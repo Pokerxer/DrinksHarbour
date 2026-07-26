@@ -24,6 +24,7 @@ const {
 } = require('../services/giftCard.helpers');
 const paymentService = require('../services/payment.service');
 const emailService = require('../services/email.service');
+const { frontendBaseUrl } = require('../utils/frontendUrl');
 const QRCode = require('qrcode');
 
 const MIN_AMOUNT = 1000; // NGN
@@ -151,8 +152,7 @@ const purchaseGiftCard = asyncHandler(async (req, res) => {
   });
 
   const reference = `DHGC-${card._id}-${Date.now()}`;
-  const frontendUrl =
-    process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002';
+  const frontendUrl = frontendBaseUrl();
   const payment = await paymentService.createGatewayTransaction(
     initialAmount,
     req.user.email,
@@ -459,7 +459,7 @@ const sendGiftAsGift = asyncHandler(async (req, res) => {
   };
   await card.save();
 
-  const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002';
+  const frontendUrl = frontendBaseUrl();
   try {
     if (emailService?.sendGiftCardEmail) {
       await emailService.sendGiftCardEmail(card.recipient.email, {

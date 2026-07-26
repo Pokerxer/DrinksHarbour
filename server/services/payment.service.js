@@ -12,6 +12,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const Order = require('../models/Order');
 const { ValidationError, NotFoundError } = require('../utils/errors');
+const { normalizeUrl, frontendUrl } = require('../utils/frontendUrl');
 
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 const KORAPAY_BASE_URL = 'https://api.korapay.com/merchant/api/v1';
@@ -141,9 +142,9 @@ const createPaystackTransaction = async (amount, email, metadata = {}, options =
         ...metadata,
         createdAt: new Date().toISOString(),
       },
-      callback_url:
-        options.callbackUrl ||
-        `${process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002'}/payment/verify`,
+      // Gateways reject anything that isn't an absolute http(s) URI, so a bad
+      // caller URL or env value is repaired here rather than forwarded.
+      callback_url: normalizeUrl(options.callbackUrl) || frontendUrl('/payment/verify'),
     };
     if (options.reference) payload.reference = options.reference;
 
@@ -262,9 +263,9 @@ const createKorapayCharge = async (amount, email, metadata = {}, options = {}) =
       // per-transaction limit is too low for premium-liquor carts (error AA021).
       // bank_transfer carries a much higher limit.
       channels: ['card', 'bank_transfer'],
-      redirect_url:
-        options.callbackUrl ||
-        `${process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002'}/payment/verify`,
+      // Korapay 400s the whole charge ("redirect_url must be a valid uri") if this
+      // isn't absolute, so normalise the caller URL / env value before sending.
+      redirect_url: normalizeUrl(options.callbackUrl) || frontendUrl('/payment/verify'),
     };
 
     const response = await axios.post(`${KORAPAY_BASE_URL}/charges/initialize`, payload, {
@@ -304,6 +305,18 @@ const createKorapayCharge = async (amount, email, metadata = {}, options = {}) =
         `This order total (₦${Math.round(amount).toLocaleString()}) is above ${limitText} for online card/bank payments. ` +
         `You can fund your DH Wallet in smaller amounts and pay from the wallet, or contact support to complete this order.`
       );
+    }
+
+    // Korapay's validation message ("One or more fields are invalid") names
+    // nothing; the useful part is per-field under data.<field>.message. Surface it
+    // so a bad payload is diagnosable from the response, not just the logs.
+    if (kpErr?.error === 'validation_error' && kpErr.data && typeof kpErr.data === 'object') {
+      const details = Object.entries(kpErr.data)
+        .map(([field, info]) => info?.message || `${field} is invalid`)
+        .join('; ');
+      if (details) {
+        throw new ValidationError(`Payment could not be initialized (${details})`);
+      }
     }
 
     throw new ValidationError(kpErr?.message || error.message || 'Failed to initialize Korapay payment');

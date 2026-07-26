@@ -138,6 +138,72 @@ test('createKorapayCharge translates AA021 limit errors into shopper-friendly gu
   }
 });
 
+test('createKorapayCharge always sends an absolute redirect_url', async () => {
+  // Production had FRONTEND_URL without a scheme, so every checkout init got
+  // 400 "redirect_url must be a valid uri" from Korapay.
+  const stub = stubAxiosPost();
+  const savedFrontend = process.env.FRONTEND_URL;
+  const savedBase = process.env.NEXT_PUBLIC_BASE_URL;
+  process.env.FRONTEND_URL = 'www.drinksharbour.com';
+  delete process.env.NEXT_PUBLIC_BASE_URL;
+  try {
+    await paymentService.createKorapayCharge(7500, 'buyer@example.com', {});
+    assert.strictEqual(
+      stub.get().redirect_url,
+      'https://www.drinksharbour.com/payment/verify',
+      'a scheme-less FRONTEND_URL must be repaired, not forwarded to Korapay',
+    );
+  } finally {
+    stub.restore();
+    if (savedFrontend === undefined) delete process.env.FRONTEND_URL;
+    else process.env.FRONTEND_URL = savedFrontend;
+    if (savedBase !== undefined) process.env.NEXT_PUBLIC_BASE_URL = savedBase;
+  }
+});
+
+test('createKorapayCharge ignores an unusable caller callbackUrl instead of forwarding it', async () => {
+  const stub = stubAxiosPost();
+  const savedFrontend = process.env.FRONTEND_URL;
+  process.env.FRONTEND_URL = 'https://drinksharbour.com';
+  try {
+    await paymentService.createKorapayCharge(5000, 'buyer@example.com', {}, { callbackUrl: '' });
+    assert.strictEqual(stub.get().redirect_url, 'https://drinksharbour.com/payment/verify');
+  } finally {
+    stub.restore();
+    if (savedFrontend === undefined) delete process.env.FRONTEND_URL;
+    else process.env.FRONTEND_URL = savedFrontend;
+  }
+});
+
+test('createKorapayCharge surfaces Korapay field-level validation errors', async () => {
+  // Korapay's top-level message ("One or more fields are invalid") names nothing;
+  // the per-field detail lives in data.<field>.message and must reach the caller.
+  const original = axios.post;
+  axios.post = async () => {
+    const err = new Error('Request failed with status code 400');
+    err.response = {
+      data: {
+        status: false,
+        error: 'validation_error',
+        message: 'One or more fields are invalid. Please fix them and try again.',
+        data: { redirect_url: { message: 'redirect_url must be a valid uri' } },
+      },
+    };
+    throw err;
+  };
+  try {
+    await assert.rejects(
+      () => paymentService.createKorapayCharge(7500, 'buyer@example.com', {}),
+      (e) => {
+        assert.match(e.message, /redirect_url must be a valid uri/, 'names the offending field');
+        return true;
+      },
+    );
+  } finally {
+    axios.post = original;
+  }
+});
+
 test('createGatewayTransaction routes to Korapay by default', async () => {
   assert.strictEqual(paymentService.ACTIVE_GATEWAY, 'korapay');
   const stub = stubAxiosPost();

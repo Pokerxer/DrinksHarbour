@@ -53,10 +53,10 @@ function toApiState(state: string): string {
 const PAYMENT_METHODS = [
   { id: 'wallet',           name: 'DH Wallet',            description: 'Pay instantly from your DrinksHarbour balance', icon: Icon.PiWalletBold,      badge: 'Instant',     comingSoon: false },
   { id: 'gift_card',        name: 'Gift Card',             description: 'Redeem a DrinksHarbour gift card code',         icon: Icon.PiGiftBold,        badge: null,          comingSoon: false },
-  { id: 'card',             name: 'Card Payment',          description: 'Visa, Mastercard — powered by Stripe',          icon: Icon.PiCreditCardBold,  badge: null,          comingSoon: false },
+  { id: 'card',             name: 'Card Payment',          description: 'Visa, Mastercard — powered by Stripe',          icon: Icon.PiCreditCardBold,  badge: 'Coming soon', comingSoon: true },
   { id: 'bank_transfer',    name: 'Card / Bank Transfer / USSD', description: 'Pay via Korapay — card, bank transfer, USSD',   icon: Icon.PiBankBold,        badge: null,          comingSoon: false },
   { id: 'paystack',         name: 'Paystack',              description: 'Pay via Paystack — card, bank, USSD',           icon: Icon.PiShieldCheckBold, badge: 'Coming soon', comingSoon: true },
-  { id: 'cash_on_delivery', name: 'Cash on Delivery',      description: 'Pay cash when your order arrives',              icon: Icon.PiMoneyBold,       badge: null,          comingSoon: false },
+  { id: 'cash_on_delivery', name: 'Cash on Delivery',      description: 'Pay cash when your order arrives',              icon: Icon.PiMoneyBold,       badge: 'Coming soon', comingSoon: true },
 ] as const;
 
 // ─── Input field ─────────────────────────────────────────────────────────────
@@ -132,7 +132,8 @@ export default function CheckoutPage() {
   const [form, setForm] = useState<FormData>({
     firstName: '', lastName: '', email: '', phone: '',
     address: '', lga: '', state: '', zipCode: '', country: 'Nigeria',
-    paymentMethod: 'cash_on_delivery',
+    // Must match the activePayment default — cash on delivery is not selectable.
+    paymentMethod: 'wallet',
   });
   const [errors, setErrors] = useState<FormErrors>({});
 

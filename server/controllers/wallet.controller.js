@@ -16,6 +16,7 @@ const { mutatePlatformWallet } = require('../services/platformWallet.service');
 const { summarizePlatformWallet } = require('../services/platformWallet.helpers');
 const paymentService = require('../services/payment.service');
 const emailService = require('../services/email.service');
+const { frontendBaseUrl } = require('../utils/frontendUrl');
 
 const MIN_FUND_AMOUNT = 500; // NGN — floor to keep Paystack fees sane.
 const MAX_FUND_AMOUNT = 10000000; // NGN — single-transaction ceiling (₦10M).
@@ -126,8 +127,7 @@ const fundWallet = asyncHandler(async (req, res) => {
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
   const reference = `DHW-${user._id}-${Date.now()}`;
-  const frontendUrl =
-    process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002';
+  const frontendUrl = frontendBaseUrl();
   const payment = await paymentService.createGatewayTransaction(
     n,
     user.email,
