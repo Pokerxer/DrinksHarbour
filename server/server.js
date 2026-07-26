@@ -46,6 +46,7 @@ const analyticsRoutes        = require('./routes/analytics.routes');
 const geminiRoutes           = require('./routes/gemini.routes');
 const bannerGeminiRoutes     = require('./routes/banner-gemini.routes');
 const bannerRoutes           = require('./routes/banner.routes');
+const reviewRoutes           = require('./routes/review.routes');
 const blogRoutes             = require('./routes/blog.routes');
 const chatbotRoutes          = require('./routes/chatbot.routes');
 const placesRoutes           = require('./routes/places.routes');
@@ -181,6 +182,7 @@ app.use('/api', async (req, res, next) => {
 app.use('/api/orders',             orderRoutes);
 app.use('/api/cart',               cartRoutes);
 app.use('/api/products',           productRoutes);
+app.use('/api/reviews',            reviewRoutes);
 app.use('/api/users',              userRoutes);
 app.use('/api/coupons',            couponRoutes);
 app.use('/api/payments',           paymentRoutes);
