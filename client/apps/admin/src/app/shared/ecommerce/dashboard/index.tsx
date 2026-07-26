@@ -30,7 +30,11 @@ import { getAuthenticatedUser } from '@/lib/server-auth';
 import { getDashboardData } from '@/services/dashboard.service';
 import { TENANT_ROLES } from '@/types/authorization';
 
-export default async function EcommerceDashboard() {
+export default async function EcommerceDashboard({
+  searchParams,
+}: {
+  searchParams?: { period?: string; from?: string; to?: string };
+}) {
   let dashboardData = null;
   let userName = 'Admin';
   let isTenantUser = false;
@@ -38,7 +42,11 @@ export default async function EcommerceDashboard() {
   try {
     const user = await getAuthenticatedUser();
     if (user?.token) {
-      dashboardData = await getDashboardData(user.token as string);
+      dashboardData = await getDashboardData(user.token as string, {
+        period: searchParams?.period,
+        from:   searchParams?.from,
+        to:     searchParams?.to,
+      });
       if (user.name) userName = user.name.split(' ')[0];
       isTenantUser = TENANT_ROLES.includes(user.role as any);
     }

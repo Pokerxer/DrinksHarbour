@@ -60,18 +60,18 @@ export default function TenantRevenueWidget({ className }: { className?: string 
   const accentColor = tenant?.primaryColor || '#dc2626';
 
   const trend = data?.profit?.trend ?? FALLBACK;
-  const thisMonth = data?.statCards?.thisMonth?.revenue ?? 0;
-  const lastMonth = data?.statCards?.lastMonth?.revenue ?? 0;
-  const thisMonthOrders = data?.statCards?.thisMonth?.orders ?? 0;
+  const periodRevenue = data?.statCards?.period?.revenue ?? 0;
+  const prevRevenue = data?.statCards?.previous?.revenue ?? 0;
+  const periodOrders = data?.statCards?.period?.orders ?? 0;
   const todayRevenue = data?.statCards?.today?.revenue ?? 0;
   const yestRevenue = data?.statCards?.yesterday?.revenue ?? 0;
   const avgOrderValue = data?.statCards?.avgOrderValue ?? 0;
 
-  const revPct = pct(thisMonth, lastMonth);
+  const revPct = pct(periodRevenue, prevRevenue);
   const todayUp = todayRevenue >= yestRevenue;
 
-  // Simple revenue margin-like display: how much of orders this month is today
-  const todayShare = thisMonth > 0 ? Math.round((todayRevenue / thisMonth) * 100) : 0;
+  // Simple revenue margin-like display: how much of orders this period is today
+  const todayShare = periodRevenue > 0 ? Math.round((todayRevenue / periodRevenue) * 100) : 0;
 
   return (
     <WidgetCard
@@ -80,7 +80,7 @@ export default function TenantRevenueWidget({ className }: { className?: string 
         !data ? (
           <div className="mt-1 h-7 w-32 animate-pulse rounded bg-gray-200" />
         ) : (
-          <span>{fmt(thisMonth)}</span>
+          <span>{fmt(periodRevenue)}</span>
         )
       }
       titleClassName="text-gray-500 font-normal font-inter !text-sm"
@@ -99,7 +99,7 @@ export default function TenantRevenueWidget({ className }: { className?: string 
                 : <PiCaretDoubleDownDuotone className="h-3.5 w-3.5" />}
               {Math.abs(revPct)}%
             </span>
-            <span className="text-gray-400">vs last month ({fmt(lastMonth)})</span>
+            <span className="text-gray-400">vs last month ({fmt(prevRevenue)})</span>
           </div>
         )}
 
@@ -114,8 +114,8 @@ export default function TenantRevenueWidget({ className }: { className?: string 
           <div className="grid grid-cols-2 gap-2">
             <MetricBox
               label="This Month"
-              value={fmt(thisMonth)}
-              sub={`${thisMonthOrders} orders`}
+              value={fmt(periodRevenue)}
+              sub={`${periodOrders} orders`}
               color="text-gray-900"
               highlight
               accentColor={accentColor}

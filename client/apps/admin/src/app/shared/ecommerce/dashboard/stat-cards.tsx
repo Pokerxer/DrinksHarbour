@@ -57,8 +57,8 @@ export default function StatCards({ className }: { className?: string }) {
   }
 
   const {
-    thisMonth,
-    lastMonth,
+    period,
+    previous,
     today,
     yesterday,
     pendingOrders,
@@ -67,18 +67,18 @@ export default function StatCards({ className }: { className?: string }) {
     sparkline,
   } = data.statCards;
 
-  const ordersPct = pct(thisMonth.orders, lastMonth.orders);
-  const revenuePct = pct(thisMonth.revenue, lastMonth.revenue);
-  const avgLastMonth =
-    lastMonth.orders > 0 ? Math.round(lastMonth.revenue / lastMonth.orders) : 0;
-  const avgPct = pct(avgOrderValue, avgLastMonth);
+  const ordersPct = pct(period.orders, previous.orders);
+  const revenuePct = pct(period.revenue, previous.revenue);
+  const avgPrevious =
+    previous.orders > 0 ? Math.round(previous.revenue / previous.orders) : 0;
+  const avgPct = pct(avgOrderValue, avgPrevious);
 
   const stats = [
     {
       id: '1',
       icon: <PiGiftDuotone className="h-6 w-6" />,
       title: 'Orders This Month',
-      metric: thisMonth.orders.toLocaleString(),
+      metric: period.orders.toLocaleString(),
       sub: `${today.orders} today`,
       increased: ordersPct >= 0,
       pct: Math.abs(ordersPct),
@@ -90,7 +90,7 @@ export default function StatCards({ className }: { className?: string }) {
       id: '2',
       icon: <PiChartPieSliceDuotone className="h-6 w-6" />,
       title: 'Revenue This Month',
-      metric: fmt(thisMonth.revenue),
+      metric: fmt(period.revenue),
       sub: `${fmt(today.revenue)} today`,
       increased: revenuePct >= 0,
       pct: Math.abs(revenuePct),
