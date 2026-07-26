@@ -303,8 +303,11 @@ function makeLinkValidator(allowed) {
 
 // Anthropic's server-side search tool. Claude runs the searches on Anthropic's
 // infrastructure and cites URLs taken from real results, so there is no
-// recall-from-memory step for it to hallucinate a URL in.
-const WEB_SEARCH_TOOL = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }];
+// recall-from-memory step for it to hallucinate a URL in. The tool version is
+// env-overridable (e.g. to the older 'web_search_20250305') so a version this
+// account cannot use is a config change, not a redeploy.
+const WEB_SEARCH_TOOL_TYPE = process.env.ANTHROPIC_WEB_SEARCH_TOOL || 'web_search_20260209';
+const WEB_SEARCH_TOOL = [{ type: WEB_SEARCH_TOOL_TYPE, name: 'web_search', max_uses: 5 }];
 
 const EXTERNAL_CITATION_PROMPT = `
 
