@@ -4,6 +4,40 @@ function authHeaders(token: string): HeadersInit {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 }
 
+export const PERIOD_KEYS = ['today', '7d', '30d', 'month', 'quarter', 'year', 'custom'] as const;
+export type PeriodKey = (typeof PERIOD_KEYS)[number];
+
+export interface PeriodMeta {
+  period:          PeriodKey;
+  label:           string;
+  comparisonLabel: string;
+  rangeStart:      string;
+  rangeEnd:        string;
+}
+
+export interface DashboardParams {
+  period?: string;
+  from?:   string;
+  to?:     string;
+}
+
+/**
+ * Serialise dashboard params into a query string. Unknown periods are dropped
+ * rather than forwarded — the server also degrades to its default, but there is
+ * no reason to send a request we already know is meaningless.
+ */
+export function buildDashboardQuery(params: DashboardParams): string {
+  const { period, from, to } = params;
+  if (!period || !PERIOD_KEYS.includes(period as PeriodKey)) return '';
+
+  if (period === 'custom') {
+    if (!from || !to) return '';
+    return `?period=custom&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  }
+
+  return `?period=${period}`;
+}
+
 export interface SparklineDay {
   day: string;
   date: string;
@@ -12,8 +46,8 @@ export interface SparklineDay {
 }
 
 export interface StatCards {
-  thisMonth:     { orders: number; revenue: number };
-  lastMonth:     { orders: number; revenue: number };
+  period:        { orders: number; revenue: number };
+  previous:      { orders: number; revenue: number };
   today:         { orders: number; revenue: number };
   yesterday:     { orders: number; revenue: number };
   pendingOrders: number;
@@ -119,10 +153,15 @@ export interface DashboardData {
   customerChart:    CustomerChartPoint[];
   profit:           ProfitData;
   topVendors:       TopVendor[];
+  meta:             PeriodMeta;
 }
 
-export async function getDashboardData(token: string): Promise<DashboardData> {
-  const res  = await fetch(`${API_URL}/api/analytics/dashboard`, { headers: authHeaders(token) });
+export async function getDashboardData(token: string, params: DashboardParams = {}): Promise<DashboardData> {
+  const qs   = buildDashboardQuery(params);
+  const res  = await fetch(`${API_URL}/api/analytics/dashboard${qs}`, {
+    headers: authHeaders(token),
+    cache: 'no-store',
+  });
   const data = await res.json() as { success: boolean; message?: string; data: DashboardData };
   if (!res.ok || !data.success) throw new Error(data.message || 'Failed to load dashboard');
   return data.data;
