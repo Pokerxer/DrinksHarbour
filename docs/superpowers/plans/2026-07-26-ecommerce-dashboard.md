@@ -1337,7 +1337,7 @@ Manual check: toggle the app to dark mode and confirm the nav bar, alert chips, 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add client/apps/admin/src/app/shared/ecommerce/
+git add client/apps/admin/src/app/shared/ecommerce/dashboard/ client/apps/admin/src/app/shared/ecommerce/ecommerce-nav-header.tsx
 git commit -m "fix(dashboard): close dark-mode holes in nav, chips, and payment badges"
 ```
 
