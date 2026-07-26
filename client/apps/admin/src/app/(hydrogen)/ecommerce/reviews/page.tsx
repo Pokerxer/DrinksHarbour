@@ -1,8 +1,5 @@
 // @ts-nocheck
-import Link from 'next/link';
-import { PiPlusBold } from 'react-icons/pi';
 import { routes } from '@/config/routes';
-import { Button } from 'rizzui/button';
 import PageHeader from '@/app/shared/page-header';
 import ReviewsTable from '@/app/shared/ecommerce/review/table';
 import { metaObject } from '@/config/site.config';
@@ -31,17 +28,7 @@ const pageHeader = {
 export default function ReviewsPage() {
   return (
     <>
-      <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb}>
-        <Link
-          href={routes.eCommerce.reviews}
-          className="mt-4 w-full @lg:mt-0 @lg:w-auto"
-        >
-          <Button as="span" className="w-full @lg:w-auto">
-            <PiPlusBold className="me-1.5 h-[17px] w-[17px]" />
-            Add Review
-          </Button>
-        </Link>
-      </PageHeader>
+      <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb} />
       <ReviewsTable />
     </>
   );

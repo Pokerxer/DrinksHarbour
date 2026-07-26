@@ -56,7 +56,7 @@ const PAYMENT_METHODS = [
   { id: 'card',             name: 'Card Payment',          description: 'Visa, Mastercard — powered by Stripe',          icon: Icon.PiCreditCardBold,  badge: 'Coming soon', comingSoon: true },
   { id: 'bank_transfer',    name: 'Card / Bank Transfer / USSD', description: 'Pay via Korapay — card, bank transfer, USSD',   icon: Icon.PiBankBold,        badge: null,          comingSoon: false },
   { id: 'paystack',         name: 'Paystack',              description: 'Pay via Paystack — card, bank, USSD',           icon: Icon.PiShieldCheckBold, badge: 'Coming soon', comingSoon: true },
-  { id: 'cash_on_delivery', name: 'Cash on Delivery',      description: 'Pay cash when your order arrives',              icon: Icon.PiMoneyBold,       badge: 'Coming soon', comingSoon: true },
+  { id: 'cash_on_delivery', name: 'Cash on Delivery',      description: 'Pay cash when your order arrives',              icon: Icon.PiMoneyBold,       badge: null,          comingSoon: false },
 ] as const;
 
 // ─── Input field ─────────────────────────────────────────────────────────────

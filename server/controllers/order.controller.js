@@ -8,7 +8,7 @@ const SubProduct = require('../models/SubProduct');
 const Product = require('../models/Product');
 const Size = require('../models/Size');
 const asyncHandler = require('../utils/asyncHandler');
-const { generateOrderNumber } = require('../utils/orderUtils');
+const { generateOrderNumber, resolveOrderRecipient } = require('../utils/orderUtils');
 const { calcPlatformCostPrice, resolveRevenueRates, resolveLineRates, resolveEffectiveUnitPrice, calculateSizePricing, roundUpTo100, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const inventoryService = require('../services/inventory.service');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
@@ -34,7 +34,6 @@ const { mutatePlatformLoyalty } = require('../services/platformLoyalty.service')
 const { earnMultiplierForTier, pointsForSpend } = require('../services/platformLoyalty.helpers');
 
 const LOYALTY_POINTS_PER_NGN = 1 / 100; // 1 pt per ₦100 base rate
-
 
 /**
  * @desc    Create new order
@@ -439,6 +438,7 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
     payment  = '',
     from,
     to,
+    source   = '',
     sort       = 'placedAt',
     order: sortDir = 'desc',
     subProductId,
@@ -448,39 +448,57 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
   const pageSize = Math.min(100, Math.max(1, parseInt(limit)));
   const skip     = (pageNum - 1) * pageSize;
 
-  const filter = {};
+  // Everything except `status` — the status cards need counts that respond to
+  // the other filters but not to the status filter itself (otherwise selecting
+  // "Delivered" would zero out every other card).
+  const baseFilter = {};
 
   // Tenant admins can only see orders containing items from their own tenant
   if (!['super_admin', 'admin'].includes(req.user.role)) {
     const tenantId = getTenantId(req);
-    filter['items.tenant'] = tenantId;
+    baseFilter['items.tenant'] = tenantId;
   }
 
-  if (status)        filter.status                = status;
-  if (payment)       filter.paymentStatus         = payment;
-  if (subProductId)  filter['items.subproduct']   = subProductId;
+  if (payment)       baseFilter.paymentStatus       = payment;
+  if (source)        baseFilter.source              = source;
+  if (subProductId)  baseFilter['items.subproduct'] = subProductId;
 
   if (from || to) {
-    filter.placedAt = {};
-    if (from) filter.placedAt.$gte = new Date(from);
-    if (to)   filter.placedAt.$lte = new Date(to);
+    baseFilter.placedAt = {};
+    if (from) baseFilter.placedAt.$gte = new Date(from);
+    if (to)   baseFilter.placedAt.$lte = new Date(to);
   }
 
   if (search.trim()) {
-    const re = new RegExp(search.trim(), 'i');
-    filter.$or = [
+    const re = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    baseFilter.$or = [
       { orderNumber:                re },
       { receiptNumber:              re },
-      { 'customer.firstName':       re },
-      { 'customer.lastName':        re },
-      { 'customer.email':           re },
+      { paymentReference:           re },
       { 'shippingAddress.fullName': re },
+      { 'shippingAddress.email':    re },
+      { 'shippingAddress.phone':    re },
+      // POS orders carry no shippingAddress — the buyer lives here instead
+      { 'paymentDetails.customer.firstName': re },
+      { 'paymentDetails.customer.lastName':  re },
+      { 'paymentDetails.customer.phone':     re },
     ];
   }
 
-  const sortObj = { [sort === 'total' ? 'totalAmount' : sort === 'status' ? 'status' : 'placedAt']: sortDir === 'asc' ? 1 : -1 };
+  const filter = status ? { ...baseFilter, status } : baseFilter;
 
-  const [orders, total] = await Promise.all([
+  const SORTABLE = {
+    orderNumber:   'orderNumber',
+    total:         'totalAmount',
+    totalAmount:   'totalAmount',
+    status:        'status',
+    paymentStatus: 'paymentStatus',
+    createdAt:     'createdAt',
+    placedAt:      'placedAt',
+  };
+  const sortObj = { [SORTABLE[sort] || 'placedAt']: sortDir === 'asc' ? 1 : -1 };
+
+  const [orders, total, statusCounts] = await Promise.all([
     Order.find(filter)
       .sort(sortObj)
       .skip(skip)
@@ -490,21 +508,19 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
       .populate('items.tenant', 'name')
       .lean(),
     Order.countDocuments(filter),
-  ]);
-
-  // Status summary counts (scoped by tenant for tenant admins)
-  const statusMatch = !['super_admin', 'admin'].includes(req.user.role)
-    ? { $match: { 'items.tenant': getTenantId(req) } }
-    : [];
-  const [statusCounts] = await Promise.all([
+    // Status summary counts over the *unfiltered-by-status* result set
     Order.aggregate([
-      ...statusMatch,
+      { $match: baseFilter },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]),
   ]);
 
-  const counts = { all: total, pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0, refunded: 0 };
+  const counts = {
+    all: 0, pending: 0, confirmed: 0, hold: 0, processing: 0,
+    partially_shipped: 0, shipped: 0, delivered: 0, cancelled: 0, refunded: 0,
+  };
   statusCounts.forEach(({ _id, count }) => {
+    counts.all += count;
     if (_id in counts) counts[_id] = count;
   });
 
@@ -547,9 +563,18 @@ exports.getOrder = asyncHandler(async (req, res) => {
   let canAccess = false;
 
   if (req.user) {
-    // Logged-in user: check if they own the order or are admin
-    canAccess = order.user?.toString() === req.user._id.toString() ||
-      ['admin', 'super_admin'].includes(req.user.role);
+    // Logged-in user: order owner, platform admin, or tenant staff whose tenant
+    // has items on this order (mirrors the scoping in getAllOrders — without
+    // this, tenant admins can list an order but get 403 opening its detail page)
+    const callerTenantId  = normalizeTenantId(req.user.tenant);
+    const isOwner         = normalizeTenantId(order.user) === req.user._id.toString();
+    const isPlatformAdmin = ['admin', 'super_admin'].includes(req.user.role);
+    const isTenantStaff =
+      ['tenant_owner', 'tenant_admin', 'tenant_staff'].includes(req.user.role) &&
+      !!callerTenantId &&
+      order.items.some((i) => normalizeTenantId(i.tenant) === callerTenantId);
+
+    canAccess = isOwner || isPlatformAdmin || isTenantStaff;
   } else {
     // Guest user: require email verification
     const { email } = req.query;
@@ -588,7 +613,8 @@ exports.getOrderByNumber = asyncHandler(async (req, res) => {
   const order = await Order.findOne({ orderNumber })
     .populate('items.product', 'name slug images')
     .populate('items.subproduct', 'name sku images')
-    .populate('items.size', 'name')
+    // Size has no `name` field — it exposes `size` ("75cl") and `displayName`
+    .populate('items.size', 'displayName size')
     .populate('items.tenant', 'name');
 
   if (!order) {
@@ -760,7 +786,7 @@ exports.cancelOrder = asyncHandler(async (req, res) => {
   });
 
   // Notify customer about cancellation (fire-and-forget)
-  const cancelCustomer = order.customer || (order.user ? await User.findById(order.user).lean().catch(() => null) : null);
+  const cancelCustomer = await resolveOrderRecipient(order);
   if (cancelCustomer) {
     (async () => {
       await Promise.allSettled([
@@ -842,7 +868,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
   // Notify customer via SMS + WhatsApp (fire-and-forget)
   if (previousStatus !== status) {
-    const customer = order.customer || (order.user ? await User.findById(order.user).lean().catch(() => null) : null);
+    const customer = await resolveOrderRecipient(order);
     if (customer) {
       (async () => {
         await Promise.allSettled([

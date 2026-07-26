@@ -1,32 +1,41 @@
-// @ts-nocheck
-import { Button } from 'rizzui/button';
+import { cache } from 'react';
+import type { Metadata } from 'next';
 import { routes } from '@/config/routes';
 import PageHeader from '@/app/shared/page-header';
-import Link from 'next/link';
 import OrderView from '@/app/shared/ecommerce/order/order-view';
+import { metaObject } from '@/config/site.config';
 import { getAuthenticatedUser } from '@/lib/server-auth';
-import { orderService } from '@/services/order.service';
+import { orderService, type Order } from '@/services/order.service';
 
-export default async function OrderDetailsPage({ params }: any) {
-  const id = (await params).id;
+type Props = { params: Promise<{ id: string }> };
 
-  // Fetch order on the server — data arrives with the initial HTML, no client waterfall
-  let order = null;
+// cache() keeps generateMetadata and the page render to a single round-trip.
+const fetchOrder = cache(async (id: string): Promise<Order | null> => {
   try {
     const user = await getAuthenticatedUser();
-    if (user?.token) {
-      order = await orderService.getOrder(user.token, id);
-    }
+    if (!user?.token) return null;
+    return await orderService.getOrder(user.token, id);
   } catch {
-    // order stays null; OrderView will show the error state
+    // OrderView renders the error state from a null order
+    return null;
   }
+});
 
-  const displayTitle = order?.orderNumber
-    ? `Order #${order.orderNumber}`
-    : `Order #${id}`;
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const id = (await params).id;
+  const order = await fetchOrder(id);
+  return metaObject(order?.orderNumber ? `Order #${order.orderNumber}` : 'Order Details');
+}
+
+export default async function OrderDetailsPage({ params }: Props) {
+  const id = (await params).id;
+
+  // Fetch on the server — data arrives with the initial HTML, no client waterfall.
+  // Next dedupes this against the identical call in generateMetadata.
+  const order = await fetchOrder(id);
 
   const pageHeader = {
-    title: displayTitle,
+    title: order?.orderNumber ? `Order #${order.orderNumber}` : 'Order Details',
     breadcrumb: [
       { href: routes.eCommerce.dashboard, name: 'E-Commerce' },
       { href: routes.eCommerce.orders, name: 'Orders' },
@@ -36,16 +45,14 @@ export default async function OrderDetailsPage({ params }: any) {
 
   return (
     <>
-      <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb}>
-        <Link
-          href={routes.eCommerce.editOrder(id)}
-          className="mt-4 w-full @lg:mt-0 @lg:w-auto"
-        >
-          <Button as="span" className="w-full @lg:w-auto">
-            Edit Order
-          </Button>
-        </Link>
-      </PageHeader>
+      {/*
+        No "Edit Order" action: the order edit form under this route is unwired
+        template code (it console.logs the payload and redirects to a DUMMY_ID),
+        so the button promised an edit that never reached the API. Real state
+        changes — status, payment, refunds — happen inside OrderView against
+        the live endpoints.
+      */}
+      <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb} />
       <OrderView orderId={id} initialOrder={order} />
     </>
   );

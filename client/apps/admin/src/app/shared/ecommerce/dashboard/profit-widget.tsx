@@ -213,62 +213,70 @@ export default function ProfitWidget({ className }: { className?: string }) {
             <div className="h-full animate-pulse rounded-xl bg-gray-100" />
           ) : (
             <>
-              <p className="text-xs text-gray-500 mb-2">12-month trend</p>
+              <p className="mb-2 text-xs text-gray-500">12-month trend</p>
               <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={trend}
-                margin={{ top: 4, bottom: 0, left: 0, right: 0 }}
-              >
-                <defs>
-                  <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gradCost" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.12} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="6 8"
-                  strokeOpacity={0.4}
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="month"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 10, fill: '#9ca3af' }}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Area
-                  type="bump"
-                  dataKey="totalSales"
-                  name="Revenue"
-                  stroke="#10b981"
-                  strokeWidth={1.8}
-                  fillOpacity={1}
-                  fill="url(#gradRev)"
-                />
-                <Area
-                  type="bump"
-                  dataKey="vendorCost"
-                  name="Vendor Cost"
-                  stroke="#3b82f6"
-                  strokeWidth={1.5}
-                  fillOpacity={1}
-                  fill="url(#gradCost)"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="profit"
-                  name="Platform Profit"
-                  stroke="#7c3aed"
-                  strokeWidth={2}
-                  dot={false}
-                  strokeDasharray="5 3"
-                />
-              </ComposedChart>
+                <ComposedChart
+                  data={trend}
+                  margin={{ top: 4, bottom: 0, left: 0, right: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
+                      <stop
+                        offset="5%"
+                        stopColor="#10b981"
+                        stopOpacity={0.15}
+                      />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradCost" x1="0" y1="0" x2="0" y2="1">
+                      <stop
+                        offset="5%"
+                        stopColor="#3b82f6"
+                        stopOpacity={0.12}
+                      />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="6 8"
+                    strokeOpacity={0.4}
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="month"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area
+                    type="bump"
+                    dataKey="totalSales"
+                    name="Revenue"
+                    stroke="#10b981"
+                    strokeWidth={1.8}
+                    fillOpacity={1}
+                    fill="url(#gradRev)"
+                  />
+                  <Area
+                    type="bump"
+                    dataKey="vendorCost"
+                    name="Vendor Cost"
+                    stroke="#3b82f6"
+                    strokeWidth={1.5}
+                    fillOpacity={1}
+                    fill="url(#gradCost)"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="profit"
+                    name="Platform Profit"
+                    stroke="#7c3aed"
+                    strokeWidth={2}
+                    dot={false}
+                    strokeDasharray="5 3"
+                  />
+                </ComposedChart>
               </ResponsiveContainer>
             </>
           )}

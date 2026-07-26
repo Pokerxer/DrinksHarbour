@@ -1,13 +1,7 @@
-// @ts-nocheck
-import Link from 'next/link';
 import { routes } from '@/config/routes';
-import { Button } from 'rizzui/button';
 import PageHeader from '@/app/shared/page-header';
 import OrdersTable from '@/app/shared/ecommerce/order/order-list/table';
-import { PiPlusBold } from 'react-icons/pi';
-import { orderData } from '@/data/order-data';
 import { metaObject } from '@/config/site.config';
-import ExportButton from '@/app/shared/export-button';
 
 export const metadata = {
   ...metaObject('Orders'),
@@ -33,24 +27,14 @@ const pageHeader = {
 export default function OrdersPage() {
   return (
     <>
-      <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb}>
-        <div className="mt-4 flex items-center gap-3 @lg:mt-0">
-          <ExportButton
-            data={orderData}
-            fileName="order_data"
-            header="Order ID,Name,Email,Avatar,Items,Price,Status,Created At,Updated At"
-          />
-          <Link
-            href={routes.eCommerce.createProduct}
-            className="w-full @lg:w-auto"
-          >
-            <Button as="span" className="w-full @lg:w-auto">
-              <PiPlusBold className="me-1.5 h-[17px] w-[17px]" />
-              Add Order
-            </Button>
-          </Link>
-        </div>
-      </PageHeader>
+      {/*
+        No "Add Order" action: orders originate from checkout or the POS till.
+        The create/edit order form under this route is unwired template code
+        (it console.logs and redirects to a DUMMY_ID), so linking to it here
+        only offered admins a way to think they had created an order.
+        Export lives inside the table, where the active filters are known.
+      */}
+      <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb} />
 
       <OrdersTable />
     </>

@@ -2,6 +2,51 @@
 
 const Order = require('../models/Order');
 const SalesOrder = require('../models/SalesOrder');
+const User = require('../models/User');
+
+/**
+ * Resolve who to notify about an order.
+ *
+ * Orders carry no top-level `customer` field — web checkouts snapshot the buyer
+ * into `shippingAddress`, POS sales into `paymentDetails.customer`, and only
+ * signed-in orders hold a `user` ref. Callers used to read `order.customer` and
+ * bail when it came back undefined, which silently muted every status SMS and
+ * WhatsApp message for guest orders.
+ *
+ * @param {Object} order - Order document or lean object
+ * @returns {Promise<{firstName: string, lastName: string, email: string, phone: string}|null>}
+ */
+async function resolveOrderRecipient(order) {
+  if (!order) return null;
+
+  const addr = order.shippingAddress;
+  if (addr?.phone || addr?.email) {
+    const [firstName, ...rest] = (addr.fullName || '').trim().split(/\s+/).filter(Boolean);
+    return {
+      firstName: firstName || 'Customer',
+      lastName:  rest.join(' '),
+      email:     addr.email || '',
+      phone:     addr.phone || '',
+    };
+  }
+
+  const pos = order.paymentDetails?.customer;
+  if (pos?.phone) {
+    return {
+      firstName: pos.firstName || 'Customer',
+      lastName:  pos.lastName  || '',
+      email:     '',
+      phone:     pos.phone,
+    };
+  }
+
+  if (order.user) {
+    const user = await User.findById(order.user).lean().catch(() => null);
+    if (user) return user;
+  }
+
+  return null;
+}
 
 async function generateOrderNumber() {
   const date = new Date();
@@ -58,6 +103,7 @@ async function generateSalesOrderNumber() {
 }
 
 module.exports = {
+  resolveOrderRecipient,
   generateOrderNumber,
   generateReceiptNumber,
   generateReturnNumber,

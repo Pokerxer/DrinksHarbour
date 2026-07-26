@@ -202,54 +202,54 @@ export default function TenantRevenueWidget({
             <div className="h-full animate-pulse rounded-xl bg-gray-100" />
           ) : (
             <>
-              <p className="text-xs text-gray-500 mb-2">12-month trend</p>
+              <p className="mb-2 text-xs text-gray-500">12-month trend</p>
               <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={trend}
-                margin={{ top: 4, bottom: 0, left: 0, right: 0 }}
-              >
-                <defs>
-                  <linearGradient
-                    id="gradTenantRev"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor={accentColor}
-                      stopOpacity={0.2}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor={accentColor}
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="6 8"
-                  strokeOpacity={0.4}
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="month"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 10, fill: '#9ca3af' }}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Area
-                  type="bump"
-                  dataKey="totalSales"
-                  name="Revenue"
-                  stroke={accentColor}
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#gradTenantRev)"
-                />
-              </AreaChart>
+                <AreaChart
+                  data={trend}
+                  margin={{ top: 4, bottom: 0, left: 0, right: 0 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="gradTenantRev"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor={accentColor}
+                        stopOpacity={0.2}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor={accentColor}
+                        stopOpacity={0}
+                      />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="6 8"
+                    strokeOpacity={0.4}
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="month"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area
+                    type="bump"
+                    dataKey="totalSales"
+                    name="Revenue"
+                    stroke={accentColor}
+                    strokeWidth={2}
+                    fillOpacity={1}
+                    fill="url(#gradTenantRev)"
+                  />
+                </AreaChart>
               </ResponsiveContainer>
             </>
           )}
