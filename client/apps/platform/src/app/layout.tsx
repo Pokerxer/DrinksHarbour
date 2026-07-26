@@ -9,6 +9,7 @@ import { Header } from "@/components/Header";
 import Footer from "@/components/Footer/Footer";
 import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
 import GoogleAnalytics from "@/components/Analytics/GoogleAnalytics";
+import { Analytics } from "@vercel/analytics/next";
 import GoogleAdSense, { ADSENSE_CLIENT_ID } from "@/components/Analytics/GoogleAdSense";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
@@ -257,6 +258,7 @@ export default async function RootLayout({
             <GoogleAnalytics />
             <GoogleAdSense />
             <AnalyticsTracker />
+            <Analytics />
             <ClientOverlays />
             <Header variant="default" showAnnouncement={false} />
             <main id="main-content">{children}</main>

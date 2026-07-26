@@ -12,6 +12,7 @@
     "cache:clean": "rm -rf .next .cache .turbo"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "framer-motion": "^12.36.0",
     "next": "16.1.6",
     "next-auth": "^4.24.11",
