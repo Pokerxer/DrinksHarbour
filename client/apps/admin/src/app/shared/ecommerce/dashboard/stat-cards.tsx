@@ -28,7 +28,7 @@ function fmt(n: number): string {
 
 function SkeletonCard() {
   return (
-    <div className="animate-pulse rounded-2xl border border-muted bg-white p-5 dark:bg-gray-100/20">
+    <div className="animate-pulse rounded-2xl border border-muted bg-gray-0 p-5">
       <div className="mb-4 flex items-start justify-between">
         <div className="h-8 w-8 rounded bg-gray-200" />
         <div className="h-4 w-16 rounded bg-gray-200" />

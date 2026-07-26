@@ -245,7 +245,7 @@ export default function EcommerceNavHeader() {
   return (
     <nav
       ref={navRef}
-      className="relative mb-0 flex items-center border-b border-gray-200 bg-white"
+      className="relative mb-0 flex items-center border-b border-muted bg-gray-0"
     >
       {/* App launcher toggle */}
       <LauncherButton className="me-1 ms-3 shadow-none" />

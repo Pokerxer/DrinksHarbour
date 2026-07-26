@@ -24,11 +24,11 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 const PAY_STYLE: Record<string, string> = {
-  paid:               'bg-green-100 text-green-700',
-  pending:            'bg-amber-100 text-amber-700',
-  failed:             'bg-red-100 text-red-600',
-  partially_refunded: 'bg-orange-100 text-orange-700',
-  refunded:           'bg-gray-100 text-gray-600',
+  paid:               'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  pending:            'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  failed:             'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  partially_refunded: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  refunded:           'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
 };
 
 const METHOD_LABEL: Record<string, string> = {
@@ -125,7 +125,7 @@ export default function RecentOrder({ className }: { className?: string }) {
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-gray-700">{order.customer}</span>
                       {order.hasAccount && (
-                        <span title="Registered user" className="shrink-0 rounded bg-blue-50 p-0.5">
+                        <span title="Registered user" className="shrink-0 rounded bg-blue-50 p-0.5 dark:bg-blue-900/30">
                           <PiUserBold className="h-2.5 w-2.5 text-blue-500" />
                         </span>
                       )}
@@ -136,14 +136,14 @@ export default function RecentOrder({ className }: { className?: string }) {
                   </td>
                   <td className="px-3 py-3.5">
                     <div className="flex flex-col gap-0.5">
-                      <span className={cn('w-fit rounded-full px-2 py-0.5 text-xs font-medium capitalize', PAY_STYLE[order.paymentStatus] ?? 'bg-gray-100 text-gray-600')}>
+                      <span className={cn('w-fit rounded-full px-2 py-0.5 text-xs font-medium capitalize', PAY_STYLE[order.paymentStatus] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300')}>
                         {order.paymentStatus}
                       </span>
                       <span className="text-xs text-gray-400">{METHOD_LABEL[order.paymentMethod] ?? order.paymentMethod}</span>
                     </div>
                   </td>
                   <td className="px-3 py-3.5">
-                    <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium capitalize', STATUS_STYLE[order.status] ?? 'bg-gray-100 text-gray-600')}>
+                    <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium capitalize', STATUS_STYLE[order.status] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300')}>
                       {order.status}
                     </span>
                   </td>

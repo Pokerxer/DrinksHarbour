@@ -120,7 +120,7 @@ export default async function EcommerceDashboard({
               {pendingOrders > 0 && (
                 <Link
                   href={routes.eCommerce.orders}
-                  className="ms-auto flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100"
+                  className="ms-auto flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/30"
                 >
                   <PiWarningCircleDuotone className="h-4 w-4 shrink-0" />
                   {pendingOrders} order{pendingOrders !== 1 ? 's' : ''} need
@@ -130,7 +130,7 @@ export default async function EcommerceDashboard({
               {lowStockCount > 0 && (
                 <Link
                   href={routes.eCommerce.subProducts}
-                  className={`flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 ${pendingOrders > 0 ? '' : 'ms-auto'}`}
+                  className={`flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 ${pendingOrders > 0 ? '' : 'ms-auto'}`}
                 >
                   <PiWarningCircleDuotone className="h-4 w-4 shrink-0" />
                   {lowStockCount} low/out-of-stock
