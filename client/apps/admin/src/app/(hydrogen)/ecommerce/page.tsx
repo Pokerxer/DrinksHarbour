@@ -6,10 +6,11 @@ export const metadata = {
   ...metaObject('E-Commerce'),
 };
 
-export default function eCommerceDashboardPage({
+export default async function eCommerceDashboardPage({
   searchParams,
 }: {
-  searchParams?: { period?: string; from?: string; to?: string };
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
 }) {
-  return <EcommerceDashboard searchParams={searchParams} />;
+  const params = await searchParams;
+  return <EcommerceDashboard searchParams={params} />;
 }

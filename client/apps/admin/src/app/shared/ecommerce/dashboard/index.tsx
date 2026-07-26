@@ -33,7 +33,7 @@ import { TENANT_ROLES } from '@/types/authorization';
 export default async function EcommerceDashboard({
   searchParams,
 }: {
-  searchParams?: { period?: string; from?: string; to?: string };
+  searchParams: { period?: string; from?: string; to?: string };
 }) {
   let dashboardData = null;
   let userName = 'Admin';
