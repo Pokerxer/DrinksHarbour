@@ -15,6 +15,7 @@ import TopVendors from '@/app/shared/ecommerce/dashboard/top-vendors';
 import RecentOrder from '@/app/shared/ecommerce/dashboard/recent-order';
 import StockReport from '@/app/shared/ecommerce/dashboard/stock-report';
 import DashboardProvider from '@/app/shared/ecommerce/dashboard/dashboard-provider';
+import PeriodSwitcher, { DashboardBody } from '@/app/shared/ecommerce/dashboard/period-switcher';
 import EcommerceHero from '@/app/shared/ecommerce/ecommerce-hero';
 import EcommerceNavHeader from '@/app/shared/ecommerce/ecommerce-nav-header';
 import {
@@ -81,8 +82,18 @@ export default async function EcommerceDashboard({
           <EcommerceHero />
         </div>
 
+        <div className="sticky top-0 z-20 -mx-4 mb-6 border-b border-muted bg-gray-0/95 px-4 py-3 backdrop-blur md:-mx-5 md:px-5 lg:-mx-6 lg:px-6 3xl:-mx-8 3xl:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-medium text-gray-500">
+              Showing <span className="font-semibold text-gray-900">{dashboardData?.meta?.label ?? 'This month'}</span>
+            </p>
+            <PeriodSwitcher />
+          </div>
+        </div>
+
         {isTenantUser ? (
           /* ── TENANT LAYOUT ──────────────────────────────────────────── */
+          <DashboardBody>
           <div className="space-y-6 3xl:space-y-8">
             {/* Quick actions + alerts bar */}
             <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -149,8 +160,10 @@ export default async function EcommerceDashboard({
             {/* Stock report */}
             <StockReport className="w-full" />
           </div>
+          </DashboardBody>
         ) : (
           /* ── ADMIN LAYOUT (unchanged) ───────────────────────────────── */
+          <DashboardBody>
           <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @7xl:grid-cols-12 3xl:gap-8">
             {/* Welcome banner */}
             <WelcomeBanner
@@ -215,6 +228,7 @@ export default async function EcommerceDashboard({
 
             <StockReport className="@4xl:col-span-2 @7xl:col-span-12" />
           </div>
+          </DashboardBody>
         )}
       </DashboardProvider>
     </div>
