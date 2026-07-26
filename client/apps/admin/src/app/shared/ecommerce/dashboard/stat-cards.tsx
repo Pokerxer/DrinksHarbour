@@ -22,7 +22,7 @@ function pct(curr: number, prev: number): number {
 
 function fmt(n: number): string {
   if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `₦${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1_000) return `₦${(n / 1_000).toFixed(1)}K`;
   return `₦${n.toLocaleString()}`;
 }
 
@@ -46,18 +46,32 @@ export default function StatCards({ className }: { className?: string }) {
 
   if (!data) {
     return (
-      <div className={cn('grid grid-cols-1 gap-5 3xl:gap-8 4xl:gap-9', className)}>
-        {[1, 2, 3, 4].map(i => <SkeletonCard key={i} />)}
+      <div
+        className={cn('grid grid-cols-1 gap-5 3xl:gap-8 4xl:gap-9', className)}
+      >
+        {[1, 2, 3, 4].map((i) => (
+          <SkeletonCard key={i} />
+        ))}
       </div>
     );
   }
 
-  const { thisMonth, lastMonth, today, yesterday, pendingOrders, lowStockCount, avgOrderValue, sparkline } = data.statCards;
+  const {
+    thisMonth,
+    lastMonth,
+    today,
+    yesterday,
+    pendingOrders,
+    lowStockCount,
+    avgOrderValue,
+    sparkline,
+  } = data.statCards;
 
-  const ordersPct   = pct(thisMonth.orders,  lastMonth.orders);
-  const revenuePct  = pct(thisMonth.revenue, lastMonth.revenue);
-  const avgLastMonth = lastMonth.orders > 0 ? Math.round(lastMonth.revenue / lastMonth.orders) : 0;
-  const avgPct       = pct(avgOrderValue, avgLastMonth);
+  const ordersPct = pct(thisMonth.orders, lastMonth.orders);
+  const revenuePct = pct(thisMonth.revenue, lastMonth.revenue);
+  const avgLastMonth =
+    lastMonth.orders > 0 ? Math.round(lastMonth.revenue / lastMonth.orders) : 0;
+  const avgPct = pct(avgOrderValue, avgLastMonth);
 
   const stats = [
     {
@@ -70,7 +84,7 @@ export default function StatCards({ className }: { className?: string }) {
       pct: Math.abs(ordersPct),
       style: 'text-[#3872FA]',
       fill: '#3872FA',
-      chart: sparkline.map(d => ({ day: d.day, sale: d.orders })),
+      chart: sparkline.map((d) => ({ day: d.day, sale: d.orders })),
     },
     {
       id: '2',
@@ -82,7 +96,7 @@ export default function StatCards({ className }: { className?: string }) {
       pct: Math.abs(revenuePct),
       style: 'text-[#10b981]',
       fill: '#10b981',
-      chart: sparkline.map(d => ({ day: d.day, sale: d.revenue })),
+      chart: sparkline.map((d) => ({ day: d.day, sale: d.revenue })),
     },
     {
       id: '3',
@@ -94,7 +108,7 @@ export default function StatCards({ className }: { className?: string }) {
       pct: Math.abs(avgPct),
       style: 'text-[#7928ca]',
       fill: '#7928ca',
-      chart: sparkline.map(d => ({ day: d.day, sale: d.revenue })),
+      chart: sparkline.map((d) => ({ day: d.day, sale: d.revenue })),
     },
     {
       id: '4',
@@ -106,12 +120,14 @@ export default function StatCards({ className }: { className?: string }) {
       pct: null,
       style: 'text-[#f59e0b]',
       fill: '#f59e0b',
-      chart: sparkline.map(d => ({ day: d.day, sale: d.orders })),
+      chart: sparkline.map((d) => ({ day: d.day, sale: d.orders })),
     },
   ];
 
   return (
-    <div className={cn('grid grid-cols-1 gap-5 3xl:gap-8 4xl:gap-9', className)}>
+    <div
+      className={cn('grid grid-cols-1 gap-5 3xl:gap-8 4xl:gap-9', className)}
+    >
       {stats.map((stat) => (
         <MetricCard
           key={stat.id}
@@ -143,10 +159,11 @@ export default function StatCards({ className }: { className?: string }) {
                     stat.increased ? 'text-green' : 'text-red'
                   )}
                 >
-                  {stat.increased
-                    ? <PiCaretDoubleUpDuotone className="me-1 h-4 w-4" />
-                    : <PiCaretDoubleDownDuotone className="me-1 h-4 w-4" />
-                  }
+                  {stat.increased ? (
+                    <PiCaretDoubleUpDuotone className="me-1 h-4 w-4" />
+                  ) : (
+                    <PiCaretDoubleDownDuotone className="me-1 h-4 w-4" />
+                  )}
                   {stat.pct}%
                 </Text>
                 <Text as="span" className="hidden @[240px]:inline-flex">
@@ -154,7 +171,9 @@ export default function StatCards({ className }: { className?: string }) {
                 </Text>
               </>
             ) : (
-              <Text as="span" className="text-sm text-orange-500">{stat.sub}</Text>
+              <Text as="span" className="text-sm text-orange-500">
+                {stat.sub}
+              </Text>
             )}
           </Text>
         </MetricCard>
