@@ -901,12 +901,15 @@ export const metadata = {
   ...metaObject('E-Commerce'),
 };
 
-export default function eCommerceDashboardPage({
+export default async function eCommerceDashboardPage({
   searchParams,
 }: {
-  searchParams?: { period?: string; from?: string; to?: string };
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
 }) {
-  return <EcommerceDashboard searchParams={searchParams} />;
+  // Next 15: searchParams is a Promise and must be awaited at the route
+  // boundary, matching sub-products/page.tsx and the other pages here.
+  const params = await searchParams;
+  return <EcommerceDashboard searchParams={params} />;
 }
 ```
 
