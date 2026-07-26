@@ -30,20 +30,16 @@ function gtag(...args: unknown[]) {
   }
 }
 
-function canTrack(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const raw = localStorage.getItem('dh_consent');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return parsed?.analytics === true;
-    }
-  } catch {}
-  return false;
-}
-
+/**
+ * Send a GA4 event.
+ *
+ * Events are always sent. Storage/identity is governed by Google Consent Mode
+ * v2, which components/Analytics/GoogleAnalytics.tsx initialises with all
+ * categories `denied` and updates when the visitor opts in. Until then GA
+ * receives cookieless pings — no identifiers are stored on the device, and GA4
+ * still reports (modelled) traffic and conversions.
+ */
 export function gtagEvent(action: string, params: GTagParams = {}): void {
-  if (!canTrack()) return;
   gtag('event', action, params);
 }
 

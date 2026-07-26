@@ -8,42 +8,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 // ─── Cookie consent banner ─────────────────────────────────────────────────────
 // Stores the visitor's choice in localStorage so it only shows once. Essential
 // cookies are always on; optional (preference/analytics/marketing) are opt-in.
+//
+// The storage key and read helpers live in @/lib/consent so analytics/pixel
+// code can read consent without pulling in this component's bundle.
 
-const STORAGE_KEY = 'dh_cookie_consent_v1';
+import {
+  CONSENT_STORAGE_KEY as STORAGE_KEY,
+  readConsent,
+  writeConsent as persist,
+  hasConsent,
+  type CookieConsent,
+} from '@/lib/consent';
 
-export interface CookieConsent {
-  essential: true;
-  preference: boolean;
-  analytics: boolean;
-  marketing: boolean;
-  ts: number;
-}
-
-function persist(consent: CookieConsent) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(consent));
-    window.dispatchEvent(new CustomEvent('dh:cookie-consent', { detail: consent }));
-  } catch {
-    /* storage unavailable — fail silently */
-  }
-}
-
-// Read the stored consent record (or null if the visitor hasn't chosen yet).
-export function readConsent(): CookieConsent | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as CookieConsent) : null;
-  } catch {
-    return null;
-  }
-}
-
-// Whether the visitor has granted consent for an optional cookie category.
-export function hasConsent(category: 'preference' | 'analytics' | 'marketing'): boolean {
-  const c = readConsent();
-  return !!c && c[category] === true;
-}
+export { readConsent, hasConsent };
+export type { CookieConsent };
 
 const OPTIONAL_KEYS = ['preference', 'analytics', 'marketing'] as const;
 

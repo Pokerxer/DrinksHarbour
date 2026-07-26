@@ -287,20 +287,6 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [fetchProducts]);
 
-  // ── GA4 view_item_list ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (visibleProducts.length > 0 && !viewListFiredRef.current) {
-      viewListFiredRef.current = true;
-      const items: GTagItem[] = visibleProducts.slice(0, 24).map((p: any) => ({
-        item_id: p.sku ?? p.slug ?? p._id ?? p.id,
-        item_name: p.name,
-        item_category: p.category?.name ?? p.type,
-        price: p.priceRange?.min ?? p.price ?? 0,
-      }));
-      viewItemListEvent({ item_list_id: 'shop', item_list_name: 'Shop', items });
-    }
-  }, [visibleProducts]);
-
   // ── Sale-type filtering (client-side) ────────────────────────────────────
   // Filter, then sort biggest discount first
   const saleProducts = useMemo(() => {
@@ -323,6 +309,22 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
     if (saleTypeParam === 'all') return saleProducts;
     return byType[saleTypeParam] ?? saleProducts;
   }, [sale, saleTypeParam, products, saleProducts, byType]);
+
+  // ── GA4 view_item_list ──────────────────────────────────────────────────
+  // Must stay below `visibleProducts`: the dependency array is evaluated during
+  // render, so referencing it earlier throws a TDZ ReferenceError.
+  useEffect(() => {
+    if (visibleProducts.length > 0 && !viewListFiredRef.current) {
+      viewListFiredRef.current = true;
+      const items: GTagItem[] = visibleProducts.slice(0, 24).map((p: any) => ({
+        item_id: p.sku ?? p.slug ?? p._id ?? p.id,
+        item_name: p.name,
+        item_category: p.category?.name ?? p.type,
+        price: p.priceRange?.min ?? p.price ?? 0,
+      }));
+      viewItemListEvent({ item_list_id: 'shop', item_list_name: 'Shop', items });
+    }
+  }, [visibleProducts]);
 
   // Flash sale end time — earliest saleEndDate across active flash_sale products
   const flashEndTime = useMemo(() => {

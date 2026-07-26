@@ -1,4 +1,4 @@
-type FeatureFlag =
+export type FeatureFlag =
   | 'new_checkout_flow'
   | 'express_checkout'
   | 'product_recommendations_v2'

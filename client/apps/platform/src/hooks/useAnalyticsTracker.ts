@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { hasConsent } from '@/components/legal/CookieConsent';
+import { hasConsent } from '@/lib/consent';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 

@@ -14,16 +14,13 @@ declare global {
   }
 }
 
+import { hasConsent } from './consent';
+
+// Social pixels have no Consent Mode equivalent — they set identifiers as soon
+// as they fire, so they stay gated on explicit marketing consent.
 function canTrackMarketing(): boolean {
   if (typeof window === 'undefined') return false;
-  try {
-    const raw = localStorage.getItem('dh_consent');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return parsed?.marketing === true;
-    }
-  } catch {}
-  return false;
+  return hasConsent('marketing');
 }
 
 export function firePixelEvent(pixel: 'meta' | 'tiktok' | 'twitter', event: string, params?: Record<string, any>): void {

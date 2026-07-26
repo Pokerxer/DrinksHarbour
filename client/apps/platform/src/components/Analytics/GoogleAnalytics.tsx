@@ -2,7 +2,7 @@
 
 import Script from 'next/script';
 import { useEffect } from 'react';
-import { readConsent } from '@/components/legal/CookieConsent';
+import { readConsent } from '@/lib/consent';
 
 // GA4 measurement ID. Configurable via env; falls back to the account's tag.
 const GA_MEASUREMENT_ID =

@@ -2,13 +2,16 @@
 
 import Script from 'next/script';
 
-const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID || '000000000000000';
-const TIKTOK_PIXEL_ID = process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID || 'XXXXXXXXXXXXXXX';
-const TWITTER_PIXEL_ID = process.env.NEXT_PUBLIC_TWITTER_PIXEL_ID || 'xxxxxxxx';
+// Each pixel only loads when a real ID is configured — loading a placeholder ID
+// sets third-party cookies for an account that doesn't exist.
+const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
+const TIKTOK_PIXEL_ID = process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID;
+const TWITTER_PIXEL_ID = process.env.NEXT_PUBLIC_TWITTER_PIXEL_ID;
 
 export default function SocialPixels() {
   return (
     <>
+      {META_PIXEL_ID && (
       <Script id="meta-pixel" strategy="afterInteractive">
         {`
           !function(f,b,e,v,n,t,s)
@@ -23,6 +26,8 @@ export default function SocialPixels() {
           fbq('track', 'PageView');
         `}
       </Script>
+      )}
+      {TIKTOK_PIXEL_ID && (
       <Script id="tiktok-pixel" strategy="afterInteractive">
         {`
           !function (w, d, t) {
@@ -32,6 +37,8 @@ export default function SocialPixels() {
           ttq.page();
         `}
       </Script>
+      )}
+      {TWITTER_PIXEL_ID && (
       <Script id="twitter-pixel" strategy="afterInteractive">
         {`
           !function(e,t,n,s,u,a){e.twq||(s=e.twq=function(){s.exe?s.exe.apply(s,arguments):s.queue.push(arguments);
@@ -40,6 +47,7 @@ export default function SocialPixels() {
           twq('config','${TWITTER_PIXEL_ID}');
         `}
       </Script>
+      )}
     </>
   );
 }
