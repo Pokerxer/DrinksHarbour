@@ -5,10 +5,15 @@ import type { ContentBlock } from './data';
 import BlogImage from './BlogImage';
 
 // Parse inline markdown into styled nodes, leaving surrounding text intact:
-//   [anchor](/internal/path)  → internal Next link (leading-slash hrefs only)
-//   **bold**                  → <strong>
-//   *italic*                  → <em>
-const INLINE_TOKEN_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+//   [anchor](/internal/path)      → internal Next link
+//   [anchor](https://example.com) → external citation, opens in a new tab
+//   **bold**                      → <strong>
+//   *italic*                      → <em>
+const INLINE_TOKEN_RE =
+  /\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+
+const LINK_CLASS =
+  'font-semibold text-red-700 underline decoration-red-300 underline-offset-2 transition-colors hover:decoration-red-600';
 
 export function renderRichText(text?: string): React.ReactNode {
   if (!text) return text ?? null;
@@ -21,13 +26,27 @@ export function renderRichText(text?: string): React.ReactNode {
     if (m.index > last) parts.push(text.slice(last, m.index));
     if (m[2]) {
       parts.push(
-        <Link
-          key={`lnk-${key++}`}
-          href={m[2]}
-          className="font-semibold text-red-700 underline decoration-red-300 underline-offset-2 transition-colors hover:decoration-red-600"
-        >
-          {m[1]}
-        </Link>,
+        m[2].startsWith('/') ? (
+          <Link key={`lnk-${key++}`} href={m[2]} className={LINK_CLASS}>
+            {m[1]}
+          </Link>
+        ) : (
+          // Citations point off-site: new tab, and deliberately no nofollow —
+          // these are links to authorities we chose to vouch for.
+          <a
+            key={`lnk-${key++}`}
+            href={m[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={LINK_CLASS}
+          >
+            {m[1]}
+            <Icon.PiArrowUpRightBold
+              aria-hidden
+              className="ms-0.5 inline h-3 w-3 align-baseline"
+            />
+          </a>
+        ),
       );
     } else if (m[3] !== undefined) {
       parts.push(

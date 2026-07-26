@@ -8,10 +8,15 @@ import {
   PiQuotesBold,
   PiLightbulbFilamentBold,
   PiImageBold,
+  PiArrowUpRightBold,
 } from 'react-icons/pi';
 import type { ContentBlock } from './blog-helpers';
 
-const INLINE_TOKEN_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+const INLINE_TOKEN_RE =
+  /\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+
+const LINK_CLASS =
+  'font-semibold text-red-700 underline decoration-red-300 underline-offset-2';
 
 function renderInline(text?: string): React.ReactNode {
   if (!text) return text ?? null;
@@ -23,13 +28,21 @@ function renderInline(text?: string): React.ReactNode {
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index));
     if (m[2]) {
+      const external = !m[2].startsWith('/');
       parts.push(
         <a
           key={`lnk-${key++}`}
           href={m[2]}
-          className="font-semibold text-red-700 underline decoration-red-300 underline-offset-2"
+          className={LINK_CLASS}
+          {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
         >
           {m[1]}
+          {external ? (
+            <PiArrowUpRightBold
+              aria-hidden
+              className="ms-0.5 inline h-3 w-3 align-baseline"
+            />
+          ) : null}
         </a>,
       );
     } else if (m[3] !== undefined) {

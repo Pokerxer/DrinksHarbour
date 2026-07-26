@@ -7,7 +7,7 @@ import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { Input, Select, Button, ActionIcon, Text } from 'rizzui';
 import cn from '@core/utils/class-names';
-import { PiSparkleBold, PiCaretDownBold } from 'react-icons/pi';
+import { PiSparkleBold, PiCaretDownBold, PiLinkBold } from 'react-icons/pi';
 import { blogService } from '@/services/blog.service';
 import { CATEGORY_OPTIONS } from './blog-helpers';
 
@@ -105,6 +105,49 @@ export default function AiBar({
         </div>
       ) : null}
     </section>
+  );
+}
+
+// Weaves verified outbound source links into the post that is already written.
+// Every URL is checked live server-side, so nothing dead reaches the editor.
+export function AddCitationsButton({
+  token,
+  post,
+  onApply,
+}: {
+  token: string;
+  post: any;
+  onApply: (content: any[]) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    if (!post?.content?.length) return toast.error('Write some content first');
+    setBusy(true);
+    try {
+      const data: any = await blogService.addCitations({ post }, token);
+      onApply(data.content);
+      toast.success(
+        data.kept
+          ? `Added ${data.kept} verified source link${data.kept === 1 ? '' : 's'}`
+          : 'No verifiable sources found for this post'
+      );
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="outline"
+      isLoading={busy}
+      onClick={run}
+      className="border-violet-200 text-violet-700 hover:bg-violet-50"
+    >
+      <PiLinkBold className="me-1.5 h-4 w-4" /> Add sources
+    </Button>
   );
 }
 
