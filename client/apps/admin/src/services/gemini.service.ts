@@ -401,7 +401,7 @@ export const geminiService = {
     category?: string
   ): Promise<ProductDetailsResponse> {
     const url = `${API_URL}/api/gemini/generate-product`;
-    
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -419,7 +419,9 @@ export const geminiService = {
       return response.json();
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        throw new Error('Cannot connect to server. Please check if the backend is running.');
+        throw new Error(
+          'Cannot connect to server. Please check if the backend is running.'
+        );
       }
       throw error;
     }
@@ -435,7 +437,7 @@ export const geminiService = {
     brand?: string
   ): Promise<DescriptionResponse> {
     const url = `${API_URL}/api/gemini/generate-description`;
-    
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -453,7 +455,9 @@ export const geminiService = {
       return response.json();
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        throw new Error('Cannot connect to server. Please check if the backend is running.');
+        throw new Error(
+          'Cannot connect to server. Please check if the backend is running.'
+        );
       }
       throw error;
     }
@@ -468,7 +472,7 @@ export const geminiService = {
     type?: string
   ): Promise<OriginResponse> {
     const url = `${API_URL}/api/gemini/generate-origin`;
-    
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -486,7 +490,9 @@ export const geminiService = {
       return response.json();
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        throw new Error('Cannot connect to server. Please check if the backend is running.');
+        throw new Error(
+          'Cannot connect to server. Please check if the backend is running.'
+        );
       }
       throw error;
     }
@@ -501,7 +507,7 @@ export const geminiService = {
     type?: string
   ): Promise<BeverageInfoResponse> {
     const url = `${API_URL}/api/gemini/generate-beverage-info`;
-    
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -519,7 +525,9 @@ export const geminiService = {
       return response.json();
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        throw new Error('Cannot connect to server. Please check if the backend is running.');
+        throw new Error(
+          'Cannot connect to server. Please check if the backend is running.'
+        );
       }
       throw error;
     }
@@ -536,7 +544,7 @@ export const geminiService = {
     brand?: string
   ): Promise<SeoResponse> {
     const url = `${API_URL}/api/gemini/generate-seo`;
-    
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -554,7 +562,9 @@ export const geminiService = {
       return response.json();
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        throw new Error('Cannot connect to server. Please check if the backend is running.');
+        throw new Error(
+          'Cannot connect to server. Please check if the backend is running.'
+        );
       }
       throw error;
     }
@@ -570,7 +580,7 @@ export const geminiService = {
     category?: string
   ): Promise<TagsResponse> {
     const url = `${API_URL}/api/gemini/generate-tags`;
-    
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -588,7 +598,9 @@ export const geminiService = {
       return response.json();
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        throw new Error('Cannot connect to server. Please check if the backend is running.');
+        throw new Error(
+          'Cannot connect to server. Please check if the backend is running.'
+        );
       }
       throw error;
     }
@@ -606,7 +618,7 @@ export const geminiService = {
     originCountry?: string
   ): Promise<PricingResponse> {
     const url = `${API_URL}/api/gemini/generate-pricing`;
-    
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -624,7 +636,9 @@ export const geminiService = {
       return response.json();
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        throw new Error('Cannot connect to server. Please check if the backend is running.');
+        throw new Error(
+          'Cannot connect to server. Please check if the backend is running.'
+        );
       }
       throw error;
     }
@@ -643,7 +657,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, brand }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -667,7 +684,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, brand, originCountry }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -689,7 +709,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -712,7 +735,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, flavorProfile }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -735,7 +761,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, flavorProfile }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -758,7 +787,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, flavorProfile }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -780,7 +812,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -803,7 +838,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, age }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -826,7 +864,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, brand }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -849,7 +890,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, originCountry }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -873,7 +917,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, originCountry, region }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -896,7 +943,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, brand, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -918,7 +968,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -941,7 +994,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, age }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -963,7 +1019,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -986,7 +1045,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, productionMethod }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1008,13 +1070,18 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
       return response.json();
     } catch (error: any) {
-      throw new Error(error.message || 'Failed to generate serving temperature');
+      throw new Error(
+        error.message || 'Failed to generate serving temperature'
+      );
     }
   },
 
@@ -1030,7 +1097,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1052,7 +1122,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1074,7 +1147,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1096,7 +1172,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1118,7 +1197,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1142,7 +1224,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, brand, type, ...options }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1161,14 +1246,28 @@ export const geminiService = {
     brand?: string,
     type?: string,
     shortDescription?: string,
-    options?: { subType?: string; originCountry?: string; region?: string; abv?: number | string }
+    options?: {
+      subType?: string;
+      originCountry?: string;
+      region?: string;
+      abv?: number | string;
+    }
   ): Promise<MetaDescriptionResponse> {
     const url = `${API_URL}/api/gemini/meta-description`;
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, brand, type, shortDescription, ...options }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name,
+          brand,
+          type,
+          shortDescription,
+          ...options,
+        }),
       });
       if (!response.ok) await handleFetchError(response);
       return response.json();
@@ -1198,7 +1297,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, ...options }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1220,7 +1322,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1244,7 +1349,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, abv, volumeMl }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1266,7 +1374,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1289,7 +1400,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, type, volumeMl }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1302,21 +1416,24 @@ export const geminiService = {
   /**
    * Generate slug
    */
-  async generateSlug(
-    name: string,
-    token: string
-  ): Promise<SlugResponse> {
+  async generateSlug(name: string, token: string): Promise<SlugResponse> {
     const url = `${API_URL}/api/gemini/slug`;
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name }),
       });
       if (!response.ok) await handleFetchError(response);
       return response.json();
     } catch (error: any) {
-      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
       return { success: true, data: { slug } };
     }
   },
@@ -1330,7 +1447,7 @@ export const geminiService = {
     category?: string
   ): Promise<{ success: boolean; data: any[] }> {
     const url = `${API_URL}/api/gemini/recommendations`;
-    
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -1348,7 +1465,9 @@ export const geminiService = {
       return response.json();
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        throw new Error('Cannot connect to server. Please check if the backend is running.');
+        throw new Error(
+          'Cannot connect to server. Please check if the backend is running.'
+        );
       }
       throw error;
     }
@@ -1366,7 +1485,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, productName }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1388,7 +1510,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, productName }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1410,7 +1535,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, countryOfOrigin: context }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1432,7 +1560,10 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ name, productName }),
       });
       if (!response.ok) await handleFetchError(response);
@@ -1455,17 +1586,22 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ 
-          name, 
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name,
           type,
-          availableCategories: availableCategories?.map(c => c.name) 
+          availableCategories: availableCategories?.map((c) => c.name),
         }),
       });
       if (!response.ok) await handleFetchError(response);
       return response.json();
     } catch (error: any) {
-      throw new Error(error.message || 'Failed to generate category suggestion');
+      throw new Error(
+        error.message || 'Failed to generate category suggestion'
+      );
     }
   },
 
@@ -1483,18 +1619,23 @@ export const geminiService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ 
-          name, 
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name,
           type,
           category,
-          availableSubCategories: availableSubCategories?.map(c => c.name) 
+          availableSubCategories: availableSubCategories?.map((c) => c.name),
         }),
       });
       if (!response.ok) await handleFetchError(response);
       return response.json();
     } catch (error: any) {
-      throw new Error(error.message || 'Failed to generate subcategory suggestion');
+      throw new Error(
+        error.message || 'Failed to generate subcategory suggestion'
+      );
     }
   },
 };

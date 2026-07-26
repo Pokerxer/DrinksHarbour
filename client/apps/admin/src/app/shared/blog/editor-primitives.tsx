@@ -75,7 +75,7 @@ export function SectionCard({
     <section
       className={cn(
         'overflow-hidden rounded-2xl border border-gray-200/70 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)]',
-        className,
+        className
       )}
     >
       <header className="flex items-start gap-3 border-b border-gray-100 px-4 py-3 sm:px-5 sm:py-3.5">
@@ -138,13 +138,13 @@ export function StatusPill({ status }: { status?: string }) {
         'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold',
         published
           ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-          : 'bg-gray-100 text-gray-600 ring-1 ring-gray-200',
+          : 'bg-gray-100 text-gray-600 ring-1 ring-gray-200'
       )}
     >
       <span
         className={cn(
           'h-1.5 w-1.5 rounded-full',
-          published ? 'bg-emerald-500' : 'bg-gray-400',
+          published ? 'bg-emerald-500' : 'bg-gray-400'
         )}
       />
       {published ? 'Published' : 'Draft'}

@@ -15,15 +15,8 @@ import {
   PiStarBold,
   PiTextAaBold,
 } from 'react-icons/pi';
-import {
-  CATEGORY_OPTIONS,
-  categoryColor,
-} from './blog-helpers';
-import {
-  CharCount,
-  FieldLabel,
-  SectionCard,
-} from './editor-primitives';
+import { CATEGORY_OPTIONS, categoryColor } from './blog-helpers';
+import { CharCount, FieldLabel, SectionCard } from './editor-primitives';
 import { RegenerateButton } from './ai-bar';
 
 interface Props {
@@ -79,9 +72,7 @@ export default function PostDetailsPanel({
             </label>
             <span className="flex items-center gap-2">
               <span className="text-xs text-gray-400">
-                {titleLen === 0
-                  ? 'aim for 50–60 chars'
-                  : `${titleLen} chars`}
+                {titleLen === 0 ? 'aim for 50–60 chars' : `${titleLen} chars`}
               </span>
               <RegenerateButton
                 field="title"
@@ -102,7 +93,7 @@ export default function PostDetailsPanel({
                 'focus:border-violet-400 focus:ring-2 focus:ring-violet-200',
                 titleLen > 60
                   ? 'border-amber-300'
-                  : 'border-gray-200 hover:border-gray-300',
+                  : 'border-gray-200 hover:border-gray-300'
               )}
             />
             <PiTextAaBold className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-200" />
@@ -117,9 +108,7 @@ export default function PostDetailsPanel({
         {/* ─── Slug + Category row ────────────────────────────────────── */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
-            <FieldLabel hint="auto-syncs with title">
-              URL slug
-            </FieldLabel>
+            <FieldLabel hint="auto-syncs with title">URL slug</FieldLabel>
             <div className="relative">
               <Input
                 value={post.slug}
@@ -174,7 +163,7 @@ export default function PostDetailsPanel({
                   <span
                     className={cn(
                       'rounded-full px-2 py-0.5 text-[10px] font-bold ring-1',
-                      categoryColor(post.category),
+                      categoryColor(post.category)
                     )}
                   >
                     {post.category}
@@ -247,11 +236,7 @@ export default function PostDetailsPanel({
                   e.preventDefault();
                   addTag(tagInput);
                 }
-                if (
-                  e.key === 'Backspace' &&
-                  !tagInput &&
-                  post.tags.length
-                ) {
+                if (e.key === 'Backspace' && !tagInput && post.tags.length) {
                   removeTag(post.tags[post.tags.length - 1]);
                 }
               }}

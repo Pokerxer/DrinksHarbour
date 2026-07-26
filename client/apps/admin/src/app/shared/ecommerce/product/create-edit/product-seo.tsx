@@ -2,7 +2,16 @@
 'use client';
 
 import { useFormContext, useWatch } from 'react-hook-form';
-import { Input, Textarea, Text, Badge, Tooltip, Button, Select, type SelectOption } from 'rizzui';
+import {
+  Input,
+  Textarea,
+  Text,
+  Badge,
+  Tooltip,
+  Button,
+  Select,
+  type SelectOption,
+} from 'rizzui';
 import cn from '@core/utils/class-names';
 import { CreateProductInput } from '@/validators/create-product.schema';
 import FormGroup from '@/app/shared/form-group';
@@ -93,7 +102,9 @@ export default function ProductSeo({ className }: ProductSeoProps) {
   }, []);
 
   const [seoScore, setSeoScore] = useState(0);
-  const [scoreBreakdown, setScoreBreakdown] = useState<{ label: string; score: number; max: number; ok: boolean }[]>([]);
+  const [scoreBreakdown, setScoreBreakdown] = useState<
+    { label: string; score: number; max: number; ok: boolean }[]
+  >([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingField, setGeneratingField] = useState<string | null>(null);
 
@@ -112,7 +123,8 @@ export default function ProductSeo({ className }: ProductSeoProps) {
     else if (titleLen >= 30 && titleLen < 40) titleScore = 20;
     else if (titleLen >= 20) titleScore = 15;
     else if (titleLen > 0) titleScore = 8;
-    const titleHasName = nameLower && titleLower.includes(nameLower.split(' ')[0]);
+    const titleHasName =
+      nameLower && titleLower.includes(nameLower.split(' ')[0]);
     if (titleLen > 0 && !titleHasName) titleScore = Math.max(titleScore - 3, 0);
 
     // 2. Meta description quality (25 pts)
@@ -122,8 +134,12 @@ export default function ProductSeo({ className }: ProductSeoProps) {
     else if (descLen >= 70) descScore = 15;
     else if (descLen >= 40) descScore = 10;
     else if (descLen > 0) descScore = 5;
-    const descHasCta = /order|shop|buy|discover|get yours|available|check|view/i.test(metaDescription);
-    if (descLen >= 70 && descHasCta && descScore < 25) descScore = Math.min(descScore + 3, 25);
+    const descHasCta =
+      /order|shop|buy|discover|get yours|available|check|view/i.test(
+        metaDescription
+      );
+    if (descLen >= 70 && descHasCta && descScore < 25)
+      descScore = Math.min(descScore + 3, 25);
 
     // 3. Keywords (20 pts)
     let kwScore = 0;
@@ -139,20 +155,49 @@ export default function ProductSeo({ className }: ProductSeoProps) {
     const slugScore = slug && slug.length > 2 ? 8 : 0;
 
     // 6. Product description (7 pts)
-    const descPresent = (shortDesc && shortDesc.length > 20) || (fullDesc && fullDesc.length > 20);
+    const descPresent =
+      (shortDesc && shortDesc.length > 20) ||
+      (fullDesc && fullDesc.length > 20);
     const productDescScore = descPresent ? 7 : 0;
 
-    const total = Math.min(titleScore + descScore + kwScore + brandScore + slugScore + productDescScore, 100);
+    const total = Math.min(
+      titleScore +
+        descScore +
+        kwScore +
+        brandScore +
+        slugScore +
+        productDescScore,
+      100
+    );
     setSeoScore(total);
     setScoreBreakdown([
       { label: 'Meta Title', score: titleScore, max: 25, ok: titleScore >= 20 },
-      { label: 'Meta Description', score: descScore, max: 25, ok: descScore >= 20 },
+      {
+        label: 'Meta Description',
+        score: descScore,
+        max: 25,
+        ok: descScore >= 20,
+      },
       { label: 'Keywords', score: kwScore, max: 20, ok: kwScore >= 16 },
       { label: 'Brand', score: brandScore, max: 15, ok: brandScore === 15 },
       { label: 'URL Slug', score: slugScore, max: 8, ok: slugScore === 8 },
-      { label: 'Description', score: productDescScore, max: 7, ok: productDescScore === 7 },
+      {
+        label: 'Description',
+        score: productDescScore,
+        max: 7,
+        ok: productDescScore === 7,
+      },
     ]);
-  }, [metaTitle, metaDescription, metaKeywords, brand, productName, shortDesc, fullDesc, slug]);
+  }, [
+    metaTitle,
+    metaDescription,
+    metaKeywords,
+    brand,
+    productName,
+    shortDesc,
+    fullDesc,
+    slug,
+  ]);
 
   // Auto-enable age verification for alcoholic products
   useEffect(() => {
@@ -177,11 +222,17 @@ export default function ProductSeo({ className }: ProductSeoProps) {
 
     setGeneratingField('title');
     try {
-      const response = await geminiService.generateMetaTitle(productName, session.user.token, brand, type, {
-        subType,
-        originCountry,
-        region,
-      });
+      const response = await geminiService.generateMetaTitle(
+        productName,
+        session.user.token,
+        brand,
+        type,
+        {
+          subType,
+          originCountry,
+          region,
+        }
+      );
       if (response.data.metaTitle) {
         setValue('metaTitle', response.data.metaTitle);
         toast.success('Meta title generated!');
@@ -270,22 +321,33 @@ export default function ProductSeo({ className }: ProductSeoProps) {
     setGeneratingField('keywords');
     try {
       const currentKeywords = Array.isArray(metaKeywords) ? metaKeywords : [];
-      const response = await geminiService.generateKeywords(productName, session.user.token, {
-        brand,
-        type,
-        subType,
-        originCountry,
-        region,
-        abv,
-        shortDescription: shortDesc,
-        existingKeywords: appendKeywords && currentKeywords.length > 0 ? currentKeywords : undefined,
-      });
+      const response = await geminiService.generateKeywords(
+        productName,
+        session.user.token,
+        {
+          brand,
+          type,
+          subType,
+          originCountry,
+          region,
+          abv,
+          shortDescription: shortDesc,
+          existingKeywords:
+            appendKeywords && currentKeywords.length > 0
+              ? currentKeywords
+              : undefined,
+        }
+      );
       if (response.data.keywords?.length) {
         const newKeywords = appendKeywords
           ? [...new Set([...currentKeywords, ...response.data.keywords])]
           : response.data.keywords;
         setValue('metaKeywords', newKeywords);
-        toast.success(appendKeywords ? `${response.data.keywords.length} keywords added!` : 'Keywords generated!');
+        toast.success(
+          appendKeywords
+            ? `${response.data.keywords.length} keywords added!`
+            : 'Keywords generated!'
+        );
       }
     } catch (error: any) {
       toast.error(error.message || 'Failed to generate keywords');
@@ -312,8 +374,21 @@ export default function ProductSeo({ className }: ProductSeoProps) {
     try {
       // Generate all in parallel with full context
       const [titleRes, descRes, keywordsRes] = await Promise.all([
-        geminiService.generateMetaTitle(productName, session.user.token, brand, type, { subType, originCountry, region }),
-        geminiService.generateMetaDescription(productName, session.user.token, brand, type, shortDesc, { subType, originCountry, region, abv }),
+        geminiService.generateMetaTitle(
+          productName,
+          session.user.token,
+          brand,
+          type,
+          { subType, originCountry, region }
+        ),
+        geminiService.generateMetaDescription(
+          productName,
+          session.user.token,
+          brand,
+          type,
+          shortDesc,
+          { subType, originCountry, region, abv }
+        ),
         geminiService.generateKeywords(productName, session.user.token, {
           brand,
           type,
@@ -325,20 +400,32 @@ export default function ProductSeo({ className }: ProductSeoProps) {
         }),
       ]);
 
-      if (titleRes.data.metaTitle) setValue('metaTitle', titleRes.data.metaTitle);
-      if (descRes.data.metaDescription) setValue('metaDescription', descRes.data.metaDescription);
-      if (keywordsRes.data.keywords) setValue('metaKeywords', keywordsRes.data.keywords);
+      if (titleRes.data.metaTitle)
+        setValue('metaTitle', titleRes.data.metaTitle);
+      if (descRes.data.metaDescription)
+        setValue('metaDescription', descRes.data.metaDescription);
+      if (keywordsRes.data.keywords)
+        setValue('metaKeywords', keywordsRes.data.keywords);
 
       toast.success('SEO content generated!', { id: 'ai-seo' });
     } catch (error: any) {
       console.error('AI generation error:', error);
-      toast.error(error.message || 'Failed to generate SEO content', { id: 'ai-seo' });
+      toast.error(error.message || 'Failed to generate SEO content', {
+        id: 'ai-seo',
+      });
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const keywordsArray = Array.isArray(metaKeywords) ? metaKeywords : (typeof metaKeywords === 'string' ? metaKeywords.split(',').map(k => k.trim()).filter(Boolean) : []);
+  const keywordsArray = Array.isArray(metaKeywords)
+    ? metaKeywords
+    : typeof metaKeywords === 'string'
+      ? metaKeywords
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean)
+      : [];
 
   return (
     <FormGroup
@@ -346,7 +433,6 @@ export default function ProductSeo({ className }: ProductSeoProps) {
       description="Optimize your product for search engines and social media"
       className={cn(className)}
     >
-
       <motion.div
         className="grid w-full gap-6 @2xl:grid-cols-2"
         variants={staggerContainer}
@@ -355,39 +441,79 @@ export default function ProductSeo({ className }: ProductSeoProps) {
       >
         {/* SEO Score Card */}
         <motion.div variants={itemVariants} className="@2xl:col-span-2">
-          <div className={cn(
-            'rounded-xl border p-5',
-            seoScore >= 90 ? 'border-green-200 bg-gradient-to-r from-green-50 to-emerald-50'
-            : seoScore >= 70 ? 'border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50'
-            : seoScore >= 50 ? 'border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50'
-            : 'border-red-200 bg-gradient-to-r from-red-50 to-rose-50'
-          )}>
+          <div
+            className={cn(
+              'rounded-xl border p-5',
+              seoScore >= 90
+                ? 'border-green-200 bg-gradient-to-r from-green-50 to-emerald-50'
+                : seoScore >= 70
+                  ? 'border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50'
+                  : seoScore >= 50
+                    ? 'border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50'
+                    : 'border-red-200 bg-gradient-to-r from-red-50 to-rose-50'
+            )}
+          >
             <div className="flex flex-col gap-4 @md:flex-row @md:items-start @md:justify-between">
               {/* Score circle + label */}
               <div className="flex items-center gap-4">
                 <div className="relative flex h-20 w-20 shrink-0 items-center justify-center">
-                  <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 36 36">
-                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e5e7eb" strokeWidth="3" />
+                  <svg
+                    className="absolute inset-0 h-full w-full -rotate-90"
+                    viewBox="0 0 36 36"
+                  >
                     <circle
-                      cx="18" cy="18" r="15.9" fill="none"
-                      stroke={seoScore >= 90 ? '#10b981' : seoScore >= 70 ? '#3b82f6' : seoScore >= 50 ? '#f59e0b' : '#ef4444'}
+                      cx="18"
+                      cy="18"
+                      r="15.9"
+                      fill="none"
+                      stroke="#e5e7eb"
+                      strokeWidth="3"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="15.9"
+                      fill="none"
+                      stroke={
+                        seoScore >= 90
+                          ? '#10b981'
+                          : seoScore >= 70
+                            ? '#3b82f6'
+                            : seoScore >= 50
+                              ? '#f59e0b'
+                              : '#ef4444'
+                      }
                       strokeWidth="3"
                       strokeDasharray={`${seoScore} ${100 - seoScore}`}
                       strokeLinecap="round"
                     />
                   </svg>
-                  <span className={cn(
-                    'text-xl font-bold',
-                    seoScore >= 90 ? 'text-green-600' : seoScore >= 70 ? 'text-blue-600' : seoScore >= 50 ? 'text-amber-600' : 'text-red-600'
-                  )}>
+                  <span
+                    className={cn(
+                      'text-xl font-bold',
+                      seoScore >= 90
+                        ? 'text-green-600'
+                        : seoScore >= 70
+                          ? 'text-blue-600'
+                          : seoScore >= 50
+                            ? 'text-amber-600'
+                            : 'text-red-600'
+                    )}
+                  >
                     {seoScore}
                   </span>
                 </div>
                 <div>
                   <h4 className="text-base font-semibold text-gray-900">
-                    {seoScore >= 90 ? 'Excellent SEO' : seoScore >= 75 ? 'Almost There!' : seoScore >= 50 ? 'Needs Work' : 'Get Started'}
+                    {seoScore >= 90
+                      ? 'Excellent SEO'
+                      : seoScore >= 75
+                        ? 'Almost There!'
+                        : seoScore >= 50
+                          ? 'Needs Work'
+                          : 'Get Started'}
                   </h4>
-                  <p className="mt-0.5 text-xs text-gray-600 max-w-[220px]">
+                  <p className="mt-0.5 max-w-[220px] text-xs text-gray-600">
                     {seoScore >= 90
                       ? 'Your product is fully optimized for search engines.'
                       : seoScore >= 75
@@ -400,10 +526,16 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                     <button
                       type="button"
                       onClick={handleAutoFill}
-                      disabled={!productName || productName.length < 3 || isGenerating}
+                      disabled={
+                        !productName || productName.length < 3 || isGenerating
+                      }
                       className="mt-2 flex items-center gap-1 rounded-md bg-white px-2.5 py-1 text-xs font-medium text-blue-600 shadow-sm ring-1 ring-blue-200 hover:bg-blue-50 disabled:opacity-50"
                     >
-                      {isGenerating ? <PiSpinner className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                      {isGenerating ? (
+                        <PiSpinner className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Zap className="h-3 w-3" />
+                      )}
                       Generate All SEO
                     </button>
                   )}
@@ -414,17 +546,31 @@ export default function ProductSeo({ className }: ProductSeoProps) {
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 @sm:grid-cols-3">
                 {scoreBreakdown.map((item) => (
                   <div key={item.label} className="flex items-center gap-2">
-                    <div className={cn(
-                      'h-2 w-2 shrink-0 rounded-full',
-                      item.ok ? 'bg-green-500' : item.score > 0 ? 'bg-amber-400' : 'bg-gray-300'
-                    )} />
-                    <div className="flex-1 min-w-0">
+                    <div
+                      className={cn(
+                        'h-2 w-2 shrink-0 rounded-full',
+                        item.ok
+                          ? 'bg-green-500'
+                          : item.score > 0
+                            ? 'bg-amber-400'
+                            : 'bg-gray-300'
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1">
-                        <span className="truncate text-xs text-gray-600">{item.label}</span>
-                        <span className={cn(
-                          'shrink-0 text-xs font-semibold',
-                          item.ok ? 'text-green-600' : item.score > 0 ? 'text-amber-600' : 'text-gray-400'
-                        )}>
+                        <span className="truncate text-xs text-gray-600">
+                          {item.label}
+                        </span>
+                        <span
+                          className={cn(
+                            'shrink-0 text-xs font-semibold',
+                            item.ok
+                              ? 'text-green-600'
+                              : item.score > 0
+                                ? 'text-amber-600'
+                                : 'text-gray-400'
+                          )}
+                        >
                           {item.score}/{item.max}
                         </span>
                       </div>
@@ -432,7 +578,11 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                         <div
                           className={cn(
                             'h-full rounded-full transition-all duration-500',
-                            item.ok ? 'bg-green-500' : item.score > 0 ? 'bg-amber-400' : 'bg-gray-300'
+                            item.ok
+                              ? 'bg-green-500'
+                              : item.score > 0
+                                ? 'bg-amber-400'
+                                : 'bg-gray-300'
                           )}
                           style={{ width: `${(item.score / item.max) * 100}%` }}
                         />
@@ -475,7 +625,11 @@ export default function ProductSeo({ className }: ProductSeoProps) {
             </div>
 
             <Input
-              placeholder={productName ? `${productName} | Premium Quality` : 'Product meta title'}
+              placeholder={
+                productName
+                  ? `${productName} | Premium Quality`
+                  : 'Product meta title'
+              }
               {...register('metaTitle')}
               className="w-full"
             />
@@ -485,26 +639,57 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                 <motion.div
                   className={cn(
                     'h-full rounded-full transition-colors',
-                    titleLength > 60 ? 'bg-red-500' : titleLength >= 40 ? 'bg-green-500' : titleLength >= 30 ? 'bg-amber-500' : 'bg-gray-400'
+                    titleLength > 60
+                      ? 'bg-red-500'
+                      : titleLength >= 40
+                        ? 'bg-green-500'
+                        : titleLength >= 30
+                          ? 'bg-amber-500'
+                          : 'bg-gray-400'
                   )}
                   initial={{ width: 0 }}
-                  animate={{ width: `${Math.min((titleLength / 60) * 100, 100)}%` }}
+                  animate={{
+                    width: `${Math.min((titleLength / 60) * 100, 100)}%`,
+                  }}
                   transition={{ duration: 0.3 }}
                 />
                 {/* Target zone markers */}
-                <div className="absolute top-0 h-full w-px bg-amber-400 opacity-60" style={{ left: '50%' }} title="30 chars" />
-                <div className="absolute top-0 h-full w-px bg-green-500 opacity-60" style={{ left: '66.7%' }} title="40 chars" />
+                <div
+                  className="absolute top-0 h-full w-px bg-amber-400 opacity-60"
+                  style={{ left: '50%' }}
+                  title="30 chars"
+                />
+                <div
+                  className="absolute top-0 h-full w-px bg-green-500 opacity-60"
+                  style={{ left: '66.7%' }}
+                  title="40 chars"
+                />
               </div>
-              <span className={cn(
-                'ml-2 text-xs font-medium',
-                titleLength > 60 ? 'text-red-500' : titleLength >= 40 ? 'text-green-600' : titleLength >= 30 ? 'text-amber-600' : 'text-gray-500'
-              )}>
+              <span
+                className={cn(
+                  'ml-2 text-xs font-medium',
+                  titleLength > 60
+                    ? 'text-red-500'
+                    : titleLength >= 40
+                      ? 'text-green-600'
+                      : titleLength >= 30
+                        ? 'text-amber-600'
+                        : 'text-gray-500'
+                )}
+              >
                 {titleLength}/60
-                {titleLength >= 40 && titleLength <= 60 && <span className="ml-1 text-green-500">✓</span>}
+                {titleLength >= 40 && titleLength <= 60 && (
+                  <span className="ml-1 text-green-500">✓</span>
+                )}
               </span>
             </div>
             <p className="mt-1 text-xs text-gray-400">
-              Optimal: 40–60 characters · Current: {titleLength < 40 ? `${40 - titleLength} chars short` : titleLength > 60 ? `${titleLength - 60} chars over` : 'in range'}
+              Optimal: 40–60 characters · Current:{' '}
+              {titleLength < 40
+                ? `${40 - titleLength} chars short`
+                : titleLength > 60
+                  ? `${titleLength - 60} chars over`
+                  : 'in range'}
             </p>
 
             {/* Google Preview */}
@@ -515,18 +700,21 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                 className="mt-4 rounded-lg border border-gray-200 bg-white p-4"
               >
                 <div className="flex items-start gap-3">
-                  <div className="mt-1 h-8 w-8 shrink-0 rounded bg-gray-100 flex items-center justify-center">
+                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded bg-gray-100">
                     <Globe className="h-4 w-4 text-gray-500" />
                   </div>
                   <div className="flex-1 overflow-hidden">
-                    <p className="text-sm text-blue-800 line-clamp-1 hover:underline cursor-pointer">
+                    <p className="line-clamp-1 cursor-pointer text-sm text-blue-800 hover:underline">
                       {metaTitle || 'Page Title'}
                     </p>
                     <p className="mt-1 text-xs text-green-700">
-                      https://drinksharbour.com/products/{productName.toLowerCase().replace(/\s+/g, '-') || 'product-name'}
+                      https://drinksharbour.com/products/
+                      {productName.toLowerCase().replace(/\s+/g, '-') ||
+                        'product-name'}
                     </p>
-                    <p className="mt-1 text-sm text-gray-600 line-clamp-2">
-                      {metaDescription || 'Product description will appear here in search results...'}
+                    <p className="mt-1 line-clamp-2 text-sm text-gray-600">
+                      {metaDescription ||
+                        'Product description will appear here in search results...'}
                     </p>
                   </div>
                 </div>
@@ -565,23 +753,36 @@ export default function ProductSeo({ className }: ProductSeoProps) {
             </div>
 
             <Input
-              placeholder={productName ? `${productName}${type ? ` ${String(type).replace(/_/g, ' ')}` : ''}` : 'On-page H1 headline'}
+              placeholder={
+                productName
+                  ? `${productName}${type ? ` ${String(type).replace(/_/g, ' ')}` : ''}`
+                  : 'On-page H1 headline'
+              }
               maxLength={80}
               {...register('seoH1')}
               className="w-full"
             />
 
             <div className="mt-2 flex items-center justify-between">
-              <span className={cn(
-                'text-xs font-medium',
-                seoH1.length > 70 ? 'text-red-500' : seoH1.length >= 20 ? 'text-green-600' : 'text-gray-500'
-              )}>
+              <span
+                className={cn(
+                  'text-xs font-medium',
+                  seoH1.length > 70
+                    ? 'text-red-500'
+                    : seoH1.length >= 20
+                      ? 'text-green-600'
+                      : 'text-gray-500'
+                )}
+              >
                 {seoH1.length}/70
-                {seoH1.length >= 20 && seoH1.length <= 70 && <span className="ml-1 text-green-500">✓</span>}
+                {seoH1.length >= 20 && seoH1.length <= 70 && (
+                  <span className="ml-1 text-green-500">✓</span>
+                )}
               </span>
             </div>
             <p className="mt-1 text-xs text-gray-400">
-              The keyword-rich H1 shown on the product page. Include the product name + beverage type; no “Buy”/price/“Nigeria” filler.
+              The keyword-rich H1 shown on the product page. Include the product
+              name + beverage type; no “Buy”/price/“Nigeria” filler.
             </p>
           </div>
         </motion.div>
@@ -616,7 +817,10 @@ export default function ProductSeo({ className }: ProductSeoProps) {
             </div>
 
             <Textarea
-              placeholder={shortDesc || 'Brief product description for search results (120-160 characters)'}
+              placeholder={
+                shortDesc ||
+                'Brief product description for search results (120-160 characters)'
+              }
               maxLength={160}
               {...register('metaDescription')}
               className="min-h-[100px] resize-none"
@@ -627,25 +831,56 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                 <motion.div
                   className={cn(
                     'h-full rounded-full transition-colors',
-                    descLength > 160 ? 'bg-red-500' : descLength >= 130 ? 'bg-green-500' : descLength >= 80 ? 'bg-amber-500' : 'bg-gray-400'
+                    descLength > 160
+                      ? 'bg-red-500'
+                      : descLength >= 130
+                        ? 'bg-green-500'
+                        : descLength >= 80
+                          ? 'bg-amber-500'
+                          : 'bg-gray-400'
                   )}
                   initial={{ width: 0 }}
-                  animate={{ width: `${Math.min((descLength / 160) * 100, 100)}%` }}
+                  animate={{
+                    width: `${Math.min((descLength / 160) * 100, 100)}%`,
+                  }}
                   transition={{ duration: 0.3 }}
                 />
-                <div className="absolute top-0 h-full w-px bg-amber-400 opacity-60" style={{ left: '50%' }} title="80 chars" />
-                <div className="absolute top-0 h-full w-px bg-green-500 opacity-60" style={{ left: '81.25%' }} title="130 chars" />
+                <div
+                  className="absolute top-0 h-full w-px bg-amber-400 opacity-60"
+                  style={{ left: '50%' }}
+                  title="80 chars"
+                />
+                <div
+                  className="absolute top-0 h-full w-px bg-green-500 opacity-60"
+                  style={{ left: '81.25%' }}
+                  title="130 chars"
+                />
               </div>
-              <span className={cn(
-                'ml-2 text-xs font-medium',
-                descLength > 160 ? 'text-red-500' : descLength >= 130 ? 'text-green-600' : descLength >= 80 ? 'text-amber-600' : 'text-gray-500'
-              )}>
+              <span
+                className={cn(
+                  'ml-2 text-xs font-medium',
+                  descLength > 160
+                    ? 'text-red-500'
+                    : descLength >= 130
+                      ? 'text-green-600'
+                      : descLength >= 80
+                        ? 'text-amber-600'
+                        : 'text-gray-500'
+                )}
+              >
                 {descLength}/160
-                {descLength >= 130 && descLength <= 160 && <span className="ml-1 text-green-500">✓</span>}
+                {descLength >= 130 && descLength <= 160 && (
+                  <span className="ml-1 text-green-500">✓</span>
+                )}
               </span>
             </div>
             <p className="mt-1 text-xs text-gray-400">
-              Optimal: 130–160 characters · {descLength < 130 ? `${130 - descLength} chars short` : descLength > 160 ? `${descLength - 160} chars over` : 'in range'}
+              Optimal: 130–160 characters ·{' '}
+              {descLength < 130
+                ? `${130 - descLength} chars short`
+                : descLength > 160
+                  ? `${descLength - 160} chars over`
+                  : 'in range'}
             </p>
           </div>
         </motion.div>
@@ -660,21 +895,31 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                 <Tooltip content="Important keywords for search indexing (8-12 recommended)">
                   <Info className="h-4 w-4 cursor-help text-gray-400" />
                 </Tooltip>
-                <span className={cn(
-                  'ml-1 rounded-full px-2 py-0.5 text-xs font-medium',
-                  keywordsArray.length >= 8 ? 'bg-green-100 text-green-700' :
-                  keywordsArray.length >= 5 ? 'bg-amber-100 text-amber-700' :
-                  'bg-gray-100 text-gray-500'
-                )}>
+                <span
+                  className={cn(
+                    'ml-1 rounded-full px-2 py-0.5 text-xs font-medium',
+                    keywordsArray.length >= 8
+                      ? 'bg-green-100 text-green-700'
+                      : keywordsArray.length >= 5
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-gray-100 text-gray-500'
+                  )}
+                >
                   {keywordsArray.length}
                 </span>
               </label>
               <div className="flex items-center gap-2">
                 {keywordsArray.length > 0 && (
-                  <Tooltip content={appendKeywords ? 'Will add to existing keywords' : 'Will replace existing keywords'}>
+                  <Tooltip
+                    content={
+                      appendKeywords
+                        ? 'Will add to existing keywords'
+                        : 'Will replace existing keywords'
+                    }
+                  >
                     <button
                       type="button"
-                      onClick={() => setAppendKeywords(v => !v)}
+                      onClick={() => setAppendKeywords((v) => !v)}
                       className={cn(
                         'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
                         appendKeywords
@@ -721,7 +966,10 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                     <button
                       type="button"
                       onClick={() => {
-                        setValue('metaKeywords', keywordsArray.filter((_, i) => i !== idx));
+                        setValue(
+                          'metaKeywords',
+                          keywordsArray.filter((_, i) => i !== idx)
+                        );
                       }}
                       className="ml-0.5 rounded-full text-purple-400 hover:text-purple-700"
                       aria-label={`Remove ${keyword}`}
@@ -732,7 +980,11 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                 ))}
                 <input
                   type="text"
-                  placeholder={keywordsArray.length === 0 ? 'Type a keyword and press Enter or comma...' : 'Add more...'}
+                  placeholder={
+                    keywordsArray.length === 0
+                      ? 'Type a keyword and press Enter or comma...'
+                      : 'Add more...'
+                  }
                   className="min-w-[180px] flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ',') {
@@ -742,7 +994,11 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                         setValue('metaKeywords', [...keywordsArray, val]);
                       }
                       (e.target as HTMLInputElement).value = '';
-                    } else if (e.key === 'Backspace' && !(e.target as HTMLInputElement).value && keywordsArray.length > 0) {
+                    } else if (
+                      e.key === 'Backspace' &&
+                      !(e.target as HTMLInputElement).value &&
+                      keywordsArray.length > 0
+                    ) {
                       setValue('metaKeywords', keywordsArray.slice(0, -1));
                     }
                   }}
@@ -758,7 +1014,16 @@ export default function ProductSeo({ className }: ProductSeoProps) {
             </div>
 
             <Text className="mt-2 text-xs text-gray-500">
-              Press <kbd className="rounded border border-gray-200 bg-gray-100 px-1 text-xs">Enter</kbd> or <kbd className="rounded border border-gray-200 bg-gray-100 px-1 text-xs">,</kbd> to add a keyword. Aim for 6+ keywords — add brand, type, origin, flavor notes, and purchase intent terms.
+              Press{' '}
+              <kbd className="rounded border border-gray-200 bg-gray-100 px-1 text-xs">
+                Enter
+              </kbd>{' '}
+              or{' '}
+              <kbd className="rounded border border-gray-200 bg-gray-100 px-1 text-xs">
+                ,
+              </kbd>{' '}
+              to add a keyword. Aim for 6+ keywords — add brand, type, origin,
+              flavor notes, and purchase intent terms.
             </Text>
           </div>
         </motion.div>
@@ -772,9 +1037,16 @@ export default function ProductSeo({ className }: ProductSeoProps) {
             </label>
 
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">drinksharbour.com/products/</span>
+              <span className="text-sm text-gray-500">
+                drinksharbour.com/products/
+              </span>
               <Input
-                placeholder={productName?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'product-url-slug'}
+                placeholder={
+                  productName
+                    ?.toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-|-$/g, '') || 'product-url-slug'
+                }
                 {...register('slug')}
                 className="flex-1"
               />
@@ -875,7 +1147,12 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                 <input
                   type="checkbox"
                   checked={!!isPublished}
-                  onChange={(e) => setValue('isPublished', e.target.checked, { shouldDirty: true, shouldValidate: true })}
+                  onChange={(e) =>
+                    setValue('isPublished', e.target.checked, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
                   className="mt-0.5 h-5 w-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
                 />
                 <div className="flex-1">
@@ -884,7 +1161,9 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                     Published
                   </span>
                   <span className="block text-xs text-gray-500">
-                    {isPublished ? 'Visible on the shop' : 'Hidden from the shop'}
+                    {isPublished
+                      ? 'Visible on the shop'
+                      : 'Hidden from the shop'}
                   </span>
                 </div>
                 {isPublished && (
@@ -938,14 +1217,34 @@ export default function ProductSeo({ className }: ProductSeoProps) {
             <div className="flex items-start gap-3">
               <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-500" />
               <div>
-                <h4 className="font-semibold text-blue-900">Quick Tips for 90+ Score</h4>
+                <h4 className="font-semibold text-blue-900">
+                  Quick Tips for 90+ Score
+                </h4>
                 <ul className="mt-2 space-y-1 text-sm text-blue-800">
-                  <li>• <strong>Title:</strong> 40-60 chars, include product name and brand</li>
-                  <li>• <strong>Description:</strong> 100-160 chars, add a call-to-action</li>
-                  <li>• <strong>Keywords:</strong> 6+ keywords covering brand, type, origin, features</li>
-                  <li>• <strong>Brand:</strong> Required — adds 15 points to your score</li>
-                  <li>• <strong>URL Slug:</strong> Auto-generated from product name</li>
-                  <li>• <strong>Tip:</strong> Use "Generate All SEO" for instant optimization</li>
+                  <li>
+                    • <strong>Title:</strong> 40-60 chars, include product name
+                    and brand
+                  </li>
+                  <li>
+                    • <strong>Description:</strong> 100-160 chars, add a
+                    call-to-action
+                  </li>
+                  <li>
+                    • <strong>Keywords:</strong> 6+ keywords covering brand,
+                    type, origin, features
+                  </li>
+                  <li>
+                    • <strong>Brand:</strong> Required — adds 15 points to your
+                    score
+                  </li>
+                  <li>
+                    • <strong>URL Slug:</strong> Auto-generated from product
+                    name
+                  </li>
+                  <li>
+                    • <strong>Tip:</strong> Use "Generate All SEO" for instant
+                    optimization
+                  </li>
                 </ul>
               </div>
             </div>

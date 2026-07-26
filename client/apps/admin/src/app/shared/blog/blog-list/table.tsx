@@ -227,91 +227,94 @@ export default function BlogPostsTable() {
               className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition-shadow hover:shadow-md sm:flex-row sm:gap-4 sm:p-4"
             >
               <div className="flex min-w-0 gap-3 sm:contents sm:gap-4">
-              {/* Thumbnail */}
-              <div className="relative h-20 w-28 flex-shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                {post.image ? (
-                  <Image
-                    src={post.image}
-                    alt={post.imageAlt || post.title || ''}
-                    fill
-                    sizes="112px"
-                    className="object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center px-1 text-center text-xs text-gray-300">
-                    No image
-                  </div>
-                )}
-              </div>
-
-              {/* Body */}
-              <div className="min-w-0 flex-1">
-                {/* Title row */}
-                <div className="flex flex-wrap items-start gap-2">
-                  <Text className="line-clamp-1 font-semibold text-gray-900">
-                    {post.title}
-                  </Text>
-                  {post.featured && (
-                    <PiStarFill
-                      className="h-4 w-4 flex-shrink-0 text-amber-400"
-                      title="Featured"
+                {/* Thumbnail */}
+                <div className="relative h-20 w-28 flex-shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                  {post.image ? (
+                    <Image
+                      src={post.image}
+                      alt={post.imageAlt || post.title || ''}
+                      fill
+                      sizes="112px"
+                      className="object-cover"
+                      unoptimized
                     />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-1 text-center text-xs text-gray-300">
+                      No image
+                    </div>
                   )}
-                  <Badge
-                    color={
-                      post.status === 'published' ? 'success' : 'secondary'
-                    }
-                    variant="flat"
-                    className="ms-auto flex-shrink-0"
-                  >
-                    {post.status}
-                  </Badge>
                 </div>
 
-                {/* Excerpt */}
-                {post.excerpt && (
-                  <Text className="mt-1 line-clamp-1 text-sm text-gray-500">
-                    {post.excerpt}
-                  </Text>
-                )}
-
-                {/* Meta row */}
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_COLORS[post.category] || 'bg-gray-100 text-gray-600'}`}
-                  >
-                    {post.category}
-                  </span>
-                  {post.readTime && (
-                    <span className="flex items-center gap-1 text-xs text-gray-400">
-                      <PiClockBold className="h-3.5 w-3.5" /> {post.readTime}
-                    </span>
-                  )}
-                  {post.tags?.slice(0, 3).map((tag: string) => (
-                    <span
-                      key={tag}
-                      className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500"
+                {/* Body */}
+                <div className="min-w-0 flex-1">
+                  {/* Title row */}
+                  <div className="flex flex-wrap items-start gap-2">
+                    <Text className="line-clamp-1 font-semibold text-gray-900">
+                      {post.title}
+                    </Text>
+                    {post.featured && (
+                      <PiStarFill
+                        className="h-4 w-4 flex-shrink-0 text-amber-400"
+                        title="Featured"
+                      />
+                    )}
+                    <Badge
+                      color={
+                        post.status === 'published' ? 'success' : 'secondary'
+                      }
+                      variant="flat"
+                      className="ms-auto flex-shrink-0"
                     >
-                      {tag}
-                    </span>
-                  ))}
-                  {post.tags?.length > 3 && (
-                    <span className="text-xs text-gray-400">
-                      +{post.tags.length - 3}
-                    </span>
+                      {post.status}
+                    </Badge>
+                  </div>
+
+                  {/* Excerpt */}
+                  {post.excerpt && (
+                    <Text className="mt-1 line-clamp-1 text-sm text-gray-500">
+                      {post.excerpt}
+                    </Text>
                   )}
-                  {post.publishedAt && (
-                    <span className="ms-auto text-xs text-gray-400">
-                      {new Date(post.publishedAt).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
+
+                  {/* Meta row */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_COLORS[post.category] || 'bg-gray-100 text-gray-600'}`}
+                    >
+                      {post.category}
                     </span>
-                  )}
+                    {post.readTime && (
+                      <span className="flex items-center gap-1 text-xs text-gray-400">
+                        <PiClockBold className="h-3.5 w-3.5" /> {post.readTime}
+                      </span>
+                    )}
+                    {post.tags?.slice(0, 3).map((tag: string) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    {post.tags?.length > 3 && (
+                      <span className="text-xs text-gray-400">
+                        +{post.tags.length - 3}
+                      </span>
+                    )}
+                    {post.publishedAt && (
+                      <span className="ms-auto text-xs text-gray-400">
+                        {new Date(post.publishedAt).toLocaleDateString(
+                          'en-US',
+                          {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          }
+                        )}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
               </div>
 
               {/* Actions */}

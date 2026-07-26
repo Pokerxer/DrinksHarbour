@@ -32,7 +32,7 @@ export default function AiBar({
     try {
       const data: any = await blogService.generatePost(
         { topic, category: category || undefined },
-        token,
+        token
       );
       onApply(data);
       toast.success('Draft generated — review before saving');
@@ -68,7 +68,7 @@ export default function AiBar({
         <PiCaretDownBold
           className={cn(
             'h-4 w-4 text-gray-400 transition',
-            open && 'rotate-180',
+            open && 'rotate-180'
           )}
         />
       </button>
@@ -85,7 +85,10 @@ export default function AiBar({
           />
           <Select
             label="Category (optional)"
-            options={[{ label: 'Let AI choose', value: '' }, ...CATEGORY_OPTIONS]}
+            options={[
+              { label: 'Let AI choose', value: '' },
+              ...CATEGORY_OPTIONS,
+            ]}
             value={category}
             onChange={(v: any) => setCategory(v?.value ?? v ?? '')}
             getOptionValue={(o) => o.value}

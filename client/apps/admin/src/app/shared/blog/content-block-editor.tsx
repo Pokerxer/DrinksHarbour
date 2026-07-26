@@ -56,7 +56,11 @@ import {
   type TextEdit,
 } from './blog-helpers';
 import RichTextToolbar from './rich-text-toolbar';
-import { BlockControls, ImageUploadButton, UrlInput } from './editor-primitives';
+import {
+  BlockControls,
+  ImageUploadButton,
+  UrlInput,
+} from './editor-primitives';
 import SmartImagePreview from './smart-image-preview';
 
 const BLOCK_ICON: Record<BlockType, any> = {
@@ -72,11 +76,27 @@ const BLOCK_ICON: Record<BlockType, any> = {
 
 // Per-block AI authoring actions surfaced in the sparkle menu.
 type AiAction = 'rewrite' | 'expand' | 'shorten';
-const AI_MENU: { action: AiAction; label: string; icon: any; hint: string }[] = [
-  { action: 'rewrite', label: 'Rewrite', icon: PiArrowsClockwiseBold, hint: 'Clearer, better wording' },
-  { action: 'expand', label: 'Expand', icon: PiPlusBold, hint: 'Add more useful detail' },
-  { action: 'shorten', label: 'Shorten', icon: PiMinusBold, hint: 'Tighter and more concise' },
-];
+const AI_MENU: { action: AiAction; label: string; icon: any; hint: string }[] =
+  [
+    {
+      action: 'rewrite',
+      label: 'Rewrite',
+      icon: PiArrowsClockwiseBold,
+      hint: 'Clearer, better wording',
+    },
+    {
+      action: 'expand',
+      label: 'Expand',
+      icon: PiPlusBold,
+      hint: 'Add more useful detail',
+    },
+    {
+      action: 'shorten',
+      label: 'Shorten',
+      icon: PiMinusBold,
+      hint: 'Tighter and more concise',
+    },
+  ];
 
 // Per-type visual cues so blocks feel different, not identical cards.
 const BLOCK_BODY_CLS: Record<BlockType, string> = {
@@ -140,16 +160,22 @@ function SortableBlock({
     setAiMenuOpen(false);
     setAiBusy(action);
     try {
-      const res: any = await blogService.generateBlock({ action, block, post: postMeta }, token);
+      const res: any = await blogService.generateBlock(
+        { action, block, post: postMeta },
+        token
+      );
       if (LIST_TYPES.includes(block.type)) {
-        if (Array.isArray(res?.items) && res.items.length) onUpdate({ items: res.items });
+        if (Array.isArray(res?.items) && res.items.length)
+          onUpdate({ items: res.items });
         else throw new Error('AI returned no list items');
       } else if (typeof res?.text === 'string' && res.text.trim()) {
         onUpdate({ text: res.text });
       } else {
         throw new Error('AI returned no text');
       }
-      toast.success(`Block ${action === 'rewrite' ? 'rewritten' : action + 'ed'}`);
+      toast.success(
+        `Block ${action === 'rewrite' ? 'rewritten' : action + 'ed'}`
+      );
     } catch (err: any) {
       toast.error(err?.message || 'AI request failed');
     } finally {
@@ -217,9 +243,7 @@ function SortableBlock({
 
   const Icon = BLOCK_ICON[block.type];
   const isEmpty =
-    block.type !== 'image'
-      ? !block.text && !(block.items?.length)
-      : !block.src;
+    block.type !== 'image' ? !block.text && !block.items?.length : !block.src;
 
   return (
     <div
@@ -227,9 +251,9 @@ function SortableBlock({
       style={style}
       className={cn(
         'group relative overflow-hidden rounded-xl border border-l-[3px] bg-white shadow-sm transition',
-        'hover:shadow-md hover:border-gray-200',
+        'hover:border-gray-200 hover:shadow-md',
         BLOCK_ACCENT[block.type] ?? 'border-l-gray-300',
-        isDragging && 'z-50 shadow-lg ring-2 ring-violet-300',
+        isDragging && 'z-50 shadow-lg ring-2 ring-violet-300'
       )}
     >
       {/* Subtle tinted body backdrop by type */}
@@ -281,7 +305,7 @@ function SortableBlock({
                   disabled={!!aiBusy}
                   className={cn(
                     'flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold transition',
-                    'text-violet-600 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60',
+                    'text-violet-600 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60'
                   )}
                   aria-haspopup="menu"
                   aria-expanded={aiMenuOpen}
@@ -292,7 +316,9 @@ function SortableBlock({
                   ) : (
                     <PiSparkleBold className="h-3.5 w-3.5" />
                   )}
-                  <span className="hidden sm:inline">{aiBusy ? '…' : 'AI'}</span>
+                  <span className="hidden sm:inline">
+                    {aiBusy ? '…' : 'AI'}
+                  </span>
                 </button>
                 {aiMenuOpen && !aiBusy ? (
                   <>
@@ -421,7 +447,7 @@ function SortableBlock({
               onKeyDown={handleKeyDown}
               className={cn(
                 'rounded-t-none [&>textarea]:resize-y',
-                block.type === 'quote' && '[&>textarea]:italic',
+                block.type === 'quote' && '[&>textarea]:italic'
               )}
             />
           </div>
@@ -475,7 +501,7 @@ export default function ContentBlockEditor({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    }),
+    })
   );
 
   const handleDragEnd = (e: DragEndEvent) => {
@@ -540,7 +566,7 @@ export default function ContentBlockEditor({
             onClick={() => addTyped(type)}
             className={cn(
               'flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition',
-              'hover:border-violet-300 hover:bg-violet-50/40 hover:text-violet-700',
+              'hover:border-violet-300 hover:bg-violet-50/40 hover:text-violet-700'
             )}
             title={`Add ${BLOCK_LABEL[type]}`}
           >
