@@ -106,6 +106,9 @@ function VerifyContent() {
         shippingFee: number;
         total: number;
         couponCode?: string;
+        utmSource?: string;
+        utmMedium?: string;
+        utmCampaign?: string;
       };
 
       // ── Step 3: Create the order ─────────────────────────────────────────
@@ -149,6 +152,9 @@ function VerifyContent() {
         shippingFee: pending.shippingFee,
         total: pending.total,
         couponCode: pending.couponCode || undefined,
+        utmSource: pending.utmSource || '',
+        utmMedium: pending.utmMedium || '',
+        utmCampaign: pending.utmCampaign || '',
         status: 'processing',
         paymentStatus: 'paid',
       };

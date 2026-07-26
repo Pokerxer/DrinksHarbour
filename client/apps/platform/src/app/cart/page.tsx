@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCart, getEffectiveUnitPrice } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
+import { viewItemListEvent, type GTagItem } from '@/lib/gtag';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 
 const CartPage = () => {
@@ -22,10 +23,24 @@ const CartPage = () => {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const viewCartFired = useRef(false);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  useEffect(() => {
+    if (isClient && cartState.cartArray.length > 0 && !viewCartFired.current) {
+      viewCartFired.current = true;
+      const items: GTagItem[] = cartState.cartArray.map((item) => ({
+        item_id: item.sku ?? item.slug ?? item._id ?? item.id,
+        item_name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+      }));
+      viewItemListEvent({ item_list_id: 'cart', item_list_name: 'Cart', items });
+    }
+  }, [isClient, cartState.cartArray]);
 
   // Auto-validate cart stock & prices on load
   useEffect(() => {

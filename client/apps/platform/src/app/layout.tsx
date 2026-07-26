@@ -8,7 +8,9 @@ import GlobalProvider from "./GlobalProvider";
 import { Header } from "@/components/Header";
 import Footer from "@/components/Footer/Footer";
 import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
+import FeatureFlagInit from "@/components/Analytics/FeatureFlagInit";
 import GoogleAnalytics from "@/components/Analytics/GoogleAnalytics";
+import SocialPixels from "@/components/Analytics/SocialPixels";
 import { Analytics } from "@vercel/analytics/next";
 import GoogleAdSense, { ADSENSE_CLIENT_ID } from "@/components/Analytics/GoogleAdSense";
 import { TenantProvider } from "@/context/TenantContext";
@@ -264,7 +266,9 @@ export default async function RootLayout({
               })}
             </script>
             <GoogleAnalytics />
+            <SocialPixels />
             <GoogleAdSense />
+            <FeatureFlagInit />
             <AnalyticsTracker />
             <Analytics />
             <ClientOverlays />

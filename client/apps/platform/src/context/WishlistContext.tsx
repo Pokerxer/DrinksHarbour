@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useReducer, useEffect, useCallback } from "react";
 import { ProductType } from "@/types/product.types";
 import { API_URL } from "@/lib/api";
+import { gtagEvent } from "@/lib/gtag";
 
 export interface WishlistItem extends ProductType {
   addedAt?: number;
@@ -133,9 +134,16 @@ export const WishlistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const addToWishlist = useCallback((item: ProductType) => {
     dispatch({ type: "ADD_TO_WISHLIST", payload: item });
+    const id = (item as any)._id || item.id;
+    const itemPrice = (item as any).price || 0;
+    gtagEvent('add_to_wishlist', {
+      currency: 'NGN',
+      value: itemPrice,
+      items: [{ item_id: id, item_name: (item as any).name, price: itemPrice }],
+    });
     const token = getToken();
     if (token) {
-      const productId = (item as any)._id || item.id;
+      const productId = id;
       authFetch(`${API_URL}/api/products/wishlist/${productId}`, { method: "POST", body: JSON.stringify({ priority: "medium" }) })
         .then(() => refreshServer())
         .catch(() => {});

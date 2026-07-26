@@ -41,7 +41,7 @@ const LOYALTY_POINTS_PER_NGN = 1 / 100; // 1 pt per ₦100 base rate
  * @access  Private/Public (Guest checkout supported)
  */
 exports.createOrder = asyncHandler(async (req, res) => {
-  const { customer, shipping, paymentMethod, paymentDetails, items, subtotal, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus } = req.body;
+  const { customer, shipping, paymentMethod, paymentDetails, items, subtotal, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus, utmSource, utmMedium, utmCampaign } = req.body;
 
   let appliedCoupon = null;
   let discountTotal = 0;
@@ -247,6 +247,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
     shippingMethod: 'standard',
     fulfillmentStatus: new Map(),
     ageVerifiedAtOrderTime: ageVerified || false,
+    utmSource: utmSource || '',
+    utmMedium: utmMedium || '',
+    utmCampaign: utmCampaign || '',
     status: status || 'pending',
     platformCommissionTotal: calculatedPlatformCommission,
   };

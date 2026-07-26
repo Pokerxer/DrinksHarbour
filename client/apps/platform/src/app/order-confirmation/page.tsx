@@ -9,6 +9,7 @@ import { useSearchParams } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 import { purchaseEvent, type GTagItem } from '@/lib/gtag';
+import { firePurchase } from '@/lib/pixels';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,6 +228,16 @@ function OrderConfirmationContent() {
       tax: 0,
       coupon: order.coupon?.code ?? undefined,
       items,
+    });
+
+    firePurchase({
+      value: order.totalAmount,
+      currency: 'NGN',
+      content_ids: (order.items || []).map((item: OrderItem) => item.subproduct?.sku ?? item.product?.slug ?? ''),
+      contents: (order.items || []).map((item: OrderItem) => ({
+        id: item.subproduct?.sku ?? item.product?.slug ?? '',
+        quantity: item.quantity,
+      })),
     });
 
     const sessionId = sessionStorage.getItem('dh_session_id');

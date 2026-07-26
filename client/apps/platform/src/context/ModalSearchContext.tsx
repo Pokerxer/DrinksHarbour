@@ -11,6 +11,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { ProductType } from '@/types/product.types';
+import { gtagEvent } from '@/lib/gtag';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -310,6 +311,10 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
   const performSearch = useCallback(async (query?: string, page = 1) => {
     const term = (query ?? searchQueryRef.current).trim();
     const activeFilters = filtersRef.current;
+
+    if (term) {
+      gtagEvent('search', { search_term: term });
+    }
 
     // Fast path: return cached result instantly (no network, no loading state)
     const cacheKey = getCacheKey(term, activeFilters, page);

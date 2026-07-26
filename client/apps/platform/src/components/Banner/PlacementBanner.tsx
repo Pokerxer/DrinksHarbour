@@ -10,6 +10,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
+import { gtagEvent } from '@/lib/gtag';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -107,11 +108,24 @@ export default function PlacementBanner({
       if (trackedRef.current.has(b._id)) return;
       trackedRef.current.add(b._id);
       fetch(`${API_URL}/api/banners/${b._id}/impression`, { method: 'POST' }).catch(() => {});
+      gtagEvent('view_promotion', {
+        promotion_id: b._id,
+        promotion_name: b.title,
+        creative_slot: placement,
+      });
     });
-  }, [banners]);
+  }, [banners, placement]);
 
   const trackClick = (id: string) => {
     fetch(`${API_URL}/api/banners/${id}/click`, { method: 'POST' }).catch(() => {});
+    const b = banners.find(bb => bb._id === id);
+    if (b) {
+      gtagEvent('select_promotion', {
+        promotion_id: b._id,
+        promotion_name: b.title,
+        creative_slot: placement,
+      });
+    }
   };
 
   if (loading || !banners.length) return null;

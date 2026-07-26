@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { useAuth } from '@/context/AuthContext';
+import { gtagEvent } from '@/lib/gtag';
 import {
   validateEmail,
   validateStrongPassword,
@@ -144,6 +145,8 @@ const Register = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+
+    gtagEvent('sign_up', { method: 'email' });
 
     if (result.requiresEmailVerification) {
       setSuccessMessage(

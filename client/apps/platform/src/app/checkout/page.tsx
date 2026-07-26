@@ -11,7 +11,9 @@ import CouponComponent from '@/components/Coupon/Coupon';
 import PaymentHandler from '@/components/Payment/PaymentHandler';
 import { API_URL } from '@/lib/api';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
-import { beginCheckoutEvent, type GTagItem } from '@/lib/gtag';
+import { readUTMParams } from '@/lib/utm';
+import { beginCheckoutEvent, gtagEvent, type GTagItem } from '@/lib/gtag';
+import { fireBeginCheckout } from '@/lib/pixels';
 import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAutocomplete/AddressAutocomplete';
 import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap';
 import PlacementBanner from '@/components/Banner/PlacementBanner';
@@ -124,6 +126,7 @@ export default function CheckoutPage() {
   const [shippingRate,    setShippingRate]     = useState<ShippingRate | null>(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const shippingDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const utmRef = useRef(readUTMParams());
 
   // Validation modal state
   const [validationIssues, setValidationIssues] = useState<Array<{ name: string; status: string; currentPrice?: number; oldPrice?: number; maxQuantity?: number | null }>>([]);
@@ -229,7 +232,39 @@ export default function CheckoutPage() {
       quantity: item.quantity,
     }));
     beginCheckoutEvent({ items });
+    fireBeginCheckout({
+      value: cartState.cartArray.reduce((sum, item) => sum + item.price * (item.quantity || 1), 0),
+      currency: 'NGN',
+      num_items: cartState.cartArray.reduce((sum, item) => sum + (item.quantity || 1), 0),
+    });
   }, [mounted, cartState.cartArray]);
+
+  const shippingInfoFired = useRef(false);
+  useEffect(() => {
+    if (!mounted || !shippingRate || cartState.cartArray.length === 0 || shippingInfoFired.current) return;
+    shippingInfoFired.current = true;
+    gtagEvent('add_shipping_info', {
+      currency: 'NGN',
+      value: subtotal,
+      shipping_tier: shippingRate?.zone || 'standard',
+      shipping: shippingRate?.fee || 0,
+      items: cartState.cartArray.map(i => ({ item_id: i.sku ?? i.slug ?? i._id ?? i.id, item_name: i.name, price: i.price, quantity: i.quantity })),
+    });
+  }, [mounted, shippingRate, cartState.cartArray]);
+
+  const paymentInfoFired = useRef(false);
+  useEffect(() => {
+    if (!mounted || cartState.cartArray.length === 0 || paymentInfoFired.current) return;
+    if (activePayment !== 'wallet') {
+      paymentInfoFired.current = true;
+      gtagEvent('add_payment_info', {
+        currency: 'NGN',
+        value: subtotal,
+        payment_type: activePayment,
+        items: cartState.cartArray.map(i => ({ item_id: i.sku ?? i.slug ?? i._id ?? i.id, item_name: i.name, price: i.price, quantity: i.quantity })),
+      });
+    }
+  }, [mounted, activePayment, cartState.cartArray]);
 
   // ── Fetch LGA list when state changes ────────────────────────────────────
   useEffect(() => {
@@ -416,6 +451,9 @@ export default function CheckoutPage() {
         shippingInfo: buildShippingInfo(),
         total,
         couponCode: appliedCoupon || undefined,
+        utmSource: utmRef.current.source,
+        utmMedium: utmRef.current.medium,
+        utmCampaign: utmRef.current.campaign,
         status: 'processing',
         paymentStatus: 'paid',
       }),
@@ -492,6 +530,9 @@ export default function CheckoutPage() {
         cartItems: cartState.cartArray,
         subtotal, shippingFee: shipping, shippingInfo: buildShippingInfo(), total,
         couponCode: appliedCoupon,
+        utmSource: utmRef.current.source,
+        utmMedium: utmRef.current.medium,
+        utmCampaign: utmRef.current.campaign,
       };
       localStorage.setItem('pendingPayment', JSON.stringify(pending));
       window.location.href = data.data.authorizationUrl;
@@ -516,6 +557,9 @@ export default function CheckoutPage() {
           items: buildItems(),
           subtotal, shippingFee: shipping, shippingInfo: buildShippingInfo(), total,
           couponCode: appliedCoupon || undefined,
+          utmSource: utmRef.current.source,
+          utmMedium: utmRef.current.medium,
+          utmCampaign: utmRef.current.campaign,
         }),
       });
       const data = await res.json();

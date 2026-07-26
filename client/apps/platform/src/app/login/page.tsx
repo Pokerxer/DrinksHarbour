@@ -7,6 +7,7 @@ import { Suspense } from 'react';
 import * as Icon from 'react-icons/pi';
 import { useAuth } from '@/context/AuthContext';
 import { validateEmail } from '@/lib/validation';
+import { gtagEvent } from '@/lib/gtag';
 
 // ─── Password strength ────────────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ function LoginForm() {
     setIsLoading(false);
 
     if (result.success) {
+      gtagEvent('login', { method: 'email' });
       router.push(redirectTo);
     } else if (result.mfaRequired && result.pendingMfaToken) {
       // Store the pending MFA token so the challenge page can read it,

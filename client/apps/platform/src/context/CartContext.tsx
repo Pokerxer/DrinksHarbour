@@ -13,7 +13,8 @@ import { ProductType } from "@/types/product.types";
 import { API_URL } from "@/lib/api";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { resolveProductPrice } from "@/utils/product.utils";
-import { addToCartEvent, type GTagItem } from "@/lib/gtag";
+import { addToCartEvent, removeFromCartEvent, type GTagItem } from "@/lib/gtag";
+import { fireAddToCart, fireAllPixels } from "@/lib/pixels";
 
 interface CartItem extends ProductType {
   cartItemId: string;
@@ -424,6 +425,20 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
       quantity: qty,
     }];
     addToCartEvent({ items: gtagItems, value: itemPrice * qty });
+    fireAddToCart({
+      value: itemPrice * qty,
+      currency: 'NGN',
+      content_ids: [product.sku ?? product.slug ?? product._id ?? product.id],
+      content_name: product.name,
+      content_type: 'product',
+    });
+    fireAllPixels('AddToCart', {
+      value: itemPrice * qty,
+      currency: 'NGN',
+      content_ids: [product.sku ?? product.slug ?? product._id ?? product.id],
+      content_name: product.name,
+      content_type: 'product',
+    });
     
     return {
       success: true,
@@ -435,6 +450,16 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const removeFromCart = (cartItemId: string) => {
+    const item = cartState.cartArray.find(i => i.cartItemId === cartItemId);
+    if (item) {
+      const gtagItems: GTagItem[] = [{
+        item_id: item.sku ?? item.slug ?? item._id ?? item.id,
+        item_name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+      }];
+      removeFromCartEvent({ items: gtagItems, value: item.price * (item.quantity || 1) });
+    }
     dispatch({ type: "REMOVE_FROM_CART", payload: cartItemId });
   };
 

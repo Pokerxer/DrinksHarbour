@@ -12,6 +12,7 @@ import PlacementBanner from '@/components/Banner/PlacementBanner';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
+import { viewItemListEvent, type GTagItem } from '@/lib/gtag';
 import { buildShopSearchParams } from './searchQuery';
 
 interface PageProps {
@@ -216,6 +217,7 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
   const [totalProducts,  setTotalProducts]  = useState(initialTotal ?? initialProducts?.length ?? 0);
   const [layoutCol,      setLayoutCol]      = useState(4);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewListFiredRef = useRef(false);
   // When the server seeded products for the current params, skip the very first
   // client fetch — the seed is already fresh and rendered into the HTML.
   const skipNextFetchRef = useRef(hasSeed);
@@ -284,6 +286,20 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
     debounceRef.current = setTimeout(() => { fetchProducts(); }, 200);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [fetchProducts]);
+
+  // ── GA4 view_item_list ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (visibleProducts.length > 0 && !viewListFiredRef.current) {
+      viewListFiredRef.current = true;
+      const items: GTagItem[] = visibleProducts.slice(0, 24).map((p: any) => ({
+        item_id: p.sku ?? p.slug ?? p._id ?? p.id,
+        item_name: p.name,
+        item_category: p.category?.name ?? p.type,
+        price: p.priceRange?.min ?? p.price ?? 0,
+      }));
+      viewItemListEvent({ item_list_id: 'shop', item_list_name: 'Shop', items });
+    }
+  }, [visibleProducts]);
 
   // ── Sale-type filtering (client-side) ────────────────────────────────────
   // Filter, then sort biggest discount first

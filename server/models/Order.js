@@ -295,6 +295,14 @@ const orderSchema = new Schema(
     },
 
     // ────────────────────────────────────────────────
+    // UTM Attribution
+    // ────────────────────────────────────────────────
+
+    utmSource: { type: String, default: '' },
+    utmMedium: { type: String, default: '' },
+    utmCampaign: { type: String, default: '' },
+
+    // ────────────────────────────────────────────────
     // Lifecycle & Status
     // ────────────────────────────────────────────────
     status: {
