@@ -1,9 +1,9 @@
 // @ts-nocheck
 'use client';
 
-import { orderData } from '@/data/order-data';
+import type { RecentOrder as RecentOrderType } from '@/services/dashboard.service';
 // Re-export for backwards compat with columns.tsx and table components
-export type OrdersDataType = (typeof orderData)[number];
+export type OrdersDataType = RecentOrderType;
 
 import Link from 'next/link';
 import WidgetCard from '@core/components/cards/widget-card';
