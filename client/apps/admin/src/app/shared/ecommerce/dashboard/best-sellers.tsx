@@ -7,13 +7,17 @@ import { Button, Text } from 'rizzui';
 import { useDashboard, useDashboardMeta } from './use-dashboard';
 import { routes } from '@/config/routes';
 import Link from 'next/link';
-import { PiPackageDuotone, PiTrophyDuotone, PiStorefrontDuotone } from 'react-icons/pi';
+import {
+  PiPackageDuotone,
+  PiTrophyDuotone,
+  PiStorefrontDuotone,
+} from 'react-icons/pi';
 import cn from '@core/utils/class-names';
 import type { TopProduct } from '@/services/dashboard.service';
 
 const STATUS_COLOR: Record<string, string> = {
-  in_stock:     'bg-green-100 text-green-700',
-  low_stock:    'bg-yellow-100 text-yellow-700',
+  in_stock: 'bg-green-100 text-green-700',
+  low_stock: 'bg-yellow-100 text-yellow-700',
   out_of_stock: 'bg-red-100 text-red-700',
 };
 
@@ -21,22 +25,40 @@ const RANK_COLOR = ['text-amber-500', 'text-gray-400', 'text-amber-700'];
 
 function fmt(n: number): string {
   if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `₦${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1_000) return `₦${(n / 1_000).toFixed(1)}K`;
   return `₦${n.toLocaleString()}`;
 }
 
 function VendorChip({ vendor }: { vendor: NonNullable<TopProduct['vendor']> }) {
-  const initials = vendor.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const initials = vendor.name
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
   return (
     <span
       className="flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
-      style={{ borderColor: vendor.color + '60', color: vendor.color, backgroundColor: vendor.color + '15' }}
+      style={{
+        borderColor: vendor.color + '60',
+        color: vendor.color,
+        backgroundColor: vendor.color + '15',
+      }}
       title={vendor.name}
     >
       {vendor.logo ? (
-        <Image src={vendor.logo} alt={vendor.name} width={12} height={12} className="h-3 w-3 rounded-full object-cover" />
+        <Image
+          src={vendor.logo}
+          alt={vendor.name}
+          width={12}
+          height={12}
+          className="h-3 w-3 rounded-full object-cover"
+        />
       ) : (
-        <span className="flex h-3 w-3 items-center justify-center rounded-full text-[8px] font-bold text-white" style={{ backgroundColor: vendor.color }}>
+        <span
+          className="flex h-3 w-3 items-center justify-center rounded-full text-[8px] font-bold text-white"
+          style={{ backgroundColor: vendor.color }}
+        >
           {initials[0]}
         </span>
       )}
@@ -74,7 +96,10 @@ export default function BestSellers({ className }: { className?: string }) {
       description={`By units sold · ${meta?.label ?? 'This month'}`}
       action={
         <Link href={routes.eCommerce.products}>
-          <Button variant="text" className="whitespace-nowrap underline text-xs">
+          <Button
+            variant="text"
+            className="whitespace-nowrap text-xs underline"
+          >
             View All
           </Button>
         </Link>
@@ -84,7 +109,11 @@ export default function BestSellers({ className }: { className?: string }) {
     >
       {isLoading ? (
         <div className="custom-scrollbar -me-2 mt-4 grid max-h-[480px] gap-4 overflow-y-auto">
-          {[1,2,3,4,5,6].map(i => <div key={i} className="pe-2"><SkeletonRow /></div>)}
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="pe-2">
+              <SkeletonRow />
+            </div>
+          ))}
         </div>
       ) : products.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-gray-400">
@@ -97,16 +126,25 @@ export default function BestSellers({ className }: { className?: string }) {
             <div key={String(product.id)} className="flex items-start pe-2">
               {/* Rank */}
               <div className="me-2 flex h-11 w-5 shrink-0 items-center justify-center">
-                {idx < 3
-                  ? <PiTrophyDuotone className={cn('h-4 w-4', RANK_COLOR[idx])} />
-                  : <span className="text-xs font-medium text-gray-400">{idx + 1}</span>
-                }
+                {idx < 3 ? (
+                  <PiTrophyDuotone className={cn('h-4 w-4', RANK_COLOR[idx])} />
+                ) : (
+                  <span className="text-xs font-medium text-gray-400">
+                    {idx + 1}
+                  </span>
+                )}
               </div>
 
               {/* Product image */}
               <div className="me-3 flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100 @sm:h-12 @sm:w-12">
                 {product.image ? (
-                  <Image src={product.image} alt={product.name} width={48} height={48} className="h-full w-full object-cover" />
+                  <Image
+                    src={product.image}
+                    alt={product.name}
+                    width={48}
+                    height={48}
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   <PiPackageDuotone className="h-5 w-5 text-gray-400" />
                 )}
@@ -115,13 +153,16 @@ export default function BestSellers({ className }: { className?: string }) {
               {/* Info */}
               <div className="flex w-full items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <Text className="font-lexend text-sm font-medium text-gray-900 dark:text-gray-100 truncate leading-snug">
+                  <Text className="truncate font-lexend text-sm font-medium leading-snug text-gray-900 dark:text-gray-100">
                     {product.name}
                   </Text>
                   <Text className="text-xs text-gray-500">
-                    {product.sold.toLocaleString()} sold · {fmt(product.revenue)}
+                    {product.sold.toLocaleString()} sold ·{' '}
+                    {fmt(product.revenue)}
                     {product.margin !== null && (
-                      <span className="ms-1.5 text-gray-400">· {product.margin}% margin</span>
+                      <span className="ms-1.5 text-gray-400">
+                        · {product.margin}% margin
+                      </span>
                     )}
                   </Text>
                   {/* Vendor chip */}
@@ -137,7 +178,13 @@ export default function BestSellers({ className }: { className?: string }) {
                 </div>
 
                 {/* Stock badge */}
-                <span className={cn('mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium', STATUS_COLOR[product.stockStatus] ?? 'bg-gray-100 text-gray-600')}>
+                <span
+                  className={cn(
+                    'mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
+                    STATUS_COLOR[product.stockStatus] ??
+                      'bg-gray-100 text-gray-600'
+                  )}
+                >
                   {product.stock} left
                 </span>
               </div>

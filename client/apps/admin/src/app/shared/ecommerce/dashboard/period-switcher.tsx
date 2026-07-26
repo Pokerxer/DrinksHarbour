@@ -8,12 +8,12 @@ import { useDashboardMeta, useDashboardRefreshControl } from './use-dashboard';
 
 /** Only the presets get a button; `custom` is driven by the URL, not this control. */
 const PRESETS: { key: string; label: string }[] = [
-  { key: 'today',   label: 'Today' },
-  { key: '7d',      label: '7 days' },
-  { key: '30d',     label: '30 days' },
-  { key: 'month',   label: 'Month' },
+  { key: 'today', label: 'Today' },
+  { key: '7d', label: '7 days' },
+  { key: '30d', label: '30 days' },
+  { key: 'month', label: 'Month' },
   { key: 'quarter', label: 'Quarter' },
-  { key: 'year',    label: 'Year' },
+  { key: 'year', label: 'Year' },
 ];
 
 export default function PeriodSwitcher() {
@@ -89,12 +89,19 @@ export default function PeriodSwitcher() {
         aria-label="Refresh dashboard data"
         className="inline-flex items-center gap-1.5 rounded-lg border border-muted bg-gray-0 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:text-gray-900"
       >
-        <PiArrowClockwiseBold className={cn('h-3.5 w-3.5', isPending && 'animate-spin motion-reduce:animate-none')} />
+        <PiArrowClockwiseBold
+          className={cn(
+            'h-3.5 w-3.5',
+            isPending && 'animate-spin motion-reduce:animate-none'
+          )}
+        />
         Refresh
       </button>
 
       <span aria-live="polite" className="sr-only">
-        {isPending ? 'Loading dashboard data' : `Showing ${meta?.label ?? 'this month'}`}
+        {isPending
+          ? 'Loading dashboard data'
+          : `Showing ${meta?.label ?? 'this month'}`}
       </span>
     </div>
   );

@@ -2,19 +2,25 @@
 'use client';
 
 import WidgetCard from '@core/components/cards/widget-card';
-import { RadialBarChart, RadialBar, Legend, ResponsiveContainer, Cell } from 'recharts';
+import {
+  RadialBarChart,
+  RadialBar,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+} from 'recharts';
 import { useMedia } from '@core/hooks/use-media';
 import { useDashboard, useDashboardMeta } from './use-dashboard';
 import cn from '@core/utils/class-names';
 
 const STATUS_META: Record<string, { label: string; fill: string }> = {
-  pending:    { label: 'Pending',    fill: '#f59e0b' },
-  confirmed:  { label: 'Confirmed',  fill: '#3872FA' },
+  pending: { label: 'Pending', fill: '#f59e0b' },
+  confirmed: { label: 'Confirmed', fill: '#3872FA' },
   processing: { label: 'Processing', fill: '#8b5cf6' },
-  shipped:    { label: 'Shipped',    fill: '#06b6d4' },
-  delivered:  { label: 'Delivered',  fill: '#10b981' },
-  cancelled:  { label: 'Cancelled',  fill: '#ef4444' },
-  refunded:   { label: 'Refunded',   fill: '#6b7280' },
+  shipped: { label: 'Shipped', fill: '#06b6d4' },
+  delivered: { label: 'Delivered', fill: '#10b981' },
+  cancelled: { label: 'Cancelled', fill: '#ef4444' },
+  refunded: { label: 'Refunded', fill: '#6b7280' },
 };
 
 function SkeletonCard() {
@@ -22,13 +28,19 @@ function SkeletonCard() {
     <div className="animate-pulse">
       <div className="mx-auto h-64 w-64 rounded-full bg-gray-100" />
       <div className="mt-4 space-y-2">
-        {[1,2,3,4].map(i => <div key={i} className="mx-auto h-3 w-32 rounded bg-gray-100" />)}
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="mx-auto h-3 w-32 rounded bg-gray-100" />
+        ))}
       </div>
     </div>
   );
 }
 
-export default function OrderStatusBreakdown({ className }: { className?: string }) {
+export default function OrderStatusBreakdown({
+  className,
+}: {
+  className?: string;
+}) {
   const isMobile = useMedia('(max-width: 480px)', false);
   const data = useDashboard();
   const meta = useDashboardMeta();
@@ -36,20 +48,28 @@ export default function OrderStatusBreakdown({ className }: { className?: string
   const statusMap = data?.statusBreakdown ?? {};
 
   const chartData = Object.entries(STATUS_META)
-    .map(([key, meta]) => ({ name: meta.label, sales: statusMap[key] ?? 0, fill: meta.fill }))
-    .filter(d => d.sales > 0);
+    .map(([key, meta]) => ({
+      name: meta.label,
+      sales: statusMap[key] ?? 0,
+      fill: meta.fill,
+    }))
+    .filter((d) => d.sales > 0);
 
   const total = chartData.reduce((s, d) => s + d.sales, 0);
 
   return (
     <WidgetCard
       title="Order Status"
-      description={data ? `${total} orders · ${periodLabel}` : `Breakdown · ${periodLabel}`}
+      description={
+        data ? `${total} orders · ${periodLabel}` : `Breakdown · ${periodLabel}`
+      }
       descriptionClassName="text-gray-500 mt-0.5"
       className={cn('@container', className)}
     >
       {!data ? (
-        <div className="pt-4"><SkeletonCard /></div>
+        <div className="pt-4">
+          <SkeletonCard />
+        </div>
       ) : chartData.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-gray-400">
           <p className="text-sm">No orders {periodLabel.toLowerCase()} yet</p>
@@ -69,7 +89,11 @@ export default function OrderStatusBreakdown({ className }: { className?: string
               className="rtl:[&_.recharts-legend-item>svg]:ml-1"
             >
               <RadialBar
-                label={{ fill: '#ffffff', position: 'insideStart', fontSize: 11 }}
+                label={{
+                  fill: '#ffffff',
+                  position: 'insideStart',
+                  fontSize: 11,
+                }}
                 background
                 dataKey="sales"
                 className="[&_.recharts-radial-bar-background-sector]:fill-gray-100"
