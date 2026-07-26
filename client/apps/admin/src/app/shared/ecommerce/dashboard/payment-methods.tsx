@@ -3,7 +3,7 @@
 
 import WidgetCard from '@core/components/cards/widget-card';
 import cn from '@core/utils/class-names';
-import { useDashboard } from './use-dashboard';
+import { useDashboard, useDashboardMeta } from './use-dashboard';
 import {
   PiHandCoinsDuotone,
   PiBankDuotone,
@@ -46,6 +46,7 @@ function fmt(n: number): string {
 
 export default function PaymentMethods({ className }: { className?: string }) {
   const data = useDashboard();
+  const meta = useDashboardMeta();
   const breakdown = data?.paymentBreakdown ?? [];
 
   const total = breakdown.reduce((s, p) => s + p.count, 0);
@@ -53,7 +54,7 @@ export default function PaymentMethods({ className }: { className?: string }) {
   return (
     <WidgetCard
       title="Payment Methods"
-      description="This month's orders"
+      description={`Orders · ${meta?.label ?? 'This month'}`}
       descriptionClassName="text-gray-500 mt-0.5"
       className={className}
     >

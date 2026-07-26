@@ -4,7 +4,7 @@
 import Image from 'next/image';
 import WidgetCard from '@core/components/cards/widget-card';
 import { Button, Text } from 'rizzui';
-import { useDashboard } from './use-dashboard';
+import { useDashboard, useDashboardMeta } from './use-dashboard';
 import { routes } from '@/config/routes';
 import Link from 'next/link';
 import { PiPackageDuotone, PiTrophyDuotone, PiStorefrontDuotone } from 'react-icons/pi';
@@ -64,13 +64,14 @@ function SkeletonRow() {
 
 export default function BestSellers({ className }: { className?: string }) {
   const data = useDashboard();
+  const meta = useDashboardMeta();
   const products = data?.topProducts ?? [];
   const isLoading = !data;
 
   return (
     <WidgetCard
       title="Top Products"
-      description="By units sold (all time)"
+      description={`By units sold · ${meta?.label ?? 'This month'}`}
       action={
         <Link href={routes.eCommerce.products}>
           <Button variant="text" className="whitespace-nowrap underline text-xs">

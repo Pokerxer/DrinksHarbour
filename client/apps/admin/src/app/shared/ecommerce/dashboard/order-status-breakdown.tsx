@@ -4,7 +4,7 @@
 import WidgetCard from '@core/components/cards/widget-card';
 import { RadialBarChart, RadialBar, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { useMedia } from '@core/hooks/use-media';
-import { useDashboard } from './use-dashboard';
+import { useDashboard, useDashboardMeta } from './use-dashboard';
 import cn from '@core/utils/class-names';
 
 const STATUS_META: Record<string, { label: string; fill: string }> = {
@@ -31,6 +31,8 @@ function SkeletonCard() {
 export default function OrderStatusBreakdown({ className }: { className?: string }) {
   const isMobile = useMedia('(max-width: 480px)', false);
   const data = useDashboard();
+  const meta = useDashboardMeta();
+  const periodLabel = meta?.label ?? 'This month';
   const statusMap = data?.statusBreakdown ?? {};
 
   const chartData = Object.entries(STATUS_META)
@@ -42,7 +44,7 @@ export default function OrderStatusBreakdown({ className }: { className?: string
   return (
     <WidgetCard
       title="Order Status"
-      description={data ? `${total} orders this month` : 'This month\'s breakdown'}
+      description={data ? `${total} orders · ${periodLabel}` : `${periodLabel}'s breakdown`}
       descriptionClassName="text-gray-500 mt-0.5"
       className={cn('@container', className)}
     >
@@ -50,7 +52,7 @@ export default function OrderStatusBreakdown({ className }: { className?: string
         <div className="pt-4"><SkeletonCard /></div>
       ) : chartData.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-          <p className="text-sm">No orders this month yet</p>
+          <p className="text-sm">No orders {periodLabel.toLowerCase()} yet</p>
         </div>
       ) : (
         <div className="h-80 w-full pb-4 pt-4 @sm:h-96 @xl:pb-0">

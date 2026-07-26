@@ -5,7 +5,7 @@ import Image from 'next/image';
 import WidgetCard from '@core/components/cards/widget-card';
 import { Button, Text } from 'rizzui';
 import cn from '@core/utils/class-names';
-import { useDashboard } from './use-dashboard';
+import { useDashboard, useDashboardMeta } from './use-dashboard';
 import {
   PiStorefrontDuotone,
   PiTrophyDuotone,
@@ -69,6 +69,8 @@ function VendorAvatar({ vendor }: { vendor: TopVendor }) {
 
 export default function TopVendors({ className }: { className?: string }) {
   const data = useDashboard();
+  const meta = useDashboardMeta();
+  const periodLabel = meta?.label ?? 'This month';
   const vendors = data?.topVendors ?? [];
   const isLoading = !data;
 
@@ -79,8 +81,8 @@ export default function TopVendors({ className }: { className?: string }) {
       title="Top Vendors"
       description={
         data
-          ? `${vendors.length} active this month · ${fmt(totalRevenue)} combined`
-          : 'By gross revenue this month'
+          ? `${vendors.length} active · ${periodLabel} · ${fmt(totalRevenue)} combined`
+          : `By gross revenue · ${periodLabel}`
       }
       descriptionClassName="text-gray-500 mt-0.5 text-xs"
       className={className}
@@ -92,7 +94,7 @@ export default function TopVendors({ className }: { className?: string }) {
       ) : vendors.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-gray-400">
           <PiStorefrontDuotone className="mb-2 h-12 w-12 opacity-30" />
-          <p className="text-sm">No vendor sales this month</p>
+          <p className="text-sm">No vendor sales {periodLabel.toLowerCase()}</p>
         </div>
       ) : (
         <div className="custom-scrollbar mt-4 space-y-2.5 max-h-[480px] overflow-y-auto -me-1 pe-1">

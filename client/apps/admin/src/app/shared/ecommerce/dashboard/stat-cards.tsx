@@ -13,7 +13,7 @@ import {
   PiWarningDiamondDuotone,
 } from 'react-icons/pi';
 import { BarChart, Bar, ResponsiveContainer } from 'recharts';
-import { useDashboard } from './use-dashboard';
+import { useDashboard, useDashboardMeta } from './use-dashboard';
 
 function pct(curr: number, prev: number): number {
   if (!prev) return curr > 0 ? 100 : 0;
@@ -43,6 +43,9 @@ function SkeletonCard() {
 
 export default function StatCards({ className }: { className?: string }) {
   const data = useDashboard();
+  const meta = useDashboardMeta();
+  const periodLabel = meta?.label ?? 'This month';
+  const comparisonLabel = meta?.comparisonLabel ?? 'vs last month';
 
   if (!data) {
     return (
@@ -77,7 +80,7 @@ export default function StatCards({ className }: { className?: string }) {
     {
       id: '1',
       icon: <PiGiftDuotone className="h-6 w-6" />,
-      title: 'Orders This Month',
+      title: `Orders · ${periodLabel}`,
       metric: period.orders.toLocaleString(),
       sub: `${today.orders} today`,
       increased: ordersPct >= 0,
@@ -89,7 +92,7 @@ export default function StatCards({ className }: { className?: string }) {
     {
       id: '2',
       icon: <PiChartPieSliceDuotone className="h-6 w-6" />,
-      title: 'Revenue This Month',
+      title: `Revenue · ${periodLabel}`,
       metric: fmt(period.revenue),
       sub: `${fmt(today.revenue)} today`,
       increased: revenuePct >= 0,
@@ -167,7 +170,7 @@ export default function StatCards({ className }: { className?: string }) {
                   {stat.pct}%
                 </Text>
                 <Text as="span" className="hidden @[240px]:inline-flex">
-                  {stat.increased ? 'up' : 'down'} vs last month
+                  {stat.increased ? 'up' : 'down'} {comparisonLabel}
                 </Text>
               </>
             ) : (

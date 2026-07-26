@@ -13,7 +13,7 @@ import {
   PiCaretDoubleDownDuotone,
   PiInfoFill,
 } from 'react-icons/pi';
-import { useDashboard } from './use-dashboard';
+import { useDashboard, useDashboardMeta } from './use-dashboard';
 import { useTenant } from '@/context/TenantContext';
 
 function fmt(n: number): string {
@@ -56,6 +56,9 @@ const FALLBACK = Array.from({ length: 12 }, (_, i) => ({
 
 export default function TenantRevenueWidget({ className }: { className?: string }) {
   const data = useDashboard();
+  const meta = useDashboardMeta();
+  const periodLabel = meta?.label ?? 'This month';
+  const comparisonLabel = meta?.comparisonLabel ?? 'vs last month';
   const { tenant } = useTenant();
   const accentColor = tenant?.primaryColor || '#dc2626';
 
@@ -90,7 +93,7 @@ export default function TenantRevenueWidget({ className }: { className?: string 
     >
       <div className="flex flex-col flex-grow gap-3">
 
-        {/* vs last month */}
+        {/* comparison vs the previous window */}
         {data && (
           <div className="flex items-center gap-1.5 text-xs">
             <span className={cn('flex items-center gap-0.5 font-medium', revPct >= 0 ? 'text-green-600' : 'text-red-500')}>
@@ -99,7 +102,7 @@ export default function TenantRevenueWidget({ className }: { className?: string 
                 : <PiCaretDoubleDownDuotone className="h-3.5 w-3.5" />}
               {Math.abs(revPct)}%
             </span>
-            <span className="text-gray-400">vs last month ({fmt(prevRevenue)})</span>
+            <span className="text-gray-400">{comparisonLabel} ({fmt(prevRevenue)})</span>
           </div>
         )}
 
@@ -113,7 +116,7 @@ export default function TenantRevenueWidget({ className }: { className?: string 
         ) : (
           <div className="grid grid-cols-2 gap-2">
             <MetricBox
-              label="This Month"
+              label={periodLabel}
               value={fmt(periodRevenue)}
               sub={`${periodOrders} orders`}
               color="text-gray-900"
@@ -129,7 +132,7 @@ export default function TenantRevenueWidget({ className }: { className?: string 
             <MetricBox
               label="Today"
               value={fmt(todayRevenue)}
-              sub={`${todayShare}% of month`}
+              sub={`${todayShare}% of period`}
               color={todayUp ? 'text-green-600' : 'text-orange-500'}
             />
             <MetricBox
@@ -173,7 +176,7 @@ export default function TenantRevenueWidget({ className }: { className?: string 
 
         <Text className="text-[11px] text-gray-400 leading-tight">
           <PiInfoFill className="inline-flex h-3.5 w-3.5 text-gray-400" />{' '}
-          Revenue from all active orders placed this month. Compared against last month's total.
+          {`Revenue from all active orders placed in the selected period (${periodLabel}). Compared ${comparisonLabel}.`}
         </Text>
       </div>
     </WidgetCard>
