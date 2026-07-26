@@ -10,6 +10,7 @@
 
 const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/response');
+const { frontendBaseUrl } = require('../utils/frontendUrl');
 const User = require('../models/User');
 const PlatformLoyaltyTransaction = require('../models/PlatformLoyaltyTransaction');
 const { mutatePlatformLoyalty } = require('../services/platformLoyalty.service');
@@ -218,7 +219,7 @@ const getOrCreateReferralCode = asyncHandler(async (req, res) => {
     await user.save();
   }
 
-  const referralLink = `${process.env.PLATFORM_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://drinksharbour.com'}/register?ref=${user.referralCode}`;
+  const referralLink = `${frontendBaseUrl(process.env.PLATFORM_URL)}/register?ref=${user.referralCode}`;
 
   successResponse(res, {
     code: user.referralCode,

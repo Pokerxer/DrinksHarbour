@@ -3,12 +3,19 @@ const nodemailer = require('nodemailer');
 const { google } = require('googleapis');
 const path = require('path');
 const fs   = require('fs');
+const { normalizeUrl, frontendBaseUrl } = require('../utils/frontendUrl');
+
+// Email hrefs MUST be absolute — a scheme-less env value ("drinksharbour.com")
+// renders as a relative link and every button in the email dead-ends.
+const SITE_URL = () => frontendBaseUrl();
+// Staff-facing links live on the admin host when BACKEND_URL is set.
+const ADMIN_URL = () => normalizeUrl(process.env.BACKEND_URL) || frontendBaseUrl();
 
 // ─── Logo (base64-embedded so it renders in all email clients regardless of env) ─
 const LOGO_PATH = path.join(__dirname, '../../client/apps/platform/public/images/logo.png');
 const LOGO_SRC  = fs.existsSync(LOGO_PATH)
   ? 'data:image/png;base64,' + fs.readFileSync(LOGO_PATH).toString('base64')
-  : `${process.env.FRONTEND_URL || 'https://drinksharbour.com'}/images/logo.png`;
+  : `${SITE_URL()}/images/logo.png`;
 
 // Email sending status
 let emailServiceReady = false;
@@ -333,7 +340,7 @@ const emailShell = ({ accentColor, accentLabel, accentSubtitle, body, footerNote
           <!-- ① White logo band -->
           <tr>
             <td style="background-color:#ffffff;padding:26px 40px 22px;text-align:center;">
-              <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}" style="display:inline-block;text-decoration:none;">
+              <a href="${SITE_URL()}" style="display:inline-block;text-decoration:none;">
                 <img src="${LOGO_SRC}"
                      alt="DrinksHarbour"
                      width="210"
@@ -370,7 +377,7 @@ const emailShell = ({ accentColor, accentLabel, accentSubtitle, body, footerNote
               <p style="font-size:13px;color:#b7ada0;margin:0 0 10px 0;line-height:1.6;">${footerNote || 'Thank you for choosing DrinksHarbour — premium drinks, delivered.'}</p>
               <!-- Contact row -->
               <p style="font-size:12px;color:#8a8073;margin:0 0 16px 0;">
-                <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}" style="color:${GOLD};text-decoration:none;font-weight:600;">drinksharbour.com</a>
+                <a href="${SITE_URL()}" style="color:${GOLD};text-decoration:none;font-weight:600;">drinksharbour.com</a>
                 <span style="color:#4b463f;">&nbsp;&bull;&nbsp;</span>
                 <a href="mailto:support@drinksharbour.com" style="color:#b7ada0;text-decoration:none;">support@drinksharbour.com</a>
               </p>
@@ -559,7 +566,7 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
       <tr>
         <td align="center">
-          <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}/order-confirmation?orderId=${order._id}"
+          <a href="${SITE_URL()}/order-confirmation?orderId=${order._id}"
              style="display:inline-block;background:linear-gradient(135deg,${GOLD} 0%,#b8862f 100%);color:#1a1310;padding:15px 36px;border-radius:12px;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 16px rgba(200,162,74,0.38);">
             View Order Details &rarr;
           </a>
@@ -710,7 +717,7 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
       <tr>
         <td align="center">
-          <a href="${process.env.BACKEND_URL || process.env.FRONTEND_URL || 'https://drinksharbour.com'}/dashboard/orders"
+          <a href="${ADMIN_URL()}/dashboard/orders"
              style="display:inline-block;background:linear-gradient(135deg,#8f1d1d,#b52a2a);color:#ffffff;padding:15px 36px;border-radius:12px;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 16px rgba(143,29,29,0.28);">
             Process Order &rarr;
           </a>
@@ -895,7 +902,7 @@ const sendNewOrderNotificationToAdmin = async (order, customer) => {
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td align="center">
-          <a href="${process.env.BACKEND_URL || process.env.FRONTEND_URL || 'https://drinksharbour.com'}/admin/orders/${order._id}"
+          <a href="${ADMIN_URL()}/admin/orders/${order._id}"
              style="display:inline-block;background:linear-gradient(135deg,#8f1d1d,#b52a2a);color:#ffffff;padding:15px 36px;border-radius:12px;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 16px rgba(143,29,29,0.28);">
             View Full Order Details &rarr;
           </a>
@@ -1100,7 +1107,7 @@ const sendPurchaseOrderToVendor = async (purchaseOrder, vendor, tenant) => {
 // ─── 6. Password reset email ─────────────────────────────────────────────────
 
 const sendPasswordResetEmail = async ({ email, firstName, resetToken }) => {
-  const frontendUrl = process.env.FRONTEND_URL || 'https://drinksharbour.com';
+  const frontendUrl = SITE_URL();
   const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
 
   const html = emailShell({
