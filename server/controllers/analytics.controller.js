@@ -6,6 +6,7 @@ const SubProduct     = require('../models/SubProduct');
 const Tenant         = require('../models/Tenant');
 const webAnalyticsService = require('../services/webAnalytics.service');
 const { successResponse, errorResponse } = require('../utils/response');
+const { resolvePeriod } = require('../services/dashboardPeriod.helpers');
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -57,10 +58,11 @@ const COMPLETED_STATUSES = ['shipped','delivered'];   // stock has physically le
 exports.getDashboard = asyncHandler(async (req, res) => {
   const now = new Date();
 
-  const thisMonthStart = startOf(now, 'month');
-  const thisMonthEnd   = endOf(now, 'month');
-  const lastMonthStart = startOf(addMonths(now, -1), 'month');
-  const lastMonthEnd   = endOf(addMonths(now, -1), 'month');
+  // Selected reporting window (?period=today|7d|30d|month|quarter|year|custom).
+  // Defaults to 'month', which reproduces the dashboard's original behaviour.
+  const period = resolvePeriod(req.query, now);
+  const { rangeStart, rangeEnd, prevStart, prevEnd } = period;
+
   const todayStart     = startOf(now, 'day');
   const todayEnd       = endOf(now, 'day');
   const yesterdayStart = startOf(new Date(now - 86_400_000), 'day');
@@ -102,15 +104,15 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     topVendorsAgg,
   ] = await Promise.all([
 
-    // 1. This month gross revenue + orders
+    // 1. This period gross revenue + orders
     Order.aggregate([
-      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: thisMonthStart, $lte: thisMonthEnd }, status: { $in: ACTIVE_STATUSES } } },
+      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$totalAmount' } } },
     ]),
 
-    // 2. Last month gross revenue + orders
+    // 2. Previous period gross revenue + orders
     Order.aggregate([
-      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: lastMonthStart, $lte: lastMonthEnd }, status: { $in: ACTIVE_STATUSES } } },
+      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: prevStart, $lte: prevEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$totalAmount' } } },
     ]),
 
@@ -143,15 +145,15 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
 
-    // 8. Status breakdown (this month)
+    // 8. Status breakdown (selected period)
     Order.aggregate([
-      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: thisMonthStart } } },
+      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd } } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]),
 
-    // 9. Payment method breakdown (this month)
+    // 9. Payment method breakdown (selected period)
     Order.aggregate([
-      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: thisMonthStart } } },
+      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd } } },
       { $group: { _id: '$paymentMethod', count: { $sum: 1 }, total: { $sum: '$totalAmount' } } },
       { $sort: { count: -1 } },
     ]),
@@ -184,9 +186,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       { $sort: { '_id.month': 1 } },
     ]),
 
-    // 14. Profit this month — all active orders (same basis as revenue stats)
+    // 14. Profit this period — all active orders (same basis as revenue stats)
     Order.aggregate([
-      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: thisMonthStart, $lte: thisMonthEnd }, status: { $in: ACTIVE_STATUSES } } },
+      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
         '_vc': { $cond: [{ $gt: ['$items.tenantRevenueShare', 0] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
@@ -203,9 +205,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       }},
     ]),
 
-    // 15. Last month profit (for % change)
+    // 15. Previous period profit (for % change)
     Order.aggregate([
-      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: lastMonthStart, $lte: lastMonthEnd }, status: { $in: ACTIVE_STATUSES } } },
+      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: prevStart, $lte: prevEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
         '_vc': { $cond: [{ $gt: ['$items.tenantRevenueShare', 0] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
@@ -240,9 +242,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
 
-    // 17. Top vendors this month
+    // 17. Top vendors (selected period)
     Order.aggregate([
-      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: thisMonthStart }, status: { $in: ACTIVE_STATUSES } } },
+      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $match: { 'items.tenant': { $exists: true, $ne: null } } },
       { $addFields: {
@@ -266,25 +268,25 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   ]);
 
   // ── Process stat cards ───────────────────────────────────────────────────
-  const thisOrders   = thisMonthAgg[0]?.orders  ?? 0;
-  const thisRevenue  = thisMonthAgg[0]?.revenue ?? 0;
-  const lastOrders   = lastMonthAgg[0]?.orders  ?? 0;
-  const lastRevenue  = lastMonthAgg[0]?.revenue ?? 0;
-  const todayOrders  = todayAgg[0]?.orders  ?? 0;
-  const todayRevenue = todayAgg[0]?.revenue ?? 0;
-  const yestOrders   = yesterdayAgg[0]?.orders  ?? 0;
-  const yestRevenue  = yesterdayAgg[0]?.revenue ?? 0;
+  const periodOrders   = thisMonthAgg[0]?.orders  ?? 0;
+  const periodRevenue  = thisMonthAgg[0]?.revenue ?? 0;
+  const prevOrders     = lastMonthAgg[0]?.orders  ?? 0;
+  const prevRevenue    = lastMonthAgg[0]?.revenue ?? 0;
+  const todayOrders    = todayAgg[0]?.orders  ?? 0;
+  const todayRevenue   = todayAgg[0]?.revenue ?? 0;
+  const yestOrders     = yesterdayAgg[0]?.orders  ?? 0;
+  const yestRevenue    = yesterdayAgg[0]?.revenue ?? 0;
 
   // vendorCost     = what platform pays out to vendors across ALL active orders
   // platformProfit = grossRevenue − vendorCost (platform markup earned)
-  const grossThisMonth      = profitThisMonthAgg[0]?.grossRevenue    ?? 0;
-  const vendorCostThisMonth = profitThisMonthAgg[0]?.vendorCost      ?? 0;
-  const platformProfit      = profitThisMonthAgg[0]?.platformProfit  ?? 0;
+  const grossPeriod         = profitThisMonthAgg[0]?.grossRevenue   ?? 0;
+  const vendorCostPeriod    = profitThisMonthAgg[0]?.vendorCost     ?? 0;
+  const platformProfit      = profitThisMonthAgg[0]?.platformProfit ?? 0;
   const orderCountThisMonth = profitThisMonthAgg[0]?.orderCount?.length ?? 0;
   // avgOrderValue from active-order count (consistent with revenue)
-  const avgOrderValue       = orderCountThisMonth > 0 ? Math.round(grossThisMonth / orderCountThisMonth) : 0;
-  const lastGross           = profitLastMonthAgg[0]?.grossRevenue    ?? 0;
-  const lastProfit          = profitLastMonthAgg[0]?.platformProfit  ?? 0;
+  const avgOrderValue       = orderCountThisMonth > 0 ? Math.round(grossPeriod / orderCountThisMonth) : 0;
+  const lastGross           = profitLastMonthAgg[0]?.grossRevenue   ?? 0;
+  const lastProfit          = profitLastMonthAgg[0]?.platformProfit ?? 0;
 
   // 7-day sparkline normalised
   const dailyMap = {};
@@ -412,10 +414,10 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     success: true,
     data: {
       statCards: {
-        thisMonth:     { orders: thisOrders,  revenue: thisRevenue  },
-        lastMonth:     { orders: lastOrders,  revenue: lastRevenue  },
-        today:         { orders: todayOrders, revenue: todayRevenue },
-        yesterday:     { orders: yestOrders,  revenue: yestRevenue  },
+        period:        { orders: periodOrders, revenue: periodRevenue },
+        previous:      { orders: prevOrders,   revenue: prevRevenue   },
+        today:         { orders: todayOrders,  revenue: todayRevenue  },
+        yesterday:     { orders: yestOrders,   revenue: yestRevenue   },
         pendingOrders: pendingCount,
         lowStockCount,
         avgOrderValue,
@@ -434,9 +436,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       profit: {
         thisMonth:    platformProfit,
         lastMonth:    lastProfit,
-        // grossRevenue = total revenue across all active orders this month
-        grossRevenue: grossThisMonth,
-        vendorCost:   vendorCostThisMonth,
+        // grossRevenue = total revenue across all active orders in the window
+        grossRevenue: grossPeriod,
+        vendorCost:   vendorCostPeriod,
         trend: salesReport.map(m => ({
           month:      m.month,
           totalSales: m.revenue,
@@ -445,6 +447,13 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         })),
       },
       topVendors,
+      meta: {
+        period:          period.key,
+        label:           period.label,
+        comparisonLabel: period.comparisonLabel,
+        rangeStart:      period.rangeStart.toISOString(),
+        rangeEnd:        period.rangeEnd.toISOString(),
+      },
     },
   });
 });
