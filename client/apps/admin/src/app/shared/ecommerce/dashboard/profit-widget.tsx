@@ -12,7 +12,7 @@ import {
   PiCaretDoubleDownDuotone,
   PiArrowRightBold,
 } from 'react-icons/pi';
-import { useDashboard } from './use-dashboard';
+import { useDashboard, useDashboardMeta } from './use-dashboard';
 
 function fmt(n: number): string {
   if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(2)}M`;
@@ -57,6 +57,7 @@ const FALLBACK = Array.from({ length: 12 }, (_, i) => ({
 
 export default function ProfitWidget({ className }: { className?: string }) {
   const data = useDashboard();
+  const meta = useDashboardMeta();
 
   const trend  = data?.profit?.trend ?? FALLBACK;
   const profit = data?.profit;
@@ -105,7 +106,7 @@ export default function ProfitWidget({ className }: { className?: string }) {
               }
               {Math.abs(profitPct)}%
             </span>
-            <span className="text-gray-400">vs last month ({fmt(profit?.lastMonth ?? 0)})</span>
+            <span className="text-gray-400">{meta?.comparisonLabel ?? 'vs last month'} ({fmt(profit?.lastMonth ?? 0)})</span>
           </div>
         )}
 

@@ -44,7 +44,7 @@ export default function OrderStatusBreakdown({ className }: { className?: string
   return (
     <WidgetCard
       title="Order Status"
-      description={data ? `${total} orders · ${periodLabel}` : `${periodLabel}'s breakdown`}
+      description={data ? `${total} orders · ${periodLabel}` : `Breakdown · ${periodLabel}`}
       descriptionClassName="text-gray-500 mt-0.5"
       className={cn('@container', className)}
     >
