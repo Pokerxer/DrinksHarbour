@@ -1,5 +1,57 @@
 # Handoff prompt — production /shop, /brands and some product pages render empty
 
+> **RESOLVED 2026-07-27 — no code defect. Do not act on the hypotheses below.**
+>
+> Investigated against production. Every reported symptom is gone, and the two
+> that were real were caused by a deploy still propagating, not by code:
+>
+> | page | now | evidence |
+> |---|---|---|
+> | `/shop` | healthy | 818 KB, 9 750 visible chars, 34 product links, all 24 API page-1 slugs present |
+> | `/shop?page=2` | healthy | 24 distinct slugs, 0 grid overlap with page 1, canonical + prev/next + "— Page 2" all correct |
+> | `/brands` | healthy | 5 903 visible chars (exactly the local baseline), 66 brand cards, "66 Brands / 125 Products" |
+> | `/product/olmeca-blanco` | healthy | 2 637 visible chars |
+> | `/product/hennessy-vsop` | **404 — correct** | that slug does not exist; the real one is `hennessy-vsop-cognac`, which renders fully (200, 2 605 visible chars, no loading skeleton) |
+>
+> **Hypotheses 1–5 are all dead:**
+>
+> 1. *Stale ISR / CDN.* Killed. Every page returns `x-vercel-cache: MISS`,
+>    `age: 0`, `cache-control: private, no-cache, no-store`. Nothing is cached;
+>    every request is a fresh render.
+> 2. *Backend not deployed.* Killed. `/api/products/search` returns the new
+>    pagination block — `pageResults: 24`, `isExactCount: true`,
+>    `totalResults: 425` — so the backend half of `e71fb315..14acfbbf` **is**
+>    live. The earlier "backend was never deployed" claim was wrong.
+> 3. *`ignoreCommand` skipped a needed build.* Killed, and the change is
+>    exonerated. The platform is serving `dpl_9EKWwWuQzwPuzdYM8AWR3T7EuTyt` =
+>    commit `3e3ed94c`, which contains all four commits. The only skip it caused
+>    (`62314d72`, docs-only → `CANCELED`) was correct behaviour.
+> 4. *`/shop` genuinely returning zero products.* Killed — 34 links, real cards.
+> 5. *`/brands` separately broken.* Killed — 66 brands.
+>
+> **Root cause:** deployment propagation. Two platform builds landed 8 minutes
+> apart (`14acfbbf` at 17:29, `3e3ed94c` at 17:37 UTC) and the report was
+> written while requests were being served by a mix of the old and new builds —
+> which is exactly what the differing `dpl_` IDs in the image URLs were showing.
+> All four pages now report the same deployment ID. The `Loading product
+> details...` text was a pre-`d4bd8651` body still being served for a slug that
+> does not exist. **Fix required: none. Nothing was changed.**
+>
+> **One real finding, separate from this bug** (cost, not correctness): the
+> admin project `drinks-harbour` has Root Directory `client/apps/admin`, so
+> `client/vercel.json` — including the `ignoreCommand` added in `3e3ed94c` — is
+> never read. Its build logs show pnpm at the workspace root and
+> `admin@7.6.2 build` in `/vercel/path0/client/apps/admin`, not the
+> `npm install --legacy-peer-deps` / `cd apps/admin` that file specifies. The
+> admin therefore still rebuilds on every push (it built the docs-only
+> `62314d72`, ~2 min on a 30-core machine). To make that half of `3e3ed94c`
+> effective, the config needs to live at `client/apps/admin/vercel.json`.
+> Also note the topology table below is wrong on this point.
+>
+> **Still open, unchanged and still out of scope:** `notFound()` renders Next's
+> blank `__next_error__` shell — `/product/hennessy-vsop` returns a correct 404
+> with a 1-character body, so a mistyped URL looks like a broken page.
+
 Paste everything below the line into a fresh session. It is written to be
 self-contained; it assumes no memory of the investigation.
 
