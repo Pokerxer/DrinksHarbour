@@ -2,6 +2,5 @@
   "installCommand": "npm install --legacy-peer-deps",
   "buildCommand": "cd apps/admin && npm run build",
   "outputDirectory": "apps/admin/.next",
-  "framework": "nextjs",
-  "ignoreCommand": "cd \"$(git rev-parse --show-toplevel)\" && git diff --quiet HEAD^ HEAD -- client/apps/admin client/packages client/package.json client/pnpm-workspace.yaml client/turbo.json"
+  "framework": "nextjs"
 }
