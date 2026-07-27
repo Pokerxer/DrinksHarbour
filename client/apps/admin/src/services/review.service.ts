@@ -17,9 +17,12 @@ export const reviewService = {
     );
     const queryString = new URLSearchParams(clean as any).toString();
     return handle(
-      await fetch(`${API_URL}/api/reviews${queryString ? `?${queryString}` : ''}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      await fetch(
+        `${API_URL}/api/reviews${queryString ? `?${queryString}` : ''}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      )
     );
   },
 

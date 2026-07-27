@@ -50,7 +50,9 @@ function Stars({ value }: { value: number }) {
         <PiStarFill
           key={i}
           className={`h-4 w-4 ${
-            i <= value ? 'fill-orange text-orange' : 'fill-gray-200 text-gray-200'
+            i <= value
+              ? 'fill-orange text-orange'
+              : 'fill-gray-200 text-gray-200'
           }`}
         />
       ))}
@@ -265,7 +267,9 @@ export default function ReviewsTable() {
                         Verified purchase
                       </span>
                     )}
-                    <Badge className={`text-xs ${STATUS_COLORS[r.status] || ''}`}>
+                    <Badge
+                      className={`text-xs ${STATUS_COLORS[r.status] || ''}`}
+                    >
                       {r.status}
                     </Badge>
                   </div>
@@ -275,9 +279,13 @@ export default function ReviewsTable() {
                   </div>
 
                   {r.title && (
-                    <Text className="mt-2 font-medium text-gray-900">{r.title}</Text>
+                    <Text className="mt-2 font-medium text-gray-900">
+                      {r.title}
+                    </Text>
                   )}
-                  <Text className="mt-1 leading-relaxed text-gray-600">{r.comment}</Text>
+                  <Text className="mt-1 leading-relaxed text-gray-600">
+                    {r.comment}
+                  </Text>
 
                   {Array.isArray(r.images) && r.images.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -324,7 +332,8 @@ export default function ReviewsTable() {
                   </Text>
                   {r.product?.reviewCount != null && (
                     <Text className="mt-0.5 text-xs text-gray-500">
-                      {r.product.averageRating || 0}★ · {r.product.reviewCount} reviews
+                      {r.product.averageRating || 0}★ · {r.product.reviewCount}{' '}
+                      reviews
                     </Text>
                   )}
                 </div>
@@ -371,7 +380,9 @@ export default function ReviewsTable() {
               <div className="ms-auto">
                 {confirmDeleteId === r._id ? (
                   <div className="flex items-center gap-2">
-                    <Text className="text-sm text-gray-600">Delete permanently?</Text>
+                    <Text className="text-sm text-gray-600">
+                      Delete permanently?
+                    </Text>
                     <Button
                       size="sm"
                       color="danger"
@@ -380,7 +391,11 @@ export default function ReviewsTable() {
                     >
                       Yes, delete
                     </Button>
-                    <Button size="sm" variant="text" onClick={() => setConfirmDeleteId('')}>
+                    <Button
+                      size="sm"
+                      variant="text"
+                      onClick={() => setConfirmDeleteId('')}
+                    >
                       Cancel
                     </Button>
                   </div>
