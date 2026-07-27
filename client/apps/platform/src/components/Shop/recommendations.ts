@@ -69,11 +69,14 @@ export function normalizeProduct(p: any): any {
   const vendorOnSale = (p.availableAt || []).some((v: any) => v.isOnSale === true);
   const isOnSale = vendorOnSale || hasRealDiscount;
 
-  const rating = p.averageRating ?? p.rating ?? p.stats?.averageRating ?? 0;
-  const reviewCount = p.reviewCount ?? p.stats?.reviewCount ?? 0;
-  const totalSold = p.totalSold ?? p.stats?.totalSold ?? p.trending?.quantitySold ?? 0;
+  // No product payload has a `stats` wrapper — the API returns these flat, so
+  // every `stats?.x` tail here was dead. `p.rating` stays: this also accepts
+  // already-mapped card products, which carry that name.
+  const rating = p.averageRating ?? p.rating ?? 0;
+  const reviewCount = p.reviewCount ?? 0;
+  const totalSold = p.totalSold ?? p.trending?.quantitySold ?? 0;
   const totalStock =
-    p.totalStock ?? p.availability?.totalStock ?? p.stockInfo?.totalStock ?? p.stats?.totalStock ?? 0;
+    p.totalStock ?? p.availability?.totalStock ?? p.stockInfo?.totalStock ?? 0;
   const tenantCount = p.availability?.tenantCount ?? p.tenantCount ?? p.tenants?.length ?? 0;
 
   return {
