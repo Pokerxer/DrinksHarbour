@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { capSeoTitle } from "@/lib/seoTitle";
 import ProductClient from "./ProductClient";
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
@@ -8,7 +9,7 @@ const SITE_NAME = "DrinksHarbour";
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
-async function fetchProduct(slug: string) {
+async function fetchProduct(slug: string): Promise<{ product: any; related: any[] } | null> {
   try {
     const res = await fetch(`${API_URL}/api/products/slug/${slug}`, {
       next: { revalidate: 3600 },
@@ -25,7 +26,7 @@ async function fetchProduct(slug: string) {
       p.metaKeywords    = p.seo.metaKeywords?.length ? p.seo.metaKeywords : p.metaKeywords;
       p.canonicalUrl    = p.seo.canonicalUrl    || p.canonicalUrl;
     }
-    return p;
+    return { product: p, related: data?.data?.relatedProducts ?? [] };
   } catch {
     return null;
   }
@@ -44,7 +45,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const p = await fetchProduct(slug);
+  const p = (await fetchProduct(slug))?.product;
 
   if (!p) {
     return {
@@ -118,11 +119,10 @@ function buildTitle(p: any): string {
   // Budget so `${title} | DrinksHarbour` stays within Google's ~60-char SERP display.
   const budget = 60 - ` | ${SITE_NAME}`.length; // 60 − 15 = 45
 
-  if (p.metaTitle) {
-    // Strip any trailing "| DrinksHarbour" the admin may have saved — we append it ourselves
-    const stored = p.metaTitle.replace(/\s*\|\s*DrinksHarbour\s*$/i, "").trim();
-    return capToBudget(stored, budget);
-  }
+  // capSeoTitle strips a stored "| DrinksHarbour" suffix and guarantees the
+  // result never ends on a separator — a mid-suffix trim used to leave a
+  // dangling "|" and render "…Single Malt | | DrinksHarbour".
+  if (p.metaTitle) return capSeoTitle(p.metaTitle, SITE_NAME);
 
   // Always keep the full product name; only add the "– Buy {Type} Online"
   // purchase-intent suffix when it fits inside the budget.
@@ -131,13 +131,7 @@ function buildTitle(p: any): string {
     const suffix = `– Buy ${formatType(p.type)} Online`;
     if (`${name} ${suffix}`.length <= budget) return `${name} ${suffix}`;
   }
-  return capToBudget(name, budget);
-}
-
-/** Trim to a word boundary within `budget` chars. */
-function capToBudget(raw: string, budget: number): string {
-  if (raw.length <= budget) return raw;
-  return raw.slice(0, budget).replace(/\s+\S*$/, "").trim();
+  return capSeoTitle(name, SITE_NAME);
 }
 
 // ─── Description builder ──────────────────────────────────────────────────────
@@ -240,10 +234,11 @@ export default async function ProductPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const p = await fetchProduct(slug);
+  const fetched = await fetchProduct(slug);
 
-  if (!p) notFound();
+  if (!fetched) notFound();
 
+  const { product: p, related } = fetched;
   const schemas = buildSchemas(p, slug);
 
   return (
@@ -255,7 +250,11 @@ export default async function ProductPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
         />
       ))}
-      <ProductClient slug={slug} />
+      {/* Hand the already-fetched product to the client component so the body —
+          description, specs, reviews — is in the server HTML rather than a
+          "Loading product details..." spinner. The fetch is deduped with the
+          one generateMetadata made. */}
+      <ProductClient slug={slug} initialProduct={p} initialRelated={related} />
     </>
   );
 }

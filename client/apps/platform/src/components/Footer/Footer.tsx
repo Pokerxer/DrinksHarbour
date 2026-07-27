@@ -24,14 +24,17 @@ const SHOP_BOTTOM_LINKS: FooterLink[] = [
   { label: "All Brands",     href: "/brands" },
 ];
 
-// Fallback category shortcuts — real category slugs pointing at the SEO
-// category pages. Shown until the live top-categories fetch resolves, and
-// kept if that request fails.
+// Fallback category shortcuts. These render in the server HTML on EVERY page —
+// the live top-categories fetch below only replaces them after hydration — so
+// every slug here must be a real, published category. "whiskey" and "wine" were
+// not: the catalog splits those into scotch / irish-whiskey / red-wine etc., so
+// the footer shipped two sitewide 404s. Keep this list in sync with
+// /api/categories.
 const FALLBACK_CATEGORY_LINKS: FooterLink[] = [
-  { label: "Whiskey",   href: "/categories/whiskey" },
-  { label: "Wine",      href: "/categories/wine" },
-  { label: "Champagne", href: "/categories/champagne" },
-  { label: "Beer",      href: "/categories/beer" },
+  { label: "Scotch Whisky", href: "/categories/scotch" },
+  { label: "Red Wine",      href: "/categories/red-wine" },
+  { label: "Champagne",     href: "/categories/champagne" },
+  { label: "Tequila",       href: "/categories/tequila" },
 ];
 
 const HELP_LINKS = [

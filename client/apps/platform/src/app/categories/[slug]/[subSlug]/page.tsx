@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
+import { capSeoTitle } from '@/lib/seoTitle';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -111,11 +112,11 @@ function plainText(raw?: string): string {
 /**
  * Cap a page title so `${title} | DrinksHarbour` stays within Google's
  * ~60-char SERP display, trimming to a word boundary. (SEO "3 Kings" — King 1)
+ * Shared helper — it also drops a site-name suffix the stored metaTitle may
+ * already carry, so trimming never leaves a dangling "|" before ours.
  */
 function capTitle(raw: string): string {
-  const budget = 60 - ` | ${SITE_NAME}`.length; // 60 − 15 = 45
-  if (raw.length <= budget) return raw;
-  return raw.slice(0, budget).replace(/\s+\S*$/, '').trim();
+  return capSeoTitle(raw, SITE_NAME);
 }
 
 /** First keyword-bearing sentence for the hero lede (SEO "3 Kings" — King 3). */

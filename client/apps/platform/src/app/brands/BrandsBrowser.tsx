@@ -333,10 +333,20 @@ function BrandCard({ brand }: { brand: Brand }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function BrandsBrowser() {
-  const [brands, setBrands] = useState<Brand[]>([]);
+export default function BrandsBrowser({
+  initialBrands = [],
+}: {
+  /**
+   * Brands the server component already fetched. Seeding them here is what puts
+   * the brand grid — names, logos and crawlable /brands/<slug> links — into the
+   * server HTML; previously this component mounted empty and rendered
+   * "0 Brands / 0 Products" for anything that doesn't run JavaScript.
+   */
+  initialBrands?: Brand[];
+}) {
+  const [brands, setBrands] = useState<Brand[]>(initialBrands);
   const [pagination, setPagination] = useState<Pagination | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialBrands.length === 0);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -419,7 +429,14 @@ export default function BrandsBrowser() {
     }
   }, [debouncedSearch, debouncedCountry, sortKey, activeLetter]);
 
+  // Skip the mount fetch when the server already seeded an unfiltered list —
+  // it would return the identical payload. Any filter/sort change refetches.
+  const skipFirstFetch = useRef(initialBrands.length > 0);
   useEffect(() => {
+    if (skipFirstFetch.current) {
+      skipFirstFetch.current = false;
+      return;
+    }
     fetchBrands();
   }, [fetchBrands]);
 

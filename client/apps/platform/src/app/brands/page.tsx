@@ -48,19 +48,21 @@ export const metadata: Metadata = {
   },
 };
 
-// Server-side fetch so the CollectionPage carries a real, crawlable ItemList of
-// brands — the browsing grid itself hydrates client-side in <BrandsBrowser/>.
-async function fetchBrands(): Promise<{ name: string; slug: string }[]> {
+// Server-side fetch so the page ships a real, crawlable brand grid — and the
+// matching CollectionPage ItemList — in its HTML. <BrandsBrowser/> is seeded
+// with this exact list (same limit, same productCount filter, same default
+// name-ascending sort) so hydration matches and it skips its own first fetch.
+async function fetchBrands(): Promise<any[]> {
   try {
-    const res = await fetch(`${API_URL}/api/brands?limit=200&status=active`, {
+    const res = await fetch(`${API_URL}/api/brands?limit=100&status=active`, {
       next: { revalidate: 3600 },
     });
     if (!res.ok) return [];
     const data = await res.json();
     const list = data?.data?.brands ?? data?.data ?? data?.brands ?? [];
     return (Array.isArray(list) ? list : [])
-      .filter((b: any) => b?.slug && (b?.productCount ?? 0) > 0)
-      .map((b: any) => ({ name: String(b.name), slug: String(b.slug) }));
+      .filter((b: any) => b?.slug && b?.name && (b?.productCount ?? 0) > 0)
+      .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
   } catch {
     return [];
   }
@@ -109,7 +111,7 @@ export default async function BrandsPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
-      <BrandsBrowser />
+      <BrandsBrowser initialBrands={brands} />
     </>
   );
 }

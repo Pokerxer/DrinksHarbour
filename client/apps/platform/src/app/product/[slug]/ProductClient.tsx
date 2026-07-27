@@ -9,22 +9,14 @@ import * as Icon from "react-icons/pi";
 import { AnnouncementBanner, PlacementBanner } from "@/components/Banner";
 import { viewItemEvent } from "@/lib/gtag";
 
-// Defer heavy components — ProductDetail pulls in Swiper + all modules
-const ProductDetail = dynamic(() => import("@/components/Product/Detail"), {
-  loading: () => (
-    <div className="container mx-auto px-4 py-10 animate-pulse">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="aspect-square bg-gray-100 rounded-2xl" />
-        <div className="space-y-4">
-          <div className="h-8 bg-gray-100 rounded w-3/4" />
-          <div className="h-5 bg-gray-100 rounded w-1/2" />
-          <div className="h-12 bg-gray-100 rounded" />
-          <div className="h-12 bg-gray-100 rounded w-2/3" />
-        </div>
-      </div>
-    </div>
-  ),
-});
+// ProductDetail is imported statically on purpose. It used to be a
+// next/dynamic() chunk to keep Swiper out of the initial bundle, but a lazy
+// chunk only ever renders its `loading` skeleton on the server — so the page's
+// entire indexable body (description, specs, reviews) was missing from the HTML.
+// It is also the above-the-fold content, so deferring it hurt LCP anyway.
+import ProductDetail from "@/components/Product/Detail";
+
+// Below the fold and not indexable content — still deferred.
 const RecentlyViewed    = dynamic(() => import("@/components/Shop/RecentlyViewed"));
 
 // ─── In-memory cache: product data keyed by slug, 5 min TTL ─────────────────
@@ -40,14 +32,64 @@ interface ApiResponse {
   message?: string;
 }
 
-export default function ProductClient({ slug }: { slug: string }) {
-  const [productData, setProductData] = useState<any>(null);
-  const [relatedProducts, setRelatedProducts] = useState<ProductType[]>([]);
-  const [loading, setLoading] = useState(true);
+/** Background top-up when the product response carried no related products. */
+function fetchRelated(
+  slug: string,
+  product: any,
+  onLoaded: (related: ProductType[]) => void,
+) {
+  fetch(`${API_URL}/api/products/${product._id}/related?limit=8`)
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      if (!d) return;
+      let fetchedRelated: ProductType[] = [];
+      if (d.success && d.data?.products?.products) fetchedRelated = d.data.products.products;
+      else if (d.success && d.data?.products) fetchedRelated = d.data.products;
+      if (fetchedRelated.length > 0) {
+        onLoaded(fetchedRelated);
+        // Update cache with related products
+        _productCache.set(slug, { product, related: fetchedRelated, ts: Date.now() });
+      }
+    })
+    .catch(() => {/* non-critical */});
+}
+
+export default function ProductClient({
+  slug,
+  initialProduct = null,
+  initialRelated = [],
+}: {
+  slug: string;
+  /**
+   * The product the server component already fetched for <head> metadata and
+   * JSON-LD. Seeding it here is what puts the description, specs and reviews in
+   * the server HTML — without it the first paint was "Loading product
+   * details...", so JS-less crawlers indexed an empty body under rich meta tags.
+   */
+  initialProduct?: any;
+  initialRelated?: ProductType[];
+}) {
+  const [productData, setProductData] = useState<any>(initialProduct);
+  const [relatedProducts, setRelatedProducts] = useState<ProductType[]>(initialRelated);
+  const [loading, setLoading] = useState(!initialProduct);
   const [error, setError] = useState<string | null>(null);
 
   const loadProduct = useCallback(async () => {
     if (!slug) return;
+
+    // Already server-rendered — don't refetch the product on mount. Related
+    // products are still topped up below when the server response lacked them.
+    if (initialProduct) {
+      _productCache.set(slug, {
+        product: initialProduct,
+        related: initialRelated,
+        ts: Date.now(),
+      });
+      if (initialRelated.length === 0 && initialProduct?._id) {
+        fetchRelated(slug, initialProduct, setRelatedProducts);
+      }
+      return;
+    }
 
     // Serve from cache if fresh
     const cached = _productCache.get(slug);
@@ -95,27 +137,14 @@ export default function ProductClient({ slug }: { slug: string }) {
       // If the main response didn't include related products, fetch them in the background
       // without blocking the UI
       if (related.length === 0 && product?._id) {
-        fetch(`${API_URL}/api/products/${product._id}/related?limit=8`)
-          .then(r => r.ok ? r.json() : null)
-          .then(d => {
-            if (!d) return;
-            let fetchedRelated: ProductType[] = [];
-            if (d.success && d.data?.products?.products) fetchedRelated = d.data.products.products;
-            else if (d.success && d.data?.products) fetchedRelated = d.data.products;
-            if (fetchedRelated.length > 0) {
-              setRelatedProducts(fetchedRelated);
-              // Update cache with related products
-              _productCache.set(slug, { product, related: fetchedRelated, ts: Date.now() });
-            }
-          })
-          .catch(() => {/* non-critical */});
+        fetchRelated(slug, product, setRelatedProducts);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load product. Please try again later.");
       setProductData(null);
       setLoading(false);
     }
-  }, [slug]);
+  }, [slug, initialProduct, initialRelated]);
 
   useEffect(() => { loadProduct(); }, [loadProduct]);
 
