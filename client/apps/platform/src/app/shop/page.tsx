@@ -3,6 +3,9 @@ import ShopClient from './ShopClient';
 import {
   buildShopSearchParams,
   parseProductsResponse,
+  parseShopPage,
+  shopPageHref,
+  EMPTY_FACET_COUNTS,
   SHOP_PAGE_SIZE,
   type ShopQueryOptions,
   type ShopSearchResult,
@@ -50,7 +53,16 @@ const CATEGORY_CANONICAL_ALIASES: Record<string, string> = {
 // 425 products into the RSC flight payload on top of rendering 24 of them,
 // which is where the 2.3 MB of HTML came from; the client pulls the rest in the
 // background once mounted.
-const EMPTY_RESULT: ShopSearchResult = { products: [], total: 0, totalPages: 1 };
+const EMPTY_RESULT: ShopSearchResult = {
+  products: [], total: 0, totalPages: 1, facetCounts: EMPTY_FACET_COUNTS,
+};
+
+// The deals view is not paginated: its tabs, countdown and "biggest savings"
+// row all reason over every active deal at once, and there are few enough of
+// them that holding the lot costs almost nothing. Everything else pages.
+function isServerPaged(params: Record<string, string>): boolean {
+  return params.sale !== 'true';
+}
 
 async function fetchInitialProducts(
   params: Record<string, string>,
@@ -1339,12 +1351,51 @@ function deriveHeroSeed(params: Record<string, string>, ctx: SeoContext): HeroSe
 
 // ─── Dynamic metadata ─────────────────────────────────────────────────────────
 
+// Page 2+ of a listing is a distinct page, not a duplicate of page 1: it gets
+// its own title and its own self-referencing canonical. Canonicalising it back
+// to page 1 (the other common choice) would tell Google to drop it, and with it
+// the only crawl path to the products that live on it.
+function paginateMetadata(meta: Metadata, params: Record<string, string>, page: number): Metadata {
+  if (page <= 1) return meta;
+
+  const sp = new URLSearchParams(
+    Object.entries(params).filter(([k, v]) => k !== 'page' && typeof v === 'string') as [string, string][],
+  );
+  const canonical = `${BASE_URL}${shopPageHref(sp, page)}`;
+
+  // Insert before the site name: "Buy Whisky — Page 2 | DrinksHarbour".
+  const absolute = (meta.title as { absolute?: string } | undefined)?.absolute;
+  const title = absolute
+    ? {
+        absolute: absolute.endsWith(` | ${SITE_NAME}`)
+          ? `${absolute.slice(0, -` | ${SITE_NAME}`.length)} — Page ${page} | ${SITE_NAME}`
+          : `${absolute} — Page ${page}`,
+      }
+    : meta.title;
+
+  return {
+    ...meta,
+    title,
+    // A noindex verdict from the unpaginated page (unknown brand, raw sort
+    // param, …) still applies — only add alternates when the page is indexable.
+    ...(meta.robots ? {} : { alternates: seoAlternates(canonical) }),
+  };
+}
+
 export async function generateMetadata({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string>>;
 }): Promise<Metadata> {
-  const params      = await searchParams;
+  const params = await searchParams;
+  return paginateMetadata(
+    await buildShopMetadata(params),
+    params,
+    parseShopPage(params.page),
+  );
+}
+
+async function buildShopMetadata(params: Record<string, string>): Promise<Metadata> {
   const category    = params.category    || '';
   const subcategory = params.subcategory || '';
   const brand       = params.brand       || '';
@@ -1708,14 +1759,28 @@ export default async function ShopPage({
   searchParams: Promise<Record<string, string>>;
 }) {
   const params  = await searchParams;
+  const serverPaged = isServerPaged(params);
+  const page = serverPaged ? parseShopPage(params.page) : 1;
+
   // Same DB-driven resolution the metadata uses — underlying fetches are deduped.
   const ctx = await resolveSeoContext(params);
   const heroSeed = deriveHeroSeed(params, ctx);
   const [schemas, initial, initialRecommended] = await Promise.all([
     buildJsonLd(params, ctx),
-    fetchInitialProducts(params, { limit: SHOP_PAGE_SIZE }),
+    fetchInitialProducts(params, serverPaged ? { limit: SHOP_PAGE_SIZE, page } : {}),
     fetchInitialRecommendations(12, params.category),
   ]);
+
+  // rel=prev/next for the paginated series. React hoists these into <head>.
+  const seriesSp = new URLSearchParams(
+    Object.entries(params).filter(([k, v]) => k !== 'page' && typeof v === 'string') as [string, string][],
+  );
+  const prevHref = serverPaged && page > 1
+    ? `${BASE_URL}${shopPageHref(seriesSp, page - 1)}`
+    : null;
+  const nextHref = serverPaged && page < initial.totalPages
+    ? `${BASE_URL}${shopPageHref(seriesSp, page + 1)}`
+    : null;
 
   return (
     <>
@@ -1726,9 +1791,15 @@ export default async function ShopPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
         />
       ))}
+      {prevHref && <link rel="prev" href={prevHref} />}
+      {nextHref && <link rel="next" href={nextHref} />}
       <ShopClient
         initialProducts={initial.products}
         initialTotal={initial.total}
+        initialTotalPages={initial.totalPages}
+        initialPage={page}
+        initialFacetCounts={initial.facetCounts}
+        serverPaged={serverPaged}
         initialRecommended={initialRecommended}
         heroSeed={heroSeed}
       />

@@ -3781,6 +3781,11 @@ const searchProducts = async (searchParams = {}) => {
     // Availability
     inStock = true,
     tenantId,
+
+    // Size / volume label, e.g. "750ml". The shop's sidebar offers one control
+    // for both, so either param name resolves to the same match.
+    size,
+    volume,
     
     // Features
     isFeatured,
@@ -3795,6 +3800,7 @@ const searchProducts = async (searchParams = {}) => {
 
   const currentDate = new Date();
   const skip = (page - 1) * limit;
+  const sizeLabel = (size || volume || '').toString().trim() || null;
 
   // ============================================================
   // STEP 1: Build Base Query
@@ -3922,10 +3928,32 @@ const searchProducts = async (searchParams = {}) => {
     baseQuery.tags = { $in: tagArray };
   }
 
-  // Flavors filter
+  // Flavors filter. The shop sidebar filters by flavor *category* ("smoky",
+  // "fruity"), not by id — feeding those straight into an ObjectId path made
+  // Mongoose throw a CastError, so every ?flavor= URL answered 500. Resolve the
+  // names the same way categories and brands are resolved, and keep the
+  // match-nothing rule for names the catalog doesn't know.
   if (flavors) {
     const flavorArray = Array.isArray(flavors) ? flavors : [flavors];
-    baseQuery.flavors = { $in: flavorArray };
+    const objectIds = flavorArray.filter(f => /^[0-9a-fA-F]{24}$/.test(f));
+    const names = flavorArray.filter(f => !/^[0-9a-fA-F]{24}$/.test(f));
+
+    let resolvedIds = [];
+    if (names.length > 0) {
+      const Flavor = require('../models/Flavor');
+      const matched = await Flavor.find({
+        $or: [
+          { category: { $in: names } },
+          { value: { $in: names } },
+          { name: { $in: names } },
+        ],
+      }).select('_id').lean();
+      resolvedIds = matched.map(f => f._id);
+    }
+
+    baseQuery.flavors = {
+      $in: [...objectIds.map(id => new mongoose.Types.ObjectId(id)), ...resolvedIds],
+    };
   }
 
   // ABV range (may be overridden by intent detection)
@@ -4092,6 +4120,14 @@ const searchProducts = async (searchParams = {}) => {
                     status: 'active',
                     availability: { $in: ['available', 'in_stock', 'low_stock'] },
                     ...(inStock ? { stock: { $gt: 0 } } : {}),
+                    // Size / volume filter. Restricting the sizes here means
+                    // the "subproduct must have at least one size" match below
+                    // drops non-matching products for free. The shop sends
+                    // whichever label the sidebar showed, which may be either
+                    // the raw size or its display name.
+                    ...(sizeLabel
+                      ? { $or: [{ size: sizeLabel }, { displayName: sizeLabel }] }
+                      : {}),
                   },
                 },
                 {
@@ -4337,7 +4373,12 @@ const searchProducts = async (searchParams = {}) => {
                   $map: {
                     input: '$$sub.sizes',
                     as: 'size',
-                    in: { $ifNull: ['$$size.baseSellingPrice', 999999999] },
+                    // `sellingPrice`, not `baseSellingPrice` — the sizes
+                    // $lookup above projects the former. Reading the latter
+                    // made every product tie at the 999999999 sentinel, so
+                    // sort=price_low and sort=price_high returned the exact
+                    // same list (the `name: 1` tiebreaker).
+                    in: { $ifNull: ['$$size.sellingPrice', 999999999] },
                   },
                 },
               },
@@ -4417,7 +4458,13 @@ const searchProducts = async (searchParams = {}) => {
       sortStage = { relevanceScore: -1 };
   }
 
-  pipeline.push({ $sort: sortStage });
+  // Every sort key above has ties — `relevanceScore` in particular does not
+  // exist on any document, so the default sort tied *every* product against
+  // every other one. Mongo is free to order ties differently between calls, so
+  // page 2 could repeat products from page 1 while others were unreachable on
+  // any page. Harmless while the shop fetched the whole catalogue in one go;
+  // fatal for ?page= pagination. `_id` is unique, so it makes the order total.
+  pipeline.push({ $sort: { ...sortStage, _id: 1 } });
 
   // ============================================================
   // STEP 6: Execute Pipeline for Total Count
@@ -4952,76 +4999,107 @@ const searchProducts = async (searchParams = {}) => {
 // HELPER: Get Available Search Filters
 // ============================================================
 
+// Distinct filter values for a search, plus how many products sit behind each
+// one — computed over the WHOLE match, not the page being returned.
+//
+// This used to be Product.find(baseQuery) with five populates and no
+// projection, on every /api/products/search call: ~3.0s warm for 426 products
+// against ~125ms for a count of the same match, and it grew with the catalog
+// while doing nothing a $group could not. One $facet pass replaces it, and the
+// per-facet counts come along for free — the shop needs them now that it
+// paginates server-side and can no longer count a locally held product array.
 async function getSearchFilters(baseQuery) {
-  // Get all products matching base query for filter options
-  const products = await Product.find(baseQuery)
-    .populate('category', 'name slug')
-    .populate('subCategory', 'name slug')
-    .populate('brand', 'name slug')
-    .populate('tags', 'name slug displayName')
-    .populate('flavors', 'name value')
-    .lean();
+  // id → {name, slug} facet: group, count, then resolve the reference.
+  const refFacet = (field, collection, project) => [
+    { $match: { [field]: { $ne: null } } },
+    { $group: { _id: `$${field}`, count: { $sum: 1 } } },
+    { $lookup: { from: collection, localField: '_id', foreignField: '_id', as: 'ref' } },
+    { $unwind: '$ref' },
+    { $project: { _id: 1, count: 1, ...project } },
+    { $sort: { name: 1 } },
+  ];
 
-  // Extract unique values
-  const categories = [...new Map(
-    products
-      .filter(p => p.category)
-      .map(p => [p.category._id.toString(), p.category])
-  ).values()];
+  // Array-of-ids facet ($unwind first, so a product with three tags counts
+  // once against each of them).
+  const arrayRefFacet = (field, collection, project) => [
+    { $unwind: `$${field}` },
+    { $group: { _id: `$${field}`, count: { $sum: 1 } } },
+    { $lookup: { from: collection, localField: '_id', foreignField: '_id', as: 'ref' } },
+    { $unwind: '$ref' },
+    { $project: { _id: 1, count: 1, ...project } },
+    { $sort: { name: 1 } },
+  ];
 
-  const subCategories = [...new Map(
-    products
-      .filter(p => p.subCategory)
-      .map(p => [p.subCategory._id.toString(), p.subCategory])
-  ).values()];
+  const scalarFacet = (field) => [
+    { $match: { [field]: { $nin: [null, ''] } } },
+    { $group: { _id: `$${field}`, count: { $sum: 1 } } },
+    { $sort: { _id: 1 } },
+  ];
 
-  const brands = [...new Map(
-    products
-      .filter(p => p.brand)
-      .map(p => [p.brand._id.toString(), p.brand])
-  ).values()];
+  const [facets = {}] = await Product.aggregate([
+    { $match: baseQuery },
+    {
+      $facet: {
+        categories:    refFacet('category', 'categories', { name: '$ref.name', slug: '$ref.slug' }),
+        subCategories: refFacet('subCategory', 'subcategories', { name: '$ref.name', slug: '$ref.slug' }),
+        brands:        refFacet('brand', 'brands', { name: '$ref.name', slug: '$ref.slug' }),
+        tags:          arrayRefFacet('tags', 'tags', { name: '$ref.name', slug: '$ref.slug', displayName: '$ref.displayName' }),
+        flavors:       arrayRefFacet('flavors', 'flavors', { name: '$ref.name', value: '$ref.value', category: '$ref.category' }),
+        countries:     scalarFacet('originCountry'),
+        regions:       scalarFacet('region'),
+        types:         scalarFacet('type'),
+        // A product can carry several flavours in the same category; count it
+        // once per category, which is what the sidebar's tally means.
+        flavorCategories: [
+          { $unwind: '$flavors' },
+          { $lookup: { from: 'flavors', localField: 'flavors', foreignField: '_id', as: 'ref' } },
+          { $unwind: '$ref' },
+          { $match: { 'ref.category': { $nin: [null, ''] } } },
+          { $group: { _id: { product: '$_id', category: '$ref.category' } } },
+          { $group: { _id: '$_id.category', count: { $sum: 1 } } },
+          { $sort: { _id: 1 } },
+        ],
+        // Unchanged from the previous implementation, quirk included: both
+        // bounds come from priceRange.min, so `max` is the highest starting
+        // price rather than the highest price.
+        priceBounds: [
+          { $match: { 'priceRange.min': { $gt: 0 } } },
+          { $group: { _id: null, min: { $min: '$priceRange.min' }, max: { $max: '$priceRange.min' } } },
+        ],
+        abvBounds: [
+          { $match: { isAlcoholic: true, abv: { $gt: 0 } } },
+          { $group: { _id: null, min: { $min: '$abv' }, max: { $max: '$abv' } } },
+        ],
+      },
+    },
+  ]);
 
-  const tags = [...new Map(
-    products
-      .flatMap(p => p.tags || [])
-      .map(t => [t._id.toString(), t])
-  ).values()];
-
-  const flavors = [...new Map(
-    products
-      .flatMap(p => p.flavors || [])
-      .map(f => [f._id.toString(), f])
-  ).values()];
-
-  const countries = [...new Set(products.map(p => p.originCountry).filter(Boolean))];
-  const regions = [...new Set(products.map(p => p.region).filter(Boolean))];
-  const types = [...new Set(products.map(p => p.type).filter(Boolean))];
-
-  // Calculate price range
-  const prices = products.map(p => p.priceRange?.min || 0).filter(p => p > 0);
-  const priceRange = prices.length > 0 ? {
-    min: Math.min(...prices),
-    max: Math.max(...prices),
-  } : null;
-
-  // Calculate ABV range
-  const abvs = products.filter(p => p.isAlcoholic).map(p => p.abv).filter(Boolean);
-  const abvRange = abvs.length > 0 ? {
-    min: Math.min(...abvs),
-    max: Math.max(...abvs),
-  } : null;
+  const bounds = (rows) => (rows?.length ? { min: rows[0].min, max: rows[0].max } : null);
+  const countMap = (rows, key) =>
+    Object.fromEntries((rows || []).filter(r => r[key]).map(r => [r[key], r.count]));
 
   return {
-    categories,
-    subCategories,
-    brands,
-    tags,
-    flavors,
-    countries,
-    regions,
-    types,
-    priceRange,
-    abvRange,
+    // Same keys and same element shapes as before, now each carrying `count`.
+    categories:    facets.categories    || [],
+    subCategories: facets.subCategories || [],
+    brands:        facets.brands        || [],
+    tags:          facets.tags          || [],
+    flavors:       facets.flavors       || [],
+    countries: (facets.countries || []).map(c => c._id),
+    regions:   (facets.regions   || []).map(r => r._id),
+    types:     (facets.types     || []).map(t => t._id),
+    priceRange: bounds(facets.priceBounds),
+    abvRange:   bounds(facets.abvBounds),
+
+    // Flat lookup tables keyed exactly how the shop sidebar labels each
+    // option, so it can render per-facet tallies without holding the catalog.
+    counts: {
+      brands:        countMap(facets.brands, 'name'),
+      categories:    countMap(facets.categories, 'slug'),
+      subcategories: countMap(facets.subCategories, 'slug'),
+      origins:       Object.fromEntries((facets.countries || []).map(c => [c._id, c.count])),
+      flavors:       Object.fromEntries((facets.flavorCategories || []).map(f => [f._id, f.count])),
+    },
   };
 }
 

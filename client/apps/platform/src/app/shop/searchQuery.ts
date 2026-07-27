@@ -24,6 +24,37 @@ export interface ShopQueryOptions {
   page?: number;
 }
 
+// Per-facet product tallies for the whole query, keyed the way the sidebar
+// labels each option. Server-supplied, because a server-paginated shop only
+// holds one page and can no longer count them itself.
+export interface ShopFacetCounts {
+  brands: Record<string, number>;
+  origins: Record<string, number>;
+  categories: Record<string, number>;
+  subcategories: Record<string, number>;
+  flavors: Record<string, number>;
+}
+
+export const EMPTY_FACET_COUNTS: ShopFacetCounts = {
+  brands: {}, origins: {}, categories: {}, subcategories: {}, flavors: {},
+};
+
+// `?page=` → a 1-based page number. Anything unparseable, zero or negative is
+// page 1, so a junk URL renders the shop rather than an empty grid.
+export function parseShopPage(value: string | null | undefined): number {
+  const n = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(n) && n > 1 ? n : 1;
+}
+
+// Build a /shop URL for page `page`, preserving every other search param.
+export function shopPageHref(sp: URLSearchParams, page: number, pathname = '/shop'): string {
+  const p = new URLSearchParams(sp.toString());
+  if (page > 1) p.set('page', String(page));
+  else p.delete('page');
+  const qs = p.toString();
+  return qs ? `${pathname}?${qs}` : pathname;
+}
+
 // Frontend sort key → backend sort key
 export const SORT_MAP: Record<string, string> = {
   newest:            'newest',
@@ -83,6 +114,8 @@ export interface ShopSearchResult {
   total: number;
   /** 1-based page count for the current query, or 1 when unknown. */
   totalPages: number;
+  /** Per-facet tallies for the whole query — empty when the API omits them. */
+  facetCounts: ShopFacetCounts;
 }
 
 // The grand total lives in `pagination.totalResults`. The old code read
@@ -97,21 +130,41 @@ function readPagination(pagination: any, received: number): { total: number; tot
   return { total, totalPages };
 }
 
+function readFacetCounts(filters: any): ShopFacetCounts {
+  const c = filters?.counts;
+  if (!c) return EMPTY_FACET_COUNTS;
+  return {
+    brands:        c.brands        ?? {},
+    origins:       c.origins       ?? {},
+    categories:    c.categories    ?? {},
+    subcategories: c.subcategories ?? {},
+    flavors:       c.flavors       ?? {},
+  };
+}
+
 // Normalise the various response shapes the search API may return.
 export function parseProductsResponse(data: any): ShopSearchResult {
   if (data?.success && data?.data?.products) {
     const products = data.data.products;
-    return { products, ...readPagination(data.data.pagination, products.length) };
+    return {
+      products,
+      ...readPagination(data.data.pagination, products.length),
+      facetCounts: readFacetCounts(data.data.filters),
+    };
   }
   if (data?.success && data?.data?.data) {
     const products = data.data.data;
-    return { products, ...readPagination(data.data.pagination, products.length) };
+    return {
+      products,
+      ...readPagination(data.data.pagination, products.length),
+      facetCounts: readFacetCounts(data.data.filters),
+    };
   }
   if (Array.isArray(data?.products)) {
-    return { products: data.products, total: data.products.length, totalPages: 1 };
+    return { products: data.products, total: data.products.length, totalPages: 1, facetCounts: EMPTY_FACET_COUNTS };
   }
   if (Array.isArray(data)) {
-    return { products: data, total: data.length, totalPages: 1 };
+    return { products: data, total: data.length, totalPages: 1, facetCounts: EMPTY_FACET_COUNTS };
   }
-  return { products: [], total: 0, totalPages: 1 };
+  return { products: [], total: 0, totalPages: 1, facetCounts: EMPTY_FACET_COUNTS };
 }

@@ -3,8 +3,12 @@
 import React, { useEffect, useState, useCallback, Suspense, useMemo, useRef } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 
-// In-memory cache: keyed by API URL, TTL 30 seconds
-const _shopCache = new Map<string, { data: any[]; total: number; ts: number }>();
+// In-memory cache: keyed by API URL, TTL 30 seconds. Keyed by the full URL, so
+// each `?page=` is its own entry and paging back and forth is instant.
+const _shopCache = new Map<
+  string,
+  { data: any[]; total: number; totalPages: number; facetCounts: ShopFacetCounts; ts: number }
+>();
 const SHOP_CACHE_TTL = 30_000;
 import Shop from '@/components/Shop';
 import ShopHeroBanner from '@/components/Shop/ShopHeroBanner';
@@ -13,18 +17,33 @@ import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 import { viewItemListEvent, type GTagItem } from '@/lib/gtag';
-import { buildShopSearchParams, parseProductsResponse } from './searchQuery';
+import {
+  buildShopSearchParams,
+  parseProductsResponse,
+  parseShopPage,
+  shopPageHref,
+  EMPTY_FACET_COUNTS,
+  SHOP_PAGE_SIZE,
+  type ShopFacetCounts,
+} from './searchQuery';
 
 interface PageProps {
   params?: { slug?: string };
-  // The FIRST grid page, fetched on the server so the grid is present in the
-  // raw HTML (crawlable by search engines). ShopClient seeds its state from
-  // these, skips the blocking initial fetch, and pulls the rest of the working
-  // set in the background after mount.
+  // The requested grid page, fetched on the server so the grid is present in
+  // the raw HTML (crawlable by search engines). ShopClient seeds its state from
+  // these and skips the initial client fetch.
   initialProducts?: any[];
   // Total products matching the query across all pages — not the length of
   // `initialProducts`. Drives the hero's "N products available" count.
   initialTotal?: number;
+  initialTotalPages?: number;
+  // 1-based page from `?page=`.
+  initialPage?: number;
+  // Per-facet tallies for the whole query, so the sidebar can show counts
+  // without holding the catalogue in memory.
+  initialFacetCounts?: ShopFacetCounts;
+  // False on the deals view, which still loads every active deal at once.
+  serverPaged?: boolean;
   // Server-fetched trending products for the "Recommended For You" section,
   // so its cards + /product links are present in the raw HTML too.
   initialRecommended?: any[];
@@ -151,7 +170,17 @@ function hasRealPriceDrop(product: any): boolean {
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
-function ShopPageContent({ params, initialProducts, initialTotal, initialRecommended, heroSeed }: PageProps) {
+function ShopPageContent({
+  params,
+  initialProducts,
+  initialTotal,
+  initialTotalPages,
+  initialPage,
+  initialFacetCounts,
+  serverPaged = false,
+  initialRecommended,
+  heroSeed,
+}: PageProps) {
   const searchParams = useSearchParams();
   const router  = useRouter();
   const pathname = usePathname();
@@ -212,23 +241,24 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
   }, [category, subcategory, brand, origin, flavor, sort, sale, sizeParam, volumeParam,
       minPriceParam, maxPriceParam, minABVParam, maxABVParam, minRatingParam]);
 
+  // `?page=` is the source of truth for which page the grid shows, so a
+  // paginated URL is shareable, bookmarkable and crawlable.
+  const currentPage = serverPaged ? parseShopPage(searchParams.get('page')) : 1;
+
   const hasSeed = (initialProducts?.length ?? 0) > 0;
   const [initialFilters] = useState<Partial<FilterState>>(buildInitialFilters);
   const [products,       setProducts]       = useState<any[]>(initialProducts ?? []);
   const [loading,        setLoading]        = useState(!hasSeed);
   const [error,          setError]          = useState<string | null>(null);
   const [totalProducts,  setTotalProducts]  = useState(initialTotal ?? initialProducts?.length ?? 0);
+  const [totalPages,     setTotalPages]     = useState(initialTotalPages ?? 1);
+  const [facetCounts,    setFacetCounts]    = useState<ShopFacetCounts>(initialFacetCounts ?? EMPTY_FACET_COUNTS);
   const [layoutCol,      setLayoutCol]      = useState(4);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewListFiredRef = useRef(false);
   // When the server seeded products for the current params, skip the very first
   // client fetch — the seed is already fresh and rendered into the HTML.
-  const skipNextFetchRef = useRef(hasSeed);
-  // The query the server seeded, captured once. The background working-set
-  // fetch below targets this, and drops its result if the user has since
-  // filtered/navigated (`supersededRef`).
-  const [seededQuery] = useState(() => searchParams.toString());
-  const supersededRef = useRef(false);
+  const skipNextFetchRef = useRef(hasSeed && (!serverPaged || currentPage === (initialPage ?? 1)));
 
   // ── API URL ──────────────────────────────────────────────────────────────
   // Query is built via the shared builder (searchQuery.ts) so this URL matches
@@ -237,21 +267,23 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
   const buildApiUrl = useCallback(() => {
     const base = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/products/search`;
     const sp = new URLSearchParams(searchParams.toString());
-    return `${base}?${buildShopSearchParams(sp).toString()}`;
-  }, [searchParams]);
+    const opts = serverPaged
+      ? { limit: SHOP_PAGE_SIZE, page: parseShopPage(sp.get('page')) }
+      : {};
+    return `${base}?${buildShopSearchParams(sp, opts).toString()}`;
+  }, [searchParams, serverPaged]);
 
   // ── Fetch ────────────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async () => {
     const url = buildApiUrl();
-    // From here on the user's own query owns `products` — a background
-    // working-set response for the seeded query must not overwrite it.
-    supersededRef.current = true;
 
     // Serve from cache if fresh
     const cached = _shopCache.get(url);
     if (cached && Date.now() - cached.ts < SHOP_CACHE_TTL) {
       setProducts(cached.data);
       setTotalProducts(cached.total);
+      setTotalPages(cached.totalPages);
+      setFacetCounts(cached.facetCounts);
       setLoading(false);
       return;
     }
@@ -261,14 +293,18 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
       setError(null);
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { products: prods, total } = parseProductsResponse(await res.json());
-      _shopCache.set(url, { data: prods, total, ts: Date.now() });
-      setProducts(prods);
-      setTotalProducts(total);
+      const parsed = parseProductsResponse(await res.json());
+      _shopCache.set(url, { ...parsed, data: parsed.products, ts: Date.now() });
+      setProducts(parsed.products);
+      setTotalProducts(parsed.total);
+      setTotalPages(parsed.totalPages);
+      setFacetCounts(parsed.facetCounts);
     } catch {
       setError('Failed to load products. Please try again later.');
       setProducts([]);
       setTotalProducts(0);
+      setTotalPages(1);
+      setFacetCounts(EMPTY_FACET_COUNTS);
     } finally {
       setLoading(false);
     }
@@ -283,38 +319,13 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [fetchProducts]);
 
-  // ── Background working-set fetch ─────────────────────────────────────────
-  // The server seeds only the first grid page so the SSR'd HTML stays small.
-  // Once mounted, pull the rest of the matching set in the background and swap
-  // it in, so the grid's client-side filtering, sorting and pagination still
-  // see every match. Deliberately never touches `loading` or `error`: a failure
-  // here leaves the already-rendered first page alone rather than replacing a
-  // working grid with a spinner or an error panel.
-  useEffect(() => {
-    if (!hasSeed) return;
-    let alive = true;
-    const base = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/products/search`;
-    const url = `${base}?${buildShopSearchParams(new URLSearchParams(seededQuery)).toString()}`;
-
-    (async () => {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) return;
-        const { products: prods, total } = parseProductsResponse(await res.json());
-        if (!alive || supersededRef.current || prods.length === 0) return;
-        _shopCache.set(url, { data: prods, total, ts: Date.now() });
-        setProducts(prods);
-        setTotalProducts(total);
-      } catch {
-        /* keep the server-rendered first page */
-      }
-    })();
-
-    return () => { alive = false; };
-    // Runs once per mount: `seededQuery` is a snapshot, and any later query
-    // change is handled by the debounced fetch above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Navigate to another page of the series. The URL is the state, so the
+  // debounced effect above picks up the new `?page=` and fetches it — and the
+  // link is a real, crawlable, shareable URL rather than component state.
+  const goToPage = useCallback((zeroBased: number) => {
+    const sp = new URLSearchParams(searchParams.toString());
+    router.push(shopPageHref(sp, zeroBased + 1, pathname), { scroll: false });
+  }, [pathname, router, searchParams]);
 
   // ── Sale-type filtering (client-side) ────────────────────────────────────
   // Filter, then sort biggest discount first
@@ -746,13 +757,19 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
       {/* ── Product grid ─────────────────────────────────────────────────── */}
       {(!isSalePage || visibleProducts.length > 0) && (
         <Shop
-          productPerPage={24}
+          productPerPage={SHOP_PAGE_SIZE}
           data={visibleProducts}
           productStyle="style-1"
           searchQuery={searchQuery}
           layoutCol={layoutCol}
           onLayoutChange={setLayoutCol}
           initialFilters={initialFilters}
+          serverPaged={serverPaged}
+          serverPage={currentPage - 1}
+          serverPageCount={totalPages}
+          serverTotal={totalProducts}
+          serverFacetCounts={facetCounts}
+          onServerPageChange={goToPage}
         />
       )}
 

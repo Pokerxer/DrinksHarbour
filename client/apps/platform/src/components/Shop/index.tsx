@@ -172,6 +172,14 @@ const EMPTY_PRODUCTS_SVG = (
   </svg>
 );
 
+interface ServerFacetCounts {
+  brands: Record<string, number>;
+  origins: Record<string, number>;
+  categories: Record<string, number>;
+  subcategories: Record<string, number>;
+  flavors: Record<string, number>;
+}
+
 interface Props {
   productPerPage: number;
   slug?: string;
@@ -183,6 +191,17 @@ interface Props {
   searchQuery?: string | null;
   layoutCol: number;
   onLayoutChange: (col: number) => void;
+  // ── Server-paginated mode ────────────────────────────────────────────────
+  // When set, `data` is ONE page that the API has already filtered and sorted:
+  // the grid renders it as-is and pages by URL. Left off, the component keeps
+  // its original behaviour of filtering/sorting/slicing a locally held list —
+  // which the deals view still relies on.
+  serverPaged?: boolean;
+  serverPage?: number;
+  serverPageCount?: number;
+  serverTotal?: number;
+  serverFacetCounts?: ServerFacetCounts;
+  onServerPageChange?: (zeroBasedPage: number) => void;
 }
 
 const Shop: React.FC<Props> = ({
@@ -194,7 +213,13 @@ const Shop: React.FC<Props> = ({
   isLoading = false,
   searchQuery = null,
   layoutCol: externalLayoutCol,
-  onLayoutChange: externalOnLayoutChange
+  onLayoutChange: externalOnLayoutChange,
+  serverPaged = false,
+  serverPage = 0,
+  serverPageCount = 1,
+  serverTotal,
+  serverFacetCounts,
+  onServerPageChange,
 }) => {
   const router = useRouter();
   const pathname = usePathname();
@@ -406,6 +431,12 @@ const Shop: React.FC<Props> = ({
   const filteredProducts = useMemo(() => {
     if (!data || data.length === 0) return [];
 
+    // Server-paginated: `data` is one page the API already filtered. Re-running
+    // the predicates here would drop rows from a page that is only 24 long and
+    // has no visibility of the other pages — every sidebar filter is sent to
+    // the API instead (see updateFilter/handleApplyFilters).
+    if (serverPaged) return data;
+
     const isArrayFilter = (value: any): value is string[] => Array.isArray(value);
 
     return data.filter(product => {
@@ -501,11 +532,16 @@ const Shop: React.FC<Props> = ({
 
       return true;
     });
-  }, [data, filters, priceFilterActive]);
+  }, [data, filters, priceFilterActive, serverPaged]);
 
   // Sort products
   const sortedProducts = useMemo(() => {
     if (filteredProducts.length === 0) return [];
+
+    // Server-paginated: sorting is done by the API over the whole result set.
+    // Re-sorting 24 rows here would order each page correctly and the series
+    // wrongly — page 2 of "price low to high" would start over at the cheapest.
+    if (serverPaged) return filteredProducts;
 
     const sorted = [...filteredProducts];
 
@@ -540,18 +576,46 @@ const Shop: React.FC<Props> = ({
       default:
         return sorted;
     }
-  }, [filteredProducts, filters.sortOption]);
+  }, [filteredProducts, filters.sortOption, serverPaged]);
 
-  const pageCount = Math.max(1, Math.ceil(sortedProducts.length / productPerPage));
-  const currentProducts = sortedProducts.slice(offset, offset + productPerPage);
+  const pageCount = serverPaged
+    ? Math.max(1, serverPageCount)
+    : Math.max(1, Math.ceil(sortedProducts.length / productPerPage));
+  const currentProducts = serverPaged
+    ? sortedProducts
+    : sortedProducts.slice(offset, offset + productPerPage);
+  const activePage = serverPaged ? serverPage : currentPage;
+  // Header count: the number of matches across the series, not this page.
+  const headerTotal = serverPaged ? (serverTotal ?? sortedProducts.length) : sortedProducts.length;
 
   // Scroll to top when page changes
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [currentPage]);
+  }, [activePage]);
 
-  // Precompute filter counts in a single pass (O(n) instead of O(n·m))
+  // Per-facet tallies for the sidebar.
+  //
+  // These used to be derived from the loaded product array, which worked only
+  // because the shop held the whole catalogue. Server-side paging leaves 24
+  // products in memory, and counting those would quietly render "Ardbeg (1)"
+  // next to a brand with 40 products — or a zero, which reads as "no results
+  // here" and stops people clicking. So in server-paged mode they come from the
+  // API's `filters.counts`, computed over the entire match (see
+  // getSearchFilters). The local derivation stays for the deals view, which
+  // genuinely does hold everything it is counting.
   const filterCounts = useMemo(() => {
+    if (serverPaged) {
+      const c = serverFacetCounts;
+      const toMap = (o?: Record<string, number>) => new Map(Object.entries(o ?? {}));
+      return {
+        brands: toMap(c?.brands),
+        origins: toMap(c?.origins),
+        categories: toMap(c?.categories),
+        subcategories: toMap(c?.subcategories),
+        flavors: toMap(c?.flavors),
+      };
+    }
+
     const brands = new Map<string, number>();
     const origins = new Map<string, number>();
     const categories = new Map<string, number>();
@@ -581,7 +645,7 @@ const Shop: React.FC<Props> = ({
     }
 
     return { brands, origins, categories, subcategories, flavors };
-  }, [data]);
+  }, [data, serverPaged, serverFacetCounts]);
 
   const getCountByBrand = useCallback(
     (brand: string) => filterCounts.brands.get(brand) || 0,
@@ -631,6 +695,9 @@ const Shop: React.FC<Props> = ({
     // origin, ABV, …) survive a single-filter change — rebuilding from
     // scratch silently dropped every param this function didn't know about.
     const params = new URLSearchParams(searchParams.toString());
+    // Any filter change restarts the series — page 4 of the old result set is
+    // meaningless against the new one, and often past its end.
+    params.delete('page');
 
     const urlKey = FILTER_URL_KEYS[key];
     if (urlKey) {
@@ -651,8 +718,24 @@ const Shop: React.FC<Props> = ({
       // Chip removal resets the range to the defaults — clear any URL pin.
       params.delete('minPrice');
       params.delete('maxPrice');
+    } else if (key === 'size' || key === 'volumeRange') {
+      // Once paging is server-side these can no longer be applied locally: the
+      // API owns which products are on this page. Same param names
+      // buildFilterUrlParams already used.
+      const param = key === 'size' ? 'size' : 'volume';
+      if (value) params.set(param, String(value));
+      else params.delete(param);
+    } else if (key === 'abvRange') {
+      const range = value as { min: number; max: number } | null;
+      if (range && (range.min !== 0 || range.max !== 100)) {
+        params.set('minABV', String(range.min));
+        params.set('maxABV', String(range.max));
+      } else {
+        params.delete('minABV');
+        params.delete('maxABV');
+      }
     }
-    // Other keys (size, abvRange, volumeRange, color) are client-side only.
+    // `color` has no catalog data behind it and no server-side equivalent.
 
     const qs = params.toString();
     router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
@@ -672,8 +755,9 @@ const Shop: React.FC<Props> = ({
   }, [pathname, router, searchParams]);
 
   const handlePageChange = useCallback((selected: number) => {
-    setCurrentPage(selected);
-  }, []);
+    if (serverPaged && onServerPageChange) onServerPageChange(selected);
+    else setCurrentPage(selected);
+  }, [serverPaged, onServerPageChange]);
 
   const handleApplyFilters = useCallback((pendingFilters: FilterState) => {
     const validatedFilters = validateFilters(pendingFilters);
@@ -741,7 +825,7 @@ const Shop: React.FC<Props> = ({
                 filters={filters}
                 updateFilter={updateFilter}
                 sortOptions={SORT_OPTIONS}
-                totalProducts={sortedProducts.length}
+                totalProducts={headerTotal}
                 onClearAllFilters={handleClearAll}
                 defaultPriceRange={filterOptions.priceRange}
                 searchQuery={searchQuery}
@@ -758,7 +842,7 @@ const Shop: React.FC<Props> = ({
                   {pageCount > 1 && (
                     <PaginationSection
                       pageCount={pageCount}
-                      currentPage={currentPage}
+                      currentPage={activePage}
                       onPageChange={handlePageChange}
                     />
                   )}

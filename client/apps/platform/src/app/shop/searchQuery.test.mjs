@@ -5,6 +5,8 @@ import { test } from 'node:test';
 import {
   buildShopSearchParams,
   parseProductsResponse,
+  parseShopPage,
+  shopPageHref,
   SHOP_PAGE_SIZE,
   SHOP_WORKING_SET,
 } from './searchQuery.ts';
@@ -89,5 +91,63 @@ test('handles the legacy data.data and bare-array shapes', () => {
 
 test('an unrecognised payload yields an empty, safe result', () => {
   const r = parseProductsResponse({ oops: true });
-  assert.deepEqual(r, { products: [], total: 0, totalPages: 1 });
+  assert.deepEqual(r, {
+    products: [],
+    total: 0,
+    totalPages: 1,
+    facetCounts: { brands: {}, origins: {}, categories: {}, subcategories: {}, flavors: {} },
+  });
+});
+
+test('facet counts are lifted out of the API filters block', () => {
+  const r = parseProductsResponse({
+    success: true,
+    data: {
+      products: [],
+      pagination: { totalResults: 425, totalPages: 18 },
+      filters: { counts: { brands: { Ardbeg: 12 }, origins: { Scotland: 40 } } },
+    },
+  });
+  assert.equal(r.facetCounts.brands.Ardbeg, 12);
+  assert.equal(r.facetCounts.origins.Scotland, 40);
+  // Missing facets default to empty rather than undefined, so the sidebar's
+  // Object.entries() never throws.
+  assert.deepEqual(r.facetCounts.flavors, {});
+});
+
+test('an API with no counts yet degrades to empty facet counts, not a crash', () => {
+  const r = parseProductsResponse({ success: true, data: { products: [{}], filters: {} } });
+  assert.deepEqual(r.facetCounts.brands, {});
+});
+
+// ── parseShopPage ────────────────────────────────────────────────────────────
+
+test('?page= parses to a 1-based page', () => {
+  assert.equal(parseShopPage('3'), 3);
+  assert.equal(parseShopPage('1'), 1);
+});
+
+test('junk, missing, zero and negative pages all mean page 1', () => {
+  for (const v of [null, undefined, '', 'abc', '0', '-4', '1.5e9999']) {
+    assert.equal(parseShopPage(v), 1, `expected page 1 for ${JSON.stringify(v)}`);
+  }
+});
+
+// ── shopPageHref ─────────────────────────────────────────────────────────────
+
+test('page 1 drops ?page= so it cannot compete with the bare /shop URL', () => {
+  assert.equal(shopPageHref(sp('category=whisky'), 1), '/shop?category=whisky');
+  assert.equal(shopPageHref(sp(''), 1), '/shop');
+});
+
+test('page 2+ carries every other filter along', () => {
+  assert.equal(
+    shopPageHref(sp('category=whisky&brand=Ardbeg'), 2),
+    '/shop?category=whisky&brand=Ardbeg&page=2',
+  );
+});
+
+test('an existing page param is replaced, not duplicated', () => {
+  assert.equal(shopPageHref(sp('page=7&brand=Ardbeg'), 3), '/shop?page=3&brand=Ardbeg');
+  assert.equal(shopPageHref(sp('page=7&brand=Ardbeg'), 1), '/shop?brand=Ardbeg');
 });
