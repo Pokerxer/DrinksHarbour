@@ -296,11 +296,12 @@ const ModalCompare = () => {
                                 )}
                               </div>
                               {/* Rating */}
-                              {(product.rating || product.rate) && (
+                              {(((product as any).averageRating ?? product.rating) || 0) > 0 && (
                                 <div className="flex items-center gap-1 mt-1">
                                   <Icon.PiStarFill size={12} className="text-yellow-400" />
                                   <span className="text-xs text-gray-600">
-                                    {product.rating || product.rate} ({product.reviewCount || 0})
+                                    {(((product as any).averageRating ?? product.rating) as number).toFixed(1)}{' '}
+                                    ({product.reviewCount || 0})
                                   </span>
                                 </div>
                               )}

@@ -46,7 +46,9 @@ interface DealProduct {
   priceRange?: { min: number; max: number };
   salePrice?: number;
   discount?: number;
-  rating?: number;
+  // These products come straight off /api/products with no mapping step, so the
+  // field is the API's flat `averageRating` — there is no `rating` on the wire.
+  averageRating?: number;
   reviewCount?: number;
   soldQuantity?: number;
   sizes?: ProductSize[];
@@ -205,25 +207,28 @@ const DealProductCard = memo(function DealProductCard({
             {product.name}
           </h3>
 
-          {/* Star Rating */}
-          <div className="flex items-center gap-1 mt-1.5" aria-label={`Rating: ${product.rating || 4.5} out of 5, ${product.reviewCount || 0} reviews`}>
-            <div className="flex items-center">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <PiStarFill
-                  key={star}
-                  size={8}
-                  className={
-                    star <= (product.rating || 4.5)
-                      ? "text-amber-400"
-                      : "text-gray-200"
-                  }
-                />
-              ))}
+          {/* Star Rating — only for products that actually have one. The old
+              `rating || 4.5` fallback drew 4.5 gold stars next to "(0)". */}
+          {(product.averageRating || 0) > 0 && (
+            <div className="flex items-center gap-1 mt-1.5" aria-label={`Rating: ${product.averageRating} out of 5, ${product.reviewCount || 0} reviews`}>
+              <div className="flex items-center">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <PiStarFill
+                    key={star}
+                    size={8}
+                    className={
+                      star <= Math.round(product.averageRating || 0)
+                        ? "text-amber-400"
+                        : "text-gray-200"
+                    }
+                  />
+                ))}
+              </div>
+              <span className="text-[10px] text-gray-500">
+                ({product.reviewCount || 0})
+              </span>
             </div>
-            <span className="text-[10px] text-gray-500">
-              ({product.reviewCount || 0})
-            </span>
-          </div>
+          )}
 
           {/* Stock Status */}
           <div className="mt-1.5">

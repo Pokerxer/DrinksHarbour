@@ -536,7 +536,10 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
         quantity: data.quantity || 100,
         action: data.action || 'add to cart',
         badge: 'badge' in data ? dataAny.badge : undefined,
-        rate: data.rate || 4.5,
+        // Real rating only — never invent one. The API returns flat
+        // averageRating/reviewCount, same as the beverage branch above reads.
+        rating: dataAny.averageRating ?? dataAny.rating ?? 0,
+        reviewCount: dataAny.reviewCount ?? 0,
       } as ProductType;
     }
   }, [data]);
@@ -1343,16 +1346,20 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                 </div>
               )}
 
-              {/* Mobile-only vendor count with pill */}
-              {isBeverageProduct(data) && vendors.length > 1 && (
+              {/* Mobile-only vendor count and rating. Each pill renders on its
+                  own condition, so a single-vendor product still shows a rating.
+                  The rating pill stops at md, where the star row below takes over. */}
+              {((isBeverageProduct(data) && vendors.length > 1) ||
+                (mappedProduct.rating || 0) > 0) && (
                 <div className="lg:hidden mt-2 flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs text-gray-600">
-                    <Icon.PiStorefrontBold className="w-3 h-3" />
-                    {vendors.length} {vendors.length === 1 ? 'seller' : 'sellers'}
-                  </span>
-                  {/* Rating display on mobile */}
+                  {isBeverageProduct(data) && vendors.length > 1 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs text-gray-600">
+                      <Icon.PiStorefrontBold className="w-3 h-3" />
+                      {vendors.length} {vendors.length === 1 ? 'seller' : 'sellers'}
+                    </span>
+                  )}
                   {(mappedProduct.rating || 0) > 0 && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-full text-xs text-amber-700">
+                    <span className="md:hidden inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-full text-xs text-amber-700">
                       <Icon.PiStarFill className="w-3 h-3" />
                       {(mappedProduct.rating || 0).toFixed(1)}
                     </span>
@@ -1361,7 +1368,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
               )}
 
               {/* Rating display on tablet+ */}
-              {(mappedProduct.rating || 0) > 0 && isBeverageProduct(data) && (
+              {(mappedProduct.rating || 0) > 0 && (
                 <div className="hidden md:flex items-center gap-2 mt-2">
                   <div className="flex items-center gap-0.5">
                     {[1, 2, 3, 4, 5].map((star) => (

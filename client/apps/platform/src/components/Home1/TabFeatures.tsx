@@ -161,8 +161,9 @@ const TabFeatures: React.FC = () => {
       primaryImage: apiProduct.primaryImage,
       images: apiProduct.images?.map((img: any) => ({ url: img.url })),
       category: apiProduct.category,
-      averageRating: apiProduct.stats?.averageRating || apiProduct.rate || 0,
-      reviewCount: apiProduct.stats?.totalReviews || apiProduct.reviewCount || 0,
+      // The API returns these flat — there is no `stats` wrapper on a product.
+      averageRating: apiProduct.averageRating || 0,
+      reviewCount: apiProduct.reviewCount || 0,
       badge: apiProduct.badge?.name ? { type: apiProduct.badge.type || 'default', name: apiProduct.badge.name, color: apiProduct.badge.color || '#10B981' } : sale ? { type: 'sale', name: `${discount}% OFF`, color: '#ef4444' } : isNew ? { type: 'new', name: 'NEW', color: '#10B981' } : undefined,
       availableAt: apiProduct.availableAt,
       defaultSize: sizeData?.size || apiProduct.volumeMl ? `${apiProduct.volumeMl}ml` : undefined,

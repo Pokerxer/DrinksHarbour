@@ -681,33 +681,22 @@ const ModalQuickview: React.FC = () => {
               </button>
             </div>
 
-            {/* Rating */}
-            <div className="flex items-center gap-2 lg:gap-3 mb-4">
-              <Rate
-                currentRate={
-                  selectedProduct.stats?.averageRating ||
-                  selectedProduct.rate ||
-                  0
-                }
-                size={14}
-              />
-              <span className="text-xs lg:text-sm text-gray-600">
-                <span className="font-semibold">
-                  {(
-                    selectedProduct.stats?.averageRating ||
-                    selectedProduct.rate ||
-                    0
-                  ).toFixed(1)}
+            {/* Rating — flat averageRating/reviewCount from the API. Hidden
+                entirely when a product has no reviews, rather than showing
+                "0.0 (0)" under five empty stars. */}
+            {((selectedProduct as any).averageRating || 0) > 0 && (
+              <div className="flex items-center gap-2 lg:gap-3 mb-4">
+                <Rate currentRate={(selectedProduct as any).averageRating} size={14} />
+                <span className="text-xs lg:text-sm text-gray-600">
+                  <span className="font-semibold">
+                    {((selectedProduct as any).averageRating as number).toFixed(1)}
+                  </span>
+                  <span className="text-gray-400 ml-1">
+                    ({(selectedProduct as any).reviewCount || 0})
+                  </span>
                 </span>
-                <span className="text-gray-400 ml-1">
-                  (
-                  {selectedProduct.stats?.totalReviews ||
-                    selectedProduct.reviewCount ||
-                    0}
-                  )
-                </span>
-              </span>
-            </div>
+              </div>
+            )}
 
             {/* Price */}
             <div className="flex flex-wrap items-baseline gap-2 lg:gap-3 mb-4 pb-3 lg:pb-4 border-b border-gray-100">

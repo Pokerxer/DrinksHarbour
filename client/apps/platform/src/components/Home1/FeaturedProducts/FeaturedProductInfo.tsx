@@ -48,22 +48,25 @@ const FeaturedProductInfo: React.FC<FeaturedProductInfoProps> = ({
         </h3>
       </Link>
 
-      {/* Star rating */}
-      <div
-        className="mt-1.5 flex items-center gap-1"
-        aria-label={`Rating: ${rating.toFixed(1)} out of 5, ${product.reviewCount} reviews`}
-      >
-        <div className="flex items-center">
-          {[1, 2, 3, 4, 5].map((star) => (
-            <PiStarFill
-              key={star}
-              size={8}
-              className={star <= Math.round(rating || 4.5) ? "text-amber-400" : "text-gray-200"}
-            />
-          ))}
+      {/* Star rating — only for products that actually have one. The old
+          `rating || 4.5` fallback drew 4.5 gold stars next to "(0)". */}
+      {rating > 0 && (
+        <div
+          className="mt-1.5 flex items-center gap-1"
+          aria-label={`Rating: ${rating.toFixed(1)} out of 5, ${product.reviewCount || 0} reviews`}
+        >
+          <div className="flex items-center">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <PiStarFill
+                key={star}
+                size={8}
+                className={star <= Math.round(rating) ? "text-amber-400" : "text-gray-200"}
+              />
+            ))}
+          </div>
+          <span className="text-[10px] text-gray-500">({product.reviewCount || 0})</span>
         </div>
-        <span className="text-[10px] text-gray-500">({product.reviewCount})</span>
-      </div>
+      )}
 
       {/* Stock status */}
       <div className="mt-1.5">

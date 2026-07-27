@@ -373,7 +373,7 @@ const ModalSearch: React.FC = () => {
                     const stock     = product.availability?.totalStock ?? 0;
                     const isSel     = idx === selectedIdx;
                     const isExpanded= expandedId === id;
-                    const rating    = product.stats?.averageRating ?? (product as any).rate ?? 0;
+                    const rating    = (product as any).averageRating ?? 0;
 
                     return (
                       <motion.div
