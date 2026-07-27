@@ -69,7 +69,11 @@ function VerifyContent() {
         throw new Error(verifyData.message || 'Payment verification failed.');
       }
 
-      const paymentInfo = verifyData.data; // { reference, transactionId, amount, paidAt, channel }
+      // { reference, transactionId, amount, paidAt, channel, paymentMethod }
+      // `paymentMethod` is derived server-side from the gateway's own record of
+      // the charge. The Korapay button covers card, bank transfer and USSD, so
+      // nothing known to this page can identify how the customer actually paid.
+      const paymentInfo = verifyData.data;
 
       // ── Step 2: Read the pending order data ──────────────────────────────
       const pendingRaw =
@@ -129,9 +133,13 @@ function VerifyContent() {
           country: pending.formData.shipping.country,
           coordinates: pending.formData.shipping.coordinates,
         },
-        paymentMethod: 'bank_transfer',
+        // Hint only — the server re-derives this from the gateway before saving.
+        paymentMethod: paymentInfo.paymentMethod || 'bank_transfer',
         paymentDetails: {
           method: 'korapay',
+          // The gateway reference, which is what the charge.success webhook
+          // matches the order on if this page never finishes.
+          reference: paymentInfo.reference || ref,
           transactionId: paymentInfo.reference || ref,
           gatewayTransactionId: paymentInfo.transactionId,
           status: 'paid',

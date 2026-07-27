@@ -9,6 +9,7 @@ import { useAccount } from '../../AccountShell';
 import { useOrderDetail } from '../../_hooks/useOrders';
 import { STATUS_CONFIG } from '../../_constants';
 import InlineAlert from '../../_components/InlineAlert';
+import { paymentMethodLabel } from '@/config/payment-methods';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -290,7 +291,7 @@ export default function OrderDetailPage() {
                     {paymentStatus}
                   </span>
                 )},
-                paymentMethod && { label: 'Method', value: paymentMethod.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) },
+                paymentMethod && { label: 'Method', value: paymentMethodLabel(paymentMethod) },
               ].filter(Boolean).map(({ label, value }: any) => (
                 <div key={label} className="flex items-center justify-between gap-3">
                   <dt className="text-xs text-stone-400">{label}</dt>

@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import type { Order } from '../_types';
 import { STATUS_CONFIG } from '../_constants';
+import { paymentMethodLabel } from '@/config/payment-methods';
 
 interface OrderCardProps {
   order: Order;
@@ -78,6 +79,12 @@ export default function OrderCard({ order, userEmail }: OrderCardProps) {
           </div>
           <div className="min-w-0">
             <p className="text-xs font-semibold text-stone-700">{items.length} item{items.length !== 1 ? 's' : ''}</p>
+            {order.paymentMethod && (
+              <p className="text-xs text-stone-400 mt-0.5 flex items-center gap-1">
+                <Icon.PiCreditCardBold size={9} className="flex-shrink-0" />
+                {paymentMethodLabel(order.paymentMethod)}
+              </p>
+            )}
             {order.shipping?.address && (
               <p className="text-xs text-stone-400 truncate max-w-[160px] mt-0.5 flex items-center gap-1">
                 <Icon.PiMapPinBold size={9} className="flex-shrink-0" />

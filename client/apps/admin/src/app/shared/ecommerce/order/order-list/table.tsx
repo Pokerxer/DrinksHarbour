@@ -14,6 +14,8 @@ import {
   PiXCircleBold, PiWarningBold, PiArrowRightBold, PiCaretRightBold,
   PiCaretLeftBold, PiCaretUpBold, PiCaretDownBold, PiCaretUpDownBold,
   PiArrowLineUpBold, PiStorefrontBold, PiGlobeBold,
+  PiCreditCardBold, PiBankBold, PiDeviceMobileBold, PiHandCoinsBold,
+  PiWalletBold, PiGiftBold,
 } from 'react-icons/pi';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -53,6 +55,44 @@ const PAY_CONFIG: Record<string, { label: string; badge: string }> = {
 };
 
 const PAY_FILTER_OPTIONS = ['pending', 'paid', 'failed', 'refunded', 'partially_refunded'];
+
+/** Mirrors the Order.paymentMethod enum (server/utils/paymentMethods.js) and the
+ *  METHOD_META used on the order detail page, so a method reads the same in both
+ *  places. The list previously showed payment *status* only, with no way to see
+ *  or filter on how an order was actually paid. */
+const METHOD_CONFIG: Record<string, { label: string; short: string; Icon: React.ElementType; badge: string }> = {
+  card:             { label: 'Card Payment',     short: 'Card',     Icon: PiCreditCardBold,   badge: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
+  bank_transfer:    { label: 'Bank Transfer',    short: 'Transfer', Icon: PiBankBold,         badge: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
+  mobile_money:     { label: 'Mobile Money',     short: 'Mobile',   Icon: PiDeviceMobileBold, badge: 'bg-green-500/10 text-green-600 dark:text-green-400' },
+  cash_on_delivery: { label: 'Cash on Delivery', short: 'COD',      Icon: PiHandCoinsBold,    badge: 'bg-orange-500/10 text-orange-600 dark:text-orange-400' },
+  cash:             { label: 'Cash',             short: 'Cash',     Icon: PiHandCoinsBold,    badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+  wallet:           { label: 'DH Wallet',        short: 'Wallet',   Icon: PiWalletBold,       badge: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' },
+  gift_card:        { label: 'Gift Card',        short: 'Gift',     Icon: PiGiftBold,         badge: 'bg-pink-500/10 text-pink-600 dark:text-pink-400' },
+  split:            { label: 'Split Payment',    short: 'Split',    Icon: PiCreditCardBold,   badge: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+};
+
+function MethodBadge({ method }: { method?: string }) {
+  if (!method) return <span className="text-xs text-gray-300">—</span>;
+  const meta = METHOD_CONFIG[method];
+  if (!meta) {
+    // An unmapped value is real data, not a blank — show it rather than hide it.
+    return (
+      <span className="inline-flex items-center rounded-md bg-gray-500/10 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">
+        {method.replace(/_/g, ' ')}
+      </span>
+    );
+  }
+  const { Icon } = meta;
+  return (
+    <span
+      title={meta.label}
+      className={cn('inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium', meta.badge)}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      {meta.short}
+    </span>
+  );
+}
 
 const SOURCE_CONFIG: Record<string, { label: string; Icon: React.ElementType }> = {
   web:    { label: 'Web',    Icon: PiGlobeBold },
@@ -280,6 +320,7 @@ export default function OrderTable({
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter,   setStatusFilter]   = useState('');
   const [paymentFilter,  setPaymentFilter]  = useState('');
+  const [methodFilter,   setMethodFilter]   = useState('');
   const [sourceFilter,   setSourceFilter]   = useState('');
   const [fromDate,       setFromDate]       = useState('');
   const [toDate,         setToDate]         = useState('');
@@ -300,12 +341,13 @@ export default function OrderTable({
     search: debouncedSearch,
     status: statusFilter || undefined,
     payment: paymentFilter || undefined,
+    paymentMethod: methodFilter || undefined,
     source: sourceFilter || undefined,
     from: fromDate || undefined,
     to: toDate || undefined,
     sort: sortField,
     order: sortDir,
-  }), [page, debouncedSearch, statusFilter, paymentFilter, sourceFilter, fromDate, toDate, sortField, sortDir]);
+  }), [page, debouncedSearch, statusFilter, paymentFilter, methodFilter, sourceFilter, fromDate, toDate, sortField, sortDir]);
 
   // Any filter change resets to page 1. Kept out of the fetch effect so it
   // can't cause a second request for the page we're abandoning.
@@ -313,7 +355,7 @@ export default function OrderTable({
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     setPage(1);
-  }, [debouncedSearch, statusFilter, paymentFilter, sourceFilter, fromDate, toDate, sortField, sortDir]);
+  }, [debouncedSearch, statusFilter, paymentFilter, methodFilter, sourceFilter, fromDate, toDate, sortField, sortDir]);
 
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -385,7 +427,7 @@ export default function OrderTable({
     setSourceFilter(''); setFromDate(''); setToDate('');
   };
 
-  const hasFilters = Boolean(search || statusFilter || paymentFilter || sourceFilter || fromDate || toDate);
+  const hasFilters = Boolean(search || statusFilter || paymentFilter || methodFilter || sourceFilter || fromDate || toDate);
   const busy = loading || sessionStatus === 'loading';
 
   const SortHeader = ({ field, label, className: cls }: { field: string; label: string; className?: string }) => {
@@ -439,6 +481,13 @@ export default function OrderTable({
               <option value="">All payments</option>
               {PAY_FILTER_OPTIONS.map((k) => (
                 <option key={k} value={k}>{PAY_CONFIG[k].label}</option>
+              ))}
+            </select>
+
+            <select value={methodFilter} onChange={(e) => setMethodFilter(e.target.value)} aria-label="Filter by payment method" className={selectClass}>
+              <option value="">All methods</option>
+              {Object.entries(METHOD_CONFIG).map(([k, v]) => (
+                <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
 
@@ -504,6 +553,7 @@ export default function OrderTable({
                 search       && { label: `"${search}"`,                            clear: () => setSearch('') },
                 statusFilter && { label: STATUS_CONFIG[statusFilter]?.label ?? statusFilter, clear: () => setStatusFilter('') },
                 paymentFilter&& { label: PAY_CONFIG[paymentFilter]?.label ?? paymentFilter,  clear: () => setPaymentFilter('') },
+                methodFilter && { label: METHOD_CONFIG[methodFilter]?.label ?? methodFilter, clear: () => setMethodFilter('') },
                 sourceFilter && { label: SOURCE_CONFIG[sourceFilter]?.label ?? sourceFilter, clear: () => setSourceFilter('') },
                 fromDate     && { label: `From ${fromDate}`,                       clear: () => setFromDate('') },
                 toDate       && { label: `To ${toDate}`,                           clear: () => setToDate('') },
@@ -563,6 +613,7 @@ export default function OrderTable({
                     <th scope="col" className="whitespace-nowrap px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Platform Profit</th>
                     <SortHeader field="status" label="Status" />
                     <SortHeader field="paymentStatus" label="Payment" />
+                    <th scope="col" className="whitespace-nowrap px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Method</th>
                     <SortHeader field="placedAt" label="Date" className="whitespace-nowrap" />
                     <th scope="col" className="px-5 py-3.5"><span className="sr-only">View</span></th>
                   </tr>
@@ -625,6 +676,7 @@ export default function OrderTable({
                           </td>
                           <td className="px-5 py-4"><StatusBadge status={order.status} /></td>
                           <td className="px-5 py-4"><PayBadge status={order.paymentStatus} /></td>
+                          <td className="px-5 py-4"><MethodBadge method={order.paymentMethod} /></td>
                           <td className="whitespace-nowrap px-5 py-4 text-xs text-gray-500">
                             {fmtDate(order.placedAt || order.createdAt)}
                           </td>
@@ -635,7 +687,7 @@ export default function OrderTable({
 
                         {vendors.length > 0 && (
                           <tr className="bg-gray-50/60">
-                            <td colSpan={9} className="px-5 pb-2.5">
+                            <td colSpan={10} className="px-5 pb-2.5">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="me-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Vendors:</span>
                                 {vendors.map((v, vi) => (

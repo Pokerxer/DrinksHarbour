@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const Order = require('../models/Order');
 const { ValidationError, NotFoundError } = require('../utils/errors');
 const { normalizeUrl, frontendUrl } = require('../utils/frontendUrl');
+const { normalizePaymentMethod } = require('../utils/paymentMethods');
 
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 const KORAPAY_BASE_URL = 'https://api.korapay.com/merchant/api/v1';
@@ -323,6 +324,24 @@ const createKorapayCharge = async (amount, email, metadata = {}, options = {}) =
   }
 };
 
+// Channels Korapay can settle a charge through. The charge-lookup response
+// (GET /charges/:reference) names no channel at all — unlike the webhook payload
+// it carries no `payment_method` key — and instead returns a nested object named
+// after the channel that was used (confirmed against a live charge: a bank
+// transfer came back as `{ bank_transfer: { payer_bank_account: … } }`).
+// Reading only `payment_method` meant the channel was always undefined, which is
+// why the checkout return page fell back to hardcoding 'bank_transfer'.
+const KORAPAY_CHANNEL_KEYS = ['card', 'bank_transfer', 'pay_with_bank', 'mobile_money', 'ussd'];
+
+const deriveKorapayChannel = (data = {}) => {
+  const declared = data.payment_method || data.channel;
+  if (declared) return String(declared);
+  const structural = KORAPAY_CHANNEL_KEYS.find(
+    (key) => data[key] && typeof data[key] === 'object',
+  );
+  return structural || null;
+};
+
 /**
  * Verify Korapay charge. Same return shape as verifyPaystackTransaction.
  */
@@ -338,6 +357,7 @@ const verifyKorapayCharge = async (reference) => {
       const { data } = response.data;
 
       if (data.status === 'success') {
+        const channel = deriveKorapayChannel(data);
         return {
           success: true,
           status: 'paid',
@@ -348,7 +368,11 @@ const verifyKorapayCharge = async (reference) => {
             amount: Number(data.amount_paid ?? data.amount),
             currency: data.currency,
             paidAt: data.transaction_date || data.completed_at || new Date().toISOString(),
-            channel: data.payment_method || data.channel,
+            // Raw gateway channel, kept verbatim for reconciliation…
+            channel,
+            // …and the canonical Order.paymentMethod it maps to. Null when the
+            // channel is unreadable — the caller must not invent one.
+            paymentMethod: normalizePaymentMethod(channel),
             metadata: data.metadata,
           },
         };
@@ -381,6 +405,48 @@ const verifyGatewayTransaction = (reference) =>
   ACTIVE_GATEWAY === 'paystack'
     ? verifyPaystackTransaction(reference)
     : verifyKorapayCharge(reference);
+
+// Which paymentDetails.method values mean "a hosted gateway settled this".
+const HOSTED_GATEWAYS = { korapay: verifyKorapayCharge, paystack: verifyPaystackTransaction };
+
+/**
+ * Decide the canonical Order.paymentMethod for an incoming order.
+ *
+ * For hosted-gateway payments the browser cannot know the answer: the single
+ * "Card / Bank Transfer / USSD" checkout button hands off to Korapay, and only
+ * the gateway knows which channel the customer ended up using. So the claim from
+ * the client is treated as a hint and re-derived from the gateway here.
+ *
+ * Fails open by design — the customer's money has already moved by the time this
+ * runs, so a gateway hiccup must never cost them the order.
+ *
+ * @param {string} claimedMethod  canonical method supplied by the caller
+ * @param {object|null} paymentDetails  the order's paymentDetails payload
+ * @returns {Promise<string>} canonical method to store
+ */
+const resolveGatewayPaymentMethod = async (claimedMethod, paymentDetails) => {
+  const verify = HOSTED_GATEWAYS[paymentDetails?.method];
+  const reference = paymentDetails?.reference || paymentDetails?.transactionId;
+  if (!verify || !reference) return claimedMethod;
+
+  try {
+    const result = await verify(reference);
+    // Korapay reports a pre-normalised paymentMethod; Paystack only reports a
+    // raw `channel` ('card' / 'bank' / 'ussd' / …), which the aliases fold.
+    const derived = result?.success
+      ? normalizePaymentMethod(result.data?.paymentMethod || result.data?.channel)
+      : null;
+    if (derived && derived !== claimedMethod) {
+      console.log(
+        `[payments] ${reference}: client said "${claimedMethod}", gateway says "${derived}" — storing gateway value`,
+      );
+    }
+    return derived || claimedMethod;
+  } catch (err) {
+    console.warn(`[payments] Could not re-derive method for ${reference}: ${err.message}`);
+    return claimedMethod;
+  }
+};
 
 /**
  * Process refund (Stripe only)
@@ -463,6 +529,7 @@ module.exports = {
   verifyKorapayCharge,
   createGatewayTransaction,
   verifyGatewayTransaction,
+  resolveGatewayPaymentMethod,
   ACTIVE_GATEWAY,
   createStripeRefund,
   getPaymentStatus,

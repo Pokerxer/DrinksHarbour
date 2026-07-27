@@ -10,6 +10,7 @@ import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 import { purchaseEvent, type GTagItem } from '@/lib/gtag';
 import { firePurchase } from '@/lib/pixels';
+import { paymentMethodLabel } from '@/config/payment-methods';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,14 +64,6 @@ const STATUS_LABELS: Record<string, string> = {
   delivered: 'Delivered',
   cancelled: 'Cancelled',
   refunded: 'Refunded',
-};
-
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  card: 'Credit / Debit Card',
-  bank_transfer: 'Bank Transfer (Korapay)',
-  cash_on_delivery: 'Cash on Delivery',
-  mobile_money: 'Mobile Money',
-  wallet: 'Wallet',
 };
 
 function formatDate(dateStr: string) {
@@ -467,7 +460,7 @@ function OrderConfirmationContent() {
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-500">Method</span>
                 <span className="text-gray-700 font-medium">
-                  {PAYMENT_METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}
+                  {paymentMethodLabel(order.paymentMethod)}
                 </span>
               </div>
               {order.paymentDetails?.transactionId && (

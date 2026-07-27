@@ -2,6 +2,7 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
+const { PAYMENT_METHODS } = require('../utils/paymentMethods');
 
 const orderItemSchema = new Schema({
   product: {
@@ -186,9 +187,11 @@ const orderSchema = new Schema(
     // ────────────────────────────────────────────────
     // Payment
     // ────────────────────────────────────────────────
+    // Canonical list lives in utils/paymentMethods so the create-order validator
+    // and this enum cannot drift apart again.
     paymentMethod: {
       type: String,
-      enum: ['card', 'bank_transfer', 'mobile_money', 'cash_on_delivery', 'cash', 'wallet', 'split'],
+      enum: PAYMENT_METHODS,
       required: true,
     },
 

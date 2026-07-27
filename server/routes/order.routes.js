@@ -7,6 +7,7 @@ const posController   = require('../controllers/pos.controller');
 const { protect, optionalProtect, attachTenant, superAdminOnly, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { body, param, query } = require('express-validator');
+const { ACCEPTED_PAYMENT_METHODS } = require('../utils/paymentMethods');
 
 const createOrderValidation = [
   body('customer.firstName')
@@ -46,8 +47,11 @@ const createOrderValidation = [
     .trim()
     .notEmpty()
     .withMessage('Country is required'),
+  // Accepted spellings and the storable enum both come from utils/paymentMethods;
+  // the controller folds aliases to a canonical value before saving.
   body('paymentMethod')
-    .isIn(['card', 'bank', 'cod', 'bank_transfer', 'mobile_money', 'cash_on_delivery', 'wallet'])
+    .customSanitizer((v) => (typeof v === 'string' ? v.trim().toLowerCase() : v))
+    .isIn(ACCEPTED_PAYMENT_METHODS)
     .withMessage('Invalid payment method'),
   body('items')
     .isArray({ min: 1 })

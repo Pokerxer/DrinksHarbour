@@ -19,6 +19,7 @@ import {
   PiCreditCardBold,
   PiDeviceMobileBold,
   PiWalletBold,
+  PiGiftBold,
   PiArrowBendUpLeftBold,
   PiPrinterBold,
   PiStorefrontBold,
@@ -588,9 +589,14 @@ const METHOD_META: Record<
     color: 'text-green-600 bg-green-500/10',
   },
   wallet: {
-    label: 'Wallet',
+    label: 'DH Wallet',
     Icon: PiWalletBold,
     color: 'text-indigo-600 bg-indigo-500/10',
+  },
+  gift_card: {
+    label: 'Gift Card',
+    Icon: PiGiftBold,
+    color: 'text-pink-600 bg-pink-500/10',
   },
   split: {
     label: 'Split Payment',

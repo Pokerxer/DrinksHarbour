@@ -24,6 +24,8 @@ export interface Order {
   orderNumber?: string;
   status: string;
   paymentStatus?: string;
+  /** Canonical Order.paymentMethod — card / bank_transfer / cash_on_delivery / … */
+  paymentMethod?: string;
   items: OrderItem[];
   totalAmount: number;
   total?: number;

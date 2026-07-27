@@ -180,7 +180,10 @@ export interface OrderListParams {
   limit?: number;
   search?: string;
   status?: string;
+  /** Payment *status* — paid / pending / failed / refunded. */
   payment?: string;
+  /** Payment *method* — card / bank_transfer / cash_on_delivery / … */
+  paymentMethod?: string;
   source?: string;
   from?: string;
   to?: string;

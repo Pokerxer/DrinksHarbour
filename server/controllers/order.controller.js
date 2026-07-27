@@ -13,6 +13,8 @@ const { generateOrderNumber, resolveOrderRecipient } = require('../utils/orderUt
 const { calcPlatformCostPrice, resolveRevenueRates, resolveLineRates, resolveEffectiveUnitPrice, calculateSizePricing, roundUpTo100, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const inventoryService = require('../services/inventory.service');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
+const { normalizePaymentMethod, buildOrderPaymentFields } = require('../utils/paymentMethods');
+const { resolveGatewayPaymentMethod } = require('../services/payment.service');
 const { ForbiddenError } = require('../utils/errors');
 const {
   sendOrderConfirmationToCustomer,
@@ -43,6 +45,19 @@ const LOYALTY_POINTS_PER_NGN = 1 / 100; // 1 pt per ₦100 base rate
  */
 exports.createOrder = asyncHandler(async (req, res) => {
   const { customer, shipping, paymentMethod, paymentDetails, items, subtotal, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus, utmSource, utmMedium, utmCampaign } = req.body;
+
+  // Fold accepted aliases ('bank', 'cod', …) into a storable enum value. The
+  // route validator has already rejected anything unrecognisable, so a null here
+  // would only come from a caller that bypassed it.
+  const canonicalPaymentMethod = normalizePaymentMethod(paymentMethod);
+  if (!canonicalPaymentMethod) {
+    return res.status(400).json({ success: false, message: 'Invalid payment method' });
+  }
+
+  // For hosted-gateway payments the browser only knows which button was pressed
+  // before hand-off — Korapay's checkout offers card, bank transfer and USSD
+  // behind one button — so ask the gateway what actually settled.
+  const resolvedPaymentMethod = await resolveGatewayPaymentMethod(canonicalPaymentMethod, paymentDetails);
 
   let appliedCoupon = null;
   let discountTotal = 0;
@@ -231,8 +246,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
     taxAmount: 0,
     totalAmount: total,
     currency: 'NGN',
-    paymentMethod,
-    paymentStatus: paymentStatus || (paymentMethod === 'cash_on_delivery' ? 'pending' : 'pending'),
+    paymentMethod: resolvedPaymentMethod,
+    paymentStatus: paymentStatus || 'pending',
     shippingAddress: {
       fullName: `${customer.firstName} ${customer.lastName}`,
       email: customer.email,
@@ -258,19 +273,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // Add payment details if provided (for orders created after payment)
   if (paymentDetails) {
     orderData.paymentDetails = paymentDetails;
-    if (paymentDetails.transactionId) {
-      orderData.paymentIntentId = paymentDetails.transactionId;
-      // Also store in the dedicated Stripe field for webhook lookups
-      if (paymentDetails.method === 'stripe') {
-        orderData.stripePaymentIntentId = paymentDetails.transactionId;
-      }
-    }
-    if (paymentDetails.reference) {
-      orderData.paymentReference = paymentDetails.reference;
-    }
-    if (paymentDetails.paidAt) {
-      orderData.paidAt = new Date(paymentDetails.paidAt);
-    }
+    Object.assign(orderData, buildOrderPaymentFields(paymentDetails));
   }
 
   // ── Reserve stock (availableStock--, reservedStock++) ─────────────────────
@@ -447,7 +450,8 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
     limit    = '20',
     search   = '',
     status   = '',
-    payment  = '',
+    payment  = '',        // payment STATUS (paid/pending/…) — kept for API compat
+    paymentMethod = '',   // how it was paid (card/bank_transfer/…)
     from,
     to,
     source   = '',
@@ -482,6 +486,12 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
 
   if (payment)       baseFilter.paymentStatus       = payment;
   if (source)        baseFilter.source              = source;
+
+  // An unrecognised method must match nothing, never everything.
+  if (paymentMethod) {
+    baseFilter.paymentMethod = normalizePaymentMethod(paymentMethod) ?? '__no_such_method__';
+  }
+
   if (subProductId)  baseFilter['items.subproduct'] = toObjectId(subProductId) ?? new mongoose.Types.ObjectId();
 
   if (from || to) {
@@ -728,7 +738,9 @@ exports.getOrderByReceipt = asyncHandler(async (req, res) => {
     .skip(skip)
     .limit(limit)
     .populate('items.product', 'name slug images')
-    .select('orderNumber status paymentStatus totalAmount subtotal shippingFee placedAt items');
+    // paymentMethod was missing here, so a customer's own order list could never
+    // show how they paid no matter what the UI did with it.
+    .select('orderNumber status paymentStatus paymentMethod totalAmount subtotal shippingFee placedAt createdAt items');
 
   const total = await Order.countDocuments(query);
 
