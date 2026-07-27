@@ -21,7 +21,7 @@ import { useCompare } from '@/context/CompareContext';
 import { useModalCompareContext } from '@/context/ModalCompareContext';
 import Rate from '@/components/Other/Rate';
 import ProductSpecifications from './ProductSpecifications';
-import ProductReviews from './ProductReviews';
+import ProductReviews from '@/components/Product/ProductReviews';
 import RelatedProducts from './RelatedProducts';
 import PackPricingCard from './PackPricingCard';
 import { ProductType } from '@/types/product.types';
@@ -1034,8 +1034,14 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
             ))}
           </div>
 
-          {/* Tab Content */}
-          <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm">
+          {/* Tab Content — reviews bring their own cards, so they skip the white panel */}
+          <div
+            className={
+              activeTab === 'reviews'
+                ? ''
+                : 'bg-white rounded-2xl p-6 md:p-8 shadow-sm'
+            }
+          >
             {activeTab === 'description' && (
               <div className="max-w-4xl">
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">Product Description</h2>
@@ -1051,12 +1057,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
               <ProductSpecifications productData={productData} />
             )}
             {activeTab === 'reviews' && (
-              <ProductReviews
-                reviews={productData?.reviews || []}
-                averageRating={productData?.averageRating || 0}
-                totalReviews={productData?.reviewCount || 0}
-                productName={productData?.name}
-              />
+              <ProductReviews productId={productData._id} />
             )}
           </div>
         </div>

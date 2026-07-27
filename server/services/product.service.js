@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const { searchProducts: searchProductsNew } = require('./search.service');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, calcPlatformMargin, resolveRevenueRates, isDiscountActive, applyDiscount, roundUpTo100, DEFAULT_PLATFORM_MARKUP, DEFAULT_PACK_RATE_MIN_UNITS } = require('../utils/pricing');
 const { ValidationError, ConflictError, NotFoundError, ForbiddenError } = require('../utils/errors');
+const { buildRatingSummary } = require('./review.helpers');
 const resolveTagReferences = require('../helpers/resolveTagReferences.helper');
 const resolveFlavorReferences = require('../helpers/resolveFlavorReference.helper');
 const Product = require('../models/Product');
@@ -6223,8 +6224,15 @@ const getProductReviews = async (productId, filters = {}, pagination = {}) => {
   };
   const sortOptions = sortMap[sortBy] || sortMap.helpful;
 
+  // The summary always covers every approved review, ignoring the star/verified
+  // filters — otherwise filtering to 5-star would report "5.0 from N reviews".
+  const summaryMatch = {
+    product: new mongoose.Types.ObjectId(productId),
+    status: 'approved',
+  };
+
   // Execute queries
-  const [total, reviews] = await Promise.all([
+  const [total, reviews, ratingGroups] = await Promise.all([
     Review.countDocuments(query),
     Review.find(query)
       .populate('user', 'firstName lastName avatar')
@@ -6232,10 +6240,15 @@ const getProductReviews = async (productId, filters = {}, pagination = {}) => {
       .skip(skip)
       .limit(limitNum)
       .lean(),
+    Review.aggregate([
+      { $match: summaryMatch },
+      { $group: { _id: '$rating', count: { $sum: 1 } } },
+    ]),
   ]);
 
   return {
     reviews,
+    summary: buildRatingSummary(ratingGroups),
     pagination: {
       page: pageNum,
       limit: limitNum,
@@ -6258,7 +6271,9 @@ const getProductRatingDistribution = async (productId) => {
   const distribution = await Review.aggregate([
     {
       $match: {
-        product: productId,
+        // Aggregation pipelines are not cast by Mongoose — a raw string id
+        // silently matches nothing.
+        product: new mongoose.Types.ObjectId(productId),
         status: 'approved',
       },
     },

@@ -7,6 +7,7 @@ const {
   buildReviewListQuery,
   buildReviewSort,
   computeRatingAggregate,
+  buildRatingSummary,
   normalizePagination,
 } = require('../services/review.helpers');
 
@@ -90,4 +91,49 @@ test('normalizePagination clamps page and limit into range', () => {
   assert.deepStrictEqual(normalizePagination({ page: -5 }), { page: 1, limit: 20, skip: 0 });
   assert.deepStrictEqual(normalizePagination({ limit: 500 }), { page: 1, limit: 100, skip: 0 });
   assert.deepStrictEqual(normalizePagination({ limit: 0 }), { page: 1, limit: 20, skip: 0 });
+});
+
+test('buildRatingSummary averages and totals a rating histogram', () => {
+  assert.deepStrictEqual(
+    buildRatingSummary([
+      { _id: 5, count: 4 },
+      { _id: 4, count: 2 },
+      { _id: 1, count: 1 },
+    ]),
+    {
+      averageRating: 4.1, // (20 + 8 + 1) / 7 = 4.142…
+      totalReviews: 7,
+      distribution: { 1: 1, 2: 0, 3: 0, 4: 2, 5: 4 },
+    }
+  );
+});
+
+test('buildRatingSummary always returns every 1-5 bucket', () => {
+  const summary = buildRatingSummary([{ _id: 3, count: 2 }]);
+  assert.deepStrictEqual(summary.distribution, { 1: 0, 2: 0, 3: 2, 4: 0, 5: 0 });
+  assert.strictEqual(summary.averageRating, 3);
+  assert.strictEqual(summary.totalReviews, 2);
+});
+
+test('buildRatingSummary reports zeroes when a product has no approved reviews', () => {
+  const empty = { averageRating: 0, totalReviews: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
+  assert.deepStrictEqual(buildRatingSummary([]), empty);
+  assert.deepStrictEqual(buildRatingSummary(null), empty);
+  assert.deepStrictEqual(buildRatingSummary(undefined), empty);
+});
+
+test('buildRatingSummary ignores out-of-range rating buckets', () => {
+  assert.deepStrictEqual(
+    buildRatingSummary([
+      { _id: 5, count: 2 },
+      { _id: 0, count: 9 },
+      { _id: 6, count: 9 },
+      { _id: null, count: 9 },
+    ]),
+    {
+      averageRating: 5,
+      totalReviews: 2,
+      distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 2 },
+    }
+  );
 });

@@ -579,13 +579,12 @@ export default function ProductReviews({ productId }: { productId: string }) {
       const data = await res.json();
       if (!data.success) return;
 
-      const incoming: Review[] = data.data?.reviews ?? data.data?.data ?? [];
+      const incoming: Review[] = data.data?.reviews ?? [];
       setReviews(prev => append ? [...prev, ...incoming] : incoming);
-      setHasMore(incoming.length === 8);
-      if (p === 1) {
-        const s = data.data?.summary ?? data.data?.meta;
-        if (s) setSummary(s);
-      }
+      setHasMore(Boolean(data.data?.pagination?.hasNext));
+      // The summary covers all approved reviews, so it is correct even while a
+      // star filter is active.
+      if (data.data?.summary) setSummary(data.data.summary);
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -629,7 +628,7 @@ export default function ProductReviews({ productId }: { productId: string }) {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-10 max-w-4xl">
+      <div className="w-full max-w-4xl">
         <div className="animate-pulse space-y-4">
           <div className="h-7 bg-gray-100 rounded-lg w-48" />
           <div className="grid sm:grid-cols-5 gap-6">
@@ -718,7 +717,7 @@ export default function ProductReviews({ productId }: { productId: string }) {
   };
 
   return (
-    <section className="container mx-auto px-4 py-12 max-w-4xl">
+    <section className="w-full max-w-4xl">
       <h2 className="text-xl font-black text-gray-900 mb-8 flex items-center gap-2">
         <Icon.PiStarFill size={20} className="text-amber-400" />
         Customer Reviews
@@ -816,7 +815,11 @@ export default function ProductReviews({ productId }: { productId: string }) {
         <div className="flex items-center justify-between mb-4">
           <p className="text-sm text-gray-500">
             {filterStar > 0
-              ? `${reviews.length} ${filterStar}-star review${reviews.length !== 1 ? 's' : ''}`
+              ? (() => {
+                  // Count comes from the distribution, not the loaded page.
+                  const n = dist[String(filterStar)] ?? reviews.length;
+                  return `${n} ${filterStar}-star review${n !== 1 ? 's' : ''}`;
+                })()
               : `${total} review${total !== 1 ? 's' : ''}`}
           </p>
           <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">

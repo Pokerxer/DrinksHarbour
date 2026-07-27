@@ -58,6 +58,31 @@ const computeRatingAggregate = (stats) => {
   };
 };
 
+// Turns a `$group by rating` aggregate into the summary the storefront renders:
+// an average, a total, and a 1–5 histogram with every bucket present so the
+// distribution bars always have a value to read.
+const buildRatingSummary = (ratingGroups) => {
+  const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let totalReviews = 0;
+  let ratingSum = 0;
+
+  for (const group of Array.isArray(ratingGroups) ? ratingGroups : []) {
+    const rating = Number(group?._id);
+    const count = Number(group?.count) || 0;
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) continue;
+    distribution[rating] = count;
+    totalReviews += count;
+    ratingSum += rating * count;
+  }
+
+  return {
+    averageRating:
+      totalReviews > 0 ? Math.round((ratingSum / totalReviews) * 10) / 10 : 0,
+    totalReviews,
+    distribution,
+  };
+};
+
 const normalizePagination = ({ page, limit } = {}) => {
   const parsedPage = parseInt(page, 10);
   const parsedLimit = parseInt(limit, 10);
@@ -73,5 +98,6 @@ module.exports = {
   buildReviewListQuery,
   buildReviewSort,
   computeRatingAggregate,
+  buildRatingSummary,
   normalizePagination,
 };

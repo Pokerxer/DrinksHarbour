@@ -240,6 +240,30 @@ router.get(
 );
 
 /**
+ * Get the rating distribution for a product
+ * @route GET /api/products/:id/reviews/distribution
+ * @access Public
+ */
+router.get(
+  '/:id/reviews/distribution',
+  mongoIdValidation,
+  validate,
+  productController.getProductRatingDistribution
+);
+
+/**
+ * Get the review summary for a product
+ * @route GET /api/products/:id/reviews/summary
+ * @access Public
+ */
+router.get(
+  '/:id/reviews/summary',
+  mongoIdValidation,
+  validate,
+  productController.getProductReviewSummary
+);
+
+/**
  * Check if the authenticated user can review this product
  * @route GET /api/products/:id/reviews/eligibility
  * @access Private
