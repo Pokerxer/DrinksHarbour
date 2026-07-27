@@ -388,6 +388,20 @@ const Shop: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The price range is only a *filter* once it differs from the bounds the
+  // sidebar is offering — same rule buildFilterUrlParams uses to decide whether
+  // minPrice/maxPrice belong in the URL. Without this, the placeholder default
+  // (0–100,000, used before the catalog's real bounds arrive) silently dropped
+  // every product over ₦100,000 from the first render — so they never appeared
+  // in the server-rendered HTML a crawler sees.
+  const priceFilterActive = useMemo(() => {
+    const active = filters.priceRange;
+    const bounds = filterOptions.priceRange;
+    if (!active) return false;
+    if (!bounds) return true;
+    return active.min !== bounds.min || active.max !== bounds.max;
+  }, [filters.priceRange, filterOptions.priceRange]);
+
   // Filter products
   const filteredProducts = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -433,11 +447,13 @@ const Shop: React.FC<Props> = ({
         } else if (!productFlavors.includes(filters.flavorCategory)) return false;
       }
 
-      const productMinPrice = product.priceRange?.min || 0;
-      const productMaxPrice = product.priceRange?.max || productMinPrice;
-      const filterMinPrice = filters.priceRange?.min ?? 0;
-      const filterMaxPrice = filters.priceRange?.max ?? Infinity;
-      if (productMaxPrice < filterMinPrice || productMinPrice > filterMaxPrice) return false;
+      if (priceFilterActive) {
+        const productMinPrice = product.priceRange?.min || 0;
+        const productMaxPrice = product.priceRange?.max || productMinPrice;
+        const filterMinPrice = filters.priceRange?.min ?? 0;
+        const filterMaxPrice = filters.priceRange?.max ?? Infinity;
+        if (productMaxPrice < filterMinPrice || productMinPrice > filterMaxPrice) return false;
+      }
 
       if (filters.minRating && (product.averageRating || 0) < filters.minRating) return false;
 
@@ -485,7 +501,7 @@ const Shop: React.FC<Props> = ({
 
       return true;
     });
-  }, [data, filters]);
+  }, [data, filters, priceFilterActive]);
 
   // Sort products
   const sortedProducts = useMemo(() => {

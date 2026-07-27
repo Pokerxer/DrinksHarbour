@@ -1,6 +1,12 @@
 import type { Metadata } from 'next';
 import ShopClient from './ShopClient';
-import { buildShopSearchParams, parseProductsResponse } from './searchQuery';
+import {
+  buildShopSearchParams,
+  parseProductsResponse,
+  SHOP_PAGE_SIZE,
+  type ShopQueryOptions,
+  type ShopSearchResult,
+} from './searchQuery';
 import { fetchInitialRecommendations } from '@/components/Shop/recommendations';
 import {
   resolveCategorySlug,
@@ -39,23 +45,31 @@ const CATEGORY_CANONICAL_ALIASES: Record<string, string> = {
 // Fetch the initial product page on the server so the grid — product names,
 // prices and crawlable /product/<slug> links — is present in the raw HTML for
 // search engines. ShopClient hydrates from this and takes over filtering.
+//
+// Only ONE grid page is fetched. Serialising the whole catalogue here put all
+// 425 products into the RSC flight payload on top of rendering 24 of them,
+// which is where the 2.3 MB of HTML came from; the client pulls the rest in the
+// background once mounted.
+const EMPTY_RESULT: ShopSearchResult = { products: [], total: 0, totalPages: 1 };
+
 async function fetchInitialProducts(
   params: Record<string, string>,
-): Promise<{ products: any[]; total: number }> {
+  opts: ShopQueryOptions = {},
+): Promise<ShopSearchResult> {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-  if (!API_URL) return { products: [], total: 0 };
+  if (!API_URL) return EMPTY_RESULT;
   try {
     const sp = new URLSearchParams(
       Object.entries(params).filter(([, v]) => typeof v === 'string') as [string, string][],
     );
-    const query = buildShopSearchParams(sp).toString();
+    const query = buildShopSearchParams(sp, opts).toString();
     const res = await fetch(`${API_URL}/api/products/search?${query}`, {
       next: { revalidate: 300 },
     });
-    if (!res.ok) return { products: [], total: 0 };
+    if (!res.ok) return EMPTY_RESULT;
     return parseProductsResponse(await res.json());
   } catch {
-    return { products: [], total: 0 };
+    return EMPTY_RESULT;
   }
 }
 
@@ -1699,7 +1713,7 @@ export default async function ShopPage({
   const heroSeed = deriveHeroSeed(params, ctx);
   const [schemas, initial, initialRecommended] = await Promise.all([
     buildJsonLd(params, ctx),
-    fetchInitialProducts(params),
+    fetchInitialProducts(params, { limit: SHOP_PAGE_SIZE }),
     fetchInitialRecommendations(12, params.category),
   ]);
 

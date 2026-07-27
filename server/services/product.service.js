@@ -4880,15 +4880,37 @@ const searchProducts = async (searchParams = {}) => {
   // ============================================================
   // STEP 13: Build Response
   // ============================================================
-  const totalPages = Math.ceil(filteredProducts.length / limit);
+  // `totalResults` from STEP 6 is the real match count: the count pipeline is
+  // the same pipeline minus $skip/$limit. Reporting `filteredProducts.length`
+  // here instead described the *page* — with limit=24 the response claimed
+  // totalResults 24 / totalPages 1 / hasNextPage false, so no caller could
+  // paginate and the shop had to fetch the whole catalog to know its own size.
+  //
+  // Caveat, stated rather than hidden: the price / on-sale / saleType filters
+  // in STEP 9 run in JS over the current page only, because they depend on
+  // per-tenant pricing computed after the aggregation. When one of those is
+  // active the count is an upper bound, flagged by `isExactCount: false`.
+  const isExactCount = !(
+    minPrice !== undefined ||
+    maxPrice !== undefined ||
+    effectiveOnSale === true ||
+    effectiveOnSale === 'true' ||
+    Boolean(saleType)
+  );
+  const totalPages = Math.ceil(totalResults / limit);
 
   return {
     products: finalProducts,
     pagination: {
       currentPage: page,
       totalPages,
-      totalResults: filteredProducts.length,
+      totalResults,
       resultsPerPage: limit,
+      // How many products this page actually returned, after the JS-side
+      // price/sale filtering above — may be < resultsPerPage on the last page
+      // or when those filters drop rows.
+      pageResults: finalProducts.length,
+      isExactCount,
       hasNextPage: page < totalPages,
       hasPreviousPage: page > 1,
     },

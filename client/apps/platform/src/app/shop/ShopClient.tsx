@@ -13,14 +13,17 @@ import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 import { viewItemListEvent, type GTagItem } from '@/lib/gtag';
-import { buildShopSearchParams } from './searchQuery';
+import { buildShopSearchParams, parseProductsResponse } from './searchQuery';
 
 interface PageProps {
   params?: { slug?: string };
-  // Products fetched on the server so the grid is present in the raw HTML
-  // (crawlable by search engines). ShopClient seeds its state from these and
-  // skips the initial client fetch when present.
+  // The FIRST grid page, fetched on the server so the grid is present in the
+  // raw HTML (crawlable by search engines). ShopClient seeds its state from
+  // these, skips the blocking initial fetch, and pulls the rest of the working
+  // set in the background after mount.
   initialProducts?: any[];
+  // Total products matching the query across all pages — not the length of
+  // `initialProducts`. Drives the hero's "N products available" count.
   initialTotal?: number;
   // Server-fetched trending products for the "Recommended For You" section,
   // so its cards + /product links are present in the raw HTML too.
@@ -221,6 +224,11 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
   // When the server seeded products for the current params, skip the very first
   // client fetch — the seed is already fresh and rendered into the HTML.
   const skipNextFetchRef = useRef(hasSeed);
+  // The query the server seeded, captured once. The background working-set
+  // fetch below targets this, and drops its result if the user has since
+  // filtered/navigated (`supersededRef`).
+  const [seededQuery] = useState(() => searchParams.toString());
+  const supersededRef = useRef(false);
 
   // ── API URL ──────────────────────────────────────────────────────────────
   // Query is built via the shared builder (searchQuery.ts) so this URL matches
@@ -235,6 +243,9 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
   // ── Fetch ────────────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async () => {
     const url = buildApiUrl();
+    // From here on the user's own query owns `products` — a background
+    // working-set response for the seeded query must not overwrite it.
+    supersededRef.current = true;
 
     // Serve from cache if fresh
     const cached = _shopCache.get(url);
@@ -250,22 +261,7 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
       setError(null);
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      let prods: any[] = [];
-      let total = 0;
-      if (data.success && data.data?.products) {
-        prods = data.data.products;
-        total = data.data.pagination?.total ?? prods.length;
-      } else if (data.success && data.data?.data) {
-        prods = data.data.data;
-        total = data.data.pagination?.total ?? prods.length;
-      } else if (Array.isArray(data.products)) {
-        prods = data.products;
-        total = prods.length;
-      } else if (Array.isArray(data)) {
-        prods = data;
-        total = prods.length;
-      }
+      const { products: prods, total } = parseProductsResponse(await res.json());
       _shopCache.set(url, { data: prods, total, ts: Date.now() });
       setProducts(prods);
       setTotalProducts(total);
@@ -286,6 +282,39 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
     debounceRef.current = setTimeout(() => { fetchProducts(); }, 200);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [fetchProducts]);
+
+  // ── Background working-set fetch ─────────────────────────────────────────
+  // The server seeds only the first grid page so the SSR'd HTML stays small.
+  // Once mounted, pull the rest of the matching set in the background and swap
+  // it in, so the grid's client-side filtering, sorting and pagination still
+  // see every match. Deliberately never touches `loading` or `error`: a failure
+  // here leaves the already-rendered first page alone rather than replacing a
+  // working grid with a spinner or an error panel.
+  useEffect(() => {
+    if (!hasSeed) return;
+    let alive = true;
+    const base = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/products/search`;
+    const url = `${base}?${buildShopSearchParams(new URLSearchParams(seededQuery)).toString()}`;
+
+    (async () => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const { products: prods, total } = parseProductsResponse(await res.json());
+        if (!alive || supersededRef.current || prods.length === 0) return;
+        _shopCache.set(url, { data: prods, total, ts: Date.now() });
+        setProducts(prods);
+        setTotalProducts(total);
+      } catch {
+        /* keep the server-rendered first page */
+      }
+    })();
+
+    return () => { alive = false; };
+    // Runs once per mount: `seededQuery` is a snapshot, and any later query
+    // change is handled by the debounced fetch above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Sale-type filtering (client-side) ────────────────────────────────────
   // Filter, then sort biggest discount first
