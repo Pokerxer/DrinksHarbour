@@ -4,7 +4,9 @@ const assert = require('node:assert');
 const {
   expandCategorySlugs,
   CATEGORY_TYPE_GROUPS,
+  safeObjectId,
 } = require('../helpers/searchFilter.helper');
+const mongoose = require('mongoose');
 
 const matches = (patterns, type) => patterns.some(p => new RegExp(p, 'i').test(type));
 
@@ -94,5 +96,25 @@ test('every schema enum type lands in exactly the expected family', () => {
     ].filter(Boolean);
     // Accessory/other types belong to no family; drink types to exactly one.
     assert.ok(families.length <= 1, `type "${t}" matched multiple families: ${families}`);
+  }
+});
+
+test('safeObjectId casts a 24-char hex string so aggregate $match can find it', () => {
+  const hex = '507f1f77bcf86cd799439011';
+  const cast = safeObjectId(hex);
+  assert.ok(cast instanceof mongoose.Types.ObjectId);
+  assert.strictEqual(String(cast), hex);
+});
+
+test('safeObjectId passes an existing ObjectId through unchanged', () => {
+  const id = new mongoose.Types.ObjectId();
+  assert.strictEqual(safeObjectId(id), id);
+});
+
+test('safeObjectId returns uncastable values untouched instead of throwing', () => {
+  // A bad id must keep matching nothing, not become an exception.
+  for (const bad of ['', 'not-an-id', '507f1f77bcf86cd79943901', null, undefined, 42]) {
+    assert.doesNotThrow(() => safeObjectId(bad));
+    assert.strictEqual(safeObjectId(bad), bad);
   }
 });

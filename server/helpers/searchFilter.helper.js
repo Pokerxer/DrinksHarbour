@@ -289,6 +289,22 @@ const toObjectId = (values) => {
   return new mongoose.Types.ObjectId(values);
 };
 
+/**
+ * Cast a value for use inside an aggregation `$match`, which Mongoose does not
+ * cast for you — a raw 24-char string id silently matches nothing.
+ *
+ * Unlike `toObjectId` this never throws: anything that is not a castable id is
+ * returned untouched, so a bad value still matches nothing instead of turning a
+ * quiet empty result into an exception.
+ *
+ * @param {*} value - Value to cast
+ * @returns {mongoose.Types.ObjectId|*} An ObjectId, or the original value
+ */
+const safeObjectId = (value) => {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  return isObjectId(value) ? new mongoose.Types.ObjectId(value) : value;
+};
+
 module.exports = {
   CATEGORY_TYPE_GROUPS,
   expandCategorySlugs,
@@ -299,5 +315,6 @@ module.exports = {
   buildSubCategoryFilter,
   buildBrandFilter,
   isObjectId,
-  toObjectId
+  toObjectId,
+  safeObjectId
 };

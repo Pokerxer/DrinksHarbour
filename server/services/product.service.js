@@ -32,7 +32,8 @@ const {
   resolveBrandToObjectIds,
   buildCategoryFilter,
   buildSubCategoryFilter,
-  buildBrandFilter
+  buildBrandFilter,
+  safeObjectId
 } = require('../helpers/searchFilter.helper');
 
 
@@ -3256,10 +3257,15 @@ const getProductRevenueData = async (productId) => {
  * Helper: Get product review data
  */
 const getProductReviewData = async (productId) => {
+  // Aggregation pipelines are not cast by Mongoose — a raw string id silently
+  // matches nothing. An unusable id is left as-is so it still matches nothing
+  // rather than throwing.
+  const productMatch = safeObjectId(productId);
+
   const reviewAgg = await Review.aggregate([
     {
       $match: {
-        product: productId,
+        product: productMatch,
         status: 'approved',
       },
     },
@@ -3280,7 +3286,7 @@ const getProductReviewData = async (productId) => {
   const distribution = await Review.aggregate([
     {
       $match: {
-        product: productId,
+        product: productMatch,
         status: 'approved',
       },
     },
@@ -10206,12 +10212,17 @@ const getProductById = async (id, includePending = false) => {
  */
 const getProductRatings = async (productId) => {
   try {
+    // Aggregation pipelines are not cast by Mongoose — a raw string id silently
+    // matches nothing, and this function swallows errors, so the miss would look
+    // like "no ratings" rather than a failure.
+    const productMatch = safeObjectId(productId);
+
     const [ratingsData, distribution] = await Promise.all([
       // Average and count
       Review.aggregate([
         {
           $match: {
-            product: productId,
+            product: productMatch,
             status: 'approved',
           },
         },
@@ -10227,7 +10238,7 @@ const getProductRatings = async (productId) => {
       Review.aggregate([
         {
           $match: {
-            product: productId,
+            product: productMatch,
             status: 'approved',
           },
         },
