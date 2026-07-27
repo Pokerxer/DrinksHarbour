@@ -105,6 +105,12 @@ export function buildShopSearchParams(
   p.set('limit', String(opts.limit ?? SHOP_WORKING_SET));
   if (opts.page && opts.page > 1) p.set('page', String(opts.page));
 
+  // Grid-card projection. The full product runs ~6.2 KB, over half of it in
+  // long-form copy and admin media metadata the shop never renders — a product
+  // page's payload, shipped 24 at a time. Opt-in, so other callers of
+  // /api/products/search are unaffected.
+  p.set('fields', 'card');
+
   return p;
 }
 

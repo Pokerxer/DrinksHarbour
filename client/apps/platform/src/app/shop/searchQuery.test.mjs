@@ -43,6 +43,11 @@ test('filters still translate to the API param names', () => {
   assert.equal(p.get('sort'), 'newest');
 });
 
+test('every shop request opts into the grid-card projection', () => {
+  assert.equal(buildShopSearchParams(sp('')).get('fields'), 'card');
+  assert.equal(buildShopSearchParams(sp('category=whisky'), { limit: 24, page: 2 }).get('fields'), 'card');
+});
+
 test('the paging options do not disturb the filter translation', () => {
   const bare = buildShopSearchParams(sp('category=whisky&origin=Scotland'));
   const paged = buildShopSearchParams(sp('category=whisky&origin=Scotland'), { limit: 24, page: 2 });

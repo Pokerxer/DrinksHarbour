@@ -3793,6 +3793,10 @@ const searchProducts = async (searchParams = {}) => {
     saleType,
     minRating,
 
+    // Response projection: 'card', or a comma-separated list of top-level
+    // keys. Omitted, the full product objects are returned as before.
+    fields,
+
     // Search mode - using semantic search with local embeddings
     searchMode = 'semantic', // 'text', 'semantic', 'hybrid'
     useEmbeddings = true, // Enabled - using local transformers.js model
@@ -4947,7 +4951,7 @@ const searchProducts = async (searchParams = {}) => {
   const totalPages = Math.ceil(totalResults / limit);
 
   return {
-    products: finalProducts,
+    products: projectProducts(finalProducts, fields),
     pagination: {
       currentPage: page,
       totalPages,
@@ -4998,6 +5002,102 @@ const searchProducts = async (searchParams = {}) => {
 // ============================================================
 // HELPER: Get Available Search Filters
 // ============================================================
+
+// ============================================================
+// HELPER: Response projections for /api/products/search
+// ============================================================
+// Opt-in via `?fields=`. Omitted, the response is byte-identical to what it
+// has always been, so existing callers are untouched.
+//
+// `fields=card` returns what a grid card, its quick-view and its add-to-cart
+// need, and nothing else: no long-form description, no tasting notes, no
+// serving suggestions or food pairings, and the nested objects trimmed to the
+// handful of keys that get read. Vendor detail stays — the card genuinely
+// prices, stocks and adds to cart from `availableAt`.
+
+const CARD_TOP_LEVEL = [
+  '_id', 'id', 'sku', 'name', 'slug', 'shortDescription',
+  'abv', 'volumeMl', 'isAlcoholic', 'originCountry', 'region', 'type',
+  'badge', 'availability', 'status', 'isFeatured',
+  'averageRating', 'reviewCount', 'totalSold', 'tenantCount',
+  // `pricingInfo` is deliberately absent: it restates priceRange/hasDiscounts
+  // and nothing on the storefront reads it.
+  'priceRange', 'stockInfo', 'sizes', 'tags', 'flavors',
+  'shippingInfo', 'createdAt',
+];
+
+const pick = (obj, keys) => {
+  if (!obj) return obj;
+  const out = {};
+  for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k];
+  return out;
+};
+
+// Images carry publicId, resourceType, tags and uploadedAt for the admin
+// media manager. A card renders a src and an alt.
+const cardImage = (img) => (img ? pick(img, ['url', 'alt']) : img);
+
+const cardTaxonomy = (t) => (t ? pick(t, ['_id', 'name', 'slug', 'type']) : t);
+
+// What a shopper is allowed to see of a size's price. The full pricing object
+// also carries costPrice, tenantPrice, platformCostPrice, platformMargin and
+// the markup/commission percentages — our margins, published to anonymous
+// visitors 24 products at a time. Nothing on the storefront reads them.
+// Anything starting with "pack" is kept: the pack-rate UI reads several.
+const CARD_PRICING = [
+  'websitePrice', 'originalWebsitePrice', 'displayPrice', 'formattedPrice',
+  'compareAtPrice', 'currency', 'currencySymbol',
+];
+
+const cardPricing = (pricing) => {
+  if (!pricing) return pricing;
+  const out = pick(pricing, CARD_PRICING);
+  for (const k of Object.keys(pricing)) {
+    if (k.startsWith('pack')) out[k] = pricing[k];
+  }
+  return out;
+};
+
+const cardSize = (s) => ({
+  ...pick(s, ['_id', 'size', 'displayName', 'volumeMl', 'sku', 'isDefault',
+    'stock', 'availability', 'discount']),
+  pricing: cardPricing(s.pricing),
+});
+
+const cardVendor = (v) => ({
+  ...pick(v, ['_id', 'sku', 'isOnSale', 'saleType', 'saleDiscountValue',
+    'saleStartDate', 'saleEndDate', 'discount', 'totalStock', 'currency']),
+  sizes: Array.isArray(v.sizes) ? v.sizes.map(cardSize) : v.sizes,
+  tenant: v.tenant
+    ? { ...pick(v.tenant, ['_id', 'name', 'slug', 'primaryColor', 'city', 'state']),
+        ...(v.tenant.logo ? { logo: { url: v.tenant.logo.url } } : {}) }
+    : v.tenant,
+});
+
+function toCardProduct(p) {
+  return {
+    ...pick(p, CARD_TOP_LEVEL),
+    brand: p.brand
+      ? { ...pick(p.brand, ['_id', 'name', 'slug', 'countryOfOrigin']),
+          ...(p.brand.logo ? { logo: { url: p.brand.logo.url } } : {}) }
+      : p.brand,
+    category:    cardTaxonomy(p.category),
+    subCategory: cardTaxonomy(p.subCategory),
+    primaryImage: cardImage(p.primaryImage),
+    images: Array.isArray(p.images) ? p.images.slice(0, 2).map(cardImage) : p.images,
+    availableAt: Array.isArray(p.availableAt) ? p.availableAt.map(cardVendor) : p.availableAt,
+  };
+}
+
+// `fields=card` for the preset, or a comma-separated list of top-level keys.
+function projectProducts(products, fields) {
+  if (!fields) return products;
+  if (fields === 'card') return products.map(toCardProduct);
+  const keys = String(fields).split(',').map(f => f.trim()).filter(Boolean);
+  if (keys.length === 0) return products;
+  if (!keys.includes('_id')) keys.unshift('_id');
+  return products.map(p => pick(p, keys));
+}
 
 // Distinct filter values for a search, plus how many products sit behind each
 // one — computed over the WHOLE match, not the page being returned.
