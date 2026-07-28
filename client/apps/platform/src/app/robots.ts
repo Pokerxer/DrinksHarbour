@@ -35,10 +35,9 @@ const DISALLOWED_PATHS = [
 ];
 
 // Query parameters that produce filtered/sorted permutations of pages we already
-// expose canonically. /shop server-renders the whole catalogue in one response
-// and every product, category and brand URL is in the sitemap, so these variants
-// add no discoverable content — they only burn crawl budget on the slowest
-// endpoint we have.
+// expose canonically. Every product, category and brand URL is in the sitemap,
+// so these variants add no discoverable content — they only burn crawl budget on
+// the slowest endpoint we have.
 //
 // `category`, `subcategory` and `brand` are intentionally NOT listed: the
 // sitemap advertises the combined ?category=&subcategory= URLs, and blog
@@ -48,8 +47,18 @@ const DISALLOWED_PATHS = [
 // (/deals) and ?sale=true canonicalizes onto it — but a blocked URL is never
 // fetched, so its canonical is never read and the consolidation cannot happen.
 // Blocking it also stopped the site's own "Sale" nav target from ranking at all.
+//
+// `page` is NOT listed, for the same "a blocked URL is never fetched" reason.
+// Pagination is not a filtered permutation: page 2 of a listing holds a
+// different set of products from page 1, which is why each paginated URL
+// self-canonicalizes rather than pointing back at page 1. Blocking it left
+// /shop?category=scotch&page=2 both `index, follow` and un-fetchable — Google
+// could never read either directive. The original rationale ("/shop
+// server-renders the whole catalogue in one response") also no longer holds:
+// /shop pages at SHOP_PAGE_SIZE, so pages 2+ are the only link path to most of
+// a category's products.
 const DISALLOWED_PARAMS = [
-  "sort", "page", "view", "limit", "offset",
+  "sort", "view", "limit", "offset",
   "search", "q",
   "saleType",
   "minPrice", "maxPrice", "minABV", "maxABV", "minRating", "rating",
