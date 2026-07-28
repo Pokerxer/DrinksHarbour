@@ -30,11 +30,16 @@ const SHOP_BOTTOM_LINKS: FooterLink[] = [
 // not: the catalog splits those into scotch / irish-whiskey / red-wine etc., so
 // the footer shipped two sitewide 404s. Keep this list in sync with
 // /api/categories.
+// Link the /shop?category= form, not /categories/<slug>: the latter sets
+// rel=canonical to the former, so linking it spends sitewide footer authority
+// on a page that immediately forwards its signals elsewhere. The /categories
+// hub keeps its own link below — it is canonical in its own right and has no
+// /shop equivalent.
 const FALLBACK_CATEGORY_LINKS: FooterLink[] = [
-  { label: "Scotch Whisky", href: "/categories/scotch" },
-  { label: "Red Wine",      href: "/categories/red-wine" },
-  { label: "Champagne",     href: "/categories/champagne" },
-  { label: "Tequila",       href: "/categories/tequila" },
+  { label: "Scotch Whisky", href: "/shop?category=scotch" },
+  { label: "Red Wine",      href: "/shop?category=red-wine" },
+  { label: "Champagne",     href: "/shop?category=champagne" },
+  { label: "Tequila",       href: "/shop?category=tequila" },
 ];
 
 const HELP_LINKS = [
@@ -150,7 +155,7 @@ export const Footer: React.FC = () => {
           .slice(0, 4)
           .map((c: any) => ({
             label: c.displayName || c.name,
-            href: `/categories/${c.slug}`,
+            href: `/shop?category=${encodeURIComponent(c.slug)}`,
           }));
         if (active && top.length) setCategoryLinks(top);
       } catch {

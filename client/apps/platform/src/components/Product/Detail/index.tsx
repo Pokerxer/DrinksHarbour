@@ -949,7 +949,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     </span>
                     {productData.category?.slug ? (
                       <Link
-                        href={`/categories/${productData.category.slug}`}
+                        href={`/shop?category=${encodeURIComponent(productData.category.slug)}`}
                         className="font-medium text-gray-900 transition-colors hover:underline"
                       >
                         {productData.category.name}
@@ -966,7 +966,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     </span>
                     {productData.subCategory?.slug && productData.category?.slug ? (
                       <Link
-                        href={`/categories/${productData.category.slug}/${productData.subCategory.slug}`}
+                        href={`/shop?category=${encodeURIComponent(productData.category.slug)}&subcategory=${encodeURIComponent(productData.subCategory.slug)}`}
                         className="font-medium text-gray-900 transition-colors hover:underline"
                       >
                         {productData.subCategory.name}
