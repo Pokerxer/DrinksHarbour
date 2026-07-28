@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
 import { getPosts } from "./blog/api";
-import { categoryHasProducts } from "./shop/taxonomy";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -53,31 +52,40 @@ interface SlugEntry {
 async function fetchProducts(): Promise<{
   items: SlugEntry[];
   brandCounts: Record<string, number> | null;
+  categoryCounts: Record<string, number> | null;
 }> {
+  const empty = { items: [], brandCounts: null, categoryCounts: null };
   try {
-    const res = await fetch(`${API_URL}/api/products/slugs`, {
-      next: { revalidate: 3600 },
-    });
-    if (!res.ok) return { items: [], brandCounts: null };
+    // The category list rides along so the API can count all of them in one
+    // request. Probing per-slug from here instead put ~23 concurrent requests
+    // on the backend during static generation, which starved the other pages
+    // being prerendered in parallel and timed the build out.
+    const res = await fetch(
+      `${API_URL}/api/products/slugs?categories=${encodeURIComponent(CATEGORY_SLUGS.join(","))}`,
+      { next: { revalidate: 3600 } },
+    );
+    if (!res.ok) return empty;
     const data = await res.json();
-    const brandCounts =
-      data?.data?.brandCounts && typeof data.data.brandCounts === "object"
-        ? (data.data.brandCounts as Record<string, number>)
-        : null;
+    const record = (v: unknown) =>
+      v && typeof v === "object" ? (v as Record<string, number>) : null;
+    const brandCounts = record(data?.data?.brandCounts);
+    const categoryCounts = record(data?.data?.categoryCounts);
     // Newer API shape: items carry updatedAt alongside the slug
     if (Array.isArray(data?.data?.items)) {
       return {
         items: data.data.items.filter((p: SlugEntry) => p?.slug),
         brandCounts,
+        categoryCounts,
       };
     }
     const slugs: string[] = data?.data?.slugs ?? data?.slugs ?? [];
     return {
       items: Array.isArray(slugs) ? slugs.map((slug) => ({ slug })) : [],
       brandCounts,
+      categoryCounts,
     };
   } catch {
-    return { items: [], brandCounts: null };
+    return empty;
   }
 }
 
@@ -213,25 +221,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/vendors/register/apply`,      changeFrequency: "monthly", priority: 0.5 },
   ];
 
-  const [productData, brands, categories, subcats, vendors, posts, categoryHasStock] =
-    await Promise.all([
-      fetchProducts(),
-      fetchBrands(),
-      fetchCategories(),
-      fetchSubcategories(),
-      fetchVendors(),
-      getPosts(),
-      // Probe each category against the same search the grid uses. `null` means
-      // the API was unreachable — keep the URL rather than silently shrinking
-      // the sitemap on a blip.
-      Promise.all(
-        CATEGORY_SLUGS.map(async (cat) => [cat, await categoryHasProducts(cat)] as const),
-      ),
-    ]);
+  const [productData, brands, categories, subcats, vendors, posts] = await Promise.all([
+    fetchProducts(),
+    fetchBrands(),
+    fetchCategories(),
+    fetchSubcategories(),
+    fetchVendors(),
+    getPosts(),
+  ]);
 
   const products = productData.items;
-  const brandCounts = productData.brandCounts;
-  const categoryEmpty = new Map(categoryHasStock);
+  const { brandCounts, categoryCounts } = productData;
 
   const productPages: MetadataRoute.Sitemap = products.map((p) => ({
     url: `${BASE_URL}/product/${p.slug}`,
@@ -250,9 +250,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // stored Category.productCount is not usable here: it counts documents linked
   // to that exact category, so umbrella slugs like `whisky` and `wine` report
   // zero while their grids are full.
+  // No categoryCounts (old API, or the call failed) means keep every slug —
+  // never shrink the sitemap on a blip.
   const categoryDocs = new Map(categories.map((c) => [c.slug, c]));
   const categoryPages: MetadataRoute.Sitemap = CATEGORY_SLUGS.filter(
-    (cat) => categoryEmpty.get(cat) !== false,
+    (cat) => !categoryCounts || (categoryCounts[cat] ?? 0) > 0,
   ).map((cat) => ({
     url: `${BASE_URL}/shop?category=${cat}`,
     lastModified: realDate(categoryDocs.get(cat)?.updatedAt),

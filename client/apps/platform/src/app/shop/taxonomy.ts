@@ -131,22 +131,6 @@ export async function subFamilyHasProducts(raw: string): Promise<boolean | null>
   return Array.isArray(products) && products.length > 0;
 }
 
-// Same probe for a category slug. The catalog knowing a slug is not the same as
-// the grid having anything to show — `whiskey`, `cognac`, `beer` and `rum` are
-// all curated, all resolve, and all render empty. The sitemap uses this so it
-// only advertises category URLs with products.
-// true = has products; false = grid is empty; null = offline.
-export async function categoryHasProducts(raw: string): Promise<boolean | null> {
-  const slug = raw.toLowerCase().trim().replace(/\s+/g, '-');
-  const data = await getJson(
-    `/api/products/search?category=${encodeURIComponent(slug)}&limit=1`,
-    900,
-  );
-  if (data === null) return null;
-  const products = data?.data?.products;
-  return Array.isArray(products) && products.length > 0;
-}
-
 // The shop `brand` URL param carries the brand *name* — same lookup the hero
 // banner uses client-side: search, prefer an exact case-insensitive name match.
 export async function fetchBrandByName(name: string): Promise<DbBrand | null | 'offline'> {

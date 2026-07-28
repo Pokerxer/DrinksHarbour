@@ -152,9 +152,18 @@ router.get(
 router.get(
   '/slugs',
   asyncHandler(async (req, res) => {
+    // ?categories=a,b,c — the sitemap's static category list. Counting them
+    // here (one request) rather than probing the search endpoint per slug keeps
+    // the platform build from firing a burst of concurrent requests at us.
+    const categorySlugs = String(req.query.categories || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 100);
+
     const [docs, facets] = await Promise.all([
       productService.getSellableProductSlugs(),
-      productService.getSellableFacetCounts(),
+      productService.getSellableFacetCounts(categorySlugs),
     ]);
     const items = docs
       .filter((p) => p.slug)

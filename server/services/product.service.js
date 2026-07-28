@@ -10368,44 +10368,63 @@ const getSellableProductSlugs = async () => {
 };
 
 /**
- * Sellable product counts per brand slug and per category slug.
+ * Sellable product counts per brand slug, and per requested category slug.
  *
  * The stored Brand.productCount / Category.productCount fields count *linked*
- * products regardless of whether any of them can actually be bought, so brands
- * like "19 Crimes" report a non-zero count while their page renders an empty
- * grid. The sitemap needs the count under the same rule the pages use, or it
+ * products regardless of whether any can actually be bought, so brands like
+ * "19 Crimes" report a non-zero count while their page renders an empty grid.
+ * The sitemap needs the count under the same rule the pages use, or it
  * advertises thin pages.
  *
+ * Categories additionally can't be counted by their own ref: the shop grid
+ * resolves umbrella slugs across a whole Category.type family, so `whisky` owns
+ * no products directly yet renders a full grid. Counting therefore reuses
+ * resolveCategoryToObjectIds — the same resolution the search filter applies —
+ * and keys the result by the slug that was asked for.
+ *
+ * @param {string[]} [categorySlugs] - Category slugs the caller wants counted.
  * @returns {Promise<{brands: Record<string, number>, categories: Record<string, number>}>}
  */
-const getSellableFacetCounts = async () => {
-  const tally = async (refField, from) => {
-    const rows = await Product.aggregate([
+const getSellableFacetCounts = async (categorySlugs = []) => {
+  const groupSellableBy = (refField) =>
+    Product.aggregate([
       { $match: { ...SELLABLE_PRODUCT_MATCH, [refField]: { $ne: null } } },
       { $project: { [refField]: 1 } },
       ...sellableListingStages(),
       { $group: { _id: `$${refField}`, count: { $sum: 1 } } },
-      {
-        $lookup: {
-          from,
-          localField: '_id',
-          foreignField: '_id',
-          as: 'doc',
-        },
-      },
-      { $unwind: '$doc' },
-      { $project: { _id: 0, slug: '$doc.slug', count: 1 } },
     ]);
-    return rows.reduce((acc, r) => {
-      if (r.slug) acc[r.slug] = r.count;
-      return acc;
-    }, {});
-  };
 
-  const [brands, categories] = await Promise.all([
-    tally('brand', 'brands'),
-    tally('category', 'categories'),
+  const [brandRows, categoryRows] = await Promise.all([
+    groupSellableBy('brand'),
+    categorySlugs.length ? groupSellableBy('category') : Promise.resolve([]),
   ]);
+
+  // Brands map cleanly by their own _id -> slug.
+  const brandSlugById = new Map(
+    (await Brand.find({ _id: { $in: brandRows.map((r) => r._id) } })
+      .select('_id slug')
+      .lean()).map((b) => [b._id.toString(), b.slug]),
+  );
+  const brands = brandRows.reduce((acc, r) => {
+    const slug = brandSlugById.get(r._id?.toString());
+    if (slug) acc[slug] = r.count;
+    return acc;
+  }, {});
+
+  // Categories: sum the counts of every category id the requested slug resolves
+  // to, so umbrella slugs pick up their whole family.
+  const countByCategoryId = new Map(
+    categoryRows.map((r) => [r._id?.toString(), r.count]),
+  );
+  const categories = {};
+  await Promise.all(
+    categorySlugs.map(async (slug) => {
+      const ids = await resolveCategoryToObjectIds([slug]);
+      const total = ids.reduce((sum, id) => sum + (countByCategoryId.get(id) || 0), 0);
+      categories[slug] = total;
+    }),
+  );
+
   return { brands, categories };
 };
 
