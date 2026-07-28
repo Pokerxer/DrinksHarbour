@@ -1,6 +1,14 @@
 import type { MetadataRoute } from "next";
 import { getPosts } from "./blog/api";
 
+// Generated on request rather than at build. This route makes six API calls, so
+// prerendering it paid Vercel build CPU to sit and wait on the backend — and a
+// slow backend could time the export out and fail the entire deploy, which is
+// exactly what happened. Crawlers fetch this a handful of times a day, and the
+// fetches below are cached (`next: { revalidate }`), so serving it per request
+// costs almost nothing.
+export const dynamic = "force-dynamic";
+
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 

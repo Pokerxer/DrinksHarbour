@@ -1,5 +1,13 @@
 import React from "react";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
+
+// Rendered per request, not prerendered at build. `middleware.ts` matches `/`
+// and rewrites request headers, so this page is served dynamically at runtime
+// regardless (every response is `no-store`, `x-vercel-cache: MISS`) — building
+// a static copy only to discard it burned build CPU waiting on the API, and is
+// what let a slow backend fail the whole deploy on a 60s export timeout.
+// (`dynamic` is the reserved route-segment name, hence the renamed import.)
+export const dynamic = "force-dynamic";
 import LazySection from "@/components/UI/LazySection";
 import { fetchInitialRecommendations } from "@/components/Shop/recommendations";
 import { buildProductItemList } from "@/lib/product-jsonld";
@@ -9,18 +17,18 @@ import HeroBanner from "@/components/Banner/HeroBanner";
 import HomeCategoryDrawer from "@/components/Home1/HomeCategoryDrawer";
 
 // Below-fold sections: dynamically imported to reduce initial JS bundle
-const FlashSale = dynamic(() => import("@/components/Home1/FlashSale"), {
+const FlashSale = nextDynamic(() => import("@/components/Home1/FlashSale"), {
   loading: () => <FlashSaleSkeleton />,
 });
-const FeaturedDeals = dynamic(() => import("@/components/Home1/FeaturedDeals"));
-const FeaturedProducts = dynamic(
+const FeaturedDeals = nextDynamic(() => import("@/components/Home1/FeaturedDeals"));
+const FeaturedProducts = nextDynamic(
   () => import("@/components/Home1/FeaturedProducts")
 );
-const Benefit = dynamic(() => import("@/components/Home1/Benefit"));
-const PlacementBanner = dynamic(
+const Benefit = nextDynamic(() => import("@/components/Home1/Benefit"));
+const PlacementBanner = nextDynamic(
   () => import("@/components/Banner/PlacementBanner")
 );
-const RecommendedForYou = dynamic(
+const RecommendedForYou = nextDynamic(
   () => import("@/components/Shop/RecommendedForYou")
 );
 
