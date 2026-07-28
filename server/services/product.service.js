@@ -9643,10 +9643,32 @@ const getBestsellers = async (page = 1, limit = 12) => {
 };
 
 
+// ────────────────────────────────────────────────────────────────────────────
+// Sellability rule — the single definition of "this product has a buyable
+// detail page". getProductBySlug enforces it per-slug; getSellableProductSlugs
+// enforces the same thing in bulk for the sitemap. Both must agree, or the
+// sitemap advertises URLs that 404.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** A product is only reachable at /product/[slug] in these states. */
+const SELLABLE_PRODUCT_MATCH = { status: 'approved', isPublished: true };
+
+/** Only these tenants may sell; anything else and the listing is invisible. */
+const SELLING_TENANT_MATCH = {
+  status: 'approved',
+  subscriptionStatus: { $in: ['active', 'trialing'] },
+};
+
+/** A size counts as buyable in these states. */
+const SELLABLE_SIZE_MATCH = {
+  status: 'active',
+  availability: { $in: ['available', 'in_stock', 'low_stock', 'pre_order', 'limited_stock'] },
+};
+
 /**
  * Get product by slug with full details, pricing, and availability.
  * Returns a comprehensive product object ready for display on a product detail page.
- * 
+ *
  * @param {string} slug - Product slug
  * @returns {Promise<Object>} Fully processed product with vendors, pricing, reviews, and badge
  * @throws {NotFoundError} If product doesn't exist or is unavailable
@@ -9655,7 +9677,7 @@ const getProductBySlug = async (slug) => {
   // ══════════════════════════════════════════════════════════════════════════
   // 1. FETCH BASE PRODUCT
   // ══════════════════════════════════════════════════════════════════════════
-  const product = await Product.findOne({ slug, status: 'approved', isPublished: true })
+  const product = await Product.findOne({ slug, ...SELLABLE_PRODUCT_MATCH })
     .populate('brand', 'name slug logo description website countryOfOrigin verified')
     .populate('category', 'name slug type description icon')
     .populate('subCategory', 'name slug subType description')
@@ -9676,19 +9698,13 @@ const getProductBySlug = async (slug) => {
   })
     .populate({
       path: 'tenant',
-      match: {
-        status: 'approved',
-        subscriptionStatus: { $in: ['active', 'trialing'] },
-      },
+      match: SELLING_TENANT_MATCH,
       select:
         'name slug logo primaryColor revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
     })
     .populate({
       path: 'sizes',
-      match: {
-        status: 'active',
-        availability: { $in: ['available', 'in_stock', 'low_stock', 'pre_order', 'limited_stock'] },
-      },
+      match: SELLABLE_SIZE_MATCH,
       select:
         'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
     })
@@ -10282,6 +10298,116 @@ const getProductBySlug = async (slug) => {
 };
 
 
+
+/**
+ * Aggregation stages that keep only products with at least one buyable listing:
+ * an active SubProduct whose tenant may sell and which has an available size.
+ * Shared so the slug list and the facet counts can never drift apart.
+ */
+const sellableListingStages = () => [
+  {
+    $lookup: {
+      from: 'subproducts',
+      let: { productId: '$_id' },
+      as: 'sellable',
+      pipeline: [
+        { $match: { $expr: { $eq: ['$product', '$$productId'] }, status: 'active' } },
+        { $project: { tenant: 1, sizes: 1 } },
+        {
+          $lookup: {
+            from: 'tenants',
+            let: { tenantId: '$tenant' },
+            as: 'sellingTenant',
+            pipeline: [
+              { $match: { $expr: { $eq: ['$_id', '$$tenantId'] }, ...SELLING_TENANT_MATCH } },
+              { $limit: 1 },
+              { $project: { _id: 1 } },
+            ],
+          },
+        },
+        { $match: { sellingTenant: { $ne: [] } } },
+        {
+          $lookup: {
+            from: 'sizes',
+            let: { sizeIds: { $ifNull: ['$sizes', []] } },
+            as: 'sellableSizes',
+            pipeline: [
+              { $match: { $expr: { $in: ['$_id', '$$sizeIds'] }, ...SELLABLE_SIZE_MATCH } },
+              { $limit: 1 },
+              { $project: { _id: 1 } },
+            ],
+          },
+        },
+        { $match: { sellableSizes: { $ne: [] } } },
+        // One qualifying listing is enough to make the page render.
+        { $limit: 1 },
+        { $project: { _id: 1 } },
+      ],
+    },
+  },
+  { $match: { sellable: { $ne: [] } } },
+];
+
+/**
+ * Every slug whose /product/[slug] page will actually render, for the sitemap.
+ *
+ * Applies the same three gates getProductBySlug does — product state, a selling
+ * tenant, and a buyable size — in one aggregation rather than N round trips.
+ * Listing a slug that fails any of them puts a 404 in the sitemap, which is
+ * exactly what this endpoint used to do by filtering on `status` alone.
+ *
+ * @returns {Promise<Array<{slug: string, updatedAt: Date}>>}
+ */
+const getSellableProductSlugs = async () => {
+  return Product.aggregate([
+    { $match: SELLABLE_PRODUCT_MATCH },
+    { $project: { slug: 1, updatedAt: 1 } },
+    ...sellableListingStages(),
+    { $project: { _id: 0, slug: 1, updatedAt: 1 } },
+  ]);
+};
+
+/**
+ * Sellable product counts per brand slug and per category slug.
+ *
+ * The stored Brand.productCount / Category.productCount fields count *linked*
+ * products regardless of whether any of them can actually be bought, so brands
+ * like "19 Crimes" report a non-zero count while their page renders an empty
+ * grid. The sitemap needs the count under the same rule the pages use, or it
+ * advertises thin pages.
+ *
+ * @returns {Promise<{brands: Record<string, number>, categories: Record<string, number>}>}
+ */
+const getSellableFacetCounts = async () => {
+  const tally = async (refField, from) => {
+    const rows = await Product.aggregate([
+      { $match: { ...SELLABLE_PRODUCT_MATCH, [refField]: { $ne: null } } },
+      { $project: { [refField]: 1 } },
+      ...sellableListingStages(),
+      { $group: { _id: `$${refField}`, count: { $sum: 1 } } },
+      {
+        $lookup: {
+          from,
+          localField: '_id',
+          foreignField: '_id',
+          as: 'doc',
+        },
+      },
+      { $unwind: '$doc' },
+      { $project: { _id: 0, slug: '$doc.slug', count: 1 } },
+    ]);
+    return rows.reduce((acc, r) => {
+      if (r.slug) acc[r.slug] = r.count;
+      return acc;
+    }, {});
+  };
+
+  const [brands, categories] = await Promise.all([
+    tally('brand', 'brands'),
+    tally('category', 'categories'),
+  ]);
+  return { brands, categories };
+};
 
 /**
  * Get product by ID with full details
@@ -12282,6 +12408,8 @@ module.exports = {
   getNewArrivals,
   getBestsellers,
   getProductBySlug,
+  getSellableProductSlugs,
+  getSellableFacetCounts,
   getProductById,
   getProductRatings,
   getProductSales,

@@ -142,25 +142,36 @@ router.get(
 );
 
 /**
- * Get all approved product slugs (for sitemap generation)
+ * Get every product slug whose detail page actually renders (for sitemap
+ * generation). Gated on the same rule getProductBySlug applies — matching on
+ * `status` alone used to advertise unpublished and sold-out products, putting
+ * 404s in the sitemap.
  * @route GET /api/products/slugs
  * @access Public
  */
 router.get(
   '/slugs',
   asyncHandler(async (req, res) => {
-    const ProductModel = require('../models/Product');
-    const docs = await ProductModel
-      .find({ status: 'approved' }, 'slug updatedAt -_id')
-      .lean();
+    const [docs, facets] = await Promise.all([
+      productService.getSellableProductSlugs(),
+      productService.getSellableFacetCounts(),
+    ]);
     const items = docs
       .filter((p) => p.slug)
       .map((p) => ({ slug: p.slug, updatedAt: p.updatedAt }));
     res.status(200).json({
       success: true,
       // `slugs` kept for backward compatibility; `items` adds updatedAt so the
-      // platform sitemap can emit truthful <lastmod> values.
-      data: { slugs: items.map((p) => p.slug), items },
+      // platform sitemap can emit truthful <lastmod> values. `brandCounts` and
+      // `categoryCounts` let the sitemap drop brand/category pages whose grids
+      // render empty — the stored productCount fields count linked products,
+      // not buyable ones, so they report non-zero for empty pages.
+      data: {
+        slugs: items.map((p) => p.slug),
+        items,
+        brandCounts: facets.brands,
+        categoryCounts: facets.categories,
+      },
     });
   })
 );

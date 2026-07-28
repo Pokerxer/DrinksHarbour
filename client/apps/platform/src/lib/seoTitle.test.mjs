@@ -59,6 +59,27 @@ test('keeps a site name that is part of the title itself', () => {
   );
 });
 
+// Live regression: /brands/dalmore rendered
+// "Dalmore — Buy Dalmore Drinks Online in | DrinksHarbour". The word-boundary
+// trim landed just past "in", and stripping trailing separators left the
+// preposition dangling. A truncated title must end on a word that can end a
+// phrase.
+test('regression: truncating never leaves a dangling preposition', () => {
+  const cases = [
+    ['Dalmore — Buy Dalmore Drinks Online in Nigeria', 'Dalmore — Buy Dalmore Drinks Online'],
+    ['Coca-Cola — Buy Coca-Cola Drinks Online in Nigeria', 'Coca-Cola — Buy Coca-Cola Drinks Online'],
+    ['Absolut Vodka | Premium Swedish Vodka in Nigeria', 'Absolut Vodka | Premium Swedish Vodka'],
+  ];
+  for (const [stored, expected] of cases) {
+    assert.equal(capSeoTitle(stored, SITE), expected);
+  }
+});
+
+test('a stop word is kept when the title fits the budget', () => {
+  // No truncation happened, so the author's phrasing is left exactly as-is.
+  assert.equal(capSeoTitle('Best Gin to Buy in', SITE), 'Best Gin to Buy in');
+});
+
 test('never ends on a separator after trimming', () => {
   for (const stored of [
     'Buy Premium Irish Whiskey Online in Nigeria | Fast Delivery',

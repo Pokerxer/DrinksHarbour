@@ -16,6 +16,14 @@ function escapeRegExp(s: string): string {
 const TRAILING_SEPARATORS = /[\s|·•/,:–—-]+$/;
 
 /**
+ * Words that cannot end a phrase. A word-boundary trim can land just past one
+ * of these — "…Drinks Online in Nigeria" capped to the budget became
+ * "…Drinks Online in", which reads as truncated in the SERP.
+ */
+const TRAILING_STOP_WORDS =
+  /\s+(?:in|on|at|for|to|of|by|with|from|and|or|the|a|an|de|is|as|your|our|its|into|onto|per|via)$/i;
+
+/**
  * Drop a "<sep> SiteName" suffix the stored title already carries — the caller
  * appends the site name itself.
  */
@@ -32,11 +40,19 @@ export function stripSiteSuffix(raw: string, siteName: string): string {
 export function capSeoTitle(raw: string, siteName: string): string {
   const stripped = stripSiteSuffix(raw, siteName);
   const budget = 60 - ` | ${siteName}`.length;
-  const capped =
-    stripped.length <= budget
-      ? stripped
-      : stripped.slice(0, budget).replace(/\s+\S*$/, '');
-  return capped.replace(TRAILING_SEPARATORS, '').trim();
+  if (stripped.length <= budget) return stripped;
+
+  // Trim to a word boundary, then peel off anything the cut left dangling: a
+  // separator, a stop word, or a separator the stop word was hiding. Loop
+  // because "… Online in |" needs more than one pass.
+  let capped = stripped.slice(0, budget).replace(/\s+\S*$/, '');
+  for (;;) {
+    const next = capped
+      .replace(TRAILING_SEPARATORS, '')
+      .replace(TRAILING_STOP_WORDS, '');
+    if (next === capped) return capped.trim();
+    capped = next;
+  }
 }
 
 /** `${title} | ${siteName}`, with the title capped to the SERP budget. */

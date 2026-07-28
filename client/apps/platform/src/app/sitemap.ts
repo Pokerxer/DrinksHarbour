@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getPosts } from "./blog/api";
+import { categoryHasProducts } from "./shop/taxonomy";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -42,21 +43,41 @@ interface SlugEntry {
   updatedAt?: string;
 }
 
-async function fetchProducts(): Promise<SlugEntry[]> {
+/**
+ * Sellable product slugs, plus per-brand sellable counts from the same call.
+ *
+ * `brandCounts` is keyed by brand slug and only contains brands with at least
+ * one buyable product — it is NOT the stored Brand.productCount, which counts
+ * linked products whether or not any can be bought.
+ */
+async function fetchProducts(): Promise<{
+  items: SlugEntry[];
+  brandCounts: Record<string, number> | null;
+}> {
   try {
     const res = await fetch(`${API_URL}/api/products/slugs`, {
       next: { revalidate: 3600 },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { items: [], brandCounts: null };
     const data = await res.json();
+    const brandCounts =
+      data?.data?.brandCounts && typeof data.data.brandCounts === "object"
+        ? (data.data.brandCounts as Record<string, number>)
+        : null;
     // Newer API shape: items carry updatedAt alongside the slug
     if (Array.isArray(data?.data?.items)) {
-      return data.data.items.filter((p: SlugEntry) => p?.slug);
+      return {
+        items: data.data.items.filter((p: SlugEntry) => p?.slug),
+        brandCounts,
+      };
     }
     const slugs: string[] = data?.data?.slugs ?? data?.slugs ?? [];
-    return Array.isArray(slugs) ? slugs.map((slug) => ({ slug })) : [];
+    return {
+      items: Array.isArray(slugs) ? slugs.map((slug) => ({ slug })) : [],
+      brandCounts,
+    };
   } catch {
-    return [];
+    return { items: [], brandCounts: null };
   }
 }
 
@@ -192,14 +213,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/vendors/register/apply`,      changeFrequency: "monthly", priority: 0.5 },
   ];
 
-  const [products, brands, categories, subcats, vendors, posts] = await Promise.all([
-    fetchProducts(),
-    fetchBrands(),
-    fetchCategories(),
-    fetchSubcategories(),
-    fetchVendors(),
-    getPosts(),
-  ]);
+  const [productData, brands, categories, subcats, vendors, posts, categoryHasStock] =
+    await Promise.all([
+      fetchProducts(),
+      fetchBrands(),
+      fetchCategories(),
+      fetchSubcategories(),
+      fetchVendors(),
+      getPosts(),
+      // Probe each category against the same search the grid uses. `null` means
+      // the API was unreachable — keep the URL rather than silently shrinking
+      // the sitemap on a blip.
+      Promise.all(
+        CATEGORY_SLUGS.map(async (cat) => [cat, await categoryHasProducts(cat)] as const),
+      ),
+    ]);
+
+  const products = productData.items;
+  const brandCounts = productData.brandCounts;
+  const categoryEmpty = new Map(categoryHasStock);
 
   const productPages: MetadataRoute.Sitemap = products.map((p) => ({
     url: `${BASE_URL}/product/${p.slug}`,
@@ -210,10 +242,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Category shop pages — each has unique Nigeria-targeted metadata. The list
   // is static, so pull the matching catalog document's updatedAt when we have it.
-  const categoryDates = new Map(categories.map((c) => [c.slug, realDate(c.updatedAt)]));
-  const categoryPages: MetadataRoute.Sitemap = CATEGORY_SLUGS.map((cat) => ({
+  //
+  // Skip slugs whose grid renders empty. The route noindexes some of them and
+  // canonicalizes onto /shop (whiskey, cognac, cider, liqueur, gift-sets) but
+  // leaves others indexable with a self-canonical (beer, rum, non-alcoholic) —
+  // either way the sitemap shouldn't advertise a page with no products. The
+  // stored Category.productCount is not usable here: it counts documents linked
+  // to that exact category, so umbrella slugs like `whisky` and `wine` report
+  // zero while their grids are full.
+  const categoryDocs = new Map(categories.map((c) => [c.slug, c]));
+  const categoryPages: MetadataRoute.Sitemap = CATEGORY_SLUGS.filter(
+    (cat) => categoryEmpty.get(cat) !== false,
+  ).map((cat) => ({
     url: `${BASE_URL}/shop?category=${cat}`,
-    lastModified: categoryDates.get(cat),
+    lastModified: realDate(categoryDocs.get(cat)?.updatedAt),
     changeFrequency: "daily",
     priority: 0.85,
   }));
@@ -251,12 +293,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // /brands/ is the canonical form (it holds the internal links and the Brand
   // entity content), so it is the only one advertised; the shop filter now
   // canonicalizes onto it.
-  const brandPages: MetadataRoute.Sitemap = brands.map((b) => ({
-    url: `${BASE_URL}/brands/${b.slug}`,
-    lastModified: realDate(b.updatedAt),
-    changeFrequency: "weekly" as const,
-    priority: 0.7,
-  }));
+  //
+  // Gated on having at least one *buyable* product, the same idea subcategories
+  // and vendors already apply. A third of the brands render an entity blurb with
+  // no product grid and no outbound product links — thin pages that spend crawl
+  // budget without earning it.
+  //
+  // The gate uses brandCounts (computed under the sellability rule) rather than
+  // the stored Brand.productCount, which counts linked products regardless of
+  // whether any can be bought: "19 Crimes" reports 1 and renders nothing. If the
+  // API didn't return brandCounts, fall back to listing every brand rather than
+  // emptying this section of the sitemap.
+  const brandPages: MetadataRoute.Sitemap = brands
+    .filter((b) => !brandCounts || (brandCounts[b.slug] ?? 0) > 0)
+    .map((b) => ({
+      url: `${BASE_URL}/brands/${b.slug}`,
+      lastModified: realDate(b.updatedAt),
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    }));
 
   // Vendor storefront pages — /vendors/[slug]. Gated on productCount>0 so we
   // don't advertise empty stores.
