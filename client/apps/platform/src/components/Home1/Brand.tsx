@@ -105,9 +105,12 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
   const brandColor = getBrandColor(brand);
   const countryEmoji = getCountryEmoji(brand.countryOfOrigin);
 
-  // Point at the brand entity page, which is the canonical form — the homepage
-  // carousel was the last high-value internal link still going to the ?brand=
-  // filter that now canonicalizes away.
+  // Point at the brand entity page, which is the canonical form for a brand
+  // (see brandEntityUrl in app/shop/page.tsx); the ?brand= filter now
+  // canonicalizes onto it. NOTE: this component is not currently mounted
+  // anywhere — app/page.tsx does not import it — so this link ships to nobody
+  // and contributes no crawl equity. It is corrected here only so the file is
+  // right if it is ever put back on the homepage.
   return (
     <Link href={brand.slug ? `/brands/${brand.slug}` : `/shop?brand=${encodeURIComponent(brand.name)}`} className="block h-full">
       <motion.div
