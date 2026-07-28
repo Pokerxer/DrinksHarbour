@@ -237,26 +237,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     }));
 
-  // Subcategory detail pages — alongside (never replacing) the combined
-  // /shop?category=&subcategory= filter URLs above. Same productCount>0
-  // gate so we don't advertise thin pages.
-  const subcategoryDetailPages: MetadataRoute.Sitemap = subcats
-    .filter((s) => s.productCount > 0)
-    .map((s) => ({
-      url: `${BASE_URL}/categories/${s.parentSlug}/${s.slug}`,
-      lastModified: realDate(s.updatedAt),
-      changeFrequency: "weekly" as const,
-      priority: 0.7,
-    }));
-
-  // Category detail pages — alongside (never replacing) the /shop?category=
-  // filter URLs above.
-  const categoryDetailPages: MetadataRoute.Sitemap = categories.map((c) => ({
-    url: `${BASE_URL}/categories/${c.slug}`,
-    lastModified: realDate(c.updatedAt),
-    changeFrequency: "weekly" as const,
-    priority: 0.7,
-  }));
+  // NOTE: the /categories/[slug] and /categories/[slug]/[subSlug] detail pages
+  // are deliberately NOT listed. They render the same products as the
+  // /shop?category=[&subcategory=] URLs above and now canonicalize onto them,
+  // and a sitemap must only advertise canonical URLs — listing both is what was
+  // splitting crawl budget across near-duplicates. The pages stay live and
+  // linked for visitors. The /categories hub itself is still listed above: it is
+  // a unique index page with no shop equivalent.
 
   // Brand pages — both the detail page and the shop filter listing
   const brandPages: MetadataRoute.Sitemap = brands.flatMap((b) => [
@@ -295,9 +282,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     ...staticPages,
     ...categoryPages,
-    ...categoryDetailPages,
     ...subcategoryPages,
-    ...subcategoryDetailPages,
     ...brandPages,
     ...vendorPages,
     ...productPages,

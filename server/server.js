@@ -313,20 +313,28 @@ app.use((err, req, res, next) => {
   console.error('   Path:', req.originalUrl);
   console.error('   Method:', req.method);
 
-  if (!isProduction) {
-    console.error('   Stack:', err.stack);
-  }
+  // Always log the stack — the console is private, the response is not.
+  console.error('   Stack:', err.stack);
 
   const statusCode = err.statusCode || err.status || 500;
-  const isProd = process.env.NODE_ENV === 'production';
+
+  // Diagnostics go in the RESPONSE only when NODE_ENV is explicitly
+  // 'development'. This deliberately fails CLOSED. The previous test was
+  // `NODE_ENV === 'production'`, which is false whenever NODE_ENV is unset — as
+  // it is on the deployed Vercel backend — so every 500 shipped the raw error
+  // message plus a stack trace naming internal /var/task/server paths to any
+  // public caller. An unset or misspelled NODE_ENV must never re-open that.
+  const exposeDiagnostics = process.env.NODE_ENV === 'development';
 
   res.status(statusCode).json({
     success: false,
-    message: isProd && statusCode === 500 ? 'Internal server error' : err.message,
+    // 5xx messages are internal detail (missing module, failed query, driver
+    // error); 4xx messages are addressed to the caller and stay verbatim.
+    message: !exposeDiagnostics && statusCode >= 500 ? 'Internal server error' : err.message,
     // Operational errors may attach structured `details` (e.g. the id of an
     // existing record a conflict points to) so the client can act on it.
     ...(err.details ? { details: err.details } : {}),
-    ...(isProd ? {} : { stack: err.stack?.split('\n').slice(0, 10) }),
+    ...(exposeDiagnostics ? { stack: err.stack?.split('\n').slice(0, 10) } : {}),
   });
 });
 

@@ -208,6 +208,12 @@ export async function generateMetadata({
 
   const name = sub.displayName || sub.name;
   const url = `${BASE_URL}/categories/${slug}/${subSlug}`;
+  // Consolidates onto the combined shop filter — the same target the sitemap
+  // and blog internal links already use for subcategories. See the parent
+  // category page for why /shop? wins over /categories/.
+  const canonicalUrl =
+    `${BASE_URL}/shop?category=${encodeURIComponent(slug)}` +
+    `&subcategory=${encodeURIComponent(subSlug)}`;
   const title = capTitle(
     sub.metaTitle || `${name} — Buy ${name} Drinks Online in Nigeria`,
   );
@@ -233,11 +239,14 @@ export async function generateMetadata({
       label(sub.type),
       ...(sub.metaKeywords || []),
     ].filter(Boolean),
-    alternates: { canonical: url, languages: { "en-NG": url, "x-default": url } },
+    alternates: {
+      canonical: canonicalUrl,
+      languages: { "en-NG": canonicalUrl, "x-default": canonicalUrl },
+    },
     openGraph: {
       title,
       description,
-      url,
+      url: canonicalUrl,
       siteName: SITE_NAME,
       type: 'website',
       images: [{ url: ogImage, alt: sub.featuredImage?.alt || name }],
@@ -317,7 +326,11 @@ export default async function SubCategoryPage({
   const parentHref = sub.parent?.slug
     ? `/categories/${sub.parent.slug}`
     : '/categories';
-  const url = `${BASE_URL}/categories/${slug}/${subSlug}`;
+  // Matches the rel=canonical in generateMetadata — the structured data must
+  // describe the consolidated shop URL, not this page's own address.
+  const url =
+    `${BASE_URL}/shop?category=${encodeURIComponent(slug)}` +
+    `&subcategory=${encodeURIComponent(subSlug)}`;
 
   // FAQ — built from real data so the answers stay true per subcategory.
   const prices = products

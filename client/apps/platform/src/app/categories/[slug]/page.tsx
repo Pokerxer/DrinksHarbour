@@ -229,6 +229,13 @@ export async function generateMetadata({
 
   const name = category.displayName || category.name;
   const url = `${BASE_URL}/categories/${slug}`;
+  // This page and /shop?category=<slug> list the same products, so they were
+  // competing as near-duplicates and splitting crawl budget. /shop?category= is
+  // the consolidation target: it carries nearly all the internal links (header
+  // and mobile nav, homepage collections, product breadcrumbs) and the longer
+  // indexation history, and it owns the real listing UI (facets, paging). This
+  // page stays live and useful for visitors; it just no longer competes.
+  const canonicalUrl = `${BASE_URL}/shop?category=${encodeURIComponent(slug)}`;
   const title = capTitle(
     category.metaTitle || `${name} — Buy ${name} Drinks Online in Nigeria`,
   );
@@ -255,11 +262,16 @@ export async function generateMetadata({
       label(category.subType),
       ...(category.metaKeywords || []),
     ].filter(Boolean),
-    alternates: { canonical: url, languages: { "en-NG": url, "x-default": url } },
+    alternates: {
+      canonical: canonicalUrl,
+      languages: { "en-NG": canonicalUrl, "x-default": canonicalUrl },
+    },
     openGraph: {
       title,
       description,
-      url,
+      // og:url tracks the canonical so social shares and the weak og signal
+      // point at the same consolidated URL.
+      url: canonicalUrl,
       siteName: SITE_NAME,
       type: 'website',
       images: [{ url: ogImage, alt: category.featuredImage?.alt || name }],
@@ -281,7 +293,9 @@ export async function generateMetadata({
 
 function buildJsonLd(category: any, slug: string, products: any[]) {
   const name = category.displayName || category.name;
-  const url = `${BASE_URL}/categories/${slug}`;
+  // Matches the rel=canonical above — the structured data must describe the
+  // consolidated URL, not this page's own address.
+  const url = `${BASE_URL}/shop?category=${encodeURIComponent(slug)}`;
 
   // Categories aren't a Brand — model the page as a CollectionPage whose main
   // entity is the ItemList of products we actually render.
