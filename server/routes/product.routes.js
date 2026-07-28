@@ -149,7 +149,7 @@ router.get(
 router.get(
   '/slugs',
   asyncHandler(async (req, res) => {
-    const ProductModel = require('../models/product.model');
+    const ProductModel = require('../models/Product');
     const docs = await ProductModel
       .find({ status: 'approved' }, 'slug updatedAt -_id')
       .lean();

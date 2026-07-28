@@ -60,7 +60,7 @@ const FALLBACK_SLIDES: BannerData[] = [
     type: 'hero',
     placement: 'home_hero',
     ctaText: 'View Deals',
-    ctaLink: '/shop?sale=true',
+    ctaLink: '/deals',
     ctaStyle: 'primary',
     backgroundColor: '#7C1D1D',
     image: { url: '/images/images/product/1000x1000.png', alt: 'Sale' },

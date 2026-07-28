@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { capSeoTitle } from "@/lib/seoTitle";
+import { pickDefaultVariant } from "@/lib/default-variant";
 import ProductClient from "./ProductClient";
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
@@ -69,8 +70,13 @@ export async function generateMetadata({
   ];
   if (allImages.length === 0) allImages.push({ url: ogImage, width: 800, height: 800, alt: p.name });
 
-  const minPrice: number | undefined = p.priceRange?.min;
-  const isAvailable = p.availability !== "out_of_stock" && p.status !== "out_of_stock";
+  // Advertise the variant the page actually renders by default, not the cheapest
+  // one in priceRange — those differ whenever the cheapest size is sold out.
+  const variant = pickDefaultVariant(p);
+  const minPrice: number | undefined = variant?.price ?? p.priceRange?.min;
+  const isAvailable = variant
+    ? variant.stock > 0
+    : p.availability !== "out_of_stock" && p.status !== "out_of_stock";
 
   return {
     title: { absolute: `${title} | ${SITE_NAME}` },
@@ -276,9 +282,14 @@ function buildSchemas(p: any, slug: string): object[] {
 function buildProductSchema(p: any, slug: string): object {
   const productUrl = p.canonicalUrl || `${BASE_URL}/product/${slug}`;
   const brand      = p.brand?.name ?? "";
-  const minPrice: number | undefined = p.priceRange?.min;
+  // Single-Offer price/availability must describe the default variant the page
+  // renders; otherwise Merchant Center reads a price no visitor is shown.
+  const variant = pickDefaultVariant(p);
+  const minPrice: number | undefined = variant?.price ?? p.priceRange?.min;
   const maxPrice: number | undefined = p.priceRange?.max;
-  const isAvailable = p.availability !== "out_of_stock" && p.status !== "out_of_stock";
+  const isAvailable = variant
+    ? variant.stock > 0
+    : p.availability !== "out_of_stock" && p.status !== "out_of_stock";
 
   const allImageUrls: string[] = (p.images ?? [])
     .map((img: any) => img.url)
@@ -322,12 +333,15 @@ function buildProductSchema(p: any, slug: string): object {
       : "https://schema.org/OutOfStock";
 
     const vendorCount = (p.availableAt ?? []).length;
-    const hasRange = maxPrice && maxPrice > minPrice;
+    // The aggregate branch describes the whole catalogue entry, so it keeps the
+    // true priceRange bounds; only the single Offer tracks the default variant.
+    const rangeLow = p.priceRange?.min;
+    const hasRange = rangeLow && maxPrice && maxPrice > rangeLow;
 
     if (hasRange && vendorCount > 1) {
       schema.offers = {
         "@type":        "AggregateOffer",
-        lowPrice:       minPrice,
+        lowPrice:       rangeLow,
         highPrice:      maxPrice,
         priceCurrency:  "NGN",
         offerCount:     vendorCount,

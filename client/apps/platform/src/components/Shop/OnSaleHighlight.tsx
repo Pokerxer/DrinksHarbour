@@ -119,7 +119,7 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
             </div>
           </div>
 
-          <Link href="/shop?sale=true">
+          <Link href="/deals">
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}

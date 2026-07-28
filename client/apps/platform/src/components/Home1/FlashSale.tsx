@@ -518,7 +518,7 @@ const FlashSale = () => {
               <CountdownTimer endTime={saleEndTime} onExpire={load} />
             </div>
             <Link
-              href="/shop?sale=true"
+              href="/deals"
               className="hidden sm:flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-600 rounded-xl text-xs font-black hover:bg-orange-50 motion-safe:active:scale-95 transition-all shadow-sm"
             >
               View All <PiArrowRight size={13} />
@@ -552,7 +552,7 @@ const FlashSale = () => {
         {/* ── Mobile "View All" ── */}
         <div className="text-center mt-3 sm:hidden">
           <Link
-            href="/shop?sale=true"
+            href="/deals"
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-bold rounded-xl transition-colors"
           >
             View All {products.length}+ Deals <PiArrowRight size={14} />

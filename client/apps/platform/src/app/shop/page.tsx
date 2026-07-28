@@ -1424,8 +1424,10 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
         'cheap alcohol Nigeria', 'discounted drinks Nigeria', 'best deals drinks Nigeria',
         'DrinksHarbour sale', 'online drinks sale Nigeria',
       ],
-      alternates: seoAlternates(`${BASE_URL}/shop?sale=true`),
-      openGraph: { type: 'website', url: `${BASE_URL}/shop?sale=true`, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
+      // The deals view lives at the static /deals path so it can actually rank;
+      // /shop?sale=true stays reachable but canonicalizes onto it.
+      alternates: seoAlternates(`${BASE_URL}/deals`),
+      openGraph: { type: 'website', url: `${BASE_URL}/deals`, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
       twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
     };
   }
@@ -1672,7 +1674,7 @@ async function buildJsonLd(params: Record<string, string>, ctx: SeoContext) {
 
   if (sale) {
     collectionName = 'Deals & Discounts — DrinksHarbour';
-    collectionUrl  = `${BASE_URL}/shop?sale=true`;
+    collectionUrl  = `${BASE_URL}/deals`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: 'Deals & Discounts', item: collectionUrl });
   } else if (brand && subcategory && !category) {
     const brandLabel = brandLabelOf();

@@ -36,7 +36,7 @@ const QUICK_ACTIONS = [
   {
     label: 'On Sale',
     icon: Icon.PiTag,
-    href: '/shop?sale=true',
+    href: '/deals',
     gradient: 'from-red-500 to-red-700',
     bg: 'bg-red-50',
     text: 'text-red-700',

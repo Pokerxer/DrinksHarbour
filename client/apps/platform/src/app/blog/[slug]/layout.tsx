@@ -40,7 +40,11 @@ function readTimeToDuration(readTime: string): string {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const post = await getPostBySlug(slug);
-  if (!post) return { title: "Article not found" };
+  // The page calls notFound() for these, so the response is a 404 — but keep the
+  // metadata noindex too, so nothing advertises the URL if it is ever rendered.
+  if (!post) {
+    return { title: "Article not found", robots: { index: false, follow: false } };
+  }
 
   const metaTitle = post.seo?.metaTitle || `${post.title} | DrinksHarbour Blog`;
   const metaDescription = post.seo?.metaDescription || post.excerpt;

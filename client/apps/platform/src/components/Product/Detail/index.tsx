@@ -25,6 +25,7 @@ import ProductReviews from '@/components/Product/ProductReviews';
 import RelatedProducts from './RelatedProducts';
 import PackPricingCard from './PackPricingCard';
 import { ProductType } from '@/types/product.types';
+import { pickDefaultSizeFrom } from '@/lib/default-variant';
 import * as Icon from 'react-icons/pi';
 
 const VENDOR_PALETTE = [
@@ -167,10 +168,29 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     }));
   }, [selectedVendor]);
 
+  // The default variant is computed during render — NOT in a useEffect — so the
+  // server-rendered HTML matches what the browser shows after hydration. When
+  // this lived in an effect, SSR had no selected size and fell back to
+  // priceRange.min (the cheapest variant, frequently out of stock), so crawlers
+  // and Merchant Center read a different price/availability than real users saw.
+  const defaultSize = useMemo(
+    () => pickDefaultSizeFrom(vendorSizes)?.size ?? '',
+    [vendorSizes],
+  );
+
+  // A user's explicit pick wins; otherwise fall back to the default. Switching
+  // vendors can strand activeSize on a size the new vendor doesn't carry, so
+  // the lookup below falls back rather than rendering a null selection.
   const selectedSizeData = useMemo(() => {
-    if (!activeSize || !vendorSizes.length) return null;
-    return vendorSizes.find((s) => s.size === activeSize) || null;
-  }, [activeSize, vendorSizes]);
+    if (!vendorSizes.length) return null;
+    return (
+      vendorSizes.find((s) => s.size === activeSize) ??
+      vendorSizes.find((s) => s.size === defaultSize) ??
+      null
+    );
+  }, [activeSize, defaultSize, vendorSizes]);
+
+  const effectiveSize = selectedSizeData?.size ?? '';
 
   const displayPrice = (() => {
     const basePrice = selectedSizeData?.price ?? productData?.priceRange?.min ?? 0;
@@ -252,13 +272,6 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   }, [productData, activeVendor]);
 
   useEffect(() => {
-    if (vendorSizes.length > 0) {
-      const firstAvailable = vendorSizes.find((s) => s.stock > 0);
-      setActiveSize(firstAvailable?.size || vendorSizes[0].size);
-    }
-  }, [vendorSizes]);
-
-  useEffect(() => {
     if (toast.show) {
       const timer = setTimeout(() => setToast({ ...toast, show: false }), 3000);
       return () => clearTimeout(timer);
@@ -294,14 +307,14 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     setIsAddingToCart(true);
     
     try {
-      await addToCart(productData, activeSize, '', selectedVendor.tenant.name, selectedVendor.tenant._id, localQuantity, selectedSizeData?._id, selectedVendor._id);
+      await addToCart(productData, effectiveSize, '', selectedVendor.tenant.name, selectedVendor.tenant._id, localQuantity, selectedSizeData?._id, selectedVendor._id);
       setToast({ show: true, message: 'Added to cart successfully!', type: 'success' });
     } catch (error) {
       setToast({ show: true, message: 'Failed to add to cart', type: 'error' });
     } finally {
       setIsAddingToCart(false);
     }
-  }, [productData, selectedSizeData, selectedVendor, activeSize, localQuantity, addToCart, inStock]);
+  }, [productData, selectedSizeData, selectedVendor, effectiveSize, localQuantity, addToCart, inStock]);
 
   const handleAddToWishlist = useCallback(() => {
     if (!productData) return;
@@ -645,7 +658,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                   </div>
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
                     {vendorSizes.map((size: VendorSize) => {
-                      const isSelected = activeSize === size.size;
+                      const isSelected = effectiveSize === size.size;
                       const isOutOfStock = size.stock === 0;
                       
                       return (
@@ -746,9 +759,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 <div className="flex-1 flex flex-col gap-2">
                   <button
                     onClick={handleAddToCart}
-                    disabled={!inStock || !activeSize || isAddingToCart}
+                    disabled={!inStock || !effectiveSize || isAddingToCart}
                     className={`w-full py-4 px-6 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2 sm:gap-3 ${
-                      !activeSize
+                      !effectiveSize
                         ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                         : !inStock
                           ? 'bg-red-100 text-red-600 cursor-not-allowed'
@@ -762,7 +775,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                         <span>Adding...</span>
                       </>
-                    ) : !activeSize ? (
+                    ) : !effectiveSize ? (
                       <>
                         <Icon.PiWarningCircle size={20} />
                         <span>Select a Size</span>
@@ -785,7 +798,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     )}
                   </button>
                   {/* Price display */}
-                  {activeSize && inStock && (
+                  {effectiveSize && inStock && (
                     <div className="text-center sm:text-right">
                       {packRateActive && packTotalSavings > 0 && (
                         <div className="text-xs text-green-600 font-semibold mb-0.5 flex items-center justify-center sm:justify-end gap-1">

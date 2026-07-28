@@ -43,10 +43,15 @@ const DISALLOWED_PATHS = [
 // `category`, `subcategory` and `brand` are intentionally NOT listed: the
 // sitemap advertises the combined ?category=&subcategory= URLs, and blog
 // category views use ?category= as well.
+//
+// `sale` is NOT listed either. The deals collection now has its own static path
+// (/deals) and ?sale=true canonicalizes onto it — but a blocked URL is never
+// fetched, so its canonical is never read and the consolidation cannot happen.
+// Blocking it also stopped the site's own "Sale" nav target from ranking at all.
 const DISALLOWED_PARAMS = [
   "sort", "page", "view", "limit", "offset",
   "search", "q",
-  "sale", "saleType",
+  "saleType",
   "minPrice", "maxPrice", "minABV", "maxABV", "minRating", "rating",
   "volume", "size", "flavor", "origin",
 ];
