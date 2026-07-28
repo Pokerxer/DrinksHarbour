@@ -327,6 +327,14 @@ function ShopPageContent({
     router.push(shopPageHref(sp, zeroBased + 1, pathname), { scroll: false });
   }, [pathname, router, searchParams]);
 
+  // The same URL `goToPage` navigates to, rendered as the control's `href` so
+  // the page controls are crawlable links rather than JS-only buttons. Page 1
+  // resolves to the bare listing URL (no `?page=1`), matching the canonical.
+  const pageHref = useCallback(
+    (page: number) => shopPageHref(new URLSearchParams(searchParams.toString()), page, pathname),
+    [pathname, searchParams],
+  );
+
   // ── Sale-type filtering (client-side) ────────────────────────────────────
   // Filter, then sort biggest discount first
   const saleProducts = useMemo(() => {
@@ -770,6 +778,7 @@ function ShopPageContent({
           serverTotal={totalProducts}
           serverFacetCounts={facetCounts}
           onServerPageChange={goToPage}
+          serverPageHref={pageHref}
         />
       )}
 

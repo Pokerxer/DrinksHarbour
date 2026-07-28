@@ -202,6 +202,12 @@ interface Props {
   serverTotal?: number;
   serverFacetCounts?: ServerFacetCounts;
   onServerPageChange?: (zeroBasedPage: number) => void;
+  /**
+   * Builds the crawlable `href` for a page control (`page` is 1-based). Only
+   * meaningful alongside `serverPaged`, where `?page=` is a real URL; the
+   * local-slicing mode pages purely in component state and has nothing to link to.
+   */
+  serverPageHref?: (page: number) => string;
 }
 
 const Shop: React.FC<Props> = ({
@@ -220,6 +226,7 @@ const Shop: React.FC<Props> = ({
   serverTotal,
   serverFacetCounts,
   onServerPageChange,
+  serverPageHref,
 }) => {
   const router = useRouter();
   const pathname = usePathname();
@@ -844,6 +851,7 @@ const Shop: React.FC<Props> = ({
                       pageCount={pageCount}
                       currentPage={activePage}
                       onPageChange={handlePageChange}
+                      hrefBuilder={serverPaged ? serverPageHref : undefined}
                     />
                   )}
                 </>
