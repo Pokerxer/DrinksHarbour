@@ -1164,6 +1164,22 @@ interface SeoContext {
 
 const isSingle = (v: string) => Boolean(v) && !v.includes(',');
 
+// The brand entity page at /brands/[slug] and this ?brand= filter list the same
+// products, so one of them has to be canonical — and here, unlike categories,
+// the detail page wins. It holds the internal links (the /brands directory
+// grid, every product page's brand link, the related-brand grids) and it
+// carries entity content a filter view has no place for: Brand JSON-LD, logo,
+// tagline, founding year, country of origin. So the brand-only shop view
+// canonicalizes onto it.
+//
+// Returns null when the catalog could not name the brand — an unknown brand is
+// already noindexed, and an API outage ('offline') must fall back to a
+// self-canonical rather than a guessed /brands/ URL that may not exist.
+function brandEntityUrl(ctx: SeoContext): string | null {
+  const db = ctx.brandDb && ctx.brandDb !== 'offline' ? ctx.brandDb : null;
+  return db?.slug ? `${BASE_URL}/brands/${db.slug}` : null;
+}
+
 async function resolveCategoryEntry(raw: string): Promise<ResolvedEntry> {
   const slugLower = raw.toLowerCase();
   const curated = CATEGORY_LABELS[slugLower];
@@ -1524,7 +1540,10 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
     const description = db?.metaDescription
       || db?.shortDescription
       || `Shop authentic ${brandLabel} products in Nigeria. Competitive prices, fast delivery from Abuja to all 36 states on DrinksHarbour.`;
-    const brandUrl    = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}`;
+    // Canonical, og:url and the CollectionPage @id/url all move to the brand
+    // entity page together — see brandEntityUrl. A mixed signal would be worse
+    // than leaving this page self-canonical.
+    const brandUrl    = brandEntityUrl(ctx) ?? `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}`;
     return {
       title: { absolute: `${title} | ${SITE_NAME}` },
       description,
@@ -1663,6 +1682,9 @@ async function buildJsonLd(params: Record<string, string>, ctx: SeoContext) {
   const catLabelOf   = () => ctx.cat?.label ?? toTitleCase(category);
   const subLabelOf   = () => ctx.sub?.label ?? toTitleCase(subcategory);
   const brandLabelOf = () => ctx.brandLabel ?? toTitleCase(brand);
+  // Every structured-data reference to the brand as a subject points at the
+  // canonical brand page, matching rel=canonical and og:url.
+  const brandUrlOf   = () => brandEntityUrl(ctx) ?? `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}`;
 
   const breadcrumbs: { '@type': string; position: number; name: string; item: string }[] = [
     { '@type': 'ListItem', position: 1, name: 'Home', item: BASE_URL },
@@ -1681,7 +1703,7 @@ async function buildJsonLd(params: Record<string, string>, ctx: SeoContext) {
     const subLabel   = subLabelOf();
     collectionUrl  = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}&subcategory=${encodeURIComponent(subcategory)}`;
     collectionName = `${brandLabel} ${subLabel} — DrinksHarbour`;
-    breadcrumbs.push({ '@type': 'ListItem', position: 3, name: brandLabel,                  item: `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}` });
+    breadcrumbs.push({ '@type': 'ListItem', position: 3, name: brandLabel,                  item: brandUrlOf() });
     breadcrumbs.push({ '@type': 'ListItem', position: 4, name: `${brandLabel} ${subLabel}`, item: collectionUrl });
   } else if (subcategory && !category && !brand) {
     const subLabel   = subLabelOf();
@@ -1704,11 +1726,11 @@ async function buildJsonLd(params: Record<string, string>, ctx: SeoContext) {
     const brandLabel = brandLabelOf();
     collectionUrl  = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}&category=${encodeURIComponent(category)}`;
     collectionName = `${brandLabel} ${catLabel} — DrinksHarbour`;
-    breadcrumbs.push({ '@type': 'ListItem', position: 3, name: brandLabel,                  item: `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}` });
+    breadcrumbs.push({ '@type': 'ListItem', position: 3, name: brandLabel,                  item: brandUrlOf() });
     breadcrumbs.push({ '@type': 'ListItem', position: 4, name: `${brandLabel} ${catLabel}`, item: collectionUrl });
   } else if (brand) {
     const brandLabel = brandLabelOf();
-    collectionUrl  = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}`;
+    collectionUrl  = brandUrlOf();
     collectionName = `${brandLabel} — DrinksHarbour`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: brandLabel, item: collectionUrl });
   } else if (origin) {

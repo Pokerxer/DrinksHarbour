@@ -105,8 +105,11 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
   const brandColor = getBrandColor(brand);
   const countryEmoji = getCountryEmoji(brand.countryOfOrigin);
 
+  // Point at the brand entity page, which is the canonical form — the homepage
+  // carousel was the last high-value internal link still going to the ?brand=
+  // filter that now canonicalizes away.
   return (
-    <Link href={`/shop?brand=${encodeURIComponent(brand.name)}`} className="block h-full">
+    <Link href={brand.slug ? `/brands/${brand.slug}` : `/shop?brand=${encodeURIComponent(brand.name)}`} className="block h-full">
       <motion.div
         onMouseEnter={() => onHover(brand._id)}
         onMouseLeave={() => onHover(null)}

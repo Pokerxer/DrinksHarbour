@@ -245,21 +245,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // linked for visitors. The /categories hub itself is still listed above: it is
   // a unique index page with no shop equivalent.
 
-  // Brand pages — both the detail page and the shop filter listing
-  const brandPages: MetadataRoute.Sitemap = brands.flatMap((b) => [
-    {
-      url: `${BASE_URL}/brands/${b.slug}`,
-      lastModified: realDate(b.updatedAt),
-      changeFrequency: "weekly" as const,
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/shop?brand=${b.slug}`,
-      lastModified: realDate(b.updatedAt),
-      changeFrequency: "weekly" as const,
-      priority: 0.7,
-    },
-  ]);
+  // Brand pages — the /brands/[slug] entity page only. The matching
+  // /shop?brand=<slug> filter listed the same products and used to be emitted
+  // alongside it, which split crawl budget across ~200 near-duplicate pairs.
+  // /brands/ is the canonical form (it holds the internal links and the Brand
+  // entity content), so it is the only one advertised; the shop filter now
+  // canonicalizes onto it.
+  const brandPages: MetadataRoute.Sitemap = brands.map((b) => ({
+    url: `${BASE_URL}/brands/${b.slug}`,
+    lastModified: realDate(b.updatedAt),
+    changeFrequency: "weekly" as const,
+    priority: 0.7,
+  }));
 
   // Vendor storefront pages — /vendors/[slug]. Gated on productCount>0 so we
   // don't advertise empty stores.
