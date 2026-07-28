@@ -116,18 +116,181 @@ function timeAgo(ts: number) {
 
 function escapeRe(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+// Enum-ish backend values arrive snake_cased ('stone_fruit', 'full_bodied').
+function prettify(s: string) {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// ─── Accent folding ───────────────────────────────────────────────────────────
+// Mirrors the server's folding (see semanticSearch.service). The API matches
+// "medoc" against "Médoc", so without the same rule here the row comes back
+// with nothing highlighted and no snippet — the hit would look arbitrary.
+
+const ACCENT_CLASSES: Record<string, string> = {
+  a: '[aàáâãäåāăą]',
+  c: '[cçćĉċč]',
+  e: '[eèéêëēĕėęě]',
+  i: '[iìíîïĩīĭįı]',
+  n: '[nñńņňŉ]',
+  o: '[oòóôõöøōŏő]',
+  s: '[sśŝşš]',
+  u: '[uùúûüũūŭůűų]',
+  y: '[yýÿŷ]',
+  z: '[zźżž]',
+};
+
+// Latin letters incl. the Latin-1 Supplement and Extended-A/B blocks, where
+// every accented character in the catalogue lives. Written as explicit ranges
+// rather than \p{L} — the build targets ES5, which has no unicode escapes.
+const LATIN_LETTER = /[A-Za-zÀ-ɏ]/g;
+const COMBINING_MARK = /[̀-ͯ]/g;
+
+function foldChar(ch: string): string {
+  const base = ch.normalize('NFD').replace(COMBINING_MARK, '').toLowerCase();
+  return base.length === 1 ? base : ch.toLowerCase();
+}
+
+/**
+ * Lowercase and strip accents ONE CHARACTER AT A TIME, so the result is the
+ * same length as the input. buildSnippet searches the folded copy and slices
+ * the original, which only works while the indices line up.
+ */
+function foldText(s: string): string {
+  return s.replace(LATIN_LETTER, foldChar);
+}
+
+/** An accent-insensitive, regex-safe pattern for one term. */
+function toPattern(term: string): string {
+  return escapeRe(term).replace(LATIN_LETTER, (ch) => ACCENT_CLASSES[foldChar(ch)] ?? ch);
+}
+
+/**
+ * The terms worth highlighting: the whole query plus each word of 3+ letters,
+ * longest first so the alternation prefers the fullest match ("red wine" over
+ * "wine"). Short words are dropped — highlighting every "de" in a French
+ * appellation is noise, not signal. All terms come back folded, so compare
+ * them against folded text only.
+ */
+function queryTerms(query: string): string[] {
+  const q = foldText(query.trim());
+  if (!q) return [];
+  const words = q.split(/\s+/).filter((w) => w.length >= 3);
+  return Array.from(new Set([q, ...words])).sort((a, b) => b.length - a.length);
+}
+
+function matchesTerms(value: string | undefined | null, terms: string[]): boolean {
+  if (!value) return false;
+  const v = foldText(value);
+  return terms.some((t) => v.includes(t));
+}
+
 function Highlight({ text, query }: { text: string; query: string }) {
-  if (!query.trim()) return <>{text}</>;
-  const parts = text.split(new RegExp(`(${escapeRe(query)})`, 'gi'));
+  const terms = queryTerms(query);
+  if (!terms.length) return <>{text}</>;
+
+  const re = new RegExp(`(${terms.map(toPattern).join('|')})`, 'gi');
+  const parts = text.split(re);
+  const termSet = new Set(terms);
+
   return (
     <>
       {parts.map((p, i) =>
-        p.toLowerCase() === query.toLowerCase()
+        p && termSet.has(foldText(p))
           ? <mark key={i} className="bg-[#b20202]/15 text-[#b20202] rounded-sm not-italic font-semibold">{p}</mark>
           : p,
       )}
     </>
   );
+}
+
+// ─── Provenance ───────────────────────────────────────────────────────────────
+
+type Facet = { key: string; label: string; value: string };
+
+/**
+ * Origin/maturation facts shown under the product name. The backend now matches
+ * the free-text query against every one of these, so when a search for
+ * "bordeaux" or "médoc" returns a bottle whose name says neither, this line is
+ * what explains the hit.
+ */
+function getFacets(p: Product): Facet[] {
+  const maker = p.producer || p.wineryName || p.distilleryName || p.breweryName;
+  const raw: Array<[string, string, string | number | undefined]> = [
+    ['country',     'Country',     p.originCountry],
+    ['region',      'Region',      p.region],
+    ['appellation', 'Appellation', p.appellation],
+    ['producer',    'Producer',    maker],
+    ['vintage',     'Vintage',     p.vintage],
+    ['age',         'Age',         p.ageStatement],
+    // caskType and style are stored snake_cased ('sherry_cask', 'full_bodied')
+    ['cask',        'Cask',        p.caskType ? prettify(p.caskType) : undefined],
+    ['style',       'Style',       p.style ? prettify(p.style) : undefined],
+  ];
+  return raw
+    .filter(([, , value]) => value !== undefined && value !== null && String(value).trim() !== '')
+    .map(([key, label, value]) => ({ key, label, value: String(value) }));
+}
+
+const MAX_FACETS = 4;
+
+/**
+ * Facets that matched the query come first (they're the reason the product is
+ * on screen), then the rest fill the row up to MAX_FACETS.
+ */
+function orderFacets(facets: Facet[], terms: string[]): { shown: Facet[]; matchedKeys: Set<string> } {
+  const matchedKeys = new Set(facets.filter((f) => matchesTerms(f.value, terms)).map((f) => f.key));
+  const shown = [
+    ...facets.filter((f) => matchedKeys.has(f.key)),
+    ...facets.filter((f) => !matchedKeys.has(f.key)),
+  ].slice(0, MAX_FACETS);
+  return { shown, matchedKeys };
+}
+
+// ─── "Why did this match?" snippet ────────────────────────────────────────────
+
+const SNIPPET_LENGTH = 120;
+const SNIPPET_LEAD   = 40;
+
+function flattenNotes(p: Product): string {
+  const n = p.tastingNotes;
+  if (!n) return '';
+  return [n.nose, n.aroma, n.palate, n.taste, n.finish, n.mouthfeel]
+    .flatMap((v) => v ?? [])
+    .concat([n.appearance, n.color].filter(Boolean) as string[])
+    .join(', ');
+}
+
+/**
+ * When the query hit prose rather than a name or a facet, quote the passage
+ * that matched instead of leaving the row looking like an unrelated result.
+ */
+function buildSnippet(p: Product, terms: string[]): { label: string; text: string } | null {
+  const sources: Array<[string, string]> = [
+    ['Description',   p.shortDescription ?? ''],
+    ['Description',   p.description ?? ''],
+    ['Tasting notes', flattenNotes(p)],
+    ['Flavour',       (p.flavorProfile ?? []).map(prettify).join(', ')],
+  ];
+
+  for (const [label, text] of sources) {
+    if (!text) continue;
+    // Folded copy for finding, original for quoting — foldText preserves length
+    // so the index is valid in both.
+    const folded = foldText(text);
+    const hit = terms.map((t) => folded.indexOf(t)).filter((i) => i >= 0).sort((a, b) => a - b)[0];
+    if (hit === undefined) continue;
+
+    const start = Math.max(0, hit - SNIPPET_LEAD);
+    const end   = Math.min(text.length, start + SNIPPET_LENGTH);
+    const body  = text.slice(start, end).trim();
+
+    return {
+      label,
+      text: `${start > 0 ? '…' : ''}${body}${end < text.length ? '…' : ''}`,
+    };
+  }
+
+  return null;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -153,6 +316,7 @@ const ModalSearch: React.FC = () => {
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const products  = useMemo(() => searchResults?.products ?? [], [searchResults]);
+  const terms     = useMemo(() => queryTerms(searchQuery), [searchQuery]);
   const hasResults = products.length > 0;
   const showDefault = !searchQuery.trim() && !isSearching;
   const showNoResults = !hasResults && !isSearching && !searchError && searchQuery.trim().length > 0;
@@ -302,8 +466,8 @@ const ModalSearch: React.FC = () => {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search products, brands, categories…"
-                  aria-label="Search products"
+                  placeholder="Search by name, brand, country, region, appellation…"
+                  aria-label="Search products by name, brand, country, region, appellation or tasting notes"
                   className={`w-full h-11 md:h-12 pl-10 pr-10 bg-gray-50 border-2 border-gray-200 ${BRAND.ring} rounded-xl text-sm md:text-base outline-none transition-all placeholder:text-gray-400 focus:bg-white`}
                 />
                 {/* Spinner / Clear — inside input right */}
@@ -375,6 +539,17 @@ const ModalSearch: React.FC = () => {
                     const isExpanded= expandedId === id;
                     const rating    = (product as any).averageRating ?? 0;
 
+                    // Explain the hit: matched facets first, then a quoted
+                    // passage — but only when nothing more prominent already
+                    // accounts for it.
+                    const { shown: facets, matchedKeys } = orderFacets(getFacets(product), terms);
+                    const explainedAbove =
+                      matchedKeys.size > 0 ||
+                      matchesTerms(product.name, terms) ||
+                      matchesTerms(product.brand?.name, terms) ||
+                      matchesTerms(product.category?.name, terms);
+                    const snippet = explainedAbove ? null : buildSnippet(product, terms);
+
                     return (
                       <motion.div
                         key={id}
@@ -406,11 +581,46 @@ const ModalSearch: React.FC = () => {
                           <p className="font-medium text-sm text-gray-900 truncate">
                             <Highlight text={product.name} query={searchQuery} />
                           </p>
-                          {product.category && (
+                          {(product.category || product.brand) && (
                             <p className="text-[11px] text-gray-400 mt-0.5 truncate">
-                              {product.category.name}{product.brand ? ` · ${product.brand.name}` : ''}
+                              {product.category && <Highlight text={product.category.name} query={searchQuery} />}
+                              {product.category && product.brand && ' · '}
+                              {product.brand && <Highlight text={product.brand.name} query={searchQuery} />}
                             </p>
                           )}
+
+                          {/* Provenance — country · region · appellation · … */}
+                          {facets.length > 0 && (
+                            <p className="flex items-center gap-1 mt-1 text-[11px] text-gray-500 min-w-0">
+                              <Icon.PiGlobeHemisphereWest size={11} className="text-gray-400 shrink-0" />
+                              <span className="truncate">
+                                {facets.map((f, i) => (
+                                  <React.Fragment key={f.key}>
+                                    {i > 0 && <span className="text-gray-300 mx-1">·</span>}
+                                    <span
+                                      title={`${f.label}: ${f.value}`}
+                                      className={matchedKeys.has(f.key) ? 'font-medium text-gray-700' : ''}
+                                    >
+                                      <Highlight text={f.value} query={searchQuery} />
+                                    </span>
+                                  </React.Fragment>
+                                ))}
+                              </span>
+                            </p>
+                          )}
+
+                          {/* Why this matched, when nothing above shows it */}
+                          {snippet && (
+                            <p className="mt-1 text-[11px] text-gray-500 leading-snug line-clamp-2">
+                              <span className="uppercase tracking-wide text-[9px] font-bold text-gray-400 mr-1">
+                                {snippet.label}
+                              </span>
+                              <span className="italic">
+                                <Highlight text={snippet.text} query={searchQuery} />
+                              </span>
+                            </p>
+                          )}
+
                           {rating > 0 && (
                             <div className="flex items-center gap-1 mt-0.5">
                               <Icon.PiStarFill size={10} className="text-amber-400" />
@@ -491,9 +701,11 @@ const ModalSearch: React.FC = () => {
                     <Icon.PiMagnifyingGlass size={30} className="text-gray-300" />
                   </div>
                   <p className="font-semibold text-gray-700 mb-1">No results for &ldquo;{searchQuery}&rdquo;</p>
-                  <p className="text-xs text-gray-400 mb-5">Try a different spelling or browse a category below</p>
+                  <p className="text-xs text-gray-400 mb-5">
+                    You can search by country, region, appellation, producer or tasting notes — try one of these
+                  </p>
                   <div className="flex flex-wrap justify-center gap-2">
-                    {['Whiskey', 'Red Wine', 'Beer', 'Gin', 'Vodka'].map((t) => (
+                    {['France', 'Bordeaux', 'Speyside', 'Single Malt', 'Smoky'].map((t) => (
                       <button key={t} onClick={() => { setSearchQuery(t); performSearch(t); }}
                         className={`px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 hover:${BRAND.bg} hover:text-white transition-all`}>
                         {t}

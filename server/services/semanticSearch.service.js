@@ -197,6 +197,69 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// ── Accent folding ────────────────────────────────────────────────────────────
+// Catalogue provenance is spelled properly — "Médoc", "Côtes de Provence",
+// "Moët", "Denominación de Origen" — but nobody types accents into a search
+// box. Each letter becomes a class covering its accented forms, so the match
+// works in both directions ("medoc" finds Médoc, "médoc" finds Medoc).
+
+const ACCENT_CLASSES = {
+  a: '[aàáâãäåāăą]',
+  c: '[cçćĉċč]',
+  e: '[eèéêëēĕėęě]',
+  i: '[iìíîïĩīĭįı]',
+  n: '[nñńņňŉ]',
+  o: '[oòóôõöøōŏő]',
+  s: '[sśŝşš]',
+  u: '[uùúûüũūŭůűų]',
+  y: '[yýÿŷ]',
+  z: '[zźżž]',
+};
+
+/**
+ * Replace every letter in an already-escaped regex source with a class that
+ * also accepts its accented variants. Safe to run post-escape: escapeRegex only
+ * ever emits a backslash followed by punctuation, so no letter it produced can
+ * be clobbered here.
+ */
+function foldAccents(escapedPattern) {
+  return escapedPattern.replace(/\p{L}/gu, (ch) => {
+    const base = ch.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+    return ACCENT_CLASSES[base] || ch;
+  });
+}
+
+/** escapeRegex + foldAccents, the combination every search regex wants. */
+function toSearchPattern(term) {
+  return foldAccents(escapeRegex(term));
+}
+
+// ── Filler terms ──────────────────────────────────────────────────────────────
+// Articles and prepositions, mostly from the French/Italian/Spanish/German
+// names that fill a drinks catalogue. Matched as whole alternation terms only —
+// they are never stripped out of the middle of a phrase.
+const FILLER_TERMS = new Set([
+  // English
+  'a', 'an', 'and', 'at', 'by', 'for', 'from', 'in', 'of', 'on', 'or',
+  'the', 'to', 'with',
+  // French
+  'au', 'aux', 'de', 'des', 'du', 'en', 'et', 'la', 'le', 'les', 'un', 'une',
+  // Italian / Spanish / Portuguese
+  'da', 'dei', 'del', 'della', 'delle', 'di', 'do', 'dos', 'el', 'il', 'lo',
+  'y',
+  // German / Dutch
+  'der', 'den', 'das', 'und', 'van', 'von',
+]);
+
+/**
+ * A term too generic to OR into the query on its own. Single/double-character
+ * tokens qualify too — they match inside almost every word.
+ */
+function isFillerTerm(term) {
+  const t = term.trim().toLowerCase();
+  return t.length <= 2 || FILLER_TERMS.has(t);
+}
+
 /**
  * Preprocess a raw search query.
  *
@@ -254,13 +317,65 @@ function preprocessQuery(rawQuery) {
   };
 }
 
+// ── Fields the free-text query is matched against ─────────────────────────────
+// Every entry is a top-level (or dotted) Product path holding a string or an
+// array of strings, so the same alternation regex applies to all of them.
+// Grouped by what a shopper is actually thinking when they type the term.
+const TEXT_SEARCH_FIELDS = [
+  // Identity
+  'name',
+  'shortDescription',
+  'description',
+  'metaKeywords',
+
+  // Classification
+  'type',
+  'subType',
+  'style',
+
+  // Provenance — "bordeaux", "france", "médoc", "speyside", "napa valley"
+  'originCountry',
+  'region',
+  'appellation',
+  'producer',
+  'wineryName',
+  'distilleryName',
+  'breweryName',
+
+  // Maturation — "12 year old", "sherry cask", "XO"
+  'ageStatement',
+  'caskType',
+  'finish',
+
+  // Sensory — "smoky", "notes of vanilla", "pairs with steak"
+  'flavorProfile',
+  'foodPairings',
+  'tastingNotes.nose',
+  'tastingNotes.aroma',
+  'tastingNotes.palate',
+  'tastingNotes.taste',
+  'tastingNotes.finish',
+  'tastingNotes.mouthfeel',
+  'tastingNotes.appearance',
+  'tastingNotes.color',
+
+  // Accolades — "double gold", "decanter"
+  'awards.title',
+  'awards.organization',
+];
+
 /**
  * Build a MongoDB $or text-search clause using expanded synonym terms.
  * Combines all terms into a single alternation regex per field.
  *
- * Fields searched (pre-lookup stage):
- *   name, shortDescription, description, type, subType,
- *   originCountry, region, producer, flavorProfile, metaKeywords
+ * Fields searched (pre-lookup stage): see TEXT_SEARCH_FIELDS — identity,
+ * classification, provenance (country / region / appellation / producer),
+ * maturation, tasting notes and awards. Identifier fields (barcode, sku) match
+ * the raw query exactly, and a bare 4-digit year matches `vintage`.
+ *
+ * Brand / category / subcategory names are NOT here: they live behind $lookups
+ * that only run after this $match, so product.service resolves them to ids and
+ * appends the extra clauses (see buildTaxonomyQueryClauses there).
  *
  * @param {string} rawQuery
  * @returns {object|null} MongoDB query fragment or null if query is empty
@@ -270,27 +385,33 @@ function buildExpandedTextQuery(rawQuery) {
 
   if (!originalQuery) return null;
 
-  // Deduplicate and build single alternation regex
-  const allTerms = [...new Set([originalQuery, ...expandedTerms])];
-  const pattern = allTerms.map(escapeRegex).join('|');
+  // Deduplicate and build single alternation regex.
+  //
+  // Terms are OR'd, so a single throwaway token poisons the whole query: with
+  // "de" in the alternation, "cotes de provence" matched all 439 products in
+  // the catalogue, because practically every description contains "de"
+  // somewhere. Drop the filler — the full phrase is always kept, so recall for
+  // the thing actually being searched for is unaffected.
+  const allTerms = [...new Set([originalQuery, ...expandedTerms])]
+    .filter((t) => t === originalQuery || !isFillerTerm(t));
+  const pattern = allTerms.map(toSearchPattern).join('|');
   const re = new RegExp(pattern, 'i');
 
-  return {
-    $or: [
-      { name:             re },
-      { shortDescription: re },
-      { description:      re },
-      { type:             re },
-      { subType:          re },
-      { originCountry:    re },
-      { region:           re },
-      { producer:         re },
-      { flavorProfile:    re },
-      { metaKeywords:     re },
-      { barcode:          new RegExp(`^${escapeRegex(originalQuery)}$`, 'i') },
-      { sku:              new RegExp(`^${escapeRegex(originalQuery)}$`, 'i') },
-    ],
-  };
+  const clauses = TEXT_SEARCH_FIELDS.map((field) => ({ [field]: re }));
+
+  // Identifiers are ASCII — escape but don't accent-fold them.
+  clauses.push(
+    { barcode: new RegExp(`^${escapeRegex(originalQuery)}$`, 'i') },
+    { sku:     new RegExp(`^${escapeRegex(originalQuery)}$`, 'i') },
+  );
+
+  // "2015" should find the 2015 vintage. vintage is a Number, so a regex would
+  // never match it — compare numerically instead, and only for a bare year.
+  if (/^\d{4}$/.test(originalQuery)) {
+    clauses.push({ vintage: parseInt(originalQuery, 10) });
+  }
+
+  return { $or: clauses };
 }
 
 /**
@@ -311,8 +432,13 @@ function detectIntents(rawQuery) {
  *  - Name starts-with query     → +35
  *  - Partial name match         → +15
  *  - Brand name match           → +20  (uses looked-up brand.name)
- *  - Category name match        → +10  (uses looked-up category.name)
+ *  - Appellation match          → +18
+ *  - Region match               → +14
+ *  - Producer match             → +12
+ *  - Category name match        → +10
+ *  - Origin country match       → +8
  *  - Type / short-desc match    → +5
+ *  - Description match          → +2
  *  - Average rating × 3
  *  - Total sold / 5
  *  - Featured                   → +10
@@ -336,9 +462,10 @@ function buildRelevanceScore(rawQuery, hasSemanticBoost = false) {
   }
 
   const q = rawQuery.trim();
-  const exactRegex   = `^${escapeRegex(q)}$`;
-  const startsRegex  = `^${escapeRegex(q)}`;
-  const partialRegex = escapeRegex(q);
+  // Accent-folded, so "medoc" scores the Médoc bottles as highly as "médoc".
+  const exactRegex   = `^${toSearchPattern(q)}$`;
+  const startsRegex  = `^${toSearchPattern(q)}`;
+  const partialRegex = toSearchPattern(q);
 
   const semanticBonus = hasSemanticBoost
     ? [{ $multiply: [{ $ifNull: ['$vectorSimilarity', 0] }, 25] }]
@@ -354,12 +481,23 @@ function buildRelevanceScore(rawQuery, hasSemanticBoost = false) {
       { $cond: [{ $regexMatch: { input: '$name', regex: partialRegex, options: 'i' } }, 15, 0] },
       // Brand name
       { $cond: [{ $regexMatch: { input: { $ifNull: ['$brand.name', ''] }, regex: partialRegex, options: 'i' } }, 20, 0] },
+      // Provenance — an appellation is the most specific origin term a shopper
+      // can type, so it outranks its region, which outranks its country.
+      { $cond: [{ $regexMatch: { input: { $ifNull: ['$appellation',   ''] }, regex: partialRegex, options: 'i' } }, 18, 0] },
+      { $cond: [{ $regexMatch: { input: { $ifNull: ['$region',        ''] }, regex: partialRegex, options: 'i' } }, 14, 0] },
+      { $cond: [{ $regexMatch: { input: { $ifNull: ['$producer',      ''] }, regex: partialRegex, options: 'i' } }, 12, 0] },
       // Category name
       { $cond: [{ $regexMatch: { input: { $ifNull: ['$category.name', ''] }, regex: partialRegex, options: 'i' } }, 10, 0] },
+      // Subcategory name
+      { $cond: [{ $regexMatch: { input: { $ifNull: ['$subCategory.name', ''] }, regex: partialRegex, options: 'i' } }, 10, 0] },
+      { $cond: [{ $regexMatch: { input: { $ifNull: ['$originCountry', ''] }, regex: partialRegex, options: 'i' } }, 8, 0] },
       // Short description
       { $cond: [{ $regexMatch: { input: { $ifNull: ['$shortDescription', ''] }, regex: partialRegex, options: 'i' } }, 5, 0] },
       // Type
       { $cond: [{ $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: partialRegex, options: 'i' } }, 5, 0] },
+      // Body description — weakest signal, but breaks ties between products
+      // that only matched on prose.
+      { $cond: [{ $regexMatch: { input: { $ifNull: ['$description', ''] }, regex: partialRegex, options: 'i' } }, 2, 0] },
       // Semantic similarity bonus
       ...semanticBonus,
       // Popularity / quality boosts
@@ -378,4 +516,6 @@ module.exports = {
   SYNONYMS,
   INTENTS,
   TYPE_HINTS,
+  TEXT_SEARCH_FIELDS,
+  toSearchPattern,
 };

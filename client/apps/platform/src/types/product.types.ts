@@ -35,9 +35,19 @@ export interface ProductType {
   // Alcohol by Volume
   volumeMl?: number;
   standardSizes?: string[];
+
+  // Provenance & maturation — all searchable, and surfaced in the search modal
   originCountry?: string;
   region?: string;
+  appellation?: string;
   producer?: string;
+  wineryName?: string;
+  distilleryName?: string;
+  breweryName?: string;
+  vintage?: number;
+  ageStatement?: string;
+  caskType?: string;
+  style?: string;
 
   // Flavors & Tasting
   flavors?: Array<{
@@ -49,7 +59,16 @@ export interface ProductType {
     intensity?: string;
   }>;
   flavorProfile?: string[];
-  tastingNotes?: { aroma?: string[]; palate?: string[]; finish?: string[] };
+  tastingNotes?: {
+    nose?: string[];
+    aroma?: string[];
+    palate?: string[];
+    taste?: string[];
+    finish?: string[];
+    mouthfeel?: string[];
+    appearance?: string;
+    color?: string;
+  };
 
   // Descriptive Content
   shortDescription?: string;

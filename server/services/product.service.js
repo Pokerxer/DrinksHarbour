@@ -24,7 +24,12 @@ const { generateDynamicPriceRanges, buildPagination, applyPostFilters, processPr
 const { createSlug, generateUniqueSlug } = require('../utils/slugify');
 const { parseCSV, generateCSV } = require('../utils/csvParser');
 const { generateEmbedding } = require('../utils/embeddings');
-const { buildExpandedTextQuery, detectIntents, buildRelevanceScore } = require('./semanticSearch.service');
+const {
+  buildExpandedTextQuery,
+  detectIntents,
+  buildRelevanceScore,
+  toSearchPattern,
+} = require('./semanticSearch.service');
 const { mergeFeaturedWithFallback } = require('./featured.helpers');
 const {
   resolveCategoryToObjectIds,
@@ -3745,6 +3750,44 @@ const getProductRecommendations = async (productId, limit = 10) => {
 // ============================================================
 
 /**
+ * Resolve a free-text query against brand / category / subcategory names and
+ * return `$or` clauses that match products belonging to them.
+ *
+ * The free-text `$match` runs before the brand/category/subcategory `$lookup`s
+ * in the search pipeline, so `{ 'brand.name': /…/ }` matches nothing there —
+ * the joined documents simply don't exist yet. Resolving the names to ids up
+ * front is what makes a query like "moët" or "single malt scotch" reach
+ * products whose own `name` never mentions the brand or category.
+ *
+ * Unlike the `?brand=` / `?category=` filters (which anchor on `^name$` so a
+ * URL slug can't accidentally widen), this matches substrings — a shopper
+ * typing "barton" should reach Thomas Barton.
+ *
+ * @param {string} rawQuery
+ * @returns {Promise<object[]>} clauses to append to the text-search `$or`
+ */
+const buildTaxonomyQueryClauses = async (rawQuery) => {
+  const term = (rawQuery || '').trim();
+  if (term.length < 2) return [];
+
+  // Accent-folded, so "moet" reaches the Moët brand.
+  const re = new RegExp(toSearchPattern(term), 'i');
+
+  const [brands, categories, subCategories] = await Promise.all([
+    Brand.find({ name: re }).select('_id').limit(25).lean().catch(() => []),
+    Category.find({ name: re }).select('_id').limit(25).lean().catch(() => []),
+    SubCategory.find({ name: re }).select('_id').limit(50).lean().catch(() => []),
+  ]);
+
+  const clauses = [];
+  if (brands.length)        clauses.push({ brand:       { $in: brands.map(b => b._id) } });
+  if (categories.length)    clauses.push({ category:    { $in: categories.map(c => c._id) } });
+  if (subCategories.length) clauses.push({ subCategory: { $in: subCategories.map(s => s._id) } });
+
+  return clauses;
+};
+
+/**
  * Advanced product search with multiple filters and ranking
  */
 // services/product.service.js
@@ -3924,6 +3967,16 @@ const searchProducts = async (searchParams = {}) => {
 
     // Build synonym-expanded regex $or clause
     textSearchQuery = buildExpandedTextQuery(query);
+
+    // Widen it to products whose brand / category / subcategory NAME matches.
+    // Those live behind $lookups that run after this $match, so they have to be
+    // resolved to ids here or they can never match.
+    if (textSearchQuery) {
+      const taxonomyClauses = await buildTaxonomyQueryClauses(query);
+      if (taxonomyClauses.length) {
+        textSearchQuery = { $or: [...textSearchQuery.$or, ...taxonomyClauses] };
+      }
+    }
   }
 
   // Tags filter
@@ -4826,9 +4879,20 @@ const searchProducts = async (searchParams = {}) => {
       volume: product.volume,
       volumeMl: product.volumeMl,
 
+      // Provenance — the search modal renders these under the product name so
+      // a hit on "bordeaux" or "médoc" is visibly explained instead of looking
+      // like an unrelated result.
       originCountry: product.originCountry,
       region: product.region,
+      appellation: product.appellation,
       producer: product.producer,
+      wineryName: product.wineryName,
+      distilleryName: product.distilleryName,
+      breweryName: product.breweryName,
+      vintage: product.vintage,
+      ageStatement: product.ageStatement,
+      caskType: product.caskType,
+      style: product.style,
 
       brand: product.brand ? {
         _id: product.brand._id,
