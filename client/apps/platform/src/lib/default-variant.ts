@@ -43,3 +43,24 @@ export function pickDefaultVariant(product: any): DefaultVariant | null {
     currencySymbol: chosen.pricing?.currencySymbol,
   };
 }
+
+/**
+ * Whether the page will render as in stock — the single rule behind the
+ * `product:availability` meta tag and the JSON-LD Offer's `availability`.
+ *
+ * Mirrors the Detail component exactly, which derives its visible
+ * "✓ In Stock" / "✗ Out of Stock" badge from the selected size alone
+ * (`(selectedSizeData?.stock || 0) > 0`). A product with no vendor sizes has
+ * nothing to select, so the shopper sees "Out of Stock" and the markup must
+ * say the same.
+ *
+ * This replaced `p.availability !== "out_of_stock" && p.status !== "out_of_stock"`,
+ * which never once evaluated false: `availability` is an object
+ * (`{ status, stockLevel, ... }`), so comparing it to a string is always true,
+ * and `status` carries the moderation state ("approved"), not stock. Every
+ * variant-less product therefore advertised `in stock` to Google and Merchant
+ * Center while the page itself said the opposite.
+ */
+export function isDefaultVariantInStock(product: any): boolean {
+  return (pickDefaultVariant(product)?.stock ?? 0) > 0;
+}

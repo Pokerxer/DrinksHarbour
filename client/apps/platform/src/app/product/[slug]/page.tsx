@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { capSeoTitle } from "@/lib/seoTitle";
-import { pickDefaultVariant } from "@/lib/default-variant";
+import { pickDefaultVariant, isDefaultVariantInStock } from "@/lib/default-variant";
 import ProductClient from "./ProductClient";
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
@@ -74,9 +74,7 @@ export async function generateMetadata({
   // one in priceRange — those differ whenever the cheapest size is sold out.
   const variant = pickDefaultVariant(p);
   const minPrice: number | undefined = variant?.price ?? p.priceRange?.min;
-  const isAvailable = variant
-    ? variant.stock > 0
-    : p.availability !== "out_of_stock" && p.status !== "out_of_stock";
+  const isAvailable = isDefaultVariantInStock(p);
 
   return {
     title: { absolute: `${title} | ${SITE_NAME}` },
@@ -287,9 +285,7 @@ function buildProductSchema(p: any, slug: string): object {
   const variant = pickDefaultVariant(p);
   const minPrice: number | undefined = variant?.price ?? p.priceRange?.min;
   const maxPrice: number | undefined = p.priceRange?.max;
-  const isAvailable = variant
-    ? variant.stock > 0
-    : p.availability !== "out_of_stock" && p.status !== "out_of_stock";
+  const isAvailable = isDefaultVariantInStock(p);
 
   const allImageUrls: string[] = (p.images ?? [])
     .map((img: any) => img.url)
