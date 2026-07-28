@@ -11,6 +11,7 @@ import {
   type ShopSearchResult,
 } from './searchQuery';
 import { fetchInitialRecommendations } from '@/components/Shop/recommendations';
+import { buildPageTitle } from '@/lib/seoTitle';
 import {
   resolveCategorySlug,
   fetchSubCategoryBySlug,
@@ -1491,7 +1492,11 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
   if (subcategory && !category && !brand) {
     const sub      = ctx.sub;
     const subLabel = sub?.label ?? toTitleCase(subcategory);
-    const title    = sub?.titleOverride ?? `Buy ${subLabel} Online Nigeria`;
+    // buildPageTitle, not `${title} | SITE_NAME`: titleOverride is a stored
+    // metaTitle that usually already ends in "| DrinksHarbour", and appending
+    // the site name to it shipped titles like
+    // "Buy Scotch Whisky Online | DrinksHarbour | DrinksHarbour".
+    const title    = buildPageTitle(sub?.titleOverride ?? `Buy ${subLabel} Online Nigeria`, SITE_NAME);
     const description = sub?.description
       ? `${sub.description.replace(/\.\s*$/, '')}. Fast delivery across all 36 states.`
       : `Shop premium ${subLabel.toLowerCase()} online in Nigeria. Authentic products with fast delivery from Abuja.`;
@@ -1506,12 +1511,12 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
       ? `${BASE_URL}/shop?category=${encodeURIComponent(parentSlug)}&subcategory=${encodeURIComponent(canonicalSub)}`
       : `${BASE_URL}/shop?subcategory=${encodeURIComponent(canonicalSub)}`;
     return {
-      title: { absolute: `${title} | ${SITE_NAME}` },
+      title: { absolute: title },
       description,
       keywords: [...(sub?.keywords?.length ? sub.keywords : [`buy ${subLabel.toLowerCase()} Nigeria`, `${subLabel.toLowerCase()} online Nigeria`, `${subLabel.toLowerCase()} delivery Nigeria`]), SITE_NAME],
       alternates: seoAlternates(url),
-      openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${subLabel} — ${SITE_NAME}` }] },
-      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url, siteName: SITE_NAME, title, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${subLabel} — ${SITE_NAME}` }] },
+      twitter:   { card: 'summary_large_image', title, description, images: ['/og-default.jpg'] },
     };
   }
 
@@ -1611,9 +1616,15 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
     const sub      = ctx.sub;
     const subLabel = sub?.label ?? (subcategory ? toTitleCase(subcategory) : '');
 
-    const pageTitle = subLabel
-      ? (sub?.titleOverride ?? `Buy ${subLabel} Online Nigeria`)
-      : (cat?.titleOverride ?? `Buy ${catLabel} Online Nigeria`);
+    // buildPageTitle strips a site-name tail the stored metaTitle already
+    // carries before re-appending it, so /shop?category=scotch stops rendering
+    // "Buy Scotch Whisky Online | DrinksHarbour | DrinksHarbour".
+    const pageTitle = buildPageTitle(
+      subLabel
+        ? (sub?.titleOverride ?? `Buy ${subLabel} Online Nigeria`)
+        : (cat?.titleOverride ?? `Buy ${catLabel} Online Nigeria`),
+      SITE_NAME,
+    );
     const trimDot   = (s: string) => s.replace(/\.\s*$/, '');
     const description = sub?.description
       ? `${trimDot(sub.description)}. Fast delivery across all 36 states.`
@@ -1628,7 +1639,7 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
     const baseKw    = (subLabel ? sub?.keywords : cat?.keywords) ?? [];
 
     return {
-      title: { absolute: `${pageTitle} | ${SITE_NAME}` },
+      title: { absolute: pageTitle },
       description,
       keywords: [
         ...baseKw,
@@ -1636,8 +1647,8 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
         SITE_NAME,
       ],
       alternates: seoAlternates(catUrl),
-      openGraph: { type: 'website', url: catUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${subLabel || catLabel} — ${SITE_NAME}` }] },
-      twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url: catUrl, siteName: SITE_NAME, title: pageTitle, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${subLabel || catLabel} — ${SITE_NAME}` }] },
+      twitter:   { card: 'summary_large_image', title: pageTitle, description, images: ['/og-default.jpg'] },
     };
   }
 

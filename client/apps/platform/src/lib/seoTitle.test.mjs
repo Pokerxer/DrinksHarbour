@@ -27,6 +27,17 @@ test('regression: truncating mid-suffix never leaves a dangling pipe', () => {
   assert.ok(!/\|\s*\|/.test(title), 'title must not contain a doubled pipe');
 });
 
+// Live regression: /shop?category=scotch rendered
+// "Buy Scotch Whisky Online | DrinksHarbour | DrinksHarbour" because the shop
+// route appended ` | ${SITE}` to the category's stored metaTitle, which already
+// ended in it. The listing routes now route that value through buildPageTitle.
+test('regression: a category metaTitle carrying the site name yields one suffix', () => {
+  const storedMetaTitle = 'Buy Scotch Whisky Online | DrinksHarbour';
+  const title = buildPageTitle(storedMetaTitle, SITE);
+  assert.equal(title, 'Buy Scotch Whisky Online | DrinksHarbour');
+  assert.equal(title.match(/DrinksHarbour/g).length, 1, 'site name must appear exactly once');
+});
+
 test('trims to a word boundary within the SERP budget', () => {
   const stored = 'Buy Authentic Single Malt Scotch Whisky Online in Nigeria Today';
   const capped = capSeoTitle(stored, SITE);
