@@ -539,8 +539,10 @@ const removeFromCart = async (userId, itemId) => {
  */
 const clearCart = async (userId) => {
   const cart = await Cart.findOne({ user: userId });
+  // Clearing an already-empty cart is a no-op, not an error — the checkout
+  // flow calls this after every order, including a user's first one.
   if (!cart) {
-    throw new NotFoundError('Cart not found');
+    return { items: [], subtotal: 0, estimatedTotal: 0 };
   }
 
   cart.items = [];
@@ -623,9 +625,47 @@ const validateCartItems = async (items) => {
   }));
 };
 
+/**
+ * Merge the browser's cart into the stored cart on login.
+ * Union keyed by cartItemId, HIGHER quantity wins (never the sum). Stock and
+ * maxOrderQuantity clamping is inherited from syncCart, which re-validates
+ * every line it writes.
+ */
+const mergeCart = async (userId, localItems) => {
+  const stored = await getCart(userId);
+
+  // Normalise the client payload to the same identity scheme getCart emits.
+  const localLines = (localItems || [])
+    .filter((item) => item.subProductId && item.sizeId && item.productId)
+    .map((item) => ({
+      cartItemId: buildCartItemId(
+        String(item.productId), item.size || '', item.vendor || '', item.color || '',
+      ),
+      selectedProductId: String(item.productId),
+      selectedSubProductId: String(item.subProductId),
+      selectedSizeId: String(item.sizeId),
+      selectedVendorId: item.tenantId ? String(item.tenantId) : null,
+      quantity: item.quantity || 1,
+      price: item.price,
+    }));
+
+  const merged = mergeCartLines(stored.items, localLines);
+
+  // syncCart replaces the stored cart and re-validates stock per line.
+  return syncCart(userId, merged.map((line) => ({
+    productId:    line.selectedProductId,
+    subProductId: line.selectedSubProductId,
+    sizeId:       line.selectedSizeId,
+    tenantId:     line.selectedVendorId,
+    quantity:     line.quantity,
+    price:        line.price,
+  })));
+};
+
 module.exports = {
   addToCart,
   getCart,
+  mergeCart,
   updateCartItemQuantity,
   removeFromCart,
   clearCart,

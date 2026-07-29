@@ -46,3 +46,31 @@ exports.validateCart = async (req, res) => {
     return errorResponse(res, 'Failed to validate cart', 500, err);
   }
 };
+
+/**
+ * POST /api/cart/merge
+ * Authenticated — merges the browser's guest cart into the stored cart on login.
+ * Higher quantity wins per line; nothing is discarded.
+ */
+exports.mergeMyCart = async (req, res) => {
+  try {
+    const { items } = req.body;
+    const { cart, results } = await cartService.mergeCart(req.user._id, items);
+    return successResponse(res, { cart, results }, 'Cart merged');
+  } catch (err) {
+    return errorResponse(res, 'Failed to merge cart', 500, err);
+  }
+};
+
+/**
+ * DELETE /api/cart
+ * Authenticated — empties the stored cart after a completed order.
+ */
+exports.clearMyCart = async (req, res) => {
+  try {
+    await cartService.clearCart(req.user._id);
+    return successResponse(res, { cart: await cartService.getCart(req.user._id) }, 'Cart cleared');
+  } catch (err) {
+    return errorResponse(res, 'Failed to clear cart', 500, err);
+  }
+};
