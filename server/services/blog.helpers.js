@@ -61,17 +61,23 @@ function snapCategory(value) {
   return BLOG_CATEGORIES.find((c) => c.toLowerCase() === needle) || null;
 }
 
-// Inline internal links use markdown syntax with an internal (leading-slash) href:
+// Inline links use markdown syntax. Internal hrefs start with "/"; external
+// hrefs are absolute http(s) URLs:
 //   [anchor words](/product/some-slug)
-const INTERNAL_LINK_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)/g;
+//   [NAFDAC](https://www.nafdac.gov.ng/)
+const LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g;
 
-// Collect every internal link across a content array (for logging / validation).
-function extractInternalLinks(content) {
+function isInternalHref(href) {
+  return typeof href === 'string' && href.startsWith('/');
+}
+
+// Collect every markdown link across a content array (for logging / validation).
+function extractLinks(content) {
   const blocks = Array.isArray(content) ? content : [];
   const out = [];
   const scan = (text) => {
     if (typeof text !== 'string') return;
-    const re = new RegExp(INTERNAL_LINK_RE.source, 'g');
+    const re = new RegExp(LINK_RE.source, 'g');
     let m;
     while ((m = re.exec(text)) !== null) out.push({ text: m[1], href: m[2] });
   };
@@ -83,16 +89,22 @@ function extractInternalLinks(content) {
   return out;
 }
 
+// Internal-only view, kept for callers that only care about catalog links.
+function extractInternalLinks(content) {
+  return extractLinks(content).filter((l) => isInternalHref(l.href));
+}
+
 function stripDisallowedLinks(text, isAllowed) {
   if (typeof text !== 'string') return text;
-  return text.replace(INTERNAL_LINK_RE, (full, anchor, href) =>
+  return text.replace(new RegExp(LINK_RE.source, 'g'), (full, anchor, href) =>
     isAllowed(href) ? full : anchor
   );
 }
 
 // Replace links whose href fails `isAllowed(href)` with their plain anchor text,
-// so hallucinated product URLs never ship as broken links.
-function sanitizeInlineLinks(content, isAllowed) {
+// so hallucinated or dead URLs never ship as broken links. Only the markup is
+// removed — the anchor words stay in the sentence.
+function sanitizeLinks(content, isAllowed) {
   const blocks = Array.isArray(content) ? content : [];
   return blocks.map((b) => {
     if (!b) return b;
@@ -102,6 +114,12 @@ function sanitizeInlineLinks(content, isAllowed) {
       items: Array.isArray(b.items) ? b.items.map((it) => stripDisallowedLinks(it, isAllowed)) : b.items,
     };
   });
+}
+
+// Internal-only sanitize: external links are left untouched here, because
+// external verification runs as its own pass.
+function sanitizeInlineLinks(content, isAllowed) {
+  return sanitizeLinks(content, (href) => (isInternalHref(href) ? isAllowed(href) : true));
 }
 
 // Tolerant JSON extraction for model output: raw JSON, ```json fences, or JSON embedded in prose.
@@ -132,8 +150,20 @@ function parseAiJson(text) {
   }
 }
 
+// With server-side tools declared, a response's content array leads with
+// server_tool_use / web_search_tool_result blocks and may split the answer over
+// several text blocks — content[0].text is not the answer.
+function textFromMessage(message) {
+  const blocks = Array.isArray(message?.content) ? message.content : [];
+  return blocks
+    .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text)
+    .join('');
+}
+
 module.exports = {
   BLOG_CATEGORIES,
+  textFromMessage,
   BLOCK_TYPES,
   AI_BLOCK_ACTIONS,
   REWRITABLE_BLOCK_TYPES,
@@ -144,6 +174,9 @@ module.exports = {
   sanitizeContentBlocks,
   snapCategory,
   parseAiJson,
+  isInternalHref,
+  extractLinks,
+  sanitizeLinks,
   extractInternalLinks,
   sanitizeInlineLinks,
 };

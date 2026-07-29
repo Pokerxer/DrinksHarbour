@@ -8,10 +8,15 @@ import {
   PiQuotesBold,
   PiLightbulbFilamentBold,
   PiImageBold,
+  PiArrowUpRightBold,
 } from 'react-icons/pi';
 import type { ContentBlock } from './blog-helpers';
 
-const INLINE_TOKEN_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+const INLINE_TOKEN_RE =
+  /\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+
+const LINK_CLASS =
+  'font-semibold text-red-700 underline decoration-red-300 underline-offset-2';
 
 function renderInline(text?: string): React.ReactNode {
   if (!text) return text ?? null;
@@ -23,20 +28,30 @@ function renderInline(text?: string): React.ReactNode {
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index));
     if (m[2]) {
+      const external = !m[2].startsWith('/');
       parts.push(
         <a
           key={`lnk-${key++}`}
           href={m[2]}
-          className="font-semibold text-red-700 underline decoration-red-300 underline-offset-2"
+          className={LINK_CLASS}
+          {...(external
+            ? { target: '_blank', rel: 'noopener noreferrer' }
+            : {})}
         >
           {m[1]}
-        </a>,
+          {external ? (
+            <PiArrowUpRightBold
+              aria-hidden
+              className="ms-0.5 inline h-3 w-3 align-baseline"
+            />
+          ) : null}
+        </a>
       );
     } else if (m[3] !== undefined) {
       parts.push(
         <strong key={`b-${key++}`} className="font-bold text-gray-900">
           {m[3]}
-        </strong>,
+        </strong>
       );
     } else if (m[4] !== undefined) {
       parts.push(<em key={`i-${key++}`}>{m[4]}</em>);
@@ -51,13 +66,13 @@ export function PreviewBlock({ block }: { block: ContentBlock }) {
   switch (block.type) {
     case 'h2':
       return (
-        <h2 className="mt-8 mb-3 text-xl font-black text-gray-900">
+        <h2 className="mb-3 mt-8 text-xl font-black text-gray-900">
           {renderInline(block.text)}
         </h2>
       );
     case 'h3':
       return (
-        <h3 className="mt-6 mb-2 text-base font-bold text-gray-900">
+        <h3 className="mb-2 mt-6 text-base font-bold text-gray-900">
           {renderInline(block.text)}
         </h3>
       );
@@ -155,7 +170,9 @@ export default function BlogPreview({
   author: { name: string; role: string };
 }) {
   const empty =
-    !title && !excerpt && content.every((b) => !b.text && !b.src && !(b.items?.length));
+    !title &&
+    !excerpt &&
+    content.every((b) => !b.text && !b.src && !b.items?.length);
   return (
     <article className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm sm:p-8">
       {empty ? (

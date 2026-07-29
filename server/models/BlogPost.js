@@ -17,6 +17,17 @@ const contentBlockSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const externalLinkSchema = new mongoose.Schema(
+  {
+    url: { type: String, required: true },
+    domain: { type: String, default: '' },
+    httpStatus: { type: Number, default: 0 },
+    state: { type: String, enum: ['ok', 'dead', 'blocked'], default: 'ok' },
+    lastCheckedAt: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 const blogPostSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -41,6 +52,10 @@ const blogPostSchema = new mongoose.Schema(
     status: { type: String, enum: ['draft', 'published'], default: 'draft', index: true },
     featured: { type: Boolean, default: false },
     publishedAt: { type: Date },
+    // Snapshot of the outbound citations in `content`, refreshed on save and by
+    // the weekly link-check cron.
+    externalLinks: { type: [externalLinkSchema], default: [] },
+    linksCheckedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

@@ -26,7 +26,7 @@ import {
   makeBlock,
   type ContentBlock,
 } from './blog-helpers';
-import AiBar from './ai-bar';
+import AiBar, { AddCitationsButton } from './ai-bar';
 import PostDetailsPanel from './post-details-panel';
 import ContentBlockEditor from './content-block-editor';
 import BlogPreview from './blog-preview';
@@ -282,6 +282,15 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
   return (
     <div className="space-y-5 pb-28">
       <AiBar token={token} onApply={applyAi} />
+
+      <AddCitationsButton
+        token={token}
+        post={post}
+        onApply={(content) => {
+          setPost((p: any) => ({ ...p, content }));
+          setDirty(true);
+        }}
+      />
 
       <PostDetailsPanel
         post={post}

@@ -92,3 +92,36 @@ test('makeLinkValidator allows catalog /product + /categories + /brands + /blog 
   assert.ok(!isAllowed('/shop?category=wine'));
   assert.ok(!isAllowed('https://example.com'));
 });
+// ── Generalized link helpers (internal + external) ────────────────────────
+
+const { extractLinks, sanitizeLinks } = require('../services/blog.helpers');
+
+test('extractLinks finds internal and external links', () => {
+  const content = [
+    { type: 'p', text: 'See [NAFDAC](https://www.nafdac.gov.ng/) and [Moet](/product/moet).' },
+    { type: 'ul', items: ['[Whisky.com](http://whisky.com/guide) is useful'] },
+  ];
+  const links = extractLinks(content);
+  assert.deepStrictEqual(links.map((l) => l.href), [
+    'https://www.nafdac.gov.ng/',
+    '/product/moet',
+    'http://whisky.com/guide',
+  ]);
+});
+
+test('sanitizeLinks strips disallowed links but keeps the sentence intact', () => {
+  const content = [
+    { type: 'p', text: 'Per [NAFDAC](https://dead.example/x), the limit stands.' },
+  ];
+  const out = sanitizeLinks(content, (href) => href !== 'https://dead.example/x');
+  assert.strictEqual(out[0].text, 'Per NAFDAC, the limit stands.');
+});
+
+test('extractInternalLinks still ignores external links', () => {
+  const content = [
+    { type: 'p', text: '[a](https://example.com/x) and [b](/product/b)' },
+  ];
+  assert.deepStrictEqual(extractInternalLinks(content), [
+    { text: 'b', href: '/product/b' },
+  ]);
+});

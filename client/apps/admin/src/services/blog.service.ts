@@ -86,4 +86,10 @@ export const blogService = {
       body: JSON.stringify(body),
     });
   },
+  addCitations(body: { post: any }, token: string) {
+    return request('/api/blog/admin/ai/add-citations', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
 };
