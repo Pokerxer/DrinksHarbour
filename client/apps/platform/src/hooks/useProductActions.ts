@@ -8,6 +8,7 @@ import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import { useCompare } from '@/context/CompareContext';
 import { useModalCompareContext } from '@/context/ModalCompareContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
+import { resolveCartLine } from '@/lib/cart-line';
 
 export const useProductActions = (data: ProductType) => {
   const router = useRouter();
@@ -24,10 +25,13 @@ export const useProductActions = (data: ProductType) => {
   const isInCompare = compareState.compareArray.some(item => item.id === data.id);
 
   const handleAddToCart = useCallback(() => {
+    // Ids resolved off `availableAt`; a line without them is dropped by
+    // /api/cart/validate and blocks checkout.
+    const line = resolveCartLine(data);
     if (!isInCart) {
-      addToCart({ ...data });
+      addToCart({ ...data }, line?.size || '', '', line?.vendorName || '', line?.tenantId || '', 1, line?.sizeId || '', line?.subProductId || '');
     }
-    updateCart(data.id, data.quantityPurchase || 1, '', '', '', '');
+    updateCart(data.id, data.quantityPurchase || 1, line?.size || '', '', line?.vendorName || '', line?.tenantId || '');
     openModalCart();
   }, [data, isInCart, addToCart, updateCart, openModalCart]);
 

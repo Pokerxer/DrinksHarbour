@@ -110,11 +110,13 @@ const addToWishlist = async (data) => {
     })
     .populate({
       path: 'items.addedFromSubproduct',
-      select: 'sku baseSellingPrice',
-      populate: {
-        path: 'tenant',
-        select: 'name slug logo',
-      },
+      select: 'sku baseSellingPrice sizes',
+      populate: [
+        { path: 'tenant', select: 'name slug logo' },
+        // The cart needs a Size _id next to the SubProduct _id, or
+        // /api/cart/validate reports the line unavailable.
+        { path: 'sizes', select: 'size stock availability sellingPrice' },
+      ],
     })
     .lean();
 
@@ -170,11 +172,13 @@ const getWishlist = async (userId) => {
     })
     .populate({
       path: 'items.addedFromSubproduct',
-      select: 'sku baseSellingPrice status',
-      populate: {
-        path: 'tenant',
-        select: 'name slug logo',
-      },
+      select: 'sku baseSellingPrice status sizes',
+      populate: [
+        { path: 'tenant', select: 'name slug logo' },
+        // The cart needs a Size _id next to the SubProduct _id, or
+        // /api/cart/validate reports the line unavailable.
+        { path: 'sizes', select: 'size stock availability sellingPrice' },
+      ],
     })
     .lean();
 

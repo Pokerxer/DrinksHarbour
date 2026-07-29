@@ -16,6 +16,7 @@ import { useModalCompareContext } from '@/context/ModalCompareContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { ProductType } from '@/types/product.types';
 import { getInitials, VENDOR_PALETTE, vendorPaletteIndex } from '@/data/vendor-helpers';
+import { resolveCartLine } from '@/lib/cart-line';
 
 interface BeverageProduct {
   _id: string;
@@ -720,28 +721,22 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
   };
 
   const handleAddToCart = useCallback(() => {
-    // Get vendor info
-    const productData = data as any;
-    const selectedVendorData = productData?.availableAt?.find((v: any) => 
-      v.sizes?.some((s: any) => s.size === activeSize)
-    ) || productData?.availableAt?.[0];
-    
-    const vendorName = selectedVendorData?.tenant?.name || '';
-    const vendorId = selectedVendorData?.tenant?._id || '';
-    const sizeId = selectedVendorData?.sizes?.find((s: any) => s.size === activeSize)?._id || '';
-    const subProductId = selectedVendorData?._id || '';
-    
+    // Resolve the vendor the shopper actually selected in the quick-shop panel;
+    // the ids must come from that one entry or validation reports "Out of Stock".
+    const line = resolveCartLine(data, { vendorId: activeVendor, size: activeSize });
+
+    const vendorName = line?.vendorName || '';
     const cartItemId = getCartItemId(mappedProduct.id, activeSize, vendorName, activeColor);
     const existingItem = cartState.cartArray.find((item) => item.cartItemId === cartItemId);
-    
+
     if (existingItem) {
       updateQuantity(cartItemId, (existingItem.quantity || 1) + 1);
     } else {
-      addToCart(mappedProduct, activeSize, activeColor, vendorName, vendorId, undefined, sizeId, subProductId);
+      addToCart(mappedProduct, activeSize, activeColor, vendorName, line?.tenantId || '', undefined, line?.sizeId || '', line?.subProductId || '');
     }
     openModalCart();
     setOpenQuickShop(false);
-  }, [cartState, mappedProduct, activeSize, activeColor, data, addToCart, updateQuantity, getCartItemId, openModalCart]);
+  }, [cartState, mappedProduct, activeSize, activeColor, activeVendor, data, addToCart, updateQuantity, getCartItemId, openModalCart]);
 
   const handleAddToWishlist = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -807,25 +802,21 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
     
     if (vendorSizes.length > 0) {
       setIsAddingToCart(true);
-      
-      const firstAvailableSize = vendorSizes.find((s: any) => s.stock > 0) || vendorSizes[0];
-      const sizeToUse = firstAvailableSize.size;
-      
-      // Get vendor info from the vendorSizes mapping
-      const productAny2 = data as any;
-      const selectedVendor = productAny2?.availableAt?.[0];
-      const vendorName = selectedVendor?.tenant?.name || '';
-      const vendorId = selectedVendor?.tenant?._id || '';
-      const sizeId = firstAvailableSize?._id || '';
-      const subProductId = selectedVendor?._id || '';
-      
+
+      // `vendorSizes` is display-only — it drops each size's `_id`, so reading
+      // the sizeId off it always yielded '' and every line added here came back
+      // from /api/cart/validate as "Out of Stock". Resolve off the raw product.
+      const line = resolveCartLine(data, { vendorId: activeVendor });
+      const sizeToUse = line?.size || (vendorSizes.find((s: any) => s.stock > 0) || vendorSizes[0]).size;
+      const vendorName = line?.vendorName || '';
+
       const cartItemId = getCartItemId(mappedProduct.id, sizeToUse, vendorName, '');
       const existingItem = cartState.cartArray.find((item) => item.cartItemId === cartItemId);
-      
+
       if (existingItem) {
         updateQuantity(cartItemId, (existingItem.quantity || 1) + 1);
       } else {
-        addToCart(mappedProduct, sizeToUse, '', vendorName, vendorId, undefined, sizeId, subProductId);
+        addToCart(mappedProduct, sizeToUse, '', vendorName, line?.tenantId || '', undefined, line?.sizeId || '', line?.subProductId || '');
       }
       
       // Show feedback animation
@@ -834,7 +825,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
         openModalCart();
       }, 300);
     }
-  }, [cartState, mappedProduct, vendorSizes, data, addToCart, updateQuantity, getCartItemId, openModalCart]);
+  }, [cartState, mappedProduct, vendorSizes, activeVendor, data, addToCart, updateQuantity, getCartItemId, openModalCart]);
 
   const [imageError, setImageError] = useState(false);
   

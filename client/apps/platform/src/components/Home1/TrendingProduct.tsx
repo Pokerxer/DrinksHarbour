@@ -14,6 +14,7 @@ import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import * as Icon from 'react-icons/pi';
+import { resolveCartLine } from '@/lib/cart-line';
 
 interface ApiProduct {
   _id: string;
@@ -35,6 +36,13 @@ interface ApiProduct {
   isFeatured?: boolean;
   availableAt?: Array<{
     _id?: string;
+    tenant?: { _id?: string; name?: string; slug?: string };
+    sizes?: Array<{
+      _id?: string;
+      size?: string;
+      stock?: number;
+      pricing?: { websitePrice?: number; originalWebsitePrice?: number };
+    }>;
     pricing?: {
       websitePrice?: number;
       originalWebsitePrice?: number;
@@ -72,6 +80,8 @@ interface Product {
   totalStock: number;
   availableStock: number;
   isOnSale: boolean;
+  /** Kept through the mapper so add-to-cart can resolve its SubProduct/Size ids. */
+  availableAt?: ApiProduct['availableAt'];
 }
 
 interface TrendingProductProps {
@@ -169,6 +179,7 @@ const mapApiProductToProduct = (apiProduct: ApiProduct): Product => {
     totalStock,
     availableStock,
     isOnSale: sale,
+    availableAt: apiProduct.availableAt,
   };
 };
 
@@ -280,16 +291,20 @@ const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
   const handleAddToCart = async (product: Product) => {
     setAddingToCart(product._id);
     try {
+      // Without the SubProduct/Size ids the line is skipped by
+      // /api/cart/validate and cannot be priced or checked out.
+      const line = resolveCartLine(product);
       addToCart({
         _id: product._id,
         name: product.name,
         slug: product.slug,
-        price: product.price,
+        price: line?.price ?? product.price,
         originPrice: product.originPrice,
         sale: product.sale,
         thumbImage: product.thumbImage,
+        availableAt: product.availableAt,
         quantityPurchase: 1
-      } as any);
+      } as any, line?.size || '', '', line?.vendorName || '', line?.tenantId || '', 1, line?.sizeId || '', line?.subProductId || '');
       await new Promise(resolve => setTimeout(resolve, 500));
       showToast(`${product.name} added to cart!`, 'success');
       openModalCart();

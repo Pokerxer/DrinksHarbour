@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { useWishlist } from '@/context/WishlistContext';
 import { useCart } from '@/context/CartContext';
+import { resolveCartLine } from '@/lib/cart-line';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
@@ -39,6 +40,10 @@ function resolveItem(serverItem: any) {
   const price = sp.baseSellingPrice || p.priceRange?.min || 0;
   return {
     productId: p._id || '',
+    // Shaped like an /api/products* `availableAt` entry so resolveCartLine can
+    // read the SubProduct/Size/Tenant ids off it. Server wishlist rows carry
+    // the subproduct the item was saved from; local rows carry the raw product.
+    availableAt: p.availableAt || (sp._id ? [{ _id: sp._id, tenant, sizes: sp.sizes || [] }] : []),
     name: p.name || 'Product',
     slug: p.slug || '',
     image,
@@ -229,7 +234,7 @@ export default function WishlistPage() {
   const resolvedItems = useMemo(() => {
     if (isAuthenticated && serverItems.length >= 0) return serverItems.map(resolveItem);
     return wishlistState.wishlistArray.map(i => resolveItem({
-      product: { _id: (i as any)._id || i.id, name: i.name, slug: (i as any).slug, images: (i as any).images, abv: (i as any).abv, brand: (i as any).brand, category: (i as any).category, priceRange: (i as any).priceRange },
+      product: { _id: (i as any)._id || i.id, name: i.name, slug: (i as any).slug, images: (i as any).images, abv: (i as any).abv, brand: (i as any).brand, category: (i as any).category, priceRange: (i as any).priceRange, availableAt: (i as any).availableAt },
       addedAt: i.addedAt,
       note: i.note,
       priority: i.priority || 'medium',
@@ -251,6 +256,9 @@ export default function WishlistPage() {
   const handleAddToCart = (item: ReturnType<typeof resolveItem>) => {
     setLoadingId(item.productId);
     try {
+      // Hardcoding blank ids here left every wishlist line unvalidatable at
+      // /cart and unable to reach checkout. Resolve them off `availableAt`.
+      const line = resolveCartLine(item);
       addToCart({
         id: item.productId,
         _id: item.productId,
@@ -258,16 +266,9 @@ export default function WishlistPage() {
         slug: item.slug,
         price: item.price,
         images: item.image ? [{ url: item.image }] : [],
+        availableAt: item.availableAt,
         quantity: 1,
-        selectedProductId: item.productId,
-        selectedSubProductId: '',
-        selectedSizeId: '',
-        selectedVendorId: '',
-        selectedSize: '',
-        selectedVendor: '',
-        selectedColor: '',
-        cartItemId: `${item.productId}-${Date.now()}`,
-      } as any);
+      } as any, line?.size || '', '', line?.vendorName || '', line?.tenantId || '', 1, line?.sizeId || '', line?.subProductId || '');
       removeFromWishlist(item.productId);
       showToast(`${item.name} added to cart!`);
     } catch {}
@@ -277,13 +278,12 @@ export default function WishlistPage() {
   const handleAddAllToCart = async () => {
     setAddingAll(true);
     for (const item of resolvedItems) {
+      const line = resolveCartLine(item);
       addToCart({
         id: item.productId, _id: item.productId, name: item.name, slug: item.slug,
         price: item.price, images: item.image ? [{ url: item.image }] : [],
-        quantity: 1, selectedProductId: item.productId, selectedSubProductId: '',
-        selectedSizeId: '', selectedVendorId: '', selectedSize: '', selectedVendor: '',
-        selectedColor: '', cartItemId: `${item.productId}-${Date.now()}`,
-      } as any);
+        availableAt: item.availableAt, quantity: 1,
+      } as any, line?.size || '', '', line?.vendorName || '', line?.tenantId || '', 1, line?.sizeId || '', line?.subProductId || '');
       removeFromWishlist(item.productId);
     }
     setAddingAll(false);

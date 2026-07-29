@@ -19,6 +19,7 @@ import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { useCompare } from '@/context/CompareContext';
 import { useModalCompareContext } from '@/context/ModalCompareContext';
 import { getInitials, VENDOR_PALETTE, vendorPaletteIndex } from '@/data/vendor-helpers';
+import { resolveCartLine } from '@/lib/cart-line';
 
 interface ProductSize {
   _id: string;
@@ -207,14 +208,10 @@ const TabFeatures: React.FC = () => {
   const handleAddToCart = async (product: TabProduct) => {
     setAddingToCart(product._id);
     try {
-      const vendorData = product.availableAt?.[0];
-      const sizes = selectedSizes[product._id] ? vendorData?.sizes?.find(s => s.size === selectedSizes[product._id]) : vendorData?.sizes?.[0];
-      const size = sizes?.size || 'Default';
-      const sizeId = sizes?._id || '';
-      const tenantName = vendorData?.tenant?.name || '';
-      const tenantId = vendorData?.tenant?._id || '';
-      const price = sizes?.pricing?.websitePrice || product.price;
-      await addToCart({ _id: product._id, id: product._id, name: product.name, slug: product.slug, type: product.type, price, originPrice: product.originPrice, thumbImage: product.thumbImage, primaryImage: product.primaryImage, images: product.images } as any, size, '', tenantName, tenantId, 1, sizeId, vendorData?._id || '');
+      const line = resolveCartLine(product, { size: selectedSizes[product._id] });
+      const size = line?.size || 'Default';
+      const price = line?.price || product.price;
+      await addToCart({ _id: product._id, id: product._id, name: product.name, slug: product.slug, type: product.type, price, originPrice: product.originPrice, thumbImage: product.thumbImage, primaryImage: product.primaryImage, images: product.images, availableAt: product.availableAt } as any, size, '', line?.vendorName || '', line?.tenantId || '', 1, line?.sizeId || '', line?.subProductId || '');
       showToastMessage(`${product.name} added to cart!`, 'success');
       openModalCart();
     } catch { showToastMessage('Failed to add to cart', 'error'); }

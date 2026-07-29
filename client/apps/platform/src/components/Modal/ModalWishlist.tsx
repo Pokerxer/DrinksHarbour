@@ -10,6 +10,7 @@ import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
+import { resolveCartLine } from '@/lib/cart-line';
 
 const ModalWishlist = () => {
   const { isModalOpen, closeModalWishlist } = useModalWishlistContext();
@@ -71,7 +72,10 @@ const ModalWishlist = () => {
 
   const handleAddToCart = async (product: any) => {
     setAddingToCartId(product.id || product._id);
-    addToCart(product);
+    // Wishlist entries keep the product's `availableAt`, so the line can carry
+    // its SubProduct/Size ids instead of arriving at /cart unvalidatable.
+    const line = resolveCartLine(product);
+    addToCart(product, line?.size || '', '', line?.vendorName || '', line?.tenantId || '', 1, line?.sizeId || '', line?.subProductId || '');
     await new Promise(resolve => setTimeout(resolve, 400));
     setAddingToCartId(null);
     closeModalWishlist();
