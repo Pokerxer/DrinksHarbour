@@ -12,6 +12,7 @@ import React, {
 import { ProductType } from "@/types/product.types";
 import { API_URL } from "@/lib/api";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { useAuth } from "@/context/AuthContext";
 import { resolveProductPrice } from "@/utils/product.utils";
 import { addToCartEvent, removeFromCartEvent, type GTagItem } from "@/lib/gtag";
 import { fireAddToCart, fireAllPixels } from "@/lib/pixels";
@@ -95,6 +96,8 @@ interface CartContextProps {
   ) => void;
   updateQuantity: (cartItemId: string, quantity: number) => void;
   clearCart: () => void;
+  /** Clears the local cart AND the stored server cart. Use after an order completes. */
+  clearCartEverywhere: () => Promise<void>;
   getCartItemId: (productId: string, size: string, vendor: string, color: string) => string;
   cartTotal: number;
   cartCount: number;
@@ -109,7 +112,12 @@ interface CartContextProps {
 }
 
 const CART_EXPIRY_DAYS = 7;
-const STORAGE_KEY = 'drinksharbour_cart';
+const STORAGE_PREFIX = 'drinksharbour_cart';
+const LEGACY_STORAGE_KEY = 'drinksharbour_cart';
+
+/** Per-identity storage key. A shared browser must never show user A's cart to user B. */
+const storageKeyFor = (userId: string | null): string =>
+  `${STORAGE_PREFIX}:${userId || 'guest'}`;
 
 const generateCartItemId = (productId: string, size: string, vendor: string, color: string): string => {
   return `${productId}-${size || 'default'}-${vendor || 'default'}-${color || 'default'}`;
@@ -276,83 +284,158 @@ const isCartExpired = (savedAt: number): boolean => {
   return Date.now() - savedAt > expiryTime;
 };
 
+const readStoredCart = (key: string): CartItem[] => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.cartArray)) return [];
+    if (isCartExpired(parsed.savedAt || 0)) {
+      localStorage.removeItem(key);
+      return [];
+    }
+    return parsed.cartArray;
+  } catch {
+    return [];
+  }
+};
+
+const writeStoredCart = (key: string, cartArray: CartItem[]): void => {
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      cartArray, savedAt: Date.now(), expiryDays: CART_EXPIRY_DAYS,
+    }));
+  } catch { /* quota — the DB copy is the durable one */ }
+};
+
+/** Client cart line → the payload shape /api/cart/save and /merge expect. */
+const toServerItems = (items: CartItem[]) =>
+  items
+    .filter((item) => item.selectedSubProductId && item.selectedSizeId)
+    .map((item) => ({
+      productId:    item.selectedProductId || item._id || item.id,
+      subProductId: item.selectedSubProductId,
+      sizeId:       item.selectedSizeId,
+      tenantId:     item.selectedVendorId,
+      size:         item.selectedSize,
+      vendor:       item.selectedVendor,
+      color:        item.selectedColor,
+      quantity:     item.quantity || 1,
+      price:        item.price,
+    }));
+
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [cartState, dispatch] = useReducer(cartReducer, { cartArray: [] });
 
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const userId = isAuthenticated ? (user?._id ?? null) : null;
+
+  const storageKey = storageKeyFor(userId);
+  // Blocks the auto-save effect until this identity's cart has been loaded.
+  // Without it the reducer's initial [] is saved over the stored cart on first paint.
+  const hydratedForRef = React.useRef<string | null>(null);
+
+  // One-time migration off the old global key into the guest key. Without this
+  // an existing shopper's cart appears to vanish on deploy.
   useEffect(() => {
-    const savedCart = localStorage.getItem(STORAGE_KEY);
-    if (savedCart) {
-      try {
-        const parsedCart = JSON.parse(savedCart);
-        if (parsedCart.cartArray && Array.isArray(parsedCart.cartArray)) {
-          const savedAt = parsedCart.savedAt || 0;
-          if (!isCartExpired(savedAt)) {
-            dispatch({ type: "LOAD_CART", payload: parsedCart.cartArray });
-          } else {
-            localStorage.removeItem(STORAGE_KEY);
-          }
-        }
-      } catch (e) {
-        console.error('Failed to parse cart from localStorage');
-      }
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!legacy) return;
+    if (!localStorage.getItem(storageKeyFor(null))) {
+      localStorage.setItem(storageKeyFor(null), legacy);
     }
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   }, []);
 
+  // Hydrate whenever the identity resolves or changes. Nothing reads or writes
+  // while auth is still resolving — a save fired then would clobber the DB cart.
   useEffect(() => {
-    const storageData = JSON.stringify({
-      cartArray: cartState.cartArray,
-      savedAt: Date.now(),
-      expiryDays: CART_EXPIRY_DAYS,
-    });
-    localStorage.setItem(STORAGE_KEY, storageData);
-  }, [cartState.cartArray]);
+    if (authLoading) return;
+    if (hydratedForRef.current === storageKey) return;
 
-  // Listen for storage changes (from other tabs) and custom cart update events (from same tab)
-  useEffect(() => {
-    let isProcessing = false;
-    
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue && !isProcessing) {
-        try {
-          const newCart = JSON.parse(e.newValue);
-          if (newCart.cartArray && Array.isArray(newCart.cartArray)) {
-            isProcessing = true;
-            dispatch({ type: "LOAD_CART", payload: newCart.cartArray });
-            setTimeout(() => { isProcessing = false; }, 100);
-          }
-        } catch (err) {
-          isProcessing = false;
+    let cancelled = false;
+
+    const hydrate = async () => {
+      if (!userId) {
+        dispatch({ type: "LOAD_CART", payload: readStoredCart(storageKey) });
+        hydratedForRef.current = storageKey;
+        return;
+      }
+
+      const guestItems = readStoredCart(storageKeyFor(null));
+
+      try {
+        const res = guestItems.length > 0
+          ? await fetchWithAuth(`${API_URL}/api/cart/merge`, {
+              method: 'POST',
+              body: JSON.stringify({ items: toServerItems(guestItems) }),
+            })
+          : await fetchWithAuth(`${API_URL}/api/cart`);
+
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (res.ok && data.success) {
+          const lines: CartItem[] = data.data?.cart?.items ?? [];
+          dispatch({ type: "LOAD_CART", payload: lines });
+          writeStoredCart(storageKey, lines);
+          // Guest cart is now folded in — drop it so it can't merge twice.
+          localStorage.removeItem(storageKeyFor(null));
+        } else {
+          dispatch({ type: "LOAD_CART", payload: readStoredCart(storageKey) });
         }
+      } catch {
+        // Offline — fall back to this user's mirror. The guest cart is KEPT so
+        // nothing is lost; the next successful hydrate merges it.
+        if (!cancelled) dispatch({ type: "LOAD_CART", payload: readStoredCart(storageKey) });
+      } finally {
+        if (!cancelled) hydratedForRef.current = storageKey;
       }
     };
 
-    const handleCartUpdate = () => {
-      if (isProcessing) return;
-      const savedCart = localStorage.getItem(STORAGE_KEY);
-      if (savedCart) {
-        try {
-          const parsed = JSON.parse(savedCart);
-          if (parsed.cartArray) {
-            isProcessing = true;
-            dispatch({ type: "LOAD_CART", payload: parsed.cartArray });
-            setTimeout(() => { isProcessing = false; }, 100);
-          }
-        } catch (err) {
-          isProcessing = false;
-        }
-      }
+    hydrate();
+    return () => { cancelled = true; };
+  }, [authLoading, storageKey, userId]);
+
+  // Wipe in-memory state the instant the identity changes, so the previous
+  // user's lines never flash on screen for the next person on a shared browser.
+  const previousUserIdRef = React.useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (authLoading) return;
+    const previous = previousUserIdRef.current;
+    previousUserIdRef.current = userId;
+    if (previous === undefined || previous === userId) return;
+
+    // Logging out: forget the account cart locally. It stays safe in the DB.
+    if (previous && !userId) {
+      localStorage.removeItem(storageKeyFor(previous));
+    }
+    dispatch({ type: "CLEAR_CART" });
+    hydratedForRef.current = null;   // force a re-hydrate for the new identity
+  }, [userId, authLoading]);
+
+  // Cross-tab sync. Reads the ACTIVE identity's key and re-subscribes when the
+  // identity changes. LOAD_CART already no-ops on an identical array, so the
+  // old re-entrancy flag is unnecessary.
+  useEffect(() => {
+    const applyStored = () => {
+      if (hydratedForRef.current !== storageKey) return;
+      dispatch({ type: "LOAD_CART", payload: readStoredCart(storageKey) });
     };
 
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('cart-updated', handleCartUpdate);
-    
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === storageKey) applyStored();
+    };
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('cart-updated', applyStored);
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('cart-updated', handleCartUpdate);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('cart-updated', applyStored);
     };
-  }, []);
+  }, [storageKey]);
 
   const addToCart = (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string): AddToCartResult => {
     const productId = product._id || product.id;
@@ -383,37 +466,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
       } 
     });
     
-    // Also directly save to localStorage to ensure persistence
-    const currentCart = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"cartArray":[]}');
-    let updatedCart = [...(currentCart.cartArray || [])];
-    
-    const existingIdx = updatedCart.findIndex((item: CartItem) => item.cartItemId === cartItemId);
-    if (existingIdx >= 0) {
-      updatedCart[existingIdx].quantity = (updatedCart[existingIdx].quantity || 0) + qty;
-    } else {
-      const itemPrice = getPriceFromAvailableAt(product, vendor || '', size || '');
-      updatedCart.push({
-        ...product,
-        cartItemId,
-        quantity: qty,
-        selectedSize: size || '',
-        selectedColor: color || '',
-        selectedVendor: vendor || '',
-        selectedVendorId: vendorId || '',
-        selectedSizeId: sizeId || '',
-        selectedSubProductId: subProductId || '',
-        selectedProductId: productId,
-        price: itemPrice,
-        addedAt: Date.now(),
-        ...getPackFromAvailableAt(product, vendor || '', size || ''),
-      });
-    }
-    
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      cartArray: updatedCart,
-      savedAt: Date.now(),
-      expiryDays: CART_EXPIRY_DAYS,
-    }));
+    // No direct localStorage write here — the mirror effect below owns that.
+    // Writing in both places is what made the reducer and localStorage drift.
 
     const itemPrice = getPriceFromAvailableAt(product, vendor || '', size || '');
     const gtagItems: GTagItem[] = [{
@@ -484,24 +538,23 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     dispatch({ type: "CLEAR_CART" });
-    localStorage.removeItem(STORAGE_KEY);
-  };
+    localStorage.removeItem(storageKey);
+  }, [storageKey]);
 
-  const refreshCart = () => {
-    const savedCart = localStorage.getItem(STORAGE_KEY);
-    if (savedCart) {
-      try {
-        const parsed = JSON.parse(savedCart);
-        if (parsed.cartArray) {
-          dispatch({ type: "LOAD_CART", payload: parsed.cartArray });
-        }
-      } catch (err) {
-        console.error('Failed to refresh cart:', err);
-      }
-    }
-  };
+  /** Empties the stored cart too — call after an order is placed. */
+  const clearCartEverywhere = useCallback(async () => {
+    clearCart();
+    if (!userId) return;
+    try {
+      await fetchWithAuth(`${API_URL}/api/cart`, { method: 'DELETE' });
+    } catch { /* the next save overwrites it anyway */ }
+  }, [clearCart, userId]);
+
+  const refreshCart = useCallback(() => {
+    dispatch({ type: "LOAD_CART", payload: readStoredCart(storageKey) });
+  }, [storageKey]);
 
   // ── Cart Validation ──────────────────────────────────────────────────────────
   const [validationMap, setValidationMap] = useState<Record<string, CartItemValidation>>({});
@@ -593,106 +646,65 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     [cartState.cartArray]
   );
 
-  const syncCartToServer = async (): Promise<boolean> => {
-    console.log('🔵 syncCartToServer called');
-
-    let token = localStorage.getItem('dh_token');
-    if (!token) {
-      token = sessionStorage.getItem('dh_token');
-    }
-
-    if (cartState.cartArray.length === 0) {
-      return true;
-    }
-
-    if (!token) {
-      return false;
-    }
-
+  // Gated on the auth CONTEXT, not a localStorage token. Auth moved to httpOnly
+  // cookies, so the old `dh_token` check made this a no-op for every session.
+  const syncCartToServer = useCallback(async (): Promise<boolean> => {
+    if (!userId) return false;
     try {
-      const items = cartState.cartArray.map(item => {
-        const productId = item._id || item.id;
-        const quantity = item.quantity || 1;
-        
-        const subProductId = item.selectedSubProductId || productId;
-        const sizeId = item.selectedSizeId || productId;
-        const tenantId = item.selectedVendorId || productId;
-        
-        return {
-          productId,
-          subProductId,
-          sizeId,
-          tenantId,
-          quantity,
-          price: item.price,
-        };
+      const res = await fetchWithAuth(`${API_URL}/api/cart/save`, {
+        method: 'POST',
+        body: JSON.stringify({ items: toServerItems(cartState.cartArray) }),
       });
-
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      };
-
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-        const response = await fetchWithAuth(`${API_URL}/api/cart/save`, {
-          method: 'POST',
-          body: JSON.stringify({ items }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          return false;
-        }
-
-        return true;
-      } catch (fetchError: any) {
-        return false;
-      }
-    } catch (error) {
+      return res.ok;
+    } catch {
       return false;
     }
-  };
+  }, [userId, cartState.cartArray]);
 
-  const loadServerCart = async (): Promise<void> => {
-    const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
-
-    const headers: Record<string, string> = {};
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    } else {
-      const guestId = localStorage.getItem('guestId');
-      if (!guestId) {
-        return;
-      }
-    }
-
+  const loadServerCart = useCallback(async (): Promise<void> => {
+    if (!userId) return;
     try {
-      const response = await fetchWithAuth(`${API_URL}/api/cart`);
+      const res = await fetchWithAuth(`${API_URL}/api/cart`);
+      const data = await res.json();
+      if (!res.ok || !data.success) return;
+      const lines: CartItem[] = data.data?.cart?.items ?? [];
+      dispatch({ type: "LOAD_CART", payload: lines });
+      writeStoredCart(storageKeyFor(userId), lines);
+    } catch { /* keep whatever is on screen */ }
+  }, [userId]);
 
-      const data = await response.json();
+  // Mirror to localStorage immediately (cheap, synchronous, survives reload),
+  // then push to the DB on a debounce so a burst of +/- clicks is one request.
+  const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          return;
-        }
-        return;
-      }
+  useEffect(() => {
+    // Never write for an identity that hasn't finished hydrating — the reducer
+    // starts at [] and would otherwise erase the stored cart on first paint.
+    if (authLoading || hydratedForRef.current !== storageKey) return;
 
-      const serverCart = data.data?.cart;
-      
-      if (serverCart && serverCart.items && serverCart.items.length > 0) {
-      }
-    } catch (error) {
-    }
-  };
+    writeStoredCart(storageKey, cartState.cartArray);
+    if (!userId) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => { syncCartToServer(); }, 800);
+
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [cartState.cartArray, storageKey, userId, authLoading, syncCartToServer]);
+
+  // Flush a pending save when the tab goes away — closing a laptop must not
+  // lose the last 800ms of edits.
+  useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState !== 'hidden') return;
+      if (!userId || hydratedForRef.current !== storageKey) return;
+      if (!saveTimerRef.current) return;
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+      syncCartToServer();
+    };
+    document.addEventListener('visibilitychange', flush);
+    return () => document.removeEventListener('visibilitychange', flush);
+  }, [userId, storageKey, syncCartToServer]);
 
   return (
     <CartContext.Provider
@@ -703,6 +715,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         updateCart,
         updateQuantity,
         clearCart,
+        clearCartEverywhere,
         getCartItemId,
         cartTotal,
         cartCount,
