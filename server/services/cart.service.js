@@ -7,6 +7,7 @@ const SubProduct = require('../models/SubProduct');
 const Tenant = require('../models/Tenant');
 const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
 const { calculateSizePricing } = require('../utils/pricing');
+const { buildCartItemId, buildCartLine, mergeCartLines } = require('../helpers/cart.helpers');
 
 /**
  * Add item to cart
@@ -128,16 +129,23 @@ const addToCart = async (data) => {
     cart.items[existingItemIndex].quantity = newQuantity;
     addedItem = cart.items[existingItemIndex];
   } else {
+    // Store the PLATFORM price, not the raw tenant-facing size.sellingPrice.
+    // getCart reprices on read anyway, but a correct value here keeps
+    // Cart.subtotal and any consumer reading the raw document honest.
+    const addPricing = calculateSizePricing(
+      size, product, subProduct.tenant, subProduct.costPrice, subProduct.baseSellingPrice,
+    );
+
     // Add new item
     const newItem = {
       product: productId,
       subproduct: subProductId,
       size: sizeId,
       tenant: subProduct.tenant._id,
-      priceAtAddition: size.sellingPrice,
+      priceAtAddition: addPricing.finalPrice,
       quantity,
       maxAvailableAtAddition: size.stock,
-      discountApplied: size.discountValue || 0,
+      discountApplied: 0,
       addedAt: new Date(),
     };
 
@@ -390,39 +398,60 @@ const updateUserCartCount = async (userId, itemCount) => {
  * Get user's cart
  */
 const getCart = async (userId) => {
+  // The selects below are wide because calculateSizePricing reads all of these.
+  // Trimming them silently prices every line at 0.
   const cart = await Cart.findOne({ user: userId })
     .populate({
       path: 'items.product',
-      select: 'name slug images type isAlcoholic abv status',
+      select: 'name slug images type isAlcoholic abv status platformMarkup platformDiscount',
     })
     .populate({
       path: 'items.subproduct',
-      select: 'sku baseSellingPrice status',
+      select: 'sku costPrice baseSellingPrice status',
       populate: {
         path: 'tenant',
-        select: 'name slug logo status subscriptionStatus',
+        select: 'name slug logo status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits',
       },
     })
     .populate({
       path: 'items.size',
-      select: 'size displayName sellingPrice stock availability currency',
+      select: 'size displayName sellingPrice costPrice stock availability currency unitsPerPack maxOrderQuantity minOrderQuantity discountValue discountType discountStart discountEnd platformMarkupOverridePct packPlatformMarkupOverridePct',
     })
     .lean();
 
   if (!cart) {
-    // Return empty cart structure
-    return {
-      items: [],
-      subtotal: 0,
-      discountTotal: 0,
-      estimatedTotal: 0,
-      isEmpty: true,
-    };
+    return { items: [], subtotal: 0, discountTotal: 0, estimatedTotal: 0, isEmpty: true };
   }
 
+  // Reprice every line through the platform pipeline. A cart loaded a week
+  // later must show today's price, not the price snapshotted at add time.
+  const items = (cart.items || [])
+    .map((item) => {
+      if (!item.product || !item.subproduct || !item.subproduct.tenant || !item.size) return null;
+      const pricing = calculateSizePricing(
+        item.size,
+        item.product,
+        item.subproduct.tenant,
+        item.subproduct.costPrice,
+        item.subproduct.baseSellingPrice,
+      );
+      return buildCartLine(item, pricing);
+    })
+    .filter(Boolean);
+
+  const subtotal = items.reduce((sum, line) => {
+    const unit = line.packUnitPrice && line.packThreshold && line.quantity >= line.packThreshold
+      ? line.packUnitPrice
+      : line.price;
+    return sum + unit * line.quantity;
+  }, 0);
+
   return {
-    ...cart,
-    isEmpty: cart.items.length === 0,
+    items,
+    subtotal,
+    discountTotal: cart.discountTotal || 0,
+    estimatedTotal: subtotal - (cart.discountTotal || 0),
+    isEmpty: items.length === 0,
   };
 };
 
