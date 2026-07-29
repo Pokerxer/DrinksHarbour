@@ -30,10 +30,13 @@ const MONGODB_URI =
 const DRY_RUN = String(process.env.DRY_RUN || 'true').toLowerCase() !== 'false';
 const ONLY_EXACT_DOUBLES = String(process.env.ONLY_EXACT_DOUBLES || '').toLowerCase() === 'true';
 
+// 'available' is Size.availability's canonical enum value. Much of the codebase
+// still writes the legacy 'in_stock' through findByIdAndUpdate (which skips the
+// pre-validate hook that would coerce it); readers accept both.
 function availabilityFor(available, threshold) {
   if (available <= 0) return 'out_of_stock';
   if (threshold > 0 && available <= threshold) return 'low_stock';
-  return 'in_stock';
+  return 'available';
 }
 
 async function main() {
