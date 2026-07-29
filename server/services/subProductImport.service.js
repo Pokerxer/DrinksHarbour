@@ -347,7 +347,11 @@ function sizePayload(r, fallbackMarkupPct) {
 // Set a size's on-hand stock to an ABSOLUTE quantity (a stock-take correction),
 // used by Update-mode imports. Mirrors the reliability pattern of the create path:
 // the warehouse ledger is best-effort, but Size.stock (the shop's inStock source
-// of truth) is always set directly.
+// of truth) always ends up at `qty`.
+//
+// recordReceiptMovement $inc's Size.stock itself, so exactly ONE writer may run:
+// the movement (which also files the audit trail) when it succeeds, a direct
+// $set only when it doesn't. Running both is what doubled every imported size.
 async function applyAbsoluteStock(d, { subProductId, productId, sizeId, qty, before, warehouseId, tenantId, user, unitCost }) {
   if (warehouseId) {
     try {
@@ -357,11 +361,7 @@ async function applyAbsoluteStock(d, { subProductId, productId, sizeId, qty, bef
       );
     } catch (_) { /* Size.stock is set below regardless */ }
   }
-  await Promise.resolve(
-    d.Size.findByIdAndUpdate(sizeId, {
-      $set: { stock: qty, availableStock: qty, availability: qty > 0 ? 'in_stock' : 'out_of_stock' },
-    })
-  ).catch(() => {});
+  let recorded = false;
   try {
     await d.recordReceiptMovement({
       subProduct: subProductId, product: productId, tenant: tenantId, size: sizeId,
@@ -370,7 +370,15 @@ async function applyAbsoluteStock(d, { subProductId, productId, sizeId, qty, bef
       unitCost, notes: 'Bulk import stock update (absolute)', reference: 'bulk-import-update',
       performedBy: user?._id,
     });
-  } catch (_) { /* audit trail is non-fatal — Size.stock already set */ }
+    recorded = true;
+  } catch (_) { /* audit trail is non-fatal — the $set below still lands */ }
+  await Promise.resolve(
+    d.Size.findByIdAndUpdate(sizeId, recorded
+      // Movement already moved stock by (qty - before); only the derived flag
+      // needs correcting (it always claims 'in_stock', even for a zeroing count).
+      ? { $set: { availability: qty > 0 ? 'in_stock' : 'out_of_stock' } }
+      : { $set: { stock: qty, availableStock: qty, availability: qty > 0 ? 'in_stock' : 'out_of_stock' } })
+  ).catch(() => {});
 }
 
 async function commitImport(rawRows, opts, tenantId, user, deps) {
@@ -618,14 +626,12 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
           );
         }
 
-        // Size.stock — set directly so the shop's inStock filter always sees the
-        // correct value even if the InventoryMovement audit trail fails to save.
-        const Size = require('mongoose').model('Size');
-        await Size.findByIdAndUpdate(s._id, {
-          $set: { stock: qty, availableStock: qty, availability: 'in_stock' },
-        }).catch(() => {});
-
-        // InventoryMovement audit trail — best-effort; failure is non-fatal.
+        // InventoryMovement audit trail — it also $inc's Size.stock (the shop's
+        // inStock source of truth), so it is the ONLY writer when it succeeds.
+        // A newly created size starts at stock 0 (see sizePayload), so the $inc
+        // lands on exactly `qty`. Writing an absolute $set as well doubled every
+        // imported size.
+        let recorded = false;
         try {
           await d.recordReceiptMovement({
             subProduct: subProductId,
@@ -641,7 +647,18 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
             reference: 'bulk-import',
             performedBy: user?._id,
           });
-        } catch (_) { /* Size.stock already set above */ }
+          recorded = true;
+        } catch (_) { /* fall back to setting Size.stock directly below */ }
+
+        // Fallback only: keep the shop's inStock filter correct even when the
+        // audit-trail write fails.
+        if (!recorded) {
+          await Promise.resolve(
+            d.Size.findByIdAndUpdate(s._id, {
+              $set: { stock: qty, availableStock: qty, availability: 'in_stock' },
+            })
+          ).catch(() => {});
+        }
 
         out.stockApplied += 1;
       }
