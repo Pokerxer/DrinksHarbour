@@ -101,7 +101,7 @@ function Field({ label, name, type = 'text', placeholder, required = true, icon:
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { cartState, clearCart, syncCartToServer, loadServerCart, validateCartItems, applyValidationUpdates, validationMap } = useCart();
+  const { cartState, clearCart, clearCartEverywhere, syncCartToServer, loadServerCart, validateCartItems, applyValidationUpdates, validationMap } = useCart();
 
   const [mounted,         setMounted]         = useState(false);
   const [isLoading,       setIsLoading]       = useState(false);
@@ -496,7 +496,7 @@ export default function CheckoutPage() {
         paidAt: new Date().toISOString(),
         amount: total,
       });
-      clearCart();
+      clearCartEverywhere();
       localStorage.setItem('customerEmail', form.email);
       router.push(`/order-confirmation?orderId=${orderId}`);
     } catch (e: any) {
@@ -564,7 +564,7 @@ export default function CheckoutPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to place order');
-      clearCart();
+      clearCartEverywhere();
       localStorage.setItem('customerEmail', form.email);
       const orderId = data.data?.order?._id || data.data?.order?.id || data.order?._id;
       router.push(`/order-confirmation?orderId=${orderId}`);
@@ -607,7 +607,7 @@ export default function CheckoutPage() {
         paidAt: new Date().toISOString(),
         amount: total,
       });
-      clearCart();
+      clearCartEverywhere();
       localStorage.setItem('customerEmail', form.email);
       router.push(`/order-confirmation?orderId=${orderId}`);
     } catch (e: any) {
@@ -636,7 +636,7 @@ export default function CheckoutPage() {
         paidAt: new Date().toISOString(),
         amount: total,
       });
-      clearCart();
+      clearCartEverywhere();
       localStorage.setItem('customerEmail', form.email);
       router.push(`/order-confirmation?orderId=${orderId}`);
     } catch (e: any) {

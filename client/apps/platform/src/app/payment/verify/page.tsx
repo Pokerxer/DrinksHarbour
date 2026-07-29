@@ -18,7 +18,7 @@ type Stage = 'verifying' | 'creating' | 'success' | 'error';
 function VerifyContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { clearCart } = useCart();
+  const { clearCartEverywhere } = useCart();
 
   // Korapay appends `reference`; Paystack (legacy) sent `reference`/`trxref` — accept either
   const reference = searchParams.get('reference') || searchParams.get('trxref');
@@ -192,7 +192,7 @@ function VerifyContent() {
       // Mark as done so a refresh doesn't re-create the order
       if (orderId) localStorage.setItem(`ps_done_${ref}`, orderId);
 
-      clearCart();
+      clearCartEverywhere();
       setStage('success');
 
       router.replace(`/order-confirmation?orderId=${orderId}`);
