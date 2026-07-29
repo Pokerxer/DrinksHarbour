@@ -46,12 +46,28 @@ clearResearchCache()
 One `anthropic.messages.create` call:
 
 - Model `claude-opus-4-8`, overridable via `ANTHROPIC_RESEARCH_MODEL`.
-- `tools: [{ type: 'web_search_20260209', name: 'web_search' }]` — the dynamic-filtering version,
-  confirmed present in the non-beta namespace of the installed `@anthropic-ai/sdk` 0.104.2.
-- Adaptive thinking (`thinking: { type: 'adaptive' }`). No `temperature`/`top_p`/`top_k` — Opus 4.8
-  rejects them.
-- Streamed via `.stream()` + `.finalMessage()` so a long search loop cannot hit an HTTP timeout.
+- `tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }]`.
+- Adaptive thinking (`thinking: { type: 'adaptive' }`) at `output_config.effort: 'low'`. No
+  `temperature`/`top_p`/`top_k` — Opus 4.8 rejects them.
+- Streamed via `.stream()`, with a 90s ceiling enforced by `withTimeout` (race + `stream.abort()`).
 - `stop_reason === 'refusal'` is handled as "not found", not as an exception.
+
+**Latency findings from live testing** (these drove the two choices above):
+
+| Config | Jameson Irish Whiskey |
+|---|---|
+| `_20260209` tool, effort `high`, max_uses 6 | 232s |
+| `_20260209` tool, effort `medium`, max_uses 4 | 414s |
+| `_20250305` tool, effort `low`, max_uses 4 | **23.1s** |
+
+An isolated probe on the same query put the tool versions at 22.6s (`_20260209`) vs 8.0s
+(`_20250305`) — the dynamic-filtering version provisions a code-execution container per search to
+pre-filter results, which buys token efficiency this endpoint does not need. Effort `high` was the
+larger cost: the model kept re-searching a well-documented product for minutes. Neither change
+loosens the no-inference rule, which lives in the prompt and again in `applyBriefToProduct`.
+
+The SDK's request-level `timeout` option did **not** interrupt a long server-tool loop in testing —
+a 90s setting sailed past to 414s. Hence the explicit `withTimeout` guard.
 
 **Brief shape:**
 
@@ -76,7 +92,13 @@ the known factual field list against the keys actually present — not self-repo
 
 **Sources are extracted from `web_search_tool_result` blocks in the response**, which carry real
 `{ title, url, page_age }`. They are never read out of the model's prose. A URL the model invents
-therefore cannot reach the admin.
+therefore cannot reach the admin. Marketplace hosts (eBay, UberEats, Amazon, Jumia…) rank last and
+the list is capped at 12 — a live run returned 27 sources, most of them retail listings.
+
+**Sourced values are normalised before the schema enum filter.** A real run returned
+`standardSizes: ["700ml","750ml","1L","1.75L"]`; the schema stores `70cl`/`75cl`, so a naive
+`includes()` filter would have discarded the two *correct* sizes and kept the outliers.
+`filterToEnum` converts sizes to millilitres and tries each spelling the schema might use.
 
 **Cache:** in-process `Map`, keyed on a normalised `name|brand`, 24h TTL, LRU-capped at 200 entries.
 `researchProduct(q, { cacheOnly: true })` returns `null` on a miss without spending a search.
@@ -132,10 +154,19 @@ Plus merge-helper coverage: the brief overrides conflicting model output in `gen
 
 Baseline to preserve: 628/631 (`node --test '__tests__/*.test.js'`), 3 known pre-existing failures.
 
-## Cost
+## Cost and latency
 
-One search + one Opus pass per new product (~$0.10–0.20), then free across every field button for
-24h. All copywriting stays on Haiku.
+One search + one Opus pass per new product (~$0.10–0.20) taking ~15–25s, then free and instant
+across every field button for 24h. All copywriting stays on Haiku.
+
+## Verified live
+
+- **Hennessy VSOP Privilege** — brand, producer (Jas Hennessy & Co.), France/Cognac, 40% ABV, 700ml,
+  official tasting notes, 12 ranked sources. `vintage`, `age`, `caskType`, `grapeVarieties`,
+  `allergens` correctly blanked.
+- **"Chairman Ultra Premium Dry Gin Nigeria"** (an invented product) — searched, found nothing
+  authoritative, returned `found: false` with all 18 factual fields blanked. Previously this would
+  have produced a complete, confident, entirely fictional spec sheet.
 
 ## Out of scope
 

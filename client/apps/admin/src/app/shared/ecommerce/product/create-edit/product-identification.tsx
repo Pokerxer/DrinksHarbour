@@ -11,7 +11,7 @@ import FormGroup from '@/app/shared/form-group';
 import { useEffect, useState, Fragment } from 'react';
 import { PiCheck, PiSparkle, PiSpinner, PiPlus } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
-import { geminiService } from '@/services/gemini.service';
+import { geminiService, type AiSource } from '@/services/gemini.service';
 import { categoryService } from '@/services/category.service';
 import { brandService } from '@/services/brand.service';
 import toast from 'react-hot-toast';
@@ -110,6 +110,18 @@ export default function ProductIdentification({ className }: ProductIdentificati
   const [isLoadingBrands, setIsLoadingBrands]               = useState(false);
   const [showBrandModal, setShowBrandModal] = useState(false);
 
+  // Where the AI's facts came from, so the admin can spot-check before saving.
+  const [sources, setSources] = useState<AiSource[]>([]);
+  const [unverified, setUnverified] = useState<string[]>([]);
+  const [showSources, setShowSources] = useState(false);
+
+  const mergeSources = (incoming: AiSource[]) =>
+    setSources((prev) => {
+      const byUrl = new Map(prev.map((s) => [s.url, s]));
+      incoming.forEach((s) => byUrl.set(s.url, s));
+      return Array.from(byUrl.values());
+    });
+
   const token = session?.user?.token;
 
   // ── Data fetching ───────────────────────────────────────────────────────────
@@ -198,12 +210,28 @@ export default function ProductIdentification({ className }: ProductIdentificati
     return true;
   };
 
-  const gen = async (field: string, fn: () => Promise<void>) => {
+  // A per-field generator may report back that no source confirmed the value.
+  // That is a successful request with an empty answer, not a failure — say so
+  // plainly rather than flashing "Generated!" over a field we just blanked.
+  const gen = async (
+    field: string,
+    fn: () => Promise<void | { unverified?: boolean | string[]; sources?: AiSource[]; note?: string }>
+  ) => {
     if (!requireName()) return;
     setGenerating(field);
     try {
-      await fn();
-      toast.success('Generated!');
+      const result = await fn();
+      if (result?.sources?.length) mergeSources(result.sources);
+
+      const nothingFound = Array.isArray(result?.unverified)
+        ? result.unverified.length > 0
+        : !!result?.unverified;
+
+      if (nothingFound) {
+        toast(result?.note || 'No source confirmed this — left blank.', { icon: '⚠️' });
+      } else {
+        toast.success('Generated!');
+      }
     } catch (err: any) {
       toast.error(err.message || 'AI generation failed');
     } finally {
@@ -216,6 +244,8 @@ export default function ProductIdentification({ className }: ProductIdentificati
     gen('slug', async () => {
       const res = await geminiService.generateSlug(productName, token);
       setValue('slug', res.data.slug || '');
+      // The slug is derived from the name, so it is never "unverified".
+      return { sources: res.sources };
     });
 
   const genType = () =>
@@ -224,6 +254,7 @@ export default function ProductIdentification({ className }: ProductIdentificati
       const res = await geminiService.generateProductDetails(productName, token, productType);
       if (res.data.type) setValue('type', res.data.type);
       if (res.data.subType) setValue('subType', res.data.subType);
+      return { sources: res.sources };
     });
 
   const genCategory = () =>
@@ -287,6 +318,10 @@ export default function ProductIdentification({ className }: ProductIdentificati
       const res  = await geminiService.generateProductDetails(productName, token, productType);
       const data = res.data;
 
+      setSources(res.sources ?? []);
+      setUnverified(Array.isArray(res.unverified) ? res.unverified : []);
+      setShowSources(false);
+
       setValue('type', data.type || '');
       setValue('subType', data.subType || '');
 
@@ -341,7 +376,20 @@ export default function ProductIdentification({ className }: ProductIdentificati
       setValue('metaDescription', data.metaDescription || '');
       setValue('keywords', data.keywords || []);
 
-      toast.success('Product details auto-filled!', { id: 'ai-all' });
+      const blanks = Array.isArray(res.unverified) ? res.unverified.length : 0;
+      if (res.researched === false) {
+        toast(
+          res.note || `No source was found for "${productName}". Factual fields were left blank.`,
+          { id: 'ai-all', icon: '⚠️', duration: 6000 }
+        );
+      } else if (blanks > 0) {
+        toast.success(
+          `Auto-filled from ${res.sources?.length ?? 0} source${res.sources?.length === 1 ? '' : 's'} — ${blanks} field${blanks === 1 ? '' : 's'} left blank as unverified.`,
+          { id: 'ai-all', duration: 6000 }
+        );
+      } else {
+        toast.success('Product details auto-filled!', { id: 'ai-all' });
+      }
     } catch (err: any) {
       const msg = err.message || 'Failed to generate product details';
       toast.error(
@@ -403,6 +451,46 @@ export default function ProductIdentification({ className }: ProductIdentificati
               <PiSparkle className="h-3 w-3 text-purple-500" />
               Enter a product name then use &quot;Auto-fill with AI&quot; to generate all details, or use the individual AI buttons per field.
             </Text>
+
+            {/* Where the facts came from. Every URL here was returned by a real
+                web search, so it is safe to open and check against. */}
+            {sources.length > 0 && (
+              <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSources((v) => !v)}
+                  className="flex w-full items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-gray-900"
+                >
+                  <PiCheck className="h-3.5 w-3.5 text-green-600" />
+                  Verified against {sources.length} source{sources.length === 1 ? '' : 's'}
+                  <span className="ml-auto text-gray-400">{showSources ? 'Hide' : 'Show'}</span>
+                </button>
+
+                {showSources && (
+                  <ul className="mt-2 space-y-1 border-t border-gray-200 pt-2">
+                    {sources.map((s) => (
+                      <li key={s.url} className="truncate text-xs">
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-violet-600 hover:underline"
+                          title={s.url}
+                        >
+                          {s.title}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {unverified.length > 0 && (
+                  <Text className="mt-2 border-t border-gray-200 pt-2 text-xs text-amber-700">
+                    Left blank — no source confirmed these: {unverified.join(', ')}
+                  </Text>
+                )}
+              </div>
+            )}
           </div>
 
           {/* URL Slug */}

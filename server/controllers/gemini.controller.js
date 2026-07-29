@@ -6,6 +6,12 @@ const SubCategory = require('../models/SubCategory');
 const Product = require('../models/Product');
 const SubProduct = require('../models/SubProduct');
 const Brand = require('../models/Brand');
+const {
+  researchProduct,
+  formatFactsForPrompt,
+  applyBriefToProduct,
+  filterToEnum,
+} = require('../services/productResearch.service');
 
 // AI provider: Claude (Anthropic). Requires ANTHROPIC_API_KEY in server/.env.
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8';
@@ -277,6 +283,67 @@ const GENERATED_STYLES = [
   'premium', 'budget_friendly',
 ];
 
+// ── Web-grounded generation ─────────────────────────────────────────────────
+//
+// Objective product facts come from `productResearch.service`, which reads the
+// live web and returns only what a real source stated. Anything it could not
+// confirm is left blank and flagged rather than invented — a wrong ABV or
+// vintage in the catalog is worse than an empty field an admin can fill in.
+
+// Enum allow-lists handed to the merge so a sourced value that the schema
+// cannot represent is dropped rather than silently stored.
+const RESEARCH_ENUMS = {
+  standardSizes: PRODUCT_ENUMS.standardSizes,
+  productionMethod: PRODUCT_ENUMS.productionMethod,
+  allergens: PRODUCT_ENUMS.allergens,
+};
+
+// Research the product named in the request body.
+// `cacheOnly` callers (copy generation) reuse a brief a previous search already
+// paid for and never trigger one of their own.
+const briefFor = (req, { cacheOnly = false } = {}) =>
+  researchProduct(
+    { name: req.body?.name, brand: req.body?.brand, category: req.body?.type || req.body?.category },
+    { cacheOnly }
+  );
+
+/**
+ * Build a per-field endpoint that answers straight from the research brief.
+ * No second model call: the value either came from a source or it did not.
+ *
+ * @param {string} fact   Field name on `brief.facts`.
+ * @param {string} key    Key the admin client expects in `data`.
+ * @param {*} blank       Value to return when nothing confirmed it.
+ * @param {string[]} [allowed] Optional schema enum to filter against.
+ */
+const factHandler = (fact, key, blank, allowed) =>
+  asyncHandler(async (req, res) => {
+    const { name } = req.body;
+    if (!name) {
+      res.status(400);
+      throw new Error('Product name is required');
+    }
+
+    const brief = await briefFor(req);
+    let value = brief.facts[fact];
+
+    if (value !== undefined && Array.isArray(allowed)) {
+      value = filterToEnum(value, allowed, fact);
+      if (Array.isArray(value) && !value.length) value = undefined;
+    }
+
+    const unverified = value === undefined;
+    res.json({
+      success: true,
+      data: { [key]: unverified ? blank : value },
+      unverified,
+      sources: brief.sources,
+      ...(unverified
+        ? { note: `No source confirmed the ${key} for "${name}" — left blank.` }
+        : {}),
+    });
+  });
+
 /**
  * Fetch categories and subcategories from database
  */
@@ -311,6 +378,14 @@ const generateProductDetails = asyncHandler(async (req, res) => {
     // Fetch categories and subcategories from database
     const { categories, subCategories } = await fetchCategories();
 
+    // Research the product on the live web before generating anything. Every
+    // objective field below is answered from this brief, not from model recall.
+    const brief = await researchProduct(
+      { name, brand: req.body.brand, category: inputCategory },
+      {}
+    );
+    const factsBlock = formatFactsForPrompt(brief);
+
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
       generationConfig: {
@@ -325,7 +400,9 @@ const generateProductDetails = asyncHandler(async (req, res) => {
     const catList = categories.map(c => c.name).join(', ');
     const subCatList = subCategories.map(s => s.name).join(', ');
     const prompt = `You are a beverage expert. Generate product details for "${name}"${inputCategory ? ` (category: ${inputCategory})` : ''} as compact JSON. Use only values from the lists below. Return ONLY valid JSON, no markdown.
-
+${factsBlock}${factsBlock ? '' : `
+NO SOURCES WERE FOUND for this product. Leave every factual field (abv, volumeMl, originCountry, region, appellation, producer, vintage, age, ageStatement, distilleryName, breweryName, wineryName, productionMethod, caskType, standardSizes, ingredients, allergens) empty or null. Do NOT infer them from the product name or category. You may still write the category, type, description and SEO copy.
+`}
 CATEGORIES: ${catList}
 SUBCATEGORIES: ${subCatList}
 TYPES: ${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
@@ -399,21 +476,37 @@ Return this JSON (fill all fields accurately):
     // Enhanced data sanitization with validation
     productData = sanitizeProductData(productData);
 
+    // The brief overrides the fill pass. Even if the model ignored the
+    // instruction above and invented an ABV, it cannot survive this step —
+    // unconfirmed factual fields are blanked and reported back as unverified.
+    const merged = applyBriefToProduct(productData, brief, {
+      enums: RESEARCH_ENUMS,
+      // The admin typed these; they are not ours to erase.
+      preserve: [req.body.brand ? 'brand' : null].filter(Boolean),
+    });
+    productData = merged.data;
+
     // Additional quality checks
     if (productData.abv && productData.abv > 0 && !productData.isAlcoholic) {
       productData.isAlcoholic = true;
     }
 
-    if (!productData.proof && productData.abv && productData.isAlcoholic) {
-      productData.proof = parseFloat((productData.abv * 2).toFixed(1));
-    }
-
     res.json({
       success: true,
       data: productData,
+      sources: brief.sources,
+      unverified: merged.unverified,
+      researched: brief.found,
+      ...(brief.found
+        ? {}
+        : {
+            note: `No authoritative source was found for "${name}". Factual fields were left blank for you to fill in; the description and SEO copy are generic.`,
+          }),
       metadata: {
         matchedCategory: matchedCategory?.name || null,
         matchedSubCategory: matchedSubCategory?.name || null,
+        sourceCount: brief.sources.length,
+        searchedAt: brief.searchedAt,
         generatedAt: new Date().toISOString()
       }
     });
@@ -421,15 +514,20 @@ Return this JSON (fill all fields accurately):
   } catch (error) {
     console.error('Gemini API error:', error.message);
 
-    // Enhanced error handling with specific fallbacks
+    // On quota exhaustion, hand back an empty skeleton rather than a plausible
+    // one. The previous behaviour invented an ABV, origin and tasting notes and
+    // returned them as `success: true`, which is indistinguishable from real
+    // generated data once it is in the form.
     if (error.message && (error.message.includes('429') || error.message.includes('quota') || error.message.includes('RATE_LIMIT'))) {
-      console.log('API quota/rate limit exceeded, returning enhanced demo data');
+      console.log('API quota/rate limit exceeded, returning a blank skeleton');
 
-      const demoData = generateEnhancedDemoData(name, inputCategory);
       return res.json({
         success: true,
-        data: demoData,
-        note: 'Using enhanced demo data - API quota exceeded',
+        data: generateBlankProductSkeleton(name),
+        unverified: FACTUAL_PRODUCT_FIELDS,
+        sources: [],
+        researched: false,
+        note: 'AI quota exceeded — nothing could be verified, so all fields were left blank. Try again later.',
         fallback: true
       });
     }
@@ -552,198 +650,67 @@ const sanitizeProductData = (data) => {
 };
 
 /**
- * Generate enhanced demo product data as fallback when API quota is exceeded
+ * Empty product skeleton returned when nothing could be verified.
+ *
+ * This deliberately contains no facts. It replaces an earlier helper that
+ * synthesised a complete, plausible spec sheet — ABV, origin, tasting notes,
+ * nutrition — from nothing but the product name, and returned it as a normal
+ * success. That data was indistinguishable from researched data once it landed
+ * in the form, which is exactly the failure this module exists to prevent.
  */
-const generateEnhancedDemoData = (name, category) => {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const nameParts = name.split(' ');
-  const brand = nameParts[0];
+const generateBlankProductSkeleton = (name) => ({
+  name,
+  slug: String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+  type: '',
+  subType: '',
+  style: '',
+  category: null,
+  subCategory: null,
+  isAlcoholic: null,
+  abv: null,
+  proof: null,
+  volumeMl: null,
+  standardSizes: [],
+  servingSize: '',
+  servingsPerContainer: null,
+  originCountry: '',
+  region: '',
+  appellation: '',
+  producer: '',
+  brand: '',
+  vintage: null,
+  age: null,
+  ageStatement: '',
+  distilleryName: '',
+  breweryName: '',
+  wineryName: '',
+  productionMethod: null,
+  caskType: '',
+  finish: '',
+  shortDescription: '',
+  description: '',
+  tastingNotes: { nose: [], aroma: [], palate: [], taste: [], finish: [], mouthfeel: [], appearance: '', color: '' },
+  flavorProfile: [],
+  foodPairings: [],
+  servingSuggestions: { temperature: '', glassware: '', garnish: [], mixers: [] },
+  isDietary: {},
+  allergens: [],
+  ingredients: [],
+  nutritionalInfo: { calories: null, carbohydrates: null, sugar: null, protein: null, fat: null, sodium: null, caffeine: null },
+  metaTitle: '',
+  metaDescription: '',
+  metaKeywords: [],
+  keywords: [],
+  status: 'draft',
+});
 
-  // Determine product type from name analysis
-  let productType = 'other';
-  let isAlcoholic = true;
-  let abv = 40;
-  let volumeMl = 750;
-  let servingSize = '1.5 oz (44ml)';
-  let servingsPerContainer = 17;
-  let glassware = 'Rocks glass';
-  let flavorProfile = ['smooth', 'balanced', 'rich'];
-
-  const nameLower = name.toLowerCase();
-
-  if (nameLower.includes('whiskey') || nameLower.includes('whisky') || nameLower.includes('bourbon') || nameLower.includes('scotch')) {
-    productType = 'spirit';
-    abv = 40;
-    flavorProfile = ['oak', 'vanilla', 'caramel', 'spicy', 'smooth'];
-    glassware = 'Whiskey tumbler';
-  } else if (nameLower.includes('wine') || nameLower.includes('merlot') || nameLower.includes('cabernet') || nameLower.includes('chardonnay')) {
-    productType = 'wine';
-    abv = 13.5;
-    servingSize = '5 oz (148ml)';
-    servingsPerContainer = 5;
-    glassware = 'Wine glass';
-    flavorProfile = ['fruity', 'berry', 'oak', 'balanced'];
-  } else if (nameLower.includes('beer') || nameLower.includes('ale') || nameLower.includes('lager') || nameLower.includes('stout')) {
-    productType = 'beer';
-    abv = 5.2;
-    volumeMl = 355;
-    servingSize = '12 oz (355ml)';
-    servingsPerContainer = 1;
-    glassware = 'Pint glass';
-    flavorProfile = ['malty', 'hoppy', 'crisp', 'refreshing'];
-  } else if (nameLower.includes('vodka')) {
-    productType = 'spirit';
-    abv = 40;
-    flavorProfile = ['clean', 'crisp', 'smooth', 'neutral'];
-  } else if (nameLower.includes('gin')) {
-    productType = 'spirit';
-    abv = 40;
-    flavorProfile = ['herbal', 'citrus', 'juniper', 'botanical'];
-  } else if (nameLower.includes('rum')) {
-    productType = 'spirit';
-    abv = 40;
-    flavorProfile = ['sweet', 'caramel', 'vanilla', 'tropical'];
-  } else if (nameLower.includes('tequila') || nameLower.includes('mezcal')) {
-    productType = 'spirit';
-    abv = 40;
-    flavorProfile = ['agave', 'earthy', 'peppery', 'smooth'];
-  } else if (nameLower.includes('juice') || nameLower.includes('soda') || nameLower.includes('water')) {
-    productType = 'non_alcoholic';
-    isAlcoholic = false;
-    abv = 0;
-    servingSize = '8 oz (237ml)';
-    servingsPerContainer = 3;
-    flavorProfile = ['refreshing', 'crisp', 'sweet'];
-  }
-
-  return {
-    name: name,
-    slug: slug,
-    type: productType,
-    subType: productType === 'spirit' ? 'Premium' : productType === 'wine' ? 'Dry' : 'Craft',
-    category: null,
-    subCategory: null,
-    isAlcoholic: isAlcoholic,
-    abv: abv,
-    proof: isAlcoholic ? abv * 2 : null,
-    volumeMl: volumeMl,
-    standardSizes: volumeMl === 750 ? ['70cl', '75cl', '1L'] : volumeMl === 355 ? ['can-330ml', 'can-355ml'] : ['75cl'],
-    servingSize: servingSize,
-    servingsPerContainer: servingsPerContainer,
-
-    originCountry: productType === 'wine' ? 'France' : productType === 'beer' ? 'Germany' : 'Scotland',
-    region: productType === 'wine' ? 'Bordeaux' : productType === 'beer' ? 'Bavaria' : 'Speyside',
-    appellation: productType === 'wine' ? 'AOC Bordeaux' : null,
-    producer: `${brand} ${productType === 'wine' ? 'Winery' : productType === 'beer' ? 'Brewery' : 'Distillery'}`,
-    brand: brand,
-    vintage: productType === 'wine' ? 2020 : null,
-    age: productType === 'spirit' && isAlcoholic ? 12 : null,
-    ageStatement: productType === 'spirit' && isAlcoholic ? '12 Year Old' : null,
-    distilleryName: productType === 'spirit' ? `${brand} Distillery` : '',
-    breweryName: productType === 'beer' ? `${brand} Brewery` : '',
-    wineryName: productType === 'wine' ? `${brand} Winery` : '',
-    productionMethod: productType === 'spirit' ? 'triple_distilled' : productType === 'wine' ? 'traditional' : 'handcrafted',
-    caskType: productType === 'spirit' ? 'Oak Barrels' : null,
-    finish: productType === 'spirit' ? 'Smooth oak finish' : null,
-
-    shortDescription: `Premium ${name} - A distinguished ${productType === 'spirit' ? 'spirit' : productType} with exceptional quality, crafted using traditional methods and finest ingredients for an unparalleled drinking experience.`,
-    description: `${name} represents the pinnacle of ${productType === 'spirit' ? 'distillation' : productType === 'wine' ? 'winemaking' : productType === 'beer' ? 'brewing' : 'beverage crafting'} artistry, combining centuries-old traditions with modern precision to create a truly exceptional ${productType === 'spirit' ? 'spirit' : productType}.
-
- The production process begins with the careful selection of the finest ${productType === 'wine' ? 'grapes' : productType === 'beer' ? 'malted barley and hops' : 'grains'}, sourced from ${productType === 'wine' ? 'premier vineyards' : productType === 'beer' ? 'trusted suppliers' : 'select farms'}. ${productType === 'spirit' ? 'Triple distillation in copper pot stills' : productType === 'wine' ? 'Controlled fermentation in stainless steel tanks' : productType === 'beer' ? 'Careful brewing with precision timing' : 'Meticulous processing'} ensures optimal flavor development and character.
-
- ${isAlcoholic && productType === 'spirit' ? `Aged for 12 years in Oak Barrels, this exceptional spirit develops its distinctive character through patient maturation. ` : ''}The result is a ${productType} that showcases ${flavorProfile.slice(0, 3).join(', ')} notes, creating a harmonious balance that delights both novice and connoisseur alike.
-
- Whether enjoyed ${productType === 'spirit' ? 'neat, on the rocks, or in premium cocktails' : productType === 'wine' ? 'with fine cuisine or as an aperitif' : productType === 'beer' ? 'chilled on its own or with hearty meals' : 'as a refreshing beverage'}, ${name} delivers an unforgettable experience that embodies the finest traditions of ${productType === 'spirit' ? 'distillation' : productType === 'wine' ? 'winemaking' : productType === 'beer' ? 'brewing' : 'beverage crafting'}.`,
-
-    tastingNotes: {
-      nose: productType === 'spirit' ? ['Rich vanilla', 'Toasted oak', 'Caramel', 'Subtle spice'] :
-        productType === 'wine' ? ['Dark berries', 'Cedar', 'Vanilla', 'Blackcurrant'] :
-          productType === 'beer' ? ['Malty sweetness', 'Floral hops', 'Bread', 'Citrus'] :
-            ['Fresh aromas', 'Natural essence', 'Clean'],
-      aroma: productType === 'spirit' ? ['Honeyed warmth', 'Oak influence'] :
-        productType === 'wine' ? ['Fruit concentration', 'Earthy complexity'] :
-          ['Balanced complexity'],
-      palate: productType === 'spirit' ? ['Smooth honey', 'Vanilla sweetness', 'Oak tannins', 'Warming spice'] :
-        productType === 'wine' ? ['Rich fruit', 'Silky tannins', 'Oak integration', 'Balanced acidity'] :
-          productType === 'beer' ? ['Malt backbone', 'Hop balance', 'Clean finish'] :
-            ['Refreshing taste', 'Natural flavors'],
-      taste: productType === 'spirit' ? ['Well-balanced', 'Complex layers'] :
-        productType === 'wine' ? ['Elegant structure', 'Fruit-forward'] :
-          ['Clean and crisp'],
-      finish: productType === 'spirit' ? ['Long warming finish', 'Lingering oak', 'Subtle sweetness'] :
-        productType === 'wine' ? ['Persistent finish', 'Elegant tannins', 'Fruit echo'] :
-          productType === 'beer' ? ['Clean finish', 'Refreshing'] :
-            ['Smooth finish'],
-      mouthfeel: productType === 'spirit' ? ['Velvety smooth', 'Full-bodied', 'Warming'] :
-        productType === 'wine' ? ['Silky texture', 'Medium-bodied', 'Balanced'] :
-          productType === 'beer' ? ['Smooth', 'Medium-bodied'] :
-            ['Light and refreshing'],
-      appearance: productType === 'spirit' ? 'Crystal clear with brilliant golden amber hue' :
-        productType === 'wine' ? 'Deep ruby red with purple highlights' :
-          productType === 'beer' ? 'Golden amber with ivory head' :
-            'Crystal clear with natural color',
-      color: productType === 'spirit' ? 'Rich golden amber' :
-        productType === 'wine' ? 'Deep ruby red' :
-          productType === 'beer' ? 'Golden amber' :
-            'Natural clear'
-    },
-
-    flavorProfile: flavorProfile,
-    foodPairings: productType === 'spirit' ? ['Grilled steak', 'Dark chocolate', 'Aged cheese', 'Smoked salmon'] :
-      productType === 'wine' ? ['Red meat', 'Aged cheeses', 'Dark chocolate', 'Roasted vegetables'] :
-        productType === 'beer' ? ['Grilled meats', 'Spicy cuisine', 'Sharp cheeses', 'Pub fare'] :
-          ['Light appetizers', 'Fresh salads', 'Seafood', 'Fruit'],
-    servingSuggestions: {
-      temperature: productType === 'spirit' ? 'Room temperature or slightly chilled' :
-        productType === 'wine' ? 'Cellar temperature (16-18°C)' :
-          productType === 'beer' ? 'Well chilled (4-6°C)' :
-            'Chilled (4-8°C)',
-      glassware: glassware,
-      garnish: productType === 'spirit' ? ['Orange peel', 'Cinnamon stick'] :
-        productType === 'wine' ? ['None needed'] :
-          productType === 'beer' ? ['Lime wedge'] :
-            ['Fresh mint', 'Lemon slice'],
-      mixers: productType === 'spirit' ? ['Soda water', 'Ginger ale', 'Ice'] :
-        productType === 'wine' ? ['Serve neat'] :
-          productType === 'beer' ? ['Serve neat'] :
-            ['Ice', 'Sparkling water']
-    },
-
-    isDietary: {
-      vegan: productType !== 'wine', // Wine often uses animal-based fining agents
-      vegetarian: true,
-      glutenFree: productType !== 'beer', // Beer typically contains gluten
-      dairyFree: true,
-      organic: false,
-      kosher: false,
-      halal: !isAlcoholic,
-      sugarFree: productType === 'spirit' && isAlcoholic,
-      lowCalorie: !isAlcoholic,
-      lowCarb: productType === 'spirit' && isAlcoholic
-    },
-
-    allergens: productType === 'beer' ? ['gluten'] : [],
-    ingredients: productType === 'spirit' ? ['Water', 'Malted grain', 'Yeast'] :
-      productType === 'wine' ? ['Grapes', 'Natural yeasts', 'Sulfites'] :
-        productType === 'beer' ? ['Water', 'Malted barley', 'Hops', 'Yeast'] :
-          ['Water', 'Natural flavoring'],
-
-    nutritionalInfo: {
-      calories: isAlcoholic ? (productType === 'spirit' ? 97 : productType === 'wine' ? 125 : 150) : 45,
-      carbohydrates: isAlcoholic ? (productType === 'spirit' ? 0 : productType === 'wine' ? 4 : 12) : 11,
-      sugar: isAlcoholic ? (productType === 'spirit' ? 0 : productType === 'wine' ? 1 : 3) : 10,
-      protein: 0,
-      fat: 0,
-      sodium: productType === 'beer' ? 5 : 1,
-      caffeine: 0
-    },
-
-    metaTitle: `${name} - Premium ${productType === 'spirit' ? 'Spirit' : productType === 'wine' ? 'Wine' : productType === 'beer' ? 'Beer' : 'Beverage'}`,
-    metaDescription: `Discover ${name}, a premium ${productType} with exceptional quality and ${flavorProfile[0]} character. Perfect for connoisseurs seeking authentic taste.`,
-    metaKeywords: [name.toLowerCase().replace(/\s+/g, '-'), productType, brand.toLowerCase(), 'premium', 'quality', isAlcoholic ? 'spirits' : 'beverage'],
-    status: 'draft'
-  };
-};
+// Product fields that must never be filled without a source behind them.
+const FACTUAL_PRODUCT_FIELDS = [
+  'brand', 'producer', 'distilleryName', 'breweryName', 'wineryName',
+  'originCountry', 'region', 'appellation', 'abv', 'volumeMl', 'vintage',
+  'age', 'ageStatement', 'productionMethod', 'caskType', 'standardSizes',
+  'ingredients', 'allergens',
+];
 
 /**
  * Generate product description only
@@ -756,6 +723,10 @@ const generateDescription = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Product name is required');
   }
+
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
 
   try {
     const model = genAI.getGenerativeModel({
@@ -773,7 +744,7 @@ Include:
 2. A full description (3-5 paragraphs) with history, production details, and tasting notes
 3. Key flavor profiles (array of descriptors)
 4. Food pairing suggestions (array)
-${COPY_GUARDRAILS}
+${grounding}${COPY_GUARDRAILS}
 Return as JSON:
 {
   "shortDescription": "...",
@@ -814,12 +785,13 @@ Return as JSON:
     res.json({
       success: true,
       data: {
-        shortDescription: `Premium ${name} - an exceptional ${type || 'beverage'} with outstanding quality.`,
-        description: `${name} is a distinguished ${type || 'beverage'} crafted with care and expertise.`,
-        flavorProfile: ['smooth', 'rich', 'balanced'],
-        foodPairings: ['Grilled meats', 'Aged cheese', 'Dark chocolate'],
+        shortDescription: '',
+        description: '',
+        flavorProfile: [],
+        foodPairings: [],
       },
-      note: 'Demo data',
+      error: true,
+      note: 'AI quota exceeded — nothing was written rather than guessing.',
     });
   }
 });
@@ -829,85 +801,37 @@ Return as JSON:
  * POST /api/gemini/generate-beverage-info
  */
 const generateBeverageInfo = asyncHandler(async (req, res) => {
-  const { name, type } = req.body;
+  const { name } = req.body;
+  if (!name) { res.status(400); throw new Error('Product name is required'); }
 
-  if (!name) {
-    res.status(400);
-    throw new Error('Product name is required');
-  }
+  const brief = await briefFor(req);
+  const { abv, volumeMl } = brief.facts;
+  const standardSizes = (brief.facts.standardSizes || []).filter((s) =>
+    PRODUCT_ENUMS.standardSizes.includes(s)
+  );
+  const unverified = ['abv', 'volumeMl', 'standardSizes'].filter(
+    (f) => brief.facts[f] === undefined
+  );
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-
-    const prompt = `Provide beverage-specific information for "${name}"${type ? `, a ${type}` : ''}.
-
-AVAILABLE STANDARD SIZES:
-${PRODUCT_ENUMS.standardSizes.join(', ')}
-
-Return as JSON:
-{
-  "isAlcoholic": true or false,
-  "abv": number between 0-100 (e.g., 40 for 40% alcohol),
-  "proof": number (ABV * 2, or null if not alcoholic),
-  "volumeMl": typical bottle size in ml (e.g., 750),
-  "standardSizes": ["select 2-5 sizes from the list above"],
-  "servingSize": "e.g., '1 shot (44ml)' or '1 glass (150ml)'",
-  "servingsPerContainer": number
-}`;
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let text = response.text();
-
-    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-    const data = parseJSONResponse(text);
-
-    // Sanitize standard sizes
-    if (Array.isArray(data.standardSizes)) {
-      data.standardSizes = data.standardSizes.filter(s => PRODUCT_ENUMS.standardSizes.includes(s));
-    } else {
-      data.standardSizes = [];
-    }
-
-    // Calculate proof if ABV is provided
-    if (data.abv && !data.proof) {
-      data.proof = data.abv * 2;
-    }
-
-    res.json({
-      success: true,
-      data,
-    });
-  } catch (error) {
-    console.error('Gemini API error:', error.message);
-
-    if (error.message && (error.message.includes('429') || error.message.includes('quota'))) {
-      const isAlcoholic = !type || !type.includes('non_alcoholic');
-      return res.json({
-        success: true,
-        data: {
-          isAlcoholic: isAlcoholic,
-          abv: isAlcoholic ? 40 : 0,
-          proof: isAlcoholic ? 80 : null,
-          volumeMl: 750,
-          standardSizes: ['70cl', '75cl', '1L'],
-          servingSize: isAlcoholic ? '1 shot (44ml)' : '1 bottle',
-          servingsPerContainer: isAlcoholic ? 17 : 1
-        },
-        note: 'Using demo data - API quota exceeded'
-      });
-    }
-
-    res.status(500);
-    throw new Error(`Failed to generate beverage info: ${error.message}`);
-  }
+  res.json({
+    success: true,
+    data: {
+      isAlcoholic: abv === undefined ? null : abv > 0,
+      abv: abv ?? null,
+      proof: abv === undefined ? null : parseFloat((abv * 2).toFixed(1)),
+      volumeMl: volumeMl ?? null,
+      standardSizes,
+      // Serving size and servings-per-container are arithmetic on a sourced
+      // volume, not independent claims — so they only exist when it does.
+      servingSize: '',
+      servingsPerContainer: null,
+    },
+    unverified,
+    sources: brief.sources,
+    ...(unverified.length
+      ? { note: `No source confirmed ${unverified.join(', ')} for "${name}" — left blank.` }
+      : {}),
+  });
 });
 
 /**
@@ -921,6 +845,10 @@ const generateSeo = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Product name is required');
   }
+
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
 
   try {
     const model = genAI.getGenerativeModel({
@@ -947,7 +875,7 @@ Requirements:
   • For Scotch/Scottish origin: "scotch whisky Nigeria", "import scotch Nigeria"
   • For wine: "buy wine Nigeria", "wine delivery Lagos"
   • For beer: "buy beer Nigeria", "beer delivery Nigeria"
-${COPY_GUARDRAILS}
+${grounding}${COPY_GUARDRAILS}
 Return as JSON:
 {
   "metaTitle": "SEO title (max 45 chars)",
@@ -1008,6 +936,10 @@ const generateTags = asyncHandler(async (req, res) => {
     throw new Error('Product name is required');
   }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1025,7 +957,7 @@ Tags should be:
 - Useful for search and filtering
 - Include brand, type, style, occasion, and flavor descriptors where applicable
 - Lowercase, with no duplicates and no generic filler ("drink", "buy", "online")
-${COPY_GUARDRAILS}
+${grounding}${COPY_GUARDRAILS}
 Return as JSON:
 {
   "tags": ["tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8"]
@@ -1195,6 +1127,10 @@ const generateShortDescription = asyncHandler(async (req, res) => {
   const { name, type, brand } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1204,7 +1140,7 @@ const generateShortDescription = asyncHandler(async (req, res) => {
       }
     });
     const prompt = `Write a compelling short description (max 280 characters) for "${name}"${type ? `, a ${type}` : ''}${brand ? ` by ${brand}` : ''}. Focus on key selling points and quality.
-${COPY_GUARDRAILS}
+${grounding}${COPY_GUARDRAILS}
 Return ONLY the JSON: {"shortDescription": "..."}`;
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -1212,7 +1148,7 @@ Return ONLY the JSON: {"shortDescription": "..."}`;
     if (data.shortDescription) data.shortDescription = normalizeCopy(data.shortDescription);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { shortDescription: `Premium ${name} - A distinguished ${type || 'beverage'} with exceptional quality.` }, note: 'Demo data' });
+    res.json({ success: true, data: { shortDescription: '' }, error: true, note: 'AI generation failed — nothing was written rather than guessing.' });
   }
 });
 
@@ -1224,6 +1160,10 @@ const generateFullDescription = asyncHandler(async (req, res) => {
   const { name, type, brand, originCountry } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1233,7 +1173,7 @@ const generateFullDescription = asyncHandler(async (req, res) => {
       }
     });
     const prompt = `Write a detailed 3-5 paragraph product description for "${name}"${type ? `, a ${type}` : ''}${brand ? ` by ${brand}` : ''}${originCountry ? ` from ${originCountry}` : ''}. Include history, production process, and unique characteristics.
-${COPY_GUARDRAILS}
+${grounding}${COPY_GUARDRAILS}
 Return ONLY JSON: {"description": "..."}`;
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -1247,7 +1187,7 @@ Return ONLY JSON: {"description": "..."}`;
     if (data.description) data.description = normalizeCopy(data.description);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { description: `${name} represents the finest in ${type || 'beverage'} craftsmanship.` }, note: 'Demo data' });
+    res.json({ success: true, data: { description: '' }, error: true, note: 'AI generation failed — nothing was written rather than guessing.' });
   }
 });
 
@@ -1259,6 +1199,10 @@ const generateFlavorProfile = asyncHandler(async (req, res) => {
   const { name, type } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1267,7 +1211,7 @@ const generateFlavorProfile = asyncHandler(async (req, res) => {
         responseMimeType: 'application/json',
       }
     });
-    const prompt = `Identify 5-8 flavor profile descriptors for "${name}"${type ? `, a ${type}` : ''}. Use standard tasting terms. Available: ${PRODUCT_ENUMS.flavorProfile.join(', ')}. Return ONLY JSON: {"flavorProfile": ["descriptor1", "descriptor2"]}`;
+    const prompt = `${grounding}Identify 5-8 flavor profile descriptors for "${name}"${type ? `, a ${type}` : ''}. Use standard tasting terms. Available: ${PRODUCT_ENUMS.flavorProfile.join(', ')}. Return ONLY JSON: {"flavorProfile": ["descriptor1", "descriptor2"]}`;
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
@@ -1279,7 +1223,7 @@ const generateFlavorProfile = asyncHandler(async (req, res) => {
     const data = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { flavorProfile: ['smooth', 'rich', 'balanced'] }, note: 'Demo data' });
+    res.json({ success: true, data: { flavorProfile: [] }, error: true, note: 'AI generation failed — no flavour descriptors were invented.' });
   }
 });
 
@@ -1291,6 +1235,10 @@ const generateFoodPairings = asyncHandler(async (req, res) => {
   const { name, type, flavorProfile } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1299,7 +1247,7 @@ const generateFoodPairings = asyncHandler(async (req, res) => {
         responseMimeType: 'application/json',
       }
     });
-    const prompt = `Suggest 4-6 ideal food pairings for "${name}"${type ? `, a ${type}` : ''}${flavorProfile ? ` with flavors: ${flavorProfile.join(', ')}` : ''}. Return ONLY JSON: {"foodPairings": ["pairing1", "pairing2"]}`;
+    const prompt = `${grounding}Suggest 4-6 ideal food pairings for "${name}"${type ? `, a ${type}` : ''}${flavorProfile ? ` with flavors: ${flavorProfile.join(', ')}` : ''}. Return ONLY JSON: {"foodPairings": ["pairing1", "pairing2"]}`;
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
@@ -1311,7 +1259,7 @@ const generateFoodPairings = asyncHandler(async (req, res) => {
     const data = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { foodPairings: ['Grilled meats', 'Aged cheese'] }, note: 'Demo data' });
+    res.json({ success: true, data: { foodPairings: [] }, error: true, note: 'AI generation failed — no pairings were invented.' });
   }
 });
 
@@ -1323,6 +1271,10 @@ const generateTastingNose = asyncHandler(async (req, res) => {
   const { name, type, flavorProfile } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1331,7 +1283,7 @@ const generateTastingNose = asyncHandler(async (req, res) => {
         responseMimeType: 'application/json',
       }
     });
-    const prompt = `Describe the nose/aroma of "${name}"${type ? `, a ${type}` : ''}. Provide 3-5 aroma descriptors. Return ONLY JSON: {"nose": ["aroma1", "aroma2"]}`;
+    const prompt = `${grounding}Describe the nose/aroma of "${name}"${type ? `, a ${type}` : ''}. Provide 3-5 aroma descriptors. Return ONLY JSON: {"nose": ["aroma1", "aroma2"]}`;
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     text = text.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
@@ -1339,7 +1291,7 @@ const generateTastingNose = asyncHandler(async (req, res) => {
     const data = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { nose: ['Rich aromas', 'Vanilla', 'Oak'] }, note: 'Demo data' });
+    res.json({ success: true, data: { nose: [] }, error: true, note: 'AI generation failed — no tasting notes were invented.' });
   }
 });
 
@@ -1351,6 +1303,10 @@ const generateTastingPalate = asyncHandler(async (req, res) => {
   const { name, type, flavorProfile } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1359,7 +1315,7 @@ const generateTastingPalate = asyncHandler(async (req, res) => {
         responseMimeType: 'application/json',
       }
     });
-    const prompt = `Describe the palate/taste of "${name}"${type ? `, a ${type}` : ''}. Provide 3-5 taste descriptors. Return ONLY JSON: {"palate": ["taste1", "taste2"]}`;
+    const prompt = `${grounding}Describe the palate/taste of "${name}"${type ? `, a ${type}` : ''}. Provide 3-5 taste descriptors. Return ONLY JSON: {"palate": ["taste1", "taste2"]}`;
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     text = text.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
@@ -1367,7 +1323,7 @@ const generateTastingPalate = asyncHandler(async (req, res) => {
     const data = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { palate: ['Smooth', 'Honey sweetness', 'Spice notes'] }, note: 'Demo data' });
+    res.json({ success: true, data: { palate: [] }, error: true, note: 'AI generation failed — no tasting notes were invented.' });
   }
 });
 
@@ -1379,6 +1335,10 @@ const generateTastingFinish = asyncHandler(async (req, res) => {
   const { name, type } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1387,7 +1347,7 @@ const generateTastingFinish = asyncHandler(async (req, res) => {
         responseMimeType: 'application/json',
       }
     });
-    const prompt = `Describe the finish/aftertaste of "${name}"${type ? `, a ${type}` : ''}. Provide 3-5 finish descriptors. Return ONLY JSON: {"finish": ["finish1", "finish2"]}`;
+    const prompt = `${grounding}Describe the finish/aftertaste of "${name}"${type ? `, a ${type}` : ''}. Provide 3-5 finish descriptors. Return ONLY JSON: {"finish": ["finish1", "finish2"]}`;
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     text = text.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
@@ -1395,7 +1355,7 @@ const generateTastingFinish = asyncHandler(async (req, res) => {
     const data = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { finish: ['Long finish', 'Warming'] }, note: 'Demo data' });
+    res.json({ success: true, data: { finish: [] }, error: true, note: 'AI generation failed — no tasting notes were invented.' });
   }
 });
 
@@ -1407,6 +1367,10 @@ const generateTastingColor = asyncHandler(async (req, res) => {
   const { name, type, age } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1415,7 +1379,7 @@ const generateTastingColor = asyncHandler(async (req, res) => {
         responseMimeType: 'application/json',
       }
     });
-    const prompt = `Describe the color and appearance of "${name}"${type ? `, a ${type}` : ''}${age ? ` aged ${age} years` : ''}. Be specific about hue, clarity, and intensity. Return ONLY JSON: {"color": "description"}`;
+    const prompt = `${grounding}Describe the color and appearance of "${name}"${type ? `, a ${type}` : ''}${age ? ` aged ${age} years` : ''}. Be specific about hue, clarity, and intensity. Return ONLY JSON: {"color": "description"}`;
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     text = text.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
@@ -1423,7 +1387,7 @@ const generateTastingColor = asyncHandler(async (req, res) => {
     const data = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { color: 'Golden amber with brilliant clarity' }, note: 'Demo data' });
+    res.json({ success: true, data: { color: '' }, error: true, note: 'AI generation failed — no appearance was invented.' });
   }
 });
 
@@ -1431,212 +1395,49 @@ const generateTastingColor = asyncHandler(async (req, res) => {
  * Generate origin country
  * POST /api/gemini/origin-country
  */
-const generateOriginCountry = asyncHandler(async (req, res) => {
-  const { name, type, brand } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `Identify the country of origin for "${name}"${brand ? ` by ${brand}` : ''}${type ? ` (${type})` : ''}. Return ONLY JSON: {"originCountry": "Country name"}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { originCountry: 'Ireland' }, note: 'Demo data' });
-  }
-});
+const generateOriginCountry = factHandler('originCountry', 'originCountry', '');
 
 /**
  * Generate region
  * POST /api/gemini/region
  */
-const generateRegion = asyncHandler(async (req, res) => {
-  const { name, type, originCountry } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `Identify the specific region within ${originCountry || 'its country'} for "${name}". For spirits: Speyside, Highlands, Islay for Scotch; Kentucky, Tennessee for Bourbon. For wine: Napa, Bordeaux, Burgundy. Return ONLY JSON: {"region": "Region name"}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { region: 'Dublin' }, note: 'Demo data' });
-  }
-});
+const generateRegion = factHandler('region', 'region', '');
 
 /**
  * Generate appellation
  * POST /api/gemini/appellation
  */
-const generateAppellation = asyncHandler(async (req, res) => {
-  const { name, type, originCountry, region } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `Identify the appellation/PDO/ designation for "${name}"${type ? ` (${type})` : ''}${originCountry ? ` from ${originCountry}` : ''}${region ? ` in ${region}` : ''}. Examples: Champagne, Cognac, Scotch Whisky, Champagne AOC, Rioja DOCa, Napa Valley AVA. Return ONLY JSON: {"appellation": "Appellation name or empty string"}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { appellation: '' }, note: 'Demo data' });
-  }
-});
+const generateAppellation = factHandler('appellation', 'appellation', '');
 
 /**
  * Generate producer name
  * POST /api/gemini/producer
  */
-const generateProducer = asyncHandler(async (req, res) => {
-  const { name, brand, type } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `Identify the producer/manufacturer for "${name}"${brand ? ` (brand: ${brand})` : ''}${type ? ` (${type})` : ''}. Return ONLY JSON: {"producer": "Producer name"}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { producer: `${brand || name.split(' ')[0]} Distillery` }, note: 'Demo data' });
-  }
-});
+const generateProducer = factHandler('producer', 'producer', '');
 
 /**
  * Generate vintage year
  * POST /api/gemini/vintage
  */
-const generateVintage = asyncHandler(async (req, res) => {
-  const { name, type } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `Is "${name}"${type ? ` (${type})` : ''} a vintage product with a specific year? If yes, return the year. If it's non-vintage or doesn't have a vintage, return null. Return ONLY JSON: {"vintage": year or null}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { vintage: null }, note: 'Demo data' });
-  }
-});
+const generateVintage = factHandler('vintage', 'vintage', null);
 
 /**
  * Generate age statement
  * POST /api/gemini/age-statement
  */
-const generateAgeStatement = asyncHandler(async (req, res) => {
-  const { name, type, age } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `What is the age statement for "${name}"${type ? ` (${type})` : ''}${age ? ` aged ${age} years` : ''}? Examples: "12 Year Old", "18 Year Old", "NAS" (No Age Statement), or empty string. Return ONLY JSON: {"ageStatement": "statement"}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { ageStatement: '12 Year Old' }, note: 'Demo data' });
-  }
-});
+const generateAgeStatement = factHandler('ageStatement', 'ageStatement', '');
 
 /**
  * Generate production method
  * POST /api/gemini/production-method
  */
-const generateProductionMethod = asyncHandler(async (req, res) => {
-  const { name, type } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `What is the production method for "${name}"${type ? ` (${type})` : ''}? Available: ${PRODUCT_ENUMS.productionMethod.join(', ')}. Return ONLY JSON: {"productionMethod": "method"}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    if (data.productionMethod && !PRODUCT_ENUMS.productionMethod.includes(data.productionMethod)) {
-      data.productionMethod = null;
-    }
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { productionMethod: 'traditional' }, note: 'Demo data' });
-  }
-});
+const generateProductionMethod = factHandler('productionMethod', 'productionMethod', null, PRODUCT_ENUMS.productionMethod);
 
 /**
  * Generate cask type
  * POST /api/gemini/cask-type
  */
-const generateCaskType = asyncHandler(async (req, res) => {
-  const { name, type, productionMethod } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `What type of cask/barrel is "${name}"${type ? ` (${type})` : ''}${productionMethod?.includes('aged') ? ' aged in' : ''} matured in? Examples: Bourbon Barrel, Sherry Cask, Oak Cask, or null. Return ONLY JSON: {"caskType": "type or null"}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { caskType: 'Oak Barrels' }, note: 'Demo data' });
-  }
-});
+const generateCaskType = factHandler('caskType', 'caskType', '');
 
 /**
  * Generate serving temperature
@@ -1660,7 +1461,7 @@ const generateServingTemperature = asyncHandler(async (req, res) => {
     const data = parseJSONResponse(text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { temperature: 'Room temperature or slightly chilled' }, note: 'Demo data' });
+    res.json({ success: true, data: { temperature: '' }, error: true, note: 'AI generation failed.' });
   }
 });
 
@@ -1686,7 +1487,7 @@ const generateGlassware = asyncHandler(async (req, res) => {
     const data = parseJSONResponse(text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { glassware: 'Tumbler or snifter' }, note: 'Demo data' });
+    res.json({ success: true, data: { glassware: '' }, error: true, note: 'AI generation failed.' });
   }
 });
 
@@ -1712,7 +1513,7 @@ const generateGarnish = asyncHandler(async (req, res) => {
     const data = parseJSONResponse(text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { garnish: ['Orange peel', 'Cinnamon stick'] }, note: 'Demo data' });
+    res.json({ success: true, data: { garnish: [] }, error: true, note: 'AI generation failed.' });
   }
 });
 
@@ -1738,7 +1539,7 @@ const generateMixers = asyncHandler(async (req, res) => {
     const data = parseJSONResponse(text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { mixers: ['Soda water', 'Ginger ale'] }, note: 'Demo data' });
+    res.json({ success: true, data: { mixers: [] }, error: true, note: 'AI generation failed.' });
   }
 });
 
@@ -1746,53 +1547,13 @@ const generateMixers = asyncHandler(async (req, res) => {
  * Generate allergens
  * POST /api/gemini/allergens
  */
-const generateAllergens = asyncHandler(async (req, res) => {
-  const { name, type } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `Identify potential allergens in "${name}"${type ? ` (${type})` : ''}. Available: ${PRODUCT_ENUMS.allergens.join(', ')}. Return ONLY JSON: {"allergens": ["allergen1"] or []}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { allergens: [] }, note: 'Demo data' });
-  }
-});
+const generateAllergens = factHandler('allergens', 'allergens', [], PRODUCT_ENUMS.allergens);
 
 /**
  * Generate ingredients list
  * POST /api/gemini/ingredients
  */
-const generateIngredients = asyncHandler(async (req, res) => {
-  const { name, type } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `List the main ingredients for "${name}"${type ? ` (${type})` : ''}. Return as JSON array. Return ONLY JSON: {"ingredients": ["ingredient1", "ingredient2"]}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { ingredients: ['Water', 'Grain', 'Yeast'] }, note: 'Demo data' });
-  }
-});
+const generateIngredients = factHandler('ingredients', 'ingredients', []);
 
 /**
  * Generate meta title
@@ -1801,6 +1562,10 @@ const generateIngredients = asyncHandler(async (req, res) => {
 const generateMetaTitle = asyncHandler(async (req, res) => {
   const { name, brand, type, subType, originCountry, region } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
+
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
 
   try {
     const model = genAI.getGenerativeModel({
@@ -1820,7 +1585,7 @@ const generateMetaTitle = asyncHandler(async (req, res) => {
       region ? `Region: ${region}` : null,
     ].filter(Boolean).join(', ');
 
-    const prompt = `You are an SEO expert for DrinksHarbour, a premium beverages e-commerce platform based in Nigeria (Abuja, Lagos, nationwide delivery).
+    const prompt = `${grounding}You are an SEO expert for DrinksHarbour, a premium beverages e-commerce platform based in Nigeria (Abuja, Lagos, nationwide delivery).
 
 Create a meta title for this product:
 ${context}
@@ -1874,6 +1639,10 @@ const generateMetaDescription = asyncHandler(async (req, res) => {
   const { name, brand, type, subType, originCountry, region, abv, shortDescription } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1894,7 +1663,7 @@ const generateMetaDescription = asyncHandler(async (req, res) => {
       shortDescription ? `Description: ${shortDescription}` : null,
     ].filter(Boolean).join('\n');
 
-    const prompt = `You are an SEO copywriter for a premium beverages e-commerce platform (DrinksHarbour).
+    const prompt = `${grounding}You are an SEO copywriter for a premium beverages e-commerce platform (DrinksHarbour).
 
 Write a meta description for this product:
 ${context}
@@ -1946,6 +1715,10 @@ const generateKeywords = asyncHandler(async (req, res) => {
   const { name, brand, type, subType, originCountry, region, abv, shortDescription, existingKeywords } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
+  // Reuse the research brief the auto-fill already paid for, so the copy is
+  // written from sourced facts instead of recall. Never triggers a search.
+  const grounding = formatFactsForPrompt(await briefFor(req, { cacheOnly: true }));
+
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
@@ -1967,7 +1740,7 @@ const generateKeywords = asyncHandler(async (req, res) => {
       existingKeywords?.length ? `Already has keywords: ${existingKeywords.join(', ')} — generate new ones that complement these` : null,
     ].filter(Boolean).join('\n');
 
-    const prompt = `You are an SEO specialist for a premium beverages e-commerce platform (DrinksHarbour).
+    const prompt = `${grounding}You are an SEO specialist for a premium beverages e-commerce platform (DrinksHarbour).
 
 Generate 8-12 highly relevant SEO keywords for this product:
 ${context}
@@ -2028,7 +1801,7 @@ const generateDietary = asyncHandler(async (req, res) => {
     const data = parseJSONResponse(text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { isDietary: { vegan: false, vegetarian: true, glutenFree: true, organic: false } }, note: 'Demo data' });
+    res.json({ success: true, data: { isDietary: {} }, error: true, note: 'AI generation failed — dietary flags were not guessed.' });
   }
 });
 
@@ -2036,82 +1809,42 @@ const generateDietary = asyncHandler(async (req, res) => {
  * Generate nutritional info
  * POST /api/gemini/nutritional-info
  */
-const generateNutritionalInfo = asyncHandler(async (req, res) => {
-  const { name, type, abv, volumeMl } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `Estimate nutritional info for "${name}"${type ? ` (${type})` : ''}${abv ? ` at ${abv}% ABV` : ''}${volumeMl ? ` in ${volumeMl}ml` : ''}. Return ONLY JSON: {"nutritionalInfo": {"calories": number, "carbohydrates": number, "sugar": number, "protein": number, "fat": number}}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { nutritionalInfo: { calories: 97, carbohydrates: 0, sugar: 0, protein: 0, fat: 0 } }, note: 'Demo data' });
-  }
-});
+const generateNutritionalInfo = factHandler('nutritionalInfo', 'nutritionalInfo', { calories: null, carbohydrates: null, sugar: null, protein: null, fat: null, sodium: null, caffeine: null });
 
 /**
  * Generate volume and ABV
  * POST /api/gemini/volume-abv
  */
 const generateVolumeAbv = asyncHandler(async (req, res) => {
-  const { name, type } = req.body;
+  const { name } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `What is the typical alcohol by volume (ABV) and bottle volume for "${name}"${type ? ` (${type})` : ''}? Return ONLY JSON: {"abv": number (0-100), "volumeMl": number (ml), "isAlcoholic": boolean}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { abv: 40, volumeMl: 750, isAlcoholic: true }, note: 'Demo data' });
-  }
+  const brief = await briefFor(req);
+  const { abv, volumeMl } = brief.facts;
+  const unverified = ['abv', 'volumeMl'].filter((f) => brief.facts[f] === undefined);
+
+  res.json({
+    success: true,
+    data: {
+      abv: abv ?? null,
+      volumeMl: volumeMl ?? null,
+      // Alcoholic status follows the sourced ABV; with no ABV we do not know.
+      isAlcoholic: abv === undefined ? null : abv > 0,
+      proof: abv === undefined ? null : parseFloat((abv * 2).toFixed(1)),
+    },
+    unverified,
+    sources: brief.sources,
+    ...(unverified.length
+      ? { note: `No source confirmed ${unverified.join(' or ')} for "${name}" — left blank.` }
+      : {}),
+  });
 });
 
 /**
  * Generate standard sizes
  * POST /api/gemini/standard-sizes
  */
-const generateStandardSizes = asyncHandler(async (req, res) => {
-  const { name, type, volumeMl } = req.body;
-  if (!name) { res.status(400); throw new Error('Product name is required'); }
-
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-      }
-    });
-    const prompt = `What standard sizes/bottle formats is "${name}"${type ? ` (${type})` : ''} typically sold in? Available: ${PRODUCT_ENUMS.standardSizes.join(', ')}. Select 2-5. Return ONLY JSON: {"standardSizes": ["size1", "size2"]}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    if (Array.isArray(data.standardSizes)) {
-      data.standardSizes = data.standardSizes.filter(s => PRODUCT_ENUMS.standardSizes.includes(s));
-    }
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({ success: true, data: { standardSizes: ['70cl', '75cl'] }, note: 'Demo data' });
-  }
-});
+const generateStandardSizes = factHandler('standardSizes', 'standardSizes', [], PRODUCT_ENUMS.standardSizes);
 
 /**
  * Generate slug
@@ -2147,7 +1880,7 @@ const generateBrandDescription = asyncHandler(async (req, res) => {
     const data = parseJSONResponse(text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { description: `${name} is a distinguished brand known for quality and excellence in their craft.` }, note: 'Demo data' });
+    res.json({ success: true, data: { description: '' }, error: true, note: 'AI generation failed — nothing was written rather than guessing.' });
   }
 });
 
@@ -2173,7 +1906,7 @@ const generateBrandCountry = asyncHandler(async (req, res) => {
     const data = parseJSONResponse(text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { countryOfOrigin: 'Ireland' }, note: 'Demo data' });
+    res.json({ success: true, data: { countryOfOrigin: '' }, error: true, note: 'AI generation failed — country was left blank rather than guessed.' });
   }
 });
 
@@ -2199,7 +1932,7 @@ const generateBrandFounded = asyncHandler(async (req, res) => {
     const data = parseJSONResponse(text);
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { founded: 1880 }, note: 'Demo data' });
+    res.json({ success: true, data: { founded: null }, error: true, note: 'AI generation failed — founding year was left blank rather than guessed.' });
   }
 });
 
@@ -2239,36 +1972,40 @@ const generateBrandCategory = asyncHandler(async (req, res) => {
  * POST /api/gemini/generate-origin
  */
 const generateOrigin = asyncHandler(async (req, res) => {
-  const { name, type } = req.body;
+  const { name } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
-    });
-    const prompt = `Provide complete origin and production details for "${name}"${type ? ` (${type})` : ''}. Return ONLY JSON:
-{"originCountry":"","region":"","appellation":"","producer":"","brand":"","vintage":null,"age":null,"ageStatement":"","distilleryName":"","breweryName":"","wineryName":"","productionMethod":"","caskType":"","finish":""}`;
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = parseJSONResponse(text);
-    if (data.productionMethod && !PRODUCT_ENUMS.productionMethod.includes(data.productionMethod)) {
-      data.productionMethod = null;
-    }
-    res.json({ success: true, data });
-  } catch (error) {
-    res.json({
-      success: true,
-      data: {
-        originCountry: '', region: '', appellation: '',
-        producer: `${name.split(' ')[0]} Distillery`, brand: name.split(' ')[0],
-        vintage: null, age: null, ageStatement: '',
-        distilleryName: '', breweryName: '', wineryName: '',
-        productionMethod: 'traditional', caskType: '', finish: '',
-      },
-      note: 'Demo data',
-    });
-  }
+  const brief = await briefFor(req);
+  const merged = applyBriefToProduct({}, brief, {
+    enums: RESEARCH_ENUMS,
+    preserve: req.body.brand ? ['brand'] : [],
+  });
+  const f = merged.data;
+
+  res.json({
+    success: true,
+    data: {
+      originCountry: f.originCountry,
+      region: f.region,
+      appellation: f.appellation,
+      producer: f.producer,
+      brand: req.body.brand || f.brand,
+      vintage: f.vintage,
+      age: f.age,
+      ageStatement: f.ageStatement,
+      distilleryName: f.distilleryName,
+      breweryName: f.breweryName,
+      wineryName: f.wineryName,
+      productionMethod: f.productionMethod,
+      caskType: f.caskType,
+      finish: '',
+    },
+    unverified: merged.unverified,
+    sources: brief.sources,
+    ...(brief.found
+      ? {}
+      : { note: `No authoritative source was found for "${name}" — origin fields left blank.` }),
+  });
 });
 
 /**

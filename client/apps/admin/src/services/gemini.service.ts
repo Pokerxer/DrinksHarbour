@@ -2,7 +2,26 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-interface ProductDetailsResponse {
+/** A page the research pass actually read. Extracted server-side from the
+ *  web_search tool results, so these URLs are always real. */
+export interface AiSource {
+  title: string;
+  url: string;
+}
+
+/** Grounding metadata every AI endpoint may return alongside `data`.
+ *  `unverified` is a field-name list on the bulk auto-fill and a boolean on the
+ *  per-field endpoints; either way, truthy means "no source confirmed this, so
+ *  it was left blank". */
+export interface GroundingMeta {
+  sources?: AiSource[];
+  unverified?: boolean | string[];
+  researched?: boolean;
+  note?: string;
+  error?: boolean;
+}
+
+interface ProductDetailsResponse extends GroundingMeta {
   success: boolean;
   data: {
     name: string;
@@ -50,7 +69,7 @@ interface ProductDetailsResponse {
   };
 }
 
-interface DescriptionResponse {
+interface DescriptionResponse extends GroundingMeta {
   success: boolean;
   data: {
     shortDescription: string;
@@ -60,7 +79,7 @@ interface DescriptionResponse {
   };
 }
 
-interface OriginResponse {
+interface OriginResponse extends GroundingMeta {
   success: boolean;
   data: {
     originCountry: string;
@@ -80,7 +99,7 @@ interface OriginResponse {
   };
 }
 
-interface BeverageInfoResponse {
+interface BeverageInfoResponse extends GroundingMeta {
   success: boolean;
   data: {
     isAlcoholic: boolean;
@@ -93,7 +112,7 @@ interface BeverageInfoResponse {
   };
 }
 
-interface SeoResponse {
+interface SeoResponse extends GroundingMeta {
   success: boolean;
   data: {
     metaTitle: string;
@@ -103,14 +122,14 @@ interface SeoResponse {
   };
 }
 
-interface TagsResponse {
+interface TagsResponse extends GroundingMeta {
   success: boolean;
   data: {
     tags: string[];
   };
 }
 
-interface PricingResponse {
+interface PricingResponse extends GroundingMeta {
   success: boolean;
   data: {
     suggestedRetailPrice: {
@@ -137,35 +156,35 @@ interface PricingResponse {
   };
 }
 
-interface ShortDescriptionResponse {
+interface ShortDescriptionResponse extends GroundingMeta {
   success: boolean;
   data: {
     shortDescription: string;
   };
 }
 
-interface FullDescriptionResponse {
+interface FullDescriptionResponse extends GroundingMeta {
   success: boolean;
   data: {
     description: string;
   };
 }
 
-interface FlavorProfileResponse {
+interface FlavorProfileResponse extends GroundingMeta {
   success: boolean;
   data: {
     flavorProfile: string[];
   };
 }
 
-interface FoodPairingsResponse {
+interface FoodPairingsResponse extends GroundingMeta {
   success: boolean;
   data: {
     foodPairings: string[];
   };
 }
 
-interface TastingNotesResponse {
+interface TastingNotesResponse extends GroundingMeta {
   success: boolean;
   data: {
     nose?: string[];
@@ -175,126 +194,126 @@ interface TastingNotesResponse {
   };
 }
 
-interface OriginCountryResponse {
+interface OriginCountryResponse extends GroundingMeta {
   success: boolean;
   data: {
     originCountry: string;
   };
 }
 
-interface RegionResponse {
+interface RegionResponse extends GroundingMeta {
   success: boolean;
   data: {
     region: string;
   };
 }
 
-interface AppellationResponse {
+interface AppellationResponse extends GroundingMeta {
   success: boolean;
   data: {
     appellation: string;
   };
 }
 
-interface ProducerResponse {
+interface ProducerResponse extends GroundingMeta {
   success: boolean;
   data: {
     producer: string;
   };
 }
 
-interface VintageResponse {
+interface VintageResponse extends GroundingMeta {
   success: boolean;
   data: {
     vintage: number | null;
   };
 }
 
-interface AgeStatementResponse {
+interface AgeStatementResponse extends GroundingMeta {
   success: boolean;
   data: {
     ageStatement: string;
   };
 }
 
-interface ProductionMethodResponse {
+interface ProductionMethodResponse extends GroundingMeta {
   success: boolean;
   data: {
     productionMethod: string;
   };
 }
 
-interface CaskTypeResponse {
+interface CaskTypeResponse extends GroundingMeta {
   success: boolean;
   data: {
     caskType: string;
   };
 }
 
-interface ServingTemperatureResponse {
+interface ServingTemperatureResponse extends GroundingMeta {
   success: boolean;
   data: {
     temperature: string;
   };
 }
 
-interface GlasswareResponse {
+interface GlasswareResponse extends GroundingMeta {
   success: boolean;
   data: {
     glassware: string;
   };
 }
 
-interface GarnishResponse {
+interface GarnishResponse extends GroundingMeta {
   success: boolean;
   data: {
     garnish: string[];
   };
 }
 
-interface MixersResponse {
+interface MixersResponse extends GroundingMeta {
   success: boolean;
   data: {
     mixers: string[];
   };
 }
 
-interface AllergensResponse {
+interface AllergensResponse extends GroundingMeta {
   success: boolean;
   data: {
     allergens: string[];
   };
 }
 
-interface IngredientsResponse {
+interface IngredientsResponse extends GroundingMeta {
   success: boolean;
   data: {
     ingredients: string[];
   };
 }
 
-interface MetaTitleResponse {
+interface MetaTitleResponse extends GroundingMeta {
   success: boolean;
   data: {
     metaTitle: string;
   };
 }
 
-interface MetaDescriptionResponse {
+interface MetaDescriptionResponse extends GroundingMeta {
   success: boolean;
   data: {
     metaDescription: string;
   };
 }
 
-interface KeywordsResponse {
+interface KeywordsResponse extends GroundingMeta {
   success: boolean;
   data: {
     keywords: string[];
   };
 }
 
-interface DietaryResponse {
+interface DietaryResponse extends GroundingMeta {
   success: boolean;
   data: {
     isDietary: {
@@ -306,7 +325,7 @@ interface DietaryResponse {
   };
 }
 
-interface NutritionalInfoResponse {
+interface NutritionalInfoResponse extends GroundingMeta {
   success: boolean;
   data: {
     nutritionalInfo: {
@@ -319,7 +338,7 @@ interface NutritionalInfoResponse {
   };
 }
 
-interface VolumeAbvResponse {
+interface VolumeAbvResponse extends GroundingMeta {
   success: boolean;
   data: {
     abv: number;
@@ -328,49 +347,49 @@ interface VolumeAbvResponse {
   };
 }
 
-interface StandardSizesResponse {
+interface StandardSizesResponse extends GroundingMeta {
   success: boolean;
   data: {
     standardSizes: string[];
   };
 }
 
-interface SlugResponse {
+interface SlugResponse extends GroundingMeta {
   success: boolean;
   data: {
     slug: string;
   };
 }
 
-interface BrandDescriptionResponse {
+interface BrandDescriptionResponse extends GroundingMeta {
   success: boolean;
   data: {
     description: string;
   };
 }
 
-interface BrandCountryResponse {
+interface BrandCountryResponse extends GroundingMeta {
   success: boolean;
   data: {
     countryOfOrigin: string;
   };
 }
 
-interface BrandFoundedResponse {
+interface BrandFoundedResponse extends GroundingMeta {
   success: boolean;
   data: {
     founded: number | null;
   };
 }
 
-interface BrandCategoryResponse {
+interface BrandCategoryResponse extends GroundingMeta {
   success: boolean;
   data: {
     primaryCategory: string;
   };
 }
 
-interface CategorySuggestionResponse {
+interface CategorySuggestionResponse extends GroundingMeta {
   success: boolean;
   data: {
     category: string;
