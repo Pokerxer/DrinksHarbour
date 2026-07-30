@@ -459,7 +459,7 @@ export default function TenantDetailPage() {
                 <div className="space-y-0">
                   <InfoRow label="Bill Control" value={
                     <Badge color="secondary" variant="flat" className="text-xs capitalize">
-                      {(t.purchaseSettings.billControlPolicy || 'received').replace(/_/g, ' ')}
+                      {(t.purchaseSettings.defaultBillControlPolicy || 'received').replace(/_/g, ' ')}
                     </Badge>
                   } />
                   <InfoRow label="Payment Terms" value={t.purchaseSettings.defaultPaymentTerms} />
@@ -486,6 +486,45 @@ export default function TenantDetailPage() {
               </Section>
             )}
 
+            {/* Business & Compliance */}
+            {(t.businessType || t.cacNumber || t.tin || t.nafdacNumber || t.bankName || t.kycChecks?.length) && (
+              <Section title="Business & Compliance">
+                <InfoRow label="Business Type" value={t.businessType} />
+                <InfoRow label="CAC Number" value={t.cacNumber} />
+                <InfoRow label="Tax ID (TIN)" value={t.tin} />
+                <InfoRow label="ID Document" value={t.idType && `${t.idType}${t.idNumber ? ` — ${t.idNumber}` : ''}`} />
+                <InfoRow
+                  label="NAFDAC"
+                  value={t.nafdacRequired ? (t.nafdacNumber || 'Required — not supplied') : (t.nafdacNumber || null)}
+                />
+                <InfoRow
+                  label="Settlement Account"
+                  value={t.bankName && (
+                    <span>
+                      {t.bankName}
+                      {t.bankAccountNumber ? ` — ${t.bankAccountNumber}` : ''}
+                      {t.bankAccountName ? ` (${t.bankAccountName})` : ''}
+                    </span>
+                  )}
+                />
+                <InfoRow
+                  label="KYC"
+                  value={
+                    <Badge color={t.kycVerified ? 'success' : 'warning'} variant="flat" className="text-xs font-semibold">
+                      {t.kycVerified ? 'Verified' : 'Not verified'}
+                    </Badge>
+                  }
+                />
+                {t.kycWarnings?.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                    {t.kycWarnings.map((w: string, i: number) => (
+                      <Text key={i} className="text-xs text-amber-800">• {w}</Text>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            )}
+
             {/* Admin Notes */}
             {t.notes && (
               <Section title="Admin Notes">
@@ -499,6 +538,48 @@ export default function TenantDetailPage() {
           {/* Right sidebar */}
           <div className="w-full space-y-6 @5xl:w-72 @5xl:flex-shrink-0">
 
+            {/* Owner account — without one nobody can sign in to this tenant */}
+            <Section title="Owner Account">
+              {t.admin && typeof t.admin === 'object' ? (
+                <div className="space-y-2">
+                  <Text className="text-sm font-medium text-gray-800">
+                    {t.admin.displayName || [t.admin.firstName, t.admin.lastName].filter(Boolean).join(' ') || t.admin.email}
+                  </Text>
+                  {t.admin.email && (
+                    <a href={`mailto:${t.admin.email}`} className="flex items-center gap-1.5 text-sm text-primary hover:underline">
+                      <PiEnvelopeBold className="h-3.5 w-3.5 flex-shrink-0" />
+                      {t.admin.email}
+                    </a>
+                  )}
+                  {t.admin.phone && (
+                    <a href={`tel:${t.admin.phone}`} className="flex items-center gap-1.5 text-sm text-primary hover:underline">
+                      <PiPhoneBold className="h-3.5 w-3.5 flex-shrink-0" />
+                      {t.admin.phone}
+                    </a>
+                  )}
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {t.admin.role && (
+                      <Badge color="secondary" variant="flat" className="text-xs capitalize">
+                        {String(t.admin.role).replace(/_/g, ' ')}
+                      </Badge>
+                    )}
+                    {t.admin.status && (
+                      <Badge color={t.admin.status === 'active' ? 'success' : 'warning'} variant="flat" className="text-xs capitalize">
+                        {t.admin.status}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                  <PiWarningCircleBold className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
+                  <Text className="text-xs text-amber-800">
+                    No owner assigned — nobody can sign in to this tenant.
+                  </Text>
+                </div>
+              )}
+            </Section>
+
             {/* Subscription */}
             <Section title="Subscription">
               <div className="space-y-0">
@@ -508,20 +589,18 @@ export default function TenantDetailPage() {
                 <InfoRow label="Period Start" value={fmtDate(t.currentPeriodStart)} />
                 <InfoRow label="Period End" value={fmtDate(t.currentPeriodEnd)} />
               </div>
-              {(t.stripeCustomerId || t.stripeSubscriptionId) && (
+              {(t.paystackCustomerId || t.paystackSubscriptionCode || t.paystackPlanCode) && (
                 <div className="mt-4 space-y-2 rounded-lg bg-gray-50 border border-gray-100 p-3">
-                  {t.stripeCustomerId && (
-                    <div>
-                      <Text className="text-xs text-gray-400 mb-0.5">Stripe Customer</Text>
-                      <Text className="font-mono text-xs text-gray-700 break-all">{t.stripeCustomerId}</Text>
+                  {[
+                    { label: 'Paystack Customer', value: t.paystackCustomerId },
+                    { label: 'Paystack Subscription', value: t.paystackSubscriptionCode },
+                    { label: 'Paystack Plan', value: t.paystackPlanCode },
+                  ].map(({ label, value }) => value && (
+                    <div key={label}>
+                      <Text className="text-xs text-gray-400 mb-0.5">{label}</Text>
+                      <Text className="font-mono text-xs text-gray-700 break-all">{value}</Text>
                     </div>
-                  )}
-                  {t.stripeSubscriptionId && (
-                    <div>
-                      <Text className="text-xs text-gray-400 mb-0.5">Stripe Subscription</Text>
-                      <Text className="font-mono text-xs text-gray-700 break-all">{t.stripeSubscriptionId}</Text>
-                    </div>
-                  )}
+                  ))}
                 </div>
               )}
             </Section>

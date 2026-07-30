@@ -19,6 +19,7 @@ export default function EditTenantPage() {
 
   const [tenantForm, setTenantForm] = useState<TenantFormInput | null>(null);
   const [currentLogoUrl, setCurrentLogoUrl] = useState<string | undefined>(undefined);
+  const [meta, setMeta] = useState<Record<string, any>>({});
   const [tenantName, setTenantName] = useState<string>('Tenant');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +33,19 @@ export default function EditTenantPage() {
         setTenantName(tenant.name || 'Tenant');
         setCurrentLogoUrl(tenant.logo?.url);
 
+        // Server data the form doesn't own, but the page shows read-only
+        setMeta({
+          owner: typeof tenant.admin === 'object' ? tenant.admin : null,
+          kycVerified: tenant.kycVerified,
+          kycChecks: tenant.kycChecks,
+          kycWarnings: tenant.kycWarnings,
+          kycNameCrossCheck: tenant.kycNameCrossCheck,
+          location: tenant.location,
+          normalizedState: tenant.normalizedState,
+        });
+
+        const ps = tenant.purchaseSettings;
+
         // Map nested fields to flat form fields
         const form: TenantFormInput = {
           name: tenant.name || '',
@@ -41,8 +55,9 @@ export default function EditTenantPage() {
           primaryColor: tenant.primaryColor || '#1a202c',
           plan: tenant.plan || 'free_trial',
           subscriptionStatus: tenant.subscriptionStatus || 'trialing',
-          stripeCustomerId: tenant.stripeCustomerId || '',
-          stripeSubscriptionId: tenant.stripeSubscriptionId || '',
+          paystackCustomerId: tenant.paystackCustomerId || '',
+          paystackSubscriptionCode: tenant.paystackSubscriptionCode || '',
+          paystackPlanCode: tenant.paystackPlanCode || '',
           trialEndsAt: tenant.trialEndsAt ? tenant.trialEndsAt.split('T')[0] : '',
           currentPeriodStart: tenant.currentPeriodStart ? tenant.currentPeriodStart.split('T')[0] : '',
           currentPeriodEnd: tenant.currentPeriodEnd ? tenant.currentPeriodEnd.split('T')[0] : '',
@@ -65,19 +80,40 @@ export default function EditTenantPage() {
           addressState: tenant.address?.state || '',
           addressZipCode: tenant.address?.zipCode || '',
           addressCountry: tenant.address?.country || '',
+          businessType: tenant.businessType || '',
+          cacNumber: tenant.cacNumber || '',
+          tin: tenant.tin || '',
+          idType: tenant.idType || '',
+          idNumber: tenant.idNumber || '',
+          nafdacRequired: tenant.nafdacRequired ?? false,
+          nafdacNumber: tenant.nafdacNumber || '',
+          applicationDescription: tenant.applicationDescription || '',
+          bankName: tenant.bankName || '',
+          bankAccountNumber: tenant.bankAccountNumber || '',
+          bankAccountName: tenant.bankAccountName || '',
+          bankAccounts: (tenant.bankAccounts || []).map((a) => ({
+            bankName: a.bankName || '',
+            accountNumber: a.accountNumber || '',
+            accountName: a.accountName || '',
+          })),
           enforceAgeVerification: tenant.enforceAgeVerification ?? true,
           isSystemTenant: tenant.isSystemTenant ?? false,
           status: tenant.status || 'pending',
           rejectionReason: tenant.rejectionReason || '',
           notes: tenant.notes || '',
-          psBillControlPolicy: tenant.purchaseSettings?.billControlPolicy || 'received',
-          psEnable3WayMatching: tenant.purchaseSettings?.enable3WayMatching ?? true,
-          psRequirePOApproval: tenant.purchaseSettings?.requirePOApproval ?? true,
-          psApprovalThreshold: tenant.purchaseSettings?.approvalThreshold ?? 0,
-          psDefaultPaymentTerms: tenant.purchaseSettings?.defaultPaymentTerms || '',
-          psAutoGenerateBill: tenant.purchaseSettings?.autoGenerateBill ?? false,
-          psAllowPartialReceipts: tenant.purchaseSettings?.allowPartialReceipts ?? true,
-          psDefaultReceivingLocation: tenant.purchaseSettings?.defaultReceivingLocation || '',
+          // Note the `default` prefix — reading `billControlPolicy` here always
+          // returned undefined, so the form silently reset the real policy
+          psDefaultBillControlPolicy: ps?.defaultBillControlPolicy || 'received',
+          psEnable3WayMatching: ps?.enable3WayMatching ?? true,
+          psRequirePOApproval: ps?.requirePOApproval ?? true,
+          psApprovalThreshold: ps?.approvalThreshold ?? 0,
+          psDefaultPaymentTerms: ps?.defaultPaymentTerms || '',
+          psAutoGenerateBill: ps?.autoGenerateBill ?? false,
+          psAllowPartialReceipts: ps?.allowPartialReceipts ?? true,
+          psDefaultReceivingLocation: ps?.defaultReceivingLocation || '',
+          psLockConfirmedOrders: ps?.lockConfirmedOrders ?? false,
+          psRfqValidityDays: ps?.rfqValidityDays ?? 30,
+          psDefaultLeadTimeDays: ps?.defaultLeadTimeDays ?? 7,
         };
 
         setTenantForm(form);
@@ -122,6 +158,7 @@ export default function EditTenantPage() {
         id={id}
         tenant={tenantForm}
         currentLogoUrl={currentLogoUrl}
+        meta={meta}
         isModalView={false}
       />
     </>

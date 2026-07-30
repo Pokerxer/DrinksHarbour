@@ -37,13 +37,59 @@ export interface AdminTenant {
   enforceAgeVerification?: boolean;
   rejectionReason?: string;
   notes?: string;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
+  paystackCustomerId?: string;
+  paystackSubscriptionCode?: string;
+  paystackPlanCode?: string;
   trialEndsAt?: string;
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
+  approvedAt?: string;
+  onboardedAt?: string;
+  approvedBy?: TenantOwner | string;
+  /** Populated tenant_owner User — absent means nobody can sign in to this tenant */
+  admin?: TenantOwner | string;
+  location?: {
+    lat?: number;
+    lon?: number;
+    geocodedAt?: string;
+    source?: string;
+  };
+  normalizedState?: string;
+  // Business registration & compliance
+  businessType?: string;
+  cacNumber?: string;
+  tin?: string;
+  idType?: string;
+  idNumber?: string;
+  nafdacNumber?: string;
+  nafdacRequired?: boolean;
+  applicationDescription?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountName?: string;
+  bankAccounts?: BankAccount[];
+  // KYC results (read-only — produced by the Paystack KYC service at apply time)
+  kycVerified?: boolean;
+  kycChecks?: {
+    check: string;
+    passed?: boolean;
+    skipped?: boolean;
+    detail?: string;
+  }[];
+  kycWarnings?: string[];
+  kycNameCrossCheck?: {
+    performed?: boolean;
+    allPassed?: boolean;
+    hasWarnings?: boolean;
+  };
+  // Soft stats
+  productCount?: number;
+  activeSubProductCount?: number;
+  totalOrders?: number;
+  totalRevenue?: number;
+  /** Note the `default` prefix — the schema field is defaultBillControlPolicy */
   purchaseSettings?: {
-    billControlPolicy?: string;
+    defaultBillControlPolicy?: string;
     enable3WayMatching?: boolean;
     requirePOApproval?: boolean;
     approvalThreshold?: number;
@@ -51,7 +97,28 @@ export interface AdminTenant {
     autoGenerateBill?: boolean;
     allowPartialReceipts?: boolean;
     defaultReceivingLocation?: string;
+    lockConfirmedOrders?: boolean;
+    rfqValidityDays?: number;
+    defaultLeadTimeDays?: number;
+    defaultCurrency?: string;
   };
+}
+
+export interface TenantOwner {
+  _id: string;
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+  status?: string;
+}
+
+export interface BankAccount {
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
 }
 
 export interface TenantFormData {
@@ -60,10 +127,15 @@ export interface TenantFormData {
   contactEmail?: string;
   contactPhone?: string;
   primaryColor?: string;
+  // Owner provisioning — create only
+  ownerName?: string;
+  ownerEmail?: string;
+  ownerPhone?: string;
   plan?: string;
   subscriptionStatus?: string;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
+  paystackCustomerId?: string;
+  paystackSubscriptionCode?: string;
+  paystackPlanCode?: string;
   trialEndsAt?: string;
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
@@ -89,8 +161,21 @@ export interface TenantFormData {
   status?: string;
   rejectionReason?: string;
   notes?: string;
+  // Business registration & compliance
+  businessType?: string;
+  cacNumber?: string;
+  tin?: string;
+  idType?: string;
+  idNumber?: string;
+  nafdacRequired?: boolean;
+  nafdacNumber?: string;
+  applicationDescription?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountName?: string;
+  bankAccounts?: BankAccount[];
   // Purchase Settings
-  psBillControlPolicy?: string;
+  psDefaultBillControlPolicy?: string;
   psEnable3WayMatching?: boolean;
   psRequirePOApproval?: boolean;
   psApprovalThreshold?: number;
@@ -98,6 +183,9 @@ export interface TenantFormData {
   psAutoGenerateBill?: boolean;
   psAllowPartialReceipts?: boolean;
   psDefaultReceivingLocation?: string;
+  psLockConfirmedOrders?: boolean;
+  psRfqValidityDays?: number;
+  psDefaultLeadTimeDays?: number;
   // image
   logoFile?: File | null;
 }
@@ -111,7 +199,15 @@ export function buildTenantFormData(data: TenantFormData): FormData {
   Object.entries(data).forEach(([k, v]) => {
     if (k === 'logoFile') {
       if (v instanceof File) form.append('logo', v);
-    } else if (v !== undefined && v !== null) {
+    } else if (v === undefined || v === null) {
+      // omitted entirely — the server only writes the fields it receives
+    } else if (
+      Array.isArray(v) ||
+      (typeof v === 'object' && !(v instanceof File))
+    ) {
+      // String(array) would post "[object Object]"; the server JSON.parses these
+      form.append(k, JSON.stringify(v));
+    } else {
       form.append(k, String(v));
     }
   });
@@ -125,15 +221,33 @@ async function apiFetch<T>(url: string, options: RequestInit): Promise<T> {
   return json.data;
 }
 
-export async function getAdminTenants(token: string): Promise<{ tenants: AdminTenant[]; total: number }> {
-  return apiFetch(`${API_URL}/api/tenants/admin`, { headers: authHeaders(token) });
+export async function getAdminTenants(
+  token: string
+): Promise<{ tenants: AdminTenant[]; total: number }> {
+  return apiFetch(`${API_URL}/api/tenants/admin`, {
+    headers: authHeaders(token),
+  });
 }
 
-export async function getAdminTenantById(token: string, id: string): Promise<{ tenant: AdminTenant }> {
-  return apiFetch(`${API_URL}/api/tenants/admin/${id}`, { headers: authHeaders(token) });
+export async function getAdminTenantById(
+  token: string,
+  id: string
+): Promise<{ tenant: AdminTenant }> {
+  return apiFetch(`${API_URL}/api/tenants/admin/${id}`, {
+    headers: authHeaders(token),
+  });
 }
 
-export async function createAdminTenant(token: string, data: TenantFormData): Promise<{ tenant: AdminTenant }> {
+export interface OwnerInvite {
+  email: string;
+  /** false when the account was created but the invite email failed to send */
+  emailSent: boolean;
+}
+
+export async function createAdminTenant(
+  token: string,
+  data: TenantFormData
+): Promise<{ tenant: AdminTenant; ownerInvite: OwnerInvite | null }> {
   return apiFetch(`${API_URL}/api/tenants/admin`, {
     method: 'POST',
     headers: authHeaders(token),
@@ -141,7 +255,11 @@ export async function createAdminTenant(token: string, data: TenantFormData): Pr
   });
 }
 
-export async function updateAdminTenant(token: string, id: string, data: TenantFormData): Promise<{ tenant: AdminTenant }> {
+export async function updateAdminTenant(
+  token: string,
+  id: string,
+  data: TenantFormData
+): Promise<{ tenant: AdminTenant }> {
   return apiFetch(`${API_URL}/api/tenants/admin/${id}`, {
     method: 'PUT',
     headers: authHeaders(token),
@@ -149,7 +267,10 @@ export async function updateAdminTenant(token: string, id: string, data: TenantF
   });
 }
 
-export async function deleteAdminTenant(token: string, id: string): Promise<void> {
+export async function deleteAdminTenant(
+  token: string,
+  id: string
+): Promise<void> {
   const res = await fetch(`${API_URL}/api/tenants/admin/${id}`, {
     method: 'DELETE',
     headers: authHeaders(token),

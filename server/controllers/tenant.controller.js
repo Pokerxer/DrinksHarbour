@@ -1,8 +1,13 @@
 // controllers/tenant.controller.js
 
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+
 const asyncHandler = require('../utils/asyncHandler');
 const Tenant = require('../models/Tenant');
+const User = require('../models/User');
 const cloudinaryService = require('../services/cloudinary.service');
+const emailService = require('../services/email.service');
 const { logPrivilegedAction } = require('../utils/auditLog');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -21,6 +26,36 @@ async function uploadTenantFile(file, altText) {
   return { url: result.url, publicId: result.publicId, alt: altText };
 }
 
+/**
+ * Flatten nested plain objects into dot-notation paths.
+ *
+ * Mongoose does NOT flatten nested paths in updates — `$set: { address: {...} }`
+ * REPLACES the whole sub-document, silently dropping every key the caller didn't
+ * send (e.g. address.formatted from the geocoder, or the purchaseSettings the
+ * admin form doesn't expose). Dot paths give us merge semantics instead.
+ *
+ * Only plain `{}` objects are descended into. Everything else — arrays, Dates,
+ * ObjectIds, Buffers — is a leaf to be replaced wholesale. Descending into an
+ * ObjectId would otherwise shred it into `approvedBy.buffer.0`-style byte paths.
+ */
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function flattenForUpdate(obj, prefix = '', out = {}) {
+  for (const [key, value] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (isPlainObject(value)) {
+      flattenForUpdate(value, path, out);
+    } else {
+      out[path] = value;
+    }
+  }
+  return out;
+}
+
 function buildTenantData(b, isUpdate = false) {
   const data = {};
 
@@ -33,8 +68,49 @@ function buildTenantData(b, isUpdate = false) {
   if (b.customPricingNote !== undefined) data.customPricingNote = b.customPricingNote;
   if (b.country !== undefined) data.country = b.country;
   if (b.rejectionReason !== undefined) data.rejectionReason = b.rejectionReason;
-  if (b.stripeCustomerId !== undefined) data.stripeCustomerId = b.stripeCustomerId;
-  if (b.stripeSubscriptionId !== undefined) data.stripeSubscriptionId = b.stripeSubscriptionId;
+
+  // Billing provider IDs — Paystack (the platform's gateway; there are no
+  // Stripe fields on the Tenant schema)
+  if (b.paystackCustomerId !== undefined) data.paystackCustomerId = b.paystackCustomerId;
+  if (b.paystackSubscriptionCode !== undefined) data.paystackSubscriptionCode = b.paystackSubscriptionCode;
+  if (b.paystackPlanCode !== undefined) data.paystackPlanCode = b.paystackPlanCode;
+
+  // Business registration & compliance (also captured by the public apply form)
+  if (b.businessType !== undefined) data.businessType = b.businessType || undefined;
+  if (b.cacNumber !== undefined) data.cacNumber = b.cacNumber;
+  if (b.tin !== undefined) data.tin = b.tin;
+  if (b.idType !== undefined) data.idType = b.idType;
+  if (b.idNumber !== undefined) data.idNumber = b.idNumber;
+  if (b.nafdacNumber !== undefined) data.nafdacNumber = b.nafdacNumber;
+  if (b.nafdacRequired !== undefined) data.nafdacRequired = toBool(b.nafdacRequired, false);
+  if (b.applicationDescription !== undefined) data.applicationDescription = b.applicationDescription;
+
+  // Settlement bank account. `bvn` is deliberately NOT accepted here — it is KYC
+  // input captured at application time, not something an admin should retype.
+  if (b.bankName !== undefined) data.bankName = b.bankName;
+  if (b.bankAccountNumber !== undefined) data.bankAccountNumber = b.bankAccountNumber;
+  if (b.bankAccountName !== undefined) data.bankAccountName = b.bankAccountName;
+
+  // Payment accounts shown on POS invoices — sent as a JSON array string
+  if (b.bankAccounts !== undefined) {
+    let parsed = b.bankAccounts;
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        parsed = null;
+      }
+    }
+    if (Array.isArray(parsed)) {
+      data.bankAccounts = parsed
+        .map((a) => ({
+          bankName: (a?.bankName || '').trim(),
+          accountNumber: (a?.accountNumber || '').trim(),
+          accountName: (a?.accountName || '').trim(),
+        }))
+        .filter((a) => a.bankName || a.accountNumber || a.accountName);
+    }
+  }
 
   // Enum fields
   if (b.plan !== undefined) data.plan = b.plan;
@@ -128,6 +204,41 @@ function buildTenantData(b, isUpdate = false) {
   return data;
 }
 
+// Address paths that, when changed, make the stored coordinates stale
+const GEOCODED_ADDRESS_PATHS = ['address.street', 'address.city', 'address.lga', 'address.state'];
+
+/**
+ * Re-run geocoding when an update touched the address.
+ *
+ * The geocoder lives in a `pre('save')` hook, which findOneAndUpdate never
+ * fires — without this, editing a tenant's address leaves location.lat/lon
+ * pointing at the old address, and those coordinates drive shipping distance.
+ * Failures are non-fatal: the address itself is already saved.
+ */
+async function regeocodeIfAddressChanged(tenant, flatUpdate, before) {
+  const changed = GEOCODED_ADDRESS_PATHS.some((path) => {
+    if (!(path in flatUpdate)) return false;
+    const key = path.split('.')[1];
+    return (before?.address?.[key] || '') !== (flatUpdate[path] || '');
+  });
+  if (!changed) return;
+
+  try {
+    await tenant.geocode();
+  } catch (err) {
+    console.warn('[Tenant] Re-geocode after admin update failed:', err.message);
+  }
+}
+
+/** Friendly message for a duplicate-slug write instead of a raw E11000 dump. */
+function isDuplicateSlugError(err) {
+  return err?.code === 11000 && Object.keys(err.keyPattern || err.keyValue || {}).includes('slug');
+}
+
+// Pure helpers, exported for unit tests
+exports.buildTenantData = buildTenantData;
+exports.flattenForUpdate = flattenForUpdate;
+
 // ─── Admin CRUD handlers ──────────────────────────────────────────────────────
 
 /**
@@ -136,7 +247,7 @@ function buildTenantData(b, isUpdate = false) {
  */
 exports.getAdminTenants = asyncHandler(async (req, res) => {
   const tenants = await Tenant.find()
-    .select('name slug plan subscriptionStatus status revenueModel markupPercentage commissionPercentage platformMarkupPercentage logo primaryColor contactEmail contactPhone country isSystemTenant createdAt')
+    .select('name slug plan subscriptionStatus status revenueModel markupPercentage commissionPercentage platformMarkupPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits logo primaryColor contactEmail contactPhone country isSystemTenant admin kycVerified createdAt')
     .sort({ createdAt: -1 })
     .lean();
 
@@ -151,7 +262,12 @@ exports.getAdminTenants = asyncHandler(async (req, res) => {
  * @access Private (admin)
  */
 exports.getAdminTenantById = asyncHandler(async (req, res) => {
-  const tenant = await Tenant.findById(req.params.id).lean();
+  // `-bvn`: the raw BVN is KYC input, never something the admin UI needs back
+  const tenant = await Tenant.findById(req.params.id)
+    .select('-bvn')
+    .populate('admin', 'firstName lastName displayName email phone role status')
+    .populate('approvedBy', 'firstName lastName displayName email')
+    .lean();
   if (!tenant) {
     return res.status(404).json({ success: false, message: 'Tenant not found' });
   }
@@ -164,13 +280,69 @@ exports.getAdminTenantById = asyncHandler(async (req, res) => {
  */
 exports.createAdminTenant = asyncHandler(async (req, res) => {
   const tenantData = buildTenantData(req.body, false);
+  const ownerEmail = (req.body.ownerEmail || '').trim().toLowerCase();
+
+  // Validate the owner up front — creating the tenant first and failing here
+  // would leave an orphaned tenant behind.
+  if (ownerEmail) {
+    const existingUser = await User.findOne({ email: ownerEmail }).lean();
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: `A user with the email ${ownerEmail} already exists. Assign that account as owner instead.`,
+      });
+    }
+  }
+
+  if (tenantData.slug) {
+    const slugTaken = await Tenant.findOne({ slug: tenantData.slug }).select('_id').lean();
+    if (slugTaken) {
+      return res.status(409).json({
+        success: false,
+        message: `The slug "${tenantData.slug}" is already taken. Choose a different one.`,
+      });
+    }
+  }
 
   if (req.files?.logo?.[0]) {
     tenantData.logo = await uploadTenantFile(req.files.logo[0], req.body.name || 'Tenant logo');
   }
 
+  // Approving straight from the create form still has to stamp the approval
+  if (tenantData.status === 'approved') {
+    tenantData.approvedAt = new Date();
+    tenantData.approvedBy = req.user?._id;
+    tenantData.onboardedAt = new Date();
+  }
+
   const tenant = new Tenant(tenantData);
-  await tenant.save();
+
+  try {
+    await tenant.save();
+  } catch (err) {
+    if (isDuplicateSlugError(err)) {
+      return res.status(409).json({
+        success: false,
+        message: `The slug "${tenantData.slug}" is already taken. Choose a different one.`,
+      });
+    }
+    throw err;
+  }
+
+  // ── Optional owner account ──────────────────────────────────────────────────
+  // Without one, nobody can sign in to the tenant that was just created.
+  let ownerInvite = null;
+  if (ownerEmail) {
+    const owner = await provisionTenantOwner({
+      tenant,
+      email: ownerEmail,
+      name: req.body.ownerName,
+      phone: req.body.ownerPhone,
+    });
+    tenant.admin = owner.user._id;
+    await tenant.save();
+    ownerInvite = { email: owner.user.email, emailSent: owner.emailSent };
+  }
 
   // Audit: platform admin created a tenant
   logPrivilegedAction(req, 'TENANT_CREATE', 'create', {
@@ -179,31 +351,123 @@ exports.createAdminTenant = asyncHandler(async (req, res) => {
     targetTenantId: tenant._id,
   });
 
-  res.status(201).json({ success: true, data: { tenant } });
+  res.status(201).json({ success: true, data: { tenant, ownerInvite } });
 });
+
+/**
+ * Create the tenant_owner User for a tenant and email them a set-password link.
+ *
+ * The account is created with an unguessable random password; the invite is a
+ * standard password-reset token, so the owner sets their own password on first
+ * use. A failed email is reported back rather than thrown — the account exists
+ * either way and the admin can re-send.
+ */
+async function provisionTenantOwner({ tenant, email, name, phone }) {
+  const tempPassword = crypto.randomBytes(32).toString('hex');
+  const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+  const [firstName, ...lastNameParts] = String(name || '').trim().split(/\s+/);
+  const lastName = lastNameParts.join(' ');
+
+  const user = await User.create({
+    email,
+    passwordHash,
+    firstName: firstName || 'Owner',
+    lastName,
+    displayName: name?.trim() || tenant.name,
+    phone: phone || tenant.contactPhone || undefined,
+    role: 'tenant_owner',
+    tenant: tenant._id,
+    status: 'active',
+    isEmailVerified: false,
+  });
+
+  const resetToken = user.generatePasswordResetToken();
+  await user.save();
+
+  let emailSent = false;
+  try {
+    await emailService.sendPasswordResetEmail({
+      email: user.email,
+      firstName: user.firstName,
+      resetToken,
+    });
+    emailSent = true;
+  } catch (err) {
+    console.error('[Tenant] Failed to send owner invite email:', err.message);
+  }
+
+  return { user, emailSent };
+}
 
 /**
  * @route PUT /api/tenants/admin/:id
  * @access Private (admin)
  */
 exports.updateAdminTenant = asyncHandler(async (req, res) => {
+  const before = await Tenant.findById(req.params.id).lean();
+  if (!before) {
+    return res.status(404).json({ success: false, message: 'Tenant not found' });
+  }
+
   const updateData = buildTenantData(req.body, true);
+
+  // A rejection the tenant owner can't act on is worse than no rejection
+  if (updateData.status === 'rejected' && !(updateData.rejectionReason ?? before.rejectionReason)?.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: 'A rejection reason is required when rejecting a tenant.',
+    });
+  }
+
+  if (updateData.slug && updateData.slug !== before.slug) {
+    const slugTaken = await Tenant.findOne({ slug: updateData.slug, _id: { $ne: before._id } })
+      .select('_id')
+      .lean();
+    if (slugTaken) {
+      return res.status(409).json({
+        success: false,
+        message: `The slug "${updateData.slug}" is already taken. Choose a different one.`,
+      });
+    }
+  }
 
   if (req.files?.logo?.[0]) {
     updateData.logo = await uploadTenantFile(req.files.logo[0], req.body.name || 'Tenant logo');
   }
 
-  const before = await Tenant.findById(req.params.id).lean();
+  // Stamp the approval on the transition, not on every save of an approved tenant
+  if (updateData.status === 'approved' && before.status !== 'approved') {
+    updateData.approvedAt = new Date();
+    updateData.approvedBy = req.user?._id;
+    if (!before.onboardedAt) updateData.onboardedAt = new Date();
+  }
 
-  const tenant = await Tenant.findByIdAndUpdate(
-    req.params.id,
-    updateData,
-    { new: true, runValidators: true }
-  );
+  // Dot paths, so untouched keys inside address/purchaseSettings survive
+  const flatUpdate = flattenForUpdate(updateData);
+
+  let tenant;
+  try {
+    tenant = await Tenant.findByIdAndUpdate(
+      req.params.id,
+      { $set: flatUpdate },
+      { new: true, runValidators: true }
+    );
+  } catch (err) {
+    if (isDuplicateSlugError(err)) {
+      return res.status(409).json({
+        success: false,
+        message: `The slug "${updateData.slug}" is already taken. Choose a different one.`,
+      });
+    }
+    throw err;
+  }
 
   if (!tenant) {
     return res.status(404).json({ success: false, message: 'Tenant not found' });
   }
+
+  await regeocodeIfAddressChanged(tenant, flatUpdate, before);
 
   // Audit: platform admin updated a tenant
   logPrivilegedAction(req, 'TENANT_UPDATE', 'update', {
@@ -263,13 +527,9 @@ exports.getTenantBySlug = asyncHandler(async (req, res) => {
 
 // ─── Public: Vendor Application ─────────────────────────────────────────────────
 
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const User = require('../models/User');
 const { generateUniqueSlug } = require('../utils/slugify');
 const { logAudit } = require('../utils/auditLog');
-const emailService = require('../services/email.service');
 const kycService = require('../services/kyc.service');
 
 /**
@@ -349,9 +609,13 @@ exports.applyTenant = asyncHandler(async (req, res) => {
       zipCode: b.postcode,
       country: 'Nigeria',
     },
+    // Tenant.location is {lat, lon, ...}, not GeoJSON — a Point/coordinates
+    // shape is silently dropped by strict mode, leaving applicants ungeocoded
     location: (b.addressLat && b.addressLon) ? {
-      type: 'Point',
-      coordinates: [b.addressLon, b.addressLat],
+      lat: Number(b.addressLat),
+      lon: Number(b.addressLon),
+      geocodedAt: new Date(),
+      source: 'manual',
     } : undefined,
   });
 
