@@ -9,7 +9,11 @@ import { Collapse } from 'rizzui/collapse';
 import cn from '@core/utils/class-names';
 import { PiCaretDownBold } from 'react-icons/pi';
 import { menuItems } from '@/layouts/hydrogen/menu-items';
-import { tenantMenuItems, isSection, planAllows } from '@/layouts/hydrogen/tenant-menu-items';
+import {
+  tenantMenuItems,
+  isSection,
+  planAllows,
+} from '@/layouts/hydrogen/tenant-menu-items';
 import type { TenantMenuEntry } from '@/layouts/hydrogen/tenant-menu-items';
 import StatusBadge from '@core/components/get-status-badge';
 import { useTenant } from '@/context/TenantContext';
@@ -18,27 +22,92 @@ import { TENANT_ROLES } from '@/types/authorization';
 
 // ─── Platform Admin Sidebar ────────────────────────────────────────────────────
 
+/** A section label is an entry with a name but no href. */
+const isPlatformSection = (item: any) => !item?.href;
+
+/**
+ * True when `pathname` is `href` or lives under it, so deep routes such as
+ * /inventory/transfers/123 still light up (and expand) their menu entry.
+ * `#` is a dropdown placeholder and never matches.
+ */
+function matchesPath(pathname: string, href?: string) {
+  if (!href || href === '#') return false;
+  const base = href.split('#')[0];
+  return pathname === base || pathname.startsWith(`${base}/`);
+}
+
+/**
+ * Of every href in the menu, the longest one that `pathname` sits under —
+ * i.e. the single entry that should read as active. Prefix matching alone
+ * would light up both "Dashboard" (/ecommerce) and "Orders"
+ * (/ecommerce/orders), or both "All Products" (/products) and "Add Product"
+ * (/products/create); only the most specific match wins.
+ */
+function resolveActiveHref(pathname: string, items: any[]): string | null {
+  let best: string | null = null;
+  const consider = (href?: string) => {
+    if (!matchesPath(pathname, href)) return;
+    if (!best || href!.length > best.length) best = href!;
+  };
+  items.forEach((item) => {
+    consider(item?.href);
+    item?.dropdownItems?.forEach((d: any) => consider(d?.href));
+  });
+  return best;
+}
+
 function PlatformSidebarMenu() {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const isPlatformAdmin = ['super_admin', 'admin'].includes(session?.user?.role ?? '');
+  const isPlatformAdmin = ['super_admin', 'admin'].includes(
+    session?.user?.role ?? ''
+  );
+
+  // Drop platformOnly entries (top-level *and* dropdown children) for users who
+  // land on this sidebar without a platform-admin role, then prune any section
+  // label left with nothing under it.
+  const visibleMenuItems = (() => {
+    const allowed = menuItems
+      .filter((item) => isPlatformAdmin || !(item as any).platformOnly)
+      .map((item) => {
+        if (!item?.dropdownItems) return item;
+        const dropdownItems = item.dropdownItems.filter(
+          (d) => isPlatformAdmin || !(d as any).platformOnly
+        );
+        return { ...item, dropdownItems };
+      })
+      // A dropdown parent whose children were all filtered out has nothing left
+      // to link to — its own href is just the `#` placeholder.
+      .filter((item) => !item?.dropdownItems || item.dropdownItems.length > 0);
+
+    const result: any[] = [];
+    allowed.forEach((item, i) => {
+      if (!isPlatformSection(item)) {
+        result.push(item);
+        return;
+      }
+      const rest = allowed.slice(i + 1);
+      const nextSectionIdx = rest.findIndex(isPlatformSection);
+      const chunk =
+        nextSectionIdx === -1 ? rest : rest.slice(0, nextSectionIdx);
+      if (chunk.length > 0) result.push(item);
+    });
+    return result;
+  })();
+
+  const activeHref = resolveActiveHref(pathname, visibleMenuItems);
 
   return (
     <div className="mt-4 pb-3 3xl:mt-6">
-      {menuItems.map((item, index) => {
-        // Filter platformOnly dropdown items for non-platform-admins
-        const visibleDropdownItems = item?.dropdownItems?.filter(
-          (d) => isPlatformAdmin || !(d as any).platformOnly
-        );
-        const effectiveItem = visibleDropdownItems
-          ? { ...item, dropdownItems: visibleDropdownItems }
-          : item;
+      {visibleMenuItems.map((item, index) => {
+        const effectiveItem = item;
+        const visibleDropdownItems = item?.dropdownItems;
 
-        const isActive = pathname === (effectiveItem?.href as string);
-        const pathnameExistInDropdowns: any = visibleDropdownItems?.filter(
-          (dropdownItem) => dropdownItem.href === pathname
+        const isActive = !!activeHref && effectiveItem?.href === activeHref;
+        const isDropdownOpen = Boolean(
+          activeHref &&
+            visibleDropdownItems?.some((d: any) => d.href === activeHref)
         );
-        const isDropdownOpen = Boolean(pathnameExistInDropdowns?.length);
 
         return (
           <Fragment key={item.name + '-' + index}>
@@ -83,7 +152,8 @@ function PlatformSidebarMenu() {
                     )}
                   >
                     {effectiveItem?.dropdownItems?.map((dropdownItem, idx) => {
-                      const isChildActive = pathname === (dropdownItem?.href as string);
+                      const isChildActive =
+                        !!activeHref && dropdownItem?.href === activeHref;
                       return (
                         <Link
                           href={dropdownItem?.href}
@@ -104,7 +174,9 @@ function PlatformSidebarMenu() {
                                   : 'opacity-40'
                               )}
                             />
-                            <span className="truncate">{dropdownItem?.name}</span>
+                            <span className="truncate">
+                              {dropdownItem?.name}
+                            </span>
                           </div>
                           {dropdownItem?.badge?.length ? (
                             <StatusBadge status={dropdownItem?.badge} />
@@ -164,7 +236,13 @@ function PlatformSidebarMenu() {
 
 // ─── Tenant Sidebar ────────────────────────────────────────────────────────────
 
-function TenantSidebarMenu({ accentColor, plan }: { accentColor: string; plan?: string }) {
+function TenantSidebarMenu({
+  accentColor,
+  plan,
+}: {
+  accentColor: string;
+  plan?: string;
+}) {
   const pathname = usePathname();
 
   const activeStyle = { color: accentColor };
@@ -186,7 +264,8 @@ function TenantSidebarMenu({ accentColor, plan }: { accentColor: string; plan?: 
         // Look ahead: is there at least one non-section item before the next section?
         const rest = allowed.slice(i + 1);
         const nextSectionIdx = rest.findIndex(isSection);
-        const chunk = nextSectionIdx === -1 ? rest : rest.slice(0, nextSectionIdx);
+        const chunk =
+          nextSectionIdx === -1 ? rest : rest.slice(0, nextSectionIdx);
         if (chunk.length > 0) result.push(entry);
       } else {
         result.push(entry);
@@ -282,7 +361,10 @@ function TenantSidebarMenu({ accentColor, plan }: { accentColor: string; plan?: 
                           className="me-[18px] ms-1 inline-flex h-1 w-1 rounded-full bg-current transition-all duration-200"
                           style={
                             isChildActive
-                              ? { ...activeBorderStyle, boxShadow: `0 0 0 1px ${accentColor}` }
+                              ? {
+                                  ...activeBorderStyle,
+                                  boxShadow: `0 0 0 1px ${accentColor}`,
+                                }
                               : { opacity: 0.4 }
                           }
                         />
@@ -303,7 +385,9 @@ function TenantSidebarMenu({ accentColor, plan }: { accentColor: string; plan?: 
                   !isActive &&
                     'text-gray-700 transition-colors duration-200 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-700/90'
                 )}
-                style={isActive ? { ...activeStyle, ...activeBgStyle } : undefined}
+                style={
+                  isActive ? { ...activeStyle, ...activeBgStyle } : undefined
+                }
               >
                 {/* Active left border */}
                 {isActive && (

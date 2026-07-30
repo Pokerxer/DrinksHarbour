@@ -10,7 +10,17 @@ import {
   type SubmitHandler,
 } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ActionIcon, Badge, Button, Input, Select, Switch, Text, Title, type SelectOption } from 'rizzui';
+import {
+  ActionIcon,
+  Badge,
+  Button,
+  Input,
+  Select,
+  Switch,
+  Text,
+  Title,
+  type SelectOption,
+} from 'rizzui';
 import cn from '@core/utils/class-names';
 import {
   TenantFormInput,
@@ -20,7 +30,10 @@ import {
 } from '@/validators/create-tenant.schema';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { createAdminTenant, updateAdminTenant } from '@/services/tenant.service';
+import {
+  createAdminTenant,
+  updateAdminTenant,
+} from '@/services/tenant.service';
 import { routes } from '@/config/routes';
 import toast from 'react-hot-toast';
 import {
@@ -86,7 +99,10 @@ const BILL_CONTROL_OPTIONS = [
   { value: 'received', label: 'Received Quantities' },
 ];
 
-const BUSINESS_TYPE_OPTIONS = businessTypeValues.map((v) => ({ value: v, label: v }));
+const BUSINESS_TYPE_OPTIONS = businessTypeValues.map((v) => ({
+  value: v,
+  label: v,
+}));
 const ID_TYPE_OPTIONS = idTypeValues.map((v) => ({ value: v, label: v }));
 
 // Field ownership per tab — drives the error dots and the jump-to-error on submit
@@ -95,31 +111,93 @@ const TABS = [
     key: 'identity',
     label: 'Identity',
     icon: PiIdentificationCardBold,
-    fields: ['name', 'slug', 'contactEmail', 'contactPhone', 'country', 'primaryColor', 'ownerName', 'ownerEmail', 'ownerPhone'],
+    fields: [
+      'name',
+      'slug',
+      'contactEmail',
+      'contactPhone',
+      'country',
+      'primaryColor',
+      'ownerName',
+      'ownerEmail',
+      'ownerPhone',
+    ],
   },
   {
     key: 'billing',
     label: 'Billing',
     icon: PiCreditCardBold,
-    fields: ['plan', 'subscriptionStatus', 'paystackCustomerId', 'paystackSubscriptionCode', 'paystackPlanCode', 'trialEndsAt', 'currentPeriodStart', 'currentPeriodEnd'],
+    fields: [
+      'plan',
+      'subscriptionStatus',
+      'paystackCustomerId',
+      'paystackSubscriptionCode',
+      'paystackPlanCode',
+      'trialEndsAt',
+      'currentPeriodStart',
+      'currentPeriodEnd',
+    ],
   },
   {
     key: 'revenue',
     label: 'Revenue',
     icon: PiPercentBold,
-    fields: ['revenueModel', 'markupPercentage', 'commissionPercentage', 'platformMarkupPercentage', 'packMarkupPercentage', 'packCommissionPercentage', 'packRateMinUnits', 'customPricingNote'],
+    fields: [
+      'revenueModel',
+      'markupPercentage',
+      'commissionPercentage',
+      'platformMarkupPercentage',
+      'packMarkupPercentage',
+      'packCommissionPercentage',
+      'packRateMinUnits',
+      'customPricingNote',
+    ],
   },
   {
     key: 'legal',
     label: 'Legal & KYC',
     icon: PiScalesBold,
-    fields: ['businessType', 'cacNumber', 'tin', 'idType', 'idNumber', 'nafdacRequired', 'nafdacNumber', 'bankName', 'bankAccountNumber', 'bankAccountName', 'bankAccounts', 'applicationDescription'],
+    fields: [
+      'businessType',
+      'cacNumber',
+      'tin',
+      'idType',
+      'idNumber',
+      'nafdacRequired',
+      'nafdacNumber',
+      'bankName',
+      'bankAccountNumber',
+      'bankAccountName',
+      'bankAccounts',
+      'applicationDescription',
+    ],
   },
   {
     key: 'operations',
     label: 'Operations',
     icon: PiSlidersHorizontalBold,
-    fields: ['addressStreet', 'addressCity', 'addressLga', 'addressState', 'addressZipCode', 'addressCountry', 'defaultCurrency', 'supportedCurrencies', 'psDefaultBillControlPolicy', 'psApprovalThreshold', 'psDefaultPaymentTerms', 'psDefaultReceivingLocation', 'psRfqValidityDays', 'psDefaultLeadTimeDays', 'psEnable3WayMatching', 'psRequirePOApproval', 'psAutoGenerateBill', 'psAllowPartialReceipts', 'psLockConfirmedOrders', 'notes'],
+    fields: [
+      'addressStreet',
+      'addressCity',
+      'addressLga',
+      'addressState',
+      'addressZipCode',
+      'addressCountry',
+      'defaultCurrency',
+      'supportedCurrencies',
+      'psDefaultBillControlPolicy',
+      'psApprovalThreshold',
+      'psDefaultPaymentTerms',
+      'psDefaultReceivingLocation',
+      'psRfqValidityDays',
+      'psDefaultLeadTimeDays',
+      'psEnable3WayMatching',
+      'psRequirePOApproval',
+      'psAutoGenerateBill',
+      'psAllowPartialReceipts',
+      'psLockConfirmedOrders',
+      'notes',
+    ],
   },
 ] as const;
 
@@ -158,26 +236,45 @@ function slugify(str: string) {
 }
 
 /** '' clears an optional number; anything else becomes a Number for zod. */
-const asOptionalNumber = (v: any) => (v === '' || v === null ? undefined : Number(v));
+const asOptionalNumber = (v: any) =>
+  v === '' || v === null ? undefined : Number(v);
 /** Same, but '' is a meaningful value the server reads as "clear this rate". */
 const asClearableNumber = (v: any) => (v === '' || v === null ? '' : Number(v));
 
 // ─── Layout primitives ────────────────────────────────────────────────────────
 
-function Card({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function Card({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6">
-      <Title as="h5" className={cn('font-semibold text-gray-800', description ? 'mb-1' : 'mb-5')}>
+      <Title
+        as="h5"
+        className={cn(
+          'font-semibold text-gray-800',
+          description ? 'mb-1' : 'mb-5'
+        )}
+      >
         {title}
       </Title>
-      {description && <Text className="mb-5 text-sm text-gray-400">{description}</Text>}
+      {description && (
+        <Text className="mb-5 text-sm text-gray-400">{description}</Text>
+      )}
       {children}
     </div>
   );
 }
 
 function FieldGrid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">{children}</div>;
+  return (
+    <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">{children}</div>
+  );
 }
 
 // ─── ImagePicker ──────────────────────────────────────────────────────────────
@@ -211,11 +308,17 @@ function ImagePicker({
 
   return (
     <div className="space-y-2">
-      {label && <Text className="text-sm font-medium text-gray-700">{label}</Text>}
+      {label && (
+        <Text className="text-sm font-medium text-gray-700">{label}</Text>
+      )}
       {preview ? (
         <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
           <div className="relative aspect-video w-full">
-            <img src={preview} alt={label || 'Tenant logo'} className="h-full w-full object-contain p-2" />
+            <img
+              src={preview}
+              alt={label || 'Tenant logo'}
+              className="h-full w-full object-contain p-2"
+            />
           </div>
           <button
             type="button"
@@ -235,7 +338,9 @@ function ImagePicker({
             <PiUploadSimpleBold className="h-4 w-4 text-gray-400" />
           </div>
           <div className="text-center">
-            <Text className="text-xs font-medium text-gray-600">Click to upload</Text>
+            <Text className="text-xs font-medium text-gray-600">
+              Click to upload
+            </Text>
             <Text className="text-xs text-gray-400">PNG, JPG or WEBP</Text>
           </div>
         </button>
@@ -268,9 +373,14 @@ function VisibilityToggle({
     <div className="flex items-center justify-between py-2.5">
       <div className="min-w-0 flex-1 pr-4">
         <Text className="text-sm font-medium text-gray-700">{label}</Text>
-        {description && <Text className="text-xs text-gray-400">{description}</Text>}
+        {description && (
+          <Text className="text-xs text-gray-400">{description}</Text>
+        )}
       </div>
-      <Switch checked={!!checked} onChange={(e) => onChange(e.target.checked)} />
+      <Switch
+        checked={!!checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
     </div>
   );
 }
@@ -291,7 +401,9 @@ function ColorInput({
   const safe = value || '#1a202c';
   return (
     <div>
-      <Text className="mb-1.5 block text-sm font-medium text-gray-700">{label}</Text>
+      <Text className="mb-1.5 block text-sm font-medium text-gray-700">
+        {label}
+      </Text>
       <div className="flex items-center gap-3">
         <input
           type="color"
@@ -304,7 +416,7 @@ function ColorInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="#1a202c"
-          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           maxLength={7}
         />
       </div>
@@ -322,8 +434,8 @@ function KycSummary({ meta }: { meta: any }) {
   if (!checks.length && !warnings.length && meta?.kycVerified === undefined) {
     return (
       <Text className="text-sm text-gray-400">
-        No KYC run for this tenant. Checks are performed automatically for vendors who sign up
-        through the public application form.
+        No KYC run for this tenant. Checks are performed automatically for
+        vendors who sign up through the public application form.
       </Text>
     );
   }
@@ -334,12 +446,16 @@ function KycSummary({ meta }: { meta: any }) {
         {meta.kycVerified ? (
           <>
             <PiSealCheckBold className="h-5 w-5 text-green-600" />
-            <Text className="text-sm font-medium text-green-700">KYC verified</Text>
+            <Text className="text-sm font-medium text-green-700">
+              KYC verified
+            </Text>
           </>
         ) : (
           <>
             <PiSealWarningBold className="h-5 w-5 text-amber-500" />
-            <Text className="text-sm font-medium text-amber-700">KYC not verified</Text>
+            <Text className="text-sm font-medium text-amber-700">
+              KYC not verified
+            </Text>
           </>
         )}
       </div>
@@ -347,16 +463,27 @@ function KycSummary({ meta }: { meta: any }) {
       {checks.length > 0 && (
         <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
           {checks.map((c: any, i: number) => (
-            <div key={`${c.check}-${i}`} className="flex items-start gap-3 px-3 py-2">
+            <div
+              key={`${c.check}-${i}`}
+              className="flex items-start gap-3 px-3 py-2"
+            >
               <span
                 className={cn(
                   'mt-1.5 h-2 w-2 flex-shrink-0 rounded-full',
-                  c.skipped ? 'bg-gray-300' : c.passed ? 'bg-green-400' : 'bg-red-400'
+                  c.skipped
+                    ? 'bg-gray-300'
+                    : c.passed
+                      ? 'bg-green-400'
+                      : 'bg-red-400'
                 )}
               />
               <div className="min-w-0">
-                <Text className="text-sm capitalize text-gray-700">{String(c.check || '').replace(/_/g, ' ')}</Text>
-                {c.detail && <Text className="text-xs text-gray-400">{c.detail}</Text>}
+                <Text className="text-sm capitalize text-gray-700">
+                  {String(c.check || '').replace(/_/g, ' ')}
+                </Text>
+                {c.detail && (
+                  <Text className="text-xs text-gray-400">{c.detail}</Text>
+                )}
               </div>
             </div>
           ))}
@@ -366,7 +493,9 @@ function KycSummary({ meta }: { meta: any }) {
       {warnings.length > 0 && (
         <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
           {warnings.map((w: string, i: number) => (
-            <Text key={i} className="text-xs text-amber-800">• {w}</Text>
+            <Text key={i} className="text-xs text-amber-800">
+              • {w}
+            </Text>
           ))}
         </div>
       )}
@@ -416,8 +545,11 @@ export default function CreateTenant({
     formState: { errors },
   } = methods;
 
-  const { fields: bankAccountFields, append: appendBankAccount, remove: removeBankAccount } =
-    useFieldArray({ control, name: 'bankAccounts' });
+  const {
+    fields: bankAccountFields,
+    append: appendBankAccount,
+    remove: removeBankAccount,
+  } = useFieldArray({ control, name: 'bankAccounts' });
 
   const nameValue = watch('name');
   const statusValue = watch('status');
@@ -437,7 +569,9 @@ export default function CreateTenant({
   const tabErrorCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const tab of TABS) {
-      counts[tab.key] = tab.fields.filter((f) => errors[f as keyof typeof errors]).length;
+      counts[tab.key] = tab.fields.filter(
+        (f) => errors[f as keyof typeof errors]
+      ).length;
     }
     return counts;
   }, [errors]);
@@ -466,7 +600,8 @@ export default function CreateTenant({
         // '' clears a pack rate on the server (packs revert to normal rates)
         packMarkupPercentage: data.packMarkupPercentage,
         packCommissionPercentage: data.packCommissionPercentage,
-        packRateMinUnits: data.packRateMinUnits === '' ? undefined : data.packRateMinUnits,
+        packRateMinUnits:
+          data.packRateMinUnits === '' ? undefined : data.packRateMinUnits,
         customPricingNote: data.customPricingNote || '',
         defaultCurrency: data.defaultCurrency || undefined,
         supportedCurrencies: data.supportedCurrencies || '',
@@ -494,7 +629,8 @@ export default function CreateTenant({
         status: data.status || undefined,
         rejectionReason: data.rejectionReason || '',
         notes: data.notes || '',
-        psDefaultBillControlPolicy: data.psDefaultBillControlPolicy || undefined,
+        psDefaultBillControlPolicy:
+          data.psDefaultBillControlPolicy || undefined,
         psEnable3WayMatching: data.psEnable3WayMatching,
         psRequirePOApproval: data.psRequirePOApproval,
         psApprovalThreshold: data.psApprovalThreshold,
@@ -554,14 +690,27 @@ export default function CreateTenant({
   if (isModalView) {
     return (
       <FormProvider {...methods}>
-        <form noValidate onSubmit={handleSubmit(onSubmit, onInvalid)} className="isomorphic-form flex flex-grow flex-col @container">
+        <form
+          noValidate
+          onSubmit={handleSubmit(onSubmit, onInvalid)}
+          className="isomorphic-form flex flex-grow flex-col @container"
+        >
           <div className="space-y-5 pb-4">
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Tenant Name *" placeholder="e.g. Acme Liquors" {...register('name')} error={errors.name?.message} />
+              <Input
+                label="Tenant Name *"
+                placeholder="e.g. Acme Liquors"
+                {...register('name')}
+                error={errors.name?.message}
+              />
               <Input
                 label="Slug *"
                 placeholder="e.g. acme-liquors"
-                {...register('slug', { onChange: () => { slugManuallyEdited.current = true; } })}
+                {...register('slug', {
+                  onChange: () => {
+                    slugManuallyEdited.current = true;
+                  },
+                })}
                 error={errors.slug?.message}
               />
               <Controller
@@ -571,7 +720,9 @@ export default function CreateTenant({
                   <Select
                     options={PLAN_OPTIONS}
                     value={PLAN_OPTIONS.find((o) => o.value === value) ?? null}
-                    onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                    onChange={(opt: SelectOption) =>
+                      onChange((opt as any).value)
+                    }
                     label="Plan"
                     placeholder="Select plan"
                     error={errors.plan?.message}
@@ -584,8 +735,13 @@ export default function CreateTenant({
                 render={({ field: { onChange, value } }) => (
                   <Select
                     options={REVENUE_MODEL_OPTIONS}
-                    value={REVENUE_MODEL_OPTIONS.find((o) => o.value === value) ?? null}
-                    onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                    value={
+                      REVENUE_MODEL_OPTIONS.find((o) => o.value === value) ??
+                      null
+                    }
+                    onChange={(opt: SelectOption) =>
+                      onChange((opt as any).value)
+                    }
                     label="Revenue Model"
                     placeholder="Select model"
                     error={errors.revenueModel?.message}
@@ -598,20 +754,47 @@ export default function CreateTenant({
                 render={({ field: { onChange, value } }) => (
                   <Select
                     options={STATUS_OPTIONS}
-                    value={STATUS_OPTIONS.find((o) => o.value === value) ?? null}
-                    onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                    value={
+                      STATUS_OPTIONS.find((o) => o.value === value) ?? null
+                    }
+                    onChange={(opt: SelectOption) =>
+                      onChange((opt as any).value)
+                    }
                     label="Status"
                     placeholder="Select status"
                     error={errors.status?.message}
                   />
                 )}
               />
-              <Input label="Contact Email" type="email" placeholder="owner@acme.com" {...register('contactEmail')} error={errors.contactEmail?.message} />
-              <Input label="Owner Name" placeholder="e.g. Chidi Okafor" {...register('ownerName')} error={errors.ownerName?.message} />
-              <Input label="Owner Email" type="email" placeholder="Sends a set-password invite" {...register('ownerEmail')} error={errors.ownerEmail?.message} />
+              <Input
+                label="Contact Email"
+                type="email"
+                placeholder="owner@acme.com"
+                {...register('contactEmail')}
+                error={errors.contactEmail?.message}
+              />
+              <Input
+                label="Owner Name"
+                placeholder="e.g. Chidi Okafor"
+                {...register('ownerName')}
+                error={errors.ownerName?.message}
+              />
+              <Input
+                label="Owner Email"
+                type="email"
+                placeholder="Sends a set-password invite"
+                {...register('ownerEmail')}
+                error={errors.ownerEmail?.message}
+              />
               <div className="col-span-2">
-                <Text className="mb-2 block text-sm font-medium text-gray-700">Logo</Text>
-                <ImagePicker currentUrl={currentLogoUrl} onFile={setLogoFile} onClear={() => setLogoFile(null)} />
+                <Text className="mb-2 block text-sm font-medium text-gray-700">
+                  Logo
+                </Text>
+                <ImagePicker
+                  currentUrl={currentLogoUrl}
+                  onFile={setLogoFile}
+                  onClear={() => setLogoFile(null)}
+                />
               </div>
             </div>
           </div>
@@ -631,11 +814,14 @@ export default function CreateTenant({
   // ── FULL PAGE layout ────────────────────────────────────────────────────────
   return (
     <FormProvider {...methods}>
-      <form noValidate onSubmit={handleSubmit(onSubmit, onInvalid)} className="isomorphic-form flex flex-grow flex-col @container">
+      <form
+        noValidate
+        onSubmit={handleSubmit(onSubmit, onInvalid)}
+        className="isomorphic-form flex flex-grow flex-col @container"
+      >
         <div className="flex gap-6 @5xl:gap-7">
           {/* ── Left column ── */}
           <div className="min-w-0 flex-1 space-y-6">
-
             {/* Tab bar */}
             <div className="flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-1.5">
               {TABS.map(({ key, label, icon: Icon }) => {
@@ -649,7 +835,9 @@ export default function CreateTenant({
                     aria-current={isActive ? 'page' : undefined}
                     className={cn(
                       'flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition',
-                      isActive ? 'bg-primary text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                      isActive
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
                     )}
                   >
                     <Icon className="h-4 w-4 flex-shrink-0" />
@@ -658,7 +846,9 @@ export default function CreateTenant({
                       <span
                         className={cn(
                           'flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold',
-                          isActive ? 'bg-white text-primary' : 'bg-red-100 text-red-600'
+                          isActive
+                            ? 'bg-white text-primary'
+                            : 'bg-red-100 text-red-600'
                         )}
                         title={`${errorCount} field${errorCount > 1 ? 's' : ''} need attention`}
                       >
@@ -671,34 +861,65 @@ export default function CreateTenant({
             </div>
 
             {/* ── Identity ── */}
-            <div className={cn('space-y-6', activeTab !== 'identity' && 'hidden')}>
+            <div
+              className={cn('space-y-6', activeTab !== 'identity' && 'hidden')}
+            >
               <Card title="Identity">
                 <div className="space-y-4">
                   <FieldGrid>
-                    <Input label="Tenant Name *" placeholder="e.g. Acme Liquors" {...register('name')} error={errors.name?.message} />
-                    <Input label="Contact Email" type="email" placeholder="owner@acme.com" {...register('contactEmail')} error={errors.contactEmail?.message} />
+                    <Input
+                      label="Tenant Name *"
+                      placeholder="e.g. Acme Liquors"
+                      {...register('name')}
+                      error={errors.name?.message}
+                    />
+                    <Input
+                      label="Contact Email"
+                      type="email"
+                      placeholder="owner@acme.com"
+                      {...register('contactEmail')}
+                      error={errors.contactEmail?.message}
+                    />
                   </FieldGrid>
                   <div>
                     <Input
                       label="Slug *"
                       placeholder="e.g. acme-liquors"
-                      {...register('slug', { onChange: () => { slugManuallyEdited.current = true; } })}
+                      {...register('slug', {
+                        onChange: () => {
+                          slugManuallyEdited.current = true;
+                        },
+                      })}
                       error={errors.slug?.message}
                       prefix={<span className="text-sm text-gray-400">/</span>}
                     />
                     <Text className="mt-1.5 text-xs text-gray-400">
-                      {id ? 'Changing this breaks existing links.' : 'Auto-generated from the name until you edit it.'}{' '}
+                      {id
+                        ? 'Changing this breaks existing links.'
+                        : 'Auto-generated from the name until you edit it.'}{' '}
                       Subdomain: {slugValue || 'slug'}.drinksharbour.com
                     </Text>
                   </div>
                   <FieldGrid>
-                    <Input label="Contact Phone" placeholder="+234 800 000 0000" {...register('contactPhone')} error={errors.contactPhone?.message} />
-                    <Input label="Country" placeholder="e.g. Nigeria" {...register('country')} error={errors.country?.message} />
+                    <Input
+                      label="Contact Phone"
+                      placeholder="+234 800 000 0000"
+                      {...register('contactPhone')}
+                      error={errors.contactPhone?.message}
+                    />
+                    <Input
+                      label="Country"
+                      placeholder="e.g. Nigeria"
+                      {...register('country')}
+                      error={errors.country?.message}
+                    />
                   </FieldGrid>
                   <ColorInput
                     label="Primary Colour"
                     value={primaryColorValue}
-                    onChange={(v) => setValue('primaryColor', v, { shouldValidate: true })}
+                    onChange={(v) =>
+                      setValue('primaryColor', v, { shouldValidate: true })
+                    }
                     error={errors.primaryColor?.message}
                   />
                 </div>
@@ -712,17 +933,35 @@ export default function CreateTenant({
                       <PiCheckCircleBold className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600" />
                       <div className="min-w-0">
                         <Text className="text-sm font-medium text-gray-800">
-                          {meta.owner.displayName || [meta.owner.firstName, meta.owner.lastName].filter(Boolean).join(' ') || meta.owner.email}
+                          {meta.owner.displayName ||
+                            [meta.owner.firstName, meta.owner.lastName]
+                              .filter(Boolean)
+                              .join(' ') ||
+                            meta.owner.email}
                         </Text>
-                        <Text className="text-xs text-gray-500">{meta.owner.email}</Text>
+                        <Text className="text-xs text-gray-500">
+                          {meta.owner.email}
+                        </Text>
                         <div className="mt-1.5 flex flex-wrap gap-1.5">
                           {meta.owner.role && (
-                            <Badge variant="flat" color="secondary" className="text-xs capitalize">
+                            <Badge
+                              variant="flat"
+                              color="secondary"
+                              className="text-xs capitalize"
+                            >
                               {String(meta.owner.role).replace(/_/g, ' ')}
                             </Badge>
                           )}
                           {meta.owner.status && (
-                            <Badge variant="flat" color={meta.owner.status === 'active' ? 'success' : 'warning'} className="text-xs capitalize">
+                            <Badge
+                              variant="flat"
+                              color={
+                                meta.owner.status === 'active'
+                                  ? 'success'
+                                  : 'warning'
+                              }
+                              className="text-xs capitalize"
+                            >
                               {meta.owner.status}
                             </Badge>
                           )}
@@ -733,10 +972,13 @@ export default function CreateTenant({
                     <div className="flex items-start gap-3 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3">
                       <PiWarningCircleBold className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
                       <div>
-                        <Text className="text-sm font-medium text-amber-900">No owner account</Text>
+                        <Text className="text-sm font-medium text-amber-900">
+                          No owner account
+                        </Text>
                         <Text className="text-xs text-amber-700">
-                          Nobody can sign in to this tenant. Create a user with the tenant_owner role from
-                          the Users page and assign them to this tenant.
+                          Nobody can sign in to this tenant. Create a user with
+                          the tenant_owner role from the Users page and assign
+                          them to this tenant.
                         </Text>
                       </div>
                     </div>
@@ -748,16 +990,34 @@ export default function CreateTenant({
                   description="Optional. Creates a tenant_owner user and emails them a link to set their password — without one, nobody can sign in to this tenant."
                 >
                   <FieldGrid>
-                    <Input label="Owner Name" placeholder="e.g. Chidi Okafor" {...register('ownerName')} error={errors.ownerName?.message} />
-                    <Input label="Owner Email" type="email" placeholder="owner@acme.com" {...register('ownerEmail')} error={errors.ownerEmail?.message} />
-                    <Input label="Owner Phone" placeholder="+234 800 000 0000" {...register('ownerPhone')} error={errors.ownerPhone?.message} />
+                    <Input
+                      label="Owner Name"
+                      placeholder="e.g. Chidi Okafor"
+                      {...register('ownerName')}
+                      error={errors.ownerName?.message}
+                    />
+                    <Input
+                      label="Owner Email"
+                      type="email"
+                      placeholder="owner@acme.com"
+                      {...register('ownerEmail')}
+                      error={errors.ownerEmail?.message}
+                    />
+                    <Input
+                      label="Owner Phone"
+                      placeholder="+234 800 000 0000"
+                      {...register('ownerPhone')}
+                      error={errors.ownerPhone?.message}
+                    />
                   </FieldGrid>
                 </Card>
               )}
             </div>
 
             {/* ── Billing ── */}
-            <div className={cn('space-y-6', activeTab !== 'billing' && 'hidden')}>
+            <div
+              className={cn('space-y-6', activeTab !== 'billing' && 'hidden')}
+            >
               <Card title="Plan & Subscription">
                 <FieldGrid>
                   <Controller
@@ -766,8 +1026,12 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={PLAN_OPTIONS}
-                        value={PLAN_OPTIONS.find((o) => o.value === value) ?? null}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          PLAN_OPTIONS.find((o) => o.value === value) ?? null
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Plan"
                         placeholder="Select plan"
                         error={errors.plan?.message}
@@ -780,31 +1044,72 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={SUBSCRIPTION_STATUS_OPTIONS}
-                        value={SUBSCRIPTION_STATUS_OPTIONS.find((o) => o.value === value) ?? null}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          SUBSCRIPTION_STATUS_OPTIONS.find(
+                            (o) => o.value === value
+                          ) ?? null
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Subscription Status"
                         placeholder="Select status"
                         error={errors.subscriptionStatus?.message}
                       />
                     )}
                   />
-                  <Input label="Trial Ends At" type="date" {...register('trialEndsAt')} error={errors.trialEndsAt?.message} />
-                  <Input label="Current Period Start" type="date" {...register('currentPeriodStart')} error={errors.currentPeriodStart?.message} />
-                  <Input label="Current Period End" type="date" {...register('currentPeriodEnd')} error={errors.currentPeriodEnd?.message} />
+                  <Input
+                    label="Trial Ends At"
+                    type="date"
+                    {...register('trialEndsAt')}
+                    error={errors.trialEndsAt?.message}
+                  />
+                  <Input
+                    label="Current Period Start"
+                    type="date"
+                    {...register('currentPeriodStart')}
+                    error={errors.currentPeriodStart?.message}
+                  />
+                  <Input
+                    label="Current Period End"
+                    type="date"
+                    {...register('currentPeriodEnd')}
+                    error={errors.currentPeriodEnd?.message}
+                  />
                 </FieldGrid>
               </Card>
 
-              <Card title="Paystack" description="Billing identifiers from the Paystack dashboard. Leave blank unless this tenant has a live subscription.">
+              <Card
+                title="Paystack"
+                description="Billing identifiers from the Paystack dashboard. Leave blank unless this tenant has a live subscription."
+              >
                 <FieldGrid>
-                  <Input label="Customer ID" placeholder="CUS_..." {...register('paystackCustomerId')} error={errors.paystackCustomerId?.message} />
-                  <Input label="Subscription Code" placeholder="SUB_..." {...register('paystackSubscriptionCode')} error={errors.paystackSubscriptionCode?.message} />
-                  <Input label="Plan Code" placeholder="PLN_..." {...register('paystackPlanCode')} error={errors.paystackPlanCode?.message} />
+                  <Input
+                    label="Customer ID"
+                    placeholder="CUS_..."
+                    {...register('paystackCustomerId')}
+                    error={errors.paystackCustomerId?.message}
+                  />
+                  <Input
+                    label="Subscription Code"
+                    placeholder="SUB_..."
+                    {...register('paystackSubscriptionCode')}
+                    error={errors.paystackSubscriptionCode?.message}
+                  />
+                  <Input
+                    label="Plan Code"
+                    placeholder="PLN_..."
+                    {...register('paystackPlanCode')}
+                    error={errors.paystackPlanCode?.message}
+                  />
                 </FieldGrid>
               </Card>
             </div>
 
             {/* ── Revenue ── */}
-            <div className={cn('space-y-6', activeTab !== 'revenue' && 'hidden')}>
+            <div
+              className={cn('space-y-6', activeTab !== 'revenue' && 'hidden')}
+            >
               <Card
                 title="Revenue Model"
                 description={
@@ -820,8 +1125,14 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={REVENUE_MODEL_OPTIONS}
-                        value={REVENUE_MODEL_OPTIONS.find((o) => o.value === value) ?? null}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          REVENUE_MODEL_OPTIONS.find(
+                            (o) => o.value === value
+                          ) ?? null
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Revenue Model"
                         placeholder="Select model"
                         error={errors.revenueModel?.message}
@@ -832,47 +1143,62 @@ export default function CreateTenant({
                     label="Markup %"
                     type="number"
                     placeholder="40"
-                    {...register('markupPercentage', { setValueAs: asOptionalNumber })}
+                    {...register('markupPercentage', {
+                      setValueAs: asOptionalNumber,
+                    })}
                     error={errors.markupPercentage?.message}
                   />
                   <Input
                     label="Commission %"
                     type="number"
                     placeholder="12"
-                    {...register('commissionPercentage', { setValueAs: asOptionalNumber })}
+                    {...register('commissionPercentage', {
+                      setValueAs: asOptionalNumber,
+                    })}
                     error={errors.commissionPercentage?.message}
                   />
                   <Input
                     label="Platform Markup %"
                     type="number"
                     placeholder="15"
-                    {...register('platformMarkupPercentage', { setValueAs: asOptionalNumber })}
+                    {...register('platformMarkupPercentage', {
+                      setValueAs: asOptionalNumber,
+                    })}
                     error={errors.platformMarkupPercentage?.message}
                   />
                 </FieldGrid>
               </Card>
 
-              <Card title="Pack Rates" description="Reduced rates for multi-pack sizes. Leave a rate empty to charge packs at the normal rate.">
+              <Card
+                title="Pack Rates"
+                description="Reduced rates for multi-pack sizes. Leave a rate empty to charge packs at the normal rate."
+              >
                 <FieldGrid>
                   <Input
                     label="Pack Markup %"
                     type="number"
                     placeholder="Empty = use normal markup"
-                    {...register('packMarkupPercentage', { setValueAs: asClearableNumber })}
+                    {...register('packMarkupPercentage', {
+                      setValueAs: asClearableNumber,
+                    })}
                     error={errors.packMarkupPercentage?.message}
                   />
                   <Input
                     label="Pack Commission %"
                     type="number"
                     placeholder="Empty = use normal commission"
-                    {...register('packCommissionPercentage', { setValueAs: asClearableNumber })}
+                    {...register('packCommissionPercentage', {
+                      setValueAs: asClearableNumber,
+                    })}
                     error={errors.packCommissionPercentage?.message}
                   />
                   <Input
                     label="Pack Rate Min Units"
                     type="number"
                     placeholder="2"
-                    {...register('packRateMinUnits', { setValueAs: asClearableNumber })}
+                    {...register('packRateMinUnits', {
+                      setValueAs: asClearableNumber,
+                    })}
                     error={errors.packRateMinUnits?.message}
                   />
                 </FieldGrid>
@@ -897,8 +1223,14 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={BUSINESS_TYPE_OPTIONS}
-                        value={BUSINESS_TYPE_OPTIONS.find((o) => o.value === value) ?? null}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          BUSINESS_TYPE_OPTIONS.find(
+                            (o) => o.value === value
+                          ) ?? null
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Business Type"
                         placeholder="Select type"
                         clearable
@@ -907,16 +1239,30 @@ export default function CreateTenant({
                       />
                     )}
                   />
-                  <Input label="CAC Number" placeholder="RC1234567" {...register('cacNumber')} error={errors.cacNumber?.message} />
-                  <Input label="Tax ID (TIN)" placeholder="1234567890" {...register('tin')} error={errors.tin?.message} />
+                  <Input
+                    label="CAC Number"
+                    placeholder="RC1234567"
+                    {...register('cacNumber')}
+                    error={errors.cacNumber?.message}
+                  />
+                  <Input
+                    label="Tax ID (TIN)"
+                    placeholder="1234567890"
+                    {...register('tin')}
+                    error={errors.tin?.message}
+                  />
                   <Controller
                     name="idType"
                     control={control}
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={ID_TYPE_OPTIONS}
-                        value={ID_TYPE_OPTIONS.find((o) => o.value === value) ?? null}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          ID_TYPE_OPTIONS.find((o) => o.value === value) ?? null
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="ID Type"
                         placeholder="Select ID type"
                         clearable
@@ -925,7 +1271,12 @@ export default function CreateTenant({
                       />
                     )}
                   />
-                  <Input label="ID Number" placeholder="e.g. 12345678901" {...register('idNumber')} error={errors.idNumber?.message} />
+                  <Input
+                    label="ID Number"
+                    placeholder="e.g. 12345678901"
+                    {...register('idNumber')}
+                    error={errors.idNumber?.message}
+                  />
                 </FieldGrid>
                 <div className="mt-4 divide-y divide-gray-100">
                   <Controller
@@ -943,27 +1294,68 @@ export default function CreateTenant({
                 </div>
                 {nafdacRequiredValue && (
                   <div className="mt-4">
-                    <Input label="NAFDAC Number *" placeholder="e.g. A1-2345" {...register('nafdacNumber')} error={errors.nafdacNumber?.message} />
+                    <Input
+                      label="NAFDAC Number *"
+                      placeholder="e.g. A1-2345"
+                      {...register('nafdacNumber')}
+                      error={errors.nafdacNumber?.message}
+                    />
                   </div>
                 )}
               </Card>
 
-              <Card title="Settlement Account" description="Where this tenant's payouts are sent.">
+              <Card
+                title="Settlement Account"
+                description="Where this tenant's payouts are sent."
+              >
                 <FieldGrid>
-                  <Input label="Bank Name" placeholder="e.g. GTBank" {...register('bankName')} error={errors.bankName?.message} />
-                  <Input label="Account Number" placeholder="0123456789" {...register('bankAccountNumber')} error={errors.bankAccountNumber?.message} />
-                  <Input label="Account Name" placeholder="e.g. Acme Liquors Ltd" {...register('bankAccountName')} error={errors.bankAccountName?.message} />
+                  <Input
+                    label="Bank Name"
+                    placeholder="e.g. GTBank"
+                    {...register('bankName')}
+                    error={errors.bankName?.message}
+                  />
+                  <Input
+                    label="Account Number"
+                    placeholder="0123456789"
+                    {...register('bankAccountNumber')}
+                    error={errors.bankAccountNumber?.message}
+                  />
+                  <Input
+                    label="Account Name"
+                    placeholder="e.g. Acme Liquors Ltd"
+                    {...register('bankAccountName')}
+                    error={errors.bankAccountName?.message}
+                  />
                 </FieldGrid>
               </Card>
 
-              <Card title="Invoice Bank Accounts" description="Shown to customers on POS invoices. Separate from the settlement account above.">
+              <Card
+                title="Invoice Bank Accounts"
+                description="Shown to customers on POS invoices. Separate from the settlement account above."
+              >
                 <div className="space-y-3">
                   {bankAccountFields.map((field, index) => (
-                    <div key={field.id} className="flex items-end gap-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                    <div
+                      key={field.id}
+                      className="flex items-end gap-3 rounded-lg border border-gray-100 bg-gray-50 p-3"
+                    >
                       <div className="grid flex-1 grid-cols-1 gap-3 @xl:grid-cols-3">
-                        <Input label="Bank" placeholder="e.g. GTBank" {...register(`bankAccounts.${index}.bankName`)} />
-                        <Input label="Account Number" placeholder="0123456789" {...register(`bankAccounts.${index}.accountNumber`)} />
-                        <Input label="Account Name" placeholder="e.g. Acme Liquors Ltd" {...register(`bankAccounts.${index}.accountName`)} />
+                        <Input
+                          label="Bank"
+                          placeholder="e.g. GTBank"
+                          {...register(`bankAccounts.${index}.bankName`)}
+                        />
+                        <Input
+                          label="Account Number"
+                          placeholder="0123456789"
+                          {...register(`bankAccounts.${index}.accountNumber`)}
+                        />
+                        <Input
+                          label="Account Name"
+                          placeholder="e.g. Acme Liquors Ltd"
+                          {...register(`bankAccounts.${index}.accountName`)}
+                        />
                       </div>
                       <ActionIcon
                         variant="flat"
@@ -977,20 +1369,31 @@ export default function CreateTenant({
                     </div>
                   ))}
                   {bankAccountFields.length === 0 && (
-                    <Text className="text-sm text-gray-400">No invoice bank accounts added.</Text>
+                    <Text className="text-sm text-gray-400">
+                      No invoice bank accounts added.
+                    </Text>
                   )}
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => appendBankAccount({ bankName: '', accountNumber: '', accountName: '' })}
+                    onClick={() =>
+                      appendBankAccount({
+                        bankName: '',
+                        accountNumber: '',
+                        accountName: '',
+                      })
+                    }
                   >
                     <PiPlusBold className="me-1.5 h-4 w-4" /> Add Account
                   </Button>
                 </div>
               </Card>
 
-              <Card title="KYC Verification" description="Read-only. Produced by the Paystack KYC checks when a vendor applies.">
+              <Card
+                title="KYC Verification"
+                description="Read-only. Produced by the Paystack KYC checks when a vendor applies."
+              >
                 <KycSummary meta={meta} />
               </Card>
 
@@ -1006,26 +1409,78 @@ export default function CreateTenant({
             </div>
 
             {/* ── Operations ── */}
-            <div className={cn('space-y-6', activeTab !== 'operations' && 'hidden')}>
+            <div
+              className={cn(
+                'space-y-6',
+                activeTab !== 'operations' && 'hidden'
+              )}
+            >
               <Card
                 title="Address"
                 description="Editing any address line re-runs geocoding, which updates the coordinates used for shipping distance."
               >
                 <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                   <div className="@xl:col-span-2">
-                    <Input label="Street" placeholder="e.g. 12 Adeola Odeku Street" {...register('addressStreet')} error={errors.addressStreet?.message} />
+                    <Input
+                      label="Street"
+                      placeholder="e.g. 12 Adeola Odeku Street"
+                      {...register('addressStreet')}
+                      error={errors.addressStreet?.message}
+                    />
                   </div>
-                  <Input label="City" placeholder="e.g. Victoria Island" {...register('addressCity')} error={errors.addressCity?.message} />
-                  <Input label="LGA" placeholder="e.g. Eti-Osa" {...register('addressLga')} error={errors.addressLga?.message} />
-                  <Input label="State" placeholder="e.g. Lagos" {...register('addressState')} error={errors.addressState?.message} />
-                  <Input label="Zip Code" placeholder="e.g. 101241" {...register('addressZipCode')} error={errors.addressZipCode?.message} />
-                  <Input label="Country" placeholder="e.g. Nigeria" {...register('addressCountry')} error={errors.addressCountry?.message} />
+                  <Input
+                    label="City"
+                    placeholder="e.g. Victoria Island"
+                    {...register('addressCity')}
+                    error={errors.addressCity?.message}
+                  />
+                  <Input
+                    label="LGA"
+                    placeholder="e.g. Eti-Osa"
+                    {...register('addressLga')}
+                    error={errors.addressLga?.message}
+                  />
+                  <Input
+                    label="State"
+                    placeholder="e.g. Lagos"
+                    {...register('addressState')}
+                    error={errors.addressState?.message}
+                  />
+                  <Input
+                    label="Zip Code"
+                    placeholder="e.g. 101241"
+                    {...register('addressZipCode')}
+                    error={errors.addressZipCode?.message}
+                  />
+                  <Input
+                    label="Country"
+                    placeholder="e.g. Nigeria"
+                    {...register('addressCountry')}
+                    error={errors.addressCountry?.message}
+                  />
                 </div>
                 {meta?.location?.lat != null && (
                   <div className="mt-4 flex flex-wrap gap-4 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
-                    <span>Lat: <span className="font-mono font-medium text-gray-700">{meta.location.lat}</span></span>
-                    <span>Lon: <span className="font-mono font-medium text-gray-700">{meta.location.lon}</span></span>
-                    {meta.normalizedState && <span>Shipping zone: <span className="font-medium text-gray-700">{meta.normalizedState}</span></span>}
+                    <span>
+                      Lat:{' '}
+                      <span className="font-mono font-medium text-gray-700">
+                        {meta.location.lat}
+                      </span>
+                    </span>
+                    <span>
+                      Lon:{' '}
+                      <span className="font-mono font-medium text-gray-700">
+                        {meta.location.lon}
+                      </span>
+                    </span>
+                    {meta.normalizedState && (
+                      <span>
+                        Shipping zone:{' '}
+                        <span className="font-medium text-gray-700">
+                          {meta.normalizedState}
+                        </span>
+                      </span>
+                    )}
                   </div>
                 )}
               </Card>
@@ -1038,8 +1493,13 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={CURRENCY_OPTIONS}
-                        value={CURRENCY_OPTIONS.find((o) => o.value === value) ?? null}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          CURRENCY_OPTIONS.find((o) => o.value === value) ??
+                          null
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Default Currency"
                         placeholder="Select currency"
                         error={errors.defaultCurrency?.message}
@@ -1047,13 +1507,23 @@ export default function CreateTenant({
                     )}
                   />
                   <div>
-                    <Input label="Supported Currencies" placeholder="e.g. NGN,USD,EUR" {...register('supportedCurrencies')} error={errors.supportedCurrencies?.message} />
-                    <Text className="mt-1 text-xs text-gray-400">Comma-separated: NGN, USD, EUR, GBP</Text>
+                    <Input
+                      label="Supported Currencies"
+                      placeholder="e.g. NGN,USD,EUR"
+                      {...register('supportedCurrencies')}
+                      error={errors.supportedCurrencies?.message}
+                    />
+                    <Text className="mt-1 text-xs text-gray-400">
+                      Comma-separated: NGN, USD, EUR, GBP
+                    </Text>
                   </div>
                 </FieldGrid>
               </Card>
 
-              <Card title="Purchase Settings" description="Procurement controls for this tenant.">
+              <Card
+                title="Purchase Settings"
+                description="Procurement controls for this tenant."
+              >
                 <FieldGrid>
                   <Controller
                     name="psDefaultBillControlPolicy"
@@ -1061,8 +1531,13 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={BILL_CONTROL_OPTIONS}
-                        value={BILL_CONTROL_OPTIONS.find((o) => o.value === value) ?? null}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          BILL_CONTROL_OPTIONS.find((o) => o.value === value) ??
+                          null
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Bill Control Policy"
                         placeholder="Select policy"
                         error={errors.psDefaultBillControlPolicy?.message}
@@ -1073,23 +1548,39 @@ export default function CreateTenant({
                     label="Approval Threshold (₦)"
                     type="number"
                     placeholder="0"
-                    {...register('psApprovalThreshold', { setValueAs: asOptionalNumber })}
+                    {...register('psApprovalThreshold', {
+                      setValueAs: asOptionalNumber,
+                    })}
                     error={errors.psApprovalThreshold?.message}
                   />
-                  <Input label="Default Payment Terms" placeholder="e.g. Net 30" {...register('psDefaultPaymentTerms')} error={errors.psDefaultPaymentTerms?.message} />
-                  <Input label="Default Receiving Location" placeholder="e.g. Main Warehouse" {...register('psDefaultReceivingLocation')} error={errors.psDefaultReceivingLocation?.message} />
+                  <Input
+                    label="Default Payment Terms"
+                    placeholder="e.g. Net 30"
+                    {...register('psDefaultPaymentTerms')}
+                    error={errors.psDefaultPaymentTerms?.message}
+                  />
+                  <Input
+                    label="Default Receiving Location"
+                    placeholder="e.g. Main Warehouse"
+                    {...register('psDefaultReceivingLocation')}
+                    error={errors.psDefaultReceivingLocation?.message}
+                  />
                   <Input
                     label="RFQ Validity (days)"
                     type="number"
                     placeholder="30"
-                    {...register('psRfqValidityDays', { setValueAs: asOptionalNumber })}
+                    {...register('psRfqValidityDays', {
+                      setValueAs: asOptionalNumber,
+                    })}
                     error={errors.psRfqValidityDays?.message}
                   />
                   <Input
                     label="Default Lead Time (days)"
                     type="number"
                     placeholder="7"
-                    {...register('psDefaultLeadTimeDays', { setValueAs: asOptionalNumber })}
+                    {...register('psDefaultLeadTimeDays', {
+                      setValueAs: asOptionalNumber,
+                    })}
                     error={errors.psDefaultLeadTimeDays?.message}
                   />
                 </FieldGrid>
@@ -1157,7 +1648,10 @@ export default function CreateTenant({
                 </div>
               </Card>
 
-              <Card title="Admin Notes" description="Internal notes — not shown to the tenant.">
+              <Card
+                title="Admin Notes"
+                description="Internal notes — not shown to the tenant."
+              >
                 <textarea
                   {...register('notes')}
                   placeholder="Any internal notes about this tenant…"
@@ -1171,10 +1665,11 @@ export default function CreateTenant({
 
           {/* ── Right sidebar ── */}
           <div className="w-72 flex-shrink-0 space-y-6 @5xl:w-80">
-
             {/* Publish panel */}
             <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <Title as="h6" className="mb-4 font-semibold text-gray-800">Publish</Title>
+              <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                Publish
+              </Title>
               <div className="mb-4">
                 <Controller
                   name="status"
@@ -1182,8 +1677,12 @@ export default function CreateTenant({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={STATUS_OPTIONS}
-                      value={STATUS_OPTIONS.find((o) => o.value === value) ?? null}
-                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                      value={
+                        STATUS_OPTIONS.find((o) => o.value === value) ?? null
+                      }
+                      onChange={(opt: SelectOption) =>
+                        onChange((opt as any).value)
+                      }
                       label="Status"
                       placeholder="Select status"
                       error={errors.status?.message}
@@ -1195,7 +1694,12 @@ export default function CreateTenant({
                 <Button type="submit" isLoading={isLoading} className="w-full">
                   {id ? 'Update Tenant' : 'Save Tenant'}
                 </Button>
-                <Button type="button" variant="flat" className="w-full" onClick={() => router.push(routes.eCommerce.tenants)}>
+                <Button
+                  type="button"
+                  variant="flat"
+                  className="w-full"
+                  onClick={() => router.push(routes.eCommerce.tenants)}
+                >
                   Cancel
                 </Button>
               </div>
@@ -1203,13 +1707,21 @@ export default function CreateTenant({
 
             {/* Logo panel */}
             <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <Title as="h6" className="mb-4 font-semibold text-gray-800">Logo</Title>
-              <ImagePicker currentUrl={currentLogoUrl} onFile={setLogoFile} onClear={() => setLogoFile(null)} />
+              <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                Logo
+              </Title>
+              <ImagePicker
+                currentUrl={currentLogoUrl}
+                onFile={setLogoFile}
+                onClear={() => setLogoFile(null)}
+              />
             </div>
 
             {/* Settings panel */}
             <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <Title as="h6" className="mb-2 font-semibold text-gray-800">Settings</Title>
+              <Title as="h6" className="mb-2 font-semibold text-gray-800">
+                Settings
+              </Title>
               <div className="divide-y divide-gray-100">
                 <Controller
                   name="enforceAgeVerification"
@@ -1241,8 +1753,12 @@ export default function CreateTenant({
             {/* Rejection reason — required by the server when status is 'rejected' */}
             {statusValue === 'rejected' && (
               <div className="rounded-xl border border-red-100 bg-red-50 p-5">
-                <Title as="h6" className="mb-2 font-semibold text-red-700">Rejection Reason *</Title>
-                <Text className="mb-3 text-xs text-red-500">Visible to the tenant owner.</Text>
+                <Title as="h6" className="mb-2 font-semibold text-red-700">
+                  Rejection Reason *
+                </Title>
+                <Text className="mb-3 text-xs text-red-500">
+                  Visible to the tenant owner.
+                </Text>
                 <textarea
                   {...register('rejectionReason')}
                   placeholder="Explain why this tenant was rejected…"
@@ -1251,7 +1767,9 @@ export default function CreateTenant({
                   className="w-full resize-none rounded-lg border border-red-200 bg-white px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
                 />
                 {errors.rejectionReason?.message && (
-                  <Text className="mt-1 text-xs font-medium text-red-600">{errors.rejectionReason.message}</Text>
+                  <Text className="mt-1 text-xs font-medium text-red-600">
+                    {errors.rejectionReason.message}
+                  </Text>
                 )}
               </div>
             )}

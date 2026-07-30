@@ -18,7 +18,9 @@ export default function EditTenantPage() {
   const token = (session?.user as any)?.token as string;
 
   const [tenantForm, setTenantForm] = useState<TenantFormInput | null>(null);
-  const [currentLogoUrl, setCurrentLogoUrl] = useState<string | undefined>(undefined);
+  const [currentLogoUrl, setCurrentLogoUrl] = useState<string | undefined>(
+    undefined
+  );
   const [meta, setMeta] = useState<Record<string, any>>({});
   const [tenantName, setTenantName] = useState<string>('Tenant');
   const [loading, setLoading] = useState(true);
@@ -58,9 +60,15 @@ export default function EditTenantPage() {
           paystackCustomerId: tenant.paystackCustomerId || '',
           paystackSubscriptionCode: tenant.paystackSubscriptionCode || '',
           paystackPlanCode: tenant.paystackPlanCode || '',
-          trialEndsAt: tenant.trialEndsAt ? tenant.trialEndsAt.split('T')[0] : '',
-          currentPeriodStart: tenant.currentPeriodStart ? tenant.currentPeriodStart.split('T')[0] : '',
-          currentPeriodEnd: tenant.currentPeriodEnd ? tenant.currentPeriodEnd.split('T')[0] : '',
+          trialEndsAt: tenant.trialEndsAt
+            ? tenant.trialEndsAt.split('T')[0]
+            : '',
+          currentPeriodStart: tenant.currentPeriodStart
+            ? tenant.currentPeriodStart.split('T')[0]
+            : '',
+          currentPeriodEnd: tenant.currentPeriodEnd
+            ? tenant.currentPeriodEnd.split('T')[0]
+            : '',
           revenueModel: tenant.revenueModel || 'markup',
           markupPercentage: tenant.markupPercentage ?? 40,
           commissionPercentage: tenant.commissionPercentage ?? 12,
@@ -72,7 +80,7 @@ export default function EditTenantPage() {
           defaultCurrency: tenant.defaultCurrency || 'NGN',
           supportedCurrencies: Array.isArray(tenant.supportedCurrencies)
             ? tenant.supportedCurrencies.join(', ')
-            : (tenant.supportedCurrencies || ''),
+            : tenant.supportedCurrencies || '',
           country: tenant.country || '',
           addressStreet: tenant.address?.street || '',
           addressCity: tenant.address?.city || '',
@@ -103,7 +111,8 @@ export default function EditTenantPage() {
           notes: tenant.notes || '',
           // Note the `default` prefix — reading `billControlPolicy` here always
           // returned undefined, so the form silently reset the real policy
-          psDefaultBillControlPolicy: ps?.defaultBillControlPolicy || 'received',
+          psDefaultBillControlPolicy:
+            ps?.defaultBillControlPolicy || 'received',
           psEnable3WayMatching: ps?.enable3WayMatching ?? true,
           psRequirePOApproval: ps?.requirePOApproval ?? true,
           psApprovalThreshold: ps?.approvalThreshold ?? 0,

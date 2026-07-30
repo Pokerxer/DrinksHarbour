@@ -961,17 +961,33 @@ export default function SubProductsTable({
       <div className="rounded-2xl border border-gray-200 bg-white">
         {/* Row 1: new | search | actions */}
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-3 py-2.5 sm:gap-3 sm:px-4">
-          {/* ── New product button ── */}
-          <button
-            type="button"
-            onClick={() => router.push(routes.eCommerce.createSubProduct)}
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#b20202] px-3.5 text-xs font-semibold text-white transition-colors hover:bg-[#7f1d1d]"
-          >
-            <PiPlus className="h-3.5 w-3.5" />
-            <span>New</span>
-          </button>
+          {/* ── Create actions ──
+              "New" creates a sub-product (this page's record); "Add Product"
+              opens the catalog Product form for when the parent product the
+              sub-product needs doesn't exist yet. Kept in one shrink-0 group
+              so they wrap together rather than splitting across rows. */}
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push(routes.eCommerce.createSubProduct)}
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-[#b20202] px-3.5 text-xs font-semibold text-white transition-colors hover:bg-[#7f1d1d]"
+            >
+              <PiPlus className="h-3.5 w-3.5" />
+              <span>New</span>
+            </button>
 
-          <div className="hidden h-5 w-px shrink-0 bg-gray-200 sm:block" />
+            <button
+              type="button"
+              onClick={() => router.push(routes.eCommerce.createProduct)}
+              title="Create a catalog product"
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3.5 text-xs font-semibold text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-800"
+            >
+              <PiPackageBold className="h-3.5 w-3.5" />
+              <span>Add Product</span>
+            </button>
+          </div>
+
+          <div className="hidden h-5 w-px shrink-0 bg-gray-200 lg:block" />
 
           {/* Odoo search bar */}
           <div
@@ -1214,7 +1230,7 @@ export default function SubProductsTable({
           </div>
 
           {/* ── Right controls ── */}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {/* Visibility */}
             <select
               value={visibilityFilter}
@@ -1228,7 +1244,7 @@ export default function SubProductsTable({
               <option value="draft">Draft ({stats.draft || 0})</option>
             </select>
 
-            <div className="h-5 w-px bg-gray-200" />
+            <div className="hidden h-5 w-px shrink-0 bg-gray-200 sm:block" />
 
             {/* Column toggle (list only) */}
             {viewMode === 'list' && <ColumnToggle table={table} />}
@@ -1255,7 +1271,7 @@ export default function SubProductsTable({
               onViewChange={handleViewModeChange}
             />
 
-            <div className="h-5 w-px bg-gray-200" />
+            <div className="hidden h-5 w-px shrink-0 bg-gray-200 sm:block" />
 
             {/* Refresh */}
             <button
