@@ -14,7 +14,6 @@ const VendorReturnSchema = new Schema(
     returnNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     vendor: {
@@ -190,7 +189,9 @@ VendorReturnSchema.pre("save", async function () {
 });
 
 // Indexes
-VendorReturnSchema.index({ tenant: 1, returnNumber: 1 });
+// Return numbers are a per-tenant sequence — uniqueness is scoped to the tenant,
+// never global (a global index makes tenant B's first return collide with A's).
+VendorReturnSchema.index({ tenant: 1, returnNumber: 1 }, { unique: true });
 VendorReturnSchema.index({ tenant: 1, vendor: 1 });
 VendorReturnSchema.index({ tenant: 1, purchaseOrder: 1 });
 VendorReturnSchema.index({ tenant: 1, status: 1 });
