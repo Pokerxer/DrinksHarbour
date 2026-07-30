@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User');
 const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
-const { resolveTenantContext } = require('./tenant.middleware');
+const { resolveTenantContext, requireOwnTenant } = require('./tenant.middleware');
 
 // super_admin has all tenant_owner privileges
 const TENANT_OWNER_ROLES = ['super_admin', 'admin', 'tenant_owner'];
@@ -242,6 +242,10 @@ module.exports = {
   authorize,
   attachTenant,
   requireTenant,
+  // Strict own-tenant gate for tenant-owned modules (POS, sales, purchases,
+  // inventory). Re-exported so routers keep importing auth middleware from one
+  // place; the implementation lives in tenant.middleware.js.
+  requireOwnTenant,
   superAdminOnly,
   tenantAdminOnly,
   tenantAdminOrSuperAdmin,

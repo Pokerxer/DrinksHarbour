@@ -48,13 +48,12 @@ const getTenantWarehouseSettings = async (tenantId) => {
   return { ...WAREHOUSE_SETTINGS_DEFAULTS, ...(tenant?.warehouseSettings || {}) };
 };
 
+// Warehouses are tenant-owned. requireOwnTenant has already pinned req.tenant to
+// the caller's JWT claim and stripped any tenantId from the query/body, so this
+// reads req.tenant and nothing else — the previous super_admin branch trusted
+// `req.query.tenantId || req.body.tenantId`, letting a caller name any tenant.
 const resolveTenantId = (req) => {
   if (req.tenant?._id) return req.tenant._id;
-  if (req.user?.role === 'super_admin') {
-    const tenantId = req.query.tenantId || req.body.tenantId;
-    if (tenantId) return tenantId;
-    return null;
-  }
   throw new ValidationError('Tenant context required');
 };
 

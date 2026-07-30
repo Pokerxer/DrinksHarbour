@@ -1,7 +1,7 @@
 // middleware/tenant.middleware.js
 
 const Tenant = require('../models/Tenant');
-const { ForbiddenError } = require('../utils/errors');
+const { ForbiddenError, NotFoundError } = require('../utils/errors');
 
 const TENANT_SELECT_FIELDS =
   '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan';
@@ -135,9 +135,79 @@ const verifyActiveSubscription = (req, res, next) => {
   next();
 };
 
+/**
+ * Strict own-tenant enforcement for tenant-owned business modules
+ * (point of sale, sales, purchases, inventory, warehouses).
+ *
+ * Use INSTEAD OF requireTenant on those routers. Run after resolveTenantContext
+ * (a.k.a. attachTenant) so req.tenant is already loaded from the DB.
+ *
+ * The data in these modules belongs to exactly one tenant and nobody outside it
+ * — including platform admins — may read or write it. So unlike requireTenant,
+ * this middleware takes the tenant from the JWT claim ONLY:
+ *
+ *   - No x-tenant-slug / ?tenant= pivot. resolveTenantContext offers that path to
+ *     admins with no tenant of their own; here a missing claim is simply a deny,
+ *     which makes the pivot unreachable rather than merely unused.
+ *   - No client-supplied tenantId. Any tenantId in the query or body is stripped
+ *     so a controller reaching for it cannot widen its own scope by accident.
+ *   - Admin roles get no bypass. An admin who owns a tenant works inside it like
+ *     any other user; an admin who owns none is denied outright.
+ */
+const requireOwnTenant = (req, res, next) => {
+  // Client input can never name the tenant on these routes.
+  if (req.query) delete req.query.tenantId;
+  if (req.body && typeof req.body === 'object') delete req.body.tenantId;
+
+  const claim = req.user?.tenant;
+  const claimedTenantId = claim?._id ? claim._id.toString() : claim?.toString();
+
+  if (!claimedTenantId) {
+    throw new ForbiddenError(
+      'This module is tenant-owned. Your account is not attached to a tenant.'
+    );
+  }
+
+  // resolveTenantContext leaves req.tenant unset when the tenant is unapproved or
+  // its subscription lapsed. Failing closed here keeps controllers from falling
+  // back to an unscoped query.
+  if (!req.tenant) {
+    throw new ForbiddenError('Tenant context required for this operation');
+  }
+
+  // Belt and braces: if anything upstream resolved a different tenant (header,
+  // query, subdomain), the JWT claim wins and the request is refused.
+  if (req.tenant._id.toString() !== claimedTenantId) {
+    throw new ForbiddenError('You do not have access to this tenant');
+  }
+
+  if (req.tenant.status !== 'approved') {
+    throw new ForbiddenError('Tenant account is not approved');
+  }
+
+  if (!['active', 'trialing'].includes(req.tenant.subscriptionStatus)) {
+    throw new ForbiddenError('Tenant subscription is not active');
+  }
+
+  next();
+};
+
+/**
+ * Throw for a document that either does not exist or belongs to another tenant.
+ *
+ * Both cases must be indistinguishable: a 403 on a cross-tenant hit confirms the
+ * id is real and lets a caller enumerate another tenant's records, so callers
+ * report 404 for both.
+ */
+const notFoundOrForeign = (resource = 'Resource') => {
+  throw new NotFoundError(`${resource} not found`);
+};
+
 module.exports = {
   resolveTenantContext,
   requireTenant,
+  requireOwnTenant,
+  notFoundOrForeign,
   verifyTenantOwnership,
   verifyActiveSubscription,
 };

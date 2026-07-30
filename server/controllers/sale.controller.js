@@ -11,6 +11,7 @@ const { successResponse } = require('../utils/response');
  */
 exports.createSale = asyncHandler(async (req, res) => {
   const sale = await saleService.createSale({
+    tenant: req.tenant?._id,
     ...req.body,
     createdBy: req.user?._id,
   });
@@ -24,7 +25,11 @@ exports.createSale = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 exports.getAllSales = asyncHandler(async (req, res) => {
-  const result = await saleService.getAllSales(req.query);
+  // Tenant comes from the verified JWT (requireOwnTenant), never from req.query.
+  const result = await saleService.getAllSales({
+    ...req.query,
+    tenant: req.tenant?._id,
+  });
   successResponse(res, result, 'Sales retrieved successfully');
 });
 
@@ -34,7 +39,7 @@ exports.getAllSales = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 exports.getSaleById = asyncHandler(async (req, res) => {
-  const sale = await saleService.getSaleById(req.params.id);
+  const sale = await saleService.getSaleById(req.params.id, req.tenant?._id);
   successResponse(res, { sale }, 'Sale retrieved successfully');
 });
 
@@ -44,7 +49,7 @@ exports.getSaleById = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 exports.updateSale = asyncHandler(async (req, res) => {
-  const sale = await saleService.updateSale(req.params.id, req.body, req.user?._id);
+  const sale = await saleService.updateSale(req.params.id, req.body, req.user?._id, req.tenant?._id);
   successResponse(res, { sale }, 'Sale updated successfully');
 });
 
@@ -54,7 +59,7 @@ exports.updateSale = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 exports.deleteSale = asyncHandler(async (req, res) => {
-  await saleService.deleteSale(req.params.id);
+  await saleService.deleteSale(req.params.id, req.tenant?._id);
   successResponse(res, null, 'Sale deleted successfully');
 });
 
@@ -64,7 +69,7 @@ exports.deleteSale = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 exports.toggleSaleStatus = asyncHandler(async (req, res) => {
-  const sale = await saleService.toggleSaleStatus(req.params.id);
+  const sale = await saleService.toggleSaleStatus(req.params.id, req.tenant?._id);
   successResponse(res, { sale }, `Sale ${sale.isActive ? 'activated' : 'deactivated'} successfully`);
 });
 
@@ -96,7 +101,7 @@ exports.getSaleByProduct = asyncHandler(async (req, res) => {
  */
 exports.applySaleToProducts = asyncHandler(async (req, res) => {
   const { productIds } = req.body;
-  const result = await saleService.applySaleToProducts(req.params.id, productIds);
+  const result = await saleService.applySaleToProducts(req.params.id, productIds, req.tenant?._id);
   successResponse(res, result, 'Sale applied to products successfully');
 });
 
@@ -106,6 +111,8 @@ exports.applySaleToProducts = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 exports.removeSaleFromProducts = asyncHandler(async (req, res) => {
+  // Scope-check ownership before mutating products attached to the campaign.
+  await saleService.getSaleById(req.params.id, req.tenant?._id);
   await saleService.removeSaleFromProducts(req.params.id);
   successResponse(res, null, 'Sale removed from products successfully');
 });
@@ -116,7 +123,7 @@ exports.removeSaleFromProducts = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 exports.endSale = asyncHandler(async (req, res) => {
-  const sale = await saleService.endSale(req.params.id);
+  const sale = await saleService.endSale(req.params.id, req.tenant?._id);
   successResponse(res, { sale }, 'Sale ended successfully');
 });
 

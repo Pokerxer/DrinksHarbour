@@ -4,6 +4,19 @@ const Sale = require('../models/Sale');
 const SubProduct = require('../models/SubProduct');
 const { ValidationError, NotFoundError } = require('../utils/errors');
 
+// Sales (promotional campaigns) are tenant-owned. Every single-document lookup
+// below is scoped by tenant, and a document owned by another tenant is reported
+// as NotFound rather than Forbidden — a 403 would confirm the id is real and let
+// a caller enumerate another tenant's campaigns.
+//
+// Reads may also see platform-wide campaigns (isGlobal). Mutations may not:
+// only the owning tenant can change its own campaign.
+const readScope = (id, tenantId) => ({
+  _id: id,
+  $or: [{ tenant: tenantId }, { isGlobal: true }],
+});
+const writeScope = (id, tenantId) => ({ _id: id, tenant: tenantId });
+
 /**
  * Create a new sale
  */
@@ -16,6 +29,10 @@ const createSale = async (saleData) => {
   
   if (end <= start) {
     throw new ValidationError('End date must be after start date');
+  }
+
+  if (!saleData.tenant) {
+    throw new ValidationError('Tenant context required to create a sale');
   }
 
   const sale = new Sale({
@@ -56,11 +73,17 @@ const getAllSales = async (query = {}) => {
     ];
   }
 
-  if (tenant) {
-    filter.$or = [
-      { tenant },
-      { isGlobal: true },
-    ];
+  if (!tenant) {
+    throw new ValidationError('Tenant context required');
+  }
+  // $and, not $or: a search term already occupies filter.$or, and overwriting it
+  // dropped the tenant scope entirely whenever a search was supplied.
+  const tenantScope = { $or: [{ tenant }, { isGlobal: true }] };
+  if (filter.$or) {
+    filter.$and = [{ $or: filter.$or }, tenantScope];
+    delete filter.$or;
+  } else {
+    Object.assign(filter, tenantScope);
   }
 
   const sales = await Sale.find(filter)
@@ -87,8 +110,8 @@ const getAllSales = async (query = {}) => {
 /**
  * Get sale by ID
  */
-const getSaleById = async (id) => {
-  const sale = await Sale.findById(id)
+const getSaleById = async (id, tenantId) => {
+  const sale = await Sale.findOne(readScope(id, tenantId))
     .populate('products', 'name slug images baseSellingPrice')
     .populate('categories', 'name slug')
     .populate('subproducts')
@@ -106,8 +129,8 @@ const getSaleById = async (id) => {
 /**
  * Update sale
  */
-const updateSale = async (id, updateData, userId) => {
-  const sale = await Sale.findById(id);
+const updateSale = async (id, updateData, userId, tenantId) => {
+  const sale = await Sale.findOne(writeScope(id, tenantId));
 
   if (!sale) {
     throw new NotFoundError('Sale not found');
@@ -137,8 +160,8 @@ const updateSale = async (id, updateData, userId) => {
 /**
  * Delete sale
  */
-const deleteSale = async (id) => {
-  const sale = await Sale.findById(id);
+const deleteSale = async (id, tenantId) => {
+  const sale = await Sale.findOne(writeScope(id, tenantId));
 
   if (!sale) {
     throw new NotFoundError('Sale not found');
@@ -155,8 +178,8 @@ const deleteSale = async (id) => {
 /**
  * Toggle sale status
  */
-const toggleSaleStatus = async (id) => {
-  const sale = await Sale.findById(id);
+const toggleSaleStatus = async (id, tenantId) => {
+  const sale = await Sale.findOne(writeScope(id, tenantId));
 
   if (!sale) {
     throw new NotFoundError('Sale not found');
@@ -228,8 +251,12 @@ const getSaleByProduct = async (productId) => {
 /**
  * Apply sale to products
  */
-const applySaleToProducts = async (saleId, productIds) => {
-  const sale = await Sale.findById(saleId);
+const applySaleToProducts = async (saleId, productIds, tenantId) => {
+  // tenantId is optional here: createSale calls this immediately after saving a
+  // sale it just scoped itself, so re-scoping would be redundant.
+  const sale = tenantId
+    ? await Sale.findOne(writeScope(saleId, tenantId))
+    : await Sale.findById(saleId);
   
   if (!sale) {
     throw new NotFoundError('Sale not found');
@@ -311,8 +338,8 @@ const incrementConversion = async (saleId, revenue = 0) => {
 /**
  * End sale manually
  */
-const endSale = async (id) => {
-  const sale = await Sale.findById(id);
+const endSale = async (id, tenantId) => {
+  const sale = await Sale.findOne(writeScope(id, tenantId));
 
   if (!sale) {
     throw new NotFoundError('Sale not found');

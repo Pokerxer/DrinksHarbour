@@ -91,6 +91,10 @@ function bypassAuth(t) {
         tenantAdminOrSuperAdmin: (r, s, n) => n(),
         resolveTenantContext: (r, s, n) => n(),
         requireTenant: (r, s, n) => n(),
+        // The router chains this on tenant-owned modules; a missing stub makes
+        // router.use(undefined) throw before any test body runs. Its own
+        // behaviour is covered in tenantIsolation.test.js.
+        requireOwnTenant: (r, s, n) => n(),
         superAdminOnly: (r, s, n) => n(),
         tenantAdminOnly: (r, s, n) => n(),
         tenantUserOnly: (r, s, n) => n(),

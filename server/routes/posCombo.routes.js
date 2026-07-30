@@ -3,7 +3,7 @@ const router   = express.Router();
 const POSCombo    = require('../models/POSCombo');
 const SubProduct  = require('../models/SubProduct');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, resolveRevenueRates, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
-const { authenticate, attachTenant, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
+const { authenticate, attachTenant, tenantAdminOrSuperAdmin, requireOwnTenant } = require('../middleware/auth.middleware');
 
 /** Mirror of pos.controller.js computePOSPricing — produces the platform selling price. */
 function computePrice(sp, sizeDoc, tenant) {
@@ -23,6 +23,10 @@ function computePrice(sp, sizeDoc, tenant) {
 
 router.use(authenticate);
 router.use(attachTenant);
+// Tenant-owned module: POS, sales, purchases and inventory data belongs to a
+// single tenant. requireOwnTenant takes the tenant from the JWT claim only —
+// no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
+router.use(requireOwnTenant);
 
 // ── Shared populate options ───────────────────────────────────────────────────
 

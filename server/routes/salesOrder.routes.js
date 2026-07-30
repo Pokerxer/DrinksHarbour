@@ -14,14 +14,17 @@ const {
   bulkMarkSent, bulkDuplicate, bulkDelete, bulkCancel,
   bulkCreateInvoice, bulkAccruedRevenue, bulkFollowers, bulkSendEmail,
 } = require('../controllers/salesOrder.controller');
-const { protect, attachTenant, tenantUserOnly } = require('../middleware/auth.middleware');
+const { protect, attachTenant, tenantUserOnly, requireOwnTenant } = require('../middleware/auth.middleware');
 
 // Sales is a tenant back-office surface: authenticate, resolve tenant from the
 // JWT authority, then require an owner/admin/staff role (super_admin/admin
 // bypass for cross-tenant ops). Without tenantUserOnly, any authenticated user
 // carrying a tenant claim — including end-user roles (member/customer) — could
 // read, create, confirm, or fulfill this tenant's sales orders.
-router.use(protect, attachTenant, tenantUserOnly);
+// Tenant-owned module: POS, sales, purchases and inventory data belongs to a
+// single tenant. requireOwnTenant takes the tenant from the JWT claim only —
+// no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
+router.use(protect, attachTenant, requireOwnTenant, tenantUserOnly);
 
 router.route('/').get(getSalesOrders).post(createSalesOrder);
 

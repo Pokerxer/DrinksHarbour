@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const saleController = require('../controllers/sale.controller');
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { protect, authorize, attachTenant, requireOwnTenant } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { body, param, query } = require('express-validator');
 
@@ -85,6 +85,10 @@ router.post(
 
 router.use(protect);
 router.use(authorize('admin', 'super_admin'));
+// Promotional campaigns are tenant-owned like the rest of the sales module:
+// scope every back-office read and write to the caller's own tenant.
+router.use(attachTenant);
+router.use(requireOwnTenant);
 
 /**
  * Get all sales

@@ -3,11 +3,15 @@ const express    = require('express');
 const router     = express.Router();
 const Pricelist  = require('../models/Pricelist');
 const SubProduct = require('../models/SubProduct');
-const { authenticate, attachTenant, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
+const { authenticate, attachTenant, tenantAdminOrSuperAdmin, requireOwnTenant } = require('../middleware/auth.middleware');
 const { enforceSingleDefault } = require('../services/pricelist.service');
 
 router.use(authenticate);
 router.use(attachTenant);
+// Tenant-owned module: POS, sales, purchases and inventory data belongs to a
+// single tenant. requireOwnTenant takes the tenant from the JWT claim only —
+// no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
+router.use(requireOwnTenant);
 
 /**
  * Tenant-scoped Pricelist lookup (Workstream B — never bare findById).

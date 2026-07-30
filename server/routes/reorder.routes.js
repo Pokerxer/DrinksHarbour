@@ -3,11 +3,15 @@
 const express = require('express');
 const router = express.Router();
 const reorderController = require('../controllers/reorder.controller');
-const { protect, attachTenant } = require('../middleware/auth.middleware');
+const { protect, attachTenant, requireOwnTenant } = require('../middleware/auth.middleware');
 
 // All routes require authentication and tenant context
 router.use(protect);
 router.use(attachTenant);
+// Tenant-owned module: POS, sales, purchases and inventory data belongs to a
+// single tenant. requireOwnTenant takes the tenant from the JWT claim only —
+// no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
+router.use(requireOwnTenant);
 
 // Reorder rules CRUD
 router.route('/rules')

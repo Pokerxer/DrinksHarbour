@@ -106,16 +106,27 @@ const protectPOSOrAdmin = asyncHandler(async (req, res, next) => {
     req.user = user;
     req.posPermissions = [];
 
-    if (user.tenant) {
-      const tenant = await Tenant.findById(user.tenant);
-      if (!tenant || !tenant.isActive) {
-        return res.status(401).json({ success: false, message: 'Tenant not found or inactive' });
-      }
-      req.tenant = tenant;
-    } else {
-      req.tenant = null;
+    // POS data is tenant-owned, so an admin reaches it only through their own
+    // tenant. A tenant-less admin used to fall through with req.tenant = null,
+    // which left every downstream query unscoped — deny instead.
+    if (!user.tenant) {
+      return res.status(403).json({
+        success: false,
+        message: 'Point of sale is tenant-owned. Your account is not attached to a tenant.',
+      });
     }
+
+    const tenant = await Tenant.findById(user.tenant);
+    if (!tenant || !tenant.isActive) {
+      return res.status(401).json({ success: false, message: 'Tenant not found or inactive' });
+    }
+    req.tenant = tenant;
   }
+
+  // Neither path lets the caller name a tenant: the id always comes from the
+  // verified token, never from the query string or body.
+  if (req.query) delete req.query.tenantId;
+  if (req.body && typeof req.body === 'object') delete req.body.tenantId;
 
   next();
 });
