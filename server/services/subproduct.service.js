@@ -1194,12 +1194,17 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
   if (!/^[0-9a-fA-F]{24}$/.test(subProductId)) {
     throw new ValidationError('Invalid SubProduct ID');
   }
-  const { warehouseId = null } = options;
+  const { warehouseId = null, anyTenant = false } = options;
+
+  // The platform admin's review drawer opens listings that by definition belong
+  // to OTHER tenants, so it passes anyTenant. Every tenant-facing caller stays
+  // scoped to its own catalog.
+  const ownership = anyTenant ? {} : { tenant: tenantId };
 
   // First, fetch without populating shipping/warehouse to check for corrupt data
   const rawSubProduct = await SubProduct.findOne({
     _id: subProductId,
-    tenant: tenantId,
+    ...ownership,
   }).lean();
 
   if (!rawSubProduct) {
@@ -1273,7 +1278,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
   // Re-fetch with safe populates
   const subProduct = await SubProduct.findOne({
     _id: subProductId,
-    tenant: tenantId,
+    ...ownership,
   })
     .populate(populateFields)
     .lean();

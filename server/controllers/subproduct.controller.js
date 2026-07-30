@@ -79,6 +79,8 @@ const getSubProduct = asyncHandler(async (req, res) => {
 
   const subProduct = await subProductService.getSubProduct(id, tenantId, {
     warehouseId: req.query.warehouseId || null,
+    // Platform admins review other tenants' listings from this endpoint.
+    anyTenant: ['super_admin', 'admin'].includes(req.user?.role),
   });
 
   res.status(200).json({
