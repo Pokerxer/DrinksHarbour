@@ -4683,9 +4683,15 @@ const getSubProductsByTenant = async (tenantId, filters = {}) => {
 /**
  * Get SubProducts by product
  */
-const getSubProductsByProduct = async (productId) => {
-  // Public endpoint: only return published, active SubProducts
-  const subProducts = await SubProduct.find({ product: productId, isPublished: true, status: 'active' })
+const getSubProductsByProduct = async (productId, { includeAll = false } = {}) => {
+  // Storefront callers only see published, active listings. Platform admins pass
+  // includeAll so the review panel can surface listings still awaiting approval
+  // (status defaults to 'pending') — those are the whole point of that screen.
+  const query = includeAll
+    ? { product: productId }
+    : { product: productId, isPublished: true, status: 'active' };
+
+  const subProducts = await SubProduct.find(query)
     .populate('product', 'name slug images type isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes platformMarkup platformDiscount')
     .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
     .populate('sizes', PRIVATE_SIZE_FIELDS)
@@ -5000,7 +5006,7 @@ const getStockStatus = async (subProductId) => {
  *
  * declineReason: optional string stored in metadata when declining
  */
-const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {}, declineReason = null) => {
+const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {}, declineReason = null, user = null) => {
   const VALID_STATUSES = ['active', 'archived', 'pending', 'draft', 'hidden', 'discontinued', 'out_of_stock', 'low_stock'];
   if (!VALID_STATUSES.includes(status)) {
     throw new ValidationError(`Invalid status: ${status}`);
@@ -5145,6 +5151,22 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
     };
     if (previousStatus === 'archived') {
       await Size.updateMany({ subProduct: subProductId }, { availability: 'available' });
+    }
+
+    // A tenant listing a product the catalog doesn't carry yet creates the Product
+    // as 'pending'. Every storefront read requires status 'approved', so approving
+    // only the listing would leave it invisible — approve the parent too, which is
+    // what the admin is signing off on in the review drawer. Required lazily: this
+    // is the one place the two services meet.
+    // Tenant admins reach this route too; approveProduct rejects them outright, so
+    // only platform admins trigger the parent approval.
+    const productId = subProduct.product?._id ?? subProduct.product;
+    if (productId && ['super_admin', 'admin'].includes(user?.role)) {
+      const parent = await Product.findById(productId).select('status').lean();
+      if (parent && parent.status !== 'approved') {
+        // eslint-disable-next-line global-require
+        await require('./product.service').approveProduct(String(productId), user);
+      }
     }
   }
 

@@ -634,7 +634,13 @@ const getSubProductsByTenant = asyncHandler(async (req, res) => {
 const getSubProductsByProduct = asyncHandler(async (req, res) => {
   const { productId } = req.params;
 
-  const subProducts = await subProductService.getSubProductsByProduct(productId);
+  // Platform admins review tenant listings from this endpoint, so they must see
+  // pending/unpublished ones too; everyone else gets the storefront view.
+  const includeAll = req.user?.role === 'super_admin';
+
+  const subProducts = await subProductService.getSubProductsByProduct(productId, {
+    includeAll,
+  });
 
   res.status(200).json({
     success: true,
@@ -776,7 +782,7 @@ const adminSetStatus = asyncHandler(async (req, res) => {
     throw new ValidationError('status is required');
   }
 
-  const subProduct = await subProductService.adminSetSubProductStatus(id, status, priceOverrides || {}, declineReason || null);
+  const subProduct = await subProductService.adminSetSubProductStatus(id, status, priceOverrides || {}, declineReason || null, req.user);
 
   res.status(200).json({
     success: true,
