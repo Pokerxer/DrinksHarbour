@@ -13,6 +13,8 @@ import { useCompare } from "@/context/CompareContext";
 import { useModalCompareContext } from "@/context/ModalCompareContext";
 import Rate from "../Other/Rate";
 import Link from "next/link";
+import PackPricingCard from "@/components/Product/PackPricingCard";
+import { resolvePackPricing } from "@/lib/pack-pricing";
 import {
   getInitials,
   VENDOR_PALETTE,
@@ -34,6 +36,9 @@ interface VendorSize {
   volumeMl?: number;
   minOrderQuantity?: number;
   maxOrderQuantity?: number;
+  packUnitPrice?: number | null;
+  packThreshold?: number | null;
+  packSavingsPct?: number | null;
 }
 
 interface Vendor {
@@ -66,9 +71,19 @@ interface Vendor {
   sku?: string;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 const ModalQuickview: React.FC = () => {
   const { selectedProduct, isOpen, closeQuickview } =
     useModalQuickviewContext();
+  /**
+   * Full by-slug payload. Card/list endpoints don't compute pack pricing — only
+   * GET /api/products/slug/:slug does — so a quickview opened from a grid or
+   * carousel would never see a pack offer. The modal renders the card data it
+   * already has (so opening stays instant) and upgrades in place once the
+   * detail payload lands.
+   */
+  const [detail, setDetail] = useState<any>(null);
   const [activeImage, setActiveImage] = useState(0);
   const imageScrollRef = useRef<HTMLDivElement>(null);
   const [activeSize, setActiveSize] = useState<string>("");
@@ -107,8 +122,8 @@ const ModalQuickview: React.FC = () => {
   );
 
   const vendors = useMemo(
-    () => selectedProduct?.availableAt || [],
-    [selectedProduct],
+    () => detail?.availableAt || selectedProduct?.availableAt || [],
+    [detail, selectedProduct],
   );
 
   const selectedVendor = useMemo(() => {
@@ -138,6 +153,9 @@ const ModalQuickview: React.FC = () => {
         volumeMl: sizeData.volumeMl,
         minOrderQuantity: sizeData.minOrderQuantity || 1,
         maxOrderQuantity: sizeData.maxOrderQuantity,
+        packUnitPrice: sizeData.pricing?.packUnitPrice ?? null,
+        packThreshold: sizeData.pricing?.packThreshold ?? null,
+        packSavingsPct: sizeData.pricing?.packSavingsPct ?? null,
       };
     });
   }, [selectedVendor]);
@@ -154,18 +172,55 @@ const ModalQuickview: React.FC = () => {
     }
   }, [selectedProduct, vendors, activeVendor]);
 
+  // Keeps the shopper's pick when the by-slug payload arrives mid-session and
+  // replaces the size list; only falls back when their size isn't carried.
   useEffect(() => {
-    if (vendorSizes.length > 0) {
-      const firstAvailableSize = vendorSizes.find((s) => s.stock > 0);
-      setActiveSize(firstAvailableSize?.size || vendorSizes[0].size);
-    }
+    if (!vendorSizes.length) return;
+    setActiveSize((prev) =>
+      prev && vendorSizes.some((s) => s.size === prev)
+        ? prev
+        : vendorSizes.find((s) => s.stock > 0)?.size || vendorSizes[0].size,
+    );
   }, [vendorSizes]);
+
+  // Switching size must not carry a quantity the new size can't fulfil — e.g.
+  // a 6-unit pack quantity surviving onto a size with 4 left.
+  useEffect(() => {
+    if (!selectedSizeData) return;
+    const minQty = selectedSizeData.minOrderQuantity || 1;
+    const maxQty =
+      selectedSizeData.maxOrderQuantity || selectedSizeData.stock || 99;
+    setQuantity((prev) => Math.min(Math.max(prev, minQty), Math.max(minQty, maxQty)));
+  }, [selectedSizeData]);
+
+  useEffect(() => {
+    const slug = (selectedProduct as any)?.slug;
+    if (!isOpen || !slug) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/products/slug/${slug}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        const full = json?.data?.product ?? json?.data ?? null;
+        // Only swap in a payload that actually carries vendor/size data —
+        // a thin or failed response must not blank out the open modal.
+        if (!cancelled && full?.availableAt?.length) setDetail(full);
+      } catch {
+        // Card data already on screen stays; quickview remains usable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, selectedProduct]);
 
   useEffect(() => {
     if (!isOpen) {
       setActiveImage(0);
       setActiveSize("");
       setActiveVendor(null);
+      setDetail(null);
       setQuantity(1);
       setIsAddingToCart(false);
       setShowAddedAnimation(false);
@@ -186,6 +241,20 @@ const ModalQuickview: React.FC = () => {
       document.body.style.overflow = "";
     };
   }, [isOpen, closeQuickview]);
+
+  /**
+   * What gets handed to the cart. The cart reads pack fields straight off
+   * `availableAt`, so a line added from the card payload would land in the cart
+   * without the pack rate the modal just advertised. Card identity fields win
+   * so the cart line id stays byte-identical to one added anywhere else.
+   */
+  const cartProduct = useMemo(
+    () =>
+      detail
+        ? { ...(selectedProduct as any), ...detail, id: (selectedProduct as any)?.id ?? detail._id }
+        : selectedProduct,
+    [detail, selectedProduct],
+  );
 
   // Handlers
   const handleAddToCart = useCallback(async () => {
@@ -222,7 +291,7 @@ const ModalQuickview: React.FC = () => {
 
     try {
       await addToCart(
-        selectedProduct,
+        cartProduct as any,
         activeSize,
         "",
         vendorName,
@@ -245,6 +314,7 @@ const ModalQuickview: React.FC = () => {
     }
   }, [
     selectedProduct,
+    cartProduct,
     selectedSizeData,
     selectedVendor,
     activeSize,
@@ -351,6 +421,28 @@ const ModalQuickview: React.FC = () => {
     return 0;
   }, [selectedSizeData, displayOriginalPrice, displayPrice, showQuickviewDiscount]);
   const inStock = (selectedSizeData?.stock || 0) > 0;
+
+  // ── Pack pricing (quantity-triggered) ──────────────────────────────────────
+  // Same resolver the product page uses, so a shopper sees the same offer,
+  // the same trigger quantity and the same total in both places.
+  const packPricing = resolvePackPricing({
+    packUnitPrice: selectedSizeData?.packUnitPrice,
+    packThreshold: selectedSizeData?.packThreshold,
+    packSavingsPct: selectedSizeData?.packSavingsPct,
+    unitPrice: displayPrice,
+    quantity,
+    stock: selectedSizeData?.stock,
+    maxOrderQuantity: selectedSizeData?.maxOrderQuantity,
+    onSale: showQuickviewDiscount,
+  });
+  const { hasPackPricing, packRateActive, effectiveUnitPrice, effectiveTotal } = packPricing;
+
+  const handleSetQuantityToPack = useCallback(() => {
+    if (!packPricing.packThreshold) return;
+    const maxQty =
+      selectedSizeData?.maxOrderQuantity || selectedSizeData?.stock || 99;
+    setQuantity(Math.min(packPricing.packThreshold, maxQty));
+  }, [packPricing.packThreshold, selectedSizeData]);
 
   if (!selectedProduct) return null;
 
@@ -700,20 +792,46 @@ const ModalQuickview: React.FC = () => {
 
             {/* Price */}
             <div className="flex flex-wrap items-baseline gap-2 lg:gap-3 mb-4 pb-3 lg:pb-4 border-b border-gray-100">
-              <span className={`text-2xl lg:text-3xl font-bold ${showQuickviewDiscount ? 'text-red-600' : 'text-gray-900'}`}>
-                {displayCurrencySymbol}
-                {displayPrice.toLocaleString()}
-              </span>
-              {showQuickviewDiscount && (
-                <span className="text-lg lg:text-xl text-gray-400 line-through">
-                  {displayCurrencySymbol}
-                  {displayOriginalPrice.toLocaleString()}
-                </span>
-              )}
-              {showQuickviewDiscount && (
-                <span className="px-2 lg:px-3 py-0.5 lg:py-1 bg-green-100 text-green-700 text-xs lg:text-sm font-bold rounded-full">
-                  Save {displayCurrencySymbol}{(displayOriginalPrice - displayPrice).toLocaleString()}
-                </span>
+              {packRateActive ? (
+                <>
+                  <span className="text-2xl lg:text-3xl font-bold text-amber-600">
+                    {displayCurrencySymbol}
+                    {effectiveUnitPrice.toLocaleString()}
+                  </span>
+                  <span className="text-lg lg:text-xl text-gray-400 line-through">
+                    {displayCurrencySymbol}
+                    {displayPrice.toLocaleString()}
+                  </span>
+                  <span className="px-2 lg:px-3 py-0.5 lg:py-1 bg-amber-100 text-amber-700 text-xs lg:text-sm font-bold rounded-full flex items-center gap-1">
+                    <Icon.PiArchive size={12} />
+                    Pack rate · Save {packPricing.packSavingsPct ?? 0}%
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className={`text-2xl lg:text-3xl font-bold ${showQuickviewDiscount ? 'text-red-600' : 'text-gray-900'}`}>
+                    {displayCurrencySymbol}
+                    {displayPrice.toLocaleString()}
+                  </span>
+                  {showQuickviewDiscount && (
+                    <span className="text-lg lg:text-xl text-gray-400 line-through">
+                      {displayCurrencySymbol}
+                      {displayOriginalPrice.toLocaleString()}
+                    </span>
+                  )}
+                  {showQuickviewDiscount && (
+                    <span className="px-2 lg:px-3 py-0.5 lg:py-1 bg-green-100 text-green-700 text-xs lg:text-sm font-bold rounded-full">
+                      Save {displayCurrencySymbol}{(displayOriginalPrice - displayPrice).toLocaleString()}
+                    </span>
+                  )}
+                  {hasPackPricing && (
+                    <span className="text-xs text-amber-500 font-medium ml-auto">
+                      from {displayCurrencySymbol}
+                      {(packPricing.packUnitPrice as number).toLocaleString()}/unit at{" "}
+                      {packPricing.packThreshold}+
+                    </span>
+                  )}
+                </>
               )}
             </div>
 
@@ -750,6 +868,18 @@ const ModalQuickview: React.FC = () => {
                     const isOutOfStock = size.stock === 0;
                     const hasDiscount =
                       size.originalPrice && size.originalPrice > size.price;
+                    // Per-size offer, so a size holding less than one full pack
+                    // never advertises a pack rate it can't honour.
+                    const sizePack = resolvePackPricing({
+                      packUnitPrice: size.packUnitPrice,
+                      packThreshold: size.packThreshold,
+                      packSavingsPct: size.packSavingsPct,
+                      unitPrice: size.price,
+                      quantity: 1,
+                      stock: size.stock,
+                      maxOrderQuantity: size.maxOrderQuantity,
+                      onSale: !!hasDiscount || !!size.discount,
+                    });
 
                     return (
                       <button
@@ -793,8 +923,22 @@ const ModalQuickview: React.FC = () => {
                             %
                           </div>
                         )}
+                        {sizePack.hasPackPricing && (
+                          <div
+                            className={`absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[8px] lg:text-[9px] font-bold rounded-full whitespace-nowrap shadow-sm flex items-center gap-0.5 ${
+                              isSelected
+                                ? "bg-amber-400 text-amber-900"
+                                : "bg-amber-500 text-white"
+                            }`}
+                          >
+                            <Icon.PiArchive size={8} />
+                            {sizePack.packSavingsPct
+                              ? `${sizePack.packSavingsPct}% off`
+                              : `${sizePack.packThreshold}-pack`}
+                          </div>
+                        )}
                         {isSelected && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full flex items-center justify-center">
+                          <div className="absolute -top-1 -left-1 w-4 h-4 bg-white rounded-full flex items-center justify-center">
                             <Icon.PiCheck
                               size={10}
                               className="text-orange-500"
@@ -805,6 +949,24 @@ const ModalQuickview: React.FC = () => {
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* Pack Pricing Card */}
+            {hasPackPricing && (
+              <div className="mb-4 lg:mb-5">
+                <PackPricingCard
+                  compact
+                  currencySymbol={displayCurrencySymbol}
+                  packUnitPrice={packPricing.packUnitPrice as number}
+                  packThreshold={packPricing.packThreshold as number}
+                  packSavingsPct={packPricing.packSavingsPct}
+                  normalPrice={displayPrice}
+                  quantity={quantity}
+                  packRateActive={packRateActive}
+                  packThresholdRemaining={packPricing.thresholdRemaining}
+                  onQuickAddPack={handleSetQuantityToPack}
+                />
               </div>
             )}
 
@@ -834,7 +996,15 @@ const ModalQuickview: React.FC = () => {
                   </button>
 
                   {/* Quantity Selector */}
-                  <div className="flex-1 flex items-center bg-gray-50 rounded-xl border-2 border-gray-200 p-1">
+                  <div
+                    className={`flex-1 flex items-center bg-gray-50 rounded-xl border-2 p-1 transition-colors ${
+                      packRateActive
+                        ? "border-amber-400 ring-2 ring-amber-200"
+                        : hasPackPricing
+                          ? "border-amber-200"
+                          : "border-gray-200"
+                    }`}
+                  >
                     <button
                       onClick={() => handleQuantityChange(-1)}
                       disabled={
@@ -844,8 +1014,17 @@ const ModalQuickview: React.FC = () => {
                     >
                       <Icon.PiMinus size={14} />
                     </button>
-                    <span className="flex-1 text-center font-bold text-sm">
-                      {quantity}
+                    <span className="flex-1 text-center">
+                      <span
+                        className={`block font-bold text-sm ${packRateActive ? "text-amber-600" : ""}`}
+                      >
+                        {quantity}
+                      </span>
+                      {packRateActive && (
+                        <span className="block text-[9px] text-amber-500 leading-none">
+                          pack rate
+                        </span>
+                      )}
                     </span>
                     <button
                       onClick={() => handleQuantityChange(1)}
@@ -879,7 +1058,9 @@ const ModalQuickview: React.FC = () => {
                       ? "bg-gray-200 text-gray-500 cursor-not-allowed"
                       : !inStock
                         ? "bg-red-100 text-red-600 cursor-not-allowed"
-                        : "bg-gray-900 text-white hover:bg-gray-800 shadow-lg"
+                        : packRateActive
+                          ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-300/40"
+                          : "bg-gray-900 text-white hover:bg-gray-800 shadow-lg"
                   }`}
                 >
                   {isAddingToCart ? (
@@ -903,11 +1084,33 @@ const ModalQuickview: React.FC = () => {
                       Add to Cart
                       <span className="text-xs opacity-70">
                         ({displayCurrencySymbol}
-                        {(displayPrice * quantity).toLocaleString()})
+                        {effectiveTotal.toLocaleString()})
                       </span>
                     </>
                   )}
                 </button>
+
+                {/* Pack nudge / savings under the button */}
+                {activeSize && inStock && hasPackPricing && (
+                  packRateActive ? (
+                    packPricing.totalSavings > 0 && (
+                      <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-green-600">
+                        <Icon.PiCheckCircle size={12} />
+                        You save {displayCurrencySymbol}
+                        {packPricing.totalSavings.toLocaleString()} at the pack rate
+                      </div>
+                    )
+                  ) : (
+                    <button
+                      onClick={handleSetQuantityToPack}
+                      className="text-[11px] font-medium text-amber-600 hover:text-amber-700 transition-colors"
+                    >
+                      Add {packPricing.thresholdRemaining} more to pay{" "}
+                      {displayCurrencySymbol}
+                      {(packPricing.packUnitPrice as number).toLocaleString()} each
+                    </button>
+                  )
+                )}
               </div>
             </div>
 

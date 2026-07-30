@@ -13,6 +13,8 @@ interface PackPricingCardProps {
   packRateActive: boolean;
   packThresholdRemaining: number;
   onQuickAddPack?: () => void;
+  /** Trims the side-by-side price comparison for narrow surfaces (quickview modal). */
+  compact?: boolean;
 }
 
 const formatPrice = (v: number) =>
@@ -30,6 +32,7 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
   packRateActive,
   packThresholdRemaining,
   onQuickAddPack,
+  compact = false,
 }) => {
   const normalTotal = normalPrice * packThreshold;
   const packTotal = packUnitPrice * packThreshold;
@@ -103,8 +106,9 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
           )}
         </div>
 
-        {/* Price comparison row */}
-        <div className="px-4 pb-3">
+        {/* Price comparison row — the quickview modal already shows both prices
+            in its header, so compact mode drops this grid. */}
+        <div className={`px-4 pb-3 ${compact ? 'hidden' : ''}`}>
           <div className="grid grid-cols-2 gap-2">
             {/* Normal price */}
             <div

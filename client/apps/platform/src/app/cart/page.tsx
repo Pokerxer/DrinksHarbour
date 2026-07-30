@@ -412,8 +412,10 @@ const CartPage = () => {
                             </span>
                           </div>
 
-                          {/* Pack price tag / nudge */}
-                          {item.packUnitPrice && item.packThreshold ? (
+                          {/* Pack price tag / nudge — suppressed when the seller
+                              can't fulfil a whole pack, so we never dangle a
+                              rate this line can't reach. */}
+                          {item.packUnitPrice && item.packThreshold && maxQty >= item.packThreshold ? (
                             (item.quantity || 1) >= item.packThreshold ? (
                               <span className="inline-block mt-1 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
                                 Pack price applied — {formatPrice(item.packUnitPrice)} each

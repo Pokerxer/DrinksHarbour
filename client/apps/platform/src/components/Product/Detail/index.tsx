@@ -23,9 +23,10 @@ import Rate from '@/components/Other/Rate';
 import ProductSpecifications from './ProductSpecifications';
 import ProductReviews from '@/components/Product/ProductReviews';
 import RelatedProducts from './RelatedProducts';
-import PackPricingCard from './PackPricingCard';
+import PackPricingCard from '@/components/Product/PackPricingCard';
 import { ProductType } from '@/types/product.types';
 import { pickDefaultSizeFrom } from '@/lib/default-variant';
+import { resolvePackPricing } from '@/lib/pack-pricing';
 import * as Icon from 'react-icons/pi';
 
 const VENDOR_PALETTE = [
@@ -228,27 +229,26 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   const displayCurrencySymbol = selectedSizeData?.currencySymbol || productData?.priceRange?.currencySymbol || '₦';
 
   // ── Pack pricing (quantity-triggered) ──────────────────────────────────────
-  // When the selected size is already on sale, do NOT also offer pack pricing.
-  // Stacking a sale discount and a pack discount over-discounts the item and is
-  // confusing to shoppers — the sale takes precedence. (Mirrors the size-card
-  // badge, which is hidden when the size has a discount.)
-  const sizeOnSale = showDetailDiscount;
-  const hasPackPricing = !!(
-    selectedSizeData?.packUnitPrice &&
-    selectedSizeData?.packThreshold &&
-    !sizeOnSale
-  );
-  const packRateActive = hasPackPricing && localQuantity >= (selectedSizeData!.packThreshold as number);
-  const effectiveUnitPrice = packRateActive
-    ? (selectedSizeData!.packUnitPrice as number)
-    : displayPrice;
-  const effectiveTotal = effectiveUnitPrice * localQuantity;
-  const packThresholdRemaining = hasPackPricing
-    ? Math.max(0, (selectedSizeData!.packThreshold as number) - localQuantity)
-    : 0;
-  const packTotalSavings = packRateActive
-    ? (displayPrice - effectiveUnitPrice) * localQuantity
-    : 0;
+  // Rules (sale precedence, and hiding packs the stock can't fulfil) live in
+  // lib/pack-pricing so the quickview modal and the cart agree with this page.
+  const packPricing = resolvePackPricing({
+    packUnitPrice: selectedSizeData?.packUnitPrice,
+    packThreshold: selectedSizeData?.packThreshold,
+    packSavingsPct: selectedSizeData?.packSavingsPct,
+    unitPrice: displayPrice,
+    quantity: localQuantity,
+    stock: selectedSizeData?.stock,
+    maxOrderQuantity: selectedSizeData?.maxOrderQuantity,
+    onSale: showDetailDiscount,
+  });
+  const {
+    hasPackPricing,
+    packRateActive,
+    effectiveUnitPrice,
+    effectiveTotal,
+    thresholdRemaining: packThresholdRemaining,
+    totalSavings: packTotalSavings,
+  } = packPricing;
 
   const discountPercentage = useMemo(() => {
     if (selectedSizeData?.discount?.percentage) {
@@ -278,6 +278,15 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     }
   }, [toast]);
 
+  // Switching size must not carry a quantity the new size can't fulfil — e.g.
+  // a 6-unit pack quantity surviving onto a size with 4 left.
+  useEffect(() => {
+    if (!selectedSizeData) return;
+    const minQty = selectedSizeData.minOrderQuantity || 1;
+    const maxQty = selectedSizeData.maxOrderQuantity || selectedSizeData.stock || 99;
+    setLocalQuantity((prev) => Math.min(Math.max(prev, minQty), Math.max(minQty, maxQty)));
+  }, [selectedSizeData]);
+
   const handleQuantityChange = useCallback((change: number) => {
     if (!selectedSizeData) return;
     const newQty = localQuantity + change;
@@ -289,10 +298,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   }, [localQuantity, selectedSizeData]);
 
   const handleSetQuantityToPack = useCallback(() => {
-    if (!selectedSizeData?.packThreshold) return;
-    const maxQty = selectedSizeData.maxOrderQuantity || selectedSizeData.stock || 99;
-    setLocalQuantity(Math.min(selectedSizeData.packThreshold, maxQty));
-  }, [selectedSizeData]);
+    if (!packPricing.packThreshold) return;
+    const maxQty = selectedSizeData?.maxOrderQuantity || selectedSizeData?.stock || 99;
+    setLocalQuantity(Math.min(packPricing.packThreshold, maxQty));
+  }, [packPricing.packThreshold, selectedSizeData]);
 
   const handleAddToCart = useCallback(async () => {
     if (!productData || !selectedSizeData || !selectedVendor) {
@@ -551,7 +560,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     </span>
                     <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-sm font-bold rounded-full flex items-center gap-1">
                       <Icon.PiArchive size={12} />
-                      Pack rate · Save {selectedSizeData?.packSavingsPct ?? 0}%
+                      Pack rate · Save {packPricing.packSavingsPct ?? 0}%
                     </span>
                   </>
                 ) : showDetailDiscount ? (
@@ -573,7 +582,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 )}
                 {hasPackPricing && !packRateActive && (
                   <span className="text-xs text-amber-500 font-medium ml-auto">
-                    from {displayCurrencySymbol}{(selectedSizeData!.packUnitPrice as number).toLocaleString('en-NG', { maximumFractionDigits: 0 })}/unit at {selectedSizeData!.packThreshold}+
+                    from {displayCurrencySymbol}{(packPricing.packUnitPrice as number).toLocaleString('en-NG', { maximumFractionDigits: 0 })}/unit at {packPricing.packThreshold}+
                   </span>
                 )}
               </div>
@@ -660,7 +669,19 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     {vendorSizes.map((size: VendorSize) => {
                       const isSelected = effectiveSize === size.size;
                       const isOutOfStock = size.stock === 0;
-                      
+                      // Per-size offer, so a size with less than one pack in
+                      // stock doesn't advertise a pack rate it can't honour.
+                      const sizePack = resolvePackPricing({
+                        packUnitPrice: size.packUnitPrice,
+                        packThreshold: size.packThreshold,
+                        packSavingsPct: size.packSavingsPct,
+                        unitPrice: size.price,
+                        quantity: 1,
+                        stock: size.stock,
+                        maxOrderQuantity: size.maxOrderQuantity,
+                        onSale: !!size.discount,
+                      });
+
                       return (
                         <button
                           key={size._id || size.size}
@@ -688,12 +709,12 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                               -{size.discount.percentage}%
                             </div>
                           )}
-                          {size.packUnitPrice && size.packThreshold && !isOutOfStock && !size.discount && (
+                          {sizePack.hasPackPricing && (
                             <div className={`absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-white text-[8px] sm:text-[9px] font-bold rounded-full whitespace-nowrap shadow-sm flex items-center gap-0.5 ${
                               isSelected ? 'bg-amber-400 text-amber-900' : 'bg-amber-500'
                             }`}>
                               <Icon.PiArchive size={8} />
-                              {size.packSavingsPct ? `${size.packSavingsPct}% off` : `${size.packThreshold}-pack`}
+                              {sizePack.packSavingsPct ? `${sizePack.packSavingsPct}% off` : `${sizePack.packThreshold}-pack`}
                             </div>
                           )}
                           {isSelected && (
@@ -712,9 +733,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
               {hasPackPricing && (
                 <PackPricingCard
                   currencySymbol={displayCurrencySymbol}
-                  packUnitPrice={selectedSizeData!.packUnitPrice as number}
-                  packThreshold={selectedSizeData!.packThreshold as number}
-                  packSavingsPct={selectedSizeData!.packSavingsPct ?? null}
+                  packUnitPrice={packPricing.packUnitPrice as number}
+                  packThreshold={packPricing.packThreshold as number}
+                  packSavingsPct={packPricing.packSavingsPct}
                   normalPrice={displayPrice}
                   quantity={localQuantity}
                   packRateActive={packRateActive}
