@@ -12,6 +12,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber, resolveOrderRecipient } = require('../utils/orderUtils');
 const { calcPlatformCostPrice, resolveRevenueRates, resolveLineRates, resolveEffectiveUnitPrice, calculateSizePricing, roundUpTo100, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const inventoryService = require('../services/inventory.service');
+const { applyOrderStatus, APPLICABLE_STATUSES } = require('../services/orderStatus.service');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
 const { normalizePaymentMethod, buildOrderPaymentFields } = require('../utils/paymentMethods');
 const { resolveGatewayPaymentMethod } = require('../services/payment.service');
@@ -838,11 +839,10 @@ exports.cancelOrder = asyncHandler(async (req, res) => {
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
 
-  const VALID_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
-  if (!VALID_STATUSES.includes(status)) {
+  if (!APPLICABLE_STATUSES.includes(status)) {
     return res.status(400).json({
       success: false,
-      message: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}`,
+      message: `Invalid status. Must be one of: ${APPLICABLE_STATUSES.join(', ')}`,
     });
   }
 
@@ -860,38 +860,13 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     }
   }
 
-  const previousStatus = order.status;
-  order.status = status;
-
-  const now = new Date();
-  if (status === 'confirmed'  && !order.confirmedAt)  order.confirmedAt  = now;
-  if (status === 'processing' && !order.processingAt) order.processingAt = now;
-  if (status === 'shipped'    && !order.shippedAt)    order.shippedAt    = now;
-  if (status === 'delivered'  && !order.deliveredAt)  order.deliveredAt  = now;
-  if (status === 'cancelled') {
-    order.cancelledAt  = now;
-    order.cancelReason = req.body.reason || 'Cancelled by admin';
-  }
-
-  await order.save();
-
-  // ── Inventory adjustments on status change ───────────────────────────────
-  const stockItems = order.items.filter(i => i.subproduct);
-  if (stockItems.length) {
-    if (status === 'shipped' && previousStatus !== 'shipped') {
-      // Item is leaving the warehouse: decrement totalStock + reservedStock
-      inventoryService.commitShipment(stockItems, order._id, req.user?._id).catch(() => {});
-    } else if (status === 'cancelled' && previousStatus !== 'cancelled') {
-      if (inventoryService.isShipped(previousStatus)) {
-        // Already shipped: restore physical stock (item returned)
-        inventoryService.restoreStock(stockItems, order._id, req.user?._id).catch(() => {});
-      } else {
-        // Not yet shipped: release reservation only
-        inventoryService.releaseReserve(stockItems, order._id, req.user?._id).catch(() => {});
-      }
-    }
-  }
-  // ─────────────────────────────────────────────────────────────────────────
+  // Timestamps, save, and the inventory side effects all live in
+  // orderStatus.service so the logistics dispatch module moves orders through
+  // exactly the same path.
+  const { previousStatus } = await applyOrderStatus(order, status, {
+    actorId: req.user?._id,
+    cancelReason: req.body.reason,
+  });
 
   res.status(200).json({
     success: true,

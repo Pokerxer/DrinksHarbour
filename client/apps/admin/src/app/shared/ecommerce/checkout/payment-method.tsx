@@ -21,8 +21,19 @@ import {
   PiCaretDownBold,
   PiCheckCircleFill,
   PiLockKeyLight,
+  PiCreditCard,
+  PiBank,
+  PiMoney,
 } from 'react-icons/pi';
 import { paymentMethodData } from '@/data/checkout-data';
+
+// DrinksHarbour payment methods render as icons (no external gateway logos);
+// the data carries an `icon` key, with `image` kept for legacy data.
+const PAYMENT_ICONS: Record<string, React.ReactNode> = {
+  'credit-card': <PiCreditCard className="h-8 w-8 text-gray-500" />,
+  bank: <PiBank className="h-8 w-8 text-gray-500" />,
+  cash: <PiMoney className="h-8 w-8 text-gray-500" />,
+};
 
 type CardExpiredType = NumberInputProps & {
   isMask?: boolean;
@@ -202,13 +213,19 @@ export default function PaymentMethod({ className }: { className?: string }) {
                 >
                   <span className="flex flex-col gap-4 py-6 ps-3.5 @md:flex-row @md:items-center @md:gap-6">
                     <span className="inline-flex @md:shrink-0">
-                      <Image
-                        src={item.image}
-                        alt={item.name}
-                        height={60}
-                        width={80}
-                        className="object-contain"
-                      />
+                      {item.icon ? (
+                        <span className="flex h-[60px] w-[80px] items-center justify-center rounded-lg bg-gray-100">
+                          {PAYMENT_ICONS[item.icon]}
+                        </span>
+                      ) : (
+                        <Image
+                          src={item.image}
+                          alt={item.name}
+                          height={60}
+                          width={80}
+                          className="object-contain"
+                        />
+                      )}
                     </span>
                     <span className="block">
                       <Title

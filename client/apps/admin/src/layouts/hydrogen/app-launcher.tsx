@@ -3,110 +3,39 @@
 import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   PiCaretLeftBold,
-  PiDotsNineBold,
-  PiSquaresFourDuotone,
+  PiHouseDuotone,
 } from 'react-icons/pi';
 import cn from '@core/utils/class-names';
-import { menuItems } from '@/layouts/hydrogen/menu-items';
-import {
-  tenantMenuItems,
-  isSection,
-  planAllows,
-} from '@/layouts/hydrogen/tenant-menu-items';
 import { useAppLauncher } from '@/layouts/hydrogen/hydrogen-sidebar-utils';
 import { useTenant } from '@/context/TenantContext';
 import { TENANT_ROLES } from '@/types/authorization';
 import HeaderMenuRight from '@/layouts/header-menu-right';
+import {
+  buildPlatformGroups,
+  buildTenantGroups,
+} from '@/layouts/hydrogen/app-launcher-utils';
 
-// ── Tile model ──────────────────────────────────────────────────────────────────
-type Tile = { name: string; href: string; icon: React.ReactNode };
-
-const DefaultIcon = <PiSquaresFourDuotone />;
-
-/**
- * Resolve a navigable href for a menu entry. Top-level entries that are pure
- * dropdown parents use '#' as their href — fall back to their first real child.
- */
-function resolveHref(item: {
-  href?: string;
-  dropdownItems?: { href: string }[];
-}): string | null {
-  if (item.href && item.href !== '#') return item.href;
-  const child = item.dropdownItems?.find((d) => d.href && d.href !== '#');
-  return child?.href ?? null;
-}
-
-type Group = { label: string | null; tiles: Tile[] };
-
-// Mirror SidebarMenu's selection logic so the launcher never becomes a second
-// source of truth — it reads the exact same menu data the sidebar rendered,
-// preserving its section grouping. Names are de-duplicated across all groups.
-function buildPlatformGroups(isPlatformAdmin: boolean): Group[] {
-  const groups: Group[] = [];
-  const seen = new Set<string>();
-  let cur: Group = { label: null, tiles: [] };
-  const flush = () => {
-    if (cur.tiles.length) groups.push(cur);
-  };
-  for (const item of menuItems as any[]) {
-    if (!item?.href) {
-      // section label
-      flush();
-      cur = { label: item.name, tiles: [] };
-      continue;
-    }
-    if (item.platformOnly && !isPlatformAdmin) continue;
-    const href = resolveHref(item);
-    if (!href || seen.has(item.name)) continue;
-    seen.add(item.name);
-    cur.tiles.push({ name: item.name, href, icon: item.icon ?? DefaultIcon });
-  }
-  flush();
-  return groups;
-}
-
-function buildTenantGroups(plan?: string): Group[] {
-  const groups: Group[] = [];
-  const seen = new Set<string>();
-  let cur: Group = { label: null, tiles: [] };
-  const flush = () => {
-    if (cur.tiles.length) groups.push(cur);
-  };
-  for (const entry of tenantMenuItems) {
-    if (isSection(entry)) {
-      flush();
-      cur = { label: entry.label, tiles: [] };
-      continue;
-    }
-    if (entry.requiredPlan && !planAllows(plan, entry.requiredPlan)) continue;
-    const href = resolveHref(entry);
-    if (!href || seen.has(entry.name)) continue;
-    seen.add(entry.name);
-    cur.tiles.push({ name: entry.name, href, icon: entry.icon ?? DefaultIcon });
-  }
-  flush();
-  return groups;
-}
-
-// ── Launcher button (placed in page headers to open the overlay) ─────────────────
+// ── Home button (placed in page headers) ──────────────────────────────────────
+// Opens the homepage — which is designed as the app menu — instead of the old
+// full-screen sidebar-menu overlay.
 export function LauncherButton({ className }: { className?: string }) {
-  const { setOpen } = useAppLauncher();
+  const router = useRouter();
   return (
     <button
       type="button"
-      onClick={() => setOpen(true)}
-      aria-label="Open app launcher"
-      title="Apps"
+      onClick={() => router.push('/')}
+      aria-label="Home"
+      title="Home"
       className={cn(
         'group flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-sm transition-all hover:-translate-y-px hover:border-[#b20202]/40 hover:bg-[#b20202] hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b20202]/40 active:translate-y-0',
         className
       )}
     >
-      <PiDotsNineBold className="h-[18px] w-[18px] transition-transform group-hover:scale-110" />
+      <PiHouseDuotone className="h-[18px] w-[18px] transition-transform group-hover:scale-110" />
     </button>
   );
 }
@@ -123,9 +52,10 @@ export default function AppLauncher() {
   const isPlatformAdmin = ['super_admin', 'admin'].includes(role);
 
   const groups = useMemo(() => {
-    if (!isMainSite || isTenantUser) return buildTenantGroups(tenant?.plan);
+    if (!isMainSite || isTenantUser)
+      return buildTenantGroups(tenant?.plan, role);
     return buildPlatformGroups(isPlatformAdmin);
-  }, [isMainSite, isTenantUser, isPlatformAdmin, tenant?.plan]);
+  }, [isMainSite, isTenantUser, isPlatformAdmin, role, tenant?.plan]);
 
   const hasTiles = groups.some((g) => g.tiles.length > 0);
 

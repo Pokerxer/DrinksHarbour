@@ -235,10 +235,6 @@ export const menuItems = [
         name: 'Snippets',
         href: routes.support.snippets,
       },
-      {
-        name: 'Templates',
-        href: routes.support.templates,
-      },
     ],
   },
   {

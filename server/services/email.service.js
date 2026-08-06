@@ -1407,6 +1407,91 @@ const sendTenantApplicationNotificationToAdmin = async ({
   });
 };
 
+// ─── Appraisals: nudge ───────────────────────────────────────────────────────
+/**
+ * Remind one person that an appraisal is waiting on them.
+ *
+ * Content rule, and it is a privacy rule not a style one: this email NEVER
+ * names another reviewer. A peer being chased already knows whose 360 they
+ * agreed to review, so the caller may pass nothing about the subject at all —
+ * and deliberately doesn't. The only names here are the recipient's own and
+ * the cycle's.
+ *
+ * Returns sendEmail's `{success, ...}` result unchanged. It never throws (it
+ * catches internally and returns `{success:false, error}`), so a caller MUST
+ * test `.success` rather than assume "no exception" means delivered — this
+ * repo has already shipped a mailer that fell back to dev mode on a 535 and
+ * still logged a tick, and every order confirmation for that period went
+ * silently unsent.
+ */
+const NUDGE_REASON_COPY = {
+  nominate: {
+    title: 'Nominate your peer reviewers',
+    line: 'Your appraisal is waiting on you to nominate the colleagues you would like feedback from.',
+  },
+  approve_peers: {
+    title: 'Peer nominations need your decision',
+    line: 'An appraisal you manage is waiting on you to approve or decline the nominated peer reviewers.',
+  },
+  feedback: {
+    title: 'Your feedback is still outstanding',
+    line: 'A review form assigned to you has not been submitted yet.',
+  },
+  summarise: {
+    title: 'An appraisal summary is outstanding',
+    line: 'An appraisal you manage is waiting on your summary and release.',
+  },
+  acknowledge: {
+    title: 'Your appraisal is ready to acknowledge',
+    line: 'Your appraisal has been released and is waiting on your acknowledgement.',
+  },
+};
+
+const sendAppraisalNudgeEmail = async ({ to, name, cycleName, reason, deadline, link }) => {
+  if (!to) {
+    // Reported, never swallowed: with no address there is nothing to send, and
+    // a caller that treated this as a success would tell HR to stop chasing.
+    return { success: false, error: 'No email address on file for this person' };
+  }
+
+  const copy = NUDGE_REASON_COPY[reason] || {
+    title: 'An appraisal is waiting on you',
+    line: 'An appraisal task assigned to you is still outstanding.',
+  };
+  const deadlineLabel = deadline
+    ? new Date(deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null;
+
+  const html = emailShell({
+    accentColor: '#b45309',
+    accentLabel: '&#9200; Appraisal Reminder',
+    accentSubtitle: cycleName ? `${cycleName}` : 'Performance review',
+    body: `
+      <p style="font-size:16px;color:#374151;margin:0 0 16px 0;">Hi ${name || 'there'},</p>
+      <p style="font-size:16px;color:#111827;font-weight:600;margin:0 0 8px 0;">${copy.title}</p>
+      <p style="font-size:15px;color:#374151;margin:0 0 20px 0;">${copy.line}</p>
+      ${deadlineLabel ? `
+      <p style="font-size:14px;color:#b45309;margin:0 0 20px 0;">
+        <strong>Deadline:</strong> ${deadlineLabel}
+      </p>` : ''}
+      ${link ? `
+      <p style="margin:0 0 24px 0;">
+        <a href="${link}" style="display:inline-block;background:${GOLD};color:#1f1300;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px;">Open your appraisals</a>
+      </p>` : ''}
+      <p style="font-size:13px;color:#9ca3af;margin:0;">
+        You are receiving this because someone in HR sent a reminder. Reply to your HR team if this reached you in error.
+      </p>
+    `,
+    footerNote: 'Performance & Appraisals — DrinksHarbour',
+  });
+
+  return sendEmail({
+    to,
+    subject: cycleName ? `Reminder: ${copy.title} — ${cycleName}` : `Reminder: ${copy.title}`,
+    html,
+  });
+};
+
 module.exports = {
   sendEmail,
   initializeEmailService,
@@ -1425,4 +1510,5 @@ module.exports = {
   sendGiftCardEmail,
   sendTenantApplicationReceivedEmail,
   sendTenantApplicationNotificationToAdmin,
+  sendAppraisalNudgeEmail,
 };

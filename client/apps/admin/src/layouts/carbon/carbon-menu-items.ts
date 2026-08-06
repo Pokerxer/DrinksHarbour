@@ -267,10 +267,6 @@ export const carbonMenuItems: MenuItemsType[] = [
             name: 'Snippets',
             href: routes.support.snippets,
           },
-          {
-            name: 'Templates',
-            href: routes.support.templates,
-          },
         ],
       },
       {

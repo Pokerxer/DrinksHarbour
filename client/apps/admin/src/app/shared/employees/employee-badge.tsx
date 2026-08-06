@@ -117,7 +117,10 @@ export default function EmployeeBadge({
       const photo = employee.avatar ? await toDataUrl(employee.avatar) : null;
       if (photo) {
         try {
-          doc.addImage(photo, 'JPEG', px, py, pSize, pSize, undefined, 'FAST');
+          // No format argument: jsPDF sniffs the MIME type from the data URL,
+          // so WebP/PNG avatars rasterise correctly instead of being forced
+          // through a corrupt JPEG decode.
+          doc.addImage(photo, px, py, pSize, pSize, undefined, 'FAST');
         } catch {
           /* ignore unsupported image format */
         }

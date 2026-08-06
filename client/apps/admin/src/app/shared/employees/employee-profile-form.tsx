@@ -214,8 +214,19 @@ export function employeeToForm(e: Employee): EmployeeInput {
   const normProfile: EmployeeProfile = {
     ...EMPTY_PROFILE,
     ...ep,
-    personal: { ...ep.personal, birthday: toDay(ep.personal?.birthday) },
-    appraisal: { nextAppraisalDate: toDay(ep.appraisal?.nextAppraisalDate) },
+    // Deep-merge the date-bearing sections instead of replacing them, so
+    // sibling fields (and the empty-form defaults when the API omitted the
+    // section entirely) survive the yyyy-mm-dd normalisation.
+    personal: {
+      ...EMPTY_PROFILE.personal,
+      ...ep.personal,
+      birthday: toDay(ep.personal?.birthday),
+    },
+    appraisal: {
+      ...EMPTY_PROFILE.appraisal,
+      ...ep.appraisal,
+      nextAppraisalDate: toDay(ep.appraisal?.nextAppraisalDate),
+    },
   };
   return {
     firstName: e.firstName,

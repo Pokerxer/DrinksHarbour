@@ -13,9 +13,11 @@ import {
   tenantMenuItems,
   isSection,
   planAllows,
+  roleAllows,
+  type TenantMenuEntry,
 } from '@/layouts/hydrogen/tenant-menu-items';
-import type { TenantMenuEntry } from '@/layouts/hydrogen/tenant-menu-items';
 import StatusBadge from '@core/components/get-status-badge';
+import MailUnreadBadge from '@/layouts/hydrogen/mail-unread-badge';
 import { useTenant } from '@/context/TenantContext';
 import { useSession } from 'next-auth/react';
 import { TENANT_ROLES } from '@/types/authorization';
@@ -24,6 +26,23 @@ import { TENANT_ROLES } from '@/types/authorization';
 
 /** A section label is an entry with a name but no href. */
 const isPlatformSection = (item: any) => !item?.href;
+
+/**
+ * Live badges, keyed by the `liveBadge` marker a menu entry carries.
+ *
+ * Kept out of the menu config because that file is imported by server
+ * components; a badge is a client component that polls. Every one of these must
+ * render nothing when it has no number — the sidebar is on every page, and a
+ * badge that shows an error or a placeholder zero would be permanent noise.
+ */
+const LIVE_BADGES: Record<string, () => JSX.Element | null> = {
+  'mail-unread': MailUnreadBadge,
+};
+
+function LiveBadge({ name }: { name?: string }) {
+  const Badge = name ? LIVE_BADGES[name] : undefined;
+  return Badge ? <Badge /> : null;
+}
 
 /**
  * True when `pathname` is `href` or lives under it, so deep routes such as
@@ -209,6 +228,7 @@ function PlatformSidebarMenu() {
                         </span>
                       )}
                       <span className="truncate">{item.name}</span>
+                      <LiveBadge name={item?.liveBadge} />
                     </div>
                     {item?.badge?.length ? (
                       <StatusBadge status={item?.badge} />
@@ -239,9 +259,11 @@ function PlatformSidebarMenu() {
 function TenantSidebarMenu({
   accentColor,
   plan,
+  role,
 }: {
   accentColor: string;
   plan?: string;
+  role?: string;
 }) {
   const pathname = usePathname();
 
@@ -249,12 +271,33 @@ function TenantSidebarMenu({
   const activeBorderStyle = { backgroundColor: accentColor };
   const activeBgStyle = { backgroundColor: `${accentColor}12` };
 
-  // Filter out items the plan doesn't allow, then remove sections with no visible items
+  // Filter out items the plan/role doesn't allow (top-level AND dropdown
+  // children), prune dropdown parents left with nothing to link to, then
+  // remove sections with no visible items.
   const visibleItems = (() => {
-    const allowed = tenantMenuItems.filter((entry) => {
-      if (isSection(entry)) return true; // keep sections for now, prune below
-      return !entry.requiredPlan || planAllows(plan, entry.requiredPlan);
-    });
+    const allowed = tenantMenuItems
+      .filter((entry) => {
+        if (isSection(entry)) return true; // keep sections for now, prune below
+        const planOk =
+          !entry.requiredPlan || planAllows(plan, entry.requiredPlan);
+        const roleOk = !entry.minRole || roleAllows(role, entry.minRole);
+        return planOk && roleOk;
+      })
+      .map((entry) => {
+        if (isSection(entry) || !entry.dropdownItems) return entry;
+        const dropdownItems = entry.dropdownItems.filter(
+          (d) => !d.minRole || roleAllows(role, d.minRole)
+        );
+        return { ...entry, dropdownItems };
+      })
+      // A dropdown parent whose children were all filtered out has nothing
+      // left to link to — its own href is just the `#` placeholder.
+      .filter(
+        (entry) =>
+          isSection(entry) ||
+          !entry.dropdownItems ||
+          entry.dropdownItems.length > 0
+      );
 
     // Remove sections that have no items following them before the next section
     const result: TenantMenuEntry[] = [];
@@ -406,6 +449,7 @@ function TenantSidebarMenu({
                     </span>
                   )}
                   <span className="truncate">{item.name}</span>
+                  <LiveBadge name={item.liveBadge} />
                 </div>
                 {item.badge?.length ? (
                   <StatusBadge status={item.badge} />
@@ -432,7 +476,13 @@ export function SidebarMenu() {
 
   if (!isMainSite || isTenantUser) {
     const accentColor = tenant?.primaryColor || '#dc2626';
-    return <TenantSidebarMenu accentColor={accentColor} plan={tenant?.plan} />;
+    return (
+      <TenantSidebarMenu
+        accentColor={accentColor}
+        plan={tenant?.plan}
+        role={role}
+      />
+    );
   }
 
   return <PlatformSidebarMenu />;

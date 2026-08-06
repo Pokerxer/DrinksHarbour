@@ -7,24 +7,24 @@ import {
   FormProvider,
   type SubmitHandler,
 } from 'react-hook-form';
-import { useSetAtom } from 'jotai';
+import { useSetAtom, useAtomValue } from 'jotai';
 import toast from 'react-hot-toast';
 import isEmpty from 'lodash/isEmpty';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import DifferentBillingAddress from '@/app/shared/ecommerce/order/order-form/different-billing-address';
-import { orderData } from '@/app/shared/ecommerce/order/order-form/form-utils';
 import AddressInfo from '@/app/shared/ecommerce/order/order-form/address-info';
 import ShippingMethod from '@/app/shared/ecommerce/checkout/shipping-method';
 import PaymentMethod from '@/app/shared/ecommerce/checkout/payment-method';
 import OrderSummery from '@/app/shared/ecommerce/checkout/order-summery';
 import OrderNote from '@/app/shared/ecommerce/checkout/order-note';
-import { DUMMY_ID } from '@/config/constants';
 import { routes } from '@/config/routes';
 import { Text } from 'rizzui';
 import cn from '@core/utils/class-names';
 import {
   billingAddressAtom,
+  couponCodeAtom,
   orderNoteAtom,
   shippingAddressAtom,
 } from '@/store/checkout';
@@ -32,7 +32,17 @@ import {
   CreateOrderInput,
   orderFormSchema,
 } from '@/validators/create-order.schema';
+import { orderService } from '@/services/order.service';
+import { useCart } from '@/store/quick-cart/cart.context';
 import { useState } from 'react';
+
+/** Split "First Last" into first/last names for the order's customer block. */
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/);
+  const firstName = parts[0] ?? '';
+  const lastName = parts.slice(1).join(' ') || firstName;
+  return { firstName, lastName };
+}
 
 // main order form component for create and update order
 export default function CheckoutPageWrapper({
@@ -42,16 +52,21 @@ export default function CheckoutPageWrapper({
 }) {
   const [isLoading, setLoading] = useState(false);
   const router = useRouter();
+  const { data: session } = useSession();
+  const token = (session?.user as any)?.token as string | undefined;
+
+  const { items, total, resetCart } = useCart();
   const setOrderNote = useSetAtom(orderNoteAtom);
   const setBillingAddress = useSetAtom(billingAddressAtom);
   const setShippingAddress = useSetAtom(shippingAddressAtom);
+  const couponCode = useAtomValue(couponCodeAtom);
 
   const methods = useForm({
     mode: 'onChange',
     resolver: zodResolver(orderFormSchema),
     defaultValues: {
-      sameShippingAddress: orderData.sameShippingAddress,
-      shippingMethod: orderData.shippingMethod,
+      sameShippingAddress: true,
+      paymentMethod: 'cash_on_delivery',
     },
   });
 
@@ -60,29 +75,109 @@ export default function CheckoutPageWrapper({
     name: 'sameShippingAddress',
   });
 
-  const onSubmit: SubmitHandler<CreateOrderInput> = (data) => {
-    // set timeout ony required to display loading state of the create order button
-    setOrderNote(data?.note as string);
-    if (sameShippingAddress) {
-      setBillingAddress(data.billingAddress);
-      setShippingAddress(data.billingAddress);
-    } else {
-      if (!isEmpty(data.shippingAddress)) {
-        setShippingAddress(data.shippingAddress);
-      }
+  const onSubmit: SubmitHandler<CreateOrderInput> = async (data) => {
+    if (!token) {
+      toast.error(<Text as="b">You must be signed in to place an order.</Text>);
+      return;
     }
 
+    if (isEmpty(items)) {
+      toast.error(<Text as="b">Your cart is empty.</Text>);
+      return;
+    }
+
+    const billing = data.billingAddress;
+    const shipping = sameShippingAddress
+      ? billing
+      : data.shippingAddress && data.shippingAddress.street
+        ? data.shippingAddress
+        : billing;
+
+    // The server requires a valid customer email (order notifications).
+    if (!billing.email?.trim()) {
+      toast.error(
+        <Text as="b">Customer email is required to place an order.</Text>
+      );
+      return;
+    }
+
+    // A toggled "different shipping address" must actually be filled in.
+    if (!sameShippingAddress && !data.shippingAddress?.street) {
+      toast.error(
+        <Text as="b">Please complete the shipping address fields.</Text>
+      );
+      return;
+    }
+
+    // Real orders need a backend product/sub-product reference per line.
+    const orderItems = items.map((item) => ({
+      subProductId: item.subProductId,
+      productId: item.productId || (typeof item.id === 'string' ? item.id : undefined),
+      sizeId: item.sizeId,
+      quantity: item.quantity,
+      price: item.price,
+    }));
+    if (orderItems.some((i) => !i.subProductId && !i.productId)) {
+      toast.error(
+        <Text as="b">
+          Some items in your cart are missing product data and cannot be
+          ordered yet.
+        </Text>
+      );
+      return;
+    }
+
+    setOrderNote(data?.note as string);
+    if (sameShippingAddress) {
+      setBillingAddress(billing);
+      setShippingAddress(billing);
+    } else if (!isEmpty(data.shippingAddress)) {
+      setShippingAddress(data.shippingAddress);
+    }
+
+    const { firstName, lastName } = splitName(billing.customerName);
+
     setLoading(true);
+    try {
+      const order = await orderService.createOrder(token, {
+        customer: {
+          firstName,
+          lastName,
+          email: billing.email.trim(),
+          phone: billing.phoneNumber,
+        },
+        shipping: {
+          address: shipping.street,
+          city: shipping.city,
+          state: shipping.state,
+          zipCode: shipping.zip,
+          country: shipping.country,
+        },
+        paymentMethod: data.paymentMethod || 'cash_on_delivery',
+        items: orderItems,
+        subtotal: total,
+        total,
+        note: data?.note || undefined,
+        couponCode: couponCode || undefined,
+      });
 
-    setTimeout(() => {
+      resetCart();
+      toast.success(
+        <Text as="b">
+          Order {order.orderNumber} placed successfully!
+        </Text>
+      );
+      router.push(routes.eCommerce.orderDetails(order._id));
+    } catch (err) {
+      toast.error(
+        <Text as="b">
+          {(err as Error).message || 'Failed to place order. Please try again.'}
+        </Text>
+      );
+    } finally {
       setLoading(false);
-      console.log('checkout_data', data);
-      router.push(routes.eCommerce.orderDetails(DUMMY_ID));
-      toast.success(<Text as="b">Order placed successfully!</Text>);
-    }, 600);
+    }
   };
-
-  // console.log('errors', methods.formState.errors);
 
   return (
     <FormProvider {...methods}>

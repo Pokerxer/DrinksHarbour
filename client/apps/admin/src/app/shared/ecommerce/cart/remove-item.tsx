@@ -8,7 +8,8 @@ import cn from '@core/utils/class-names';
 import { useCart } from '@/store/quick-cart/cart.context';
 
 interface RemoveItemProps {
-  productID: number;
+  // CartItem.id is number for demo data, string (Mongo _id) for API data.
+  productID: number | string;
   className?: string;
   placement: Placement;
 }

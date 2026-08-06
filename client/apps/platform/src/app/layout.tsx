@@ -32,6 +32,7 @@ const FooterPlacementBanner = dynamic(() => import("@/components/Banner/Placemen
 // client-only (ssr: false). That option is only valid inside a Client Component,
 // so they live in ClientOverlays rather than being imported here directly.
 import ClientOverlays from "@/components/Layout/ClientOverlays";
+import ExtensionNoiseGuard from "@/components/Layout/ExtensionNoiseGuard";
 
 const elmsSans = Elms_Sans({
   subsets: ["latin"],
@@ -259,6 +260,11 @@ export default async function RootLayout({
             <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
           </head>
           <body className={`${elmsSans.className} ${kavoon.variable}`}>
+            {/* Inline at HTML-parse time — BEFORE the Next.js bundle registers
+                its dev-overlay error listeners — so wallet-extension errors
+                (MetaMask etc.) are stopped at the window before the overlay
+                can capture them. Renders nothing; never touches app errors. */}
+            <ExtensionNoiseGuard />
             {/* Speculation Rules — prerender likely navigations on hover */}
             <script type="speculationrules">
               {JSON.stringify({

@@ -8,6 +8,13 @@ const addressSchema = z.object({
       required_error: messages.phoneNumberIsRequired,
     })
     .min(2, { message: messages.phoneNumberIsRequired }),
+  // Optional here so the shared admin order-create form isn't forced to
+  // collect it; the storefront checkout validates it before submitting.
+  email: z
+    .string()
+    .email({ message: messages.emailIsRequired })
+    .optional()
+    .or(z.literal('')),
   country: z.string().min(1, { message: messages.countryIsRequired }),
   state: z.string().min(1, { message: messages.stateIsRequired }),
   city: z.string().min(1, { message: messages.cityIsRequired }),
@@ -23,6 +30,11 @@ export const orderFormSchema = z.object({
     .object({
       customerName: z.string().optional(),
       phoneNumber: z.string().optional(),
+      email: z
+        .string()
+        .email({ message: messages.emailIsRequired })
+        .optional()
+        .or(z.literal('')),
       country: z.string().optional(),
       state: z.string().optional(),
       city: z.string().optional(),

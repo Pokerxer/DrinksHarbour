@@ -23,6 +23,8 @@ import {
   PiStorefront,
   PiWarningCircle,
   PiIdentificationCard,
+  PiPauseCircle,
+  PiPlayCircle,
 } from 'react-icons/pi';
 import {
   employeeService,
@@ -177,6 +179,10 @@ export default function EmployeesList() {
   const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
+  const sessionUserId =
+    (session?.user as { id?: string; _id?: string })?.id ??
+    (session?.user as { id?: string; _id?: string })?._id ??
+    '';
 
   const [items, setItems] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -188,9 +194,16 @@ export default function EmployeesList() {
   const [form, setForm] = useState<EmployeeInput>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [badgeFor, setBadgeFor] = useState<Employee | null>(null);
+  // Employee id currently being toggled by the quick suspend/activate action.
+  const [toggling, setToggling] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      // No session yet (or not authenticated) — stop the skeletons instead of
+      // leaving the page spinning forever.
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await employeeService.getEmployees(token);
@@ -251,6 +264,10 @@ export default function EmployeesList() {
       toast.error('The tenant owner cannot be removed');
       return;
     }
+    if (sessionUserId && e._id === sessionUserId) {
+      toast.error('You cannot remove your own account');
+      return;
+    }
     if (!confirm(`Remove ${fullName(e)}? They will lose all access.`)) return;
     try {
       await employeeService.removeEmployee(e._id, token);
@@ -258,6 +275,27 @@ export default function EmployeesList() {
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Remove failed');
+    }
+  };
+
+  // Quick suspend/activate straight from the list. Only ever touches status,
+  // never role/pos fields; the owner is skipped because the server refuses it.
+  const toggleStatus = async (e: Employee) => {
+    if (e.role === 'tenant_owner') return;
+    const next: EmployeeStatus = e.status === 'active' ? 'suspended' : 'active';
+    setToggling(e._id);
+    try {
+      await employeeService.updateEmployee(e._id, { status: next }, token);
+      toast.success(
+        next === 'active'
+          ? `${fullName(e)} is active again`
+          : `${fullName(e)} suspended`
+      );
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update failed');
+    } finally {
+      setToggling(null);
     }
   };
 
@@ -540,6 +578,33 @@ export default function EmployeesList() {
                             type="button"
                             onClick={(ev) => {
                               ev.stopPropagation();
+                              toggleStatus(e);
+                            }}
+                            disabled={
+                              e.role === 'tenant_owner' ||
+                              toggling === e._id
+                            }
+                            title={
+                              e.role === 'tenant_owner'
+                                ? 'The owner cannot be suspended'
+                                : e.status === 'active'
+                                  ? 'Suspend access'
+                                  : 'Reactivate'
+                            }
+                            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-amber-50 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                          >
+                            {toggling === e._id ? (
+                              <PiArrowsClockwise className="h-4 w-4 animate-spin" />
+                            ) : e.status === 'active' ? (
+                              <PiPauseCircle className="h-4 w-4" />
+                            ) : (
+                              <PiPlayCircle className="h-4 w-4" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
                               setBadgeFor(e);
                             }}
                             title="Generate badge"
@@ -564,11 +629,18 @@ export default function EmployeesList() {
                               ev.stopPropagation();
                               remove(e);
                             }}
-                            disabled={e.role === 'tenant_owner'}
+                            disabled={
+                              e.role === 'tenant_owner' ||
+                              (sessionUserId !== '' &&
+                                e._id === sessionUserId)
+                            }
                             title={
                               e.role === 'tenant_owner'
                                 ? 'The owner cannot be removed'
-                                : 'Remove'
+                                : sessionUserId !== '' &&
+                                    e._id === sessionUserId
+                                  ? 'You cannot remove your own account'
+                                  : 'Remove'
                             }
                             className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
                           >

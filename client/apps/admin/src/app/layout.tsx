@@ -9,8 +9,11 @@ import { JotaiProvider, ThemeProvider } from '@/app/shared/theme-provider';
 import { siteConfig } from '@/config/site.config';
 import { inter, lexendDeca } from '@/app/fonts';
 import cn from '@core/utils/class-names';
-import { TenantProvider } from '@/context/TenantContext';
-import type { AdminTenantData } from '@/context/TenantContext';
+import {
+  TenantProvider,
+  type AdminTenantData,
+} from '@/context/TenantContext';
+import ExtensionErrorFilter from '@/components/extension-error-filter';
 // import NextProgress from '@core/components/next-progress';
 // import ChatbotWidget from '@/components/Chatbot/ChatbotWidget';
 
@@ -30,6 +33,52 @@ export const viewport = {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+// Runs at HTML-parse time, BEFORE the Next.js bundle (and therefore before
+// the dev overlay) registers its window 'error' / 'unhandledrejection'
+// listeners. Wallet extensions (MetaMask etc.) inject inpage.js at
+// document_start and throw/log "Failed to connect to MetaMask" whenever
+// their background service worker is unreachable. Those errors are
+// dispatched at window, so listeners fire in registration order — by
+// registering first we can stopImmediatePropagation() them away from the
+// overlay entirely. Extension-only markers; a real app error never
+// contains them. (See components/extension-error-filter.tsx for the
+// post-hydration console.error re-wrap, which stays as defense-in-depth.)
+const EXTENSION_NOISE_GUARD_SCRIPT = `(function () {
+  var schemeRe = /^(chrome|moz|safari|edge|brave)-extension:\\/\\//i;
+  var noiseRe = /MetaMask|metamask|inpage\\.js|contentscript\\.js/i;
+  function textOf(value) {
+    if (!value) return String(value);
+    return value.stack || value.message || String(value);
+  }
+  function isNoise(text) {
+    return !!(text && (schemeRe.test(text) || noiseRe.test(text)));
+  }
+  function onError(evt) {
+    if (isNoise(textOf(evt.error)) || isNoise(evt.filename)) {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+    }
+  }
+  function onRejection(evt) {
+    if (isNoise(textOf(evt.reason))) {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+    }
+  }
+  window.addEventListener('error', onError, true);
+  window.addEventListener('unhandledrejection', onRejection, true);
+  var originalConsoleError = window.console.error.bind(window.console);
+  window.console.error = function () {
+    var parts = [];
+    for (var i = 0; i < arguments.length; i++) {
+      parts.push(textOf(arguments[i]));
+    }
+    if (!isNoise(parts.join(' '))) {
+      originalConsoleError.apply(window.console, arguments);
+    }
+  };
+})();`;
 
 async function fetchTenantBySlug(
   slug: string
@@ -72,6 +121,16 @@ export default async function RootLayout({
         className={cn(inter.variable, lexendDeca.variable, 'font-inter')}
         style={bodyStyle}
       >
+        {/* Inline, at HTML-parse time — BEFORE the Next.js bundle registers
+            its dev-overlay error listeners — so wallet-extension errors
+            (MetaMask etc.) are stopped at the window before the overlay can
+            capture them. Renders nothing; never touches app errors. */}
+        <script
+          dangerouslySetInnerHTML={{ __html: EXTENSION_NOISE_GUARD_SCRIPT }}
+        />
+        {/* Filters wallet-extension (MetaMask etc.) console/overlay noise;
+            renders nothing and never touches app errors. */}
+        <ExtensionErrorFilter />
         <AuthProvider session={session}>
           <TenantProvider initialTenant={initialTenant}>
             <ThemeProvider>

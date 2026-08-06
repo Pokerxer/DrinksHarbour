@@ -3,10 +3,23 @@
 
 import Image from 'next/image';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { PiCheckCircleFill, PiQuestionFill } from 'react-icons/pi';
+import {
+  PiCheckCircleFill,
+  PiQuestionFill,
+  PiTruck,
+  PiLightning,
+  PiClock,
+} from 'react-icons/pi';
 import { shippingMethodData, shippingSpeedData } from '@/data/checkout-data';
 import { AdvancedRadio, FieldError, Title, Text } from 'rizzui';
 import cn from '@core/utils/class-names';
+
+// DrinksHarbour delivery options render as icons (no external courier logos).
+const SHIPPING_ICONS: Record<string, React.ReactNode> = {
+  truck: <PiTruck className="h-6 w-6 text-gray-500" />,
+  lightning: <PiLightning className="h-6 w-6 text-gray-500" />,
+  clock: <PiClock className="h-6 w-6 text-gray-500" />,
+};
 
 export default function ShippingMethod({ className }: { className?: string }) {
   const {
@@ -44,12 +57,18 @@ export default function ShippingMethod({ className }: { className?: string }) {
                   {...register('shippingMethod')}
                   className="flex shrink-0 items-center rounded border-muted/80 hover:cursor-pointer peer-checked:ring-[0.5px] [&_.rizzui-advanced-checkbox:hover]:border-primary [&_.rizzui-advanced-checkbox]:min-w-[unset] [&_.rizzui-advanced-checkbox]:p-0 [&_img]:h-[45px] [&_img]:w-[60px] [&_img]:rounded-md [&_input:checked~.rizzui-advanced-checkbox]:border-primary [&_input:checked~.rizzui-advanced-checkbox]:ring-primary"
                 >
-                  <Image
-                    src={item.image}
-                    alt={item.name}
-                    height={45}
-                    width={60}
-                  />
+                  {item.icon ? (
+                    <span className="flex h-[45px] w-[60px] items-center justify-center rounded-md bg-gray-100">
+                      {SHIPPING_ICONS[item.icon]}
+                    </span>
+                  ) : (
+                    <Image
+                      src={item.image}
+                      alt={item.name}
+                      height={45}
+                      width={60}
+                    />
+                  )}
                 </AdvancedRadio>
               ))}
             </div>

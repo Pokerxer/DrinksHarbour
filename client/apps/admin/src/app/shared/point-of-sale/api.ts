@@ -1,6 +1,7 @@
 import type {
   POSAuthResponse,
   POSStaff,
+  POSCashier,
   POSSessionInfo,
   POSProduct,
   POSOrderResponse,
@@ -366,9 +367,61 @@ export const posApi = {
   },
 
   async listCashiers(token: string) {
-    return request<POSStaff[]>(`${API_URL}/api/pos/cashiers`, {
+    return request<{ cashiers: POSCashier[] }>(`${API_URL}/api/pos/cashiers`, {
       headers: authHeaders(token),
     });
+  },
+
+  async createCashier(
+    token: string,
+    payload: {
+      firstName: string;
+      lastName?: string;
+      email: string;
+      phone?: string;
+      pin?: string;
+      posName?: string;
+      posPermissions?: string[];
+    }
+  ) {
+    return request<{ cashier: POSCashier }>(`${API_URL}/api/pos/cashiers`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateCashier(
+    token: string,
+    cashierId: string,
+    payload: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      pin?: string;
+      posAccess?: boolean;
+      posName?: string;
+      posPermissions?: string[];
+    }
+  ) {
+    return request<{ cashier: POSCashier }>(
+      `${API_URL}/api/pos/cashiers/${cashierId}`,
+      {
+        method: 'PATCH',
+        headers: authHeaders(token),
+        body: JSON.stringify(payload),
+      }
+    );
+  },
+
+  async deleteCashier(token: string, cashierId: string) {
+    return request<{ message: string }>(
+      `${API_URL}/api/pos/cashiers/${cashierId}`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(token),
+      }
+    );
   },
 
   async getBankAccounts(token: string) {

@@ -38,7 +38,7 @@ export type ProductColor = {
 };
 
 export interface CartItem {
-  id: number;
+  id: number | string;
   name: string;
   slug?: string;
   description?: string;
@@ -50,6 +50,14 @@ export interface CartItem {
   size: number;
   stock?: number;
   discount?: number;
+  /**
+   * Backend identifiers carried through so checkout can submit a real order.
+   * Demo/template items (no subProductId) surface a clear error at checkout
+   * instead of silently redirecting to a fake order page.
+   */
+  subProductId?: string;
+  productId?: string;
+  sizeId?: string;
 }
 
 export type Product = {

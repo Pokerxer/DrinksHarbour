@@ -1,7 +1,6 @@
 // @ts-nocheck
 'use client';
 
-import { useState } from 'react';
 import toast from 'react-hot-toast';
 import isEmpty from 'lodash/isEmpty';
 import { PiShoppingCartSimple } from 'react-icons/pi';
@@ -27,7 +26,6 @@ export default function ProductDetailsSummery({
   product: Product;
 }) {
   const { addItemToCart } = useCart();
-  const [isLoading, setLoading] = useState(false);
 
   const methods = useForm<ProductDetailsInput>({
     mode: 'onChange',
@@ -42,13 +40,8 @@ export default function ProductDetailsSummery({
       size: data.productSize,
     });
 
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      console.log('createOrder data ->', data);
-      addItemToCart(item, 1);
-      toast.success(<Text as="b">Product added to the cart</Text>);
-    }, 600);
+    addItemToCart(item, 1);
+    toast.success(<Text as="b">Product added to the cart</Text>);
   };
 
   // console.log('errors', methods.formState.errors?.productColor);
@@ -70,12 +63,24 @@ export default function ProductDetailsSummery({
             <div className="-mb-0.5 text-2xl font-semibold text-gray-900 lg:text-3xl">
               {toCurrency(product?.price as number)}
             </div>
-            <del className="ps-1.5 font-medium text-gray-500">
-              {toCurrency(product?.sale_price as number)}
-            </del>
-            <div className="ps-1.5 text-red">
-              ({calculatePercentage(295, 320)}% OFF)
-            </div>
+            {/* Sale badge only when there is a genuine discount — never show
+                "₦0" / NaN for products without a sale price. */}
+            {product?.sale_price != null &&
+              product.sale_price > (product?.price ?? 0) && (
+                <>
+                  <del className="ps-1.5 font-medium text-gray-500">
+                    {toCurrency(product?.sale_price)}
+                  </del>
+                  <div className="ps-1.5 text-red">
+                    (
+                    {calculatePercentage(
+                      product?.price as number,
+                      product?.sale_price as number
+                    )}
+                    % OFF)
+                  </div>
+                </>
+              )}
           </div>
           <div className="font-medium text-green-dark">
             Inclusive of all taxes
@@ -102,7 +107,6 @@ export default function ProductDetailsSummery({
             <Button
               size="xl"
               type="submit"
-              isLoading={isLoading}
               className="h-12 text-sm lg:h-14 lg:text-base"
             >
               <PiShoppingCartSimple className="me-2 h-5 w-5 lg:h-[22px] lg:w-[22px]" />{' '}

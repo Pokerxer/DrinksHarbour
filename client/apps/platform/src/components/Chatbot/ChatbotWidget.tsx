@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/context/CartContext';
+import TalkToHuman from './TalkToHuman';
 
 // ── Markdown-lite renderer ────────────────────────────────────────────────────
 // Supports: **bold**, [links](/path), bullet lists, **Section** headers.
@@ -270,6 +271,7 @@ export default function ChatbotWidget() {
   const [isDragging, setIsDragging] = useState(false);
   const [pendingCart, setPendingCart] = useState<CartProposalItem[] | null>(null);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [escalateOpen, setEscalateOpen] = useState(false);
 
   const { addToCart, cartCount } = useCart();
 
@@ -929,6 +931,14 @@ export default function ChatbotWidget() {
                       Retry
                     </button>
                   )}
+                  {/* The bot has just failed the visitor. Offering the human
+                      path right here is the point at which they most need it. */}
+                  <button
+                    onClick={() => setEscalateOpen(true)}
+                    className="underline font-medium hover:text-red-900"
+                  >
+                    Talk to a human
+                  </button>
                 </div>
               </div>
             )}
@@ -946,8 +956,32 @@ export default function ChatbotWidget() {
             </button>
           )}
 
+          {/* ── Talk to a human ─────────────────────────────────────────── */}
+          {escalateOpen && (
+            <TalkToHuman
+              // Seeded with what they last asked so they do not retype it.
+              initialMessage={
+                [...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+              }
+              onCancel={() => setEscalateOpen(false)}
+              onSent={() => {
+                setEscalateOpen(false);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'assistant',
+                    content:
+                      "Thanks — I've passed that to the team. They'll reply to your email shortly.",
+                    timestamp: Date.now(),
+                  },
+                ]);
+                setUnread((n) => n + 1);
+              }}
+            />
+          )}
+
           {/* ── Add-to-cart offer confirm bar ───────────────────────────── */}
-          {pendingCart && pendingCart.length > 0 && !isLoading && (
+          {pendingCart && pendingCart.length > 0 && !isLoading && !escalateOpen && (
             <div className="px-3 py-2.5 bg-red-50/80 border-t border-red-100 flex-shrink-0">
               <p className="text-[11px] text-slate-700 font-medium mb-2 truncate">
                 🛒 Add {pendingCart.reduce((s, i) => s + (i.qty || 1), 0)} item{pendingCart.reduce((s, i) => s + (i.qty || 1), 0) > 1 ? 's' : ''} to your cart
@@ -978,7 +1012,7 @@ export default function ChatbotWidget() {
           )}
 
           {/* ── Quick replies ───────────────────────────────────────────── */}
-          {quickReplies.length > 0 && !isLoading && (
+          {quickReplies.length > 0 && !isLoading && !escalateOpen && (
             <div className="flex gap-2 overflow-x-auto overscroll-x-contain px-3 py-2 bg-white border-t border-slate-100 flex-shrink-0 scrollbar-none snap-x">
               {quickReplies.slice(0, 6).map((qr, i) => (
                 <button
@@ -990,6 +1024,18 @@ export default function ChatbotWidget() {
                   {typeof qr === 'string' ? qr : qr.label}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* ── Persistent escape hatch ─────────────────────────────────── */}
+          {!escalateOpen && !isLoading && messages.length > 0 && (
+            <div className="px-3 pt-1.5 bg-white flex-shrink-0">
+              <button
+                onClick={() => setEscalateOpen(true)}
+                className="text-[10px] text-slate-500 underline underline-offset-2 hover:text-red-700 transition-colors"
+              >
+                Talk to a human
+              </button>
             </div>
           )}
 

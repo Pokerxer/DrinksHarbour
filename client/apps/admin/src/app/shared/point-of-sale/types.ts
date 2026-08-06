@@ -13,6 +13,25 @@ export interface POSStaff {
   };
 }
 
+/**
+ * A tenant POS staff record as returned by /api/pos/cashiers. Narrower than
+ * POSStaff: the list endpoint selects a fixed field set and does not expose
+ * PIN/permission internals.
+ */
+export interface POSCashier {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  posAccess?: boolean;
+  posName?: string;
+  role: string;
+  status?: string;
+  avatar?: string;
+  createdAt?: string;
+}
+
 export interface POSCustomer {
   _id: string;
   firstName: string;

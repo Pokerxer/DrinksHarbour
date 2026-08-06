@@ -31,6 +31,8 @@ const subproductRoutes       = require('./routes/subproduct.routes');
 const inventoryRoutes        = require('./routes/inventory.routes');
 const warehouseRoutes        = require('./routes/warehouse.routes');
 const reorderRoutes          = require('./routes/reorder.routes');
+const deliveryRoutes         = require('./routes/delivery.routes');
+const driverRoutes           = require('./routes/driver.routes');
 const promotionRoutes        = require('./routes/promotion.routes');
 const pricelistRoutes        = require('./routes/pricelist.routes');
 const vendorRoutes           = require('./routes/vendor.routes');
@@ -160,9 +162,22 @@ const limiter = rateLimit({
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, forwardedHeader: false },
   message: { success: false, message: 'Too many requests, please try again later.' },
-  skip: (req) => req.path === '/health' || req.path === '/api/ping',
+  // /api/mail is an interactive mail client: opening a folder and reading a
+  // few messages easily exceeds 100 requests, and throttling it would lock the
+  // user out of every other endpoint too. It has its own limiter below.
+  skip: (req) => req.path === '/health' || req.path === '/api/ping' || req.originalUrl.startsWith('/api/mail'),
 });
 app.use('/api', limiter);
+
+const mailLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, forwardedHeader: false },
+  message: { success: false, message: 'Too many mail requests, please slow down.' },
+});
+app.use('/api/mail', mailLimiter);
 
 // Serverless cold-start guard: ensure the (cached) DB connection is live before
 // any /api handler runs, since connectDB uses bufferCommands:false. Cheap after
@@ -199,6 +214,8 @@ app.use('/api/inventory',          inventoryRoutes);
 app.use('/api/warehouses',         warehouseRoutes);
 app.use('/api/stock-transfers',    stockTransferRoutes);
 app.use('/api/reorder',            reorderRoutes);
+app.use('/api/deliveries',         deliveryRoutes);
+app.use('/api/drivers',            driverRoutes);
 app.use('/api/promotions',         promotionRoutes);
 app.use('/api/pricelists',         pricelistRoutes);
 app.use('/api/meetings',           require('./routes/meeting.routes'));
@@ -216,6 +233,7 @@ app.use('/api/analytics',          analyticsRoutes);
 app.use('/api/gemini',             geminiRoutes);
 app.use('/api/banner-ai',          bannerGeminiRoutes);
 app.use('/api/banners',            bannerRoutes);
+app.use('/api/mail',               require('./routes/mail.routes'));
 app.use('/api/blog',               blogRoutes);
 app.use('/api/chatbot',            chatbotRoutes);
 app.use('/api/places',             placesRoutes);
@@ -223,6 +241,11 @@ app.use('/api/tenants',            require('./routes/tenant.routes'));
 app.use('/api/stores',             require('./routes/store.routes'));
 app.use('/api/erm',                require('./routes/erm.routes'));
 app.use('/api/employees',          require('./routes/employee.routes'));
+const appraisalRouters = require('./routes/appraisal.routes');
+app.use('/api/appraisal-cycles',   appraisalRouters.cycleRouter);
+app.use('/api/appraisals',         appraisalRouters.appraisalRouter);
+app.use('/api/appraisal-feedback', appraisalRouters.feedbackRouter);
+app.use('/api/appraisal-templates', appraisalRouters.templateRouter);
 app.use('/api/contacts',           require('./routes/contact.routes'));
 app.use('/api/sales-orders',       salesOrderRoutes);
 app.use('/api/scan',               scanRoutes);
@@ -316,6 +339,28 @@ app.use((err, req, res, next) => {
   // Always log the stack — the console is private, the response is not.
   console.error('   Stack:', err.stack);
 
+  // A Mongoose schema validation failure is by definition bad input from the
+  // caller, but nothing translated it, so it fell through as a generic 500 —
+  // an over-length `declineReason` or `answers[].text` reported a server fault
+  // for what was a form the user could have fixed. Matched by instance rather
+  // than by `err.name`, which would also catch this app's own ValidationError
+  // (utils/errors.js) — that one already carries statusCode 400 and a message
+  // written for the caller, and must keep both.
+  //
+  // The raw Mongoose message is NOT returned: it names schema paths and echoes
+  // the rejected value back. Only the field paths are, which is what a form
+  // needs to highlight the offending inputs. CastError is deliberately left
+  // alone — a malformed ObjectId reaching a handler is usually a routing or
+  // client bug rather than user input, and this module's handlers already
+  // validate ids they care about.
+  if (err instanceof mongoose.Error.ValidationError) {
+    return res.status(400).json({
+      success: false,
+      message: 'Some of the values submitted are invalid.',
+      fields: Object.keys(err.errors || {}),
+    });
+  }
+
   const statusCode = err.statusCode || err.status || 500;
 
   // Diagnostics go in the RESPONSE only when NODE_ENV is explicitly
@@ -330,7 +375,15 @@ app.use((err, req, res, next) => {
     success: false,
     // 5xx messages are internal detail (missing module, failed query, driver
     // error); 4xx messages are addressed to the caller and stay verbatim.
-    message: !exposeDiagnostics && statusCode >= 500 ? 'Internal server error' : err.message,
+    // `err.expose` is the narrow opt-out: a 5xx that describes a *named
+    // upstream* the caller depends on (e.g. "Could not reach the mail server")
+    // is written for the operator, and masking it turns a diagnosable outage
+    // into an opaque 500. Only AppErrors constructed with expose=true qualify;
+    // everything else still fails closed.
+    message:
+      !exposeDiagnostics && statusCode >= 500 && !err.expose
+        ? 'Internal server error'
+        : err.message,
     // Operational errors may attach structured `details` (e.g. the id of an
     // existing record a conflict points to) so the client can act on it.
     ...(err.details ? { details: err.details } : {}),

@@ -1,5 +1,3 @@
-import AppLauncher from '@/layouts/hydrogen/app-launcher';
-
 export default function HydrogenLayout({
   children,
 }: {
@@ -12,10 +10,6 @@ export default function HydrogenLayout({
           {children}
         </div>
       </div>
-
-      {/* Full-screen app launcher overlay — replaces the persistent sidebar.
-          Opened from the launcher button in page headers; renders nothing while closed. */}
-      <AppLauncher />
     </main>
   );
 }

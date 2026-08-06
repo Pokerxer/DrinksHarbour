@@ -11,6 +11,12 @@ server/.env
 # Local Claude Code settings / worktrees
 .claude/
 
+# Third-party tool repo cloned into workspace (embedded git repo)
+Clawd-Code/
+
+# Scratch debug scripts with live credentials
+server/_insp.js
+
 # subagent-driven-development scratch (progress ledger, review packages)
 .superpowers/
 .npm-cache/

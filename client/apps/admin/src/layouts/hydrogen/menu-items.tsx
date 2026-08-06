@@ -287,25 +287,21 @@ export const menuItems = [
     name: 'Logistics',
   },
   {
-    name: 'Shipments',
-    href: '#',
+    name: 'Dispatch Board',
+    href: routes.logistics.dashboard,
     icon: <PiTruckDuotone />,
-    dropdownItems: [
-      { name: 'All Shipments', href: routes.logistics.shipmentList },
-      { name: 'New Shipment', href: routes.logistics.createShipment },
-    ],
   },
   {
-    name: 'Tracking',
-    href: '#',
+    name: 'Riders',
+    href: routes.logistics.drivers,
     icon: <PiArrowsDownUpDuotone />,
-    dropdownItems: [
-      { name: 'Dashboard', href: routes.logistics.dashboard },
-      // routes.logistics.tracking takes an id; this is the standalone page.
-      { name: 'Track Shipment', href: '/logistics/tracking' },
-      { name: 'Customer Profile', href: routes.logistics.customerProfile },
-    ],
   },
+  // The Shipments / Track Shipment / Customer Profile pages are still the
+  // Isomorphic template demo — hardcoded fleets, shipment countries and
+  // complaint charts that read nothing from the database. Their routes still
+  // resolve, but they are unlinked so they cannot be mistaken for live data
+  // next to the real dispatch board. Restore these entries when those pages are
+  // rebuilt against /api/deliveries.
 
   // ─── Support ────────────────────────────────────────────────
   {
@@ -315,6 +311,9 @@ export const menuItems = [
     name: 'Inbox',
     href: routes.support.inbox,
     icon: <PiChatCircleDotsDuotone />,
+    // A live count, unlike `badge` which is a static label. Rendered by
+    // sidebar-menu; fails silent, so users without mail access see nothing.
+    liveBadge: 'mail-unread',
   },
   {
     name: 'Customers',
@@ -322,13 +321,9 @@ export const menuItems = [
     icon: <PiUsersThreeDuotone />,
   },
   {
-    name: 'Snippets & Templates',
-    href: '#',
+    name: 'Snippets',
+    href: routes.support.snippets,
     icon: <PiFilesDuotone />,
-    dropdownItems: [
-      { name: 'Snippets', href: routes.support.snippets },
-      { name: 'Templates', href: routes.support.templates },
-    ],
   },
 
   // ─── Administration (platform-wide) ─────────────────────────

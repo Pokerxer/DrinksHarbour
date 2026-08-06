@@ -1,36 +1,29 @@
 import { Metadata } from 'next';
-import { metaObject } from '@/config/site.config';
 import BackButton from '@/app/shared/support/inbox/back-button';
-import MessageList from '@/app/shared/support/inbox/message-list';
-import MessageDetails from '@/app/shared/support/inbox/message-details';
+import MessageDetailView from '@/app/shared/support/inbox/message-detail-page';
+import { metaObject } from '@/config/site.config';
 
 type Props = {
   params: Promise<{ id: string }>;
 };
 
 /**
- * for dynamic metadata
- * @link: https://nextjs.org/docs/app/api-reference/functions/generate-metadata#generatemetadata-function
+ * The id is an opaque base64url handle, not a human-readable subject, so it is
+ * deliberately NOT interpolated into the page title — decoding it here would
+ * also put a folder path and uid into the browser history and any shared link
+ * preview.
  */
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  // read route params
-  const id = (await params).id;
-
-  return metaObject(`Message ${id}`);
+  await params;
+  return metaObject('Message');
 }
 
-export default function Page() {
+export default async function Page({ params }: Props) {
+  const { id } = await params;
   return (
-    <>
-      <div className="mt-5 items-start @container lg:mt-9 lg:grid lg:grid-cols-[330px_1fr] lg:gap-7 2xl:grid-cols-[400px_1fr]">
-        <div className="col-span-full">
-          <BackButton />
-        </div>
-
-        <MessageList className="lg:hidden" />
-        <MessageDetails />
-      </div>
-    </>
+    <div className="mt-5 lg:mt-9">
+      <BackButton />
+      <MessageDetailView id={id} />
+    </div>
   );
 }

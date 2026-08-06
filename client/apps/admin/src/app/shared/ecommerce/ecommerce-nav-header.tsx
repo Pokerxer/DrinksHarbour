@@ -6,222 +6,26 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { routes } from '@/config/routes';
-import {
-  PiCaretDown,
-  PiStorefrontDuotone,
-  PiPackageDuotone,
-  PiReceiptDuotone,
-  PiUsersThreeDuotone,
-  PiGearSixDuotone,
-  PiStackDuotone,
-  PiCashRegisterDuotone,
-  PiIdentificationCardDuotone,
-  PiSlidersHorizontalDuotone,
-  PiUserGearDuotone,
-  PiTagDuotone,
-  PiStarDuotone,
-  PiMegaphoneDuotone,
-  PiBuildingsDuotone,
-  PiChartLineUpDuotone,
-  PiGaugeDuotone,
-} from 'react-icons/pi';
+import { PiCaretDown } from 'react-icons/pi';
 import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
-import NavDropdownPanel, {
-  type NavSubItem,
-} from '@/app/shared/nav-dropdown-panel';
+import NavDropdownPanel from '@/app/shared/nav-dropdown-panel';
+import { useTenant } from '@/context/TenantContext';
 import { TENANT_ROLES } from '@/types/authorization';
-
-type NavItem =
-  | { label: string; href: string; icon: React.ReactNode; items?: never }
-  | { label: string; href?: never; icon: React.ReactNode; items: NavSubItem[] };
-
-// ── Tenant nav: store operators running their branded subdomain ──────────────
-const tenantNavItems: NavItem[] = [
-  {
-    label: 'Dashboard',
-    href: routes.eCommerce.dashboard,
-    icon: <PiGaugeDuotone />,
-  },
-  {
-    label: 'Orders',
-    href: routes.eCommerce.orders,
-    icon: <PiReceiptDuotone />,
-  },
-  {
-    label: 'Sub-Products',
-    icon: <PiPackageDuotone />,
-    items: [
-      {
-        label: 'My Sub-Products',
-        href: routes.eCommerce.subProducts,
-        icon: <PiPackageDuotone />,
-        desc: 'Your sellable stock instances',
-      },
-      {
-        label: 'Add Sub-Product',
-        href: routes.eCommerce.createSubProduct,
-        icon: <PiPackageDuotone />,
-        desc: 'Link to a catalog product or create new',
-      },
-    ],
-  },
-  {
-    label: 'Inventory',
-    icon: <PiStackDuotone />,
-    items: [
-      {
-        label: 'Categories',
-        href: routes.eCommerce.categories,
-        icon: <PiTagDuotone />,
-      },
-      {
-        label: 'Brands',
-        href: routes.eCommerce.brands,
-        icon: <PiTagDuotone />,
-      },
-      {
-        label: 'Banners',
-        href: routes.eCommerce.banners,
-        icon: <PiMegaphoneDuotone />,
-        desc: 'Storefront promotional banners',
-      },
-    ],
-  },
-  {
-    label: 'Point of Sale',
-    icon: <PiCashRegisterDuotone />,
-    items: [
-      {
-        label: 'POS Dashboard',
-        href: routes.pos.index,
-        icon: <PiCashRegisterDuotone />,
-        desc: 'Terminal overview',
-      },
-      {
-        label: 'Cashiers',
-        href: routes.pos.cashiers,
-        icon: <PiIdentificationCardDuotone />,
-        desc: 'POS staff & PINs',
-      },
-    ],
-  },
-  {
-    label: 'Configuration',
-    icon: <PiGearSixDuotone />,
-    items: [
-      {
-        label: 'Account Settings',
-        href: routes.forms.profileSettings,
-        icon: <PiUserGearDuotone />,
-        desc: 'Your profile & security',
-      },
-      {
-        label: 'Settings',
-        href: '/settings',
-        icon: <PiSlidersHorizontalDuotone />,
-        desc: 'Workspace settings',
-      },
-    ],
-  },
-];
-
-// ── Platform admin nav: super-admin / admin running the central marketplace ──
-const adminNavItems: NavItem[] = [
-  {
-    label: 'Dashboard',
-    href: routes.eCommerce.dashboard,
-    icon: <PiGaugeDuotone />,
-  },
-  {
-    label: 'Products',
-    icon: <PiPackageDuotone />,
-    items: [
-      {
-        label: 'Central Catalog',
-        href: routes.eCommerce.products,
-        icon: <PiPackageDuotone />,
-        desc: 'Single source of truth for products',
-      },
-      {
-        label: 'Add Product',
-        href: routes.eCommerce.createProduct,
-        icon: <PiPackageDuotone />,
-      },
-      {
-        label: 'Sub-Products',
-        href: routes.eCommerce.subProducts,
-        icon: <PiStackDuotone />,
-        desc: 'Tenant-owned selling instances',
-      },
-      {
-        label: 'Categories',
-        href: routes.eCommerce.categories,
-        icon: <PiTagDuotone />,
-      },
-      {
-        label: 'Brands',
-        href: routes.eCommerce.brands,
-        icon: <PiTagDuotone />,
-      },
-    ],
-  },
-  {
-    label: 'Tenants',
-    href: routes.eCommerce.tenants,
-    icon: <PiBuildingsDuotone />,
-  },
-  {
-    label: 'Orders',
-    href: routes.eCommerce.orders,
-    icon: <PiReceiptDuotone />,
-  },
-  {
-    label: 'Engagement',
-    icon: <PiStarDuotone />,
-    items: [
-      {
-        label: 'Reviews',
-        href: routes.eCommerce.reviews,
-        icon: <PiStarDuotone />,
-      },
-      {
-        label: 'Promotions',
-        href: routes.eCommerce.promotions,
-        icon: <PiMegaphoneDuotone />,
-      },
-      {
-        label: 'Banners',
-        href: routes.eCommerce.banners,
-        icon: <PiMegaphoneDuotone />,
-      },
-    ],
-  },
-  {
-    label: 'Configuration',
-    icon: <PiGearSixDuotone />,
-    items: [
-      {
-        label: 'Settings',
-        href: '/settings',
-        icon: <PiSlidersHorizontalDuotone />,
-        desc: 'Platform settings',
-      },
-      {
-        label: 'Analytics',
-        href: routes.analytics,
-        icon: <PiChartLineUpDuotone />,
-      },
-    ],
-  },
-];
+import {
+  getEcommerceNavItems,
+} from '@/app/shared/ecommerce/ecommerce-nav-items';
 
 export default function EcommerceNavHeader() {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const role = session?.user?.role ?? '';
-  const isTenantUser = TENANT_ROLES.includes(role as any);
+  const { tenant } = useTenant();
 
-  const navItems = isTenantUser ? tenantNavItems : adminNavItems;
+  const role = session?.user?.role ?? '';
+  // Tenant accent color — the sidebar highlights in the tenant's brand color;
+  // the top bar used to hardcode the platform red, which clashed on subdomains.
+  const accentColor = tenant?.primaryColor || '#b20202';
+
+  const navItems = getEcommerceNavItems({ role, plan: tenant?.plan });
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const navRef = useRef<HTMLElement>(null);
@@ -240,12 +44,14 @@ export default function EcommerceNavHeader() {
     close();
   }, [pathname, close]);
 
+  const isTenantUser = TENANT_ROLES.includes(role as any);
   const brandLabel = isTenantUser ? 'Store' : 'Marketplace';
 
   return (
     <nav
       ref={navRef}
       className="relative mb-0 flex items-center border-b border-muted bg-gray-0"
+      style={{ ['--nav-accent' as string]: accentColor }}
     >
       {/* App launcher toggle */}
       <LauncherButton className="me-1 ms-3 shadow-none" />
@@ -281,7 +87,7 @@ export default function EcommerceNavHeader() {
           const isOpen = openMenu === item.label;
 
           const activeCls =
-            'font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#b20202]';
+            'font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[var(--nav-accent)]';
 
           if ('href' in item && item.href) {
             return (
@@ -290,7 +96,7 @@ export default function EcommerceNavHeader() {
                 href={item.href}
                 className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors sm:px-4 ${
                   isActive
-                    ? `${activeCls} text-[#b20202]`
+                    ? `${activeCls} text-[var(--nav-accent)]`
                     : 'font-normal text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -311,7 +117,7 @@ export default function EcommerceNavHeader() {
                 onClick={() => setOpenMenu(isOpen ? null : item.label)}
                 className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors sm:px-4 ${
                   isActive || isOpen
-                    ? `${activeCls} text-[#b20202]`
+                    ? `${activeCls} text-[var(--nav-accent)]`
                     : 'font-normal text-gray-600 hover:text-gray-900'
                 }`}
               >

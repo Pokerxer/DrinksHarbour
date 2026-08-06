@@ -62,6 +62,16 @@ export default function AddressInfo({
         error={errors?.[type]?.country?.message as string}
       />
       <Input
+        label="Email"
+        placeholder="customer@example.com"
+        type="email"
+        // Optional — required only at storefront checkout, where the order
+        // notification depends on a valid address.
+        {...register(`${type}.email`)}
+        // @ts-ignore
+        error={errors?.[type]?.email?.message as string}
+      />
+      <Input
         label="State"
         placeholder="State"
         {...register(`${type}.state`)}

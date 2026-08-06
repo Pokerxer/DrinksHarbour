@@ -9,7 +9,6 @@ import {
   PiListBulletsDuotone,
   PiReceiptDuotone,
   PiStarDuotone,
-  PiMegaphoneDuotone,
   PiImageDuotone,
   PiTruckDuotone,
   PiUserGearDuotone,
@@ -26,23 +25,32 @@ import {
   PiTrayArrowDownDuotone,
   PiArrowUUpLeftDuotone,
   PiPackageDuotone,
+  PiClipboardTextDuotone,
 } from 'react-icons/pi';
 
 // ─── Plan hierarchy ──────────────────────────────────────────────────────────
+// Keys mirror server/config/erm-plans.js — Tenant.plan enum. Keep the two in
+// sync: a plan missing here ranks as free_trial (0) and silently locks the
+// tenant out of every gated item, which is how growth (₦35K) and venue (₦150K)
+// tenants were being treated before growth/venue were added.
 
 export type TenantPlan =
   | 'free_trial'
   | 'starter'
+  | 'growth'
   | 'pro'
   | 'enterprise'
+  | 'venue'
   | 'custom';
 
 const PLAN_RANK: Record<TenantPlan, number> = {
   free_trial: 0,
   starter: 1,
-  pro: 2,
-  enterprise: 3,
-  custom: 4,
+  growth: 2,
+  pro: 3,
+  enterprise: 4,
+  venue: 5,
+  custom: 6,
 };
 
 /** Returns true if the tenant's plan meets or exceeds the required plan. */
@@ -54,6 +62,28 @@ export function planAllows(
   return rank >= PLAN_RANK[required];
 }
 
+// ─── Role hierarchy ───────────────────────────────────────────────────────────
+// Tenant-role users all share the tenant sidebar, but a handful of entries are
+// management surfaces the server and middleware refuse for tenant_staff. This
+// mirrors src/middleware.ts (/roles-permissions, /users) and the server's
+// tenantAdminOrSuperAdmin guards (/api/pos/cashiers).
+
+export type TenantMenuRole = 'tenant_owner' | 'tenant_admin';
+
+const ROLE_RANK: Record<TenantMenuRole, number> = {
+  tenant_owner: 1,
+  tenant_admin: 2,
+};
+
+/** Returns true if the user's role meets or exceeds the required role. */
+export function roleAllows(
+  userRole: string | undefined,
+  required: TenantMenuRole
+): boolean {
+  const rank = ROLE_RANK[userRole as TenantMenuRole] ?? 0;
+  return rank >= ROLE_RANK[required];
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type TenantMenuItem = {
@@ -61,9 +91,26 @@ export type TenantMenuItem = {
   href?: string;
   icon?: React.ReactNode;
   badge?: string;
+  /**
+   * Names a live, self-updating badge for this entry, as opposed to `badge`
+   * which is a fixed label. Resolved to a component in sidebar-menu.
+   */
+  liveBadge?: 'mail-unread';
   /** Minimum plan required to see this item. Omit = available on all plans. */
   requiredPlan?: TenantPlan;
-  dropdownItems?: { name: string; href: string; badge?: string }[];
+  /**
+   * Minimum tenant role required to see this item. Omit = visible to all
+   * tenant roles (tenant_staff included). Mirrors the middleware/server
+   * guards, so the menu stops offering links that end in access-denied or
+   * a 403 for staff users.
+   */
+  minRole?: TenantMenuRole;
+  dropdownItems?: {
+    name: string;
+    href: string;
+    badge?: string;
+    minRole?: TenantMenuRole;
+  }[];
 };
 
 export type TenantMenuSection = {
@@ -168,7 +215,12 @@ export const tenantMenuItems: TenantMenuEntry[] = [
       { name: 'Sell', href: routes.pos.sell },
       { name: 'Order History', href: routes.pos.history },
       { name: 'Sessions', href: routes.pos.sessions },
-      { name: 'Cashiers', href: routes.pos.cashiers },
+      {
+        name: 'Cashiers',
+        href: routes.pos.cashiers,
+        // Server: /api/pos/cashiers* requires tenantAdminOrSuperAdmin.
+        minRole: 'tenant_owner',
+      },
     ],
   },
   {
@@ -180,12 +232,6 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     name: 'Reviews',
     href: routes.eCommerce.reviews,
     icon: <PiStarDuotone />,
-    requiredPlan: 'starter',
-  },
-  {
-    name: 'Promotions',
-    href: routes.eCommerce.promotions,
-    icon: <PiMegaphoneDuotone />,
     requiredPlan: 'starter',
   },
   {
@@ -244,21 +290,19 @@ export const tenantMenuItems: TenantMenuEntry[] = [
   // ─── Logistics ──────────────────────────────────────────────
   { label: 'Logistics' },
   {
-    name: 'Shipments',
-    href: '#',
+    name: 'Dispatch Board',
+    href: routes.logistics.dashboard,
     icon: <PiTruckDuotone />,
     requiredPlan: 'enterprise',
-    dropdownItems: [
-      { name: 'All Shipments', href: routes.logistics.shipmentList },
-      { name: 'New Shipment', href: routes.logistics.createShipment },
-    ],
   },
   {
-    name: 'Tracking',
-    href: routes.logistics.dashboard,
+    name: 'Riders',
+    href: routes.logistics.drivers,
     icon: <PiArrowsDownUpDuotone />,
     requiredPlan: 'enterprise',
   },
+  // Shipments / Tracking / Customer Profile remain template demo pages and are
+  // deliberately unlinked — see the note in hydrogen/menu-items.tsx.
 
   // ─── Support ────────────────────────────────────────────────
   { label: 'Support' },
@@ -267,6 +311,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     href: routes.support.inbox,
     icon: <PiChatCircleDotsDuotone />,
     requiredPlan: 'pro',
+    liveBadge: 'mail-unread',
   },
   {
     name: 'Customers',
@@ -281,18 +326,38 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     name: 'Settings',
     href: '/settings',
     icon: <PiGearDuotone />,
-    // available on all plans
+    // Store configuration — staff shouldn't reconfigure the business.
+    minRole: 'tenant_owner',
   },
   {
     name: 'Account Settings',
     href: routes.forms.profileSettings,
     icon: <PiUserGearDuotone />,
+    // Own profile — every tenant role sees this.
   },
   {
     name: 'Employees',
     href: routes.employees.list,
     icon: <PiUsersThreeDuotone />,
-    // available on all plans
+    // Staff/role management — matches /roles-permissions protection.
+    minRole: 'tenant_owner',
+  },
+  {
+    name: 'Appraisals',
+    href: '/appraisals',
+    icon: <PiClipboardTextDuotone />,
+    // Own appraisal + assigned feedback forms — every tenant role sees this
+    // (matches middleware: bare /appraisals is not gated).
+    dropdownItems: [
+      { name: 'My Appraisals', href: '/appraisals' },
+      { name: 'My Team', href: '/appraisals/team' },
+      {
+        name: 'Cycles',
+        href: '/appraisals/cycles',
+        // HR administration — matches middleware's /appraisals/cycles gate.
+        minRole: 'tenant_owner',
+      },
+    ],
   },
   {
     name: 'Contacts',
@@ -305,5 +370,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     href: routes.rolesPermissions,
     icon: <PiShieldCheckDuotone />,
     requiredPlan: 'starter',
+    // Middleware refuses /roles-permissions for tenant_staff.
+    minRole: 'tenant_owner',
   },
 ];

@@ -1,10 +1,12 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { pagesOptions } from '@/app/api/auth/[...nextauth]/pages-options';
 import withAuth from 'next-auth/middleware';
 import { getToken } from 'next-auth/jwt';
-import type { UserRole } from '@/types/authorization';
-import { PLATFORM_ROLES, TENANT_ROLES } from '@/types/authorization';
+import {
+  PLATFORM_ROLES,
+  TENANT_ROLES,
+  type UserRole,
+} from '@/types/authorization';
 import { hasAdminSession } from '@/app/api/auth/[...nextauth]/session-guard';
 
 interface NextAuthRequest extends NextRequest {
@@ -38,6 +40,21 @@ function extractTenantSlug(req: NextRequest): string | null {
   }
 
   return null;
+}
+
+/**
+ * `path` is `prefix` or sits underneath it, matching on whole URL segments.
+ *
+ * A bare `path.startsWith('/users')` also matches `/users-guide` and
+ * `/usersettings`, so every route whose name merely begins with a gated one
+ * inherited that gate. Today those gates all redirect to /access-denied, so
+ * the over-match fails closed and nothing is exposed — but it silently
+ * reserves a whole namespace of URLs, and the same helper is what keeps a
+ * future `/appraisals/templates-help` from being read as HR-only (or, if a
+ * gate is ever inverted into an allow, from being read as public).
+ */
+function isUnder(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
 }
 
 // Cookie names NextAuth uses (vary by HTTPS/HTTP)
@@ -109,7 +126,7 @@ const authMiddleware = withAuth(
     // ── Role-based access control ────────────────────────────────────────────
 
     // Platform-only sections — tenant roles cannot access these at all
-    if (path.startsWith('/executive') || path.startsWith('/financial')) {
+    if (isUnder(path, '/executive') || isUnder(path, '/financial')) {
       if (!role || !PLATFORM_ROLES.includes(role)) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
@@ -124,7 +141,7 @@ const authMiddleware = withAuth(
     if (
       role &&
       TENANT_ROLES.includes(role) &&
-      PLATFORM_ONLY_PATHS.some((p) => path.startsWith(p))
+      PLATFORM_ONLY_PATHS.some((p) => isUnder(path, p))
     ) {
       return NextResponse.redirect(new URL('/access-denied', req.url));
     }
@@ -141,8 +158,8 @@ const authMiddleware = withAuth(
       '/banners',
     ];
     if (
-      ECOMMERCE_PREFIXES.some((p) => path.startsWith(p)) ||
-      path.startsWith('/logistics')
+      ECOMMERCE_PREFIXES.some((p) => isUnder(path, p)) ||
+      isUnder(path, '/logistics')
     ) {
       if (role && TENANT_ROLES.includes(role) && !tenantId) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
@@ -150,7 +167,40 @@ const authMiddleware = withAuth(
     }
 
     // User/role management — platform admins + tenant owners/admins only
-    if (path.startsWith('/roles-permissions') || path.startsWith('/users')) {
+    if (isUnder(path, '/roles-permissions') || isUnder(path, '/users')) {
+      if (
+        !role ||
+        (!PLATFORM_ROLES.includes(role) &&
+          role !== 'tenant_admin' &&
+          role !== 'tenant_owner')
+      ) {
+        return NextResponse.redirect(new URL('/access-denied', req.url));
+      }
+    }
+
+    // Staff management — same audience as /roles-permissions; the tenant
+    // sidebar already hides "Employees" from tenant_staff, so block the
+    // direct URL too (defense in depth).
+    if (isUnder(path, '/employees')) {
+      if (
+        !role ||
+        (!PLATFORM_ROLES.includes(role) &&
+          role !== 'tenant_admin' &&
+          role !== 'tenant_owner')
+      ) {
+        return NextResponse.redirect(new URL('/access-denied', req.url));
+      }
+    }
+
+    // Appraisal cycle + template administration — HR audience only.
+    //
+    // Note the deliberate asymmetry with /employees above: bare /appraisals is
+    // NOT gated, because tenant_staff must reach their own appraisal and their
+    // assigned feedback forms. Only the HR sub-routes are restricted.
+    if (
+      isUnder(path, '/appraisals/cycles') ||
+      isUnder(path, '/appraisals/templates')
+    ) {
       if (
         !role ||
         (!PLATFORM_ROLES.includes(role) &&
@@ -205,6 +255,8 @@ export const config = {
     '/forms/profile-settings/:path*',
     '/roles-permissions/:path*',
     '/users/:path*',
+    '/employees/:path*',
+    '/appraisals/:path*',
     '/point-of-sale/:path*',
     '/inventory/:path*',
     '/pos/sell',

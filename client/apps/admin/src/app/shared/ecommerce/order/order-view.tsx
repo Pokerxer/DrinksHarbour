@@ -254,6 +254,11 @@ function StatusStepper({
   const currentIdx = getStatusIndex(order.status);
   const nextStatus = NEXT_STATUS[order.status];
   const canCancel = !terminal && order.status !== 'delivered';
+  // Server guards status mutations to tenant admins/super admins; keep the
+  // controls off the page for tenant_staff instead of letting them 403.
+  const canManage = ['super_admin', 'admin', 'tenant_admin', 'tenant_owner'].includes(
+    (session?.user as any)?.role ?? ''
+  );
 
   async function doUpdate(status: string, reason?: string) {
     const token = (session?.user as any)?.token;
@@ -394,7 +399,7 @@ function StatusStepper({
         </div>
       )}
 
-      {(nextStatus || canCancel) && (
+      {canManage && (nextStatus || canCancel) && (
         <div className="mt-5 space-y-2 border-t border-muted pt-4 print:hidden">
           {nextStatus && (
             <Button
@@ -639,6 +644,10 @@ function PaymentPanel({
   const canMarkPaid = isPending || isFailed;
   const canMarkRefund = isPaid && !isRefunded;
   const canMarkFailed = isPending;
+  // Payment mutations are admin/owner-only on the server — hide for staff.
+  const canManage = ['super_admin', 'admin', 'tenant_admin', 'tenant_owner'].includes(
+    (session?.user as any)?.role ?? ''
+  );
 
   function closeModal() {
     setModal(null);
@@ -802,7 +811,7 @@ function PaymentPanel({
         </div>
       )}
 
-      {(canMarkPaid || canMarkRefund || canMarkFailed) && (
+      {canManage && (canMarkPaid || canMarkRefund || canMarkFailed) && (
         <div className="mt-4 space-y-2 border-t border-muted pt-4 print:hidden">
           {canMarkPaid && (
             <Button

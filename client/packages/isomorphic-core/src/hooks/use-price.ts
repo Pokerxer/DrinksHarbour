@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 // import { useRouter } from 'next/router';
 
-export const CURRENCY_CODE = 'USD';
+// Platform currency is Nigerian Naira (AGENTS.md). Overridable per deployment;
+// kept in sync with @core/utils/to-currency.
+export const CURRENCY_CODE = process.env.NEXT_PUBLIC_CURRENCY_CODE || 'NGN';
 export const CURRENCY_OPTIONS = {
-  formation: 'en-US',
+  formation: process.env.NEXT_PUBLIC_CURRENCY_LOCALE || 'en-NG',
   fractions: 2,
 };
 export const LOCALE = 'en';

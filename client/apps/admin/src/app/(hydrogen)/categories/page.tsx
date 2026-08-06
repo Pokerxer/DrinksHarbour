@@ -2,7 +2,6 @@
 import { routes } from '@/config/routes';
 import CategoryTable from '@/app/shared/ecommerce/category/category-list/table';
 import CategoryPageHeader from './category-page-header';
-import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import CategoriesAiSection from './categories-ai-section';
 import { metaObject } from '@/config/site.config';
 
@@ -29,16 +28,13 @@ const pageHeader = {
 
 export default function CategoriesPage() {
   return (
-    <>
-      <EcommercePageHeader hideHero />
-      <div className="mt-4 space-y-5">
-        <CategoriesAiSection />
-        <CategoryPageHeader
-          title={pageHeader.title}
-          breadcrumb={pageHeader.breadcrumb}
-        />
-        <CategoryTable />
-      </div>
-    </>
+    <div className="mt-4 space-y-5">
+      <CategoriesAiSection />
+      <CategoryPageHeader
+        title={pageHeader.title}
+        breadcrumb={pageHeader.breadcrumb}
+      />
+      <CategoryTable />
+    </div>
   );
 }

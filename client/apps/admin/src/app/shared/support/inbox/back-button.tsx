@@ -12,9 +12,10 @@ export default function BackButton() {
       size="sm"
       variant="outline"
       onClick={() => router.back()}
+      aria-label="Back to inbox"
       className="flex items-center gap-2"
     >
-      <PiArrowLeft />
+      <PiArrowLeft className="h-4 w-4" />
       Back
     </Button>
   );

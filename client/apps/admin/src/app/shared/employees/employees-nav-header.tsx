@@ -118,7 +118,13 @@ export default function EmployeesNavHeader() {
       {/* Nav links */}
       <div className="flex items-center pl-2">
         {navItems.map((item) => {
-          const isDirectActive = 'href' in item && item.href === pathname;
+          // Prefix match so create/detail/edit sub-routes stay lit. Direct links
+          // in this nav have no overlapping prefixes (/employees vs
+          // /roles-permissions), so startsWith(href + '/') is safe here.
+          const isDirectActive =
+            'href' in item &&
+            !!item.href &&
+            (item.href === pathname || pathname.startsWith(item.href + '/'));
           const isDropdownActive =
             'items' in item &&
             (item.items?.some(

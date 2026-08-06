@@ -1,6 +1,7 @@
 'use strict';
 
 const chatbotService = require('../services/chatbot.service');
+const escalationService = require('../services/chatEscalation.service');
 const { successResponse, errorResponse } = require('../utils/response');
 
 /**
@@ -105,5 +106,31 @@ exports.query = async (req, res) => {
     return successResponse(res, result, 'Chatbot response');
   } catch (err) {
     return errorResponse(res, 'Chatbot request failed', 500, err);
+  }
+};
+
+/**
+ * POST /api/chatbot/escalate
+ * Public — "talk to a human". Files the visitor's message in the support inbox
+ * as real mail with Reply-To set to them.
+ *
+ * The visitor's own validation errors are returned as 400s with their message,
+ * because "that email address isn't valid" is something they can act on.
+ * Anything else is reported generically: this endpoint is unauthenticated, and
+ * whether a mailbox exists or which SMTP host refused is not a stranger's
+ * business. The failure is still logged, and it is never dressed up as a send —
+ * a visitor told "a human will get back to you" over a message that was never
+ * delivered is the outcome this whole path exists to prevent.
+ */
+exports.escalate = async (req, res) => {
+  try {
+    const result = await escalationService.escalate(req.body || {});
+    return successResponse(res, result, 'A support agent has been notified');
+  } catch (err) {
+    if (err?.statusCode === 400) {
+      return errorResponse(res, err.message, 400, err);
+    }
+    console.error('[chatbot] escalation failed:', err?.message || err);
+    return errorResponse(res, 'Could not reach the support team right now', 502, err);
   }
 };

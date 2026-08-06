@@ -40,6 +40,10 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
   const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
+  const sessionUserId =
+    (session?.user as { id?: string; _id?: string })?.id ??
+    (session?.user as { id?: string; _id?: string })?._id ??
+    '';
 
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [colleagues, setColleagues] = useState<Employee[]>([]);
@@ -50,6 +54,7 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resettingPin, setResettingPin] = useState(false);
   const [showBadge, setShowBadge] = useState(false);
   const [activeSection, setActiveSection] = useState('details');
 
@@ -59,7 +64,11 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
   );
 
   const load = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setNotFound(false);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setNotFound(false);
     try {
@@ -183,6 +192,10 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
       toast.error('The tenant owner cannot be removed');
       return;
     }
+    if (sessionUserId && employee._id === sessionUserId) {
+      toast.error('You cannot remove your own account');
+      return;
+    }
     if (!confirm(`Remove ${fullName(employee)}? They will lose all access.`))
       return;
     setDeleting(true);
@@ -193,6 +206,32 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Remove failed');
       setDeleting(false);
+    }
+  };
+
+  // Clear the POS PIN. The edit form can only ever *set* a PIN (blank means
+  // "keep current"), so removing one needs its own explicit action.
+  const resetPin = async () => {
+    if (!employee) return;
+    if (
+      !confirm(
+        `Remove the POS PIN for ${fullName(employee)}? They will need to set a new one before using the terminal.`
+      )
+    )
+      return;
+    setResettingPin(true);
+    try {
+      const res = await employeeService.resetPin(employee._id, token);
+      const updated = res.data.employee;
+      const f = employeeToForm(updated);
+      setEmployee(updated);
+      setForm(f);
+      setBaseline(JSON.stringify(f));
+      toast.success('POS PIN cleared');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to reset PIN');
+    } finally {
+      setResettingPin(false);
     }
   };
 
@@ -265,14 +304,28 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
             >
               <PiArrowLeft className="h-4 w-4" /> Employees
             </Link>
-            <button
-              type="button"
-              onClick={() => setShowBadge(true)}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/25"
-            >
-              <PiIdentificationCard className="h-4 w-4" />
-              Generate badge
-            </button>
+            <div className="flex items-center gap-2">
+              {employee.hasPin && (
+                <button
+                  type="button"
+                  onClick={resetPin}
+                  disabled={resettingPin}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/25 disabled:opacity-60"
+                  title="Remove the POS PIN so the employee must set a new one"
+                >
+                  <PiKey className="h-4 w-4" />
+                  {resettingPin ? 'Clearing…' : 'Reset PIN'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowBadge(true)}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/25"
+              >
+                <PiIdentificationCard className="h-4 w-4" />
+                Generate badge
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
@@ -369,8 +422,19 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
           <button
             type="button"
             onClick={remove}
-            disabled={isOwner || deleting || saving}
-            title={isOwner ? 'The owner cannot be removed' : 'Remove employee'}
+            disabled={
+              isOwner ||
+              deleting ||
+              saving ||
+              (sessionUserId !== '' && employee._id === sessionUserId)
+            }
+            title={
+              isOwner
+                ? 'The owner cannot be removed'
+                : sessionUserId !== '' && employee._id === sessionUserId
+                  ? 'You cannot remove your own account'
+                  : 'Remove employee'
+            }
             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-transparent disabled:hover:text-gray-600"
           >
             <PiTrash className="h-4 w-4" />

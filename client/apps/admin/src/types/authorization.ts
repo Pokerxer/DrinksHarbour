@@ -37,7 +37,10 @@ export type Permission =
   | 'tenant:manage'
   | 'billing:read'
   | 'billing:write'
-  | 'analytics:read';
+  | 'analytics:read'
+  | 'appraisals:read'
+  | 'appraisals:review'
+  | 'appraisals:manage';
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   super_admin: [
@@ -72,6 +75,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'billing:read',
     'billing:write',
     'analytics:read',
+    'appraisals:read',
+    'appraisals:review',
+    'appraisals:manage',
   ],
   admin: [
     'products:read',
@@ -102,6 +108,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'settings:write',
     'billing:read',
     'analytics:read',
+    'appraisals:read',
+    'appraisals:review',
+    'appraisals:manage',
   ],
   tenant_admin: [
     'products:read',
@@ -122,6 +131,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'users:write',
     'settings:read',
     'analytics:read',
+    'appraisals:read',
+    'appraisals:review',
+    'appraisals:manage',
   ],
   tenant_owner: [
     'products:read',
@@ -141,6 +153,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'users:read',
     'settings:read',
     'analytics:read',
+    'appraisals:read',
+    'appraisals:review',
+    'appraisals:manage',
   ],
   tenant_staff: [
     'products:read',
@@ -151,6 +166,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'customers:read',
     'inventory:read',
     'analytics:read',
+    'appraisals:read',
+    'appraisals:review',
   ],
   customer: [
     'products:read',

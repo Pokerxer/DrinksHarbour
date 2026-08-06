@@ -126,10 +126,6 @@ export const pageLinks = [
     href: routes.support.snippets,
   },
   {
-    name: 'Support Templates',
-    href: routes.support.templates,
-  },
-  {
     name: 'Invoice List',
     href: routes.invoice.home,
   },

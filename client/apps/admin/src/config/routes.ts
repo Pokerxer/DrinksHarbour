@@ -1,5 +1,8 @@
 export const routes = {
-  dashboard: '/ecommerce',
+  // Post-login landing route — the app homepage (the "All Apps" menu screen
+  // at /). Kept as `dashboard` because every consumer is the sign-in flow's
+  // redirect; the ecommerce dashboard stays reachable via its own menu tile.
+  dashboard: '/',
   signIn: '/signin',
   warehouses: {
     list: '/warehouses',
@@ -156,17 +159,14 @@ export const routes = {
     inbox: '/support/inbox',
     supportCategory: (category: string) => `/support/inbox/${category}`,
     messageDetails: (id: string) => `/support/inbox/${id}`,
+    // Snippets are created and edited in a drawer on the list page, so there
+    // are no create/view/edit routes. Templates were the same concept under a
+    // second name and were merged into snippets.
     snippets: '/support/snippets',
-    createSnippet: '/support/snippets/create',
-    viewSnippet: (id: string) => `/support/snippets/${id}`,
-    editSnippet: (id: string) => `/support/snippets/${id}/edit`,
-    templates: '/support/templates',
-    createTemplate: '/support/templates/create',
-    viewTemplate: (id: string) => `/support/templates/${id}`,
-    editTemplate: (id: string) => `/support/templates/${id}/edit`,
   },
   logistics: {
     dashboard: '/logistics',
+    drivers: '/logistics/drivers',
     shipmentList: '/logistics/shipments',
     customerProfile: '/logistics/customer-profile',
     createShipment: '/logistics/shipments/create',

@@ -696,6 +696,7 @@ function ShopPageContent({
         />
       )}
 
+
       {/* ── Category Top — admin-managed banner for category browsing ────── */}
       {!isSalePage && !searchQuery && (categoryParam || subcategoryParam) && (
         <PlacementBanner

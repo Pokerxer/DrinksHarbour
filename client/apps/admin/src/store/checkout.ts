@@ -68,6 +68,13 @@ export const shippingAddressAtom = atom(
     return set(checkoutAtom, { ...prev, shipping_address: data });
   }
 );
+
+/**
+ * Promo code applied on the cart page, carried through to checkout so the
+ * created order can pass `couponCode` to POST /api/orders. Persisted so the
+ * code survives a page refresh between cart and checkout.
+ */
+export const couponCodeAtom = atomWithStorage<string>('isomorphic-coupon', '');
 export const deliveryTimeAtom = atom(
   (get) => get(checkoutAtom).delivery_time,
   (get, set, data: DeliveryTime) => {

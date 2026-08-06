@@ -239,10 +239,6 @@ export const berylliumSidebarMenuItems = [
         name: 'Snippets',
         href: routes.support.snippets,
       },
-      {
-        name: 'Templates',
-        href: routes.support.templates,
-      },
     ],
   },
   {

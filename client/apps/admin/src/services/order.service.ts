@@ -197,7 +197,60 @@ export interface OrdersResponse {
   counts: Record<string, number>;
 }
 
+/**
+ * Payload for POST /api/orders — matches the create-order route validation
+ * (customer + shipping blocks, canonical paymentMethod, items with
+ * subProductId/productId + quantity + price, subtotal, total). The server
+ * re-derives all pricing from the SubProducts, so the client totals are only
+ * used as a fallback for unpriced lines.
+ */
+export interface CreateOrderPayload {
+  customer: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+  };
+  shipping: {
+    address: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+  };
+  paymentMethod: string;
+  items: {
+    subProductId?: string;
+    productId?: string;
+    sizeId?: string;
+    quantity: number;
+    price: number;
+  }[];
+  subtotal: number;
+  total: number;
+  note?: string;
+  /** Promo code validated at the cart; the server re-applies the discount. */
+  couponCode?: string;
+}
+
 export const orderService = {
+  /**
+   * Create an order from the storefront checkout. Returns the created order's
+   * `_id` + `orderNumber` (the server derives tenant + pricing itself).
+   */
+  async createOrder(token: string, payload: CreateOrderPayload): Promise<Order> {
+    const res = await fetch(`${API_URL}/api/orders`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(payload),
+    });
+    const { order } = await unwrap<{ order: Order }>(
+      res,
+      'Failed to place order'
+    );
+    return order;
+  },
+
   async getOrders(
     token: string,
     params: OrderListParams = {},
