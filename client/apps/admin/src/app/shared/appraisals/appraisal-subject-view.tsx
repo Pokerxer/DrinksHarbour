@@ -282,15 +282,19 @@ export default function AppraisalSubjectView({
             questions={questions}
           />
         )}
-        {peerFeedback.map((f, i) => (
+        {/* Every card is headed "Peer feedback", with no ordinal.
+            The numbering that used to be here read as a neutral label but was
+            a stable index into a list the subject wrote themselves: peer rows
+            arrived in creation order, which is the order their own nominations
+            were approved. The server now also reorders these under a salted
+            hash (orderFeedbackForViewer) so position carries nothing — the
+            missing number is the second half of that, removing the affordance
+            to correlate at all. Cards are separated visually, not by rank. */}
+        {peerFeedback.map((f) => (
           <FeedbackCard
             key={f._id}
             feedback={f}
-            heading={
-              peerFeedback.length > 1
-                ? `${KIND_HEADING.peer} ${i + 1}`
-                : KIND_HEADING.peer
-            }
+            heading={KIND_HEADING.peer}
             questions={questions}
           />
         ))}

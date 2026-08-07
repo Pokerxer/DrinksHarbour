@@ -67,6 +67,7 @@ function NewCycleForm({
   onCreated: (cycle: AppraisalCycle) => void;
 }) {
   const [name, setName] = useState('');
+  const [nominationDeadline, setNominationDeadline] = useState('');
   const [feedbackDeadline, setFeedbackDeadline] = useState('');
   // Defaults on: peer review is the normal shape of a cycle. HR turns it off
   // only to run a self + manager assessment only (see helper text below).
@@ -112,23 +113,40 @@ function NewCycleForm({
   // — validated here first so an empty submit is a disabled button, not a
   // round trip that comes back as a generic error toast.
   const nameError = !name.trim() ? 'Cycle name is required' : null;
+  // Nominating happens before feedback is collected, so a nomination deadline
+  // after the feedback deadline describes a cycle that cannot run. The server
+  // stores both without comparing them, so this is the only place it is caught.
+  const deadlineError =
+    nominationDeadline &&
+    feedbackDeadline &&
+    nominationDeadline > feedbackDeadline
+      ? 'The nomination deadline must fall on or before the feedback deadline.'
+      : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (nameError) {
-      toast.error(nameError);
+    const blocked = nameError || deadlineError;
+    if (blocked) {
+      toast.error(blocked);
       return;
     }
     setSubmitting(true);
     try {
       const cycle = await createCycle({
         name: name.trim(),
+        // Only sent when peer review is actually on — a nomination deadline on
+        // a self-and-manager cycle is a date nothing ever reads.
+        nominationDeadline:
+          peerReviewEnabled && nominationDeadline
+            ? nominationDeadline
+            : undefined,
         feedbackDeadline: feedbackDeadline || undefined,
         peerReviewEnabled,
         templateFamily: templateFamily || undefined,
       });
       toast.success('Cycle created');
       setName('');
+      setNominationDeadline('');
       setFeedbackDeadline('');
       setPeerReviewEnabled(true);
       onCreated(cycle);
@@ -158,6 +176,21 @@ function NewCycleForm({
             disabled={submitting}
           />
         </div>
+        {/* Only shown while peer review is on — see handleSubmit. */}
+        {peerReviewEnabled && (
+          <div className="flex-1">
+            <label className="mb-1.5 block text-xs font-semibold text-gray-500">
+              Nomination deadline
+            </label>
+            <Input
+              type="date"
+              value={nominationDeadline}
+              onChange={(e) => setNominationDeadline(e.target.value)}
+              max={feedbackDeadline || undefined}
+              disabled={submitting}
+            />
+          </div>
+        )}
         <div className="flex-1">
           <label className="mb-1.5 block text-xs font-semibold text-gray-500">
             Feedback deadline
@@ -166,18 +199,25 @@ function NewCycleForm({
             type="date"
             value={feedbackDeadline}
             onChange={(e) => setFeedbackDeadline(e.target.value)}
+            min={nominationDeadline || undefined}
             disabled={submitting}
           />
         </div>
         <Button
           type="submit"
-          disabled={submitting || Boolean(nameError)}
+          disabled={submitting || Boolean(nameError || deadlineError)}
           className="bg-[#b20202] hover:bg-[#9f0101] sm:w-auto"
         >
           <PiPlusBold className="me-1.5 h-4 w-4" />
           {submitting ? 'Creating…' : 'New cycle'}
         </Button>
       </div>
+
+      {deadlineError ? (
+        <Text className="-mt-1 text-xs font-medium text-red-600">
+          {deadlineError}
+        </Text>
+      ) : null}
 
       {templateOptions.length > 0 ? (
         <div className="max-w-md">

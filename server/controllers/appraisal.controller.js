@@ -18,6 +18,7 @@ const emailService = require('../services/email.service');
 const {
   resolveAppraisalAccess,
   projectFeedbackForViewer,
+  orderFeedbackForViewer,
   assertTransition,
   nominationViewForSubject,
   validateNominations,
@@ -309,7 +310,17 @@ exports.getAppraisal = async (req, res, next) => {
     // Anonymity is applied here, once, for every caller — to the feedback
     // rows via projectFeedbackForViewer, and to the appraisal document's own
     // reviewer-identifying fields via projectAppraisalForViewer.
-    const feedback = rawFeedback.map((fb) => projectFeedbackForViewer(fb, access));
+    // Anonymity is two things, not one: WHAT each row says about its author
+    // (projectFeedbackForViewer strips `reviewer`) and WHERE the row sits.
+    // Peer rows come back in natural order, which is creation order, which is
+    // the order the subject's own nominations were approved — so an anonymous
+    // list still ranked itself for them. orderFeedbackForViewer reorders peer
+    // rows under a per-appraisal salted hash for anyone who may not see names.
+    const feedback = orderFeedbackForViewer(
+      rawFeedback.map((fb) => projectFeedbackForViewer(fb, access)),
+      appraisal._id,
+      access
+    );
     const safeAppraisal = projectAppraisalForViewer(appraisal, access);
 
     // Built from the PROJECTED feedback, never the raw rows — the order of

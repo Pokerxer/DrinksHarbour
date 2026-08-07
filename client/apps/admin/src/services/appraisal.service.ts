@@ -573,16 +573,19 @@ export const fetchCycle = (id: string) =>
   request<AppraisalCycle>(`/api/appraisal-cycles/${id}`);
 
 /**
- * NOTE: `POST /api/appraisal-cycles` (appraisalCycle.controller.js#createCycle)
- * currently destructures only `{ name, nominationDeadline, feedbackDeadline }`
- * from the body — `peerReviewEnabled` is sent here but silently dropped
- * server-side, so every cycle is created with the model's `default: true`
- * regardless of what HR picks on this form. Flagged rather than fixed: fixing
- * it means editing `server/controllers/appraisalCycle.controller.js`, which
- * is out of scope for an admin-UI-only task.
+ * `peerReviewEnabled` IS honoured — an earlier note here claimed the server
+ * silently dropped it, which was wrong and would have sent the next reader
+ * off to "fix" a working switch. createCycle destructures it and passes it
+ * through raw so Mongoose's Boolean cast handles a non-JSON client, and
+ * `undefined` falls back to the schema default of true.
  */
 export const createCycle = (payload: {
   name: string;
+  /**
+   * When employees must have nominated their peers by. Only meaningful with
+   * `peerReviewEnabled` — nothing nominates on a self+manager cycle.
+   */
+  nominationDeadline?: string;
   feedbackDeadline?: string;
   peerReviewEnabled?: boolean;
   /**

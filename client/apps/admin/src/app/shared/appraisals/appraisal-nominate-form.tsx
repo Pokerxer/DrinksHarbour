@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Button, MultiSelect, Text, Title } from 'rizzui';
+import { Button, Modal, MultiSelect, Text, Title } from 'rizzui';
 import {
   PiCalendarBlank,
   PiCheckCircle,
   PiUsersThree,
   PiWarningCircle,
+  PiWarningOctagon,
 } from 'react-icons/pi';
 import {
   getEligiblePeers,
@@ -16,11 +17,18 @@ import {
   type NominationView,
   type PersonRef,
 } from '@/services/appraisal.service';
+import { deadlineTone } from './my-appraisals-utils';
+import { useUnsavedChangesGuard } from './use-unsaved-changes-guard';
 
 function personName(person?: PersonRef | null): string {
   if (!person) return 'Unknown';
   const name = `${person.firstName ?? ''} ${person.lastName ?? ''}`.trim();
   return name || person.email || 'Unknown';
+}
+
+/** Order-insensitive: picking the same people in another order is not a change. */
+function signatureOf(ids: string[]): string {
+  return [...ids].sort().join(',');
 }
 
 function formatDeadline(deadline?: string | null): string | null {
@@ -57,6 +65,13 @@ export default function AppraisalNominateForm({
   const [selected, setSelected] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  /**
+   * The selection the server holds, so leaving with picks that were never
+   * saved asks first. Peers are only persisted by an explicit "Save draft" —
+   * choosing five colleagues and clicking a nav tab used to lose all of it.
+   */
+  const [savedSelection, setSavedSelection] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,7 +86,9 @@ export default function AppraisalNominateForm({
         setView(nomination);
         setPeers(eligiblePeers);
         if (nomination.state === 'nominating') {
-          setSelected(nomination.myProposals.map((p) => p.user._id));
+          const seeded = nomination.myProposals.map((p) => p.user._id);
+          setSelected(seeded);
+          setSavedSelection(signatureOf(seeded));
         }
       } catch (e) {
         if (!cancelled) {
@@ -88,6 +105,18 @@ export default function AppraisalNominateForm({
     };
   }, [appraisalId]);
 
+  // Above every early return below, so the hook order is unconditional. The
+  // predicate carries the state check instead: only a live `nominating` view
+  // has an editable selection to lose.
+  useUnsavedChangesGuard(
+    view?.state === 'nominating' &&
+      savedSelection !== null &&
+      !submitting &&
+      !savingDraft &&
+      signatureOf(selected) !== savedSelection,
+    'Your peer nominations have not been saved. Leave without saving?'
+  );
+
   /**
    * Save without submitting. The appraisal stays in `nominating`, so unlike
    * handleSubmit below there is nothing irreversible to protect the employee
@@ -97,8 +126,10 @@ export default function AppraisalNominateForm({
    */
   async function handleSaveDraft() {
     setSavingDraft(true);
+    const sending = signatureOf(selected);
     try {
       await nominatePeers(appraisalId, selected, { submit: false });
+      setSavedSelection(sending);
       toast.success('Draft saved — you can finish this later');
       setView(await getNomination(appraisalId));
     } catch (e) {
@@ -110,8 +141,13 @@ export default function AppraisalNominateForm({
 
   async function handleSubmit() {
     setSubmitting(true);
+    const sending = signatureOf(selected);
     try {
       await nominatePeers(appraisalId, selected);
+      // Only after the server took it. Disarming before the call would drop
+      // the unsaved-work guard on a REJECTED submit, which is exactly when the
+      // list is still unpersisted and most worth protecting.
+      setSavedSelection(sending);
     } catch (e) {
       // Server 400 messages here are written for end users — surface them
       // verbatim rather than a generic fallback.
@@ -186,6 +222,10 @@ export default function AppraisalNominateForm({
 
   const { min, max, deadline, myProposals } = view;
   const deadlineLabel = formatDeadline(deadline);
+  // Toned like every other deadline in the module rather than flat grey — an
+  // employee whose nomination window closes tomorrow gets no useful signal
+  // from the same colour it wore a month out.
+  const tone = deadlineTone(deadline);
   const count = selected.length;
   const overMax = count > max;
   const outOfRange = count < min || overMax;
@@ -211,9 +251,23 @@ export default function AppraisalNominateForm({
           Choose {rangeLabel} colleagues to give you feedback.
         </p>
         {deadlineLabel && (
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-400">
-            <PiCalendarBlank className="h-3.5 w-3.5 shrink-0" />
-            Nominate by {deadlineLabel}
+          <p
+            className={`mt-1 flex items-center gap-1.5 text-xs font-medium ${
+              tone === 'overdue'
+                ? 'text-red-600'
+                : tone === 'soon'
+                  ? 'text-amber-600'
+                  : 'text-gray-400'
+            }`}
+          >
+            {tone === 'overdue' ? (
+              <PiWarningOctagon className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <PiCalendarBlank className="h-3.5 w-3.5 shrink-0" />
+            )}
+            {tone === 'overdue'
+              ? `Nominations were due ${deadlineLabel}`
+              : `Nominate by ${deadlineLabel}`}
           </p>
         )}
       </div>
@@ -269,7 +323,7 @@ export default function AppraisalNominateForm({
             {savingDraft ? 'Saving…' : 'Save draft'}
           </Button>
           <Button
-            onClick={handleSubmit}
+            onClick={() => setConfirmOpen(true)}
             disabled={busy || outOfRange}
             className="bg-[#b20202] hover:bg-[#9f0101]"
           >
@@ -282,6 +336,56 @@ export default function AppraisalNominateForm({
         Submitting is final — it sends your list to your manager for approval
         and you will not be able to change it afterwards.
       </Text>
+
+      {/* This screen told the employee submitting was final and then fired on
+          a single click — the last one-way door in the module without a
+          confirmation, and the only one aimed at someone who is not an admin. */}
+      <Modal
+        isOpen={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        size="sm"
+      >
+        <div className="p-6">
+          <Title as="h3" className="text-base font-semibold text-gray-900">
+            Submit these {count} {count === 1 ? 'nomination' : 'nominations'}?
+          </Title>
+          <Text className="mt-2 text-sm text-gray-500">
+            Your list goes to your manager for approval. You will not be able to
+            change it afterwards — use “Save draft” instead if you are still
+            deciding.
+          </Text>
+          <ul className="mt-4 flex flex-col gap-1">
+            {selected.map((id) => (
+              <li
+                key={id}
+                className="flex items-center gap-1.5 text-sm text-gray-700"
+              >
+                <PiUsersThree className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                {personName(peers.find((p) => p._id === id))}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmOpen(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setConfirmOpen(false);
+                await handleSubmit();
+              }}
+              disabled={submitting}
+              className="bg-[#b20202] hover:bg-[#9f0101]"
+            >
+              {submitting ? 'Submitting…' : 'Submit nominations'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

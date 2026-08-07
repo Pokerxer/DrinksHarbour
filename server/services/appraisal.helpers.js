@@ -4,6 +4,7 @@
 // database, which is what lets the security-critical access rules be unit
 // tested exhaustively.
 
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 
 const APPRAISAL_STATES = [
@@ -193,6 +194,53 @@ function projectFeedbackForViewer(feedback, access) {
     delete plain.answers;
   }
   return plain;
+}
+
+/**
+ * Order feedback rows so their POSITION carries no information.
+ *
+ * Stripping `reviewer` (above) makes a peer row anonymous on its own, but the
+ * order of the array was still the order the rows were created — which is the
+ * order the subject's own nominations were approved in. The UI then labelled
+ * the cards "Peer feedback 1", "Peer feedback 2", handing the subject a
+ * stable index into a list they themselves wrote. Two peers, and the first
+ * one they nominated is card 1.
+ *
+ * So for any viewer who may not see reviewer names, peer rows are reordered by
+ * a hash of the row id salted with the appraisal id. Properties that matter:
+ *
+ *  - Unrelated to creation order, so position leaks nothing.
+ *  - Deterministic, so refreshing the page does not shuffle the cards under
+ *    someone reading them — the "which one said that" confusion would be a
+ *    real usability cost, and re-randomising per request also lets a viewer
+ *    average over many loads to recover the true order.
+ *  - Salted per appraisal, so the same reviewer does not land in the same
+ *    slot across every appraisal they contribute to.
+ *
+ * Self and manager rows keep their kind-based identity — the subject already
+ * knows who wrote those — and are not reordered relative to each other.
+ *
+ * A viewer WITH `canSeeReviewerNames` gets the rows untouched: they can read
+ * the names anyway, and manager/HR screens are easier to scan in a stable
+ * order.
+ */
+function orderFeedbackForViewer(feedback, appraisalId, access) {
+  const rows = Array.isArray(feedback) ? feedback : [];
+  if (access?.canSeeReviewerNames) return rows;
+  const salt = idOf(appraisalId);
+  const rank = new Map(
+    rows.map((row) => [
+      row,
+      crypto
+        .createHash('sha256')
+        .update(`${salt}:${idOf(row?._id)}`)
+        .digest('hex'),
+    ])
+  );
+  const peers = rows.filter((r) => r?.kind === 'peer');
+  const others = rows.filter((r) => r?.kind !== 'peer');
+  peers.sort((a, b) => rank.get(a).localeCompare(rank.get(b)));
+  return [...others, ...peers];
 }
 
 /**
@@ -700,6 +748,7 @@ module.exports = {
   assertTransition,
   resolveAppraisalAccess,
   projectFeedbackForViewer,
+  orderFeedbackForViewer,
   planCycleLaunch,
   buildDefaultTemplate,
   filterSectionsForKind,

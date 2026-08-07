@@ -1,11 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { motion, MotionConfig } from 'framer-motion';
-import { PiArrowLeft, PiSparkle, PiWarningCircle } from 'react-icons/pi';
+import {
+  PiArrowClockwise,
+  PiArrowLeft,
+  PiSparkle,
+  PiWarningCircle,
+} from 'react-icons/pi';
 import {
   ApiError,
   aiAssistQuestion,
@@ -17,6 +22,14 @@ import {
   type FeedbackKind,
 } from '@/services/appraisal.service';
 import { useUndoRedo } from './use-undo-redo';
+import { useUnsavedChangesGuard } from './use-unsaved-changes-guard';
+import {
+  ensureDraftKeys,
+  newUid,
+  reKey,
+  stripDraftKeys,
+  type KeyedSection,
+} from './template-draft-keys';
 import { blankSections } from './template-presets';
 import {
   appendGeneratedSections,
@@ -28,7 +41,10 @@ import TemplateFormHeader from './template-form-header';
 import TemplateFormSummary from './template-form-summary';
 import TemplateSectionCard from './template-section-card';
 import TemplateFormFooter from './template-form-footer';
-import TemplateAiModal, { type AiModalMode, type AiResult } from './template-ai-modal';
+import TemplateAiModal, {
+  type AiModalMode,
+  type AiResult,
+} from './template-ai-modal';
 
 /**
  * A per-question assist is deliberately NOT scoped to the audiences the form
@@ -50,14 +66,28 @@ function moved<T>(arr: T[], from: number, dir: -1 | 1): T[] {
   return next;
 }
 
-function blankQuestion(): DraftQuestion {
+function blankQuestion() {
   return {
-    type: 'rating',
+    type: 'rating' as const,
     label: '',
     required: true,
     scaleMax: 5,
-    askOf: ['self', 'manager', 'peer'],
+    askOf: ['self', 'manager', 'peer'] as FeedbackKind[],
+    _uid: newUid(),
   };
+}
+
+/** What a save would put on the wire — the comparison basis for "is dirty". */
+function draftSignature(
+  name: string,
+  description: string,
+  sections: KeyedSection[]
+): string {
+  return JSON.stringify({
+    name: name.trim(),
+    description: description.trim(),
+    sections: stripDraftKeys(sections),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -71,16 +101,50 @@ export default function TemplateEditor({ id }: { id: string }) {
   const [presetChosen, setPresetChosen] = useState(!isNew);
 
   // --- Form state with undo/redo ---
-  const { state: sections, set: setSections, undo, redo, canUndo, canRedo } =
-    useUndoRedo<DraftSection[]>([blankSections()[0]]);
+  const {
+    state: sections,
+    set: setKeyedSections,
+    reset: resetSections,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useUndoRedo<KeyedSection[]>(ensureDraftKeys([blankSections()[0]]));
+
+  /**
+   * The single write path for the draft. Every producer of sections — presets,
+   * AI generation, add, duplicate, the loaded template — funnels through here
+   * so client-side identity is attached in one place rather than in each of
+   * them. `ensureDraftKeys` returns its input untouched when nothing needed a
+   * uid, so this stays free for the common case and does not turn a no-op
+   * update into an undoable step.
+   */
+  const setSections = useCallback(
+    (next: DraftSection[] | ((prev: KeyedSection[]) => DraftSection[])) =>
+      setKeyedSections((prev) =>
+        ensureDraftKeys(typeof next === 'function' ? next(prev) : next)
+      ),
+    [setKeyedSections]
+  );
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [version, setVersion] = useState(1);
   const [hasLaunchedCycle, setHasLaunchedCycle] = useState(false);
   const [loading, setLoading] = useState(!isNew);
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [badFields, setBadFields] = useState<string[]>([]);
+  /**
+   * The signature of what the SERVER holds. Null until the form has a baseline
+   * (a loaded template, or the first successful create), which is what keeps a
+   * brand-new untouched draft from counting as unsaved work.
+   */
+  const [savedSignature, setSavedSignature] = useState<string | null>(null);
+  /** Current sections without making the preset callback re-created per edit. */
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
 
   // --- AI generation state ---
   const [aiModal, setAiModal] = useState<{
@@ -90,22 +154,40 @@ export default function TemplateEditor({ id }: { id: string }) {
   /** `${sectionIndex}:${questionIndex}` while a per-question assist is in flight. */
   const [assisting, setAssisting] = useState<string | null>(null);
 
+  const signature = useMemo(
+    () => draftSignature(name, description, sections),
+    [name, description, sections]
+  );
+  const isDirty = savedSignature !== null && signature !== savedSignature;
+  // The editor holds the largest body of unsaved work in the module and had no
+  // guard at all: the back link, the section nav and the sidebar are all
+  // client-side navigations, which never fire `beforeunload`.
+  useUnsavedChangesGuard(
+    isDirty && !saving,
+    'This review form has unsaved changes. Leave without saving?'
+  );
+
   // --- Keyboard shortcuts ---
+  // The handler is re-read from a ref rather than re-bound every render, which
+  // is what the missing dependency array here used to buy.
+  const handleSaveRef = useRef<() => void>(() => {});
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      if (key === 's') {
         e.preventDefault();
-        handleSave();
+        handleSaveRef.current();
       }
     }
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  });
+  }, [undo, redo]);
 
   // --- Load existing template (edit mode) ---
   useEffect(() => {
@@ -113,19 +195,28 @@ export default function TemplateEditor({ id }: { id: string }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setLoadFailed(null);
       try {
         const t = await fetchTemplate(id);
         if (cancelled) return;
+        const loaded = ensureDraftKeys(
+          t.sections?.length ? t.sections : [blankSections()[0]]
+        );
         setName(t.name);
         setDescription(t.description || '');
-        setSections(t.sections?.length ? t.sections : [blankSections()[0]]);
+        // `reset`, not `set`: seeding through the undo stack made the blank
+        // starting draft an undoable state, so the first Cmd+Z on a form the
+        // user had only just opened replaced it with a single empty section.
+        resetSections(loaded);
+        setSavedSignature(draftSignature(t.name, t.description || '', loaded));
         setVersion(t.version);
         setHasLaunchedCycle(t.hasLaunchedCycle);
       } catch (err) {
         if (!cancelled) {
-          toast.error(
-            err instanceof Error ? err.message : 'Failed to load this form'
-          );
+          const message =
+            err instanceof Error ? err.message : 'Failed to load this form';
+          setLoadFailed(message);
+          toast.error(message);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -134,7 +225,7 @@ export default function TemplateEditor({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [id, isNew, setSections]);
+  }, [id, isNew, reloadKey, resetSections]);
 
   // --- Preset callback ---
   const handlePreset = useCallback(
@@ -143,18 +234,35 @@ export default function TemplateEditor({ id }: { id: string }) {
       presetName: string,
       presetDescription: string
     ) => {
+      const seeded = ensureDraftKeys(
+        presetSections.length > 0 ? presetSections : sectionsRef.current
+      );
       if (presetSections.length > 0) {
-        setSections(presetSections);
+        resetSections(seeded);
         setName(presetName);
         setDescription(presetDescription);
       }
+      // The preset itself is the baseline, so a user who picks one and leaves
+      // without typing anything is not warned about "unsaved changes" they
+      // never made. Everything after this point is theirs.
+      setSavedSignature(
+        draftSignature(
+          presetSections.length > 0 ? presetName : name,
+          presetSections.length > 0 ? presetDescription : description,
+          seeded
+        )
+      );
       setPresetChosen(true);
     },
-    [setSections]
+    [description, name, resetSections]
   );
 
   // --- Question mutation helpers ---
-  function patchQuestion(si: number, qi: number, patch: Partial<DraftQuestion>) {
+  function patchQuestion(
+    si: number,
+    qi: number,
+    patch: Partial<DraftQuestion>
+  ) {
     setSections((prev) =>
       prev.map((s, i) =>
         i !== si
@@ -190,9 +298,7 @@ export default function TemplateEditor({ id }: { id: string }) {
   function addQuestion(si: number) {
     setSections((prev) =>
       prev.map((s, i) =>
-        i === si
-          ? { ...s, questions: [...s.questions, blankQuestion()] }
-          : s
+        i === si ? { ...s, questions: [...s.questions, blankQuestion()] } : s
       )
     );
   }
@@ -201,12 +307,12 @@ export default function TemplateEditor({ id }: { id: string }) {
     setSections((prev) =>
       prev.map((s, i) => {
         if (i !== si) return s;
-        const copy = { ...s.questions[qi] };
-        // Server mints _id on save — never clone an existing id.
-        const { _id: _unused, ...rest } = copy as any;
-        const dup = { ...rest };
+        // Server mints `_id` on save — never clone an existing one — and
+        // `reKey` gives the copy its own client identity so the two rows do
+        // not share collapsed state the moment they appear.
+        const { _id: _unused, ...rest } = s.questions[qi];
         const next = [...s.questions];
-        next.splice(qi + 1, 0, dup);
+        next.splice(qi + 1, 0, reKey(rest));
         return { ...s, questions: next };
       })
     );
@@ -214,9 +320,7 @@ export default function TemplateEditor({ id }: { id: string }) {
 
   // --- Section mutation helpers ---
   function patchSectionTitle(si: number, title: string) {
-    setSections((prev) =>
-      prev.map((s, i) => (i === si ? { ...s, title } : s))
-    );
+    setSections((prev) => prev.map((s, i) => (i === si ? { ...s, title } : s)));
   }
 
   function moveSection(si: number, dir: -1 | 1) {
@@ -230,7 +334,7 @@ export default function TemplateEditor({ id }: { id: string }) {
   function addSection() {
     setSections((prev) => [
       ...prev,
-      { title: '', questions: [blankQuestion()] },
+      { title: '', questions: [blankQuestion()], _uid: newUid() },
     ]);
   }
 
@@ -250,14 +354,21 @@ export default function TemplateEditor({ id }: { id: string }) {
         setSections((prev) => appendGeneratedSections(prev, result.sections));
         // Only fill a name HR has not written themselves.
         if (!name.trim() && result.name) setName(result.name);
-        if (!description.trim() && result.description) setDescription(result.description);
+        if (!description.trim() && result.description)
+          setDescription(result.description);
       }
       toast.success(
-        result.strategy === 'replace' ? 'Form replaced with the draft' : 'Draft added to your form'
+        result.strategy === 'replace'
+          ? 'Form replaced with the draft'
+          : 'Draft added to your form'
       );
     } else if (result.expandIndex !== null) {
       setSections((prev) =>
-        appendQuestionsToSection(prev, result.expandIndex as number, result.section.questions)
+        appendQuestionsToSection(
+          prev,
+          result.expandIndex as number,
+          result.section.questions
+        )
       );
       toast.success('Questions added to the section');
     } else {
@@ -275,7 +386,9 @@ export default function TemplateEditor({ id }: { id: string }) {
     const question = sections[si]?.questions?.[qi];
     if (!question) return;
     if (mode !== 'label' && !question.label.trim()) {
-      toast.error('Write the question first — there is nothing to work from yet.');
+      toast.error(
+        'Write the question first — there is nothing to work from yet.'
+      );
       return;
     }
 
@@ -297,7 +410,9 @@ export default function TemplateEditor({ id }: { id: string }) {
             : 'Reviewers suggested'
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not improve this question');
+      toast.error(
+        err instanceof Error ? err.message : 'Could not improve this question'
+      );
     } finally {
       setAssisting(null);
     }
@@ -332,24 +447,33 @@ export default function TemplateEditor({ id }: { id: string }) {
     }
     setSaving(true);
     setBadFields([]);
+    // Captured before the await: marking THIS as saved on success means an
+    // edit made while the request was in flight still counts as unsaved.
+    const sending = signature;
     try {
       const body = {
         name: name.trim(),
         description: description.trim() || undefined,
-        sections,
+        // `_uid` is client-side identity and never goes on the wire.
+        sections: stripDraftKeys(sections),
       };
       if (isNew) {
         const created = await createTemplate(body);
+        // Cleared before the push so the navigation guard does not challenge
+        // a route change caused by a successful save.
+        setSavedSignature(sending);
         toast.success('Form created');
         router.push(`/appraisals/templates/${created._id}`);
         return;
       }
       const saved = await updateTemplate(id, body);
       if (saved.forked) {
+        setSavedSignature(sending);
         toast.success(`Saved as version ${saved.version}`);
         router.push(`/appraisals/templates/${saved._id}`);
         return;
       }
+      setSavedSignature(sending);
       toast.success('Form saved');
       setVersion(saved.version);
     } catch (err) {
@@ -364,6 +488,8 @@ export default function TemplateEditor({ id }: { id: string }) {
     }
   }
 
+  handleSaveRef.current = handleSave;
+
   // --- Loading skeleton ---
   if (loading) {
     return (
@@ -371,6 +497,40 @@ export default function TemplateEditor({ id }: { id: string }) {
         {[0, 1, 2].map((i) => (
           <div key={i} className="h-24 animate-pulse rounded-2xl bg-gray-100" />
         ))}
+      </div>
+    );
+  }
+
+  // --- Load failure ---
+  // Without this a failed fetch dropped the user into an editor showing one
+  // blank section, which is indistinguishable from a form that really is
+  // empty — and saving it would have overwritten the real one.
+  if (loadFailed) {
+    return (
+      <div className="mx-auto max-w-md px-6 py-20 text-center">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
+          <PiWarningCircle className="h-7 w-7 text-gray-400" />
+        </div>
+        <p className="text-sm font-medium text-gray-600">
+          This review form could not be loaded.
+        </p>
+        <p className="mt-1 text-xs text-gray-400">{loadFailed}</p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => setReloadKey((n) => n + 1)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-50"
+          >
+            <PiArrowClockwise className="h-4 w-4" />
+            Try again
+          </button>
+          <Link
+            href="/appraisals/templates"
+            className="text-sm font-medium text-gray-400 hover:text-gray-700"
+          >
+            All review forms
+          </Link>
+        </div>
       </div>
     );
   }
@@ -389,7 +549,7 @@ export default function TemplateEditor({ id }: { id: string }) {
           <div>
             <Link
               href="/appraisals/templates"
-              className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-gray-400 hover:text-gray-700 transition-colors"
+              className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-gray-400 transition-colors hover:text-gray-700"
             >
               <PiArrowLeft className="h-3.5 w-3.5" />
               All review forms
@@ -405,7 +565,7 @@ export default function TemplateEditor({ id }: { id: string }) {
               type="button"
               onClick={() => setAiModal({ mode: 'template', expand: null })}
               disabled={saving}
-              className="mr-1 inline-flex items-center gap-1.5 rounded-xl border border-[#b20202]/20 bg-gradient-to-r from-[#b20202]/5 to-purple-50 px-3 py-2 text-sm font-semibold text-[#b20202] hover:from-[#b20202]/10 hover:to-purple-100 disabled:opacity-50 transition-colors"
+              className="mr-1 inline-flex items-center gap-1.5 rounded-xl border border-[#b20202]/20 bg-gradient-to-r from-[#b20202]/5 to-purple-50 px-3 py-2 text-sm font-semibold text-[#b20202] transition-colors hover:from-[#b20202]/10 hover:to-purple-100 disabled:opacity-50"
             >
               <PiSparkle className="h-4 w-4" />
               <span className="hidden sm:inline">Generate with AI</span>
@@ -416,10 +576,19 @@ export default function TemplateEditor({ id }: { id: string }) {
               onClick={undo}
               disabled={!canUndo}
               title="Undo (Cmd+Z)"
-              className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-30"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 7v6h6" />
+                <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
               </svg>
             </button>
             <button
@@ -427,10 +596,19 @@ export default function TemplateEditor({ id }: { id: string }) {
               onClick={redo}
               disabled={!canRedo}
               title="Redo (Cmd+Shift+Z)"
-              className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-30"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 7v6h-6" />
+                <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
               </svg>
             </button>
           </div>
@@ -452,8 +630,8 @@ export default function TemplateEditor({ id }: { id: string }) {
               </p>
               <p className="mt-0.5 text-xs text-amber-600">
                 Saving will create version {version + 1}. Cycles already running
-                keep the version they launched with, so reviews in progress are not
-                affected.
+                keep the version they launched with, so reviews in progress are
+                not affected.
               </p>
             </div>
           </motion.div>
@@ -475,7 +653,10 @@ export default function TemplateEditor({ id }: { id: string }) {
         <div className="flex flex-col gap-5">
           {sections.map((section, si) => (
             <TemplateSectionCard
-              key={si}
+              // Client identity, not the index: TemplateSectionCard owns its
+              // own `collapsed` state, and an index key hands that state to
+              // whichever section lands in the slot after a move or a delete.
+              key={section._uid}
               section={section}
               sectionIndex={si}
               isFirst={si === 0}
@@ -494,7 +675,10 @@ export default function TemplateEditor({ id }: { id: string }) {
               onExpandWithAi={(index) =>
                 setAiModal({
                   mode: 'section',
-                  expand: { index, title: section.title || `Section ${index + 1}` },
+                  expand: {
+                    index,
+                    title: section.title || `Section ${index + 1}`,
+                  },
                 })
               }
               onAssistQuestion={handleQuestionAssist}
@@ -508,7 +692,7 @@ export default function TemplateEditor({ id }: { id: string }) {
           type="button"
           onClick={() => setAiModal({ mode: 'section', expand: null })}
           disabled={saving}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-dashed border-[#b20202]/30 bg-[#b20202]/[0.03] px-4 py-3 text-sm font-medium text-[#b20202] hover:bg-[#b20202]/[0.07] disabled:opacity-50 transition-colors"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-dashed border-[#b20202]/30 bg-[#b20202]/[0.03] px-4 py-3 text-sm font-medium text-[#b20202] transition-colors hover:bg-[#b20202]/[0.07] disabled:opacity-50"
         >
           <PiSparkle className="h-4 w-4" />
           Add a section with AI

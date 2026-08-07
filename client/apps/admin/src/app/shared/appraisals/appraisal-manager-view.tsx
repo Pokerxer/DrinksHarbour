@@ -35,6 +35,7 @@ import {
   type PersonRef,
 } from '@/services/appraisal.service';
 import { formatAnswer, isNumericQuestion } from './review-answer-utils';
+import { useUnsavedChangesGuard } from './use-unsaved-changes-guard';
 import AppraisalStateBadge from './state-badge';
 import AppraisalPeerApproval from './appraisal-peer-approval';
 import AppraisalComparison from './appraisal-comparison';
@@ -44,6 +45,42 @@ import AppraisalComparison from './appraisal-comparison';
 import AppraisalPeerBreakdown from './appraisal-peer-breakdown';
 
 const QUESTION_GONE_LABEL = 'Question no longer on this form';
+
+/** Inclusive bounds of the final rating, matching the input's min/max. */
+const RATING_MIN = 0;
+const RATING_MAX = 10;
+
+/**
+ * Validate the final-rating box.
+ *
+ * Blank is legal — a summary may be released without a score, and the report's
+ * histogram is explicitly captioned "N released, M scored" for exactly that
+ * case. Anything else must be a real number inside the bounds: `Number('')` is
+ * 0 and `Number('abc')` is NaN, and NaN serialises to `null` over JSON, so an
+ * unvalidated box silently sent "no rating" for a typo instead of saying so.
+ */
+export function parseFinalRating(
+  raw: string
+): { ok: true; value: number | undefined } | { ok: false; error: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: true, value: undefined };
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) {
+    return { ok: false, error: 'The final rating must be a number.' };
+  }
+  if (value < RATING_MIN || value > RATING_MAX) {
+    return {
+      ok: false,
+      error: `The final rating must be between ${RATING_MIN} and ${RATING_MAX}.`,
+    };
+  }
+  return { ok: true, value };
+}
+
+/** Fingerprint of the editable summary fields, for the unsaved-work guard. */
+function savedSignatureOf(summary: string, finalRating: string): string {
+  return JSON.stringify([summary, finalRating.trim()]);
+}
 
 function personName(person?: PersonRef | null): string {
   if (!person) return 'Unknown';
@@ -248,6 +285,19 @@ export default function AppraisalManagerView({
       ? String(appraisal.finalRating)
       : ''
   );
+  /**
+   * What the server holds, so navigating away with an unsaved summary asks
+   * first. A manager's summary is the longest single piece of prose anyone
+   * types in this module and it had no protection at all.
+   */
+  const [savedSignature, setSavedSignature] = useState(() =>
+    savedSignatureOf(
+      appraisal.summary ?? '',
+      typeof appraisal.finalRating === 'number'
+        ? String(appraisal.finalRating)
+        : ''
+    )
+  );
   const [saving, setSaving] = useState(false);
   const [releasing, setReleasing] = useState(false);
   // Set only when releaseAppraisal rejects with code === 'LOW_PEER_RESPONSE_COUNT'
@@ -357,18 +407,39 @@ export default function AppraisalManagerView({
   // goes read-only in those states instead of letting a save 403 server-side.
   const readOnly = !access.canSummarise;
   const summaryEmpty = !summary.trim();
+  const ratingCheck = parseFinalRating(finalRating);
+  const isDirty = savedSignatureOf(summary, finalRating) !== savedSignature;
   const releaseDisabledReason = !access.canRelease
     ? 'This appraisal is not ready to release yet.'
     : summaryEmpty
       ? 'Write a summary before releasing.'
-      : null;
+      : !ratingCheck.ok
+        ? ratingCheck.error
+        : // Release sends nothing but the id — it publishes whatever the server
+          // already holds. So releasing on top of unsaved edits shows the
+          // employee the PREVIOUS summary while this screen displays the new
+          // one, and nobody finds out. Saving first is the only honest order.
+          isDirty
+          ? 'Save your changes before releasing.'
+          : null;
+
+  useUnsavedChangesGuard(
+    !readOnly && !saving && isDirty,
+    'This summary has unsaved changes. Leave without saving?'
+  );
 
   async function handleSave() {
+    const parsed = parseFinalRating(finalRating);
+    if (!parsed.ok) {
+      toast.error(parsed.error);
+      return;
+    }
     setSaving(true);
+    const sending = savedSignatureOf(summary, finalRating);
     try {
-      const rating = finalRating.trim() ? Number(finalRating) : undefined;
-      const updated = await saveSummary(appraisal._id, summary, rating);
+      const updated = await saveSummary(appraisal._id, summary, parsed.value);
       onUpdate(updated);
+      setSavedSignature(sending);
       toast.success('Summary saved');
     } catch (e) {
       toast.error(
@@ -534,15 +605,24 @@ export default function AppraisalManagerView({
           <PiStar className="h-4 w-4 shrink-0 text-amber-500" />
           <Input
             type="number"
-            min={0}
-            max={10}
+            min={RATING_MIN}
+            max={RATING_MAX}
+            step="0.1"
             value={finalRating}
             onChange={(e) => setFinalRating(e.target.value)}
-            placeholder="Final rating (0–10)"
+            placeholder={`Final rating (${RATING_MIN}–${RATING_MAX})`}
             disabled={readOnly}
+            aria-invalid={!ratingCheck.ok}
+            error={ratingCheck.ok ? undefined : ratingCheck.error}
             className="w-full max-w-[12rem]"
           />
         </div>
+        {/* `min`/`max` on a number input are advisory — the browser will not
+            block a typed value, and this form has no submit event for its
+            constraint validation to run on. */}
+        <p className="mt-1.5 text-xs text-gray-400">
+          Optional. Leave blank to release without a score.
+        </p>
 
         {readOnly ? (
           <p className="mt-4 flex items-center gap-1.5 text-xs text-gray-400">

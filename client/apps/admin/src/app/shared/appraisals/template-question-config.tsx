@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from 'rizzui';
 import { PiPlusBold, PiTrash, PiWarningCircle } from 'react-icons/pi';
@@ -77,10 +78,55 @@ function ChoiceConfig({
 }) {
   const options = question.options ?? [];
 
-  function setOptions(next: string[]) { onPatch({ options: next }); }
-  function addOption() { setOptions([...options, '']); }
-  function updateOption(i: number, val: string) { setOptions(options.map((o, j) => (j === i ? val : o))); }
-  function removeOption(i: number) { setOptions(options.filter((_, j) => j !== i)); }
+  /**
+   * Options are bare strings on the wire, so there is no id to key a row by
+   * and two options may legitimately read the same while being typed. This
+   * keeps a parallel list of client-side keys that moves with the options:
+   * deleting the second of four used to leave the caret in a row that now
+   * held the third option's text, because the input node was reused.
+   */
+  const [rowKeys, setRowKeys] = useState<number[]>(() =>
+    options.map((_, i) => i)
+  );
+  // Derived, not stored in a ref: a counter mutated during render advances
+  // twice under React's development double-invoke. Reading the current maximum
+  // is pure and gives the same guarantee — a key never reused while these
+  // options are on screen.
+  const nextKey = rowKeys.length > 0 ? Math.max(...rowKeys) + 1 : 0;
+  // Options that arrived from elsewhere (AI assist, a preset, an undo) need
+  // the key list resized to match rather than reconciled by index. Setting
+  // state during render of this same component is React's supported way to
+  // adjust to changed props.
+  //
+  // It terminates because the resize is driven by `options.length` alone and
+  // the next render therefore sees equal lengths — NOT because `onPatch`
+  // happens to be synchronous. Keep it that way: deriving the new keys from
+  // anything that `onPatch` feeds back (or making the write below conditional
+  // on a value `onPatch` controls) turns a debounced or async patch into an
+  // infinite render loop.
+  if (rowKeys.length !== options.length) {
+    setRowKeys(options.map((_, i) => rowKeys[i] ?? nextKey + i));
+  }
+
+  function setOptions(next: string[], keys: number[]) {
+    setRowKeys(keys);
+    onPatch({ options: next });
+  }
+  function addOption() {
+    setOptions([...options, ''], [...rowKeys, nextKey]);
+  }
+  function updateOption(i: number, val: string) {
+    setOptions(
+      options.map((o, j) => (j === i ? val : o)),
+      rowKeys
+    );
+  }
+  function removeOption(i: number) {
+    setOptions(
+      options.filter((_, j) => j !== i),
+      rowKeys.filter((_, j) => j !== i)
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -101,7 +147,7 @@ function ChoiceConfig({
       <div className="flex flex-col gap-2">
         {options.map((opt, i) => (
           <motion.div
-            key={i}
+            key={rowKeys[i] ?? i}
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -8 }}

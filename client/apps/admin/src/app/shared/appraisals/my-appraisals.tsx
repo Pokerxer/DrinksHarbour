@@ -70,7 +70,9 @@ function StatCard({
       </div>
       <div className="min-w-0">
         <p className="text-xl font-bold leading-tight text-gray-900">{value}</p>
-        <p className="truncate text-[11px] font-medium text-gray-500">{label}</p>
+        <p className="truncate text-[11px] font-medium text-gray-500">
+          {label}
+        </p>
       </div>
     </motion.div>
   );
@@ -125,10 +127,7 @@ export default function MyAppraisals() {
     if (silent) setRefreshing(true);
     else setLoading(true);
     try {
-      const [a, r] = await Promise.all([
-        fetchMyAppraisals(),
-        fetchMyReviews(),
-      ]);
+      const [a, r] = await Promise.all([fetchMyAppraisals(), fetchMyReviews()]);
       setAppraisals(a);
       setReviews(r);
       setLastUpdated(new Date());
@@ -182,6 +181,18 @@ export default function MyAppraisals() {
   );
   const submittedReviews = useMemo(
     () => reviews.filter((r) => r.status === 'submitted'),
+    [reviews]
+  );
+  /**
+   * A request that expired or was declined is neither pending nor submitted,
+   * so it renders in neither list. It still has to be reachable — the reviewer
+   * can open it to see what happened, and a row that silently vanishes reads
+   * as a bug — and it must not be counted in a heading that promises to list
+   * it. Shown in a closed group of its own, with the count kept honest.
+   */
+  const closedReviews = useMemo(
+    () =>
+      reviews.filter((r) => r.status === 'expired' || r.status === 'declined'),
     [reviews]
   );
 
@@ -331,8 +342,8 @@ export default function MyAppraisals() {
                 Nothing here yet
               </p>
               <p className="mt-1 max-w-sm text-sm text-gray-400">
-                Your appraisals and feedback requests will appear here once
-                your manager launches a cycle.
+                Your appraisals and feedback requests will appear here once your
+                manager launches a cycle.
               </p>
             </motion.div>
           ) : (
@@ -353,7 +364,9 @@ export default function MyAppraisals() {
                 <div className="mt-3">
                   {sortedAppraisals.length === 0 ? (
                     <InlineEmpty
-                      icon={<PiClipboardText className="h-6 w-6 text-gray-400" />}
+                      icon={
+                        <PiClipboardText className="h-6 w-6 text-gray-400" />
+                      }
                       text="No appraisal cycles have been launched for you yet."
                     />
                   ) : (
@@ -379,7 +392,9 @@ export default function MyAppraisals() {
                 <div className="mt-3 flex flex-col gap-3">
                   {reviews.length === 0 ? (
                     <InlineEmpty
-                      icon={<PiChatCircleText className="h-6 w-6 text-gray-400" />}
+                      icon={
+                        <PiChatCircleText className="h-6 w-6 text-gray-400" />
+                      }
                       text="Nobody has asked you for feedback right now."
                     />
                   ) : (
@@ -387,7 +402,11 @@ export default function MyAppraisals() {
                       {pendingReviews.length > 0 && (
                         <div className="flex flex-col gap-2">
                           {pendingReviews.map((r, i) => (
-                            <ReviewRequestRow key={r._id} review={r} index={i} />
+                            <ReviewRequestRow
+                              key={r._id}
+                              review={r}
+                              index={i}
+                            />
                           ))}
                         </div>
                       )}
@@ -403,6 +422,24 @@ export default function MyAppraisals() {
                               key={r._id}
                               review={r}
                               index={pendingReviews.length + i}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {closedReviews.length > 0 && (
+                        <div className="flex flex-col gap-2">
+                          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                            Closed
+                          </p>
+                          {closedReviews.map((r, i) => (
+                            <ReviewRequestRow
+                              key={r._id}
+                              review={r}
+                              index={
+                                pendingReviews.length +
+                                submittedReviews.length +
+                                i
+                              }
                             />
                           ))}
                         </div>

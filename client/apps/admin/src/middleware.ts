@@ -5,6 +5,7 @@ import { getToken } from 'next-auth/jwt';
 import {
   PLATFORM_ROLES,
   TENANT_ROLES,
+  canAdministerAppraisals,
   type UserRole,
 } from '@/types/authorization';
 import { hasAdminSession } from '@/app/api/auth/[...nextauth]/session-guard';
@@ -197,16 +198,16 @@ const authMiddleware = withAuth(
     // Note the deliberate asymmetry with /employees above: bare /appraisals is
     // NOT gated, because tenant_staff must reach their own appraisal and their
     // assigned feedback forms. Only the HR sub-routes are restricted.
+    //
+    // The predicate is shared with the appraisals nav header (see
+    // canAdministerAppraisals) rather than spelled out inline a second time:
+    // when the chrome and the gate disagree, tenant_staff get offered tabs
+    // that land them on /access-denied.
     if (
       isUnder(path, '/appraisals/cycles') ||
       isUnder(path, '/appraisals/templates')
     ) {
-      if (
-        !role ||
-        (!PLATFORM_ROLES.includes(role) &&
-          role !== 'tenant_admin' &&
-          role !== 'tenant_owner')
-      ) {
+      if (!canAdministerAppraisals(role)) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
     }

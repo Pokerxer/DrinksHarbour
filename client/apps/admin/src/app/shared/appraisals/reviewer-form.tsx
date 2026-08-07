@@ -21,6 +21,7 @@ import {
   type AppraisalQuestion,
   type ReviewerForm as ReviewerFormData,
 } from '@/services/appraisal.service';
+import { useUnsavedChangesGuard } from './use-unsaved-changes-guard';
 import ReviewProgressStrip from './review-progress-strip';
 import ReviewDisclosureBanner from './review-disclosure-banner';
 import ReviewQuestionCard from './review-question-card';
@@ -46,6 +47,16 @@ import {
  *  to PATCH per keystroke in a textarea, short enough that a reviewer who
  *  closes the tab after answering a question has almost certainly been saved. */
 const AUTOSAVE_IDLE_MS = 2500;
+
+/**
+ * Backoff for a failed autosave, in milliseconds, then every 30s.
+ *
+ * A failure used to be terminal: the debounce re-arms only when `isDirty` or
+ * `persistDraft` changes, and after a rejected PATCH neither does — so a
+ * reviewer who lost connectivity mid-form kept typing into a page that had
+ * quietly stopped saving, with a footer label as the only clue.
+ */
+const AUTOSAVE_RETRY_MS = [3_000, 8_000, 20_000, 30_000];
 
 function formatDeadline(deadline?: string | null): string | null {
   if (!deadline) return null;
@@ -106,6 +117,12 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
   const [clockTick, setClockTick] = useState(0);
   /** The last question jumped to, so repeated presses walk forward. */
   const lastJumpRef = useRef<string | null>(null);
+  /** True while a draft PATCH is open — see persistDraft. */
+  const inFlightRef = useRef(false);
+  /** An edit arrived mid-request and still needs writing. */
+  const saveQueuedRef = useRef(false);
+  /** How many consecutive autosaves have failed, indexing AUTOSAVE_RETRY_MS. */
+  const retryCountRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +133,12 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
         const data = await fetchReviewerForm(feedbackId);
         if (cancelled) return;
         const seeded = seedAnswers(data.feedback.answers);
+        // Per-form, not per-session: carried over, a form opened after one
+        // whose autosave had failed four times would start its first retry at
+        // the longest backoff instead of the shortest.
+        retryCountRef.current = 0;
+        inFlightRef.current = false;
+        saveQueuedRef.current = false;
         setForm(data);
         setAnswers(seeded);
         // Seeded from what came back, so a form opened and not edited is not
@@ -171,6 +194,16 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
   const persistDraft = useCallback(
     async (opts: { toastOnSuccess?: boolean } = {}) => {
       if (!form || isReadOnly) return;
+      // One write at a time. Without this, an edit made while a PATCH was in
+      // flight started a second concurrent one, and whichever response landed
+      // last won — so a stale request completing out of order could record an
+      // older signature as "what the server holds" and silently mark the form
+      // clean while holding newer answers.
+      if (inFlightRef.current) {
+        saveQueuedRef.current = true;
+        return;
+      }
+      inFlightRef.current = true;
       const sending = answersSignature(form.sections, answers);
       setSaving(true);
       setSaveState('saving');
@@ -182,6 +215,7 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
         setSavedSignature(sending);
         setSavedAt(Date.now());
         setSaveState('saved');
+        retryCountRef.current = 0;
         if (opts.toastOnSuccess) toast.success('Draft saved');
       } catch (e) {
         setSaveState('error');
@@ -189,7 +223,13 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
           toast.error(e instanceof Error ? e.message : 'Could not save draft');
         }
       } finally {
+        inFlightRef.current = false;
         setSaving(false);
+        // An edit arrived while this request was open; it has not been sent.
+        if (saveQueuedRef.current) {
+          saveQueuedRef.current = false;
+          setSaveState((s) => (s === 'error' ? s : 'dirty'));
+        }
       }
     },
     [answers, feedbackId, form, isReadOnly]
@@ -208,19 +248,30 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
     // signal we want to debounce on.
   }, [isDirty, persistDraft]);
 
-  /* Last line of defence for a closed tab or a hard reload. Only armed while
-     something is genuinely unwritten — an unconditional handler trains people
-     to click through the dialog. */
+  /* Retry a failed autosave on a backoff rather than waiting for the next
+     keystroke. Re-armed by `saveState` returning to 'error' after each failed
+     attempt, and torn down the moment one succeeds. */
   useEffect(() => {
-    if (!isDirty && saveState !== 'error') return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      // Legacy assignment: Chrome still requires a truthy returnValue.
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [isDirty, saveState]);
+    if (saveState !== 'error' || !isDirty) return;
+    const delay =
+      AUTOSAVE_RETRY_MS[
+        Math.min(retryCountRef.current, AUTOSAVE_RETRY_MS.length - 1)
+      ];
+    const t = setTimeout(() => {
+      retryCountRef.current += 1;
+      void persistDraft();
+    }, delay);
+    return () => clearTimeout(t);
+  }, [saveState, isDirty, persistDraft]);
+
+  /* Last line of defence for a closed tab, a hard reload, or — the case that
+     actually happens here — a client-side navigation out of the form via the
+     appraisals section nav, which never fires `beforeunload`. Only armed while
+     something is genuinely unwritten. */
+  useUnsavedChangesGuard(
+    isDirty || saveState === 'error',
+    'Your answers have not been saved yet. Leave without saving?'
+  );
 
   /* Keeps "Saved 3 minutes ago" honest without re-rendering the whole form on
      a timer forever — it only runs while there is a relative time on screen. */

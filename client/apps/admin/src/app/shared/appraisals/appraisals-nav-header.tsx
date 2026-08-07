@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import {
   PiClipboardTextDuotone,
   PiUsersThreeDuotone,
@@ -10,6 +11,7 @@ import {
   PiSquaresFourDuotone,
 } from 'react-icons/pi';
 import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
+import { canAdministerAppraisals } from '@/types/authorization';
 
 type NavItem = {
   label: string;
@@ -23,6 +25,13 @@ type NavItem = {
    * the sibling sections to their own links.
    */
   match?: (pathname: string) => boolean;
+  /**
+   * Render this tab only for a role the middleware will actually let through.
+   * Without it, tenant_staff were shown Cycles and Templates and bounced to
+   * /access-denied on click — the gate lives in src/middleware.ts, and both
+   * sides now read the same predicate.
+   */
+  hrOnly?: boolean;
 };
 
 const SIBLING_SEGMENTS = ['team', 'cycles', 'templates'];
@@ -46,11 +55,13 @@ const navItems: NavItem[] = [
     label: 'Cycles',
     href: '/appraisals/cycles',
     icon: <PiCalendarDotsDuotone />,
+    hrOnly: true,
   },
   {
     label: 'Templates',
     href: '/appraisals/templates',
     icon: <PiSquaresFourDuotone />,
+    hrOnly: true,
   },
 ];
 
@@ -62,6 +73,14 @@ const navItems: NavItem[] = [
  */
 export default function AppraisalsNavHeader() {
   const pathname = usePathname();
+  const { data: session, status } = useSession();
+  // While the session is still resolving, `role` is undefined and the HR tabs
+  // stay hidden — showing then removing them would be a worse flicker than a
+  // tab that appears a beat late, and it fails closed either way.
+  const isHr = canAdministerAppraisals(session?.user?.role);
+  const visibleItems = navItems.filter(
+    (item) => !item.hrOnly || (status === 'authenticated' && isHr)
+  );
 
   const activeCls =
     'font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#b20202]';
@@ -88,7 +107,7 @@ export default function AppraisalsNavHeader() {
 
       {/* Nav links */}
       <div className="flex items-center overflow-x-auto pl-2">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = item.match
             ? item.match(pathname)
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -96,6 +115,7 @@ export default function AppraisalsNavHeader() {
             <Link
               key={item.label}
               href={item.href}
+              aria-current={isActive ? 'page' : undefined}
               className={`relative flex items-center gap-1.5 whitespace-nowrap px-4 py-3 text-sm transition-colors ${
                 isActive
                   ? `${activeCls} text-[#b20202]`

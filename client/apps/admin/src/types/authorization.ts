@@ -234,3 +234,23 @@ export const isPlatformRole = (role: UserRole): boolean => {
 export const isTenantRole = (role: UserRole): boolean => {
   return TENANT_ROLES.includes(role);
 };
+
+/**
+ * May this role administer appraisal cycles and templates?
+ *
+ * The single source of truth for the `/appraisals/cycles` and
+ * `/appraisals/templates` gate. `src/middleware.ts` enforces it, and the
+ * appraisals nav header hides the tabs with it, so the chrome cannot offer a
+ * link the middleware then bounces to /access-denied. Takes a bare `string`
+ * because the caller's role comes off a session token, where it is untyped.
+ *
+ * Bare `/appraisals` is deliberately NOT covered: every tenant role reaches
+ * their own appraisal and their assigned feedback forms.
+ */
+export const canAdministerAppraisals = (
+  role: string | null | undefined
+): boolean =>
+  Boolean(role) &&
+  (PLATFORM_ROLES.includes(role as UserRole) ||
+    role === 'tenant_admin' ||
+    role === 'tenant_owner');

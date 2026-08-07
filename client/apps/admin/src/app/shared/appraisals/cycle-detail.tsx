@@ -276,10 +276,14 @@ function LaunchResultPanel({ result }: { result: LaunchResult }) {
               </li>
             ))}
           </ul>
+          {/* This used to tell HR the response "only carries employee ids, not
+              names — look these up in Employees", directly beneath a list
+              rendering the names. The server resolves them now; the advice
+              outlived the limitation it described. */}
           <p className="mt-2 text-[11px] text-gray-400">
-            The launch response only carries employee ids, not names — look
-            these up in Employees, or ask engineering to have the server resolve
-            them.
+            Fix the underlying record — usually a missing manager on the
+            employee&rsquo;s profile — then launch again. Employees who already
+            have an appraisal for this cycle are skipped, not duplicated.
           </p>
         </div>
       )}
@@ -296,6 +300,7 @@ export default function CycleDetail({ id }: { id: string }) {
   const [launchResult, setLaunchResult] = useState<LaunchResult | null>(null);
   const [closing, setClosing] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [skippingId, setSkippingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -345,6 +350,7 @@ export default function CycleDetail({ id }: { id: string }) {
       toast.success(
         `Launched: ${result.created} created, ${result.alreadyExisted} already existed, ${result.skipped.length} skipped`
       );
+      setShowLaunchModal(false);
       const updated = await fetchCycle(id);
       setCycle(updated);
       await refreshProgress();
@@ -488,8 +494,11 @@ export default function CycleDetail({ id }: { id: string }) {
       <div className="rounded-xl border border-gray-100 bg-white p-5">
         <p className="text-sm font-semibold text-gray-900">Actions</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
+          {/* Confirmed, like Close. Launching is the larger of the two: it
+              creates an appraisal for every eligible employee and starts
+              notifying them, and there is no unlaunch. */}
           <Button
-            onClick={handleLaunch}
+            onClick={() => setShowLaunchModal(true)}
             disabled={launching || Boolean(launchDisabledReason)}
             className="bg-[#b20202] hover:bg-[#9f0101]"
           >
@@ -520,6 +529,47 @@ export default function CycleDetail({ id }: { id: string }) {
 
         {launchResult && <LaunchResultPanel result={launchResult} />}
       </div>
+
+      <Modal
+        isOpen={showLaunchModal}
+        onClose={() => setShowLaunchModal(false)}
+        size="sm"
+      >
+        <div className="p-6">
+          <p className="text-base font-semibold text-gray-900">
+            Launch {cycle.name}?
+          </p>
+          <p className="mt-2 text-sm text-gray-500">
+            This creates an appraisal for every eligible employee and starts
+            asking them and their managers for feedback.{' '}
+            {cycle.peerReviewEnabled
+              ? 'Peer review is on, so employees will be asked to nominate peers.'
+              : 'Peer review is off, so this collects self and manager assessments only.'}
+          </p>
+          <p className="mt-2 text-sm text-gray-500">
+            Re-launching later is safe — employees who already have an
+            appraisal for this cycle are skipped rather than duplicated — but a
+            launch cannot be undone.
+          </p>
+          <div className="mt-6 flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowLaunchModal(false)}
+              disabled={launching}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleLaunch}
+              disabled={launching}
+              className="bg-[#b20202] hover:bg-[#9f0101]"
+            >
+              <PiRocketLaunch className="me-1.5 h-4 w-4" />
+              {launching ? 'Launching…' : 'Launch cycle'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showCloseModal}

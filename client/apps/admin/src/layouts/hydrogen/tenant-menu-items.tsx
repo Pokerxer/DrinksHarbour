@@ -357,6 +357,14 @@ export const tenantMenuItems: TenantMenuEntry[] = [
         // HR administration — matches middleware's /appraisals/cycles gate.
         minRole: 'tenant_owner',
       },
+      {
+        name: 'Review Forms',
+        href: '/appraisals/templates',
+        // Same gate as Cycles (middleware's /appraisals/templates). Was
+        // missing entirely, so the only route to the template builder was the
+        // section nav header inside /appraisals.
+        minRole: 'tenant_owner',
+      },
     ],
   },
   {

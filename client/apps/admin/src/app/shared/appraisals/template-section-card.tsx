@@ -11,7 +11,8 @@ import {
   PiSparkle,
   PiTrash,
 } from 'react-icons/pi';
-import type { DraftSection, DraftQuestion } from '@/services/appraisal.service';
+import type { DraftQuestion } from '@/services/appraisal.service';
+import type { KeyedSection } from './template-draft-keys';
 import TemplateQuestionRow from './template-question-row';
 
 // ---------------------------------------------------------------------------
@@ -52,7 +53,9 @@ const SECTION_COLORS = [
 // Props
 // ---------------------------------------------------------------------------
 interface TemplateSectionCardProps {
-  section: DraftSection;
+  // Keyed rather than bare: this card renders each question with the
+  // question's own client identity as its React key, so it needs `_uid`.
+  section: KeyedSection;
   sectionIndex: number;
   isFirst: boolean;
   isLast: boolean;
@@ -255,7 +258,12 @@ export default function TemplateSectionCard({
               <AnimatePresence mode="popLayout">
                 {section.questions.map((q, qi) => (
                   <TemplateQuestionRow
-                    key={qi}
+                    // Client identity, not the index. The row owns `collapsed`
+                    // and `assistOpen`, and this list sits inside an
+                    // AnimatePresence — under index keys, deleting a question
+                    // animated the LAST row out and left the survivors wearing
+                    // their neighbours' open/closed state.
+                    key={q._uid}
                     question={q}
                     sectionIndex={si}
                     questionIndex={qi}

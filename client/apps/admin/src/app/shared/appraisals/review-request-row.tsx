@@ -50,6 +50,12 @@ export default function ReviewRequestRow({
 }) {
   const isSelf = review.kind === 'self';
   const submitted = review.status === 'submitted';
+  // Expired and declined requests are closed: the form is read-only, so
+  // offering "Give feedback" sends the reviewer to a page that will not let
+  // them do it. They stay openable — the reviewer is entitled to see what was
+  // asked and what became of it — just not under a call to action.
+  const closed = review.status === 'expired' || review.status === 'declined';
+  const inactive = submitted || closed;
   const meta = KIND_META[review.kind] ?? KIND_META.peer;
   const Icon = meta.icon;
   const subject = isSelf
@@ -74,7 +80,7 @@ export default function ReviewRequestRow({
         damping: 26,
       }}
       className={`group flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 transition-all duration-200 ${
-        submitted
+        inactive
           ? 'border-gray-100 bg-gray-50/60'
           : 'border-gray-200 bg-white hover:-translate-y-0.5 hover:shadow-md'
       }`}
@@ -92,7 +98,7 @@ export default function ReviewRequestRow({
           </p>
           <p className="truncate text-xs text-gray-400">
             {meta.label} · {review.cycle?.name || 'Appraisal cycle'}
-            {!submitted && deadline && tone !== 'none' ? (
+            {!inactive && deadline && tone !== 'none' ? (
               tone === 'overdue' ? (
                 <span className="font-semibold text-red-600">
                   {' '}
@@ -123,6 +129,18 @@ export default function ReviewRequestRow({
           <PiCheckCircle className="h-3.5 w-3.5" />
           Submitted{review.submittedAt ? ` · ${formatDueLabel(review.submittedAt)}` : ''}
         </span>
+      ) : closed ? (
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-semibold text-gray-500">
+            {review.status === 'declined' ? 'Declined' : 'Expired'}
+          </span>
+          <Link
+            href={`/appraisals/reviews/${review._id}`}
+            className="text-xs font-semibold text-gray-400 underline decoration-gray-300 underline-offset-2 transition-colors hover:text-gray-700"
+          >
+            View
+          </Link>
+        </div>
       ) : (
         <Link
           href={`/appraisals/reviews/${review._id}`}
