@@ -6,9 +6,6 @@ const User = require('../models/User');
 const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
 const { resolveTenantContext, requireOwnTenant } = require('./tenant.middleware');
 
-// super_admin has all tenant_owner privileges
-const TENANT_OWNER_ROLES = ['super_admin', 'admin', 'tenant_owner'];
-
 /**
  * Protect routes - verifies JWT and attaches user to req
  * Alias: authenticate
@@ -160,6 +157,7 @@ const superAdminOnly = (req, res, next) => {
   }
   next();
 };
+superAdminOnly.authorizedRoles = ['super_admin'];
 
 /**
  * Tenant admin / owner only (super_admin bypasses tenant check)
@@ -178,6 +176,7 @@ const tenantAdminOnly = (req, res, next) => {
   }
   next();
 };
+tenantAdminOnly.authorizedRoles = ['super_admin', 'admin', 'tenant_owner', 'tenant_admin'];
 
 /**
  * Tenant admin, owner, or super admin
@@ -200,6 +199,7 @@ const tenantAdminOrSuperAdmin = (req, res, next) => {
   }
   next();
 };
+tenantAdminOrSuperAdmin.authorizedRoles = ['super_admin', 'admin', 'tenant_owner', 'tenant_admin'];
 
 /**
  * Any authenticated tenant user (owner, admin, staff) — super_admin bypasses
@@ -217,13 +217,20 @@ const tenantUserOnly = (req, res, next) => {
   }
   next();
 };
+tenantUserOnly.authorizedRoles = ['super_admin', 'admin', 'tenant_owner', 'tenant_admin', 'tenant_staff'];
 
 /**
  * Authorize by role(s) - allows multiple roles
+ *
+ * The returned guard carries `authorizedRoles` so tests can read the enforced
+ * role set off a live Express router — Express cannot otherwise reveal what a
+ * closure captured. authorizedRolesMetadata.test.js proves the tag matches
+ * behaviour, so it cannot drift.
+ *
  * @param {...string} roles - Roles to allow
  */
 const authorize = (...roles) => {
-  return (req, res, next) => {
+  const guard = (req, res, next) => {
     if (!req.user) {
       throw new UnauthorizedError('Not authorized - no user found');
     }
@@ -234,6 +241,8 @@ const authorize = (...roles) => {
 
     next();
   };
+  guard.authorizedRoles = roles;
+  return guard;
 };
 
 module.exports = {

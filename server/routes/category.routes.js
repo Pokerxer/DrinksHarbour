@@ -4,7 +4,9 @@ const categoryController = require('../controllers/category.controller');
 const { protect, authorize } = require('../middleware/auth.middleware');
 const { uploadCategoryImages } = require('../middleware/imageUpload.middleware');
 
-const adminRoles = ['super_admin', 'admin', 'tenant_owner', 'tenant_admin'];
+// Category is platform-wide: its only tenant-ish field is tenantPresenceCount,
+// a denormalised counter, not ownership. Platform admins only.
+const adminRoles = ['super_admin', 'admin'];
 
 // Admin CRUD (protected) - must come before /:id routes
 router.post('/admin/ai-fill', protect, authorize(...adminRoles), categoryController.fillWithAI);

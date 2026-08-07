@@ -42,6 +42,20 @@ export type Permission =
   | 'appraisals:review'
   | 'appraisals:manage';
 
+/**
+ * What each role may do, as the server actually enforces it.
+ *
+ * Nothing consumes this map today — the utils/hooks/hoc chain built on it has
+ * zero call sites, and so do lib/server-auth.ts's requirePermission and
+ * requireAnyPermission. It is kept anyway, and kept true, so that a future
+ * server-side permission system has an honest starting point and so that a
+ * reader cannot mistake a stale entry for a live authorization hole.
+ *
+ * server/__tests__/rolePermissionMap.test.js fails if this drifts from the
+ * route guards. Entries here mirror ROUTE-LEVEL role gates only; finer inline
+ * rules (super_admin alone may permanently delete a user or delete a tenant)
+ * live in the controllers.
+ */
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   super_admin: [
     'products:read',
@@ -104,9 +118,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports:export',
     'users:read',
     'users:write',
+    'users:delete',
     'settings:read',
     'settings:write',
     'billing:read',
+    'tenant:manage',
     'analytics:read',
     'appraisals:read',
     'appraisals:review',
@@ -120,6 +136,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'orders:read',
     'orders:write',
     'customers:read',
+    'customers:write',
     'categories:read',
     'brands:read',
     'inventory:read',
@@ -127,8 +144,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'inventory:adjust',
     'reports:read',
     'reports:export',
-    'users:read',
-    'users:write',
     'settings:read',
     'analytics:read',
     'appraisals:read',
@@ -143,6 +158,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'orders:read',
     'orders:write',
     'customers:read',
+    'customers:write',
     'categories:read',
     'brands:read',
     'inventory:read',
@@ -150,7 +166,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'inventory:adjust',
     'reports:read',
     'reports:export',
-    'users:read',
     'settings:read',
     'analytics:read',
     'appraisals:read',
@@ -159,8 +174,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   tenant_staff: [
     'products:read',
+    // No 'subproducts:write': the reachable POST /api/subproducts is guarded by
+    // tenantAdminOrSuperAdmin, which excludes tenant_staff. (subproduct.routes.js
+    // declares POST / a second time with a wider guard, but Express matches the
+    // first declaration, so that block is unreachable.)
     'subproducts:read',
-    'subproducts:write',
     'orders:read',
     'orders:write',
     'customers:read',

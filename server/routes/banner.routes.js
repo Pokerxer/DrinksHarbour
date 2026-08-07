@@ -5,7 +5,11 @@ const router = express.Router();
 const ctrl = require('../controllers/banner.controller');
 const { protect, authorize } = require('../middleware/auth.middleware');
 
-const adminOnly = [protect, authorize('super_admin', 'tenant_admin', 'admin')];
+// Banner really is tenant-scoped (a `tenant` ref plus a
+// {tenant, placement, isActive} index) and plan-gated, so tenant roles keep
+// write access here — unlike the platform taxonomy. tenant_owner, the role
+// that actually owns the tenant, was omitted by mistake.
+const adminOnly = [protect, authorize('super_admin', 'admin', 'tenant_owner', 'tenant_admin')];
 
 // ── Public storefront endpoints ──────────────────────────────────────────────
 // Declared before the generic /:id routes so their static prefixes win.

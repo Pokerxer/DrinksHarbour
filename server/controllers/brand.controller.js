@@ -23,14 +23,35 @@ async function uploadBrandFile(file, altText) {
   return { url: result.url, publicId: result.publicId, alt: altText };
 }
 
+/** Roles whose brand submissions are proposals awaiting platform approval. */
+const PROPOSING_ROLES = ['tenant_owner', 'tenant_admin', 'tenant_staff'];
+
 /**
  * @desc    Create new brand
  * @route   POST /api/brands
- * @access  Private/Admin
+ * @access  Private — platform admins and tenant roles (see below)
+ *
+ * Brands are platform-wide, so only a platform admin may publish one. Tenant
+ * roles reach this route through the inline "create brand" modal in the product
+ * and sub-product flows, and what they get is a *proposal*: status is forced to
+ * 'pending' regardless of what the request body asked for, and a platform admin
+ * approves it via PUT /api/brands/admin/:id. Same pattern product.service.js
+ * already uses for auto-created brands.
  */
 exports.createBrand = asyncHandler(async (req, res) => {
-  const brand = await brandService.createBrand(req.body, req.user?._id);
-  successResponse(res, { brand }, 'Brand created successfully', 201);
+  const isProposal = PROPOSING_ROLES.includes(req.user?.role);
+  const brandData = {
+    ...req.body,
+    status: isProposal ? 'pending' : req.body.status || 'active',
+  };
+
+  const brand = await brandService.createBrand(brandData, req.user?._id);
+  successResponse(
+    res,
+    { brand },
+    isProposal ? 'Brand submitted for approval' : 'Brand created successfully',
+    201
+  );
 });
 
 /**

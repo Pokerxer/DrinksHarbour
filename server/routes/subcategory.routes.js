@@ -4,7 +4,9 @@ const subcategoryController = require('../controllers/subcategory.controller');
 const { protect, authorize } = require('../middleware/auth.middleware');
 const { uploadCategoryImages } = require('../middleware/imageUpload.middleware');
 
-const adminRoles = ['super_admin', 'admin', 'tenant_owner', 'tenant_admin'];
+// SubCategory is platform-wide for the same reason as Category —
+// tenantPresenceCount is a counter, not ownership. Platform admins only.
+const adminRoles = ['super_admin', 'admin'];
 
 // Admin CRUD (protected) - must come before /:id routes
 router.post('/admin/ai-fill', protect, authorize(...adminRoles), subcategoryController.fillWithAI);
