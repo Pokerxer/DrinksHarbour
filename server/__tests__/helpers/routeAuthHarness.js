@@ -15,6 +15,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const User = require('../../models/User');
+const Tenant = require('../../models/Tenant');
 
 // No test here connects to Mongo. If a request slips past a guard and reaches a
 // controller, the model call would otherwise sit in Mongoose's 10s buffering
@@ -61,6 +62,30 @@ function mockAuthUser(t, user) {
 }
 
 /**
+ * Makes `attachTenant` (= resolveTenantContext) resolve the caller's JWT tenant
+ * to an approved, active tenant whose `_id` is TENANT_ID — the tenant every
+ * ROLE_USERS entry belongs to.
+ *
+ * Routers that mount `attachTenant` need this: tenantAdminOrSuperAdmin refuses a
+ * tenant_owner/tenant_admin with no `req.tenant`, so without it those roles 403
+ * for a reason that has nothing to do with the guard under test.
+ */
+function mockTenantContext(t) {
+  t.mock.method(Tenant, 'findById', () => ({
+    select: () => ({
+      lean: async () => ({
+        _id: TENANT_ID,
+        name: 'Test Tenant',
+        slug: 'test-tenant',
+        status: 'approved',
+        subscriptionStatus: 'active',
+        plan: 'enterprise',
+      }),
+    }),
+  }));
+}
+
+/**
  * Mounts `router` at `basePath` behind a minimal error handler that mirrors
  * server.js's `err.statusCode || 500` mapping, and listens on an ephemeral
  * port. Always `await close()` in a finally block.
@@ -85,4 +110,11 @@ async function startRouter(router, basePath = '/') {
   };
 }
 
-module.exports = { startRouter, mockAuthUser, signToken, ROLE_USERS, TENANT_ID };
+module.exports = {
+  startRouter,
+  mockAuthUser,
+  mockTenantContext,
+  signToken,
+  ROLE_USERS,
+  TENANT_ID,
+};

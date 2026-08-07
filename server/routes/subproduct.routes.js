@@ -5,8 +5,6 @@ const router = express.Router();
 const subProductController = require('../controllers/subproduct.controller');
 const subProductImportController = require('../controllers/subProductImport.controller');
 const {
-  protect,
-  authorize,
   authenticate,
   attachTenant,
   tenantAdminOrSuperAdmin,
@@ -249,12 +247,33 @@ const removeDiscountValidation = [
 // ============================================================
 // Routes
 // ============================================================
+//
+// Every route below used to carry `protect, authorize('tenant_admin',
+// 'super_admin')` while the tenant-scoped block at the top of the file used
+// `tenantAdminOrSuperAdmin`. That split was a seam left by the three-draft
+// concatenation, not a boundary anyone designed: it left tenant_owner — the
+// role that owns the tenant — able to create, update, archive and delete a
+// sub-product but not to add a size to one, adjust its stock, or read its own
+// sales figures, and it excluded `admin` from handlers that branch on
+// `['super_admin','admin'].includes(req.user.role)` (see bulk-promote below).
+//
+// Unified onto tenantAdminOrSuperAdmin on 2026-08-07. `protect` went with it:
+// `protect === authenticate` and `router.use(authenticate)` already ran at the
+// top of the file, so each of these was a second JWT verify and a second
+// User.findById per request.
+//
+// Tenant scoping does not come from these guards — it comes from the JWT via
+// attachTenant/getTenantId, and the two cross-tenant operations defend
+// themselves independently (bulkCreateSubProducts and transferSubProduct both
+// require the caller to be the target tenant's own admin, and cross-tenant
+// transfer stays gated on `role === 'super_admin'` inside the service).
+//
+// subproductGuardConsistency.test.js fails if the seam reopens.
 
 // Bulk operations
 router.post(
   '/bulk',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   bulkCreateValidation,
   validate,
   subProductController.bulkCreate
@@ -263,8 +282,7 @@ router.post(
 // Transfer
 router.post(
   '/:id/transfer',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   transferValidation,
   validate,
   subProductController.transfer
@@ -273,16 +291,23 @@ router.post(
 // Pricing
 router.patch(
   '/:id/pricing',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   updatePricingValidation,
   validate,
   subProductController.updatePricing
 );
 
-// Effective price (public)
+// Effective price
+//
+// Labelled "public" until 2026-08-07, but it never was: router.use(authenticate)
+// refuses an anonymous caller, so "public" only ever meant "any authenticated
+// role, customer included". The storefront does not call it — nothing does — so
+// it takes the same guard as the rest of the file. Same story for the four other
+// reads that carried no role guard: /tenant/:tenantId, /product/:productId,
+// /sku/:sku and /:id/stock-status.
 router.get(
   '/:id/sizes/:sizeId/effective-price',
+  tenantAdminOrSuperAdmin,
   effectivePriceValidation,
   validate,
   subProductController.getEffectivePrice
@@ -291,8 +316,7 @@ router.get(
 // Bulk discount
 router.post(
   '/discount/apply',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   bulkDiscountValidation,
   validate,
   subProductController.applyDiscount
@@ -300,8 +324,7 @@ router.post(
 
 router.post(
   '/discount/remove',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   removeDiscountValidation,
   validate,
   subProductController.removeDiscount
@@ -312,8 +335,7 @@ router.post(
 // (the fields read by computePOSPricing and computeStorePricing)
 router.patch(
   '/bulk-promote',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   async (req, res, next) => {
     try {
       const { ids, saleType, saleDiscountValue, saleStartDate, saleEndDate, applyToAll } = req.body;
@@ -363,8 +385,7 @@ router.patch(
 
 router.patch(
   '/bulk-unpromote',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   async (req, res, next) => {
     try {
       const { ids, applyToAll } = req.body;
@@ -399,8 +420,7 @@ router.patch(
 // Price history
 router.get(
   '/:id/price-history',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   param('id').isMongoId(),
   validate,
   subProductController.getPriceHistory
@@ -425,30 +445,34 @@ router.get(
 /**
  * @route   GET /api/subproducts/tenant/:tenantId
  * @desc    Get SubProducts by tenant
- * @access  Public
+ * @access  Private (Tenant admin or platform admin)
  */
 router.get(
   '/tenant/:tenantId',
+  tenantAdminOrSuperAdmin,
   subProductController.getSubProductsByTenant
 );
 
 /**
  * @route   GET /api/subproducts/product/:productId
  * @desc    Get SubProducts by product
- * @access  Public
+ * @access  Private (Tenant admin or platform admin) — backs the admin
+ *          listing-review panel; super_admin additionally sees pending ones
  */
 router.get(
   '/product/:productId',
+  tenantAdminOrSuperAdmin,
   subProductController.getSubProductsByProduct
 );
 
 /**
  * @route   GET /api/subproducts/sku/:sku
  * @desc    Get SubProduct by SKU
- * @access  Public
+ * @access  Private (Tenant admin or platform admin)
  */
 router.get(
   '/sku/:sku',
+  tenantAdminOrSuperAdmin,
   subProductController.getSubProductBySKU
 );
 
@@ -459,8 +483,7 @@ router.get(
  */
 router.post(
   '/:id/sizes',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.addSize
 );
 
@@ -471,8 +494,7 @@ router.post(
  */
 router.patch(
   '/:id/sizes/:sizeId',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.updateSize
 );
 
@@ -483,8 +505,7 @@ router.patch(
  */
 router.delete(
   '/:id/sizes/:sizeId',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.deleteSize
 );
 
@@ -495,18 +516,18 @@ router.delete(
  */
 router.patch(
   '/:id/stock',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.updateStock
 );
 
 /**
  * @route   GET /api/subproducts/:id/stock-status
  * @desc    Get stock status for SubProduct
- * @access  Public
+ * @access  Private (Tenant admin or platform admin)
  */
 router.get(
   '/:id/stock-status',
+  tenantAdminOrSuperAdmin,
   subProductController.getStockStatus
 );
 
@@ -521,8 +542,7 @@ router.get(
  */
 router.get(
   '/:id/inventory',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.getInventory
 );
 
@@ -533,8 +553,7 @@ router.get(
  */
 router.post(
   '/:id/sizes/:sizeId/adjust-stock',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.adjustStock
 );
 
@@ -545,8 +564,7 @@ router.post(
  */
 router.get(
   '/:id/stock-movements',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.getStockMovements
 );
 
@@ -557,8 +575,7 @@ router.get(
  */
 router.get(
   '/tenant/:tenantId/low-stock',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.getLowStock
 );
 
@@ -569,8 +586,7 @@ router.get(
  */
 router.get(
   '/tenant/:tenantId/out-of-stock',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.getOutOfStock
 );
 
@@ -581,8 +597,7 @@ router.get(
  */
 router.post(
   '/:id/reorder-points',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.setReorderPoints
 );
 
@@ -597,8 +612,7 @@ router.post(
  */
 router.get(
   '/:id/sales',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.getSales
 );
 
@@ -609,8 +623,7 @@ router.get(
  */
 router.get(
   '/:id/revenue',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.getRevenue
 );
 
@@ -621,8 +634,7 @@ router.get(
  */
 router.get(
   '/tenant/:tenantId/top-selling',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.getTopSelling
 );
 
@@ -633,8 +645,7 @@ router.get(
  */
 router.get(
   '/:id/conversion-rate',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.getConversionRate
 );
 
@@ -645,8 +656,7 @@ router.get(
  */
 router.get(
   '/:id/average-order-value',
-  protect,
-  authorize('tenant_admin', 'super_admin'),
+  tenantAdminOrSuperAdmin,
   subProductController.getAverageOrderValue
 );
 

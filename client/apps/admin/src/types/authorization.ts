@@ -174,10 +174,14 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   tenant_staff: [
     'products:read',
-    // No 'subproducts:write': the reachable POST /api/subproducts is guarded by
-    // tenantAdminOrSuperAdmin, which excludes tenant_staff. (subproduct.routes.js
-    // declares POST / a second time with a wider guard, but Express matches the
-    // first declaration, so that block is unreachable.)
+    // No 'subproducts:write': every endpoint in subproduct.routes.js is guarded
+    // by tenantAdminOrSuperAdmin, which excludes tenant_staff. (The duplicate
+    // POST / that once sat further down the file with a different guard was
+    // unreachable, and was deleted on 2026-08-07.)
+    //
+    // 'subproducts:read' is aspirational for the same reason — no sub-product
+    // read endpoint admits tenant_staff either. It is left in place because the
+    // map binds only write/delete permissions to routes; see the header comment.
     'subproducts:read',
     'orders:read',
     'orders:write',
