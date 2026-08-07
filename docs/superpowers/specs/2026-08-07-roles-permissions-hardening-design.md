@@ -163,6 +163,21 @@ and the controller branches on role:
 lives in the sub-product create/edit flow they use. Excluding them would break the same
 workflow this section exists to preserve.
 
+> **Correction, 2026-08-07 (post-implementation).** The rationale above is **wrong** and the
+> decision it supports was nevertheless kept. `tenant_staff` holds `subproducts:write` only in
+> the admin client's `ROLE_PERMISSIONS` map; the server never granted it. The reachable
+> `POST /api/subproducts` is guarded by `tenantAdminOrSuperAdmin`
+> (`super_admin, admin, tenant_owner, tenant_admin`) — a *second*, unreachable declaration
+> further down `subproduct.routes.js` carried `authorize('tenant_admin','super_admin')`, and
+> reading that dead layer is what produced the false belief. So a `tenant_staff` cannot create
+> a sub-product and never reaches the inline brand modal: the inclusion is **inert**, not
+> load-bearing.
+>
+> Reviewed on 2026-08-07 and **left in place** — it is harmless, and it stays correct if
+> sub-product creation is ever widened to `tenant_staff`. `subproducts:write` was removed from
+> `tenant_staff` in `ROLE_PERMISSIONS`, and the 18 shadowed declarations in
+> `subproduct.routes.js` were deleted, so the dead layer cannot mislead a third reader.
+
 The other four brand routes remain platform-admin only — a tenant can *propose* a brand,
 never edit, delete, or approve one.
 

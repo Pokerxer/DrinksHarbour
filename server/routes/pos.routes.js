@@ -252,7 +252,14 @@ router.get('/reports/session/:id',            protectPOSOrAdmin, getSessionRepor
 // rejectPOSTokens ensures POS tokens can't slip through the protect() check.
 router.use(rejectPOSTokens, protect, attachTenant, tenantUserOnly);
 
-router.get('/sessions',  getSessionList);
+// A second `router.get('/sessions', getSessionList)` sat here until 2026-08-07.
+// It was unreachable: the identical declaration above (line ~245) is declared
+// first, so Express always matched that one. Nothing was lost by deleting it —
+// same handler, and `protectPOSOrAdmin` already serves BOTH callers, branching
+// on `decoded.type === 'pos'` to take either the POS-token or the admin-JWT
+// path. The admin path there deliberately 403s a tenant-less admin rather than
+// falling through with an unscoped query, which is stricter than the
+// attachTenant/tenantUserOnly chain this dead line would have used.
 
 // ── Tenant admins only ────────────────────────────────────────────────────────
 router.get('/cashiers',              tenantAdminOrSuperAdmin, listCashiers);

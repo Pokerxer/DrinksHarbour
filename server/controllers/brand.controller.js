@@ -23,7 +23,13 @@ async function uploadBrandFile(file, altText) {
   return { url: result.url, publicId: result.publicId, alt: altText };
 }
 
-/** Roles whose brand submissions are proposals awaiting platform approval. */
+/**
+ * Roles whose brand submissions are proposals awaiting platform approval.
+ *
+ * `tenant_staff` cannot currently reach POST /api/brands' authorize() list in
+ * practice — see the comment on that route in brand.routes.js — but it is listed
+ * here so the two stay in step if that ever changes.
+ */
 const PROPOSING_ROLES = ['tenant_owner', 'tenant_admin', 'tenant_staff'];
 
 /**
@@ -162,43 +168,11 @@ exports.getBrandBySlug = asyncHandler(async (req, res) => {
   successResponse(res, { brand }, 'Brand retrieved successfully');
 });
 
-/**
- * @desc    Update brand
- * @route   PUT /api/brands/:id
- * @access  Private/Admin
- */
-exports.updateBrand = asyncHandler(async (req, res) => {
-  const brand = await brandService.updateBrand(
-    req.params.id,
-    req.body,
-    req.user?._id
-  );
-  successResponse(res, { brand }, 'Brand updated successfully');
-});
-
-/**
- * @desc    Patch/Partial update brand
- * @route   PATCH /api/brands/:id
- * @access  Private/Admin
- */
-exports.patchBrand = asyncHandler(async (req, res) => {
-  const brand = await brandService.updateBrand(
-    req.params.id,
-    req.body,
-    req.user?._id
-  );
-  successResponse(res, { brand }, 'Brand updated successfully');
-});
-
-/**
- * @desc    Delete brand
- * @route   DELETE /api/brands/:id
- * @access  Private/Admin
- */
-exports.deleteBrand = asyncHandler(async (req, res) => {
-  await brandService.deleteBrand(req.params.id);
-  successResponse(res, null, 'Brand deleted successfully');
-});
+// updateBrand / patchBrand / deleteBrand used to live here, backing the
+// unguarded PUT|PATCH|DELETE /api/brands/:id routes deleted in 2f91df26. They
+// were unreferenced duplicates of the guarded /admin/:id twins, so the routes
+// went and these followed on 2026-08-07. Use updateAdminBrand / deleteAdminBrand.
+// brandControllerExports.test.js fails if an unrouted handler reappears here.
 
 /**
  * @desc    Get brand statistics

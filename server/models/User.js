@@ -52,9 +52,28 @@ const userSchema = new Schema(
     // ════════════════════════════════════════════════════════════
     role: {
       type: String,
+      // `admin` is a real, lesser platform-admin tier — not a synonym for
+      // `super_admin` and not dead weight. It carries every platform-admin
+      // capability EXCEPT the five below, which `super_admin` holds alone:
+      //
+      //   1. Review moderation           — review.routes.js `router.use(superAdminOnly)`
+      //   2. Permanent user delete       — DELETE /api/users/:id/permanent
+      //   3. Tenant delete               — DELETE /api/tenants/admin/:id
+      //   4. Product approve/reject      — POST /api/products/:id/approve|reject
+      //   5. Cross-tenant visibility     — subproduct.controller.js `includeAll`,
+      //                                    subproduct.service.js `statusFilter`
+      //
+      // As of 2026-08-07 **zero production users hold `admin`** (customer 80 ·
+      // tenant_staff 36 · tenant_owner 7 · tenant_admin 3 · super_admin 1 ·
+      // admin 0). Retiring it was considered and declined: the tier is coherent
+      // and it is the natural role for a future platform hire who should not be
+      // able to delete a tenant. Retiring it is cheap only while nobody holds
+      // it — if that stops being true, the window closes.
+      //
+      // adminTierBoundary.test.js pins all five so this list cannot rot.
       enum: [
         'super_admin',      // platform-wide admin (drinksharbour.com)
-        'admin',            // general admin role
+        'admin',            // platform admin, minus the five capabilities above
         'tenant_owner',     // tenant full control + billing
         'tenant_admin',     // tenant product/order/stock management
         'tenant_staff',     // tenant POS / order fulfillment

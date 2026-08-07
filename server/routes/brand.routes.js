@@ -36,6 +36,15 @@ router.get('/:id', brandController.getBrandById);
 // POST / keeps a wider role set on purpose: it backs the inline "create brand"
 // modal in the product and sub-product flows. Tenant roles get a *pending*
 // brand — see brand.controller.createBrand.
+//
+// `tenant_staff` is in that list deliberately, but the inclusion is inert today
+// and the reason originally given for it was wrong. The design spec justified it
+// with "they hold subproducts:write" — read off the admin client's permission
+// map, which was itself incorrect. The server does not grant it: the reachable
+// POST /api/subproducts is guarded by tenantAdminOrSuperAdmin, which excludes
+// tenant_staff, so they never reach the sub-product flow the modal lives in.
+// It is kept because it costs nothing and stays correct if sub-product creation
+// is ever widened to tenant_staff — reviewed and left as-is on 2026-08-07.
 router.post(
   '/',
   protect,
