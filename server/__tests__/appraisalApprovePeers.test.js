@@ -305,7 +305,9 @@ async function skipPeers({ state }) {
   const originalFindOne = Appraisal.findOne;
   Appraisal.findOne = () => makeQuery(() => appraisalDoc);
 
-  const user = { _id: oid(), tenant: tenantId, role: 'tenant_admin' }; // HR
+  // tenant_owner: an admin's HR powers are department-scoped since Phase 5,
+  // and skipping peers is an HR capability, not a departmental question.
+  const user = { _id: oid(), tenant: tenantId, role: 'tenant_owner' }; // HR
   const { req, res } = fakeReqRes({ user, appraisalId, body: {} });
   try {
     await appraisals.skipPeers(req, res, (err) => { throw err; });

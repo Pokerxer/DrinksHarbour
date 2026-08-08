@@ -15,12 +15,14 @@ import {
   ApiError,
   aiAssistQuestion,
   createTemplate,
+  fetchDepartmentOptions,
   fetchTemplate,
   updateTemplate,
   type DraftQuestion,
   type DraftSection,
   type FeedbackKind,
 } from '@/services/appraisal.service';
+import type { DepartmentOption } from './section-departments-utils';
 import { useUndoRedo } from './use-undo-redo';
 import { useUnsavedChangesGuard } from './use-unsaved-changes-guard';
 import {
@@ -131,6 +133,16 @@ export default function TemplateEditor({ id }: { id: string }) {
     [setKeyedSections]
   );
 
+  /**
+   * The tenant's departments, for the per-section scope picker (Phase 5 §9.1).
+   *
+   * Loaded once and INDEPENDENTLY of the template: a failure here must not
+   * block editing a form. It degrades to an empty list, which hides the picker
+   * — a section keeps whatever scope it already has, because the editor only
+   * ever writes `departments` when HR touches the control.
+   */
+  const [departmentOptions, setDepartmentOptions] = useState<DepartmentOption[]>([]);
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [version, setVersion] = useState(1);
@@ -192,6 +204,25 @@ export default function TemplateEditor({ id }: { id: string }) {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [undo, redo]);
+
+  // --- Load the department list (scope picker) ---
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await fetchDepartmentOptions();
+        if (cancelled) return;
+        setDepartmentOptions(rows.map((d) => ({ _id: d._id, name: d.name })));
+      } catch {
+        // Deliberately silent: a form is still perfectly editable without the
+        // scope picker, and a toast here would fire on every tenant that has
+        // not set up departments yet.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // --- Load existing template (edit mode) ---
   useEffect(() => {
@@ -325,6 +356,12 @@ export default function TemplateEditor({ id }: { id: string }) {
   // --- Section mutation helpers ---
   function patchSectionTitle(si: number, title: string) {
     setSections((prev) => prev.map((s, i) => (i === si ? { ...s, title } : s)));
+  }
+
+  function patchSectionDepartments(si: number, departments: string[]) {
+    setSections((prev) =>
+      prev.map((s, i) => (i === si ? { ...s, departments } : s))
+    );
   }
 
   function moveSection(si: number, dir: -1 | 1) {
@@ -687,6 +724,8 @@ export default function TemplateEditor({ id }: { id: string }) {
               }
               onAssistQuestion={handleQuestionAssist}
               assistingKey={assisting}
+              departmentOptions={departmentOptions}
+              onDepartmentsChange={patchSectionDepartments}
             />
           ))}
         </div>

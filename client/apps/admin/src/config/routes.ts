@@ -42,6 +42,18 @@ export const routes = {
   employees: {
     list: '/employees',
     detail: (id: string) => `/employees/${id}`,
+    // Org structure. `/employees/:path*` is already in the middleware
+    // allow-list, so these need no new matcher entry.
+    departments: '/employees/departments',
+    jobPositions: '/employees/job-positions',
+    roles: '/employees/roles',
+    // Planning. Same story: covered by the `/employees/:path*` matcher.
+    shifts: '/employees/shifts',
+    shiftTemplates: '/employees/shifts/templates',
+    attendance: '/employees/attendance',
+    attendanceKiosk: '/employees/attendance/kiosk',
+    timeOff: '/employees/time-off',
+    swaps: '/employees/swaps',
   },
   contacts: {
     list: '/contacts',

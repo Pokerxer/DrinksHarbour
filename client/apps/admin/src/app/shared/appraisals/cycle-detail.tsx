@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { Button, Modal, Title } from 'rizzui';
@@ -30,7 +31,9 @@ import AppraisalStateBadge from './state-badge';
 import { CycleStatusBadge } from './cycles-list';
 import CycleRoster from './cycle-roster';
 import CycleReport from './cycle-report';
+import CycleStandingFeedback from './cycle-standing-feedback';
 import { cycleStats } from './cycle-detail-utils';
+import { canReadStandingFeedback } from '@/types/authorization';
 // One deadline rule for the whole module — see my-appraisals-utils.ts.
 import { deadlineTone, type DeadlineTone } from './my-appraisals-utils';
 
@@ -416,6 +419,9 @@ function LaunchResultPanel({ result }: { result: LaunchResult }) {
 }
 
 export default function CycleDetail({ id }: { id: string }) {
+  // While the session resolves, `role` is undefined and the owner-only panel
+  // stays hidden. Failing closed on a flicker is the right way round here.
+  const { data: session } = useSession();
   const [cycle, setCycle] = useState<AppraisalCycle | null>(null);
   const [progress, setProgress] = useState<CycleProgress | null>(null);
   const [loading, setLoading] = useState(true);
@@ -681,6 +687,15 @@ export default function CycleDetail({ id }: { id: string }) {
       <CycleRoster cycleId={id} />
 
       <CycleReport cycleId={id} />
+
+      {/* Phase 5 §9.5 — the OWNER's read, narrower than the HR gate that lets
+          a tenant_admin onto this page at all. Hidden rather than rendered-
+          and-403'd so an admin is not shown a panel they cannot open; the
+          server gates the endpoint at the route and re-checks in the handler,
+          which is where the actual boundary is. */}
+      {canReadStandingFeedback(session?.user?.role) ? (
+        <CycleStandingFeedback cycleId={id} />
+      ) : null}
 
       <div className="rounded-xl border border-gray-100 bg-white p-4 sm:p-5">
         <p className="text-sm font-semibold text-gray-900">Actions</p>

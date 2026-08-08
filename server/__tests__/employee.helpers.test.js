@@ -201,30 +201,57 @@ test('buildEmployeeProfile drops unknown keys and empty bank rows', () => {
       email: 'PRIV@X.COM',
       bankAccounts: [{ bankName: 'GTB', accountNumber: '123' }, {}, { accountName: '   ' }],
     },
-    planning: { roles: ['Bartender', '', '  '] },
+    // planning.roles is now [ObjectId → EmployeeRole]. Legacy free-text values
+    // ('Bartender') are dropped rather than cast, which would throw.
+    planning: { roles: ['507f1f77bcf86cd799439011', 'Bartender', '', '  '] },
   });
   assert.strictEqual(p.bogusTop, undefined);
   assert.strictEqual(p.privateContact.email, 'priv@x.com');
   assert.strictEqual(p.privateContact.bankAccounts.length, 1);
-  assert.deepStrictEqual(p.planning.roles, ['Bartender']);
+  assert.deepStrictEqual(p.planning.roles, ['507f1f77bcf86cd799439011']);
+});
+
+test('buildEmployeeProfile drops legacy free-text refs instead of casting them', () => {
+  // Before the org-structure migration these were strings. An unmigrated
+  // document round-tripping through the edit form must not hand 'Warehouse' to
+  // a ref field — Mongoose would throw a CastError and the save would 500.
+  const p = buildEmployeeProfile({
+    work: { department: 'Warehouse', jobPosition: 'Warehouse Manager' },
+    approvers: { timeOff: 'Jane Doe' },
+  });
+  assert.strictEqual(p.work.department, undefined);
+  assert.strictEqual(p.work.jobPosition, undefined);
+  assert.strictEqual(p.approvers.timeOff, undefined);
+});
+
+test('buildEmployeeProfile clears a ref on an explicit empty value', () => {
+  const p = buildEmployeeProfile({ work: { department: '', manager: null } });
+  assert.strictEqual(p.work.department, null);
+  assert.strictEqual(p.work.manager, null);
 });
 
 test('buildEmployeeProfile keeps the work section and nested address', () => {
+  const DEPT = '507f1f77bcf86cd799439011';
+  const POSITION = '507f1f77bcf86cd799439012';
+  const MANAGER = '507f1f77bcf86cd799439013';
   const p = buildEmployeeProfile({
     work: {
-      department: ' Warehouse ',
-      jobPosition: 'Warehouse Manager',
+      department: DEPT,
+      jobPosition: POSITION,
+      // Free text by design — the position is the shared post, the title is
+      // this person's wording for it.
       jobTitle: 'Warehouse Manager',
-      manager: 'abc123',
+      manager: MANAGER,
       workAddress: { company: 'CLOUD BAY', street: '39 Gana Street', city: '' },
       workLocation: 'Building 2',
       note: 'On probation',
       bogus: 'x',
     },
   });
-  assert.strictEqual(p.work.department, 'Warehouse');
-  assert.strictEqual(p.work.jobPosition, 'Warehouse Manager');
-  assert.strictEqual(p.work.manager, 'abc123');
+  assert.strictEqual(p.work.department, DEPT);
+  assert.strictEqual(p.work.jobPosition, POSITION);
+  assert.strictEqual(p.work.jobTitle, 'Warehouse Manager');
+  assert.strictEqual(p.work.manager, MANAGER);
   assert.strictEqual(p.work.workAddress.company, 'CLOUD BAY');
   assert.strictEqual(p.work.workAddress.street, '39 Gana Street');
   assert.strictEqual(p.work.workAddress.city, undefined);

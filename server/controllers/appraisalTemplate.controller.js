@@ -7,6 +7,7 @@
 const mongoose = require('mongoose');
 const AppraisalTemplate = require('../models/AppraisalTemplate');
 const AppraisalCycle = require('../models/AppraisalCycle');
+const Department = require('../models/Department');
 
 /**
  * Structural rules a Mongoose schema cannot express. Everything else —
@@ -427,6 +428,18 @@ function pickAllowPeerScoring(body) {
   return Boolean(body && body.allowPeerScoring);
 }
 
+/**
+ * The tenant's real department ids, for the AI sanitizer to snap a generated
+ * section's `departments` against (Phase 5 §9.1). Queried per generation
+ * rather than passed in the body: a client-supplied roster of "valid"
+ * departments would defeat the point of validating against one.
+ */
+async function tenantDepartmentIds(req) {
+  if (!req.tenant?._id) return [];
+  const rows = await Department.find({ tenant: req.tenant._id }).select('_id').lean();
+  return rows.map((r) => r._id);
+}
+
 /** POST /api/appraisal-templates/ai/template — generate a whole form. */
 exports.aiGenerateTemplate = async (req, res, next) => {
   try {
@@ -452,7 +465,9 @@ exports.aiGenerateTemplate = async (req, res, next) => {
     const json = await generateJson(res, { prompt: buildTemplatePrompt(brief), maxTokens: 8192 });
     if (!json) return;
 
-    const draft = sanitizeGeneratedTemplate(json, { audiences, allowPeerScoring });
+    const draft = sanitizeGeneratedTemplate(json, {
+      audiences, allowPeerScoring, departmentIds: await tenantDepartmentIds(req),
+    });
     // Everything the model produced failed the invariants. Say so plainly —
     // handing HR an empty draft would read as a successful generation.
     if (draft.sections.length === 0) {
@@ -495,7 +510,9 @@ exports.aiGenerateSection = async (req, res, next) => {
       }
     }
 
-    const section = sanitizeGeneratedSection(json, { audiences, seenLabels, allowPeerScoring });
+    const section = sanitizeGeneratedSection(json, {
+      audiences, seenLabels, allowPeerScoring, departmentIds: await tenantDepartmentIds(req),
+    });
     if (!section) {
       return res.status(500).json({
         success: false,

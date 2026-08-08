@@ -13,6 +13,8 @@ const row = (over: Partial<ComparisonRow> = {}): ComparisonRow => ({
   askOf: ['self', 'manager', 'peer'],
   self: 4,
   manager: 3,
+  // Explicit null, like every other 'nothing here' field buildComparison emits.
+  managerComment: null,
   peer: { mean: 4.5, n: 3, suppressed: false },
   peerBreakdown: null,
   ...over,

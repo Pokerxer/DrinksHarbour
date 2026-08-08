@@ -22,6 +22,7 @@ const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 
 const AppraisalFeedback = require('../models/AppraisalFeedback');
+const Appraisal = require('../models/Appraisal');
 const AppraisalCycle = require('../models/AppraisalCycle');
 const AppraisalTemplate = require('../models/AppraisalTemplate');
 const feedback = require('../controllers/appraisalFeedback.controller');
@@ -99,11 +100,18 @@ function stubTemplate(t) {
   ];
   const cycleFindOne = AppraisalCycle.findOne;
   const templateFindOne = AppraisalTemplate.findOne;
+  // Since Phase 5 the sections are also filtered by the appraisal's snapshot
+  // department, so the write paths read the appraisal too. No department here:
+  // these questions are company-wide, which is what an empty `departments`
+  // means and what every pre-Phase-5 template has.
+  const appraisalFindOne = Appraisal.findOne;
   AppraisalCycle.findOne = () => ({ lean: async () => ({ _id: oid(), template: oid() }) });
   AppraisalTemplate.findOne = () => ({ lean: async () => ({ _id: oid(), sections }) });
+  Appraisal.findOne = () => ({ select: () => ({ lean: async () => ({ _id: oid(), department: null }) }) });
   t.after(() => {
     AppraisalCycle.findOne = cycleFindOne;
     AppraisalTemplate.findOne = templateFindOne;
+    Appraisal.findOne = appraisalFindOne;
   });
 }
 

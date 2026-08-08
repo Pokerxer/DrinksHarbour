@@ -2,7 +2,7 @@
 
 import { useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { PiCheck, PiWarningCircle } from 'react-icons/pi';
+import { PiChatText, PiCheck, PiWarningCircle } from 'react-icons/pi';
 import type {
   AppraisalQuestion,
   AppraisalAnswer,
@@ -386,6 +386,8 @@ export default function ReviewQuestionCard({
   onTextChange,
   onSelectedChange,
   onNotObservedChange,
+  onCommentChange,
+  canComment,
   canAbstain,
   isMissing,
   readOnly,
@@ -397,6 +399,15 @@ export default function ReviewQuestionCard({
   onTextChange: (text: string) => void;
   onSelectedChange: (selected: string[]) => void;
   onNotObservedChange: (on: boolean) => void;
+  /** Manager forms only — the server strips a comment off any other kind. */
+  onCommentChange?: (comment: string) => void;
+  /**
+   * Whether to offer the per-question note (Phase 5 §9.3). Manager forms only:
+   * a comment is the REVIEWER's annotation, and the server drops one written
+   * on a self or peer row rather than rejecting the submission — so offering
+   * the box anywhere else would be a control that silently does nothing.
+   */
+  canComment: boolean;
   /** Peer forms only — see canAbstain() in review-answer-utils.ts. */
   canAbstain: boolean;
   isMissing: boolean;
@@ -520,6 +531,53 @@ export default function ReviewQuestionCard({
             </span>
           </span>
         </label>
+      )}
+
+      {/* ── The reviewer's note on THIS answer (Phase 5 §9.3) ──────────────
+          Not a second answer: it is the sentence that makes a 3 mean
+          something to the person who receives it. Kept beside the score rather
+          than pooled into the summary box, because "which of these did you
+          mean?" is the question a bare overall comment always leaves open.
+
+          The employee reads it only after release — the same rule as the rest
+          of the manager assessment — which the disclosure banner at the top of
+          the form already states, so it is not repeated on every question. */}
+      {canComment && onCommentChange && !readOnly && (
+        <div className="mt-4">
+          <label
+            htmlFor={`comment-${question._id}`}
+            className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400"
+          >
+            <PiChatText className="h-3.5 w-3.5" />
+            Your note on this answer
+            <span className="font-normal normal-case tracking-normal text-gray-300">
+              optional
+            </span>
+          </label>
+          <textarea
+            id={`comment-${question._id}`}
+            rows={2}
+            value={answer?.comment ?? ''}
+            onChange={(e) => onCommentChange(e.target.value)}
+            disabled={abstained}
+            maxLength={5000}
+            placeholder="Why this score? A specific example helps more than a summary."
+            className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50/50 px-3.5 py-2.5 text-sm leading-relaxed text-gray-900 transition-all duration-200 placeholder:text-gray-300 focus:border-[#b20202]/40 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#b20202]/15 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+      )}
+
+      {/* The same note on a submitted form, and on the reader's side. */}
+      {answer?.comment && (readOnly || !canComment) && (
+        <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50/70 px-3.5 py-2.5">
+          <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+            <PiChatText className="h-3.5 w-3.5" />
+            Reviewer’s note
+          </p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
+            {answer.comment}
+          </p>
+        </div>
       )}
 
       {/* Read-only rendering of the same state, for a submitted form. */}

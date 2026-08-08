@@ -11,7 +11,7 @@
 // bitten by —
 //   * an out-of-enum `type` or an over-length label is a 500 on save;
 //   * a competency scoped to raters only vanishes from the self form
-//     (`filterSectionsForKind`) and leaves `buildComparison` nothing to
+//     (`filterSections`) and leaves `buildComparison` nothing to
 //     compare — the bug the `three-sixty` preset shipped with;
 //   * a `choice` with one option renders an explicit authoring-error box in
 //     `review-question-card.tsx`.
@@ -199,6 +199,35 @@ function sanitizeGeneratedQuestion(raw, opts) {
 // Section
 // ---------------------------------------------------------------------------
 /**
+ * Snap a generated section's `departments` to ids the tenant actually has
+ * (Phase 5 §9.1).
+ *
+ * An id the model invented — or one from another tenant — is DROPPED, and a
+ * section left with none becomes company-wide rather than being thrown away.
+ * That direction is deliberate: over-asking a question of everybody is a
+ * nuisance HR can fix in the editor in seconds, whereas silently losing a
+ * whole section of questions to one bad id is invisible until someone opens
+ * the form and wonders what happened to the competency block.
+ *
+ * `opts.departmentIds` absent means the caller did not supply a roster to
+ * check against, in which case nothing is trusted and every section is
+ * company-wide — the same conservative default, reached a different way.
+ */
+function snapDepartments(raw, opts) {
+  const known = new Set((opts?.departmentIds || []).map((d) => String(d?._id ?? d)));
+  if (known.size === 0) return [];
+  const seen = new Set();
+  const out = [];
+  for (const d of Array.isArray(raw) ? raw : []) {
+    const id = String(d?._id ?? d ?? '');
+    if (!id || seen.has(id) || !known.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/**
  * Sanitize one generated section, or return null to DROP it.
  *
  * `opts.seenLabels` is a Set of already-used lowercased labels and is MUTATED
@@ -227,7 +256,9 @@ function sanitizeGeneratedSection(raw, opts) {
   }
 
   if (questions.length === 0) return null;
-  return { title, questions };
+  // Always present, always an array — `[]` is the schema's "asked of everyone",
+  // so an omitted key and an empty one must not read differently in the editor.
+  return { title, departments: snapDepartments(raw.departments, opts), questions };
 }
 
 // ---------------------------------------------------------------------------
@@ -247,13 +278,15 @@ function sanitizeGeneratedTemplate(raw, opts) {
   const sections = [];
   for (const rawSection of Array.isArray(src.sections) ? src.sections : []) {
     if (sections.length === MAX_SECTIONS) break;
-    const s = sanitizeGeneratedSection(rawSection, { audiences, seenLabels, allowPeerScoring });
+    const s = sanitizeGeneratedSection(rawSection, {
+      audiences, seenLabels, allowPeerScoring, departmentIds: opts?.departmentIds,
+    });
     if (s) sections.push(s);
   }
 
   // PEER COVERAGE — the mirror image of the 360 bug. Stripping peer off every
   // scored question can leave a peer with nothing to answer at all;
-  // `filterSectionsForKind` then returns [] and they open a blank review form.
+  // `filterSections` then returns [] and they open a blank review form.
   //
   // Checked here and not in sanitizeGeneratedSection because one section of
   // pure competencies legitimately has no peer questions — it is the whole
@@ -272,6 +305,9 @@ function sanitizeGeneratedTemplate(raw, opts) {
     // peer who cannot answer anything is a broken form, not a long one.
     sections.push({
       title: PEER_EVIDENCE_SECTION_TITLE,
+      // Company-wide by construction: every peer needs something to answer,
+      // whichever department the subject sits in.
+      departments: [],
       questions: source.map((q) => ({ ...q, askOf: ['peer'] })),
     });
   }
@@ -568,6 +604,7 @@ module.exports = {
   SYSTEM_PROMPT,
   parseAiJson,
   sanitizeGeneratedQuestion,
+  snapDepartments,
   sanitizeGeneratedSection,
   sanitizeGeneratedTemplate,
   mergeQuestionAssist,

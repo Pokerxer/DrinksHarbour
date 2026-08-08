@@ -5,7 +5,14 @@ const {
   attachTenant,
   requireOwnTenant,
   tenantAdminOrSuperAdmin,
+  authorize,
 } = require('../middleware/auth.middleware');
+
+// Phase 5 §9.5. Standing feedback is the owner's read and nobody else's — not
+// HR's, not the department admin's. `authorize` rather than
+// tenantAdminOrSuperAdmin because that gate includes tenant_admin, which is
+// precisely who must not see this.
+const ownerOnly = authorize('tenant_owner', 'super_admin');
 
 const cycles = require('../controllers/appraisalCycle.controller');
 const appraisals = require('../controllers/appraisal.controller');
@@ -62,6 +69,11 @@ appraisalRouter.get('/my', appraisals.myAppraisals);
 appraisalRouter.get('/my/reviews', appraisals.myReviewRequests);
 appraisalRouter.get('/team', appraisals.teamAppraisals);
 appraisalRouter.get('/:id', appraisals.getAppraisal);
+// Phase 5 §9.3: the employee's self-answers, for whoever is writing their
+// manager assessment. The handler gates on relation manager/hr and on the self
+// row actually being submitted; there is no role gate here because the
+// assigned reviewer is frequently tenant_staff.
+appraisalRouter.get('/:id/subject-answers', appraisals.subjectAnswers);
 appraisalRouter.post('/:id/summary', appraisals.saveSummary);
 appraisalRouter.post('/:id/release', appraisals.releaseAppraisal);
 appraisalRouter.post('/:id/acknowledge', appraisals.acknowledgeAppraisal);
@@ -84,7 +96,17 @@ appraisalRouter.post('/:id/skip-peers', appraisals.skipPeers);
 appraisalRouter.post('/:id/nudge', tenantAdminOrSuperAdmin, appraisals.nudge);
 
 // ── Reviewers: their own feedback row only ──────────────────────────────────
+// Declared BEFORE '/:id' so the literal path can never be read as a feedback
+// id. Gated at the route AND re-checked inside listStandingFeedback — belt and
+// braces, because "HR-only by mount point" is the pattern that leaked in this
+// module before.
+feedbackRouter.get('/standing', ownerOnly, feedback.listStandingFeedback);
 feedbackRouter.get('/:id', feedback.getFeedback);
+// The author's own optional step on their self-form. Ownership, not role:
+// loadOwnFeedback matches on reviewer === req.user._id, so an id belonging to
+// anyone else is a 404.
+feedbackRouter.get('/:id/standing', feedback.getStandingForm);
+feedbackRouter.post('/:id/standing', feedback.saveStandingFeedback);
 feedbackRouter.patch('/:id', feedback.saveDraft);
 feedbackRouter.post('/:id/submit', feedback.submitFeedback);
 feedbackRouter.post('/:id/decline', feedback.declineFeedback);

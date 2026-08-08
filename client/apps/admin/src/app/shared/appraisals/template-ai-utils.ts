@@ -163,3 +163,25 @@ export function applyQuestionAssist(
         }
   );
 }
+
+/**
+ * Stamp a department onto freshly generated sections (Phase 5 §9.1).
+ *
+ * `''` leaves them company-wide — `departments: []` explicitly, not absent,
+ * so the editor's scope pill reads "Everyone" from a real value rather than
+ * from a missing key it has to guess about.
+ *
+ * Only ever applied to sections the model just produced. An existing section
+ * already carries an audience HR chose; re-scoping it because they typed a
+ * department into the generator would silently change who answers questions
+ * that are already on the form.
+ */
+export function scopeSections<T extends { departments?: string[] }>(
+  sections: T[],
+  departmentId: string
+): T[] {
+  return (sections || []).map((section) => ({
+    ...section,
+    departments: departmentId ? [departmentId] : [],
+  }));
+}

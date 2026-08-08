@@ -254,3 +254,21 @@ export const canAdministerAppraisals = (
   (PLATFORM_ROLES.includes(role as UserRole) ||
     role === 'tenant_admin' ||
     role === 'tenant_owner');
+
+/**
+ * May this role read employee-authored STANDING feedback (Phase 5 §9.5)?
+ *
+ * A strictly narrower gate than `canAdministerAppraisals`, and deliberately
+ * not derived from it: standing feedback is one employee writing about another
+ * by name, and the promise made on the form is that the business owner is the
+ * only reader. `tenant_admin` administers appraisals and is still excluded.
+ *
+ * This is chrome only. The server gates the endpoint at the route AND re-checks
+ * inside the controller — "HR-only by mount point" is the pattern that leaked
+ * in this module before, so nothing here is load-bearing.
+ */
+export const canReadStandingFeedback = (
+  role: string | null | undefined
+): boolean =>
+  Boolean(role) &&
+  (PLATFORM_ROLES.includes(role as UserRole) || role === 'tenant_owner');

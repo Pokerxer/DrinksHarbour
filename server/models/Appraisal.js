@@ -29,6 +29,13 @@ const appraisalSchema = new Schema(
     // Snapshot taken at launch. Never re-read from employeeProfile.work.manager:
     // a reorg mid-cycle must not rewrite who was responsible for this appraisal.
     manager: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    // Snapshot taken at launch, for the same reason `manager` above is one:
+    // an employee transferred mid-cycle must not have the shape of a form they
+    // are already filling change underneath them (filterSections reads this),
+    // and which admin may look at the record must not move with the person
+    // either (resolveAppraisalAccess reads this). Nullable: every appraisal
+    // launched before Phase 5 has none, and those are the owner's alone to see.
+    department: { type: Schema.Types.ObjectId, ref: 'Department', index: true },
     state: { type: String, enum: APPRAISAL_STATES, default: 'draft', index: true },
     // Denormalised list of everyone with a feedback row, so the access resolver
     // can identify a reviewer without a second query.

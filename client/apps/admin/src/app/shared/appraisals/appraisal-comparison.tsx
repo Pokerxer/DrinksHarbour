@@ -128,6 +128,23 @@ function QuestionBlock({ row }: { row: ComparisonRow }) {
             {peer.n} peer{peer.n === 1 ? '' : 's'}
           </p>
         )}
+
+        {/* The manager's note on THIS question (Phase 5 §9.3).
+            Attributed only as "the manager", never by name — this file renders
+            for the subject as well, and naming nobody is what keeps that true
+            without a conditional. The server has already stripped the field
+            for any viewer not entitled to it (projectFeedbackForViewer), so a
+            non-null value here is one this reader may read. */}
+        {row.managerComment ? (
+          <div className="ms-[4.75rem] mt-2 rounded-lg border-s-2 border-gray-200 bg-gray-50/70 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+              Manager’s note
+            </p>
+            <p className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-gray-600">
+              {row.managerComment}
+            </p>
+          </div>
+        ) : null}
       </div>
     </div>
   );

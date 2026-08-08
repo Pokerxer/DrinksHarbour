@@ -8,13 +8,18 @@ const {
   projectFeedbackForViewer,
   planCycleLaunch,
   buildDefaultTemplate,
-  filterSectionsForKind,
+  filterSections,
   getAskedQuestionIds,
   partitionAnswersByAskedQuestions,
 } = require('../services/appraisal.helpers');
 
 const TENANT = 'tenant-1';
-const HR = { _id: 'u-hr', role: 'tenant_admin', tenant: TENANT };
+// tenant_owner rather than tenant_admin: since Phase 5 an admin's HR powers
+// are bounded by the departments they manage (resolveAppraisalAccess takes a
+// departmentScope), and these tests are about what the `hr` RELATION can do,
+// not about who qualifies for it. The department boundary itself is covered in
+// appraisalDepartmentScoping.test.js.
+const HR = { _id: 'u-hr', role: 'tenant_owner', tenant: TENANT };
 const MANAGER = { _id: 'u-mgr', role: 'tenant_staff', tenant: TENANT };
 const EMPLOYEE = { _id: 'u-emp', role: 'tenant_staff', tenant: TENANT };
 const PEER = { _id: 'u-peer', role: 'tenant_staff', tenant: TENANT };
@@ -192,7 +197,7 @@ test('the manager approves peers only at pending_peer_approval, backfills only a
 test('HR holds all three so acting on behalf is a capability, not a bypass', () => {
   const tenant = oid();
   const mk = (state) => ({ tenant, employee: oid(), manager: oid(), state, reviewerIds: [] });
-  const hr = { _id: oid(), tenant, role: 'tenant_admin' };
+  const hr = { _id: oid(), tenant, role: 'tenant_owner' };
   assert.strictEqual(resolveAppraisalAccess(hr, mk('nominating')).canNominate, true);
   assert.strictEqual(resolveAppraisalAccess(hr, mk('pending_peer_approval')).canApprovePeers, true);
   assert.strictEqual(resolveAppraisalAccess(hr, mk('collecting')).canBackfillPeers, true);
@@ -246,7 +251,9 @@ test('planCycleLaunch pairs each employee with their manager', () => {
     [{ _id: 'e1', employeeProfile: { work: { manager: 'm1' } } }],
     []
   );
-  assert.deepStrictEqual(plan.toCreate, [{ employee: 'e1', manager: 'm1' }]);
+  // `department` rides along since Phase 5 and is null when the employee has
+  // none — it is snapshotted onto the Appraisal, so it is part of the plan.
+  assert.deepStrictEqual(plan.toCreate, [{ employee: 'e1', manager: 'm1', department: null }]);
   assert.strictEqual(plan.skipped.length, 0);
 });
 
@@ -328,30 +335,30 @@ const SECTIONS = [
   },
 ];
 
-test('filterSectionsForKind keeps only questions asked of that kind, dropping empty sections', () => {
-  const forSelf = filterSectionsForKind(SECTIONS, 'self');
+test('filterSections keeps only questions asked of that kind, dropping empty sections', () => {
+  const forSelf = filterSections(SECTIONS, { kind: 'self' });
   const selfIds = forSelf.flatMap((s) => s.questions.map((q) => q._id));
   assert.deepStrictEqual(selfIds.sort(), ['q-all', 'q-self-mgr']);
 
-  const forPeer = filterSectionsForKind(SECTIONS, 'peer');
+  const forPeer = filterSections(SECTIONS, { kind: 'peer' });
   const peerIds = forPeer.flatMap((s) => s.questions.map((q) => q._id));
   assert.deepStrictEqual(peerIds.sort(), ['q-all', 'q-peer-only']);
 });
 
-test('filterSectionsForKind returns an empty array for a kind asked nothing', () => {
+test('filterSections returns an empty array for a kind asked nothing', () => {
   const noQuestions = [{ title: 'Solo', questions: [{ _id: 'q1', askOf: ['manager'] }] }];
-  assert.deepStrictEqual(filterSectionsForKind(noQuestions, 'peer'), []);
+  assert.deepStrictEqual(filterSections(noQuestions, { kind: 'peer' }), []);
 });
 
 test('getAskedQuestionIds collects ids from a filtered sections array as strings', () => {
-  const forManager = filterSectionsForKind(SECTIONS, 'manager');
+  const forManager = filterSections(SECTIONS, { kind: 'manager' });
   const ids = getAskedQuestionIds(forManager);
   assert.ok(ids instanceof Set);
   assert.deepStrictEqual([...ids].sort(), ['q-all', 'q-mgr-only', 'q-self-mgr']);
 });
 
 test('partitionAnswersByAskedQuestions allows answers keyed to asked questions', () => {
-  const askedIds = getAskedQuestionIds(filterSectionsForKind(SECTIONS, 'self'));
+  const askedIds = getAskedQuestionIds(filterSections(SECTIONS, { kind: 'self' }));
   const answers = [
     { questionId: 'q-self-mgr', rating: 5 },
     { questionId: 'q-all', text: 'great' },
@@ -362,7 +369,7 @@ test('partitionAnswersByAskedQuestions allows answers keyed to asked questions',
 });
 
 test('partitionAnswersByAskedQuestions rejects a manager-only question answered by a self reviewer', () => {
-  const askedIds = getAskedQuestionIds(filterSectionsForKind(SECTIONS, 'self'));
+  const askedIds = getAskedQuestionIds(filterSections(SECTIONS, { kind: 'self' }));
   const answers = [{ questionId: 'q-mgr-only', rating: 5 }];
   const { allowed, rejectedIds } = partitionAnswersByAskedQuestions(answers, askedIds);
   assert.strictEqual(allowed.length, 0);
@@ -370,7 +377,7 @@ test('partitionAnswersByAskedQuestions rejects a manager-only question answered 
 });
 
 test('partitionAnswersByAskedQuestions rejects a fabricated question id matching nothing', () => {
-  const askedIds = getAskedQuestionIds(filterSectionsForKind(SECTIONS, 'self'));
+  const askedIds = getAskedQuestionIds(filterSections(SECTIONS, { kind: 'self' }));
   const answers = [{ questionId: 'not-a-real-question', rating: 1 }];
   const { allowed, rejectedIds } = partitionAnswersByAskedQuestions(answers, askedIds);
   assert.strictEqual(allowed.length, 0);
@@ -378,14 +385,14 @@ test('partitionAnswersByAskedQuestions rejects a fabricated question id matching
 });
 
 test('partitionAnswersByAskedQuestions rejects an answer missing questionId instead of throwing', () => {
-  const askedIds = getAskedQuestionIds(filterSectionsForKind(SECTIONS, 'self'));
+  const askedIds = getAskedQuestionIds(filterSections(SECTIONS, { kind: 'self' }));
   const { allowed, rejectedIds } = partitionAnswersByAskedQuestions([{ rating: 3 }], askedIds);
   assert.strictEqual(allowed.length, 0);
   assert.deepStrictEqual(rejectedIds, ['(missing questionId)']);
 });
 
 test('partitionAnswersByAskedQuestions dedupes repeated rejected ids', () => {
-  const askedIds = getAskedQuestionIds(filterSectionsForKind(SECTIONS, 'self'));
+  const askedIds = getAskedQuestionIds(filterSections(SECTIONS, { kind: 'self' }));
   const answers = [
     { questionId: 'q-mgr-only', rating: 1 },
     { questionId: 'q-mgr-only', rating: 2 },

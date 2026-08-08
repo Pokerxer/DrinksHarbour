@@ -13,6 +13,15 @@ import {
   PiGearSixDuotone,
   PiSlidersHorizontalDuotone,
   PiIdentificationCardDuotone,
+  PiBuildingsDuotone,
+  PiBriefcaseDuotone,
+  PiIdentificationBadgeDuotone,
+  PiCalendarBlankDuotone,
+  PiClockCounterClockwiseDuotone,
+  PiClockUserDuotone,
+  PiFingerprintDuotone,
+  PiUmbrellaDuotone,
+  PiArrowsLeftRightDuotone,
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
@@ -34,6 +43,72 @@ const navItems: NavItem[] = [
     label: 'Users & Roles',
     href: routes.rolesPermissions,
     icon: <PiShieldCheckDuotone />,
+  },
+  {
+    label: 'Organisation',
+    icon: <PiBuildingsDuotone />,
+    items: [
+      {
+        label: 'Departments',
+        href: routes.employees.departments,
+        icon: <PiBuildingsDuotone />,
+        desc: 'Units & their managers',
+      },
+      {
+        label: 'Job Positions',
+        href: routes.employees.jobPositions,
+        icon: <PiBriefcaseDuotone />,
+        desc: 'Posts & headcount targets',
+      },
+      {
+        label: 'Roles',
+        href: routes.employees.roles,
+        icon: <PiIdentificationBadgeDuotone />,
+        desc: 'What staff can work',
+      },
+    ],
+  },
+  {
+    label: 'Planning',
+    icon: <PiCalendarBlankDuotone />,
+    items: [
+      {
+        label: 'Roster',
+        href: routes.employees.shifts,
+        icon: <PiCalendarBlankDuotone />,
+        desc: 'The week, who works when',
+      },
+      {
+        label: 'Shift Templates',
+        href: routes.employees.shiftTemplates,
+        icon: <PiClockCounterClockwiseDuotone />,
+        desc: 'Patterns the roster is built from',
+      },
+      {
+        label: 'Attendance',
+        href: routes.employees.attendance,
+        icon: <PiClockUserDuotone />,
+        desc: 'Who is in, and who was late',
+      },
+      {
+        label: 'Clock Kiosk',
+        href: routes.employees.attendanceKiosk,
+        icon: <PiFingerprintDuotone />,
+        desc: 'The PIN pad staff clock in on',
+      },
+      {
+        label: 'Time Off',
+        href: routes.employees.timeOff,
+        icon: <PiUmbrellaDuotone />,
+        desc: 'Requests, and what is approved',
+      },
+      {
+        label: 'Shift Swaps',
+        href: routes.employees.swaps,
+        icon: <PiArrowsLeftRightDuotone />,
+        desc: 'Cover offered, taken and approved',
+      },
+    ],
   },
   {
     label: 'Point of Sale',

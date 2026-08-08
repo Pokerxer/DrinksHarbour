@@ -22,7 +22,7 @@ const { NUDGE_MIN_INTERVAL_HOURS } = appraisals;
 
 function scenario({ state = 'collecting', withPeer = false } = {}) {
   const tenant = oid();
-  const hr = { _id: oid(), tenant, role: 'tenant_admin', firstName: 'Ada' };
+  const hr = { _id: oid(), tenant, role: 'tenant_owner', firstName: 'Ada' };
   const emp = { _id: oid(), tenant, role: 'tenant_staff', status: 'active', firstName: 'Grace', email: 'grace@wyncity.test' };
   const mgr = { _id: oid(), tenant, role: 'tenant_staff', status: 'active', firstName: 'Kofi', email: 'kofi@wyncity.test' };
   const peer = { _id: oid(), tenant, role: 'tenant_staff', status: 'active', firstName: 'Zara', email: 'zara@wyncity.test' };

@@ -30,8 +30,25 @@ const {
   outstandingActionsFor,
   buildComparison,
   normaliseCommitments,
+  filterSections,
   TENANT_ROLES,
 } = require('../services/appraisal.helpers');
+const { departmentScopeFor } = require('../services/appraisalScope.service');
+
+/**
+ * Resolve access, WITH the caller's department scope (Phase 5 §9.4).
+ *
+ * Every single-record handler in this file goes through here rather than
+ * calling resolveAppraisalAccess directly, because the resolver fails closed
+ * for a `tenant_admin` when no scope is supplied — so a handler that called it
+ * bare would 403 its own admins rather than leak, but would still be wrong.
+ * One function, memoised per request by departmentScopeFor, means one query
+ * however many times a handler resolves access.
+ */
+async function accessFor(req, appraisal) {
+  const departmentScope = await departmentScopeFor(req);
+  return resolveAppraisalAccess(req.user, appraisal, { departmentScope });
+}
 
 // How long a reminder silences the next identical one. Mostly about a
 // double-click sending two emails, and about a stalled appraisal not becoming
@@ -254,7 +271,7 @@ exports.getAppraisal = async (req, res, next) => {
       .lean();
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     if (!access.canRead) {
       return res.status(403).json({ success: false, message: 'Not permitted' });
     }
@@ -374,12 +391,87 @@ exports.getAppraisal = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+/**
+ * GET /api/appraisals/:id/subject-answers — the employee's own self-answers,
+ * for the person writing their manager assessment (Phase 5 §9.3).
+ *
+ * Two gates, both load-bearing:
+ *
+ *  - WHO: the assigned reviewer (relation 'manager') or an HR viewer whose
+ *    scope covers this record. Not peers — a peer reading the subject's
+ *    self-assessment is not a peer review, it is an audience. Not the subject
+ *    either; they wrote it.
+ *  - WHEN: only once the self row is 'submitted'. While it is pending this
+ *    answers `selfSubmitted: false` and NO answers, so the reviewer's form can
+ *    say "not yet submitted" rather than rendering an empty comparison that
+ *    reads as though the employee answered nothing and was judged for it.
+ *
+ * Sections are filtered to the employee's own snapshot department and the
+ * `self` kind, so a reviewer sees exactly the questions the employee was
+ * actually asked — not the manager form's version of them.
+ */
+exports.subjectAnswers = async (req, res, next) => {
+  try {
+    const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id })
+      .populate('cycle', 'name template')
+      .lean();
+    if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
+
+    const access = await accessFor(req, appraisal);
+    if (access.relation !== 'manager' && access.relation !== 'hr') {
+      return res.status(403).json({ success: false, message: 'Not permitted' });
+    }
+
+    const self = await AppraisalFeedback.findOne({
+      tenant: req.tenant._id,
+      appraisal: appraisal._id,
+      kind: 'self',
+    }).lean();
+
+    if (!self || self.status !== 'submitted') {
+      // Deliberately not a 404: the row exists, the employee simply has not
+      // finished. Telling the reviewer which of those it is IS the feature.
+      return res.json({
+        success: true,
+        data: { selfSubmitted: false, submittedAt: null, sections: [], answers: [] },
+      });
+    }
+
+    const template = appraisal.cycle?.template
+      ? await AppraisalTemplate.findOne({ _id: appraisal.cycle.template, tenant: req.tenant._id }).lean()
+      : null;
+    if (!template) {
+      const err = new Error('The appraisal template for this appraisal could not be found.');
+      err.status = 500;
+      err.expose = true;
+      throw err;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        selfSubmitted: true,
+        submittedAt: self.submittedAt || null,
+        sections: filterSections(template.sections, {
+          kind: 'self',
+          departmentId: appraisal.department ?? null,
+        }),
+        // Projected like every other feedback read, so a self row that somehow
+        // carries a `comment` (normaliseAnswers strips them, but rows written
+        // before this phase are not re-validated) cannot surface here as
+        // reviewer commentary.
+        answers: projectFeedbackForViewer(self, access).answers || [],
+      },
+    });
+  } catch (err) { next(err); }
+};
+
 exports.saveSummary = async (req, res, next) => {
   try {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id });
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     if (!access.canSummarise) {
       return res.status(403).json({ success: false, message: 'Not permitted' });
     }
@@ -417,7 +509,7 @@ exports.releaseAppraisal = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id });
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     if (!access.canRelease) {
       return res.status(403).json({ success: false, message: 'Not permitted' });
     }
@@ -495,7 +587,7 @@ exports.acknowledgeAppraisal = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id });
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     if (!access.canAcknowledge) {
       return res.status(403).json({ success: false, message: 'Not permitted' });
     }
@@ -545,7 +637,7 @@ exports.getNomination = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id }).lean();
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     // Anyone with a stake in nomination may read this screen. Note this is NOT
     // access.canRead — that stays false for the subject until release, and this
     // payload is an allow-list built by nominationViewForSubject, never the
@@ -594,7 +686,7 @@ exports.eligiblePeers = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id }).lean();
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     if (!access.canNominate && !access.canApprovePeers && !access.canBackfillPeers) {
       return res.status(403).json({ success: false, message: 'Not permitted' });
     }
@@ -607,7 +699,7 @@ exports.nominatePeers = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id });
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     if (!access.canNominate) {
       return res.status(403).json({ success: false, message: 'Not permitted' });
     }
@@ -731,7 +823,7 @@ exports.approvePeers = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id });
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     if (!access.canApprovePeers) {
       return res.status(403).json({ success: false, message: 'Not permitted' });
     }
@@ -785,7 +877,7 @@ exports.backfillPeers = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id });
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     if (!access.canBackfillPeers) {
       return res.status(403).json({ success: false, message: 'Not permitted' });
     }
@@ -827,7 +919,7 @@ exports.skipPeers = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: req.tenant._id });
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     // Deliberately HR-only: skipping peers is the unblock-a-stall power, not a
     // way for a manager to opt out of the 360 they were asked to run.
     if (access.relation !== 'hr' || !(access.canNominate || access.canApprovePeers)) {
@@ -874,7 +966,7 @@ exports.nudge = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: req.params.id, tenant: tenantId }).lean();
     if (!appraisal) return res.status(404).json({ success: false, message: 'Appraisal not found' });
 
-    const access = resolveAppraisalAccess(req.user, appraisal);
+    const access = await accessFor(req, appraisal);
     if (!access.canManageCycle) {
       return res.status(403).json({ success: false, message: 'Not permitted' });
     }

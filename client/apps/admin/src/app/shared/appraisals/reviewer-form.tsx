@@ -24,18 +24,22 @@ import {
 import { useUnsavedChangesGuard } from './use-unsaved-changes-guard';
 import ReviewProgressStrip from './review-progress-strip';
 import PriorCommitmentsBanner from './prior-commitments-banner';
+import SubjectAnswersPanel from './subject-answers-panel';
+import StandingFeedbackStep from './standing-feedback-step';
 import ReviewDisclosureBanner from './review-disclosure-banner';
 import ReviewQuestionCard from './review-question-card';
 import ReviewFormFooter from './review-form-footer';
 import ReviewSectionNav from './review-section-nav';
 import {
   canAbstain,
+  carryComment,
   isAnswered,
   outstandingRequired,
   progressOf,
   seedAnswers,
   serializeAnswers,
   toggleNotObserved,
+  withComment,
 } from './review-answer-utils';
 import {
   answersSignature,
@@ -317,7 +321,13 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
    * again unanswered.
    */
   function applyAnswer(questionId: string, answer: AppraisalAnswer) {
-    setAnswers((prev) => ({ ...prev, [questionId]: answer }));
+    setAnswers((prev) => ({
+      ...prev,
+      // carryComment is the ONE exception to "write the whole answer": a
+      // reviewer's note sits on a different axis from the value, so nudging a
+      // score must not silently discard what they wrote about it.
+      [questionId]: carryComment(prev[questionId], answer),
+    }));
     setOutstanding((prev) =>
       prev.length === 0
         ? prev
@@ -334,6 +344,16 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
   function setSelected(questionId: string, selected: string[]) {
     applyAnswer(questionId, { questionId, selected });
   }
+  function setComment(questionId: string, comment: string) {
+    setAnswers((prev) => {
+      const next = withComment(prev[questionId], comment);
+      // A note typed before anything was answered has nothing to attach to.
+      // serializeAnswers would drop it either way, so it never becomes state.
+      if (!next) return prev;
+      return { ...prev, [questionId]: next };
+    });
+  }
+
   function setNotObserved(questionId: string, on: boolean) {
     // toggleNotObserved owns the rule that an abstention replaces the value
     // outright in both directions — see review-answer-utils.ts.
@@ -579,6 +599,32 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
             {/* Null on peer forms and on a first-ever appraisal. */}
             <PriorCommitmentsBanner prior={form.priorCommitments} />
 
+            {/* Self forms only (Phase 5 §9.5): an optional step where the
+                employee flags colleagues in their own department. The server
+                refuses it on any other kind, and the component hides itself
+                when the author has no colleagues to write about. */}
+            {form.kind === 'self' ? (
+              <StandingFeedbackStep
+                feedbackId={form.feedback._id}
+                readOnly={isReadOnly}
+              />
+            ) : null}
+
+            {/* Manager forms only (Phase 5 §9.3). The server independently
+                requires relation manager/hr AND a submitted self row, so this
+                condition is an affordance, not the boundary — a peer who
+                reached the endpoint by hand still gets a 403. */}
+            {form.kind === 'manager' && form.appraisalId ? (
+              <SubjectAnswersPanel
+                appraisalId={form.appraisalId}
+                subjectName={
+                  [form.subject?.firstName, form.subject?.lastName]
+                    .filter(Boolean)
+                    .join(' ') || 'this employee'
+                }
+              />
+            ) : null}
+
             {/* Question sections.
                 Not wrapped in AnimatePresence: sections are never conditionally
                 removed, and `mode="wait"` around a .map of siblings is a
@@ -626,6 +672,11 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
                       onTextChange={(v) => setText(q._id, v)}
                       onSelectedChange={(v) => setSelected(q._id, v)}
                       onNotObservedChange={(on) => setNotObserved(q._id, on)}
+                      onCommentChange={(v) => setComment(q._id, v)}
+                      // Manager forms only. The server strips a comment off any
+                      // other kind, so offering the box elsewhere would be a
+                      // control that silently does nothing.
+                      canComment={form.kind === 'manager'}
                       canAbstain={canAbstain(form.kind)}
                       isMissing={outstanding.some((o) => o._id === q._id)}
                       readOnly={isReadOnly}

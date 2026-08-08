@@ -5,7 +5,10 @@
 // Same split as team-appraisals-utils / cycle-detail-utils: this app's vitest
 // runs `environment: 'node'` with no jsdom, so components cannot be rendered
 // and anything that can actually be WRONG has to be a pure function.
-import type { AppraisalCycle, AppraisalState } from '@/services/appraisal.service';
+import type {
+  AppraisalCycle,
+  AppraisalState,
+} from '@/services/appraisal.service';
 
 /**
  * States in which the appraisal has reached the employee. Kept identical to
@@ -55,7 +58,8 @@ export function cycleCompletion(
   for (const [state, raw] of Object.entries(byState ?? {})) {
     // A count arriving as a non-number (or negative) would poison every total
     // downstream, and `NaN%` on a progress bar is worse than no bar at all.
-    const count = typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : 0;
+    const count =
+      typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : 0;
     total += count;
     if (DONE_STATES.has(state)) done += count;
     if (state === CANCELLED) cancelled += count;
@@ -170,5 +174,7 @@ function priorityOf(status: string): number {
 }
 
 export function sortCycles(cycles: AppraisalCycle[]): AppraisalCycle[] {
-  return [...cycles].sort((a, b) => priorityOf(a.status) - priorityOf(b.status));
+  return [...cycles].sort(
+    (a, b) => priorityOf(a.status) - priorityOf(b.status)
+  );
 }

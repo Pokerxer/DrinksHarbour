@@ -6,6 +6,7 @@ import { Input } from 'rizzui';
 import {
   PiArrowDown,
   PiArrowUp,
+  PiBuildings,
   PiCaretRight,
   PiPlusBold,
   PiSparkle,
@@ -14,6 +15,11 @@ import {
 import type { DraftQuestion } from '@/services/appraisal.service';
 import type { KeyedSection } from './template-draft-keys';
 import TemplateQuestionRow from './template-question-row';
+import {
+  describeSectionAudience,
+  toggleSectionDepartment,
+  type DepartmentOption,
+} from './section-departments-utils';
 
 // ---------------------------------------------------------------------------
 // Section-type hint
@@ -93,6 +99,13 @@ interface TemplateSectionCardProps {
   ) => void;
   /** `${si}:${qi}` of the question whose assist is in flight, if any. */
   assistingKey?: string | null;
+  /**
+   * The tenant's departments, for the per-section scope picker (Phase 5 §9.1).
+   * Empty (a tenant with no departments yet, or a still-loading list) hides the
+   * picker entirely rather than showing a control with nothing in it.
+   */
+  departmentOptions?: DepartmentOption[];
+  onDepartmentsChange?: (si: number, departments: string[]) => void;
 }
 
 export default function TemplateSectionCard({
@@ -114,8 +127,11 @@ export default function TemplateSectionCard({
   onExpandWithAi,
   onAssistQuestion,
   assistingKey,
+  departmentOptions = [],
+  onDepartmentsChange,
 }: TemplateSectionCardProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const si = sectionIndex;
   const color = SECTION_COLORS[si % SECTION_COLORS.length];
   const hint = SECTION_HINTS[section.title.trim()] ?? undefined;
@@ -197,6 +213,83 @@ export default function TemplateSectionCard({
           </div>
         ) : null}
       </div>
+
+      {/* ─── Row 1b: Who is asked this section (Phase 5 §9.1) ─── */}
+      {departmentOptions.length > 0 && onDepartmentsChange ? (
+        <div className="px-4 pb-2 sm:px-5">
+          <button
+            type="button"
+            onClick={() => setScopeOpen((open) => !open)}
+            disabled={saving}
+            className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors disabled:opacity-50 ${
+              (section.departments || []).length === 0
+                ? 'bg-gray-50 text-gray-600 ring-gray-200 hover:bg-gray-100'
+                : `${color.bg}/10 ${color.text} ${color.ring} hover:brightness-95`
+            }`}
+          >
+            <PiBuildings className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              Asked of: {describeSectionAudience(section.departments, departmentOptions)}
+            </span>
+          </button>
+
+          <AnimatePresence initial={false}>
+            {scopeOpen ? (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.15 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+                  {/* Said outright, because a multi-select with nothing ticked
+                      normally means "nobody" and here it means the opposite. */}
+                  <p className="mb-2 text-[11px] text-gray-500">
+                    Tick none to ask this section of everyone. Tick one or more
+                    and only employees in those departments are asked it.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {departmentOptions.map((dept) => {
+                      const on = (section.departments || []).includes(dept._id);
+                      return (
+                        <button
+                          key={dept._id}
+                          type="button"
+                          disabled={saving}
+                          onClick={() =>
+                            onDepartmentsChange(
+                              si,
+                              toggleSectionDepartment(section.departments, dept._id)
+                            )
+                          }
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors disabled:opacity-50 ${
+                            on
+                              ? 'bg-[#b20202] text-white ring-[#b20202]'
+                              : 'bg-white text-gray-600 ring-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          {dept.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(section.departments || []).length > 0 ? (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => onDepartmentsChange(si, [])}
+                      className="mt-2 text-[11px] font-medium text-gray-500 underline underline-offset-2 hover:text-gray-700 disabled:opacity-50"
+                    >
+                      Ask everyone instead
+                    </button>
+                  ) : null}
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      ) : null}
 
       {/* ─── Row 2: Collapse toggle + Label + Complete badge + Controls ─── */}
       <div className="flex items-center gap-2 px-4 pb-3 sm:px-5">

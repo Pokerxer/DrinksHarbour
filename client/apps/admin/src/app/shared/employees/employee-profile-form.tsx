@@ -32,6 +32,12 @@ import {
 } from '@/services/employee.service';
 import { uploadService } from '@/services/upload.service';
 import { fraunces } from './employees-fonts';
+import {
+  useOrgOptions,
+  WorkOrgFields,
+  PlanningRoleFields,
+  ApproverFields,
+} from './employee-org-fields';
 
 // ── metadata (shared by the list, the drawer and the detail page) ─────────────
 
@@ -759,6 +765,10 @@ export default function EmployeeProfileForm({
   // The owner cannot be demoted/suspended, so lock those controls when editing one.
   const isOwner = editing?.role === 'tenant_owner';
 
+  // Department / position / role option lists. Loaded once per mount and shared
+  // by the Work and Planning sections.
+  const orgOptions = useOrgOptions(token);
+
   const togglePerm = (p: PosPermission) => {
     const set = new Set(form.posPermissions ?? []);
     if (set.has(p)) set.delete(p);
@@ -1003,27 +1013,12 @@ export default function EmployeeProfileForm({
 
       {/* Work information + org chart */}
       <ProfileSection id="work" title="Work Information">
-        <PText
-          label="Department"
-          path="work.department"
-          profile={profile}
+        <WorkOrgFields
+          departmentId={profile.work?.department ?? ''}
+          positionId={profile.work?.jobPosition ?? ''}
+          jobTitle={profile.work?.jobTitle ?? ''}
+          options={orgOptions}
           setP={setP}
-          placeholder="e.g. Sales"
-        />
-        <PText
-          label="Job Position"
-          path="work.jobPosition"
-          profile={profile}
-          setP={setP}
-          placeholder="e.g. Sales Associate"
-        />
-        <PText
-          label="Job Title"
-          path="work.jobTitle"
-          profile={profile}
-          setP={setP}
-          placeholder="e.g. Senior Bartender"
-          span2
         />
         <label className="col-span-2 text-sm font-medium text-gray-700">
           Manager
@@ -1115,7 +1110,12 @@ export default function EmployeeProfileForm({
               manager={manager}
               current={editing}
               reports={reports}
-              currentTitle={profile.work?.jobTitle || profile.work?.jobPosition}
+              // jobPosition is an id now, so it can no longer be a fallback
+              // string — resolve it through the loaded option list instead.
+              currentTitle={
+                profile.work?.jobTitle ||
+                orgOptions.positions.find((p) => p._id === profile.work?.jobPosition)?.name
+              }
             />
           </div>
         )}
@@ -1445,53 +1445,23 @@ export default function EmployeeProfileForm({
       </ProfileSection>
 
       <ProfileSection id="approvers" title="Approvers">
-        <PText
-          label="HR Responsible"
-          path="approvers.hrResponsible"
-          profile={profile}
-          setP={setP}
-          span2
-        />
-        <PText
-          label="Expense"
-          path="approvers.expense"
-          profile={profile}
-          setP={setP}
-        />
-        <PText
-          label="Time Off"
-          path="approvers.timeOff"
-          profile={profile}
+        <ApproverFields
+          values={{
+            hrResponsible: profile.approvers?.hrResponsible ?? '',
+            expense: profile.approvers?.expense ?? '',
+            timeOff: profile.approvers?.timeOff ?? '',
+          }}
+          colleagues={colleagues}
           setP={setP}
         />
       </ProfileSection>
 
       <ProfileSection id="planning" title="Planning">
-        <label className="col-span-2 text-sm font-medium text-gray-700">
-          Roles{' '}
-          <span className="font-normal text-gray-400">(comma-separated)</span>
-          <input
-            className={`mt-1.5 ${PFIELD}`}
-            value={roles.join(', ')}
-            onChange={(e) =>
-              setP(
-                'planning.roles',
-                e.target.value
-                  .split(',')
-                  .map((r) => r.trim())
-                  .filter(Boolean)
-              )
-            }
-            placeholder="e.g. Bartender"
-          />
-        </label>
-        <PText
-          label="Default Role"
-          path="planning.defaultRole"
-          profile={profile}
+        <PlanningRoleFields
+          roleIds={roles}
+          defaultRoleId={profile.planning?.defaultRole ?? ''}
+          options={orgOptions}
           setP={setP}
-          placeholder="e.g. Bartender"
-          span2
         />
       </ProfileSection>
 

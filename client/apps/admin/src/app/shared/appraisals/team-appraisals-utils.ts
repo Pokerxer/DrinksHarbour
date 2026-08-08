@@ -166,7 +166,8 @@ const COMPARATORS: Record<TeamSort, (a: Appraisal, b: Appraisal) => number> = {
     compareName(a, b),
   due: (a, b) => compareDeadline(a, b) || compareName(a, b),
   name: compareName,
-  status: (a, b) => lifecycleOf(a.state) - lifecycleOf(b.state) || compareName(a, b),
+  status: (a, b) =>
+    lifecycleOf(a.state) - lifecycleOf(b.state) || compareName(a, b),
 };
 
 /**

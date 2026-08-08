@@ -19,7 +19,7 @@ const cycles = require('../controllers/appraisalCycle.controller');
 
 function scenario() {
   const tenant = oid();
-  const hr = { _id: oid(), tenant, role: 'tenant_admin' };
+  const hr = { _id: oid(), tenant, role: 'tenant_owner' };
   const emp = { _id: oid(), tenant, role: 'tenant_staff', status: 'active', firstName: 'Grace', lastName: 'H', email: 'grace@x.io' };
   const mgr = { _id: oid(), tenant, role: 'tenant_staff', status: 'active', firstName: 'Kofi', lastName: 'A', email: 'kofi@x.io' };
   const peer = { _id: oid(), tenant, role: 'tenant_staff', status: 'active', firstName: 'Ada', lastName: 'L', email: 'ada@x.io' };

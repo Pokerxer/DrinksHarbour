@@ -43,6 +43,8 @@ const AppraisalFeedback = require('../../models/AppraisalFeedback');
 const AppraisalCycle = require('../../models/AppraisalCycle');
 const AppraisalTemplate = require('../../models/AppraisalTemplate');
 const AppraisalNudge = require('../../models/AppraisalNudge');
+const PeerStandingFeedback = require('../../models/PeerStandingFeedback');
+const Department = require('../../models/Department');
 const User = require('../../models/User');
 
 // ---------------------------------------------------------------------------
@@ -54,7 +56,7 @@ const User = require('../../models/User');
 // hazard below.
 const FIELD_LISTS = {
   appraisals: [
-    'tenant', 'cycle', 'employee', 'manager', 'state', 'reviewerIds',
+    'tenant', 'cycle', 'employee', 'manager', 'department', 'state', 'reviewerIds',
     'peerNominations', 'summary', 'finalRating', 'releasedAt', 'releasedBy',
     'acknowledgedAt', 'employeeResponse', 'cancelledAt', 'cancelReason',
     'createdAt', 'updatedAt',
@@ -76,11 +78,21 @@ const FIELD_LISTS = {
     'tenant', 'appraisal', 'cycle', 'target', 'reason', 'channel', 'sentBy',
     'sentAt', 'emailError', 'createdAt', 'updatedAt',
   ],
+  departments: ['tenant', 'name', 'code', 'parent', 'manager', 'isActive', 'createdAt', 'updatedAt'],
+  standing: [
+    'tenant', 'cycle', 'appraisal', 'author', 'department', 'entries',
+    'submittedAt', 'createdAt', 'updatedAt',
+  ],
 };
 
 // Which collection a ref field on a document resolves against, for populate.
 const REF_MAP = {
-  appraisals: { employee: 'users', manager: 'users', releasedBy: 'users', cycle: 'cycles' },
+  appraisals: {
+    employee: 'users', manager: 'users', releasedBy: 'users', cycle: 'cycles',
+    department: 'departments',
+  },
+  departments: { manager: 'users', parent: 'departments' },
+  standing: { author: 'users', department: 'departments', cycle: 'cycles', appraisal: 'appraisals' },
   feedback: { reviewer: 'users', appraisal: 'appraisals', cycle: 'cycles' },
   cycles: { template: 'templates', templateFamily: 'templates', createdBy: 'users' },
   nudges: { target: 'users', sentBy: 'users', appraisal: 'appraisals', cycle: 'cycles' },
@@ -91,6 +103,7 @@ const REF_MAP = {
 // ('user') isn't unique enough on its own.
 const SUBDOC_REF_MAP = {
   'appraisals.peerNominations.user': 'users',
+  'standing.entries.subject': 'users',
 };
 
 const DEFAULTS = {
@@ -99,6 +112,8 @@ const DEFAULTS = {
   cycles: { status: 'draft' },
   templates: { isArchived: false, sections: [] },
   nudges: { channel: 'app' },
+  departments: { isActive: true, manager: null, parent: null },
+  standing: { entries: [] },
   users: { status: 'active' },
 };
 
@@ -149,15 +164,21 @@ function pick(obj, selectSpec) {
 function matchesFilter(doc, filter) {
   for (const [key, val] of Object.entries(filter || {})) {
     if (val === undefined) continue;
+    // Dotted filter keys ('employeeProfile.work.department') are ordinary
+    // mongo, and reading them as a flat own-property silently matched NOTHING
+    // — which reads as "this department has no members" rather than as the
+    // harness gap it is. Resolved the same way `.select()` already resolves
+    // nested paths.
+    const actualValue = key.includes('.') ? getDeep(doc, key) : doc[key];
     if (val && typeof val === 'object' && !(val instanceof Date) && !(val instanceof mongoose.Types.ObjectId)) {
       if (Object.prototype.hasOwnProperty.call(val, '$in')) {
         const set = new Set(val.$in.map(String));
-        if (!set.has(String(doc[key]))) return false;
+        if (!set.has(String(actualValue))) return false;
         continue;
       }
       if (Object.prototype.hasOwnProperty.call(val, '$nin')) {
         const set = new Set(val.$nin.map(String));
-        if (set.has(String(doc[key]))) return false;
+        if (set.has(String(actualValue))) return false;
         continue;
       }
       // Before this branch existed `{x: {$ne: null}}` fell through to the
@@ -166,7 +187,7 @@ function matchesFilter(doc, filter) {
       // branch it was meant to exercise was unreachable. A missing field
       // fails `$ne: null` exactly as it does on real Mongo.
       if (Object.prototype.hasOwnProperty.call(val, '$ne')) {
-        const actual = doc[key];
+        const actual = actualValue;
         if (val.$ne === null || val.$ne === undefined) {
           if (actual === null || actual === undefined) return false;
         } else if (String(actual) === String(val.$ne)) {
@@ -175,7 +196,7 @@ function matchesFilter(doc, filter) {
         continue;
       }
     }
-    if (String(doc[key]) !== String(val)) return false;
+    if (String(actualValue) !== String(val)) return false;
   }
   return true;
 }
@@ -521,6 +542,11 @@ function installModelStubs(harness, { transientFailures = 0 } = {}) {
     NudgeCountDocuments: AppraisalNudge.countDocuments,
     UserFind: User.find,
     UserFindOne: User.findOne,
+    DepartmentFind: Department.find,
+    DepartmentFindOne: Department.findOne,
+    StandingFind: PeerStandingFeedback.find,
+    StandingFindOne: PeerStandingFeedback.findOne,
+    StandingFindOneAndUpdate: PeerStandingFeedback.findOneAndUpdate,
     startSession: mongoose.startSession,
   };
 
@@ -607,6 +633,33 @@ function installModelStubs(harness, { transientFailures = 0 } = {}) {
   User.find = (filter) => harness.query('users', filter, { multi: true });
   User.findOne = (filter) => harness.query('users', filter, { multi: false });
 
+  // Phase 5. Department is read on the reviewer-routing path (launchCycle) and
+  // on EVERY request a tenant_admin makes (departmentScopeFor), so leaving it
+  // unstubbed does not fail — it hangs, buffering against a database that is
+  // not there. That is why it is here rather than only in the tests that seed
+  // departments: a harness that covers a model only when a fixture uses it is
+  // a harness that deadlocks the first time a controller reaches past its
+  // fixtures.
+  Department.find = (filter) => harness.query('departments', filter, { multi: true });
+  Department.findOne = (filter) => harness.query('departments', filter, { multi: false });
+
+  PeerStandingFeedback.find = (filter) => harness.query('standing', filter, { multi: true });
+  PeerStandingFeedback.findOne = (filter) => harness.query('standing', filter, { multi: false });
+  // Upsert on {author, cycle} — the unique index. Mirrors the real
+  // findOneAndUpdate: seed an insert from the filter's own equality predicates,
+  // then layer $set on top.
+  PeerStandingFeedback.findOneAndUpdate = async (filter, update, opts = {}) => {
+    const existing = harness.db.standing.find((d) => matchesFilter(d, filter));
+    if (existing) {
+      if (update && update.$set) Object.assign(existing, update.$set);
+      existing.updatedAt = new Date();
+      return opts.new ? deepClone(existing) : null;
+    }
+    if (!opts.upsert) return null;
+    const stored = harness.insertOne('standing', { ...(filter || {}), ...(update?.$set || {}) });
+    return opts.new ? deepClone(stored) : null;
+  };
+
   // A real `withTransaction` re-runs its ENTIRE callback on a transient
   // error, having first rolled the aborted attempt's writes back. That is the
   // exact shape that cost this module two bugs — launchCycle's `created.push`
@@ -671,6 +724,11 @@ function installModelStubs(harness, { transientFailures = 0 } = {}) {
     AppraisalNudge.countDocuments = originals.NudgeCountDocuments;
     User.find = originals.UserFind;
     User.findOne = originals.UserFindOne;
+    Department.find = originals.DepartmentFind;
+    Department.findOne = originals.DepartmentFindOne;
+    PeerStandingFeedback.find = originals.StandingFind;
+    PeerStandingFeedback.findOne = originals.StandingFindOne;
+    PeerStandingFeedback.findOneAndUpdate = originals.StandingFindOneAndUpdate;
     mongoose.startSession = originals.startSession;
   }
 
@@ -692,11 +750,22 @@ function installModelStubs(harness, { transientFailures = 0 } = {}) {
  * launching a cycle opens one transaction per employee before approvePeers
  * ever opens its own.
  */
-function makeHarness({ users = [], cycle, template, transientFailures = 0 } = {}) {
-  const db = { users: [], appraisals: [], feedback: [], cycles: [], templates: [], nudges: [] };
+function makeHarness({ users = [], departments = [], cycle, template, transientFailures = 0 } = {}) {
+  const db = {
+    users: [], appraisals: [], feedback: [], cycles: [], templates: [], nudges: [],
+    departments: [], standing: [],
+  };
 
   for (const u of users) {
     db.users.push({ status: 'active', role: 'tenant_staff', ...u, _id: u._id || new mongoose.Types.ObjectId() });
+  }
+
+  for (const d of departments) {
+    db.departments.push({
+      isActive: true, manager: null, parent: null,
+      ...d,
+      _id: d._id || new mongoose.Types.ObjectId(),
+    });
   }
 
   let templateId = template && template._id;

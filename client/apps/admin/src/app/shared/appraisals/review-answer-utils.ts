@@ -195,6 +195,52 @@ export function toggleChoice(
  *     version would otherwise carry both, and `isAnswered` would report the
  *     stale field.
  */
+/**
+ * Set (or clear) the reviewer's note on an answer — Phase 5 §9.3.
+ *
+ * A blanked note DELETES the key rather than storing `''`. An empty string
+ * would come back from the server as an absent field, so the local map and the
+ * saved row would disagree forever and autosave would fire on every reload —
+ * the same reasoning `serializeAnswers` already applies to `notObserved`.
+ */
+export function withComment(
+  answer: AppraisalAnswer | undefined,
+  comment: string
+): AppraisalAnswer | undefined {
+  if (!answer) return undefined;
+  const text = comment.trim();
+  if (!text) {
+    const { comment: _dropped, ...rest } = answer;
+    return rest;
+  }
+  return { ...answer, comment: text };
+}
+
+/**
+ * Carry a note across a change to the VALUE.
+ *
+ * `applyAnswer` in reviewer-form.tsx deliberately writes the whole answer
+ * rather than merging, so a question can never accumulate two mutually
+ * exclusive value fields. A comment is not one of those: it sits on a
+ * different axis from the rating/text/selected triple, and without this a
+ * manager who writes a note and then nudges the score loses the note with no
+ * warning.
+ *
+ * NOT carried onto an abstention: a "can't judge this" answer is rebuilt from
+ * scratch by the server as `{questionId, notObserved}`, and a note surviving
+ * onto it locally would put the dirty-check permanently out of step with what
+ * comes back.
+ */
+export function carryComment(
+  previous: AppraisalAnswer | undefined,
+  next: AppraisalAnswer
+): AppraisalAnswer {
+  if (next.notObserved === true) return next;
+  if ('comment' in next) return next;
+  const carried = previous?.comment;
+  return carried ? { ...next, comment: carried } : next;
+}
+
 export function serializeAnswers(
   sections: AppraisalSection[] | undefined,
   answers: Record<string, AppraisalAnswer>
@@ -210,13 +256,23 @@ export function serializeAnswers(
     // back, and autosave would then write on every reload.
     if (answer!.notObserved === true) {
       out.push({ questionId: q._id, notObserved: true });
-    } else if (q.type === 'choice') {
-      out.push({ questionId: q._id, selected: [...(answer!.selected ?? [])] });
-    } else if (q.type === 'text') {
-      out.push({ questionId: q._id, text: answer!.text!.trim() });
-    } else {
-      out.push({ questionId: q._id, rating: answer!.rating });
+      continue;
     }
+    let wire: AppraisalAnswer;
+    if (q.type === 'choice') {
+      wire = { questionId: q._id, selected: [...(answer!.selected ?? [])] };
+    } else if (q.type === 'text') {
+      wire = { questionId: q._id, text: answer!.text!.trim() };
+    } else {
+      wire = { questionId: q._id, rating: answer!.rating };
+    }
+    // The reviewer's note rides along with the value it annotates. Trimmed and
+    // omitted when blank for the same round-trip reason as `withComment`. The
+    // server drops it from anything but a manager row, so sending it from a
+    // self or peer form is harmless — but nothing here offers the box there.
+    const comment = answer!.comment?.trim();
+    if (comment) wire.comment = comment;
+    out.push(wire);
   }
   return out;
 }

@@ -15,6 +15,7 @@ const AppraisalCycle = require('../models/AppraisalCycle');
 const Appraisal = require('../models/Appraisal');
 const AppraisalFeedback = require('../models/AppraisalFeedback');
 const User = require('../models/User');
+const Department = require('../models/Department');
 const cycles = require('../controllers/appraisalCycle.controller');
 
 const oid = () => new mongoose.Types.ObjectId();
@@ -72,10 +73,19 @@ async function captureLaunch({ peerReviewEnabled }) {
 
   const originalCycleFindOne = AppraisalCycle.findOne;
   const originalUserFind = User.find;
+  const originalUserFindOne = User.findOne;
+  const originalDepartmentFind = Department.find;
   const originalAppraisalFind = Appraisal.find;
   const originalAppraisalCreate = Appraisal.create;
   const originalFeedbackInsertMany = AppraisalFeedback.insertMany;
   const originalStartSession = mongoose.startSession;
+
+  // Phase 5 reviewer routing reads the department roster and the tenant owner
+  // before planning the launch. Neither exists in this fixture, so routing
+  // falls all the way through to work.manager — which is exactly the
+  // pre-Phase-5 behaviour these tests were written to pin down.
+  Department.find = () => chainable(() => []);
+  User.findOne = () => chainable(() => null);
 
   const created = [];
 
@@ -103,6 +113,8 @@ async function captureLaunch({ peerReviewEnabled }) {
   } finally {
     AppraisalCycle.findOne = originalCycleFindOne;
     User.find = originalUserFind;
+    User.findOne = originalUserFindOne;
+    Department.find = originalDepartmentFind;
     Appraisal.find = originalAppraisalFind;
     Appraisal.create = originalAppraisalCreate;
     AppraisalFeedback.insertMany = originalFeedbackInsertMany;
@@ -133,10 +145,19 @@ async function captureLaunchSkips() {
 
   const originalCycleFindOne = AppraisalCycle.findOne;
   const originalUserFind = User.find;
+  const originalUserFindOne = User.findOne;
+  const originalDepartmentFind = Department.find;
   const originalAppraisalFind = Appraisal.find;
   const originalAppraisalCreate = Appraisal.create;
   const originalFeedbackInsertMany = AppraisalFeedback.insertMany;
   const originalStartSession = mongoose.startSession;
+
+  // Phase 5 reviewer routing reads the department roster and the tenant owner
+  // before planning the launch. Neither exists in this fixture, so routing
+  // falls all the way through to work.manager — which is exactly the
+  // pre-Phase-5 behaviour these tests were written to pin down.
+  Department.find = () => chainable(() => []);
+  User.findOne = () => chainable(() => null);
 
   User.find = (filter) => chainable(() => {
     if (filter && filter.role) {
@@ -166,6 +187,8 @@ async function captureLaunchSkips() {
   } finally {
     AppraisalCycle.findOne = originalCycleFindOne;
     User.find = originalUserFind;
+    User.findOne = originalUserFindOne;
+    Department.find = originalDepartmentFind;
     Appraisal.find = originalAppraisalFind;
     Appraisal.create = originalAppraisalCreate;
     AppraisalFeedback.insertMany = originalFeedbackInsertMany;

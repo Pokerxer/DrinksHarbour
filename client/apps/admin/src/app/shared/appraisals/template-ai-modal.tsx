@@ -13,10 +13,15 @@ import {
 import {
   aiGenerateSection,
   aiGenerateTemplate,
+  fetchDepartmentOptions,
   type DraftSection,
   type FeedbackKind,
 } from '@/services/appraisal.service';
-import { countQuestions, summarizeAudiences } from './template-ai-utils';
+import {
+  countQuestions,
+  scopeSections,
+  summarizeAudiences,
+} from './template-ai-utils';
 import { getTypeInfo } from './template-type-selector';
 
 // ---------------------------------------------------------------------------
@@ -54,7 +59,11 @@ interface TemplateAiModalProps {
 
 const KINDS: { value: FeedbackKind; label: string; hint: string }[] = [
   { value: 'self', label: 'Self', hint: 'The employee rates themselves' },
-  { value: 'manager', label: 'Manager', hint: 'Their line manager reviews them' },
+  {
+    value: 'manager',
+    label: 'Manager',
+    hint: 'Their line manager reviews them',
+  },
   { value: 'peer', label: 'Peer', hint: 'Colleagues give 360° feedback' },
 ];
 
@@ -76,10 +85,30 @@ export default function TemplateAiModal({
   onApply,
 }: TemplateAiModalProps) {
   const [role, setRole] = useState('');
-  const [department, setDepartment] = useState('');
+  /**
+   * The department the generated questions are FOR (Phase 5 §9.1).
+   *
+   * A real id, not free text, so the generated sections can be scoped to it
+   * rather than merely mentioning it in the prompt. `''` means "everyone",
+   * which is what a form with no department in mind should produce and what
+   * an empty `departments` array means on the wire.
+   *
+   * The typed name still goes to the model — it is what makes the questions
+   * about warehouses rather than about work in general — so a tenant with no
+   * departments set up loses nothing but the scoping.
+   */
+  const [departmentId, setDepartmentId] = useState('');
+  const [departmentOptions, setDepartmentOptions] = useState<
+    { _id: string; name: string }[]
+  >([]);
+  const departmentName =
+    departmentOptions.find((d) => d._id === departmentId)?.name || '';
   const [purpose, setPurpose] = useState('');
   const [notes, setNotes] = useState('');
-  const [audiences, setAudiences] = useState<FeedbackKind[]>(['self', 'manager']);
+  const [audiences, setAudiences] = useState<FeedbackKind[]>([
+    'self',
+    'manager',
+  ]);
   // Off by default: scored questions are generated for self+manager only,
   // matching the seeded default form. This is the deliberate override, not a
   // setting HR has to find — it only appears once peers are on the form.
@@ -100,6 +129,28 @@ export default function TemplateAiModal({
     setGenerating(false);
   }, [open, mode, expand?.index]);
 
+  // Loaded on first open, not on mount: the modal lives on every template
+  // screen and most visits never open it. Silent on failure — the picker just
+  // stays on "Everyone", which is the pre-Phase-5 behaviour and a perfectly
+  // usable form.
+  useEffect(() => {
+    if (!open || departmentOptions.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await fetchDepartmentOptions();
+        if (!cancelled) {
+          setDepartmentOptions(rows.map((d) => ({ _id: d._id, name: d.name })));
+        }
+      } catch {
+        /* the picker degrades to "Everyone" */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, departmentOptions.length]);
+
   const previewSections = useMemo(() => {
     if (!preview) return [];
     return preview.kind === 'template' ? preview.sections : [preview.section];
@@ -115,7 +166,9 @@ export default function TemplateAiModal({
 
   async function handleGenerate() {
     if (audiences.length === 0) {
-      setError('Pick at least one reviewer — a form nobody fills in has no questions to write.');
+      setError(
+        'Pick at least one reviewer — a form nobody fills in has no questions to write.'
+      );
       return;
     }
     setGenerating(true);
@@ -124,7 +177,7 @@ export default function TemplateAiModal({
       if (mode === 'template') {
         const result = await aiGenerateTemplate({
           role: role.trim() || undefined,
-          department: department.trim() || undefined,
+          department: departmentName || undefined,
           purpose: purpose.trim() || undefined,
           notes: notes.trim() || undefined,
           audiences,
@@ -136,13 +189,18 @@ export default function TemplateAiModal({
           kind: 'template',
           name: result.name,
           description: result.description,
-          sections: result.sections,
+          // Scoped to the chosen department, or left company-wide. Applied
+          // here rather than trusted from the model: the server's sanitizer
+          // snaps an unrecognised id to empty (company-wide) precisely because
+          // losing a whole section to a bad id is worse than over-asking, so
+          // the id has to come from a list HR actually picked from.
+          sections: scopeSections(result.sections, departmentId),
           strategy: 'append',
         });
       } else {
         const section = await aiGenerateSection({
           role: role.trim() || undefined,
-          department: department.trim() || undefined,
+          department: departmentName || undefined,
           notes: notes.trim() || undefined,
           audiences,
           allowPeerScoring,
@@ -152,12 +210,19 @@ export default function TemplateAiModal({
         });
         setPreview({
           kind: 'section',
-          section,
+          // Expanding an existing section must not silently re-scope it — the
+          // section already has an audience HR chose, and the new questions
+          // join it. Only a brand-new section takes the picker's scope.
+          section: expand
+            ? section
+            : scopeSections([section], departmentId)[0],
           expandIndex: expand ? expand.index : null,
         });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Generation failed. Try again.');
+      setError(
+        err instanceof Error ? err.message : 'Generation failed. Try again.'
+      );
     } finally {
       setGenerating(false);
     }
@@ -210,7 +275,7 @@ export default function TemplateAiModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
             >
               <PiX className="h-4 w-4" />
             </button>
@@ -235,15 +300,37 @@ export default function TemplateAiModal({
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">
+                    <label
+                      htmlFor="ai-department"
+                      className="mb-1.5 block text-[11px] font-semibold text-gray-500"
+                    >
                       Department
                     </label>
-                    <Input
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      placeholder="e.g. Logistics"
-                      disabled={generating}
-                    />
+                    <select
+                      id="ai-department"
+                      value={departmentId}
+                      onChange={(e) => setDepartmentId(e.target.value)}
+                      disabled={generating || departmentOptions.length === 0}
+                      className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 transition-colors focus:border-[#b20202]/40 focus:outline-none focus:ring-2 focus:ring-[#b20202]/15 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
+                    >
+                      <option value="">
+                        {departmentOptions.length === 0
+                          ? 'No departments set up'
+                          : 'Everyone (no department)'}
+                      </option>
+                      {departmentOptions.map((d) => (
+                        <option key={d._id} value={d._id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                    {departmentId ? (
+                      <p className="mt-1 text-[11px] text-gray-400">
+                        These questions will be asked only of{' '}
+                        {departmentName} employees. You can change that per
+                        section afterwards.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -312,9 +399,9 @@ export default function TemplateAiModal({
                     ))}
                   </div>
                   <p className="mt-2.5 text-[11px] leading-relaxed text-gray-400">
-                    Scored questions are always asked of the employee too when a self
-                    review is included — otherwise there is nothing to compare their
-                    reviewers against.
+                    Scored questions are always asked of the employee too when a
+                    self review is included — otherwise there is nothing to
+                    compare their reviewers against.
                   </p>
 
                   {audiences.includes('peer') && (
@@ -330,10 +417,11 @@ export default function TemplateAiModal({
                         <span>
                           Let peers score too
                           <span className="mt-0.5 block text-[11px] leading-relaxed text-gray-400">
-                            Off by default. Peers are asked for a specific example they
-                            saw rather than a rating — a colleague in another team has
-                            no basis to score something like &ldquo;quality of
-                            work&rdquo;, and the guess still ends up in an average.
+                            Off by default. Peers are asked for a specific
+                            example they saw rather than a rating — a colleague
+                            in another team has no basis to score something like
+                            &ldquo;quality of work&rdquo;, and the guess still
+                            ends up in an average.
                           </span>
                         </span>
                       </label>
@@ -353,21 +441,27 @@ export default function TemplateAiModal({
                         min={2}
                         max={8}
                         value={sectionCount}
-                        onChange={(e) => setSectionCount(Number(e.target.value))}
+                        onChange={(e) =>
+                          setSectionCount(Number(e.target.value))
+                        }
                         disabled={generating}
                       />
                     </div>
                   ) : null}
                   <div>
                     <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">
-                      {mode === 'template' ? 'Questions per section' : 'Questions'}
+                      {mode === 'template'
+                        ? 'Questions per section'
+                        : 'Questions'}
                     </label>
                     <Input
                       type="number"
                       min={2}
                       max={12}
                       value={questionsPerSection}
-                      onChange={(e) => setQuestionsPerSection(Number(e.target.value))}
+                      onChange={(e) =>
+                        setQuestionsPerSection(Number(e.target.value))
+                      }
                       disabled={generating}
                     />
                   </div>
@@ -376,8 +470,8 @@ export default function TemplateAiModal({
                 {mode === 'section' && currentSections.length > 0 ? (
                   <p className="text-[11px] text-gray-400">
                     Your existing {countQuestions(currentSections)} question
-                    {countQuestions(currentSections) === 1 ? '' : 's'} are sent as
-                    context, so nothing already on the form gets asked twice.
+                    {countQuestions(currentSections) === 1 ? '' : 's'} are sent
+                    as context, so nothing already on the form gets asked twice.
                   </p>
                 ) : null}
               </div>
@@ -405,7 +499,7 @@ export default function TemplateAiModal({
                 <button
                   type="button"
                   onClick={() => setPreview(null)}
-                  className="mr-auto inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                  className="mr-auto inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
                 >
                   <PiArrowLeft className="h-3.5 w-3.5" />
                   Change the brief
@@ -414,7 +508,7 @@ export default function TemplateAiModal({
                   <button
                     type="button"
                     onClick={() => apply('replace')}
-                    className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                    className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
                   >
                     Replace all
                   </button>
@@ -422,10 +516,12 @@ export default function TemplateAiModal({
                 <button
                   type="button"
                   onClick={() => apply('append')}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#8f0202] transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#b20202] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#8f0202]"
                 >
                   <PiCheckCircle className="h-4 w-4" />
-                  {preview.kind === 'template' ? 'Append to form' : 'Add to form'}
+                  {preview.kind === 'template'
+                    ? 'Append to form'
+                    : 'Add to form'}
                 </button>
               </>
             ) : (
@@ -433,7 +529,7 @@ export default function TemplateAiModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-xl px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                  className="rounded-xl px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
                 >
                   Cancel
                 </button>
@@ -441,9 +537,11 @@ export default function TemplateAiModal({
                   type="button"
                   onClick={handleGenerate}
                   disabled={generating}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#8f0202] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#b20202] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#8f0202] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <PiSparkle className={`h-4 w-4 ${generating ? 'animate-pulse' : ''}`} />
+                  <PiSparkle
+                    className={`h-4 w-4 ${generating ? 'animate-pulse' : ''}`}
+                  />
                   {generating ? 'Writing questions…' : 'Generate'}
                 </button>
               </>
@@ -501,7 +599,9 @@ function PreviewPanel({
       {sections.map((section, si) => (
         <div key={si} className="rounded-xl border border-gray-200">
           <div className="border-b border-gray-100 px-4 py-2.5">
-            <p className="text-[13px] font-semibold text-gray-800">{section.title}</p>
+            <p className="text-[13px] font-semibold text-gray-800">
+              {section.title}
+            </p>
           </div>
           <ul className="divide-y divide-gray-50">
             {section.questions.map((q, qi) => {
@@ -515,9 +615,13 @@ function PreviewPanel({
                     {info.shortLabel}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] leading-snug text-gray-700">{q.label}</p>
+                    <p className="text-[13px] leading-snug text-gray-700">
+                      {q.label}
+                    </p>
                     {q.helpText ? (
-                      <p className="mt-0.5 text-[11px] text-gray-400">{q.helpText}</p>
+                      <p className="mt-0.5 text-[11px] text-gray-400">
+                        {q.helpText}
+                      </p>
                     ) : null}
                     {q.options?.length ? (
                       <p className="mt-1 text-[11px] text-gray-400">

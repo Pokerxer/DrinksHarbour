@@ -55,6 +55,14 @@ export interface AppraisalAccess {
    * reaches the employee through the manager's written summary instead.
    */
   canSeePeerFeedback: boolean;
+  /**
+   * Whether this viewer may read the reviewer's per-question `comment`
+   * (Phase 5 §9.3). False for the subject until release — the server strips
+   * the field from the payload, so this flag is for rendering affordances
+   * (e.g. the "add a note" box on the manager's own form), never a gate the
+   * UI is trusted to apply.
+   */
+  canSeeAnswerComments: boolean;
   canSummarise: boolean;
   canRelease: boolean;
   canAcknowledge: boolean;
@@ -157,6 +165,14 @@ export interface AppraisalAnswer {
    * then excluded from every peer average.
    */
   notObserved?: boolean;
+  /**
+   * The REVIEWER's note on this specific answer (Phase 5 §9.3). Only a
+   * `kind: 'manager'` row may carry one — the server strips it from self and
+   * peer answers on write, so sending one from a self form is silently
+   * dropped rather than rejected. Read back only by a viewer with
+   * `canSeeAnswerComments`.
+   */
+  comment?: string;
 }
 
 export interface AppraisalFeedback {
@@ -197,6 +213,12 @@ export interface Appraisal {
   state: AppraisalState;
   employee: PersonRef;
   manager: PersonRef;
+  /**
+   * The department SNAPSHOTTED at launch (Phase 5 §9.1). Drives which template
+   * sections this appraisal asks and which admins may see it. Absent on every
+   * appraisal launched before Phase 5, and on employees who have no department.
+   */
+  department?: string | { _id: string; name?: string };
   cycle: {
     _id: string;
     name: string;
@@ -253,6 +275,13 @@ export interface AppraisalQuestion {
 
 export interface AppraisalSection {
   title: string;
+  /**
+   * Which departments are asked this section. EMPTY (or absent) MEANS
+   * EVERYONE — that is the common case and the shape every pre-Phase-5
+   * template has. Filtering happens server-side in `filterSections`; a section
+   * that reaches a reviewer's form is one they are asked.
+   */
+  departments?: string[];
   questions: AppraisalQuestion[];
 }
 
@@ -271,6 +300,12 @@ export interface PriorCommitments {
 export interface ReviewerForm {
   feedback: AppraisalFeedback;
   kind: FeedbackKind;
+  /**
+   * The appraisal this row belongs to. Needed by the manager form to fetch the
+   * subject's own answers (`fetchSubjectAnswers`). Null only if the row is in a
+   * broken state with no parent.
+   */
+  appraisalId: string | null;
   subject: PersonRef | null;
   cycleName: string;
   deadline: string | null;
@@ -285,7 +320,11 @@ export interface ReviewerForm {
    * forms now carry: the subject never receives the row, rather than receiving
    * it with the name stripped.
    */
-  visibility: { namedTo: string[]; anonymousTo: string[]; withheldFrom: string[] };
+  visibility: {
+    namedTo: string[];
+    anonymousTo: string[];
+    withheldFrom: string[];
+  };
 }
 
 export interface AppraisalCycle {
@@ -516,6 +555,109 @@ export const submitFeedback = (id: string, answers: AppraisalAnswer[]) =>
     body: JSON.stringify({ answers }),
   });
 
+// ── Phase 5 §9.1: the tenant's departments, for the section scope picker ───
+
+/**
+ * The department list, through THIS module's auth path.
+ *
+ * `orgStructure.service.ts` already exposes a full department client, but it
+ * takes an explicit token per call while everything in the appraisal module
+ * resolves one internally. Re-declared here as a read-only shape rather than
+ * threading a token through the template editor purely to reach one list —
+ * the editor would otherwise be the only screen in the module carrying auth
+ * by hand. Writes stay in orgStructure.service.ts; this is a read.
+ */
+export interface DepartmentOptionDoc {
+  _id: string;
+  name: string;
+  isActive?: boolean;
+}
+
+export const fetchDepartmentOptions = () =>
+  request<{ items: DepartmentOptionDoc[] }>('/api/departments?isActive=true').then(
+    (d) => d.items || []
+  );
+
+// ── Phase 5 §9.3: the subject's own answers, for their reviewer ────────────
+
+/**
+ * The employee's self-answers, for whoever writes their manager assessment.
+ *
+ * `selfSubmitted: false` is the normal early state, not an error: the employee
+ * has not finished. Render "not yet submitted" rather than an empty comparison
+ * — an empty one reads as though they answered nothing.
+ */
+export interface SubjectAnswers {
+  selfSubmitted: boolean;
+  submittedAt: string | null;
+  /** Filtered to the `self` kind AND the appraisal's snapshot department. */
+  sections: AppraisalSection[];
+  answers: AppraisalAnswer[];
+}
+
+export const fetchSubjectAnswers = (appraisalId: string) =>
+  request<SubjectAnswers>(`/api/appraisals/${appraisalId}/subject-answers`);
+
+// ── Phase 5 §9.5: standing feedback ────────────────────────────────────────
+
+export type StandingValue = 'doing_well' | 'needs_support';
+
+export interface StandingEntry {
+  subject: string;
+  standing: StandingValue;
+  note?: string;
+}
+
+/** The same entry as the OWNER reads it, with the colleague populated. */
+export interface StandingEntryPopulated {
+  subject: PersonRef;
+  standing: StandingValue;
+  note?: string;
+}
+
+export interface StandingForm {
+  /** Active colleagues in the author's department, excluding themselves. */
+  candidates: PersonRef[];
+  entries: StandingEntry[];
+  submittedAt: string | null;
+  standingValues: StandingValue[];
+  visibility: { namedTo: string[]; withheldFrom: string[] };
+}
+
+export interface StandingReport {
+  _id: string;
+  author: PersonRef;
+  department?: { _id: string; name?: string } | null;
+  entries: StandingEntryPopulated[];
+  submittedAt: string | null;
+  createdAt?: string;
+}
+
+export const STANDING_LABELS: Record<StandingValue, string> = {
+  doing_well: 'Doing well',
+  needs_support: 'Needs support',
+};
+
+/** Keyed on the author's OWN self feedback row — this is a step on that form. */
+export const fetchStandingForm = (feedbackId: string) =>
+  request<StandingForm>(`/api/appraisal-feedback/${feedbackId}/standing`);
+
+/**
+ * Replaces the whole list rather than appending: removing a name in the UI has
+ * to actually remove it. Send `[]` to withdraw the report entirely.
+ */
+export const saveStandingFeedback = (feedbackId: string, entries: StandingEntry[]) =>
+  request<{ entries: StandingEntry[] }>(`/api/appraisal-feedback/${feedbackId}/standing`, {
+    method: 'POST',
+    body: JSON.stringify({ entries }),
+  });
+
+/** Owner + super_admin only — the server 403s everyone else, route and handler. */
+export const fetchStandingFeedback = (cycleId: string) =>
+  request<StandingReport[]>(
+    `/api/appraisal-feedback/standing?cycle=${encodeURIComponent(cycleId)}`
+  );
+
 export const declineFeedback = (id: string, reason?: string) =>
   request<{ status: FeedbackStatus; declinedAt: string }>(
     `/api/appraisal-feedback/${id}/decline`,
@@ -724,6 +866,8 @@ export interface DraftQuestion extends Omit<AppraisalQuestion, '_id'> {
 export interface DraftSection {
   _id?: string;
   title: string;
+  /** See AppraisalSection.departments — empty means asked of everyone. */
+  departments?: string[];
   questions: DraftQuestion[];
 }
 
@@ -854,6 +998,13 @@ export interface ComparisonRow {
   askOf: FeedbackKind[];
   self: number | null;
   manager: number | null;
+  /**
+   * The manager's per-question note (Phase 5 §9.3), or null. Only the manager
+   * side can carry one — self and peer answers cannot hold a comment at all.
+   * Already stripped by the server for a viewer without `canSeeAnswerComments`,
+   * so a non-null value here is one this viewer is entitled to read.
+   */
+  managerComment: string | null;
   /**
    * `mean` is null when `suppressed` — fewer than 2 peer responses FOR THIS
    * QUESTION (suppression is per question, not per appraisal, so `n` really
