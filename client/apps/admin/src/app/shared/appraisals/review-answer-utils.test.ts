@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canAbstain,
+  carryComment,
   formatAnswer,
   isAnswered,
   outstandingRequired,
@@ -10,6 +11,7 @@ import {
   serializeAnswers,
   toggleChoice,
   toggleNotObserved,
+  withComment,
 } from './review-answer-utils';
 import type {
   AppraisalQuestion,
@@ -268,16 +270,23 @@ describe('not observed', () => {
   it('counts as answered, so it satisfies a required question', () => {
     // The whole reason the option exists: without this, a peer who genuinely
     // cannot judge is forced to invent a mid-scale answer to get past submit.
-    expect(isAnswered(q('rating'), { questionId: 'q1', notObserved: true })).toBe(true);
     expect(
-      outstandingRequired([{ title: 'S', questions: [q('rating')] }] as AppraisalSection[], {
-        q1: { questionId: 'q1', notObserved: true },
-      })
+      isAnswered(q('rating'), { questionId: 'q1', notObserved: true })
+    ).toBe(true);
+    expect(
+      outstandingRequired(
+        [{ title: 'S', questions: [q('rating')] }] as AppraisalSection[],
+        {
+          q1: { questionId: 'q1', notObserved: true },
+        }
+      )
     ).toEqual([]);
   });
 
   it('serialises as the flag ALONE, with any leftover rating dropped', () => {
-    const sections = [{ title: 'S', questions: [q('rating')] }] as AppraisalSection[];
+    const sections = [
+      { title: 'S', questions: [q('rating')] },
+    ] as AppraisalSection[];
     // The server rebuilds the answer from just the flag. Sending the stale
     // rating too would make the local signature disagree with what comes back
     // and autosave would rewrite on every load.
@@ -289,7 +298,9 @@ describe('not observed', () => {
   });
 
   it('turning it on discards the previous value', () => {
-    expect(toggleNotObserved('q1', { questionId: 'q1', rating: 4 }, true)).toEqual({
+    expect(
+      toggleNotObserved('q1', { questionId: 'q1', rating: 4 }, true)
+    ).toEqual({
       questionId: 'q1',
       notObserved: true,
     });
@@ -307,5 +318,101 @@ describe('not observed', () => {
     expect(canAbstain('peer')).toBe(true);
     expect(canAbstain('self')).toBe(false);
     expect(canAbstain('manager')).toBe(false);
+  });
+});
+
+// ── Phase 5 §9.3: the reviewer's per-question note ─────────────────────────
+describe('withComment', () => {
+  it('sets a trimmed comment on the answer', () => {
+    expect(withComment({ questionId: 'q1', rating: 3 }, '  Solid.  ')).toEqual({
+      questionId: 'q1',
+      rating: 3,
+      comment: 'Solid.',
+    });
+  });
+
+  it('drops the key entirely when the note is blanked', () => {
+    // Not `comment: ''` — an empty string would round-trip as a note the
+    // manager never wrote, and would make the dirty-check see a change.
+    const cleared = withComment(
+      { questionId: 'q1', rating: 3, comment: 'old' },
+      '   '
+    );
+    expect(cleared).toEqual({ questionId: 'q1', rating: 3 });
+    expect('comment' in cleared!).toBe(false);
+  });
+
+  it('returns undefined when there is no answer to annotate', () => {
+    // A note with nothing to attach it to is not an answer; serializeAnswers
+    // would drop it anyway, so it never becomes state.
+    expect(withComment(undefined, 'Note')).toBeUndefined();
+  });
+});
+
+describe('carryComment', () => {
+  it('keeps an existing note when the SCORE changes', () => {
+    // applyAnswer writes the whole answer, so without this a manager typing a
+    // note and then adjusting the rating silently loses the note.
+    const next = carryComment(
+      { questionId: 'q1', rating: 3, comment: 'Missed two deadlines.' },
+      { questionId: 'q1', rating: 4 }
+    );
+    expect(next.comment).toBe('Missed two deadlines.');
+    expect(next.rating).toBe(4);
+  });
+
+  it('does not resurrect a note onto an abstention', () => {
+    const next = carryComment(
+      { questionId: 'q1', rating: 3, comment: 'A note.' },
+      { questionId: 'q1', notObserved: true }
+    );
+    expect('comment' in next).toBe(false);
+  });
+
+  it('leaves an explicit new note alone', () => {
+    const next = carryComment(
+      { questionId: 'q1', rating: 3, comment: 'old' },
+      { questionId: 'q1', rating: 3, comment: 'new' }
+    );
+    expect(next.comment).toBe('new');
+  });
+
+  it('is a no-op when there was nothing to carry', () => {
+    const next = { questionId: 'q1', rating: 4 };
+    expect(carryComment(undefined, next)).toEqual(next);
+  });
+});
+
+describe('serializeAnswers with comments', () => {
+  const sections = [
+    {
+      title: 'S',
+      questions: [
+        {
+          _id: 'q1',
+          type: 'rating' as const,
+          label: 'Quality',
+          required: true,
+          scaleMax: 5,
+          askOf: ['manager' as const],
+        },
+      ],
+    },
+  ];
+
+  it('sends the comment alongside the value', () => {
+    expect(
+      serializeAnswers(sections, {
+        q1: { questionId: 'q1', rating: 4, comment: 'Good half.' },
+      })
+    ).toEqual([{ questionId: 'q1', rating: 4, comment: 'Good half.' }]);
+  });
+
+  it('omits a blank comment rather than sending an empty string', () => {
+    expect(
+      serializeAnswers(sections, {
+        q1: { questionId: 'q1', rating: 4, comment: '   ' },
+      })
+    ).toEqual([{ questionId: 'q1', rating: 4 }]);
   });
 });

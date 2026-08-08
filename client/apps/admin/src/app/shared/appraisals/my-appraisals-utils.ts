@@ -95,31 +95,29 @@ export function nudgeIsStillOpen(
 }
 
 /** Human copy for each nudge reason, shown on the banner. */
-export const NUDGE_COPY: Record<
-  NudgeReason,
-  { title: string; body: string }
-> = {
-  nominate: {
-    title: 'Nominations needed',
-    body: 'Reminder: choose your peer reviewers so your appraisal can move forward.',
-  },
-  approve_peers: {
-    title: 'Peer approval pending',
-    body: 'Reminder: peer reviewer nominations are waiting for approval.',
-  },
-  feedback: {
-    title: 'Feedback still waiting',
-    body: 'Reminder: this feedback request is still outstanding.',
-  },
-  summarise: {
-    title: 'Summary needed',
-    body: 'Reminder: this appraisal is waiting to be summarised.',
-  },
-  acknowledge: {
-    title: 'Awaiting your review',
-    body: 'Reminder: please review and acknowledge your appraisal.',
-  },
-};
+export const NUDGE_COPY: Record<NudgeReason, { title: string; body: string }> =
+  {
+    nominate: {
+      title: 'Nominations needed',
+      body: 'Reminder: choose your peer reviewers so your appraisal can move forward.',
+    },
+    approve_peers: {
+      title: 'Peer approval pending',
+      body: 'Reminder: peer reviewer nominations are waiting for approval.',
+    },
+    feedback: {
+      title: 'Feedback still waiting',
+      body: 'Reminder: this feedback request is still outstanding.',
+    },
+    summarise: {
+      title: 'Summary needed',
+      body: 'Reminder: this appraisal is waiting to be summarised.',
+    },
+    acknowledge: {
+      title: 'Awaiting your review',
+      body: 'Reminder: please review and acknowledge your appraisal.',
+    },
+  };
 
 /**
  * Subject-first ordering for the "My appraisals" list. An appraisal only

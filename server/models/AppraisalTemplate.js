@@ -30,6 +30,12 @@ const questionSchema = new Schema({
 
 const sectionSchema = new Schema({
   title: { type: String, required: true, trim: true, maxlength: 200 },
+  // Which departments are asked this section (Phase 5 §9.1). EMPTY MEANS
+  // EVERYONE — the common case, and the shape every pre-Phase-5 template
+  // already has, so no migration is needed to keep existing forms company-wide.
+  // Filtering lives in filterSections (services/appraisal.helpers.js), which
+  // every read/write path goes through; nothing here enforces it.
+  departments: [{ type: Schema.Types.ObjectId, ref: 'Department' }],
   questions: [questionSchema],
 });
 

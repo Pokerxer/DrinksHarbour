@@ -24,7 +24,7 @@ const boom = (e) => { throw e; };
 
 function reportScenario({ pinTemplate = true } = {}) {
   const tenant = oid();
-  const hr = { _id: oid(), tenant, role: 'tenant_admin' };
+  const hr = { _id: oid(), tenant, role: 'tenant_owner' };
   const cycleId = oid();
   const templateId = oid();
   const h = makeHarness({

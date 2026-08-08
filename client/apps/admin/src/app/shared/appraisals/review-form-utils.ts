@@ -83,7 +83,7 @@ export function sectionProgress(
       total,
       pct: total > 0 ? Math.round((answered / total) * 100) : 0,
       // A section with no questions is vacuously complete rather than stuck at
-      // 0% forever — filterSectionsForKind should never send one, but the nav
+      // 0% forever — filterSections should never send one, but the nav
       // must not invent a blocker if it does.
       complete: answered === total,
       firstQuestionId: questions[0]?._id ?? null,

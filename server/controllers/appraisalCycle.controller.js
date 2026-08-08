@@ -10,6 +10,27 @@ const {
   planCycleLaunch, buildDefaultTemplate, TENANT_ROLES,
   outstandingActionsFor, countApprovedPeers,
 } = require('../services/appraisal.helpers');
+const Department = require('../models/Department');
+const {
+  departmentScopeFor, departmentFilter, departmentMatch,
+} = require('../services/appraisalScope.service');
+
+/**
+ * The appraisal ids in this cycle the caller may see, or `null` for an
+ * unrestricted viewer.
+ *
+ * Feedback rows carry no department of their own, so a scoped admin's counts
+ * and per-question means have to be narrowed through the appraisals those rows
+ * belong to. `null` short-circuits the extra query for owners, who are the
+ * common case.
+ */
+async function scopedAppraisalIdsFor(tenantId, cycleId, scope) {
+  if (scope === null) return null;
+  const rows = await Appraisal.find({
+    tenant: tenantId, cycle: cycleId, ...departmentFilter(scope),
+  }).select('_id').lean();
+  return rows.map((r) => r._id);
+}
 
 /**
  * Resolve the tenant's default template, seeding it on first use.
@@ -65,10 +86,14 @@ exports.listCycles = async (req, res, next) => {
     // ObjectId here — a string $match silently matches nothing and every
     // cycle would come back with no counts at all.
     const tenantId = new mongoose.Types.ObjectId(req.tenant._id);
+    const scope = await departmentScopeFor(req);
     const [cycles, counts] = await Promise.all([
       AppraisalCycle.find({ tenant: req.tenant._id }).sort({ createdAt: -1 }).lean(),
       Appraisal.aggregate([
-        { $match: { tenant: tenantId } },
+        // Phase 5 §9.4: an admin's cycle cards count only their own
+        // departments. Applied through the one shared scope definition so this
+        // list cannot drift from the roster it links to.
+        { $match: { tenant: tenantId, ...departmentMatch(scope) } },
         { $group: { _id: { cycle: '$cycle', state: '$state' }, count: { $sum: 1 } } },
       ]),
     ]);
@@ -206,12 +231,33 @@ exports.launchCycle = async (req, res, next) => {
       role: { $in: TENANT_ROLES },
       status: 'active',
       ...scope,
-    }).select('_id employeeProfile.work.manager').lean();
+    })
+      // `role` and the department are Phase 5's routing inputs: the owner gets
+      // no appraisal, an admin is reviewed by the owner, and everybody else by
+      // their department's manager. Leaving either off the projection would
+      // silently collapse every employee back onto work.manager.
+      .select('_id role employeeProfile.work.manager employeeProfile.work.department')
+      .lean();
 
     const existing = await Appraisal.find({ tenant: req.tenant._id, cycle: cycle._id })
       .select('employee').lean();
 
-    const plan = planCycleLaunch(employees, existing.map((a) => a.employee));
+    // Reviewer routing inputs (Phase 5 §9.2). Two reads for the whole launch,
+    // not one per employee: departments are few and the owner is one row.
+    const [departments, owner] = await Promise.all([
+      Department.find({ tenant: req.tenant._id }).select('_id manager').lean(),
+      User.findOne({ tenant: req.tenant._id, role: 'tenant_owner' }).select('_id').lean(),
+    ]);
+    const departmentManagerOf = new Map(
+      departments
+        .filter((d) => d.manager)
+        .map((d) => [String(d._id), String(d.manager)])
+    );
+
+    const plan = planCycleLaunch(employees, existing.map((a) => a.employee), {
+      departmentManagerOf,
+      ownerId: owner?._id || null,
+    });
 
     // planCycleLaunch returns bare ids; HR cannot chase an ObjectId. Resolve
     // them here rather than in the helper, which stays DB-free by design.
@@ -231,7 +277,7 @@ exports.launchCycle = async (req, res, next) => {
     const launchState = cycle.peerReviewEnabled === false ? 'collecting' : 'nominating';
 
     const created = [];
-    for (const { employee, manager } of plan.toCreate) {
+    for (const { employee, manager, department } of plan.toCreate) {
       const session = await mongoose.startSession();
       try {
         // Assigned inside the callback and pushed only after the transaction
@@ -247,6 +293,9 @@ exports.launchCycle = async (req, res, next) => {
             cycle: cycle._id,
             employee,
             manager,
+            // Snapshotted here and never re-read: see the field's comment on
+            // models/Appraisal.js.
+            department: department || undefined,
             state: launchState,
             reviewerIds: [employee, manager],
           }], { session });
@@ -317,6 +366,12 @@ exports.cycleProgress = async (req, res, next) => {
     const cycleId = new mongoose.Types.ObjectId(req.params.id);
     const tenantId = new mongoose.Types.ObjectId(req.tenant._id);
     const filter = { tenant: req.tenant._id, cycle: req.params.id };
+    const scope = await departmentScopeFor(req);
+    // Feedback has no department; it is narrowed through the appraisals it
+    // belongs to, so a scoped admin's completion percentage describes their own
+    // departments rather than the whole tenant's.
+    const visibleIds = await scopedAppraisalIdsFor(req.tenant._id, req.params.id, scope);
+    const feedbackFilter = visibleIds === null ? filter : { ...filter, appraisal: { $in: visibleIds } };
 
     // No .catch(() => []) here: an aggregate failure must surface as a 500,
     // not be reported as "zero appraisals in every state" — that would look
@@ -324,11 +379,11 @@ exports.cycleProgress = async (req, res, next) => {
     const [cycle, appraisals, feedbackTotal, feedbackSubmitted] = await Promise.all([
       AppraisalCycle.findOne({ _id: cycleId, tenant: tenantId }).lean(),
       Appraisal.aggregate([
-        { $match: { tenant: tenantId, cycle: cycleId } },
+        { $match: { tenant: tenantId, cycle: cycleId, ...departmentMatch(scope) } },
         { $group: { _id: '$state', count: { $sum: 1 } } },
       ]),
-      AppraisalFeedback.countDocuments(filter),
-      AppraisalFeedback.countDocuments({ ...filter, status: 'submitted' }),
+      AppraisalFeedback.countDocuments(feedbackFilter),
+      AppraisalFeedback.countDocuments({ ...feedbackFilter, status: 'submitted' }),
     ]);
 
     // 404 like every sibling handler (getCycle/launchCycle/closeCycle). This
@@ -350,6 +405,7 @@ exports.cycleProgress = async (req, res, next) => {
           tenant: req.tenant._id,
           cycle: cycle._id,
           state: { $in: ['nominating', 'pending_peer_approval'] },
+          ...departmentFilter(scope),
         })
           .populate('employee', 'firstName lastName email')
           .populate('manager', 'firstName lastName email')
@@ -450,7 +506,13 @@ exports.cycleRoster = async (req, res, next) => {
     // and paging is applied after the sort because the spec's ordering is by
     // employee NAME, which lives on the populated ref and cannot be sorted on
     // in the database without a $lookup pipeline.
-    const all = await Appraisal.find({ tenant: tenantId, cycle: cycle._id })
+    // Phase 5 §9.4. This is the endpoint that names peer reviewers, so it is
+    // also the one where a tenant_admin seeing another department's roster
+    // matters most — the mount point's admin gate is no longer the whole
+    // boundary, the department scope is the rest of it.
+    const all = await Appraisal.find({
+      tenant: tenantId, cycle: cycle._id, ...departmentFilter(await departmentScopeFor(req)),
+    })
       .populate('employee', 'firstName lastName email employeeProfile.work.jobTitle')
       .populate('manager', 'firstName lastName email')
       .sort({ state: 1, createdAt: 1 })
@@ -605,6 +667,8 @@ exports.cycleReport = async (req, res, next) => {
     // cycle with nothing in it yet.
     if (!cycle) return res.status(404).json({ success: false, message: 'Cycle not found' });
 
+    const scope = await departmentScopeFor(req);
+    const visibleIds = await scopedAppraisalIdsFor(tenantId, cycle._id, scope);
     const [template, released, submitted] = await Promise.all([
       // Guarded on cycle.template being present for the same reason as the
       // tenant guard above: findOne({_id: undefined, tenant}) is stripped down
@@ -617,11 +681,18 @@ exports.cycleReport = async (req, res, next) => {
         tenant: tenantId,
         cycle: cycle._id,
         state: { $in: ['released', 'acknowledged'] },
+        ...departmentFilter(scope),
       }).select('state finalRating').lean(),
       // Tenant-scoped as well as cycle-scoped: a cycle id is not a tenant
       // boundary on its own.
       AppraisalFeedback.find({
-        tenant: tenantId, cycle: cycle._id, status: 'submitted',
+        tenant: tenantId,
+        cycle: cycle._id,
+        status: 'submitted',
+        // Narrowed through the appraisals, since a feedback row has no
+        // department of its own. An admin's per-question means describe their
+        // own departments, which is the whole point of the scope.
+        ...(visibleIds === null ? {} : { appraisal: { $in: visibleIds } }),
       }).select('kind answers').lean(),
     ]);
 

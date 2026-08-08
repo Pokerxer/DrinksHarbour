@@ -3,12 +3,17 @@ const AppraisalFeedback = require('../models/AppraisalFeedback');
 const Appraisal = require('../models/Appraisal');
 const AppraisalCycle = require('../models/AppraisalCycle');
 const AppraisalTemplate = require('../models/AppraisalTemplate');
+const PeerStandingFeedback = require('../models/PeerStandingFeedback');
+const User = require('../models/User');
 const {
-  filterSectionsForKind,
+  filterSections,
   getAskedQuestionIds,
   partitionAnswersByAskedQuestions,
   normaliseAnswers,
   findUnansweredRequired,
+  normaliseStandingEntries,
+  STANDING_VALUES,
+  TENANT_ROLES,
 } = require('../services/appraisal.helpers');
 
 /**
@@ -74,8 +79,16 @@ async function loadOwnFeedback(req) {
  * documents in normal operation. If either lookup comes back empty, the row
  * is in a broken state, not an empty questionnaire — throw loudly instead of
  * letting the caller silently treat "nothing to answer" as success.
+ *
+ * The department comes off the APPRAISAL's snapshot (Phase 5 §9.1), never off
+ * the employee's current profile: a reviewer part-way through a form must not
+ * have questions appear or vanish because the subject transferred this
+ * morning. Callers that already hold the appraisal pass it in rather than
+ * paying for the read twice.
  */
-async function loadAskedSections(fb) {
+async function loadAskedSections(fb, knownAppraisal) {
+  const appraisal = knownAppraisal
+    || await Appraisal.findOne({ _id: fb.appraisal, tenant: fb.tenant }).select('department').lean();
   const cycle = await AppraisalCycle.findOne({ _id: fb.cycle, tenant: fb.tenant }).lean();
   if (!cycle) {
     const err = new Error('The appraisal cycle for this feedback could not be found.');
@@ -90,8 +103,11 @@ async function loadAskedSections(fb) {
     err.expose = true;
     throw err;
   }
-  const sections = filterSectionsForKind(template.sections, fb.kind);
-  return { cycle, template, sections };
+  const sections = filterSections(template.sections, {
+    kind: fb.kind,
+    departmentId: appraisal?.department ?? null,
+  });
+  return { cycle, template, sections, appraisal };
 }
 
 exports.getFeedback = async (req, res, next) => {
@@ -102,13 +118,18 @@ exports.getFeedback = async (req, res, next) => {
     const appraisal = await Appraisal.findOne({ _id: fb.appraisal, tenant: fb.tenant })
       .populate('employee', 'firstName lastName email')
       .lean();
-    const { cycle, sections } = await loadAskedSections(fb);
+    const { cycle, sections } = await loadAskedSections(fb, appraisal);
 
     res.json({
       success: true,
       data: {
         feedback: fb,
         kind: fb.kind,
+        // Named explicitly rather than left for the client to dig out of the
+        // feedback row: the manager form needs it to fetch the subject's own
+        // answers (Phase 5 §9.3), and a payload field a caller has to know is
+        // hiding on a nested document is a field that eventually gets removed.
+        appraisalId: fb.appraisal ? String(fb.appraisal) : null,
         subject: appraisal?.employee || null,
         cycleName: cycle.name || '',
         deadline: cycle.feedbackDeadline || null,
@@ -266,5 +287,187 @@ exports.declineFeedback = async (req, res, next) => {
     await fb.save();
 
     res.json({ success: true, data: { status: fb.status, declinedAt: fb.declinedAt } });
+  } catch (err) { next(err); }
+};
+
+// ─── Phase 5 §9.5: standing feedback ────────────────────────────────────────
+//
+// "Who on my team is doing well, and who needs support", written by an
+// employee about their own department as an OPTIONAL step on their self-form,
+// and readable by the tenant owner alone.
+//
+// Three properties this code has to keep true, none of which the schema can
+// enforce on its own:
+//
+//  1. It never joins an appraisal payload. There is no roster field, no report
+//     field, no comparison row — the only read is listStandingFeedback below.
+//  2. It is attributed. Peer feedback is anonymous because it is about the
+//     person who will read it; this is about third parties and read by the
+//     owner, and an unattributed report on a colleague is a rumour.
+//  3. Only the AUTHOR writes their own report, resolved from their own self
+//     feedback row (loadOwnFeedback is an ownership check), never from an id
+//     in the body.
+
+/** Roles that may read the whole tenant's standing feedback. Nobody else. */
+const STANDING_READER_ROLES = ['tenant_owner', 'super_admin'];
+
+/**
+ * The colleagues this author may report on: active employees in the same
+ * department, excluding the author.
+ *
+ * Drawn from the APPRAISAL's department snapshot, matching filterSections —
+ * the candidate list an author saw when they opened the form must be the one
+ * their submission is validated against, even if they transferred since.
+ */
+async function loadStandingCandidates(tenantId, appraisal, authorId) {
+  const department = appraisal?.department;
+  if (!department) return [];
+  const rows = await User.find({
+    tenant: tenantId,
+    role: { $in: TENANT_ROLES },
+    status: 'active',
+    'employeeProfile.work.department': department,
+    _id: { $ne: authorId },
+  })
+    .select('firstName lastName email employeeProfile.work.jobTitle')
+    .lean();
+  return rows;
+}
+
+/**
+ * GET /api/appraisal-feedback/:id/standing — the author's own form.
+ *
+ * Keyed on their SELF feedback row: the step belongs to the self-assessment,
+ * and loadOwnFeedback means an id belonging to anybody else is a 404 before
+ * any of this runs.
+ */
+exports.getStandingForm = async (req, res, next) => {
+  try {
+    const fb = await loadOwnFeedback(req);
+    if (!fb) return res.status(404).json({ success: false, message: 'Feedback not found' });
+    // Only on the self form. A manager or peer commenting on a third party
+    // through this endpoint would be a different feature with different rules.
+    if (fb.kind !== 'self') {
+      return res.status(400).json({
+        success: false,
+        message: 'Standing feedback is part of your own self-assessment.',
+      });
+    }
+
+    const appraisal = await Appraisal.findOne({ _id: fb.appraisal, tenant: fb.tenant })
+      .select('department')
+      .lean();
+    const [candidates, existing] = await Promise.all([
+      loadStandingCandidates(fb.tenant, appraisal, req.user._id),
+      PeerStandingFeedback.findOne({
+        tenant: fb.tenant, cycle: fb.cycle, author: req.user._id,
+      }).lean(),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        // Empty when the employee has no department: there is nobody to report
+        // on, and the UI hides the step rather than showing an empty list.
+        candidates,
+        entries: existing?.entries || [],
+        submittedAt: existing?.submittedAt || null,
+        standingValues: STANDING_VALUES,
+        // Said plainly on the form. An employee writing about a colleague is
+        // entitled to know exactly who reads it and that their name is on it.
+        visibility: { namedTo: ['owner'], withheldFrom: ['subject', 'manager', 'hr'] },
+      },
+    });
+  } catch (err) { next(err); }
+};
+
+/**
+ * POST /api/appraisal-feedback/:id/standing — save the author's report.
+ *
+ * Upserted on {author, cycle}, which is the unique index: re-submitting
+ * REPLACES the whole list rather than appending, so removing a name in the UI
+ * actually removes it.
+ */
+exports.saveStandingFeedback = async (req, res, next) => {
+  try {
+    const fb = await loadOwnFeedback(req);
+    if (!fb) return res.status(404).json({ success: false, message: 'Feedback not found' });
+    if (fb.kind !== 'self') {
+      return res.status(400).json({
+        success: false,
+        message: 'Standing feedback is part of your own self-assessment.',
+      });
+    }
+    // Tied to the self form's own editability. Once the self-assessment is
+    // submitted or expired the cycle has moved on, and a standing report
+    // arriving afterwards would be commentary on a review already in progress.
+    if (fb.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Your self-assessment is already submitted, so this can no longer be changed.',
+      });
+    }
+
+    const appraisal = await Appraisal.findOne({ _id: fb.appraisal, tenant: fb.tenant })
+      .select('department')
+      .lean();
+    const candidates = await loadStandingCandidates(fb.tenant, appraisal, req.user._id);
+    const { entries, errors } = normaliseStandingEntries(req.body?.entries, {
+      candidateIds: candidates.map((c) => c._id),
+      authorId: req.user._id,
+    });
+    if (errors.length) {
+      return res.status(400).json({ success: false, message: errors.join(' ') });
+    }
+
+    const saved = await PeerStandingFeedback.findOneAndUpdate(
+      { author: req.user._id, cycle: fb.cycle },
+      {
+        $set: {
+          tenant: fb.tenant,
+          appraisal: fb.appraisal,
+          // Snapshot, matching Appraisal.department: which team this was
+          // written about is a fact about when it was written.
+          department: appraisal?.department ?? null,
+          entries,
+          submittedAt: new Date(),
+        },
+      },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+
+    res.json({ success: true, data: { entries: saved?.entries || entries } });
+  } catch (err) { next(err); }
+};
+
+/**
+ * GET /api/appraisal-feedback/standing?cycle= — the owner's read.
+ *
+ * Gated to tenant_owner + super_admin at the route AND re-checked here. Belt
+ * and braces on purpose: this module has already shipped a fix for a leak
+ * caused by a payload that was "HR-only by mount point", and a route file is
+ * exactly the thing a later refactor moves a handler out of without noticing.
+ */
+exports.listStandingFeedback = async (req, res, next) => {
+  try {
+    if (!STANDING_READER_ROLES.includes(req.user?.role)) {
+      return res.status(403).json({ success: false, message: 'Not permitted' });
+    }
+    if (!req.tenant?._id) {
+      return res.status(403).json({ success: false, message: 'Tenant context required' });
+    }
+    const cycle = req.query?.cycle;
+    if (!cycle) {
+      return res.status(400).json({ success: false, message: 'A cycle is required.' });
+    }
+
+    const rows = await PeerStandingFeedback.find({ tenant: req.tenant._id, cycle })
+      .populate('author', 'firstName lastName email')
+      .populate('department', 'name')
+      .populate('entries.subject', 'firstName lastName email')
+      .sort({ createdAt: 1 })
+      .lean();
+
+    res.json({ success: true, data: rows });
   } catch (err) { next(err); }
 };

@@ -19,6 +19,12 @@ const test = require('node:test');
 const assert = require('node:assert');
 const mongoose = require('mongoose');
 
+// Phase 5 note: the HR fixtures in this file are `tenant_owner`, not
+// `tenant_admin`. Since §9.4 an admin's HR powers are bounded by the
+// departments they manage, and every test below is about ANONYMITY rather than
+// about who qualifies as HR. The department boundary itself gets its own
+// scenario at the bottom of this file, where a non-owning admin is asserted
+// filtered or 403'd on the roster, the report and appraisal detail.
 const appraisals = require('../controllers/appraisal.controller');
 const cyclesCtrl = require('../controllers/appraisalCycle.controller');
 const feedbackCtrl = require('../controllers/appraisalFeedback.controller');
@@ -146,7 +152,7 @@ test('the full 360 loop never leaks a reviewer identity to the subject', async (
       { _id: peerB, tenant: tenantId, role: 'tenant_staff', firstName: 'Bo', lastName: 'PeerB', email: 'peerb@wyn.test' },
       { _id: peerC, tenant: tenantId, role: 'tenant_staff', firstName: 'Cy', lastName: 'PeerC', email: 'peerc@wyn.test' },
       { _id: peerD, tenant: tenantId, role: 'tenant_staff', firstName: 'Di', lastName: 'PeerD', email: 'peerd@wyn.test' },
-      { _id: hrId, tenant: tenantId, role: 'tenant_admin', firstName: 'Helen', lastName: 'HR', email: 'hr@wyn.test' },
+      { _id: hrId, tenant: tenantId, role: 'tenant_owner', firstName: 'Helen', lastName: 'HR', email: 'hr@wyn.test' },
     ],
     template,
     cycle,
@@ -157,7 +163,7 @@ test('the full 360 loop never leaks a reviewer identity to the subject', async (
   const peerAUser = { _id: peerA, tenant: tenantId, role: 'tenant_staff' };
   const peerBUser = { _id: peerB, tenant: tenantId, role: 'tenant_staff' };
   const peerDUser = { _id: peerD, tenant: tenantId, role: 'tenant_staff' };
-  const hrUser = { _id: hrId, tenant: tenantId, role: 'tenant_admin' };
+  const hrUser = { _id: hrId, tenant: tenantId, role: 'tenant_owner' };
 
   // Every peer candidate in this scenario — approved (A, B, D) or rejected
   // (C) — is a reviewer identity the subject is never entitled to learn.
@@ -427,7 +433,7 @@ test('the manager and HR DO see peer reviewer names', async () => {
     users: [
       { _id: subjectId, tenant: tenantId, role: 'tenant_staff', firstName: 'Sam', lastName: 'Subject', email: 'sam3@wyn.test' },
       { _id: managerId, tenant: tenantId, role: 'tenant_staff', firstName: 'Mia', lastName: 'Manager', email: 'mia3@wyn.test' },
-      { _id: hrId, tenant: tenantId, role: 'tenant_admin', firstName: 'Helen', lastName: 'HR', email: 'hr3@wyn.test' },
+      { _id: hrId, tenant: tenantId, role: 'tenant_owner', firstName: 'Helen', lastName: 'HR', email: 'hr3@wyn.test' },
       { _id: peerId, tenant: tenantId, role: 'tenant_staff', firstName: 'Percy', lastName: 'Peer', email: 'percy@wyn.test' },
     ],
     template,
@@ -453,7 +459,7 @@ test('the manager and HR DO see peer reviewer names', async () => {
     });
 
     const managerUser = { _id: managerId, tenant: tenantId, role: 'tenant_staff' };
-    const hrUser = { _id: hrId, tenant: tenantId, role: 'tenant_admin' };
+    const hrUser = { _id: hrId, tenant: tenantId, role: 'tenant_owner' };
 
     for (const viewer of [managerUser, hrUser]) {
       const res = capture();
@@ -518,7 +524,7 @@ test('a declined peer row reaches manager/HR at collecting with no answers, does
       { _id: subjectId, tenant: tenantId, role: 'tenant_staff', firstName: 'Sam', lastName: 'Subject', email: 'sam6@wyn.test' },
       { _id: managerId, tenant: tenantId, role: 'tenant_staff', firstName: 'Mia', lastName: 'Manager', email: 'mia6@wyn.test' },
       { _id: peerId, tenant: tenantId, role: 'tenant_staff', firstName: 'Percy', lastName: 'Peer', email: 'percy6@wyn.test' },
-      { _id: hrId, tenant: tenantId, role: 'tenant_admin', firstName: 'Helen', lastName: 'HR', email: 'hr6@wyn.test' },
+      { _id: hrId, tenant: tenantId, role: 'tenant_owner', firstName: 'Helen', lastName: 'HR', email: 'hr6@wyn.test' },
     ],
     template,
     cycle,
@@ -526,7 +532,7 @@ test('a declined peer row reaches manager/HR at collecting with no answers, does
 
   const peerUser = { _id: peerId, tenant: tenantId, role: 'tenant_staff' };
   const managerUser = { _id: managerId, tenant: tenantId, role: 'tenant_staff' };
-  const hrUser = { _id: hrId, tenant: tenantId, role: 'tenant_admin' };
+  const hrUser = { _id: hrId, tenant: tenantId, role: 'tenant_owner' };
   const subjectUser = { _id: subjectId, tenant: tenantId, role: 'tenant_staff' };
   const SENSITIVE_TEXT = 'I have real concerns about how they handled the Q3 escalation';
 
@@ -677,6 +683,170 @@ test('an approved peer reviewer cannot read the appraisal they are reviewing', a
         `an approved peer reviewer holding their own feedback row must still be refused GET /:id at ${state}`
       );
     }
+  } finally {
+    restore();
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Phase 5 §9.4 — the DEPARTMENT boundary.
+//
+// This is a REMOVAL of access that every `tenant_admin` in every tenant has
+// today, so it is asserted from both sides on all three surfaces the scope is
+// meant to cover: the roster (which names peer reviewers), the cycle report
+// (which aggregates everyone's answers) and appraisal detail (which is
+// everything). The module has already shipped one fix for an HR-only tab leak;
+// a boundary with no test is a boundary that comes back.
+// ───────────────────────────────────────────────────────────────────────────
+test('a tenant_admin sees only the departments they manage, on every surface', async () => {
+  const tenantId = oid();
+  const salesDept = oid();
+  const opsDept = oid();
+  // Adaeze manages Sales. Everything in Ops is none of her business.
+  const salesAdminId = oid();
+  const opsAdminId = oid();
+  const ownerId = oid();
+  const salesStaffId = oid();
+  const opsStaffId = oid();
+
+  const template = buildDefaultTemplate(tenantId, ownerId);
+  const cycle = { tenant: tenantId, name: 'H1 2026 Review', peerReviewEnabled: false };
+
+  const { db, restore } = makeHarness({
+    users: [
+      { _id: ownerId, tenant: tenantId, role: 'tenant_owner', firstName: 'Okey', lastName: 'Owner', email: 'owner@wyn.test' },
+      { _id: salesAdminId, tenant: tenantId, role: 'tenant_admin', firstName: 'Ada', lastName: 'Sales', email: 'ada@wyn.test' },
+      { _id: opsAdminId, tenant: tenantId, role: 'tenant_admin', firstName: 'Obi', lastName: 'Ops', email: 'obi@wyn.test' },
+      { _id: salesStaffId, tenant: tenantId, role: 'tenant_staff', firstName: 'Sam', lastName: 'Seller', email: 'sam@wyn.test', employeeProfile: { work: { department: salesDept } } },
+      { _id: opsStaffId, tenant: tenantId, role: 'tenant_staff', firstName: 'Ola', lastName: 'Opsman', email: 'ola@wyn.test', employeeProfile: { work: { department: opsDept } } },
+    ],
+    departments: [
+      { _id: salesDept, tenant: tenantId, name: 'Sales', manager: salesAdminId },
+      { _id: opsDept, tenant: tenantId, name: 'Operations', manager: opsAdminId },
+    ],
+    template,
+    cycle,
+  });
+
+  const owner = { _id: ownerId, tenant: tenantId, role: 'tenant_owner' };
+  const salesAdmin = { _id: salesAdminId, tenant: tenantId, role: 'tenant_admin' };
+
+  try {
+    const cycleId = db.cycles[0]._id;
+
+    // Launch as the owner, so both departments' appraisals exist.
+    let res = capture();
+    await cyclesCtrl.launchCycle(
+      asUser(owner, { params: { id: String(cycleId) }, body: { employeeIds: [String(salesStaffId), String(opsStaffId)] } }),
+      res, fail
+    );
+    assert.strictEqual(res.status, 200);
+
+    // §9.2 reviewer routing, end to end: each staffer is reviewed by their own
+    // department's manager, and the OWNER is not given an appraisal at all.
+    const salesAppraisal = db.appraisals.find((a) => String(a.employee) === String(salesStaffId));
+    const opsAppraisal = db.appraisals.find((a) => String(a.employee) === String(opsStaffId));
+    assert.strictEqual(String(salesAppraisal.manager), String(salesAdminId));
+    assert.strictEqual(String(salesAppraisal.department), String(salesDept));
+    assert.strictEqual(String(opsAppraisal.manager), String(opsAdminId));
+
+    // ── roster ───────────────────────────────────────────────────────────
+    res = capture();
+    await cyclesCtrl.cycleRoster(asUser(salesAdmin, { params: { id: String(cycleId) } }), res, fail);
+    assert.strictEqual(res.status, 200);
+    const rosterEmployees = res.body.data.rows.map((r) => String(r.employee?._id ?? r.employee));
+    assert.deepStrictEqual(rosterEmployees, [String(salesStaffId)],
+      'the Sales admin must not see the Ops roster row');
+    // And the value-level check: the Ops employee's id must appear NOWHERE in
+    // the payload, whatever key it might have hidden under.
+    assert.ok(
+      !JSON.stringify(res.body).includes(String(opsStaffId)),
+      'no trace of another department may survive anywhere in the roster payload'
+    );
+
+    // The owner, by contrast, sees both.
+    res = capture();
+    await cyclesCtrl.cycleRoster(asUser(owner, { params: { id: String(cycleId) } }), res, fail);
+    assert.strictEqual(res.body.data.rows.length, 2, 'the owner sees the whole tenant');
+
+    // ── cycle report ─────────────────────────────────────────────────────
+    // Release both so each contributes a finalRating to the histogram, then
+    // assert the admin's report counts one appraisal and the owner's counts two.
+    for (const a of db.appraisals) {
+      a.state = 'released';
+      a.finalRating = 4;
+    }
+    res = capture();
+    await cyclesCtrl.cycleReport(asUser(salesAdmin, { params: { id: String(cycleId) } }), res, fail);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.data.releasedCount, 1, 'the report is scoped too, not just the roster');
+
+    res = capture();
+    await cyclesCtrl.cycleReport(asUser(owner, { params: { id: String(cycleId) } }), res, fail);
+    assert.strictEqual(res.body.data.releasedCount, 2);
+
+    // ── appraisal detail ─────────────────────────────────────────────────
+    res = capture();
+    await appraisals.getAppraisal(asUser(salesAdmin, { params: { id: String(opsAppraisal._id) } }), res, fail);
+    assert.strictEqual(res.status, 403, 'an out-of-department appraisal is a 403, not a redacted 200');
+
+    res = capture();
+    await appraisals.getAppraisal(asUser(salesAdmin, { params: { id: String(salesAppraisal._id) } }), res, fail);
+    assert.strictEqual(res.status, 200, 'their own department still resolves as hr');
+    assert.strictEqual(res.body.data.access.relation, 'hr');
+
+    res = capture();
+    await appraisals.getAppraisal(asUser(owner, { params: { id: String(opsAppraisal._id) } }), res, fail);
+    assert.strictEqual(res.status, 200, 'the owner reaches everything in the tenant');
+  } finally {
+    restore();
+  }
+});
+
+test('an admin who manages no department gets HR access to nothing', async () => {
+  const tenantId = oid();
+  const dept = oid();
+  const ownerId = oid();
+  const strayAdminId = oid();
+  const staffId = oid();
+  const deptManagerId = oid();
+
+  const template = buildDefaultTemplate(tenantId, ownerId);
+  const { db, restore } = makeHarness({
+    users: [
+      { _id: ownerId, tenant: tenantId, role: 'tenant_owner' },
+      { _id: strayAdminId, tenant: tenantId, role: 'tenant_admin' },
+      { _id: deptManagerId, tenant: tenantId, role: 'tenant_staff' },
+      { _id: staffId, tenant: tenantId, role: 'tenant_staff', firstName: 'Sam', lastName: 'Staff', email: 's@wyn.test' },
+    ],
+    departments: [{ _id: dept, tenant: tenantId, name: 'Sales', manager: deptManagerId }],
+    template,
+    cycle: { tenant: tenantId, name: 'H1', peerReviewEnabled: false },
+  });
+
+  try {
+    const cycleId = db.cycles[0]._id;
+    const appraisalId = oid();
+    db.appraisals.push({
+      _id: appraisalId, tenant: tenantId, cycle: cycleId, employee: staffId,
+      manager: deptManagerId, department: dept, state: 'released',
+      reviewerIds: [staffId, deptManagerId], peerNominations: [], summary: 'ok',
+    });
+
+    const stray = { _id: strayAdminId, tenant: tenantId, role: 'tenant_admin' };
+
+    let res = capture();
+    await appraisals.getAppraisal(asUser(stray, { params: { id: String(appraisalId) } }), res, fail);
+    assert.strictEqual(res.status, 403);
+
+    res = capture();
+    await cyclesCtrl.cycleRoster(asUser(stray, { params: { id: String(cycleId) } }), res, fail);
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(res.body.data.rows, [], 'an empty scope matches nothing, it does not fall back to everything');
+
+    res = capture();
+    await cyclesCtrl.cycleReport(asUser(stray, { params: { id: String(cycleId) } }), res, fail);
+    assert.strictEqual(res.body.data.releasedCount, 0);
   } finally {
     restore();
   }

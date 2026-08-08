@@ -417,7 +417,10 @@ test('the manager and HR can summarise from collecting, not only from summarisin
     true
   );
   assert.strictEqual(
-    resolveAppraisalAccess({ _id: oid(), tenant: tenantId, role: 'tenant_admin' }, appraisal).canSummarise,
+    // tenant_owner: since Phase 5 a tenant_admin's HR powers need a
+    // departmentScope, and this assertion is about the `hr` relation's
+    // capabilities rather than about who qualifies for it.
+    resolveAppraisalAccess({ _id: oid(), tenant: tenantId, role: 'tenant_owner' }, appraisal).canSummarise,
     true
   );
   assert.strictEqual(

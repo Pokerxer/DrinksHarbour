@@ -29,6 +29,13 @@ const answerSchema = new Schema(
     // maxlength matches AppraisalTemplate's option maxlength — a stored answer
     // can never be longer than the option it was chosen from.
     selected: [{ type: String, trim: true, maxlength: 200 }],
+    // The REVIEWER's note on this specific answer (Phase 5 §9.3). Only a
+    // `kind: 'manager'` row may carry one — normaliseAnswers strips it from
+    // self and peer, because an employee annotating their own form would
+    // otherwise render downstream as their reviewer's commentary. Read back
+    // only by a viewer with `canSeeAnswerComments` (projectFeedbackForViewer),
+    // which for the subject means after release and not before.
+    comment: { type: String, trim: true, maxlength: 5000 },
   },
   { _id: false }
 );

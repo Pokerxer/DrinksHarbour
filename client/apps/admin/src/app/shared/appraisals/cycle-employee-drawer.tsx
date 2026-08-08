@@ -319,7 +319,11 @@ export default function CycleEmployeeDrawer({
                     Peer feedback
                   </p>
                   {others.map((f) => (
-                    <ReviewerCard key={f._id} feedback={f} questions={questions} />
+                    <ReviewerCard
+                      key={f._id}
+                      feedback={f}
+                      questions={questions}
+                    />
                   ))}
                 </div>
               )}

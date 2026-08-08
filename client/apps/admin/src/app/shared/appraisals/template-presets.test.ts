@@ -14,12 +14,26 @@ import type {
  */
 const COMPARABLE: QuestionType[] = ['rating', 'likert', 'scale'];
 
-/** Mirrors filterSectionsForKind in server/services/appraisal.helpers.js. */
-function filterSectionsForKind(
+/**
+ * Mirrors filterSections in server/services/appraisal.helpers.js.
+ *
+ * Carries the Phase 5 department rule too: a section naming departments is
+ * asked only of an employee in one of them, and an empty/absent list means
+ * everyone. Every preset ships company-wide sections, so `departmentId` is
+ * omitted below — but the mirror has to model the real function, or it stops
+ * being a check on the presets and becomes a check on a function that no
+ * longer exists.
+ */
+function filterSections(
   sections: DraftSection[],
-  kind: FeedbackKind
+  { kind, departmentId }: { kind: FeedbackKind; departmentId?: string }
 ): DraftSection[] {
   return sections
+    .filter((s) => {
+      const departments = s.departments || [];
+      if (departments.length === 0) return true;
+      return Boolean(departmentId) && departments.includes(departmentId!);
+    })
     .map((s) => ({
       ...s,
       questions: s.questions.filter((q) => (q.askOf || []).includes(kind)),
@@ -85,7 +99,7 @@ describe('the 360° Feedback preset', () => {
   });
 
   it('puts every section on the self-assessment form', () => {
-    const selfSections = filterSectionsForKind(threeSixty.sections, 'self');
+    const selfSections = filterSections(threeSixty.sections, { kind: 'self' });
     expect(selfSections.map((s) => s.title)).toEqual(
       threeSixty.sections.map((s) => s.title)
     );

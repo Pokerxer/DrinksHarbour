@@ -248,7 +248,7 @@ const standardPerformanceReview: DraftSection[] = [
  * decoration: a 360's output is the gap between how the subject rates
  * themselves and how their manager and peers rate them on the SAME competency.
  * Scoping a competency to raters only silently removes it from that
- * comparison, and because filterSectionsForKind drops sections that come back
+ * comparison, and because filterSections drops sections that come back
  * empty, a whole section can vanish from the self form. Unscored questions
  * stay rater-scoped where the subject genuinely cannot answer them ("would you
  * work with this person again?") or where the value is the rater's own

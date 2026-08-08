@@ -6,6 +6,7 @@ import {
   countQuestions,
   isBlankDraft,
   existingQuestionLabels,
+  scopeSections,
   stripDuplicateQuestions,
   summarizeAudiences,
 } from './template-ai-utils';
@@ -208,5 +209,34 @@ describe('summarizeAudiences', () => {
 
   it('is empty for an empty draft', () => {
     expect(summarizeAudiences([])).toEqual([]);
+  });
+});
+
+// ── Phase 5 §9.1 ──────────────────────────────────────────────────────────
+describe('scopeSections', () => {
+  const generated = [
+    { title: 'Warehouse safety', questions: [] },
+    { title: 'Stock accuracy', questions: [], departments: ['d-old'] },
+  ];
+
+  it('stamps the chosen department onto every generated section', () => {
+    expect(scopeSections(generated, 'd-ops')).toEqual([
+      { title: 'Warehouse safety', questions: [], departments: ['d-ops'] },
+      { title: 'Stock accuracy', questions: [], departments: ['d-ops'] },
+    ]);
+  });
+
+  it('writes an EXPLICIT empty list for "everyone", never an absent key', () => {
+    // The editor's scope pill reads "Everyone" off a real value; an absent key
+    // would leave it guessing whether the model simply forgot to say.
+    const out = scopeSections(generated, '');
+    expect(out[0].departments).toEqual([]);
+    expect(out[1].departments).toEqual([]);
+  });
+
+  it('does not mutate the sections it was given', () => {
+    scopeSections(generated, 'd-ops');
+    expect(generated[0]).not.toHaveProperty('departments');
+    expect(generated[1].departments).toEqual(['d-old']);
   });
 });

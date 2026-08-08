@@ -243,10 +243,10 @@ describe('sortTeamAppraisals', () => {
         row('z', 'collecting', { first: 'Zoe', deadline: LATER }),
         row('a', 'collecting', { first: 'Ada', deadline: LATER }),
       ];
-      expect(sortTeamAppraisals(rows, sort).map((r) => r._id), sort).toEqual([
-        'a',
-        'z',
-      ]);
+      expect(
+        sortTeamAppraisals(rows, sort).map((r) => r._id),
+        sort
+      ).toEqual(['a', 'z']);
     }
   });
 
@@ -261,7 +261,10 @@ describe('sortTeamAppraisals', () => {
     for (const sort of ['priority', 'due', 'name', 'status'] as const) {
       const rows = [row('b', 'acknowledged'), row('a', 'summarising')];
       sortTeamAppraisals(rows, sort);
-      expect(rows.map((r) => r._id), sort).toEqual(['b', 'a']);
+      expect(
+        rows.map((r) => r._id),
+        sort
+      ).toEqual(['b', 'a']);
     }
   });
 });
@@ -298,9 +301,7 @@ describe('teamCycleOptions', () => {
       { ...row('1', 'collecting'), cycle: undefined } as unknown as Appraisal,
       row('2', 'collecting', { cycleId: 'c1', cycleName: 'H1 2026' }),
     ];
-    expect(teamCycleOptions(rows)).toEqual([
-      { value: 'c1', label: 'H1 2026' },
-    ]);
+    expect(teamCycleOptions(rows)).toEqual([{ value: 'c1', label: 'H1 2026' }]);
   });
 
   it('is empty for an empty team', () => {
@@ -419,7 +420,9 @@ describe('filterTeamAppraisals', () => {
   });
 
   it("treats 'all' and an absent cycle the same way", () => {
-    expect(filterTeamAppraisals(mixed, { cycleId: 'all' }, NOW)).toHaveLength(3);
+    expect(filterTeamAppraisals(mixed, { cycleId: 'all' }, NOW)).toHaveLength(
+      3
+    );
     expect(filterTeamAppraisals(mixed, {}, NOW)).toHaveLength(3);
   });
 
@@ -442,7 +445,10 @@ describe('filterTeamAppraisals', () => {
 
   it('drops rows with no cycle when a specific cycle is selected', () => {
     // …rather than letting an unpopulated ref slip through every filter.
-    const orphan = { ...row('x', 'collecting'), cycle: undefined } as unknown as Appraisal;
+    const orphan = {
+      ...row('x', 'collecting'),
+      cycle: undefined,
+    } as unknown as Appraisal;
     expect(
       filterTeamAppraisals([...mixed, orphan], { cycleId: 'c-ops' }, NOW).map(
         (r) => r._id
