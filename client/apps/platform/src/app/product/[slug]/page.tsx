@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { capSeoTitle } from "@/lib/seoTitle";
 import { pickDefaultVariant, isDefaultVariantInStock } from "@/lib/default-variant";
 import ProductClient from "./ProductClient";
+import { SHIPPING_DETAILS, MERCHANT_RETURN_POLICY } from "@/lib/commerce-policy";
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL  || "https://www.drinksharbour.com";
@@ -345,6 +346,8 @@ function buildProductSchema(p: any, slug: string): object {
         url:            productUrl,
         seller:         { "@type": "Organization", name: SITE_NAME, url: BASE_URL },
         areaServed:     { "@type": "Country", name: "Nigeria" },
+        shippingDetails:        SHIPPING_DETAILS,
+        hasMerchantReturnPolicy: MERCHANT_RETURN_POLICY,
       };
     } else {
       schema.offers = {
@@ -356,19 +359,10 @@ function buildProductSchema(p: any, slug: string): object {
         itemCondition:   "https://schema.org/NewCondition",
         seller:          { "@type": "Organization", name: SITE_NAME, url: BASE_URL },
         areaServed:      { "@type": "Country", name: "Nigeria" },
-        shippingDetails: {
-          "@type":             "OfferShippingDetails",
-          shippingDestination: {
-            "@type":          "DefinedRegion",
-            addressCountry:   "NG",
-          },
-          deliveryTime: {
-            "@type":       "ShippingDeliveryTime",
-            businessDays:  { "@type": "OpeningHoursSpecification", dayOfWeek: ["Monday","Tuesday","Wednesday","Thursday","Friday"] },
-            handlingTime:  { "@type": "QuantitativeValue", minValue: 0, maxValue: 1, unitCode: "DAY" },
-            transitTime:   { "@type": "QuantitativeValue", minValue: 1, maxValue: 3, unitCode: "DAY" },
-          },
-        },
+        // Previously an inline node with no shippingRate, which Google discards
+        // — hence the "missing shippingDetails" warning despite it being emitted.
+        shippingDetails:         SHIPPING_DETAILS,
+        hasMerchantReturnPolicy: MERCHANT_RETURN_POLICY,
       };
     }
   }
