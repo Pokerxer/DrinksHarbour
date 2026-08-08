@@ -52,6 +52,10 @@ import TemplateAiModal, {
  * suggestion to the kinds already in use would make "suggest who should answer
  * this" incapable of ever proposing a kind the form does not yet have. The
  * server's 360 rule still applies to whatever comes back.
+ *
+ * House style applies too: a "suggest who should answer this" run will not put
+ * peers on a rating. A label or options run leaves a peer-scored rating HR
+ * authored alone — rewording a question is not permission to re-scope it.
  */
 const ALL_KINDS: FeedbackKind[] = ['self', 'manager', 'peer'];
 

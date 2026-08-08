@@ -385,6 +385,8 @@ export default function ReviewQuestionCard({
   onRatingChange,
   onTextChange,
   onSelectedChange,
+  onNotObservedChange,
+  canAbstain,
   isMissing,
   readOnly,
   index,
@@ -394,11 +396,20 @@ export default function ReviewQuestionCard({
   onRatingChange: (rating: number) => void;
   onTextChange: (text: string) => void;
   onSelectedChange: (selected: string[]) => void;
+  onNotObservedChange: (on: boolean) => void;
+  /** Peer forms only — see canAbstain() in review-answer-utils.ts. */
+  canAbstain: boolean;
   isMissing: boolean;
   readOnly: boolean;
   index: number;
 }) {
   const answered = isAnswered(question, answer);
+  const abstained = answer?.notObserved === true;
+  // The field stays MOUNTED and merely disabled while abstaining, rather than
+  // being swapped out. Unmounting a textarea would destroy anything typed into
+  // it, so a mis-click on the checkbox would silently discard written work the
+  // reviewer could not get back by unticking it.
+  const fieldDisabled = readOnly || abstained;
 
   function field() {
     switch (question.type) {
@@ -410,7 +421,7 @@ export default function ReviewQuestionCard({
             question={question}
             value={answer?.rating}
             onChange={onRatingChange}
-            disabled={readOnly}
+            disabled={fieldDisabled}
           />
         );
       case 'yes_no':
@@ -419,7 +430,7 @@ export default function ReviewQuestionCard({
             question={question}
             value={answer?.rating}
             onChange={onRatingChange}
-            disabled={readOnly}
+            disabled={fieldDisabled}
           />
         );
       case 'choice':
@@ -428,7 +439,7 @@ export default function ReviewQuestionCard({
             question={question}
             value={answer?.selected}
             onChange={onSelectedChange}
-            disabled={readOnly}
+            disabled={fieldDisabled}
           />
         );
       case 'text':
@@ -441,7 +452,7 @@ export default function ReviewQuestionCard({
             question={question}
             value={answer?.text ?? ''}
             onChange={onTextChange}
-            disabled={readOnly}
+            disabled={fieldDisabled}
           />
         );
     }
@@ -477,7 +488,46 @@ export default function ReviewQuestionCard({
         />
       )}
 
-      <div className={answered ? 'pr-5' : undefined}>{field()}</div>
+      <div
+        className={`${answered ? 'pr-5' : ''} ${
+          abstained ? 'pointer-events-none opacity-40' : ''
+        }`.trim()}
+      >
+        {field()}
+      </div>
+
+      {/* The honest way out.
+          Offered only to peers, and only while the form is editable. A peer who
+          did not observe something has, without this, exactly two options: skip
+          a required question and be unable to submit, or invent a middle
+          answer. They pick the middle answer — which is indistinguishable from
+          a considered "adequate" and quietly drags every average toward it. */}
+      {canAbstain && !readOnly && (
+        <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-3.5 py-2.5 transition-colors hover:border-gray-300 hover:bg-gray-50">
+          <input
+            type="checkbox"
+            checked={abstained}
+            onChange={(e) => onNotObservedChange(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 text-[#b20202] focus:ring-2 focus:ring-[#b20202]/30"
+          />
+          <span className="min-w-0 text-xs leading-relaxed text-gray-500">
+            <span className="font-semibold text-gray-700">
+              I haven’t seen enough to judge this
+            </span>
+            <span className="mt-0.5 block text-gray-400">
+              Counts as answered and is left out of the averages — a better
+              answer than guessing.
+            </span>
+          </span>
+        </label>
+      )}
+
+      {/* Read-only rendering of the same state, for a submitted form. */}
+      {abstained && readOnly && (
+        <p className="mt-3 text-xs font-medium italic text-gray-400">
+          Marked “not observed” by this reviewer.
+        </p>
+      )}
 
       {isMissing && (
         <motion.p

@@ -20,3 +20,6 @@ server/_insp.js
 # subagent-driven-development scratch (progress ledger, review packages)
 .superpowers/
 .npm-cache/
+
+# Runtime TTS audio cache (fishAudio.service.js regenerates on demand)
+server/uploads/tts/

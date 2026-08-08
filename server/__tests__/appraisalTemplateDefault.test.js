@@ -99,3 +99,74 @@ test('two buildDefaultTemplate calls generate DIFFERENT family ids', () => {
   // versions of one another.
   assert.notStrictEqual(String(a.family), String(b.family));
 });
+
+// ── What each reviewer kind is asked ────────────────────────────────────────
+// The default template is the form most tenants will actually run, so the
+// "ask peers only what peers can answer" rule has to hold HERE, not just be
+// expressible via askOf.
+
+const questionsFor = (doc, kind) =>
+  (doc.sections || []).flatMap((s) =>
+    (s.questions || []).filter((q) => (q.askOf || []).includes(kind))
+  );
+
+test('the default template asks peers NO rating-style questions', () => {
+  const { buildDefaultTemplate, COMPARABLE_QUESTION_TYPES } = require('../services/appraisal.helpers');
+  const doc = buildDefaultTemplate(oid(), oid());
+
+  const peerScored = questionsFor(doc, 'peer').filter((q) =>
+    COMPARABLE_QUESTION_TYPES.has(q.type)
+  );
+  // A peer in another function rating "quality of work" is guessing, and the
+  // guess is then averaged into a number that looks measured. Ratings belong
+  // to the manager, who has the context to calibrate them.
+  assert.deepStrictEqual(
+    peerScored.map((q) => q.label),
+    [],
+    'peers must not be asked to score anything in the default form'
+  );
+});
+
+test('the default template asks peers at least two REQUIRED text questions', () => {
+  const { buildDefaultTemplate } = require('../services/appraisal.helpers');
+  const doc = buildDefaultTemplate(oid(), oid());
+
+  const peerText = questionsFor(doc, 'peer').filter((q) => q.type === 'text');
+  assert.ok(
+    peerText.length >= 2,
+    `peers need evidence-shaped prompts, got ${peerText.length}`
+  );
+  assert.ok(
+    peerText.every((q) => q.required === true),
+    'a peer who is asked at all should be asked properly'
+  );
+});
+
+test('every rating question is asked of BOTH self and manager', () => {
+  const { buildDefaultTemplate, COMPARABLE_QUESTION_TYPES } = require('../services/appraisal.helpers');
+  const doc = buildDefaultTemplate(oid(), oid());
+
+  const scored = (doc.sections || []).flatMap((s) =>
+    (s.questions || []).filter((q) => COMPARABLE_QUESTION_TYPES.has(q.type))
+  );
+  assert.ok(scored.length > 0, 'the form must still score something');
+  for (const q of scored) {
+    // buildComparison joins self against manager on a SHARED questionId. A
+    // rating asked of only one of them produces a half-empty row.
+    assert.ok(q.askOf.includes('self'), `${q.label} must be asked of self`);
+    assert.ok(q.askOf.includes('manager'), `${q.label} must be asked of manager`);
+  }
+});
+
+test('no question is asked of nobody', () => {
+  const { buildDefaultTemplate } = require('../services/appraisal.helpers');
+  const doc = buildDefaultTemplate(oid(), oid());
+  for (const s of doc.sections) {
+    for (const q of s.questions) {
+      assert.ok(
+        Array.isArray(q.askOf) && q.askOf.length > 0,
+        `${q.label} is asked of no reviewer kind and would never render`
+      );
+    }
+  }
+});

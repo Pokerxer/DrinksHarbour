@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canAbstain,
   formatAnswer,
   isAnswered,
   outstandingRequired,
@@ -8,6 +9,7 @@ import {
   seedAnswers,
   serializeAnswers,
   toggleChoice,
+  toggleNotObserved,
 } from './review-answer-utils';
 import type {
   AppraisalQuestion,
@@ -251,5 +253,59 @@ describe('formatAnswer', () => {
 
   it('returns null (not "") when unanswered', () => {
     expect(formatAnswer(q('text'), undefined)).toBeNull();
+  });
+
+  it('reads an abstention back as "Not observed", never as "Not answered"', () => {
+    // A considered "I wasn't in a position to judge" is not a gap, and
+    // reporting it as one misrepresents the reviewer.
+    expect(
+      formatAnswer(q('rating'), { questionId: 'q1', notObserved: true })
+    ).toBe('Not observed');
+  });
+});
+
+describe('not observed', () => {
+  it('counts as answered, so it satisfies a required question', () => {
+    // The whole reason the option exists: without this, a peer who genuinely
+    // cannot judge is forced to invent a mid-scale answer to get past submit.
+    expect(isAnswered(q('rating'), { questionId: 'q1', notObserved: true })).toBe(true);
+    expect(
+      outstandingRequired([{ title: 'S', questions: [q('rating')] }] as AppraisalSection[], {
+        q1: { questionId: 'q1', notObserved: true },
+      })
+    ).toEqual([]);
+  });
+
+  it('serialises as the flag ALONE, with any leftover rating dropped', () => {
+    const sections = [{ title: 'S', questions: [q('rating')] }] as AppraisalSection[];
+    // The server rebuilds the answer from just the flag. Sending the stale
+    // rating too would make the local signature disagree with what comes back
+    // and autosave would rewrite on every load.
+    expect(
+      serializeAnswers(sections, {
+        q1: { questionId: 'q1', rating: 5, notObserved: true },
+      })
+    ).toEqual([{ questionId: 'q1', notObserved: true }]);
+  });
+
+  it('turning it on discards the previous value', () => {
+    expect(toggleNotObserved('q1', { questionId: 'q1', rating: 4 }, true)).toEqual({
+      questionId: 'q1',
+      notObserved: true,
+    });
+  });
+
+  it('turning it off clears rather than restoring the old score', () => {
+    // Reinstating a rating the reviewer had already moved away from would put
+    // a number back under their name that they did not just choose.
+    expect(
+      toggleNotObserved('q1', { questionId: 'q1', notObserved: true }, false)
+    ).toEqual({ questionId: 'q1' });
+  });
+
+  it('is offered to peers only', () => {
+    expect(canAbstain('peer')).toBe(true);
+    expect(canAbstain('self')).toBe(false);
+    expect(canAbstain('manager')).toBe(false);
   });
 });

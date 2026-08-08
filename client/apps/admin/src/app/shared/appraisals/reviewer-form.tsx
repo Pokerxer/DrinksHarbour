@@ -23,16 +23,19 @@ import {
 } from '@/services/appraisal.service';
 import { useUnsavedChangesGuard } from './use-unsaved-changes-guard';
 import ReviewProgressStrip from './review-progress-strip';
+import PriorCommitmentsBanner from './prior-commitments-banner';
 import ReviewDisclosureBanner from './review-disclosure-banner';
 import ReviewQuestionCard from './review-question-card';
 import ReviewFormFooter from './review-form-footer';
 import ReviewSectionNav from './review-section-nav';
 import {
+  canAbstain,
   isAnswered,
   outstandingRequired,
   progressOf,
   seedAnswers,
   serializeAnswers,
+  toggleNotObserved,
 } from './review-answer-utils';
 import {
   answersSignature,
@@ -331,6 +334,14 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
   function setSelected(questionId: string, selected: string[]) {
     applyAnswer(questionId, { questionId, selected });
   }
+  function setNotObserved(questionId: string, on: boolean) {
+    // toggleNotObserved owns the rule that an abstention replaces the value
+    // outright in both directions — see review-answer-utils.ts.
+    applyAnswer(
+      questionId,
+      toggleNotObserved(questionId, answers[questionId], on)
+    );
+  }
 
   function handleSaveDraft() {
     void persistDraft({ toastOnSuccess: true });
@@ -561,8 +572,12 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
             <ReviewDisclosureBanner
               namedTo={form.visibility.namedTo}
               anonymousTo={form.visibility.anonymousTo}
+              withheldFrom={form.visibility.withheldFrom}
               kind={form.kind}
             />
+
+            {/* Null on peer forms and on a first-ever appraisal. */}
+            <PriorCommitmentsBanner prior={form.priorCommitments} />
 
             {/* Question sections.
                 Not wrapped in AnimatePresence: sections are never conditionally
@@ -610,6 +625,8 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
                       onRatingChange={(v) => setRating(q._id, v)}
                       onTextChange={(v) => setText(q._id, v)}
                       onSelectedChange={(v) => setSelected(q._id, v)}
+                      onNotObservedChange={(on) => setNotObserved(q._id, on)}
+                      canAbstain={canAbstain(form.kind)}
                       isMissing={outstanding.some((o) => o._id === q._id)}
                       readOnly={isReadOnly}
                       index={sIdx * 10 + qIdx}

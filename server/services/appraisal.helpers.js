@@ -61,6 +61,7 @@ const NO_ACCESS = {
   relation: 'none',
   canRead: false,
   canSeeReviewerNames: false,
+  canSeePeerFeedback: false,
   canSummarise: false,
   canRelease: false,
   canAcknowledge: false,
@@ -102,6 +103,21 @@ function resolveAppraisalAccess(user, appraisal) {
       relation: 'subject',
       canRead: visible,
       canSeeReviewerNames: false,
+      // The subject never reads raw peer feedback, at any state.
+      //
+      // Stripping the reviewer's name off a peer card was never enough to make
+      // it anonymous: prose identifies its author. "As we discussed after the
+      // Maitama run" names someone to a team of six no matter whose name is on
+      // it, and a colleague who knows that is a colleague who writes nothing
+      // worth reading. Anonymity that depends on peers self-censoring the
+      // specifics is not anonymity, it is a request for vagueness.
+      //
+      // So peer input reaches the employee through the manager's summary,
+      // which a named person writes and is accountable for. The employee is
+      // still told how many peers contributed (approvedPeerCount /
+      // peerResponseCount in getAppraisal) so they can judge what the summary
+      // rests on — the count is what they need, the transcript is not.
+      canSeePeerFeedback: false,
       canSummarise: false,
       canRelease: false,
       canAcknowledge: state === 'released',
@@ -117,6 +133,7 @@ function resolveAppraisalAccess(user, appraisal) {
       relation: 'hr',
       canRead: true,
       canSeeReviewerNames: true,
+      canSeePeerFeedback: true,
       // Gated the same as the manager branch below: without this, HR could
       // silently rewrite the summary/finalRating of an appraisal that is
       // already released, acknowledged (signed off by the employee), or even
@@ -139,6 +156,10 @@ function resolveAppraisalAccess(user, appraisal) {
       relation: 'manager',
       canRead: true,
       canSeeReviewerNames: true,
+      // The manager is the one who reads peer input in full and turns it into
+      // a summary they put their name to. That is the whole mechanism: a
+      // person is accountable for the judgement, not a form.
+      canSeePeerFeedback: true,
       canSummarise: state === 'collecting' || state === 'summarising',
       canRelease: state === 'summarising',
       canAcknowledge: false,
@@ -155,6 +176,7 @@ function resolveAppraisalAccess(user, appraisal) {
       relation: 'reviewer',
       canRead: false, // reviewers see only their own feedback row
       canSeeReviewerNames: false,
+      canSeePeerFeedback: false,
       canSummarise: false,
       canRelease: false,
       canAcknowledge: false,
@@ -278,12 +300,61 @@ function planCycleLaunch(employees, existingEmployeeIds = []) {
 }
 
 /**
- * The single template Phase 1 seeds per tenant. Every question is asked of both
- * self and manager so the two answers land on the same questionId and can be
- * compared directly. `peer` is included so Phase 2 needs no data migration.
+ * The house peer prompts, shared by the seeded default template and by the AI
+ * generator's peer-coverage fallback (appraisalAi.service.js).
+ *
+ * One definition because they encode a position, not just wording: peers are
+ * asked for an INCIDENT, not an impression. "Think of a specific time" is the
+ * load-bearing phrase — it is the difference between a colleague recalling
+ * something that happened and a colleague summarising how they feel about
+ * someone. Two generators drifting apart on that would mean the form a tenant
+ * gets depends on whether HR clicked "generate".
+ *
+ * Carries no `askOf`; callers add `askOf: ['peer']`.
+ */
+const PEER_EVIDENCE_SECTION_TITLE = 'Working with this person';
+
+const PEER_EVIDENCE_QUESTIONS = [
+  {
+    type: 'text',
+    label: 'Think of a specific time this person made your work easier. What happened?',
+    helpText:
+      'One concrete example is more useful than a general impression. Only write about what you saw yourself.',
+    required: true,
+  },
+  {
+    type: 'text',
+    label: 'What is one thing they could do differently that would help you work with them?',
+    helpText:
+      'Be specific and practical. This is read by their manager, who writes the summary the employee sees.',
+    required: true,
+  },
+];
+
+/**
+ * The single template Phase 1 seeds per tenant.
+ *
+ * Every SCORED question is asked of both self and manager and of neither peer,
+ * which is two rules rather than one:
+ *
+ *  - self+manager, always: buildComparison joins the two on a shared
+ *    questionId, so a rating asked of only one of them is a half-empty row.
+ *  - never peer: a peer in another function has no basis to score "quality of
+ *    work". They answer anyway — a required question leaves no honest way out
+ *    — and the guess is then averaged into a mean that reads as measurement.
+ *    Ratings are for the manager, who has the context to calibrate them.
+ *
+ * Peers instead get evidence-shaped prompts about what they personally
+ * experienced. "They unblocked my PO backlog twice this quarter" is worth more
+ * to a manager writing a summary than a 3.4/5, and it sidesteps the low-n mean
+ * problem outright: there is no average to suppress or over-read.
+ *
+ * `askOf` is per-question and HR-editable, so a tenant that wants peer ratings
+ * can still add them — this is the default, not a constraint.
  */
 function buildDefaultTemplate(tenantId, createdBy) {
-  const all = ['self', 'manager', 'peer'];
+  const bothSides = ['self', 'manager'];
+  const peerOnly = ['peer'];
   return {
     tenant: tenantId,
     // Generated per call, never shared: a fixed family id would make two
@@ -300,18 +371,27 @@ function buildDefaultTemplate(tenantId, createdBy) {
       {
         title: 'Performance',
         questions: [
-          { type: 'rating', label: 'Quality of work', scaleMax: 5, required: true, askOf: all },
-          { type: 'rating', label: 'Reliability and follow-through', scaleMax: 5, required: true, askOf: all },
-          { type: 'rating', label: 'Communication', scaleMax: 5, required: true, askOf: all },
-          { type: 'rating', label: 'Collaboration with others', scaleMax: 5, required: true, askOf: all },
+          { type: 'rating', label: 'Quality of work', scaleMax: 5, required: true, askOf: bothSides },
+          { type: 'rating', label: 'Reliability and follow-through', scaleMax: 5, required: true, askOf: bothSides },
+          { type: 'rating', label: 'Communication', scaleMax: 5, required: true, askOf: bothSides },
+          { type: 'rating', label: 'Collaboration with others', scaleMax: 5, required: true, askOf: bothSides },
         ],
       },
       {
         title: 'Comments',
         questions: [
-          { type: 'text', label: 'What went well this period?', required: true, askOf: all },
-          { type: 'text', label: 'What should improve next period?', required: true, askOf: all },
+          { type: 'text', label: 'What went well this period?', required: true, askOf: bothSides },
+          { type: 'text', label: 'What should improve next period?', required: true, askOf: bothSides },
         ],
+      },
+      {
+        // Peer-only, from the shared definition above — the AI generator's
+        // peer-coverage fallback appends the same two questions, so a tenant's
+        // peer form does not depend on whether HR clicked "generate".
+        title: PEER_EVIDENCE_SECTION_TITLE,
+        // Copied, not referenced: the constant is module-level and a caller
+        // mutating a returned template must not edit every future one.
+        questions: PEER_EVIDENCE_QUESTIONS.map((q) => ({ ...q, askOf: peerOnly })),
       },
     ],
   };
@@ -366,6 +446,139 @@ function partitionAnswersByAskedQuestions(answers, askedQuestionIds) {
     }
   }
   return { allowed, rejectedIds: [...new Set(rejected)] };
+}
+
+/**
+ * Is this answer a response at all?
+ *
+ * `notObserved` counts: a peer saying "I can't judge this" HAS answered, and
+ * that is the entire point of offering it — a required question with no
+ * honest way out is what produces the defensive middle-of-the-scale 3.
+ *
+ * A rating of 0 counts; `0` is a real score on a 0-based scale and the falsy
+ * check that would drop it is the classic bug here. Whitespace-only text does
+ * not count — a space bar is not an answer.
+ */
+function isAnswered(a) {
+  if (!a) return false;
+  if (a.notObserved === true) return true;
+  if (typeof a.rating === 'number' && Number.isFinite(a.rating)) return true;
+  if (typeof a.text === 'string' && a.text.trim() !== '') return true;
+  if (Array.isArray(a.selected) && a.selected.length > 0) return true;
+  return false;
+}
+
+/**
+ * Enforce who may abstain, and make an abstention exclusive.
+ *
+ * Peers only: self and manager hold the context to answer, and letting a
+ * manager skip a question they are accountable for is a different feature.
+ *
+ * A not-observed answer is rebuilt from scratch rather than having its value
+ * fields deleted, so nothing a client sent alongside the flag survives. The
+ * UI can and does leave a previously-picked rating on the answer when the
+ * reviewer switches to "can't judge"; trusting the payload would store an
+ * abstention that is also a 5.
+ */
+function normaliseAnswers(answers, kind) {
+  const errors = [];
+  const out = [];
+  for (const a of answers || []) {
+    if (a && a.notObserved === true) {
+      if (kind !== 'peer') {
+        errors.push(
+          'Only peer reviewers may mark a question as not observed; a self or manager assessment must answer it.'
+        );
+        continue;
+      }
+      out.push({ questionId: a.questionId, notObserved: true });
+      continue;
+    }
+    if (a && 'notObserved' in a) {
+      // An explicit `false` carries no meaning and would otherwise persist as
+      // noise on every answer the UI touches.
+      const { notObserved, ...rest } = a;
+      out.push(rest);
+      continue;
+    }
+    out.push(a);
+  }
+  return { answers: out, errors };
+}
+
+/**
+ * Which required questions this submission left unanswered, by label.
+ *
+ * Takes an ALREADY kind-filtered sections array (see filterSectionsForKind),
+ * so a question this reviewer was never asked can never be reported missing.
+ * Returns labels rather than ids because the message goes to the reviewer.
+ */
+function findUnansweredRequired(answers, filteredSections) {
+  const byId = new Map(
+    (answers || [])
+      .filter((a) => a && a.questionId != null)
+      .map((a) => [String(a.questionId), a])
+  );
+  const missing = [];
+  for (const section of filteredSections || []) {
+    for (const q of section?.questions || []) {
+      if (!q || q.required !== true) continue;
+      // A question with no _id is skipped, matching getAskedQuestionIds, which
+      // drops the same questions from the set of ids a reviewer is allowed to
+      // answer. The two MUST agree: a required question that is not
+      // addressable could never be answered, so demanding it would reject
+      // every submission and brick the form outright.
+      if (q._id == null) continue;
+      if (!isAnswered(byId.get(String(q._id)))) missing.push(q.label ?? String(q._id));
+    }
+  }
+  return missing;
+}
+
+// A review that ends in a filing cabinet changes nothing. Releasing therefore
+// requires at least one concrete action for the next period, which the next
+// cycle's self-assessment opens with — that loop is what turns an appraisal
+// from a record into a process.
+//
+// Capped because a list of fifteen "priorities" is a list of none; the cap is
+// a deliberate forcing function, not a storage limit.
+const MAX_COMMITMENTS = 8;
+const COMMITMENT_MAXLENGTH = 500;
+
+/**
+ * Clean a submitted commitment list.
+ *
+ * Returns `commitments: null` when the caller did not supply the key at all,
+ * which is NOT the same as supplying `[]`. saveSummary autosaves partial work,
+ * and a payload that simply omits the field must leave whatever is already
+ * stored alone rather than silently clearing it — the distinction is the
+ * difference between "I didn't touch this" and "I deleted these".
+ *
+ * Blank entries are dropped rather than rejected: the editor renders empty
+ * rows for the manager to type into, and submitting with one still empty is
+ * ordinary, not an error worth blocking on.
+ */
+function normaliseCommitments(input) {
+  const errors = [];
+  if (input == null) return { commitments: null, errors };
+  if (!Array.isArray(input)) {
+    errors.push('Commitments must be a list.');
+    return { commitments: [], errors };
+  }
+
+  const commitments = [];
+  for (const c of input) {
+    const raw = typeof c === 'string' ? c : typeof c?.text === 'string' ? c.text : '';
+    const text = raw.trim();
+    if (!text) continue;
+    commitments.push({ text: text.slice(0, COMMITMENT_MAXLENGTH) });
+  }
+  if (commitments.length > MAX_COMMITMENTS) {
+    errors.push(
+      `Agree at most ${MAX_COMMITMENTS} actions — a longer list is not a plan.`
+    );
+  }
+  return { commitments, errors };
 }
 
 // Below this many SUBMITTED peer responses, releasing prompts the manager to
@@ -682,8 +895,15 @@ function buildComparison(sections, feedback, access) {
   // question this reviewer skipped. Neither may enter a denominator, and
   // neither may be scored 0 — a zero is a bad review nobody gave. A genuine
   // rating of 0 is a real answer and is kept.
+  //
+  // `notObserved` is checked BEFORE the rating and wins outright. The
+  // controller already strips the rating off such an answer, so this is the
+  // second of two independent guards: rows written before that rule existed,
+  // or by any future path that bypasses submitFeedback, still cannot have an
+  // abstention counted as a score.
   const ratingIn = (r, qid) => {
     const a = (r?.answers || []).find((x) => x && String(x.questionId) === qid);
+    if (a?.notObserved === true) return null;
     return typeof a?.rating === 'number' && Number.isFinite(a.rating) ? a.rating : null;
   };
 
@@ -750,10 +970,18 @@ module.exports = {
   projectFeedbackForViewer,
   orderFeedbackForViewer,
   planCycleLaunch,
+  PEER_EVIDENCE_SECTION_TITLE,
+  PEER_EVIDENCE_QUESTIONS,
   buildDefaultTemplate,
   filterSectionsForKind,
   getAskedQuestionIds,
   partitionAnswersByAskedQuestions,
+  isAnswered,
+  normaliseAnswers,
+  findUnansweredRequired,
+  MAX_COMMITMENTS,
+  COMMITMENT_MAXLENGTH,
+  normaliseCommitments,
   PEER_RELEASE_MIN,
   COMPARABLE_QUESTION_TYPES,
   effectiveNominationMin,

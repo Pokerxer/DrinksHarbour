@@ -7,7 +7,49 @@ const {
   filterSectionsForKind,
   getAskedQuestionIds,
   partitionAnswersByAskedQuestions,
+  normaliseAnswers,
+  findUnansweredRequired,
 } = require('../services/appraisal.helpers');
+
+/**
+ * What this employee last agreed to do, from their most recent completed
+ * appraisal — the thing that turns a cycle into a sequence rather than a
+ * series of unrelated snapshots.
+ *
+ * Shown only on self and manager forms. A peer has no business reading what
+ * a colleague privately committed to with their manager, and peers are the
+ * one reviewer kind whose form this must never appear on.
+ *
+ * Excludes the appraisal currently being reviewed by cycle, not by id: a
+ * re-run or a second appraisal in the same cycle would otherwise quote this
+ * period's own commitments back as though they were last period's.
+ */
+async function loadPriorCommitments(fb, appraisal) {
+  if (fb.kind !== 'self' && fb.kind !== 'manager') return null;
+  if (!appraisal?.employee) return null;
+
+  const employeeId = appraisal.employee._id || appraisal.employee;
+  const prior = await Appraisal.findOne({
+    tenant: fb.tenant,
+    employee: employeeId,
+    cycle: { $ne: fb.cycle },
+    state: { $in: ['released', 'acknowledged'] },
+    'commitments.0': { $exists: true },
+  })
+    // Most recently released wins. `releasedAt` rather than createdAt: cycles
+    // are not necessarily created in the order they complete.
+    .sort({ releasedAt: -1 })
+    .select('commitments releasedAt cycle')
+    .populate('cycle', 'name')
+    .lean();
+
+  if (!prior) return null;
+  return {
+    cycleName: prior.cycle?.name || null,
+    releasedAt: prior.releasedAt || null,
+    commitments: prior.commitments || [],
+  };
+}
 
 /**
  * Load a feedback row the caller owns. A reviewer may only ever touch their own
@@ -71,12 +113,21 @@ exports.getFeedback = async (req, res, next) => {
         cycleName: cycle.name || '',
         deadline: cycle.feedbackDeadline || null,
         sections,
-        // Drives the disclosure banner. Phase 1 has no peer feedback, but the
-        // contract is in place so Phase 2 does not change the response shape.
+        // What this person agreed to last time, so the review opens on it.
+        priorCommitments: await loadPriorCommitments(fb, appraisal),
+        // Drives the disclosure banner, which is how a reviewer calibrates how
+        // candid to be — so it has to describe what actually happens.
+        //
+        // `withheldFrom` is a stronger claim than `anonymousTo` and replaces it
+        // for peers: their feedback is not shown to the employee under a
+        // stripped name, it is not shown to the employee at all. Saying merely
+        // "anonymous" would understate the protection, and a peer who
+        // believes the subject will read their words — name attached or not —
+        // writes the vague, unfalsifiable thing that helps nobody.
         visibility:
           fb.kind === 'peer'
-            ? { namedTo: ['manager', 'hr'], anonymousTo: ['employee'] }
-            : { namedTo: ['manager', 'hr', 'employee'], anonymousTo: [] },
+            ? { namedTo: ['manager', 'hr'], anonymousTo: [], withheldFrom: ['employee'] }
+            : { namedTo: ['manager', 'hr', 'employee'], anonymousTo: [], withheldFrom: [] },
       },
     });
   } catch (err) { next(err); }
@@ -107,7 +158,15 @@ exports.saveDraft = async (req, res, next) => {
           message: `Answers were submitted for question id(s) not asked of this reviewer: ${rejectedIds.join(', ')}`,
         });
       }
-      fb.answers = allowed;
+      // Same abstention rules as submit — a draft must not be able to park a
+      // not-observed flag on a self/manager row, or carry a rating alongside
+      // one, and then have submit inherit it. Required-question completeness
+      // is deliberately NOT checked: a draft is partial by definition.
+      const { answers, errors } = normaliseAnswers(allowed, fb.kind);
+      if (errors.length > 0) {
+        return res.status(400).json({ success: false, message: errors.join(' ') });
+      }
+      fb.answers = answers;
     }
     await fb.save();
     res.json({ success: true, data: fb });
@@ -130,18 +189,44 @@ exports.submitFeedback = async (req, res, next) => {
           : 'This feedback has expired and can no longer be submitted';
       return res.status(400).json({ success: false, message: reason });
     }
-    if (Array.isArray(req.body.answers)) {
-      const { sections } = await loadAskedSections(fb);
-      const askedIds = getAskedQuestionIds(sections);
-      const { allowed, rejectedIds } = partitionAnswersByAskedQuestions(req.body.answers, askedIds);
-      if (rejectedIds.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Answers were submitted for question id(s) not asked of this reviewer: ${rejectedIds.join(', ')}`,
-        });
-      }
-      fb.answers = allowed;
+    // Unlike saveDraft, submit ALWAYS resolves the template — a submission
+    // with no `answers` key at all is an empty form, and the required-question
+    // check below is what has to catch it. Reading req.body.answers as `[]`
+    // rather than skipping the block is the difference between rejecting that
+    // and silently accepting it.
+    const { sections } = await loadAskedSections(fb);
+    const askedIds = getAskedQuestionIds(sections);
+    const incoming = Array.isArray(req.body.answers) ? req.body.answers : [];
+    const { allowed, rejectedIds } = partitionAnswersByAskedQuestions(incoming, askedIds);
+    if (rejectedIds.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Answers were submitted for question id(s) not asked of this reviewer: ${rejectedIds.join(', ')}`,
+      });
     }
+
+    const { answers, errors } = normaliseAnswers(allowed, fb.kind);
+    if (errors.length > 0) {
+      return res.status(400).json({ success: false, message: errors.join(' ') });
+    }
+
+    // Enforced here rather than left to the client. `required` was previously
+    // advisory — the form greyed out its own submit button and the server
+    // accepted whatever arrived — so an empty submission from a stale tab or
+    // a direct API call landed as a complete assessment. It matters more now
+    // that peers have a legitimate way to abstain: "not observed" is only
+    // meaningfully different from skipping if skipping is actually refused.
+    const missing = findUnansweredRequired(answers, sections);
+    if (missing.length > 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'REQUIRED_QUESTIONS_UNANSWERED',
+        missing,
+        message: `Answer every required question before submitting: ${missing.join(', ')}.`,
+      });
+    }
+
+    fb.answers = answers;
     fb.status = 'submitted';
     fb.submittedAt = new Date();
     await fb.save();

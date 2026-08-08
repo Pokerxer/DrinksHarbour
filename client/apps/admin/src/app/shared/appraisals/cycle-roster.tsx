@@ -18,6 +18,7 @@ import {
   PiArrowClockwise,
   PiBellRinging,
   PiCaretDownBold,
+  PiCaretRight,
   PiWarningCircle,
 } from 'react-icons/pi';
 import {
@@ -29,6 +30,7 @@ import {
 } from '@/services/appraisal.service';
 import AppraisalStateBadge from './state-badge';
 import { personName } from './my-appraisals-utils';
+import CycleEmployeeDrawer from './cycle-employee-drawer';
 
 type Outstanding = RosterRow['outstanding'][number];
 
@@ -113,6 +115,14 @@ export default function CycleRoster({ cycleId }: { cycleId: string }) {
   );
   /** The channel awaiting confirmation, or null when no dialog is open. */
   const [confirmBulk, setConfirmBulk] = useState<'app' | 'email' | null>(null);
+  /**
+   * The row whose scores and responses are open in the drawer. Holds the name
+   * as well as the id so the drawer header can be right immediately rather
+   * than after its own fetch resolves.
+   */
+  const [openRow, setOpenRow] = useState<{ id: string; name: string } | null>(
+    null
+  );
   /** Set by "Stop" (and by unmounting) to end a run between sends. */
   const bulkAbortRef = useRef(false);
   const unmountedRef = useRef(false);
@@ -346,7 +356,10 @@ export default function CycleRoster({ cycleId }: { cycleId: string }) {
     if (throttled > 0) parts.push(`${throttled} already reminded recently`);
     if (emailFailures > 0) parts.push(`${emailFailures} email(s) failed`);
     if (failed > 0) parts.push(`${failed} failed`);
-    if (stopped) parts.push(`stopped — ${targets.length - sent - throttled - failed} not contacted`);
+    if (stopped)
+      parts.push(
+        `stopped — ${targets.length - sent - throttled - failed} not contacted`
+      );
     const summary = parts.join(' · ');
     if (failed > 0 || emailFailures > 0) toast.error(summary);
     else toast.success(summary);
@@ -356,10 +369,96 @@ export default function CycleRoster({ cycleId }: { cycleId: string }) {
     if (!unmountedRef.current) await load(page);
   }
 
+  /**
+   * Who is holding this row up, with the per-person Remind control.
+   *
+   * A plain render function, not a nested component: declaring a component
+   * inside the body remounts its whole subtree on every parent render, which
+   * would close the Dropdown the moment anything else on the page updated.
+   *
+   * `stopPropagation` on the wrapper is load-bearing. The row itself opens the
+   * drawer, and without this every "Remind" click would also open the drawer
+   * behind the menu.
+   */
+  function renderOutstanding(row: RosterRow) {
+    const nudged = nudgedAgo(row.lastNudge?.sentAt);
+    if (row.outstanding.length === 0) {
+      return <span className="text-sm text-gray-300">—</span>;
+    }
+    return (
+      <div
+        className="flex flex-col gap-2"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        role="presentation"
+      >
+        {row.outstanding.map((item) => {
+          const key = `${row._id}:${item.target._id}:${item.reason}`;
+          const busy = sending === key;
+          return (
+            <div
+              key={key}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1"
+            >
+              <span className="text-sm text-gray-700">
+                {personName(item.target)}
+                <span className="ms-1.5 text-xs text-gray-400">
+                  {REASON_LABEL[item.reason]}
+                </span>
+              </span>
+              <Dropdown placement="bottom-end">
+                {/* Locked during a bulk run: this row is already in that
+                    queue, and a manual send here would chase the same person
+                    twice within seconds. */}
+                <Dropdown.Trigger disabled={busy || bulk !== null}>
+                  {/* Dropdown.Trigger already renders a <button>, so this is a
+                      <span> — a nested button throws a hydration error. */}
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50">
+                    <PiBellRinging className="h-3.5 w-3.5" />
+                    {busy ? 'Sending…' : 'Remind'}
+                    <PiCaretDownBold className="h-2.5 w-2.5 text-gray-400" />
+                  </span>
+                </Dropdown.Trigger>
+                <Dropdown.Menu className="w-56">
+                  <Dropdown.Item
+                    onClick={() => void runNudge(row, item, 'app')}
+                  >
+                    Remind in app
+                  </Dropdown.Item>
+                  <Dropdown.Item
+                    onClick={() => void runNudge(row, item, 'email')}
+                  >
+                    Remind in app + email
+                  </Dropdown.Item>
+                </Dropdown.Menu>
+              </Dropdown>
+            </div>
+          );
+        })}
+        {/* `lastNudge` is the latest reminder on the APPRAISAL, not on any one
+            target — the roster keeps only the newest row per appraisal. So it
+            renders once, naming what was chased, rather than being repeated
+            beside every control as if each person had been reminded. */}
+        {nudged && row.lastNudge && (
+          <span className="text-xs text-gray-400">
+            Last reminder: {REASON_LABEL[row.lastNudge.reason]} ·{' '}
+            {row.lastNudge.channel === 'email' ? 'app + email' : 'app'} ·{' '}
+            {nudged}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  /** Opens the scores-and-responses drawer for one employee. */
+  function openDrawer(row: RosterRow) {
+    setOpenRow({ id: row._id, name: personName(row.employee) });
+  }
+
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="rounded-xl border border-gray-100 bg-white p-5">
+    <div className="rounded-xl border border-gray-100 bg-white p-4 sm:p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="text-sm font-semibold text-gray-900">Roster</p>
         {total > 0 && (
@@ -412,7 +511,7 @@ export default function CycleRoster({ cycleId }: { cycleId: string }) {
 
           {bulk ? (
             <div className="ms-auto flex items-center gap-2">
-              <span className="text-xs font-semibold text-gray-500 tabular-nums">
+              <span className="text-xs font-semibold tabular-nums text-gray-500">
                 Reminding {bulk.done}/{bulk.total}…
               </span>
               <Button
@@ -472,47 +571,154 @@ export default function CycleRoster({ cycleId }: { cycleId: string }) {
           </Button>
         </div>
       ) : (
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
-            <thead>
-              <tr className="border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                <th className="py-2 pr-3">Employee</th>
-                <th className="py-2 pr-3">Manager</th>
-                <th className="py-2 pr-3">State</th>
-                <th className="py-2 pr-3 text-center">Self</th>
-                <th className="py-2 pr-3 text-center">Manager</th>
-                <th className="py-2 pr-3 text-center">Peers</th>
-                <th className="py-2 pr-3">Outstanding</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                [0, 1, 2].map((i) => (
-                  <tr key={i} className="animate-pulse">
-                    {Array.from({ length: 7 }).map((_, j) => (
-                      <td key={j} className="py-3 pr-3">
-                        <div className="h-4 rounded bg-gray-100" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : visibleRows.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-10">
-                    <p className="text-center text-sm text-gray-400">
-                      {reasonFilter
-                        ? 'No rows on this page are waiting on that.'
-                        : 'No appraisals have been launched for this cycle yet.'}
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                visibleRows.map((row) => {
-                  const nudged = nudgedAgo(row.lastNudge?.sentAt);
-                  return (
-                    <tr key={row._id}>
-                      <td className="py-2.5 pr-3 text-sm font-medium text-gray-900">
+        <>
+          {/* ── Phone / tablet: one card per appraisal ────────────────────
+              The table below is 7 columns and never fitted a phone; it lived
+              behind a horizontal scroller, which hides the Outstanding column
+              — the only actionable one — off the right edge by default. A card
+              stack puts the same fields in reading order instead. */}
+          <div className="mt-3 flex flex-col gap-2.5 lg:hidden">
+            {loading ? (
+              [0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-28 animate-pulse rounded-xl border border-gray-100 bg-gray-50"
+                />
+              ))
+            ) : visibleRows.length === 0 ? (
+              <p className="py-10 text-center text-sm text-gray-400">
+                {reasonFilter
+                  ? 'No rows on this page are waiting on that.'
+                  : 'No appraisals have been launched for this cycle yet.'}
+              </p>
+            ) : (
+              visibleRows.map((row) => (
+                // Not role="button": the card contains the Remind dropdown,
+                // and nesting interactive controls inside a button flattens
+                // both for a screen reader. The name below is a real button —
+                // that is the keyboard and AT path — and the card click is a
+                // pointer convenience layered on top, exactly as in the table.
+                <div
+                  key={row._id}
+                  onClick={() => openDrawer(row)}
+                  role="presentation"
+                  className="cursor-pointer rounded-xl border border-gray-100 bg-white p-3.5 text-left transition-colors hover:border-gray-200 hover:bg-gray-50/60"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openDrawer(row);
+                        }}
+                        className="max-w-full truncate rounded text-left text-sm font-semibold text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#b20202]/30"
+                      >
                         {personName(row.employee)}
+                      </button>
+                      <p className="mt-0.5 truncate text-xs text-gray-400">
+                        Manager: {personName(row.manager)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <AppraisalStateBadge state={row.state} />
+                      <PiCaretRight className="h-3.5 w-3.5 text-gray-300" />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-gray-400">Self</span>
+                      <SubmittedMark entry={row.self} />
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-gray-400">Manager</span>
+                      <SubmittedMark entry={row.mgr} />
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-gray-400">Peers</span>
+                      <span className="font-medium text-gray-600">
+                        {row.peers.submitted}/{row.peers.approved}
+                      </span>
+                      {row.peers.declined > 0 && (
+                        <span className="text-gray-400">
+                          ({row.peers.declined} declined)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  {row.outstanding.length > 0 && (
+                    <div className="mt-3 border-t border-gray-50 pt-3">
+                      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                        Waiting on
+                      </p>
+                      {renderOutstanding(row)}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* ── Desktop: the full table ─────────────────────────────────── */}
+          <div className="mt-3 hidden overflow-x-auto lg:block">
+            <table className="w-full min-w-[820px] text-left">
+              <thead>
+                <tr className="border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                  <th className="py-2 pr-3">Employee</th>
+                  <th className="py-2 pr-3">Manager</th>
+                  <th className="py-2 pr-3">State</th>
+                  <th className="py-2 pr-3 text-center">Self</th>
+                  <th className="py-2 pr-3 text-center">Manager</th>
+                  <th className="py-2 pr-3 text-center">Peers</th>
+                  <th className="py-2 pr-3">Outstanding</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loading ? (
+                  [0, 1, 2].map((i) => (
+                    <tr key={i} className="animate-pulse">
+                      {Array.from({ length: 7 }).map((_, j) => (
+                        <td key={j} className="py-3 pr-3">
+                          <div className="h-4 rounded bg-gray-100" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : visibleRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-10">
+                      <p className="text-center text-sm text-gray-400">
+                        {reasonFilter
+                          ? 'No rows on this page are waiting on that.'
+                          : 'No appraisals have been launched for this cycle yet.'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  visibleRows.map((row) => (
+                    <tr
+                      key={row._id}
+                      onClick={() => openDrawer(row)}
+                      className="cursor-pointer transition-colors hover:bg-gray-50/70"
+                    >
+                      <td className="py-2.5 pr-3">
+                        {/* A real button, not just the row handler: this is the
+                            keyboard and screen-reader path to the drawer. The
+                            row click is a convenience on top of it, not the
+                            only way in. */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDrawer(row);
+                          }}
+                          className="group inline-flex items-center gap-1.5 rounded text-left text-sm font-medium text-gray-900 hover:text-[#b20202] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#b20202]/30"
+                        >
+                          {personName(row.employee)}
+                          <PiCaretRight className="h-3 w-3 text-gray-300 transition-colors group-hover:text-[#b20202]" />
+                        </button>
                       </td>
                       <td className="py-2.5 pr-3 text-sm text-gray-600">
                         {personName(row.manager)}
@@ -534,89 +740,14 @@ export default function CycleRoster({ cycleId }: { cycleId: string }) {
                           </span>
                         )}
                       </td>
-                      <td className="py-2.5 pr-3">
-                        {row.outstanding.length === 0 ? (
-                          <span className="text-sm text-gray-300">—</span>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            {row.outstanding.map((item) => {
-                              const key = `${row._id}:${item.target._id}:${item.reason}`;
-                              const busy = sending === key;
-                              return (
-                                <div
-                                  key={key}
-                                  className="flex flex-wrap items-center gap-x-3 gap-y-1"
-                                >
-                                  <span className="text-sm text-gray-700">
-                                    {personName(item.target)}
-                                    <span className="ms-1.5 text-xs text-gray-400">
-                                      {REASON_LABEL[item.reason]}
-                                    </span>
-                                  </span>
-                                  <Dropdown placement="bottom-end">
-                                    {/* Locked during a bulk run: this row is
-                                        already in that queue, and a manual
-                                        send here would chase the same person
-                                        twice within seconds. */}
-                                    <Dropdown.Trigger
-                                      disabled={busy || bulk !== null}
-                                    >
-                                      {/* Dropdown.Trigger already renders a
-                                          <button>, so this is a <span> — a
-                                          nested button throws a hydration
-                                          error. */}
-                                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50">
-                                        <PiBellRinging className="h-3.5 w-3.5" />
-                                        {busy ? 'Sending…' : 'Remind'}
-                                        <PiCaretDownBold className="h-2.5 w-2.5 text-gray-400" />
-                                      </span>
-                                    </Dropdown.Trigger>
-                                    <Dropdown.Menu className="w-56">
-                                      <Dropdown.Item
-                                        onClick={() =>
-                                          void runNudge(row, item, 'app')
-                                        }
-                                      >
-                                        Remind in app
-                                      </Dropdown.Item>
-                                      <Dropdown.Item
-                                        onClick={() =>
-                                          void runNudge(row, item, 'email')
-                                        }
-                                      >
-                                        Remind in app + email
-                                      </Dropdown.Item>
-                                    </Dropdown.Menu>
-                                  </Dropdown>
-                                </div>
-                              );
-                            })}
-                            {/* `lastNudge` is the latest reminder on the
-                                APPRAISAL, not on any one target — the roster
-                                keeps only the newest row per appraisal. So it
-                                renders once, naming what was chased, rather
-                                than being repeated beside every control as if
-                                each person had been reminded. */}
-                            {nudged && row.lastNudge && (
-                              <span className="text-xs text-gray-400">
-                                Last reminder:{' '}
-                                {REASON_LABEL[row.lastNudge.reason]} ·{' '}
-                                {row.lastNudge.channel === 'email'
-                                  ? 'app + email'
-                                  : 'app'}{' '}
-                                · {nudged}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
+                      <td className="py-2.5 pr-3">{renderOutstanding(row)}</td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {!error && lastPage > 1 && (
@@ -683,6 +814,14 @@ export default function CycleRoster({ cycleId }: { cycleId: string }) {
           </div>
         </div>
       </Modal>
+
+      {/* One drawer for the whole table rather than one per row: fifty mounted
+          drawers is fifty subtrees, and only one can ever be open. */}
+      <CycleEmployeeDrawer
+        appraisalId={openRow?.id ?? null}
+        employeeLabel={openRow?.name ?? ''}
+        onClose={() => setOpenRow(null)}
+      />
     </div>
   );
 }

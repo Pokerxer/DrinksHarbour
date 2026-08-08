@@ -37,6 +37,17 @@ const appraisalSchema = new Schema(
     // — Mongoose cannot express uniqueness inside a subdocument array.
     peerNominations: [peerNominationSchema],
     summary: { type: String, trim: true, maxlength: 10000 },
+    // What the employee and manager agreed to do next. At least one is
+    // required to release (see releaseAppraisal) — an appraisal that ends in a
+    // rating and nothing else changes nothing. The next cycle's self and
+    // manager forms open with these, which is the loop that makes them matter.
+    //
+    // Stored on the appraisal rather than in their own collection: they are
+    // written once at release, read as a block, and belong to exactly one
+    // appraisal. `_id: false` because nothing addresses a single one.
+    commitments: [
+      new Schema({ text: { type: String, required: true, trim: true, maxlength: 500 } }, { _id: false }),
+    ],
     finalRating: { type: Number, min: 0, max: 10 },
     releasedAt: { type: Date },
     releasedBy: { type: Schema.Types.ObjectId, ref: 'User' },

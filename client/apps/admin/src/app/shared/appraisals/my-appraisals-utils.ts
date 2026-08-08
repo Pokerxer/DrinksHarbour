@@ -38,9 +38,26 @@ export function isOverdue(value?: string | null, now = Date.now()): boolean {
 
 export type DeadlineTone = 'overdue' | 'soon' | 'normal' | 'none';
 
+/** The one "soon" window in the appraisals module, in days.
+ *
+ *  SEVEN, not three. There were briefly two deadlineTone functions — this one
+ *  at 3 days and a copy in cycle-detail-utils.ts at 7 — so the same date
+ *  rendered amber on the cycle detail page and grey on the team list. Seven
+ *  won because of what the amber is FOR: every action these deadlines gate
+ *  (write a summary, chase four peer reviewers, collect a self-assessment)
+ *  needs more than a long weekend, and a warning that arrives with three days
+ *  left arrives too late to change the outcome. A week is also the cadence HR
+ *  actually works this module on. The cost is a slightly wider amber band,
+ *  which is the cheap direction to be wrong in.
+ */
+const SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * Classify a deadline for display. 'overdue' is past; 'soon' is within the
- * next 3 days; 'normal' is further out; 'none' is missing/unparseable.
+ * next 7 days (inclusive of the boundary); 'normal' is further out; 'none' is
+ * missing/unparseable — never 'overdue', because a red badge driven by a parse
+ * failure is HR chasing people who owe nothing.
+ *
  * `now` is injectable so tests can pin the clock.
  */
 export function deadlineTone(
@@ -51,7 +68,7 @@ export function deadlineTone(
   const t = new Date(value).getTime();
   if (Number.isNaN(t)) return 'none';
   if (t < now) return 'overdue';
-  if (t - now < 3 * 24 * 60 * 60 * 1000) return 'soon';
+  if (t - now <= SOON_WINDOW_MS) return 'soon';
   return 'normal';
 }
 

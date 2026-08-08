@@ -143,7 +143,7 @@ export default function CycleReport({ cycleId }: { cycleId: string }) {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-gray-100 bg-white p-5">
+      <div className="rounded-xl border border-gray-100 bg-white p-4 sm:p-5">
         <div className="h-4 w-32 animate-pulse rounded bg-gray-100" />
         <div className="mt-4 h-24 animate-pulse rounded-lg bg-gray-50" />
       </div>
@@ -152,7 +152,7 @@ export default function CycleReport({ cycleId }: { cycleId: string }) {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-gray-100 bg-white p-5">
+      <div className="rounded-xl border border-gray-100 bg-white p-4 sm:p-5">
         <p className="text-sm font-semibold text-gray-900">Results</p>
         <p className="mt-2 flex items-center gap-1.5 text-sm text-gray-500">
           <PiWarningCircle className="h-4 w-4 shrink-0 text-gray-400" />
@@ -166,7 +166,7 @@ export default function CycleReport({ cycleId }: { cycleId: string }) {
     // An explicit empty state, not two blank panels — a blank panel reads as
     // broken rather than as "there is nothing to show yet".
     return (
-      <div className="rounded-xl border border-gray-100 bg-white p-5">
+      <div className="rounded-xl border border-gray-100 bg-white p-4 sm:p-5">
         <p className="text-sm font-semibold text-gray-900">Results</p>
         <p className="mt-2 text-sm text-gray-400">
           No appraisals have been released yet. Results appear here once
@@ -187,7 +187,7 @@ export default function CycleReport({ cycleId }: { cycleId: string }) {
   );
 
   return (
-    <div className="rounded-xl border border-gray-100 bg-white p-5">
+    <div className="rounded-xl border border-gray-100 bg-white p-4 sm:p-5">
       <p className="text-sm font-semibold text-gray-900">Results</p>
       <p className="mt-1 text-xs text-gray-400">
         {data.releasedCount} released, {scored} scored

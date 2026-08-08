@@ -288,7 +288,14 @@ test('the full 360 loop never leaks a reviewer identity to the subject', async (
     assert.strictEqual(appraisal.state, 'summarising');
 
     res = capture();
-    await appraisals.releaseAppraisal(asUser(managerUser, { params: { id: String(appraisalId) }, body: {} }), res, fail);
+    // Releasing requires at least one agreed action for the next period.
+    await appraisals.releaseAppraisal(
+      asUser(managerUser, {
+        params: { id: String(appraisalId) },
+        body: { commitments: [{ text: 'Lead two tastings next quarter' }] },
+      }),
+      res, fail
+    );
     assert.strictEqual(res.status, 200, `release must succeed on 2 submitted peer responses without confirmation: ${JSON.stringify(res.body)}`);
     assert.strictEqual(res.body.data.state, 'released');
     assert.strictEqual(appraisal.state, 'released');
@@ -298,11 +305,31 @@ test('the full 360 loop never leaks a reviewer identity to the subject', async (
     await appraisals.getAppraisal(asUser(subjectUser, { params: { id: String(appraisalId) } }), res, fail);
     assert.strictEqual(res.status, 200, 'the subject can now read their released appraisal');
     assertNoIdentityLeak(res.body.data, 'subject GET /:id (released)', reviewerIdentityIds);
+    // Peer rows no longer reach the subject at all — anonymising the card was
+    // never enough, because the prose on it identifies its author. Peer input
+    // reaches the employee only through the manager's summary.
     const peerRowsSeenBySubject = res.body.data.feedback.filter((fb) => fb.kind === 'peer');
-    assert.strictEqual(peerRowsSeenBySubject.length, 2, 'both submitted peer rows (A and D) must actually flow through the projection — otherwise the leak assertion above is vacuous');
-    for (const fb of peerRowsSeenBySubject) assert.strictEqual(fb.reviewer, undefined);
+    assert.strictEqual(peerRowsSeenBySubject.length, 0, 'the subject must receive NO peer feedback rows');
+    // The subject's comparison must lose its peer column by the same route,
+    // rather than reporting a peer mean derived from rows they cannot read.
+    for (const row of res.body.data.comparison || []) {
+      assert.strictEqual(row.peer.n, 0, `${row.label}: no peer answer may reach the subject's comparison`);
+      assert.strictEqual(row.peer.mean, null, `${row.label}: no peer mean for the subject`);
+    }
+    // Still told what the summary rests on, which is the part they need.
     assert.strictEqual(res.body.data.approvedPeerCount, 3, 'A, B, D approved; C rejected');
     assert.strictEqual(res.body.data.peerResponseCount, 2, 'A and D submitted; B declined');
+
+    // The rows do exist and DO reach the manager — otherwise the assertions
+    // above would hold vacuously against an appraisal with no peer input.
+    res = capture();
+    await appraisals.getAppraisal(asUser(managerUser, { params: { id: String(appraisalId) } }), res, fail);
+    assert.strictEqual(res.status, 200);
+    const peerRowsSeenByManager = res.body.data.feedback.filter((fb) => fb.kind === 'peer');
+    assert.strictEqual(peerRowsSeenByManager.length, 2, 'the manager reads both submitted peer rows in full');
+    for (const fb of peerRowsSeenByManager) {
+      assert.ok(fb.reviewer, 'the manager sees peer reviewers by name — they write the summary');
+    }
 
     // 12. subject GET /my → assertNoIdentityLeak on every row
     res = capture();
@@ -471,7 +498,13 @@ test('a declined peer row reaches manager/HR at collecting with no answers, does
   for (const section of template.sections) {
     for (const q of section.questions) q._id = oid();
   }
-  const draftedQuestionId = template.sections[1].questions[0]._id;
+  // Derived from askOf rather than indexed positionally: the peer prompts live
+  // in their own section now, and a hardcoded [1].questions[0] silently became
+  // a self/manager-only question — which saveDraft correctly refuses, failing
+  // this test for a reason that has nothing to do with the leak it guards.
+  const draftedQuestionId = template.sections
+    .flatMap((s) => s.questions)
+    .find((q) => (q.askOf || []).includes('peer'))._id;
   const cycle = {
     tenant: tenantId,
     name: 'Declined Draft Cycle',

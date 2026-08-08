@@ -8,6 +8,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useModalSearchContext, useModalSearchUIContext } from '@/context/ModalSearchContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { ProductType } from '@/types/product.types';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { API_URL } from '@/lib/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,6 +106,23 @@ function getPrice(product: Product) {
   const pr = product.priceRange;
   if (pr) return { price: pr.min ?? 0, original: pr.max !== pr.min ? pr.max : undefined };
   return { price: 0, original: undefined };
+}
+
+/**
+ * The line spoken for a product row: name, maker, tasting notes, price.
+ * Fish Audio TTS (server-proxied, cached) reads this aloud.
+ */
+function buildSpokenText(product: Product): string {
+  const maker = product.producer || product.wineryName || product.distilleryName || product.breweryName || product.brand?.name;
+  const notes = flattenNotes(product).slice(0, 110) || product.shortDescription?.slice(0, 110);
+  const { price } = getPrice(product);
+  const parts = [
+    product.name,
+    maker && `by ${maker}`,
+    notes,
+    price > 0 && `at ${price.toLocaleString('en-NG')} Naira`,
+  ].filter(Boolean);
+  return parts.join('. ').slice(0, 280);
 }
 
 function timeAgo(ts: number) {
@@ -303,6 +322,12 @@ const ModalSearch: React.FC = () => {
   const [selectedIdx,   setSelectedIdx]   = useState(-1);
   const [isListening,   setIsListening]   = useState(false);
   const [expandedId,    setExpandedId]    = useState<string | null>(null);
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
+
+  // Single shared player + session cache so playback never overlaps.
+  const audioRef          = useRef<HTMLAudioElement | null>(null);
+  const audioUrlCacheRef  = useRef<Map<string, string>>(new Map());
 
   const { openQuickview } = useModalQuickviewContext() || {};
 
@@ -335,6 +360,15 @@ const ModalSearch: React.FC = () => {
       setTimeout(() => inputRef.current?.focus(), 80);
       setSelectedIdx(-1);
       setExpandedId(null);
+    }
+  }, [isModalOpen]);
+
+  // ── Stop any audio playback when the modal closes ─────────────────────────
+  useEffect(() => {
+    if (!isModalOpen) {
+      audioRef.current?.pause();
+      audioRef.current = null;
+      setPlayingAudioId(null);
     }
   }, [isModalOpen]);
 
@@ -389,6 +423,63 @@ const ModalSearch: React.FC = () => {
     };
     rec.start();
   }, [setSearchQuery, performSearch]);
+
+  // ── Read-aloud of a result row (Fish Audio TTS, server-proxied) ───────────
+
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setPlayingAudioId(null);
+  }, []);
+
+  const playAudioUrl = useCallback((url: string, id: string) => {
+    stopAudio();
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    audio.onended = () => { setPlayingAudioId(null); audioRef.current = null; };
+    audio.onerror = () => { setPlayingAudioId(null); audioRef.current = null; };
+    audio.play()
+      .then(() => setPlayingAudioId(id))
+      .catch(() => { setPlayingAudioId(null); audioRef.current = null; });
+  }, [stopAudio]);
+
+  const handleTts = useCallback(async (product: Product, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const id = (product as any).id ?? product._id ?? '';
+    if (!id) return;
+
+    // Toggle off if this product is already playing
+    if (playingAudioId === id) { stopAudio(); return; }
+
+    const cachedUrl = audioUrlCacheRef.current.get(id);
+    if (cachedUrl) { playAudioUrl(cachedUrl, id); return; }
+
+    setLoadingAudioId(id);
+    try {
+      const text = buildSpokenText(product);
+      const res = await fetchWithAuth(`${API_URL}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+        skipAuthRefresh: true,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        console.warn('TTS unavailable:', data?.message ?? res.status);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      audioUrlCacheRef.current.set(id, url);
+      playAudioUrl(url, id);
+    } catch (err) {
+      console.warn('TTS error:', err);
+    } finally {
+      setLoadingAudioId(null);
+    }
+  }, [playingAudioId, stopAudio, playAudioUrl]);
 
   const goAndClose = (href: string) => { router.push(href); closeModalSearch(); };
 
@@ -637,6 +728,33 @@ const ModalSearch: React.FC = () => {
                                 {stock} left
                               </span>
                             )}
+
+                            {/* Listen — AI voice by Fish Audio */}
+                            <button
+                              onClick={(e) => handleTts(product, e)}
+                              disabled={loadingAudioId === id}
+                              title={playingAudioId === id ? 'Stop playback' : 'Listen — AI voice by Fish Audio'}
+                              aria-label={
+                                playingAudioId === id
+                                  ? `Stop audio for ${product.name}`
+                                  : `Listen to ${product.name} — AI voice by Fish Audio`
+                              }
+                              className={`ml-auto flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                loadingAudioId === id
+                                  ? 'bg-gray-100 text-gray-400 cursor-wait'
+                                  : playingAudioId === id
+                                    ? 'bg-[#b20202]/10 text-[#b20202] ring-2 ring-[#b20202]/25'
+                                    : 'bg-gray-100 text-gray-400 hover:bg-[#b20202]/8 hover:text-[#b20202]'
+                              }`}
+                            >
+                              {loadingAudioId === id ? (
+                                <div className="w-4 h-4 rounded-full border-[2px] border-gray-200 border-t-[#b20202] animate-spin" />
+                              ) : playingAudioId === id ? (
+                                <Icon.PiStopFill size={14} />
+                              ) : (
+                                <Icon.PiSpeakerHigh size={14} />
+                              )}
+                            </button>
                           </div>
 
                           {/* Expanded quick-add */}
@@ -829,9 +947,14 @@ const ModalSearch: React.FC = () => {
               <span><kbd className="px-1.5 py-0.5 bg-gray-200 rounded font-mono">↑↓</kbd> navigate</span>
               <span><kbd className="px-1.5 py-0.5 bg-gray-200 rounded font-mono">↵</kbd> open</span>
             </div>
-            <div className="flex items-center gap-1 text-[11px] text-gray-400">
+            <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
               <span className="hidden md:inline">Powered by</span>
               <span className="font-bold text-[#b20202]">DrinksHarbour</span>
+              <span className="text-gray-300 hidden sm:inline">·</span>
+              <span className="hidden sm:flex items-center gap-1" title="Product audio generated with Fish Audio TTS">
+                <Icon.PiSpeakerHigh size={10} />
+                Audio by <span className="font-semibold text-gray-500">Fish Audio</span>
+              </span>
             </div>
           </div>
         </motion.div>

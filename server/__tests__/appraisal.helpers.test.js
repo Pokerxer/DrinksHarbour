@@ -285,17 +285,28 @@ test('planCycleLaunch refuses to make an employee their own manager', () => {
 
 // ── default template ────────────────────────────────────────────────────────
 
-test('buildDefaultTemplate asks every question of both self and manager', () => {
+test('buildDefaultTemplate asks every SCORED question of both self and manager', () => {
   const tpl = buildDefaultTemplate(TENANT, 'u-hr');
   assert.strictEqual(tpl.tenant, TENANT);
   const questions = tpl.sections.flatMap((s) => s.questions);
   assert.ok(questions.length > 0);
-  for (const q of questions) {
+
+  // Narrowed from "every question" deliberately. Peers are no longer asked the
+  // self/manager questions at all — they get their own evidence-shaped prompts
+  // — so the blanket rule is gone. What must still hold is the one the
+  // comparison depends on: a scored question is answered by BOTH self and
+  // manager, or buildComparison joins them into a half-empty row.
+  // The peer side of the contract is pinned in appraisalTemplateDefault.test.js.
+  for (const q of questions.filter((x) => x.type === 'rating')) {
     assert.ok(q.askOf.includes('self'), `${q.label} must be asked of self`);
     assert.ok(q.askOf.includes('manager'), `${q.label} must be asked of manager`);
   }
   assert.ok(questions.some((q) => q.type === 'rating'));
   assert.ok(questions.some((q) => q.type === 'text'));
+  assert.ok(
+    questions.some((q) => q.askOf.includes('peer')),
+    'peers must still be asked something'
+  );
 });
 
 // ── asked-question filtering + answer validation ────────────────────────────

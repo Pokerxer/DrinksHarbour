@@ -58,6 +58,7 @@ const walletRoutes           = require('./routes/wallet.routes');
 const giftCardRoutes         = require('./routes/giftcard.routes');
 const giftCardClaimRoutes    = require('./routes/giftCardClaim.routes');
 const loyaltyRoutes          = require('./routes/loyalty.routes');
+const ttsRoutes              = require('./routes/tts.routes');
 
 const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Vercel edge)
@@ -256,6 +257,7 @@ app.use('/api/wallet',             walletRoutes);
 app.use('/api/gift-cards/claim',   giftCardClaimRoutes);
 app.use('/api/gift-cards',         giftCardRoutes);
 app.use('/api/loyalty',            loyaltyRoutes);
+app.use('/api/tts',                ttsRoutes);
 
 // ────────────────────────────────────────────────
  // Health Check Endpoint

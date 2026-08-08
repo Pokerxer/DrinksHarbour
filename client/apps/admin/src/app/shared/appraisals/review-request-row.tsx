@@ -22,7 +22,11 @@ import {
 
 const KIND_META: Record<
   FeedbackKind,
-  { label: string; icon: ComponentType<{ className?: string }>; avatarBg: string }
+  {
+    label: string;
+    icon: ComponentType<{ className?: string }>;
+    avatarBg: string;
+  }
 > = {
   self: {
     label: 'Self assessment',
@@ -127,7 +131,8 @@ export default function ReviewRequestRow({
       {submitted ? (
         <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-[11px] font-semibold text-green-700">
           <PiCheckCircle className="h-3.5 w-3.5" />
-          Submitted{review.submittedAt ? ` · ${formatDueLabel(review.submittedAt)}` : ''}
+          Submitted
+          {review.submittedAt ? ` · ${formatDueLabel(review.submittedAt)}` : ''}
         </span>
       ) : closed ? (
         <div className="flex items-center gap-3">

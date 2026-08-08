@@ -14,7 +14,9 @@ import {
 import {
   PiCheckCircle,
   PiChatCircleText,
+  PiFlagBannerFold,
   PiStar,
+  PiTrash,
   PiUserCircle,
   PiUsersThree,
   PiWarningCircle,
@@ -27,14 +29,19 @@ import {
   saveSummary,
   type Appraisal,
   type AppraisalAccess,
-  type AppraisalAnswer,
   type AppraisalFeedback,
-  type AppraisalQuestion,
   type AppraisalSection,
   type ComparisonRow,
   type PersonRef,
 } from '@/services/appraisal.service';
-import { formatAnswer, isNumericQuestion } from './review-answer-utils';
+import {
+  QUESTION_GONE_LABEL,
+  ReviewerCard,
+  SideBySideComparison,
+  buildQuestionIndex,
+  personName,
+} from './appraisal-answer-views';
+import { askedQuestionIds } from './cycle-detail-utils';
 import { useUnsavedChangesGuard } from './use-unsaved-changes-guard';
 import AppraisalStateBadge from './state-badge';
 import AppraisalPeerApproval from './appraisal-peer-approval';
@@ -44,11 +51,16 @@ import AppraisalComparison from './appraisal-comparison';
 // view imports this file rather than by a conditional inside it.
 import AppraisalPeerBreakdown from './appraisal-peer-breakdown';
 
-const QUESTION_GONE_LABEL = 'Question no longer on this form';
-
 /** Inclusive bounds of the final rating, matching the input's min/max. */
 const RATING_MIN = 0;
 const RATING_MAX = 10;
+
+/**
+ * Mirrors MAX_COMMITMENTS in server/services/appraisal.helpers.js. Kept as a
+ * literal rather than imported — this bundle does not import from the server —
+ * so the two must be changed together; the server is the one that enforces it.
+ */
+const MAX_COMMITMENTS = 8;
 
 /**
  * Validate the final-rating box.
@@ -78,172 +90,27 @@ export function parseFinalRating(
 }
 
 /** Fingerprint of the editable summary fields, for the unsaved-work guard. */
-function savedSignatureOf(summary: string, finalRating: string): string {
-  return JSON.stringify([summary, finalRating.trim()]);
+function savedSignatureOf(
+  summary: string,
+  finalRating: string,
+  commitments: string[]
+): string {
+  // Blank rows are excluded so an empty "add another" line the manager never
+  // typed into does not read as unsaved work and block release behind a save
+  // that would change nothing.
+  return JSON.stringify([
+    summary,
+    finalRating.trim(),
+    commitments.map((c) => c.trim()).filter(Boolean),
+  ]);
 }
 
-function personName(person?: PersonRef | null): string {
-  if (!person) return 'Unknown';
-  const name = `${person.firstName ?? ''} ${person.lastName ?? ''}`.trim();
-  return name || person.email || 'Unknown';
-}
-
-/**
- * `GET /api/appraisals/:id` now returns the full template `sections` behind
- * the appraisal's cycle (every `askOf` kind, unfiltered — a manager
- * legitimately reads self/manager/peer answers side by side) alongside the
- * feedback rows, so each `answers[].questionId` can be resolved to its real
- * label instead of a numbered placeholder. A template can be edited after
- * feedback was submitted against it, so a `questionId` on a feedback row may
- * not exist in the current sections — that answer falls back to
- * QUESTION_GONE_LABEL rather than a blank or numbered guess.
- *
- * Indexed by the whole QUESTION, not just its label: an answer cannot be
- * rendered without knowing its question's type. `selected: ['A','B']` and
- * `rating: 0` are both invisible to a rating-or-text reader — the first falls
- * through to an em dash, the second reads as "Rating: 0" where the reviewer
- * clicked "No".
- */
-function buildQuestionIndex(
-  sections: AppraisalSection[]
-): Map<string, AppraisalQuestion> {
-  const index = new Map<string, AppraisalQuestion>();
-  sections.forEach((s) => s.questions.forEach((q) => index.set(q._id, q)));
-  return index;
-}
-
-function AnswerValue({
-  question,
-  answer,
-}: {
-  question: AppraisalQuestion | undefined;
-  answer: AppraisalAnswer | undefined;
-}) {
-  if (!answer) return <p className="text-sm text-gray-300">Not answered</p>;
-
-  // The question survives in the current template: render it by its real type.
-  if (question) {
-    const display = formatAnswer(question, answer);
-    if (display === null) {
-      return <p className="text-sm text-gray-300">Not answered</p>;
-    }
-    return isNumericQuestion(question) ? (
-      <p className="text-sm font-medium text-gray-900">{display}</p>
-    ) : (
-      <p className="whitespace-pre-wrap text-sm text-gray-700">{display}</p>
-    );
-  }
-
-  // The question was edited out of the template after this answer was
-  // submitted (see QUESTION_GONE_LABEL). Its type is unknowable, so fall back
-  // to whichever field carries data — including `selected`, which the old
-  // rating-or-text fallback silently rendered as an em dash.
-  if (answer.selected?.length) {
-    return (
-      <p className="text-sm text-gray-700">{answer.selected.join(', ')}</p>
-    );
-  }
-  if (typeof answer.rating === 'number') {
-    return (
-      <p className="text-sm font-medium text-gray-900">
-        Rating: {answer.rating}
-      </p>
-    );
-  }
-  return (
-    <p className="whitespace-pre-wrap text-sm text-gray-700">
-      {answer.text || '—'}
-    </p>
-  );
-}
-
-// Self and manager answers to the same questionId are placed in one row so
-// the comparison the shared id exists to enable (see AppraisalQuestion.askOf
-// in the template model) is actually visible, rather than two lists a reader
-// has to cross-reference by hand.
-function SideBySideComparison({
-  questionIds,
-  questions,
-  self,
-  manager,
-}: {
-  questionIds: string[];
-  questions: Map<string, AppraisalQuestion>;
-  self: AppraisalFeedback | undefined;
-  manager: AppraisalFeedback | undefined;
-}) {
-  if (questionIds.length === 0) return null;
-  return (
-    <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
-      <div className="grid grid-cols-2 border-b border-gray-100 bg-gray-50/80 text-xs font-semibold uppercase tracking-wide text-gray-500">
-        <p className="px-4 py-2.5">Self-assessment</p>
-        <p className="border-l border-gray-100 px-4 py-2.5">Manager</p>
-      </div>
-      <div className="divide-y divide-gray-50">
-        {questionIds.map((id) => {
-          const selfAnswer = self?.answers.find((a) => a.questionId === id);
-          const managerAnswer = manager?.answers.find(
-            (a) => a.questionId === id
-          );
-          return (
-            <div key={id} className="grid grid-cols-2">
-              <div className="px-4 py-3">
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                  {questions.get(id)?.label ?? QUESTION_GONE_LABEL}
-                </p>
-                <AnswerValue question={questions.get(id)} answer={selfAnswer} />
-              </div>
-              <div className="border-l border-gray-100 px-4 py-3">
-                <AnswerValue
-                  question={questions.get(id)}
-                  answer={managerAnswer}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// A reviewer-attributed feedback row for anyone other than self/manager
-// (peer, in Phase 2). This relation has canSeeReviewerNames: true, so
-// reading `feedback.reviewer` here is exactly what the access grant is for —
-// unlike appraisal-subject-view.tsx, which must never do this.
-function ReviewerCard({
-  feedback,
-  questions,
-}: {
-  feedback: AppraisalFeedback;
-  questions: Map<string, AppraisalQuestion>;
-}) {
-  return (
-    <div className="rounded-xl border border-gray-100 bg-white p-4">
-      <p className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <PiUserCircle className="h-4 w-4 text-gray-400" />
-        {personName(feedback.reviewer)}
-        <span className="text-xs font-normal capitalize text-gray-400">
-          ({feedback.kind})
-        </span>
-      </p>
-      <div className="flex flex-col gap-3">
-        {feedback.answers.map((a) => (
-          <div
-            key={a.questionId}
-            className="border-t border-gray-50 pt-3 first:border-t-0 first:pt-0"
-          >
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-              {questions.get(a.questionId)?.label ?? QUESTION_GONE_LABEL}
-            </p>
-            <div className="mt-1">
-              <AnswerValue question={questions.get(a.questionId)} answer={a} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+/** Rows the server would keep — see normaliseCommitments on the server. */
+function meaningfulCommitments(rows: string[]): { text: string }[] {
+  return rows
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((text) => ({ text }));
 }
 
 export default function AppraisalManagerView({
@@ -290,12 +157,23 @@ export default function AppraisalManagerView({
    * first. A manager's summary is the longest single piece of prose anyone
    * types in this module and it had no protection at all.
    */
+  /**
+   * The actions agreed for the next period. At least one is required to
+   * release — see the server's NO_COMMITMENTS_AGREED. Seeded with one empty
+   * row on a fresh appraisal so the field reads as something to fill in rather
+   * than an empty area with an "add" button the manager has to discover.
+   */
+  const [commitments, setCommitments] = useState<string[]>(() => {
+    const stored = (appraisal.commitments ?? []).map((c) => c.text);
+    return stored.length > 0 ? stored : [''];
+  });
   const [savedSignature, setSavedSignature] = useState(() =>
     savedSignatureOf(
       appraisal.summary ?? '',
       typeof appraisal.finalRating === 'number'
         ? String(appraisal.finalRating)
-        : ''
+        : '',
+      (appraisal.commitments ?? []).map((c) => c.text)
     )
   );
   const [saving, setSaving] = useState(false);
@@ -395,12 +273,12 @@ export default function AppraisalManagerView({
   }
 
   const questions = useMemo(() => buildQuestionIndex(sections), [sections]);
-  const comparisonIds = useMemo(() => {
-    const ids = new Set<string>();
-    selfFeedback?.answers.forEach((a) => ids.add(a.questionId));
-    managerFeedback?.answers.forEach((a) => ids.add(a.questionId));
-    return Array.from(ids).sort();
-  }, [selfFeedback, managerFeedback]);
+  // Template order, not ObjectId order — sorting by id scrambles a form HR
+  // sequenced deliberately. See askedQuestionIds.
+  const comparisonIds = useMemo(
+    () => askedQuestionIds(selfFeedback, managerFeedback, sections),
+    [selfFeedback, managerFeedback, sections]
+  );
 
   // `access.canSummarise` is false once the appraisal is
   // released/acknowledged/cancelled (see resolveAppraisalAccess) — the editor
@@ -408,20 +286,27 @@ export default function AppraisalManagerView({
   const readOnly = !access.canSummarise;
   const summaryEmpty = !summary.trim();
   const ratingCheck = parseFinalRating(finalRating);
-  const isDirty = savedSignatureOf(summary, finalRating) !== savedSignature;
+  const agreedActions = meaningfulCommitments(commitments);
+  const isDirty =
+    savedSignatureOf(summary, finalRating, commitments) !== savedSignature;
   const releaseDisabledReason = !access.canRelease
     ? 'This appraisal is not ready to release yet.'
     : summaryEmpty
       ? 'Write a summary before releasing.'
-      : !ratingCheck.ok
-        ? ratingCheck.error
-        : // Release sends nothing but the id — it publishes whatever the server
-          // already holds. So releasing on top of unsaved edits shows the
-          // employee the PREVIOUS summary while this screen displays the new
-          // one, and nobody finds out. Saving first is the only honest order.
-          isDirty
-          ? 'Save your changes before releasing.'
-          : null;
+      : agreedActions.length === 0
+        ? // Mirrors the server's NO_COMMITMENTS_AGREED rather than relying on
+          // it: the manager should see why the button is dead before they
+          // click it, not after a round trip.
+          'Agree at least one action for the next period before releasing.'
+        : !ratingCheck.ok
+          ? ratingCheck.error
+          : // Release sends nothing but the id — it publishes whatever the server
+            // already holds. So releasing on top of unsaved edits shows the
+            // employee the PREVIOUS summary while this screen displays the new
+            // one, and nobody finds out. Saving first is the only honest order.
+            isDirty
+            ? 'Save your changes before releasing.'
+            : null;
 
   useUnsavedChangesGuard(
     !readOnly && !saving && isDirty,
@@ -435,9 +320,14 @@ export default function AppraisalManagerView({
       return;
     }
     setSaving(true);
-    const sending = savedSignatureOf(summary, finalRating);
+    const sending = savedSignatureOf(summary, finalRating, commitments);
     try {
-      const updated = await saveSummary(appraisal._id, summary, parsed.value);
+      const updated = await saveSummary(
+        appraisal._id,
+        summary,
+        parsed.value,
+        agreedActions
+      );
       onUpdate(updated);
       setSavedSignature(sending);
       toast.success('Summary saved');
@@ -463,7 +353,14 @@ export default function AppraisalManagerView({
   async function handleRelease(confirmed = false) {
     setReleasing(true);
     try {
-      const updated = await releaseAppraisal(appraisal._id, confirmed);
+      // Sent explicitly rather than relying on the server's fallback to what
+      // saveSummary stored: release is blocked while `isDirty`, so these match
+      // what is persisted, and sending them keeps the request self-describing.
+      const updated = await releaseAppraisal(
+        appraisal._id,
+        confirmed,
+        agreedActions
+      );
       onUpdate(updated);
       setReleaseConfirm(null);
       toast.success('Released to employee');
@@ -601,6 +498,76 @@ export default function AppraisalManagerView({
           className="mt-2"
           disabled={readOnly}
         />
+        {/* Agreed actions.
+            Sits inside the summary card, above the rating, because it is part
+            of writing the review rather than an afterthought bolted onto the
+            release dialog — and because the manager should be drafting these
+            while the peer input is still in front of them. */}
+        <div className="mt-5 border-t border-gray-100 pt-4">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+            <PiFlagBannerFold className="h-4 w-4 text-indigo-600" />
+            Agreed actions for the next period
+            <span className="text-[#b20202]" aria-hidden="true">
+              *
+            </span>
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-gray-400">
+            At least one is required. These open the next review for{' '}
+            {personName(appraisal.employee)}, which is what makes them worth
+            writing.
+          </p>
+
+          <div className="mt-3 flex flex-col gap-2">
+            {commitments.map((text, i) => (
+              // Index-keyed: rows are positional, and a text-keyed list would
+              // remount the input the manager is typing into on every keystroke.
+              <div key={i} className="flex items-start gap-2">
+                <span
+                  aria-hidden="true"
+                  className="mt-2.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[11px] font-bold tabular-nums text-indigo-700"
+                >
+                  {i + 1}
+                </span>
+                <Input
+                  value={text}
+                  onChange={(e) =>
+                    setCommitments((prev) =>
+                      prev.map((c, j) => (j === i ? e.target.value : c))
+                    )
+                  }
+                  maxLength={500}
+                  placeholder="e.g. Lead two supplier tastings this quarter"
+                  disabled={readOnly}
+                  className="flex-1"
+                  aria-label={`Agreed action ${i + 1}`}
+                />
+                {!readOnly && commitments.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCommitments((prev) => prev.filter((_, j) => j !== i))
+                    }
+                    aria-label={`Remove agreed action ${i + 1}`}
+                    className="mt-2 shrink-0 text-gray-300 transition-colors hover:text-[#b20202]"
+                  >
+                    <PiTrash className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {!readOnly && commitments.length < MAX_COMMITMENTS && (
+            <button
+              type="button"
+              onClick={() => setCommitments((prev) => [...prev, ''])}
+              className="mt-2.5 text-xs font-semibold text-[#b20202] underline decoration-[#b20202]/30 underline-offset-2 transition-colors hover:decoration-[#b20202]"
+            >
+              + Add another
+            </button>
+          )}
+        </div>
+
         <div className="mt-4 flex items-center gap-2">
           <PiStar className="h-4 w-4 shrink-0 text-amber-500" />
           <Input

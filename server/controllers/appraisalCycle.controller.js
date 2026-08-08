@@ -45,12 +45,48 @@ async function ensureDefaultTemplate(tenant, userId) {
 
 exports.ensureDefaultTemplate = ensureDefaultTemplate;
 
+/**
+ * Every cycle in the tenant, each carrying its own appraisal counts by state.
+ *
+ * The counts are ONE aggregate for the whole list, not a lookup per row: the
+ * cycles page renders every cycle the tenant has ever run, so a per-row query
+ * is an N+1 that gets slower every review season. Grouping on {cycle, state}
+ * gives the page the same `byState` vocabulary cycleProgress already returns
+ * for a single cycle, so the client computes "released %" with one shared
+ * function instead of two drifting ones.
+ *
+ * No .catch(() => []) on the aggregate, for the reason cycleProgress spells
+ * out: a failure that degrades to zeroes reports every cycle as empty, which
+ * reads as a legitimate answer HR would act on. It throws to next() instead.
+ */
 exports.listCycles = async (req, res, next) => {
   try {
-    const cycles = await AppraisalCycle.find({ tenant: req.tenant._id })
-      .sort({ createdAt: -1 })
-      .lean();
-    res.json({ success: true, data: cycles });
+    // aggregate does no schema casting, so the tenant has to be a real
+    // ObjectId here — a string $match silently matches nothing and every
+    // cycle would come back with no counts at all.
+    const tenantId = new mongoose.Types.ObjectId(req.tenant._id);
+    const [cycles, counts] = await Promise.all([
+      AppraisalCycle.find({ tenant: req.tenant._id }).sort({ createdAt: -1 }).lean(),
+      Appraisal.aggregate([
+        { $match: { tenant: tenantId } },
+        { $group: { _id: { cycle: '$cycle', state: '$state' }, count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const byCycle = new Map();
+    for (const row of counts) {
+      const key = String(row._id.cycle);
+      if (!byCycle.has(key)) byCycle.set(key, {});
+      byCycle.get(key)[row._id.state] = row.count;
+    }
+
+    res.json({
+      success: true,
+      // `?? {}` and not `?? undefined`: a cycle with no appraisals must still
+      // carry the shape, so the client can tell "not launched yet" from a
+      // payload that never had counts on it.
+      data: cycles.map((c) => ({ ...c, byState: byCycle.get(String(c._id)) ?? {} })),
+    });
   } catch (err) { next(err); }
 };
 

@@ -26,17 +26,29 @@ export default function TemplateQuestionConfig({
     <AnimatePresence mode="wait">
       {t === 'choice' && (
         <ConfigWrapper key="choice">
-          <ChoiceConfig question={question} onPatch={onPatch} disabled={disabled} />
+          <ChoiceConfig
+            question={question}
+            onPatch={onPatch}
+            disabled={disabled}
+          />
         </ConfigWrapper>
       )}
       {t === 'likert' && (
         <ConfigWrapper key="likert">
-          <LikertConfig question={question} onPatch={onPatch} disabled={disabled} />
+          <LikertConfig
+            question={question}
+            onPatch={onPatch}
+            disabled={disabled}
+          />
         </ConfigWrapper>
       )}
       {t === 'scale' && (
         <ConfigWrapper key="scale">
-          <ScaleConfig question={question} onPatch={onPatch} disabled={disabled} />
+          <ScaleConfig
+            question={question}
+            onPatch={onPatch}
+            disabled={disabled}
+          />
         </ConfigWrapper>
       )}
       {t === 'yes_no' && (
@@ -131,7 +143,9 @@ function ChoiceConfig({
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center justify-between">
-        <label className="text-[11px] font-semibold text-gray-500">Options</label>
+        <label className="text-[11px] font-semibold text-gray-500">
+          Options
+        </label>
         <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-gray-500">
           <input
             type="checkbox"
@@ -166,7 +180,7 @@ function ChoiceConfig({
               type="button"
               onClick={() => removeOption(i)}
               disabled={disabled || options.length <= 2}
-              className="shrink-0 rounded-lg p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-30 transition-colors"
+              className="shrink-0 rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
             >
               <PiTrash className="h-3.5 w-3.5" />
             </button>
@@ -212,22 +226,30 @@ function LikertConfig({
 
   return (
     <div className="flex flex-col gap-2.5">
-      <label className="text-[11px] font-semibold text-gray-500">Scale labels</label>
+      <label className="text-[11px] font-semibold text-gray-500">
+        Scale labels
+      </label>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <p className="mb-1 text-[10px] text-gray-400">Lowest (1)</p>
           <Input
             value={labels.low ?? ''}
-            onChange={(e) => onPatch({ scaleLabels: { ...labels, low: e.target.value } })}
+            onChange={(e) =>
+              onPatch({ scaleLabels: { ...labels, low: e.target.value } })
+            }
             placeholder="e.g. Strongly Disagree"
             disabled={disabled}
           />
         </div>
         <div>
-          <p className="mb-1 text-[10px] text-gray-400">Highest ({question.scaleMax ?? 5})</p>
+          <p className="mb-1 text-[10px] text-gray-400">
+            Highest ({question.scaleMax ?? 5})
+          </p>
           <Input
             value={labels.high ?? ''}
-            onChange={(e) => onPatch({ scaleLabels: { ...labels, high: e.target.value } })}
+            onChange={(e) =>
+              onPatch({ scaleLabels: { ...labels, high: e.target.value } })
+            }
             placeholder="e.g. Strongly Agree"
             disabled={disabled}
           />
@@ -253,13 +275,17 @@ function ScaleConfig({
 
   return (
     <div className="flex flex-col gap-2.5">
-      <label className="text-[11px] font-semibold text-gray-500">Scale endpoints</label>
+      <label className="text-[11px] font-semibold text-gray-500">
+        Scale endpoints
+      </label>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <p className="mb-1 text-[10px] text-gray-400">Left endpoint</p>
           <Input
             value={labels.low ?? ''}
-            onChange={(e) => onPatch({ scaleLabels: { ...labels, low: e.target.value } })}
+            onChange={(e) =>
+              onPatch({ scaleLabels: { ...labels, low: e.target.value } })
+            }
             placeholder="e.g. Poor"
             disabled={disabled}
           />
@@ -268,7 +294,9 @@ function ScaleConfig({
           <p className="mb-1 text-[10px] text-gray-400">Right endpoint</p>
           <Input
             value={labels.high ?? ''}
-            onChange={(e) => onPatch({ scaleLabels: { ...labels, high: e.target.value } })}
+            onChange={(e) =>
+              onPatch({ scaleLabels: { ...labels, high: e.target.value } })
+            }
             placeholder="e.g. Excellent"
             disabled={disabled}
           />
@@ -290,8 +318,10 @@ function ScaleConfig({
 function YesNoHint() {
   return (
     <p className="text-[11px] text-gray-400">
-      Reviewers will see two buttons: <span className="font-medium text-gray-600">Yes</span> and{' '}
-      <span className="font-medium text-gray-600">No</span>. Add a text question below for optional follow-up comments.
+      Reviewers will see two buttons:{' '}
+      <span className="font-medium text-gray-600">Yes</span> and{' '}
+      <span className="font-medium text-gray-600">No</span>. Add a text question
+      below for optional follow-up comments.
     </p>
   );
 }
