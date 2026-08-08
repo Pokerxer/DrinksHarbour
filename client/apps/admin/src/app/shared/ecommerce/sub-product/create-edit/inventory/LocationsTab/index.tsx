@@ -16,6 +16,12 @@ import {
   type AdjustType,
 } from '@/services/warehouseStock.service';
 import WarehouseTransferDrawer from '@/app/shared/warehouses/warehouse-transfer-drawer';
+import {
+  refIdOf,
+  warehouseNameOf,
+  warehouseCodeOf,
+  sizeLabelOf,
+} from '@/app/shared/warehouses/warehouse-ref-helpers';
 import { routes } from '@/config/routes';
 
 interface LocationsTabProps {
@@ -27,16 +33,13 @@ interface LocationsTabProps {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const idOf = (v: WarehouseStockRow['warehouse'] | WarehouseStockRow['size']) =>
-  typeof v === 'object' ? v._id : v;
-const whName = (r: WarehouseStockRow) =>
-  typeof r.warehouse === 'object'
-    ? (r.warehouse.name ?? r.warehouse._id)
-    : r.warehouse;
-const whCode = (r: WarehouseStockRow) =>
-  typeof r.warehouse === 'object' ? (r.warehouse.code ?? '') : '';
-const sizeName = (r: WarehouseStockRow) =>
-  typeof r.size === 'object' ? (r.size.size ?? r.size._id) : r.size;
+// Ref accessors are null-safe and shared — a deleted warehouse/size leaves a
+// dangling ref that populate resolves to null, and `typeof null === 'object'`
+// used to send it down the "populated" branch and throw during render.
+const idOf = refIdOf;
+const whName = warehouseNameOf;
+const whCode = warehouseCodeOf;
+const sizeName = sizeLabelOf;
 const available = (r: WarehouseStockRow) =>
   Math.max(0, (r.currentQuantity || 0) - (r.reservedQuantity || 0));
 
@@ -90,7 +93,7 @@ export function LocationsTab({
       if (!g) {
         g = {
           warehouseId: id,
-          name: String(whName(r)),
+          name: whName(r) || 'Unknown warehouse',
           code: whCode(r),
           rows: [],
           onHand: 0,
@@ -270,7 +273,7 @@ export function LocationsTab({
                   {g.rows.map((r) => (
                     <tr key={r._id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-800">
-                        {String(sizeName(r))}
+                        {sizeName(r) || 'Unknown size'}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums text-gray-800">
                         {r.currentQuantity}

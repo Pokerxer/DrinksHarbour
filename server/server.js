@@ -147,6 +147,29 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // ────────────────────────────────────────────────
+// API responses must never be cached
+// ────────────────────────────────────────────────
+// Without this, /api responses go out with the platform default
+// `Cache-Control: public, max-age=0, must-revalidate` plus Express's ETag. That
+// combination is storable and revalidatable, which broke tenant subdomains: a
+// response cached while the user was on admin.drinksharbour.com carries
+// `Access-Control-Allow-Origin: https://admin.drinksharbour.com`, and replaying
+// it via a 304 for wyncity.drinksharbour.com fails the browser's CORS check —
+// every API call from the tenant subdomain errored. (The allowlist itself is
+// fine: corsOptions below reflects any *.drinksharbour.com origin, and
+// `Vary: Origin` is present.)
+//
+// It is also a data-isolation matter, independent of CORS: `public` invites any
+// shared cache to hold an authenticated, tenant-scoped payload — an employee
+// list served from cache to a different tenant would be a cross-tenant leak.
+// `private, no-store` makes these responses unstorable by every layer, so no
+// revalidation happens and no stale ACAO can be replayed.
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'private, no-store, max-age=0');
+  next();
+});
+
+// ────────────────────────────────────────────────
 // CSRF protection (double-submit cookie pattern)
 // Applied to all /api routes — safe methods (GET/HEAD/OPTIONS) are exempt.
 // ────────────────────────────────────────────────

@@ -131,9 +131,11 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
       setRet(res.data);
 
       // Load linked vendor bill to determine refund eligibility
-      const poId = typeof res.data.purchaseOrder === 'object'
-        ? (res.data.purchaseOrder as { _id: string })._id
-        : res.data.purchaseOrder;
+      // May be an id string, the populated doc, or null for a deleted PO —
+      // `typeof null === 'object'`, so the truthiness check is load-bearing.
+      const po = res.data.purchaseOrder;
+      const poId =
+        po && typeof po === 'object' ? (po as { _id: string })._id : po;
       if (poId) {
         const billsRes = await vendorBillService
           .getVendorBills(token, { purchaseOrder: poId, limit: 5 })

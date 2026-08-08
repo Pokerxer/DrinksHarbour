@@ -44,30 +44,22 @@ import {
 } from '@/services/warehouseStock.service';
 import { routes } from '@/config/routes';
 import { fraunces } from '../purchases/purchases-fonts';
+import {
+  skuOf,
+  productNameOf as nameOf,
+  sizeLabelOf as sizeOf,
+  imageOf,
+  subProductIdOf,
+  sizeIdOf,
+} from './warehouse-ref-helpers';
 
 // Fallback low-stock threshold; overridden by the tenant's warehouse settings.
 const LOW_STOCK = 10;
 
-const skuOf = (r: WarehouseStockRow) =>
-  typeof r.subProduct === 'object'
-    ? (r.subProduct.sku ?? r.subProduct._id)
-    : r.subProduct;
-const nameOf = (r: WarehouseStockRow) =>
-  typeof r.subProduct === 'object' ? (r.subProduct.product?.name ?? '') : '';
-const sizeOf = (r: WarehouseStockRow) =>
-  typeof r.size === 'object' ? (r.size.size ?? r.size._id) : r.size;
-const imageOf = (r: WarehouseStockRow): string | null => {
-  if (typeof r.subProduct !== 'object') return null;
-  return (
-    r.subProduct.imagesOverride?.[0]?.url ??
-    r.subProduct.product?.images?.[0]?.url ??
-    null
-  );
-};
-const subProductIdOf = (r: WarehouseStockRow): string | null =>
-  typeof r.subProduct === 'object' ? r.subProduct._id : (r.subProduct ?? null);
-const sizeIdOf = (r: WarehouseStockRow): string | null =>
-  typeof r.size === 'object' ? r.size._id : (r.size ?? null);
+// The ref accessors (skuOf/nameOf/sizeOf/imageOf/subProductIdOf/sizeIdOf) live
+// in ./warehouse-ref-helpers — they are null-safe and shared with the other
+// WarehouseStock views. See that file for why `typeof x === 'object'` is not
+// enough.
 const viewHrefOf = (r: WarehouseStockRow): string | null => {
   const id = subProductIdOf(r);
   return id ? routes.eCommerce.editSubProduct(id) : null;

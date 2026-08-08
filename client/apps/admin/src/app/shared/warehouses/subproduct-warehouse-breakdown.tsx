@@ -6,13 +6,10 @@ import {
   warehouseStockService,
   type WarehouseStockRow,
 } from '@/services/warehouseStock.service';
-
-const whName = (r: WarehouseStockRow) =>
-  typeof r.warehouse === 'object'
-    ? (r.warehouse.name ?? r.warehouse._id)
-    : r.warehouse;
-const sizeName = (r: WarehouseStockRow) =>
-  typeof r.size === 'object' ? (r.size.size ?? r.size._id) : r.size;
+import {
+  warehouseNameOf,
+  sizeLabelOf,
+} from './warehouse-ref-helpers';
 
 export default function SubproductWarehouseBreakdown({
   subProductId,
@@ -51,8 +48,10 @@ export default function SubproductWarehouseBreakdown({
           {rows.map((r) => (
             <li key={r._id} className="flex items-center justify-between py-2">
               <span>
-                {whName(r)}{' '}
-                <span className="text-gray-400">· {sizeName(r)}</span>
+                {warehouseNameOf(r) || 'Unknown warehouse'}{' '}
+                <span className="text-gray-400">
+                  · {sizeLabelOf(r) || 'Unknown size'}
+                </span>
               </span>
               <span className="font-medium">{r.currentQuantity}</span>
             </li>
