@@ -1,0 +1,45 @@
+// models/ShiftTemplate.js — a repeating shift pattern ("Weekday morning bar,
+// 09:00–17:00, Mon–Fri"), used to generate a roster rather than to be worked.
+//
+// Times are stored as LOCAL wall clock strings, not Dates. "The morning shift"
+// is a local-time idea that stays 09:00 whatever the date; the absolute instant
+// only exists once the template is stamped onto a calendar day, which is what
+// Shift records. Converting between the two is shift.helpers.js's job and needs
+// the tenant's UTC offset, which the controller passes in explicitly.
+const mongoose = require('mongoose');
+const { Schema } = mongoose;
+const { ObjectId } = Schema;
+
+const { DAYS_OF_WEEK } = require('../services/shift.helpers');
+
+const shiftTemplateSchema = new Schema(
+  {
+    tenant: { type: ObjectId, ref: 'Tenant', required: true, index: true },
+    name: { type: String, required: true, trim: true, maxlength: 120 },
+    // What the shift needs someone to be able to do. Required: a shift nobody
+    // is qualified for cannot be checked against an employee's capabilities.
+    role: { type: ObjectId, ref: 'EmployeeRole', required: true },
+    department: { type: ObjectId, ref: 'Department', default: null },
+    // 'HH:MM' local. An endTime at or before startTime means the shift runs
+    // past midnight — derived by shift.helpers.crossesMidnight, never stored,
+    // so the two can never disagree.
+    startTime: { type: String, required: true, trim: true },
+    endTime: { type: String, required: true, trim: true },
+    // Unpaid break, subtracted from the roster's scheduled hours.
+    breakMinutes: { type: Number, min: 0, default: 0 },
+    // 0 = Sunday .. 6 = Saturday, matching Date#getUTCDay.
+    daysOfWeek: { type: [{ type: Number, enum: DAYS_OF_WEEK }], default: [] },
+    // Falls back to the role's colour on the roster when unset.
+    color: { type: String, trim: true, maxlength: 9 },
+    note: { type: String, trim: true, maxlength: 1000 },
+    isActive: { type: Boolean, default: true },
+    createdBy: { type: ObjectId, ref: 'User' },
+  },
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+);
+
+shiftTemplateSchema.index({ tenant: 1, name: 1 }, { unique: true });
+shiftTemplateSchema.index({ tenant: 1, isActive: 1 });
+
+module.exports =
+  mongoose.models.ShiftTemplate || mongoose.model('ShiftTemplate', shiftTemplateSchema);
