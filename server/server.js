@@ -272,6 +272,7 @@ app.use('/api/employee-roles',     orgRouters.employeeRoleRouter);
 const shiftRouters = require('./routes/shift.routes');
 app.use('/api/shift-templates',    shiftRouters.shiftTemplateRouter);
 app.use('/api/shifts',             shiftRouters.shiftRouter);
+app.use('/api/attendance',         require('./routes/attendance.routes'));
 const appraisalRouters = require('./routes/appraisal.routes');
 app.use('/api/appraisal-cycles',   appraisalRouters.cycleRouter);
 app.use('/api/appraisals',         appraisalRouters.appraisalRouter);
