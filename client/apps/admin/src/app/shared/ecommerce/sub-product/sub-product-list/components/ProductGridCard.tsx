@@ -15,9 +15,11 @@ import {
   PiBeerBottleBold,
   PiDropBold,
   PiPackageBold,
+  PiImagesBold as PiImages,
 } from 'react-icons/pi';
 import type { SubProductListItem, SizeVariant } from '../table';
 import SubProductImage from './SubProductImage';
+import { resolveSubProductImages } from '../image-utils';
 
 interface ProductGridCardProps {
   product: SubProductListItem;
@@ -133,15 +135,15 @@ export default function ProductGridCard({
       {/* Image area */}
       <div
         className={cn(
-          'relative flex items-center justify-center bg-gradient-to-br',
+          'relative flex items-center justify-center bg-gradient-to-br overflow-hidden',
           bg,
-          'aspect-[3/4]'
+          'aspect-[4/5]'
         )}
       >
         <SubProductImage
           sp={product}
           alt={product.product?.name || 'Product'}
-          className="h-full w-full object-contain p-4 drop-shadow-sm"
+          className="h-full w-full object-cover"
           fallback={<BeverageIcon className="h-14 w-14 text-gray-300" />}
         />
 
@@ -190,6 +192,18 @@ export default function ProductGridCard({
             </button>
           )}
         </div>
+
+        {/* Image count badge (for products with multiple images) */}
+        {(() => {
+          const imgCount = (product.imagesOverride?.length || 0) + (product.product?.images?.length || 0);
+          if (imgCount <= 1) return null;
+          return (
+            <span className="absolute bottom-2 left-2 flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white backdrop-blur-sm">
+              <PiImages className="h-2.5 w-2.5" />
+              {imgCount}
+            </span>
+          );
+        })()}
 
         {/* Stock dot */}
         <span

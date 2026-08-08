@@ -4,6 +4,12 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
+// Product suggestions link to the shopper-facing product page, which lives in
+// the platform app — the admin app has no /product/[slug] route, so a relative
+// href here 404s on the admin host.
+const STOREFRONT_URL =
+  process.env.NEXT_PUBLIC_STOREFRONT_URL || 'https://www.drinksharbour.com';
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
@@ -681,7 +687,7 @@ export default function ChatbotWidget() {
                       {msg.products.slice(0, 3).map((product, idx) => (
                         <a
                           key={`${product.id}-${idx}`}
-                          href={`/product/${product.slug}`}
+                          href={`${STOREFRONT_URL}/product/${product.slug}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-3 p-2.5 sm:p-3 bg-white rounded-xl sm:rounded-2xl border border-slate-200 hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-100/50 transition-all duration-200 group"

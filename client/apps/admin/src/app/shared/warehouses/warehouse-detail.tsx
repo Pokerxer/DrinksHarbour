@@ -747,7 +747,14 @@ export default function WarehouseDetail({
   const exportColumns = useMemo(() => buildExportColumns(lowStock), [lowStock]);
 
   const load = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      // `loading` starts true, so returning without clearing it leaves the page
+      // on skeletons forever whenever no token ever arrives (signed out, or an
+      // expired session on a route the middleware does not gate). Clear it so
+      // the empty state renders instead of an indefinite spinner.
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [wh, stock] = await Promise.all([

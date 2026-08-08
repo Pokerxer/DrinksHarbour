@@ -234,6 +234,21 @@ export default async function middleware(req: NextRequest) {
   return (authMiddleware as any)(req);
 }
 
+/**
+ * Every gated route must be listed here explicitly.
+ *
+ * This is an allow-list matcher, so a module that is merely *absent* gets no
+ * middleware at all — not even the `authorized` session check. That fails OPEN
+ * in a way that is easy to miss: the page still renders for a signed-out or
+ * expired visitor, nothing redirects to /signin, and the client loaders simply
+ * never receive a token. Most of them bail on `if (!token) return` while their
+ * skeleton state is still `true`, so the route reads to the user as a dead
+ * link that spins forever rather than as "please sign in".
+ *
+ * `/warehouses`, `/purchases`, `/sales`, `/settings`, `/contacts`, `/blog`,
+ * `/store-analytics` and `/profile` were all missing for exactly that reason.
+ * When adding a new top-level module, add it here too.
+ */
 export const config = {
   matcher: [
     '/',
@@ -249,6 +264,14 @@ export const config = {
     '/brands/:path*',
     '/tenants/:path*',
     '/banners/:path*',
+    '/warehouses/:path*',
+    '/purchases/:path*',
+    '/sales/:path*',
+    '/contacts/:path*',
+    '/blog/:path*',
+    '/settings/:path*',
+    '/store-analytics/:path*',
+    '/profile/:path*',
     '/support/:path*',
     '/file/:path*',
     '/file-manager',

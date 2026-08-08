@@ -48,6 +48,10 @@ import {
   ViewToggle,
 } from './components';
 import type { FilterConfig, ViewMode } from './components';
+import {
+  saveProductSearchContext,
+  loadProductSearchContext,
+} from './search-context';
 
 // ── Custom filter rule types ────────────────────────────────────────────────────
 type RuleOperator =
@@ -1780,6 +1784,25 @@ export default function ProductsTable({
   const searchPanelRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Restore saved search context (when navigating back from edit page) ──
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const ctx = loadProductSearchContext();
+    if (!ctx) return;
+    const s = ctx.state;
+    setSearchQuery(s.searchQuery);
+    setSearchChips(s.searchChips);
+    setSpActiveFilters(new Set(s.spActiveFilters));
+    setSpGroupBy(s.spGroupBy as any);
+    setActiveCustomRules(s.activeCustomRules);
+    setAdvancedFilters(s.advancedFilters);
+    setStatusFilter(s.statusFilter);
+    setVisibilityFilter(s.visibilityFilter as any);
+    setViewMode(s.viewMode as ViewMode);
+  }, []);
+
   // Close panels on outside click
   useEffect(() => {
     function handleOutsideClick(e: MouseEvent) {
@@ -2203,6 +2226,47 @@ export default function ProductsTable({
     advancedFilters,
     spActiveFilters,
     activeCustomRules,
+  ]);
+
+  // ── Persist search context (debounced) ─────────────────────────────────────
+  const searchContextIds = useMemo(
+    () => filtered.map((p) => String(p._id)).filter(Boolean),
+    [filtered]
+  );
+
+  useEffect(() => {
+    if (!session?.user?.token || searchContextIds.length === 0) return;
+    const t = setTimeout(
+      () =>
+        saveProductSearchContext({
+          ids: searchContextIds,
+          state: {
+            searchQuery,
+            searchChips,
+            spActiveFilters: Array.from(spActiveFilters),
+            spGroupBy,
+            activeCustomRules,
+            advancedFilters,
+            statusFilter,
+            visibilityFilter,
+            viewMode,
+          },
+        }),
+      400
+    );
+    return () => clearTimeout(t);
+  }, [
+    searchContextIds,
+    searchQuery,
+    searchChips,
+    spActiveFilters,
+    spGroupBy,
+    activeCustomRules,
+    advancedFilters,
+    statusFilter,
+    visibilityFilter,
+    viewMode,
+    session?.user?.token,
   ]);
 
   // Grouped products for Odoo group-by

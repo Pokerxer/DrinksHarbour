@@ -17,6 +17,7 @@ import {
   PiBeerBottleBold,
   PiDropBold,
   PiSparkle,
+  PiImagesBold as PiImages,
 } from 'react-icons/pi';
 import type { ProductListItem } from '../columns';
 
@@ -97,12 +98,12 @@ export default function ProductGridCard({
       </div>
 
       {/* Image */}
-      <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="relative flex aspect-[4/5] items-center justify-center overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
         {imageUrl ? (
           <img
             src={imageUrl}
             alt={product.name}
-            className="h-full w-full object-contain p-4 drop-shadow-sm"
+            className="h-full w-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none';
             }}
@@ -110,6 +111,18 @@ export default function ProductGridCard({
         ) : (
           <BeverageIcon className="h-16 w-16 text-gray-300" />
         )}
+
+        {/* Image count badge */}
+        {(() => {
+          const imgCount = product.images?.length || 0;
+          if (imgCount <= 1) return null;
+          return (
+            <span className="absolute bottom-2 left-2 z-10 flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white backdrop-blur-sm">
+              <PiImages className="h-2.5 w-2.5" />
+              {imgCount}
+            </span>
+          );
+        })()}
 
         {/* Actions — always visible on touch, hover-revealed on desktop */}
         <div

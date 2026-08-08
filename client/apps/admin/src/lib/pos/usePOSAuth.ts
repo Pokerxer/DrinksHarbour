@@ -130,7 +130,9 @@ export function usePOSAuth(): POSAuthState {
     setPosToken(null);
     setPosUser(null);
     setPosTenant(null);
-    router.push('/pos/login');
+    // The cashier PIN login lives at /point-of-sale/login; there is no
+    // /pos/login page, so the old target logged a cashier out onto a 404.
+    router.push('/point-of-sale/login');
   }, [router]);
 
   const isAuthenticated = !!posToken && !isLoading;
