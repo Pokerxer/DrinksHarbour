@@ -435,14 +435,19 @@ const userSchema = new Schema(
       appraisal: {
         nextAppraisalDate: { type: Date },
       },
+      // Who signs off on this employee's requests. Refs rather than free text:
+      // an approver that cannot be resolved to an account cannot be routed to,
+      // and time-off/expense approval needs to reach a real inbox.
       approvers: {
-        hrResponsible: { type: String, trim: true },
-        expense: { type: String, trim: true },
-        timeOff: { type: String, trim: true },
+        hrResponsible: { type: ObjectId, ref: 'User' },
+        expense: { type: ObjectId, ref: 'User' },
+        timeOff: { type: ObjectId, ref: 'User' },
       },
+      // HR/planning capability, NOT access control — see models/EmployeeRole.js.
+      // A shift requires a role; an employee holding it may be assigned to it.
       planning: {
-        roles: { type: [String], default: [] },
-        defaultRole: { type: String, trim: true },
+        roles: { type: [{ type: ObjectId, ref: 'EmployeeRole' }], default: [] },
+        defaultRole: { type: ObjectId, ref: 'EmployeeRole' },
       },
       appSettings: {
         analyticDistribution: { type: String, trim: true },
@@ -452,8 +457,13 @@ const userSchema = new Schema(
         rfidBadge: { type: String, trim: true },
       },
       work: {
-        department: { type: String, trim: true },
-        jobPosition: { type: String, trim: true },
+        // Refs, not free text. Migrated from the old strings by
+        // scripts/migrate-employee-org-structure.js.
+        department: { type: ObjectId, ref: 'Department' },
+        jobPosition: { type: ObjectId, ref: 'JobPosition' },
+        // Deliberately still free text: the POSITION is the shared, countable
+        // post, while the TITLE is this person's wording for it. Defaults from
+        // the position name in the UI, overridable per employee.
         jobTitle: { type: String, trim: true },
         // Reporting line: another employee in the same tenant. Existence,
         // self-reference and cycles are enforced in the controller.

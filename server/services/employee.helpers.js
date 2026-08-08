@@ -235,6 +235,21 @@ const dateVal = (v) => {
 };
 const oneOf = (v, allowed) => (allowed.includes(v) ? v : undefined);
 
+// Coerce a reference field. `null`/'' clear it; a 24-hex id (or a populated
+// document) is kept; ANYTHING ELSE IS DROPPED.
+//
+// The drop is the point. department/jobPosition/planning.roles used to be free
+// text, so unmigrated documents and stale client caches still carry values like
+// 'Sales'. Passing one of those through to a ref field throws a CastError that
+// surfaces as a 500 on an ordinary profile save. Dropping it degrades to "field
+// not set" — visible and fixable — instead of a broken form.
+const oid = (v) => {
+  if (v === null || v === '') return null;
+  if (v === undefined) return undefined;
+  const s = typeof v === 'object' && v._id ? String(v._id) : String(v);
+  return /^[a-fA-F0-9]{24}$/.test(s) ? s : undefined;
+};
+
 // Drop keys whose value is undefined so we never overwrite stored data with
 // blanks the client didn't send.
 const compact = (obj) => {
@@ -268,7 +283,7 @@ function buildEmployeeProfile(input) {
     : undefined;
 
   const roles = Array.isArray(p.planning?.roles)
-    ? p.planning.roles.map((r) => str(r)).filter(Boolean)
+    ? p.planning.roles.map((r) => oid(r)).filter(Boolean)
     : undefined;
 
   return compact({
@@ -330,13 +345,13 @@ function buildEmployeeProfile(input) {
       nextAppraisalDate: dateVal(p.appraisal?.nextAppraisalDate),
     }),
     approvers: compact({
-      hrResponsible: str(p.approvers?.hrResponsible),
-      expense: str(p.approvers?.expense),
-      timeOff: str(p.approvers?.timeOff),
+      hrResponsible: oid(p.approvers?.hrResponsible),
+      expense: oid(p.approvers?.expense),
+      timeOff: oid(p.approvers?.timeOff),
     }),
     planning: compact({
       roles,
-      defaultRole: str(p.planning?.defaultRole),
+      defaultRole: oid(p.planning?.defaultRole),
     }),
     appSettings: compact({
       analyticDistribution: str(p.appSettings?.analyticDistribution),
@@ -346,10 +361,11 @@ function buildEmployeeProfile(input) {
       rfidBadge: str(p.attendance?.rfidBadge),
     }),
     work: compact({
-      department: str(p.work?.department),
-      jobPosition: str(p.work?.jobPosition),
+      department: oid(p.work?.department),
+      jobPosition: oid(p.work?.jobPosition),
+      // Still free text — the employee's own wording for the post they hold.
       jobTitle: str(p.work?.jobTitle),
-      manager: str(p.work?.manager),
+      manager: oid(p.work?.manager),
       workAddress: compact({
         company: str(p.work?.workAddress?.company),
         street: str(p.work?.workAddress?.street),
