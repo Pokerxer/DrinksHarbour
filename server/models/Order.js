@@ -166,6 +166,17 @@ const orderSchema = new Schema(
       default: 0,
     },
 
+    // First-purchase free-delivery waiver. Kept separate from discountTotal on
+    // purpose: email.service.js and the revenue reconciliation sum that field as
+    // an item-level discount, and a shipping waiver is neither an item discount
+    // nor part of vendor payout. `amount` is what the platform absorbed;
+    // shippingFee already has it deducted.
+    deliveryWaiver: {
+      applied: { type: Boolean, default: false },
+      amount:  { type: Number,  default: 0 },
+      reason:  { type: String,  default: '' },
+    },
+
     taxAmount: {
       type: Number,
       default: 0,

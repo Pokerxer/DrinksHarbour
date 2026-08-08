@@ -18,3 +18,4 @@ export { default as FooterBanner } from './FooterBanner';
 export { default as FooterBannerSection } from './FooterBannerSection';
 export { default as PopupBanner } from './PopupBanner';
 export { default as PlacementBanner } from './PlacementBanner';
+export { default as FirstOrderPerkBanner } from './FirstOrderPerkBanner';
