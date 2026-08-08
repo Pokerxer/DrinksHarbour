@@ -16,6 +16,8 @@
 //   * a `choice` with one option renders an explicit authoring-error box in
 //     `review-question-card.tsx`.
 
+const { PEER_EVIDENCE_SECTION_TITLE, PEER_EVIDENCE_QUESTIONS } = require('./appraisal.helpers');
+
 const KINDS = ['self', 'manager', 'peer'];
 const TYPES = ['rating', 'text', 'likert', 'choice', 'yes_no', 'scale'];
 // Types that produce a number an appraisal can average and compare across
@@ -52,6 +54,16 @@ function requestedAudiences(opts) {
   const picked = raw ? KINDS.filter((k) => raw.includes(k)) : [];
   // A caller that names no audience gets the schema default: everyone.
   return picked.length ? picked : [...KINDS];
+}
+
+/**
+ * HR's explicit "yes, I do want peers to score this" opt-in. Default false:
+ * the house rule below is what a tenant gets unless they say otherwise, which
+ * is the same stance `buildDefaultTemplate` takes (peer-scored askOf is
+ * editable there, just not the default).
+ */
+function peerScoringAllowed(opts) {
+  return Boolean(opts && opts.allowPeerScoring);
 }
 
 /**
@@ -96,6 +108,26 @@ function sanitizeGeneratedQuestion(raw, opts) {
   // for", matching the schema default rather than silently narrowing.
   const proposed = Array.isArray(raw.askOf) ? raw.askOf : audiences;
   let askOf = audiences.filter((k) => proposed.includes(k));
+
+  if (SCORED_TYPES.includes(type) && !peerScoringAllowed(opts) && askOf.includes('peer')) {
+    // THE HOUSE RULE, matching buildDefaultTemplate: scored questions are for
+    // the employee and their manager, never a peer. A peer in another function
+    // has no basis to score "quality of work"; a required question leaves them
+    // no honest way out, so they guess, and the guess is averaged into a mean
+    // that reads as measurement. Peers get evidence-shaped text instead.
+    //
+    // Generated and seeded forms have to agree on this or the form a tenant
+    // gets depends on whether HR clicked "generate".
+    askOf = askOf.filter((k) => k !== 'peer');
+    // Manager takes peer's place. Without this a question the model scoped
+    // ['self','peer'] collapses to ['self'] and is then killed outright by the
+    // no-rater rule below — the strip would delete competencies rather than
+    // re-aim them. `audiences` is still respected: a form HR built without a
+    // manager does not grow one.
+    if (audiences.includes('manager') && !askOf.includes('manager')) {
+      askOf = KINDS.filter((k) => k === 'manager' || askOf.includes(k));
+    }
+  }
 
   if (SCORED_TYPES.includes(type)) {
     // THE 360 RULE. A model writing "Sets a clear direction for the team"
@@ -209,13 +241,39 @@ function sanitizeGeneratedSection(raw, opts) {
 function sanitizeGeneratedTemplate(raw, opts) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const audiences = requestedAudiences(opts);
+  const allowPeerScoring = peerScoringAllowed(opts);
   const seenLabels = (opts && opts.seenLabels) || new Set();
 
   const sections = [];
   for (const rawSection of Array.isArray(src.sections) ? src.sections : []) {
     if (sections.length === MAX_SECTIONS) break;
-    const s = sanitizeGeneratedSection(rawSection, { audiences, seenLabels });
+    const s = sanitizeGeneratedSection(rawSection, { audiences, seenLabels, allowPeerScoring });
     if (s) sections.push(s);
+  }
+
+  // PEER COVERAGE — the mirror image of the 360 bug. Stripping peer off every
+  // scored question can leave a peer with nothing to answer at all;
+  // `filterSectionsForKind` then returns [] and they open a blank review form.
+  //
+  // Checked here and not in sanitizeGeneratedSection because one section of
+  // pure competencies legitimately has no peer questions — it is the whole
+  // TEMPLATE having none that is broken.
+  //
+  // Only on a draft that already has something in it: `sections: []` is how
+  // the controller learns the model returned nothing usable, and rescuing that
+  // into two canned questions would report a failed generation as a success.
+  const peerCovered = sections.some((s) => s.questions.some((q) => q.askOf.includes('peer')));
+  if (audiences.includes('peer') && sections.length && !peerCovered) {
+    const fresh = PEER_EVIDENCE_QUESTIONS.filter((q) => !seenLabels.has(q.label.toLowerCase()));
+    const source = fresh.length ? fresh : PEER_EVIDENCE_QUESTIONS;
+    for (const q of source) seenLabels.add(q.label.toLowerCase());
+    // Appended past MAX_SECTIONS if the draft hit the cap: the cap bounds what
+    // the MODEL produced (the schema puts no limit on section count), and a
+    // peer who cannot answer anything is a broken form, not a long one.
+    sections.push({
+      title: PEER_EVIDENCE_SECTION_TITLE,
+      questions: source.map((q) => ({ ...q, askOf: ['peer'] })),
+    });
   }
 
   const out = { name: aiStr(src.name, LIMITS.name), sections };
@@ -250,7 +308,15 @@ function mergeQuestionAssist(current, proposal, opts) {
     base.askOf = proposal.askOf;
   }
 
-  return sanitizeGeneratedQuestion(base, opts);
+  // A label or options run must not quietly un-scope a peer rating HR authored
+  // deliberately — that is the "silently impossible" failure `allowPeerScoring`
+  // exists to prevent, and HR asked for new wording, not a new audience. An
+  // `askOf` run is different: there HR asked the model to re-decide who
+  // answers, so house style governs the answer.
+  const keepsPeerScoring =
+    mode !== 'askOf' && Array.isArray(base.askOf) && base.askOf.includes('peer');
+
+  return sanitizeGeneratedQuestion(base, keepsPeerScoring ? { ...opts, allowPeerScoring: true } : opts);
 }
 
 // ---------------------------------------------------------------------------
@@ -263,9 +329,77 @@ const SYSTEM_PROMPT =
   'open-text prompts that ask for specific examples. ' +
   'Respond with ONLY a single valid JSON object — no prose, no markdown fences.';
 
-/** Shared tail: the exact question object the sanitizers will accept. */
-function questionContract(audiences) {
+/**
+ * Which reviewer kinds may carry a SCORED question on a form with these
+ * audiences, mirroring what `sanitizeGeneratedQuestion` will actually allow.
+ *
+ * `noScoring` is the case worth naming: a form whose only rater is a peer has
+ * nobody left who may score, so the right instruction is "write no scored
+ * questions" rather than a rule the model will read as "include a rater" and
+ * satisfy with the one kind it must not use.
+ */
+function scoringPlan(audiences, opts) {
+  const scoredKinds = peerScoringAllowed(opts)
+    ? audiences
+    : audiences.filter((k) => k !== 'peer');
+  const scoredRaters = scoredKinds.filter((k) => k !== 'self');
+  return {
+    scoredKinds,
+    comparable: scoredKinds.includes('self') && scoredRaters.length > 0,
+    noScoring: scoredRaters.length === 0 && audiences.some((k) => k !== 'self'),
+  };
+}
+
+/**
+ * Shared tail: the exact question object the sanitizers will accept.
+ *
+ * The sanitizers are a backstop, not the specification. A model that writes a
+ * peer rating anyway does not break anything — the question is silently
+ * re-scoped — but the slot is wasted and HR gets a shorter draft than they
+ * asked for. Every rule the sanitizer enforces is stated here first.
+ */
+function questionContract(audiences, opts) {
   const list = audiences.join(', ');
+  const hasPeer = audiences.includes('peer');
+  const allowPeerScoring = peerScoringAllowed(opts);
+
+  const { scoredKinds, comparable, noScoring } = scoringPlan(audiences, opts);
+  // The comparison rationale only lands when both sides of the comparison are
+  // on the form. On a manager-only or self-only form it reads as a non sequitur
+  // and invites the model to add the missing kind back.
+  const why = comparable
+    ? ' A scored competency the employee does not also rate cannot be compared against their reviewers, which is the entire point of the form.'
+    : '';
+
+  const scoredRule = noScoring
+    ? `- Do NOT write any rating, likert or scale question on this form. The only reviewers besides the employee are peers, and peers do not score. Use text questions throughout.`
+    : allowPeerScoring
+      ? `- Every rating, likert and scale question MUST include ${audiences.includes('self') ? 'self plus at least one other reviewer kind' : 'every reviewer kind that can judge it'} in "askOf".${why}`
+      : `- Every rating, likert and scale question MUST have "askOf": [${scoredKinds.map((k) => `"${k}"`).join(', ')}] — exactly those, no more and no fewer.${why}`;
+
+  // Stated only when peers are actually on this form — a self+manager form has
+  // no peers to write text questions for, and mentioning them just invites a
+  // section nobody can answer.
+  const peerRules =
+    hasPeer && !allowPeerScoring
+      ? [
+          '- Never include "peer" in the "askOf" of a rating, likert or scale question. A peer in another team has no basis to score a competency like "quality of work"; asked anyway they guess, and the guess is averaged into a number that reads as measurement. Scores are for the manager, who has the context to calibrate them.',
+          '- Give peers open-text questions instead, and ask for evidence rather than an impression: one specific incident the peer personally observed ("Think of a specific time..."), not an overall view of the person. At least one question on the form must be scoped "askOf": ["peer"], or peers open a blank form.',
+        ]
+      : hasPeer
+        ? [
+            '- HR has asked for peer scoring on this form, so peers may appear in the "askOf" of rating, likert and scale questions. Only include them where a peer could genuinely observe what the question asks about.',
+            '- Also give peers at least one open-text question asking for one specific incident they personally observed ("Think of a specific time..."), not an overall impression.',
+          ]
+        : [];
+
+  // Reviewers already have a native abstain (AppraisalFeedback.answers
+  // .notObserved), which buildComparison excludes from the denominator. A
+  // modelled "N/A" is a second, worse way to say the same thing — it counts as
+  // a real answer, and the reviewer now has two controls competing for it.
+  const abstainRule =
+    '- Do NOT invent an "N/A", "Not applicable", "Did not observe" or "Unable to judge" answer option, choice or scale point. Reviewers already have a built-in control for saying they did not observe something; a question that models it as an option duplicates that control and competes with it.';
+
   return `Each question object has these keys:
   "type": one of rating | text | likert | choice | yes_no | scale
   "label": the question as the reviewer reads it (max ${LIMITS.label} chars)
@@ -278,7 +412,8 @@ function questionContract(audiences) {
   "askOf": array naming which reviewers answer it, drawn ONLY from: ${list}
 
 Rules you must follow:
-- Every rating, likert and scale question MUST include ${audiences.includes('self') ? 'self plus at least one other reviewer kind' : 'every reviewer kind that can judge it'} in "askOf". A scored competency that the employee does not also rate cannot be compared against their reviewers, which is the entire point of the form.
+${scoredRule}
+${peerRules.join('\n')}${peerRules.length ? '\n' : ''}${abstainRule}
 - Never use a "type" outside the six listed. Never use an "askOf" value outside the list above.
 - Do not repeat a question label anywhere in the form.
 - Write labels as observable behaviours ("Communicates decisions clearly to the team"), never personality traits ("Is a nice person").`;
@@ -313,9 +448,17 @@ Return a JSON object with exactly these keys:
   "sections": [ { "title": "section heading (max ${LIMITS.sectionTitle} chars)", "questions": [ ... ] } ]
 }
 
-Produce ${sectionCount} sections. Give each a heading an HR manager would recognise (competencies, goals, strengths and development, overall assessment). Mix scored questions with at least one open-text question per form so reviewers can give specific examples.
+Produce ${sectionCount} sections. Give each a heading an HR manager would recognise (competencies, goals, strengths and development, overall assessment). ${
+    scoringPlan(audiences, b).noScoring
+      ? 'Every question is open text on this form, so make each one ask for something different and concrete rather than restating the last.'
+      : 'Mix scored questions with at least one open-text question per form so reviewers can give specific examples.'
+  }${
+    audiences.includes('peer')
+      ? ` One of those sections must be for peers: give it a plain heading like "${PEER_EVIDENCE_SECTION_TITLE}" and fill it with open-text questions scoped "askOf": ["peer"].`
+      : ''
+  }
 
-${questionContract(audiences)}`;
+${questionContract(audiences, b)}`;
 }
 
 function buildSectionPrompt(input) {
@@ -360,7 +503,7 @@ Return a JSON object with exactly these keys:
   "questions": [ ... ]
 }
 
-${questionContract(audiences)}`;
+${questionContract(audiences, b)}`;
 }
 
 /**
@@ -411,7 +554,7 @@ ${context.join('\n')}
 
 Return the COMPLETE improved question as a single JSON object — every key it needs, not just the ones you changed.
 
-${questionContract(audiences)}`;
+${questionContract(audiences, b)}`;
 }
 
 module.exports = {

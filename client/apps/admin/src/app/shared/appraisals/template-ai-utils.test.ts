@@ -14,7 +14,14 @@ import type { DraftQuestion, DraftSection } from '@/services/appraisal.service';
 const ALL: DraftQuestion['askOf'] = ['self', 'manager', 'peer'];
 
 function q(label: string, extra: Partial<DraftQuestion> = {}): DraftQuestion {
-  return { type: 'rating', label, required: true, scaleMax: 5, askOf: ALL, ...extra };
+  return {
+    type: 'rating',
+    label,
+    required: true,
+    scaleMax: 5,
+    askOf: ALL,
+    ...extra,
+  };
 }
 
 function s(title: string, labels: string[]): DraftSection {
@@ -22,7 +29,12 @@ function s(title: string, labels: string[]): DraftSection {
 }
 
 const BLANK: DraftSection[] = [
-  { title: '', questions: [{ type: 'rating', label: '', required: true, scaleMax: 5, askOf: ALL }] },
+  {
+    title: '',
+    questions: [
+      { type: 'rating', label: '', required: true, scaleMax: 5, askOf: ALL },
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -35,7 +47,9 @@ describe('isBlankDraft', () => {
   });
 
   it('is false once HR has typed anything', () => {
-    expect(isBlankDraft([{ title: 'Competencies', questions: BLANK[0].questions }])).toBe(false);
+    expect(
+      isBlankDraft([{ title: 'Competencies', questions: BLANK[0].questions }])
+    ).toBe(false);
     expect(isBlankDraft([s('', ['Communication'])])).toBe(false);
     expect(isBlankDraft([...BLANK, ...BLANK])).toBe(false);
   });
@@ -46,14 +60,18 @@ describe('isBlankDraft', () => {
 // ---------------------------------------------------------------------------
 describe('appendGeneratedSections', () => {
   it('replaces an untouched blank draft instead of appending below it', () => {
-    const out = appendGeneratedSections(BLANK, [s('Competencies', ['Communication'])]);
+    const out = appendGeneratedSections(BLANK, [
+      s('Competencies', ['Communication']),
+    ]);
     expect(out).toHaveLength(1);
     expect(out[0].title).toBe('Competencies');
   });
 
   it('appends after real work rather than clobbering it', () => {
     const current = [s('Goals', ['Hit quarterly target'])];
-    const out = appendGeneratedSections(current, [s('Competencies', ['Communication'])]);
+    const out = appendGeneratedSections(current, [
+      s('Competencies', ['Communication']),
+    ]);
     expect(out.map((x) => x.title)).toEqual(['Goals', 'Competencies']);
   });
 
@@ -73,14 +91,19 @@ describe('appendGeneratedSections', () => {
 
   it('drops an incoming section left with no questions after dedupe', () => {
     const current = [s('Goals', ['Communication'])];
-    const out = appendGeneratedSections(current, [s('Competencies', ['communication'])]);
+    const out = appendGeneratedSections(current, [
+      s('Competencies', ['communication']),
+    ]);
     expect(out).toHaveLength(1);
     expect(out[0].title).toBe('Goals');
   });
 
   it('never carries an _id in from generated content', () => {
     const generated = [
-      { title: 'Competencies', questions: [q('Communication', { _id: 'not-ours' } as never)] },
+      {
+        title: 'Competencies',
+        questions: [q('Communication', { _id: 'not-ours' } as never)],
+      },
     ] as DraftSection[];
     const out = appendGeneratedSections(BLANK, generated);
     expect(out[0].questions[0]).not.toHaveProperty('_id');
@@ -105,7 +128,9 @@ describe('appendQuestionsToSection', () => {
   });
 
   it('drops the section placeholder question when the section was still blank', () => {
-    const current: DraftSection[] = [{ title: 'Competencies', questions: [q('')] }];
+    const current: DraftSection[] = [
+      { title: 'Competencies', questions: [q('')] },
+    ];
     const out = appendQuestionsToSection(current, 0, [q('C')]);
     expect(out[0].questions.map((x) => x.label)).toEqual(['C']);
   });
@@ -154,14 +179,20 @@ describe('countQuestions', () => {
 
 describe('existingQuestionLabels', () => {
   it('collects trimmed lowercased labels and ignores blanks', () => {
-    const set = existingQuestionLabels([s('A', ['  Communication ', '']), s('B', ['Ownership'])]);
+    const set = existingQuestionLabels([
+      s('A', ['  Communication ', '']),
+      s('B', ['Ownership']),
+    ]);
     expect(Array.from(set).sort()).toEqual(['communication', 'ownership']);
   });
 });
 
 describe('stripDuplicateQuestions', () => {
   it('dedupes within the incoming sections too, not only against the draft', () => {
-    const out = stripDuplicateQuestions([s('A', ['One', 'one', 'Two'])], new Set());
+    const out = stripDuplicateQuestions(
+      [s('A', ['One', 'one', 'Two'])],
+      new Set()
+    );
     expect(out[0].questions.map((x) => x.label)).toEqual(['One', 'Two']);
   });
 });

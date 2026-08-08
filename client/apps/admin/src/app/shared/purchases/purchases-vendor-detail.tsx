@@ -2270,7 +2270,7 @@ export default function PurchasesVendorDetail({ id }: { id: string }) {
                         </span>
                       </div>
                       <Link
-                        href={`/purchases/vendors/${id}/pricelists`}
+                        href="/purchases/pricelists"
                         className="text-xs text-[#b20202] hover:underline"
                       >
                         Manage →
@@ -2306,7 +2306,7 @@ export default function PurchasesVendorDetail({ id }: { id: string }) {
                           ))}
                           {vendorPricelists.length > 3 && (
                             <Link
-                              href={`/purchases/vendors/${id}/pricelists`}
+                              href="/purchases/pricelists"
                               className="block text-center text-xs text-[#b20202] hover:underline"
                             >
                               +{vendorPricelists.length - 3} more pricelists

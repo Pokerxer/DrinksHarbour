@@ -17,6 +17,8 @@ import { fireBeginCheckout } from '@/lib/pixels';
 import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAutocomplete/AddressAutocomplete';
 import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap';
 import PlacementBanner from '@/components/Banner/PlacementBanner';
+import FirstOrderPerkBanner from '@/components/Banner/FirstOrderPerkBanner';
+import { describeDeliveryLine, type FirstOrderPerk } from '@/lib/first-order-perk';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,7 +28,12 @@ const fmt = (n: number) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
 
 interface ShippingRate {
+  /** What the customer pays — already net of any first-order waiver. */
   fee: number;
+  /** The fee before the waiver. Sent back on the order so the server can
+   *  recompute the waiver without it compounding on an already-discounted fee. */
+  baseFee?: number;
+  firstOrderPerk?: FirstOrderPerk;
   zone: string;
   label: string;
   deliveryDaysMin: number;
@@ -307,7 +314,10 @@ export default function CheckoutPage() {
       if (vendorIds.length >= 2) {
         params.set('vendors', vendorIds.join(','));
       }
-      fetch(`${API_URL}/api/shipping/calculate?${params}`)
+      // credentials matter here: the first-order delivery waiver depends on the
+      // httpOnly session cookie reaching the server. Without it every shopper
+      // looks like a guest and the waiver never applies.
+      fetch(`${API_URL}/api/shipping/calculate?${params}`, { credentials: 'include' })
         .then(r => r.json())
         .then(d => { if (d.success) setShippingRate(d.data); })
         .catch(() => {})
@@ -319,6 +329,12 @@ export default function CheckoutPage() {
   // ── Derived totals ────────────────────────────────────────────────────────
   const shipping    = shippingRate?.fee ?? 0;
   const shippingZone = shippingRate?.label ?? '';
+  // The server's verdict on free delivery for a first purchase. `perkLine` is
+  // null whenever there is nothing waived, so every use site can fall through
+  // to the existing delivery copy.
+  const perk        = shippingRate?.firstOrderPerk ?? null;
+  const perkApplied = !!perk?.eligible;
+  const perkLine    = describeDeliveryLine(perk);
   const discount  = Math.min(couponDiscount, subtotal);
   const total     = Math.max(0, subtotal - discount + shipping);
 
@@ -418,6 +434,9 @@ export default function CheckoutPage() {
   });
 
   const buildShippingInfo = () => shippingRate ? ({
+    // The server recomputes the first-order waiver from baseFee, never from the
+    // discounted `fee` — otherwise the waiver would be applied twice.
+    baseFee:     shippingRate.baseFee ?? shippingRate.fee,
     distanceKm:  shippingRate.distanceKm ?? null,
     routeType:   shippingRate.routeType  ?? null,
     stops:       shippingRate.stops      ?? null,
@@ -1040,20 +1059,37 @@ export default function CheckoutPage() {
                               <Icon.PiTruckBold size={18} className={shippingRate.isFree ? 'text-green-600 flex-shrink-0' : 'text-blue-600 flex-shrink-0'} />
                               <div className="flex-1 min-w-0">
                                 <p className={`font-bold ${shippingRate.isFree ? 'text-green-700' : 'text-blue-800'}`}>
-                                  {shippingRate.isFree ? 'Free Delivery' : fmt(shippingRate.fee)}
-                                  {!shippingRate.isFree && !form.lga && (
+                                  {/* A partly waived fee shows both numbers, so the
+                                      discount is visible rather than just a lower price. */}
+                                  {perkApplied && !shippingRate.isFree && shippingRate.baseFee ? (
+                                    <>
+                                      <span className="line-through font-normal text-blue-400 mr-1.5">{fmt(shippingRate.baseFee)}</span>
+                                      {fmt(shippingRate.fee)}
+                                    </>
+                                  ) : (
+                                    shippingRate.isFree ? 'Free Delivery' : fmt(shippingRate.fee)
+                                  )}
+                                  {!shippingRate.isFree && !perkApplied && !form.lga && (
                                     <span className="text-xs font-normal text-blue-500 ml-1.5">(select LGA for exact rate)</span>
                                   )}
                                 </p>
+                                {perkLine && (
+                                  <p className="text-xs font-semibold text-green-700 mt-0.5 flex items-center gap-1">
+                                    <Icon.PiSparkleBold size={12} /> {perkLine}
+                                  </p>
+                                )}
                                 <p className={`text-xs mt-0.5 ${shippingRate.isFree ? 'text-green-600' : 'text-blue-600'}`}>
-                                  {shippingRate.isFree
+                                  {shippingRate.isFree && !perkApplied
                                     ? 'Your order qualifies for free delivery!'
                                     : shippingRate.source === 'google' && shippingRate.distanceKm
                                       ? `~${shippingRate.distanceKm} km${shippingRate.routeType === 'multi-vendor' ? ` · ${shippingRate.stops} pickup stops` : ''} · Est. ${shippingRate.deliveryDaysMin}–${shippingRate.deliveryDaysMax} business days`
                                       : `${shippingRate.label} · Est. ${shippingRate.deliveryDaysMin}–${shippingRate.deliveryDaysMax} business days`
                                   }
                                 </p>
-                                {!shippingRate.isFree && shippingRate.remaining > 0 && (
+                                {/* Suppressed once the waiver applies — telling someone
+                                    who is already getting free delivery to spend ₦2m more
+                                    to get free delivery reads as a bug. */}
+                                {!shippingRate.isFree && !perkApplied && shippingRate.remaining > 0 && (
                                   <p className="text-xs text-blue-500 mt-0.5">
                                     Add {fmt(shippingRate.remaining)} more to get free delivery
                                   </p>
@@ -1234,6 +1270,11 @@ export default function CheckoutPage() {
                       })}
                     </div>
 
+                    {/* First-order free delivery. Renders the sign-in nudge for
+                        guests and the "add ₦x more" hint below the minimum; stays
+                        hidden for anyone who cannot claim it. */}
+                    <FirstOrderPerkBanner variant="card" subtotal={subtotal} returnTo="/checkout" />
+
                     {/* Coupon */}
                     <CouponComponent
                       onCouponApplied={(code, disc) => { setCouponDiscount(disc); setAppliedCoupon(code); }}
@@ -1270,7 +1311,11 @@ export default function CheckoutPage() {
                       </div>
                       {shippingRate && !shippingLoading && (
                         <div className="text-xs text-gray-400 space-y-0.5">
-                          {shippingRate.isFree ? (
+                          {perkLine ? (
+                            <p className="text-green-600 flex items-center gap-1 font-semibold">
+                              <Icon.PiCheckCircleBold size={12} /> {perkLine}
+                            </p>
+                          ) : shippingRate.isFree ? (
                             <p className="text-green-600 flex items-center gap-1">
                               <Icon.PiCheckCircleBold size={12} /> Free delivery — order qualifies!
                             </p>

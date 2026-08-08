@@ -21,6 +21,7 @@ import { useCompare } from '@/context/CompareContext';
 import { useModalCompareContext } from '@/context/ModalCompareContext';
 import Rate from '@/components/Other/Rate';
 import ProductSpecifications from './ProductSpecifications';
+import ShareButton from './ShareButton';
 import ProductReviews from '@/components/Product/ProductReviews';
 import RelatedProducts from './RelatedProducts';
 import PackPricingCard from '@/components/Product/PackPricingCard';
@@ -358,23 +359,6 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
       }
     }
   }, [productData, productId, isInCompare, removeFromCompare, addToCompare, openModalCompare]);
-
-  const handleShare = useCallback(async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: productData?.name,
-          text: productData?.shortDescription || productData?.description,
-          url: window.location.href,
-        });
-      } catch (err) {
-        console.log('Share cancelled');
-      }
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      setToast({ show: true, message: 'Link copied to clipboard!', type: 'success' });
-    }
-  }, [productData]);
 
   const renderToast = () => {
     if (!toast.show) return null;
@@ -875,12 +859,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                   {isProductInCompare ? 'In Compare' : 'Compare'}
                 </button>
 
-                <button
-                  onClick={handleShare}
-                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl border-2 border-gray-200 hover:border-gray-300 text-gray-700 font-medium transition-all"
-                >
-                  <Icon.PiShareNetwork size={18} />
-                </button>
+                <ShareButton
+                  name={productData.name}
+                  description={productData.shortDescription || productData.description}
+                />
               </div>
 
               {/* Trust Indicators - Enhanced with vendor-specific info */}

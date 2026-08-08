@@ -59,6 +59,9 @@ import {
   PiLink,
   PiMagicWand,
   PiSparkle,
+  PiCaretLeft,
+  PiCaretRight,
+  PiMagnifyingGlassBold,
 } from 'react-icons/pi';
 import ProductIdentification from '@/app/shared/ecommerce/product/create-edit/product-identification';
 import ProductBeverageInfo from '@/app/shared/ecommerce/product/create-edit/product-beverage-info';
@@ -79,6 +82,10 @@ import {
 } from '@/validators/create-product.schema';
 import { routes } from '@/config/routes';
 import { productService } from '@/services/product.service';
+import {
+  loadProductSearchContext,
+  summarizeProductSearchContext,
+} from '../product-list/search-context';
 import { defaultValues, formParts } from './form-utils';
 import ProductSubProductsPanel from './product-subproducts';
 import { ValidationSummary } from '@/components/validation-summary';
@@ -377,6 +384,7 @@ export default function CreateEditProduct({
 
   // Record navigation — real product id list so prev/next moves between records
   const [productIds, setProductIds] = useState<string[]>([]);
+  const [navContextSummary, setNavContextSummary] = useState<string>('');
   const [headerMeta, setHeaderMeta] = useState<{
     status?: string;
     isPublished?: boolean;
@@ -868,9 +876,22 @@ export default function CreateEditProduct({
       .finally(() => setIsFetching(false));
   }, [id, session?.user?.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load the product id list once so prev/next navigates real records
+  // Load the product id list once so prev/next navigates real records.
+  // Prefer the search context saved by the /products list (filtered results).
   useEffect(() => {
     if (!isEditMode || !session?.user?.token) return;
+
+    // 1. Try the search context saved by the list page
+    const ctx = loadProductSearchContext();
+    const ctxIds = ctx?.ids || [];
+    if (ctxIds.length > 0) {
+      setProductIds(ctxIds);
+      setNavContextSummary(summarizeProductSearchContext(ctx));
+      return;
+    }
+    setNavContextSummary('');
+
+    // 2. Fallback: fetch all products from server
     productService
       .getProducts(session.user.token, { limit: 500 })
       .then((res) => {
@@ -1265,6 +1286,51 @@ export default function CreateEditProduct({
                       )}
                       <span>{isGenerating ? 'Generating…' : 'AI'}</span>
                     </motion.button>
+                  )}
+
+                  {/* ── Prev / Next navigation ── */}
+                  {isEditMode && productIds.length > 1 && currentProductIndex !== -1 && (
+                    <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                      {navContextSummary && (
+                        <span
+                          className="hidden max-w-[10rem] truncate rounded-md bg-[#b20202]/5 px-2 py-1 text-[10px] font-medium text-[#b20202] md:block"
+                          title={`From search: ${navContextSummary}`}
+                        >
+                          <PiMagnifyingGlassBold className="mr-1 inline h-2.5 w-2.5" />
+                          {navContextSummary}
+                        </span>
+                      )}
+                      {navContextSummary && <div className="h-4 w-px bg-gray-200" />}
+                      <button
+                        type="button"
+                        disabled={currentProductIndex <= 0}
+                        title={
+                          currentProductIndex > 0
+                            ? `Previous product (${currentProductIndex} of ${productIds.length})`
+                            : 'No previous product'
+                        }
+                        onClick={handlePrevProduct}
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <PiCaretLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="min-w-[3rem] text-center text-[10px] font-semibold tabular-nums text-gray-500">
+                        {currentProductIndex + 1} / {productIds.length}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={currentProductIndex >= productIds.length - 1}
+                        title={
+                          currentProductIndex < productIds.length - 1
+                            ? `Next product (${currentProductIndex + 2} of ${productIds.length})`
+                            : 'No next product'
+                        }
+                        onClick={handleNextProduct}
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <PiCaretRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   )}
 
                   {/* Settings Dropdown */}

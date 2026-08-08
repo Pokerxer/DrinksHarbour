@@ -21,20 +21,26 @@ import TemplateQuestionRow from './template-question-row';
 const SECTION_HINTS: Record<string, string> = {
   'Core Competencies': 'Rate key skills and behaviours specific to the role.',
   'Goal Assessment': 'Evaluate progress against goals and set new objectives.',
-  'Strengths & Areas for Improvement': 'Highlight strengths and identify development areas.',
+  'Strengths & Areas for Improvement':
+    'Highlight strengths and identify development areas.',
   'Development Plan': 'Outline training needs and career aspirations.',
-  'Leadership & Decision-Making': 'Assess leadership capability and decision quality.',
-  'Communication & Collaboration': 'Rate communication effectiveness and teamwork.',
-  'Technical & Role Competency': 'Evaluate technical or role-specific skill proficiency.',
+  'Leadership & Decision-Making':
+    'Assess leadership capability and decision quality.',
+  'Communication & Collaboration':
+    'Rate communication effectiveness and teamwork.',
+  'Technical & Role Competency':
+    'Evaluate technical or role-specific skill proficiency.',
   'Culture & Values': 'Assess alignment with company values and culture.',
   'Top Accomplishments': 'Capture key achievements from the period.',
   'Goals Progress': 'Rate progress toward annual or quarterly goals.',
   'Challenges & Support': 'Identify barriers and needed resources.',
   'Next Quarter Focus': 'Set priorities for the upcoming quarter.',
-  'Role Understanding & Performance': 'Evaluate grasp of role and quality of output.',
+  'Role Understanding & Performance':
+    'Evaluate grasp of role and quality of output.',
   'Learning & Adaptability': 'Assess willingness to learn and adapt to change.',
   'Team & Culture Fit': 'Evaluate integration and cultural alignment.',
-  'Overall Assessment': 'Final summary: achievements, areas for growth, and recommendation.',
+  'Overall Assessment':
+    'Final summary: achievements, areas for growth, and recommendation.',
 };
 
 // ---------------------------------------------------------------------------
@@ -43,7 +49,11 @@ const SECTION_HINTS: Record<string, string> = {
 const SECTION_COLORS = [
   { ring: 'ring-[#b20202]/20', bg: 'bg-[#b20202]', text: 'text-[#b20202]' },
   { ring: 'ring-purple-500/20', bg: 'bg-purple-500', text: 'text-purple-600' },
-  { ring: 'ring-emerald-500/20', bg: 'bg-emerald-500', text: 'text-emerald-600' },
+  {
+    ring: 'ring-emerald-500/20',
+    bg: 'bg-emerald-500',
+    text: 'text-emerald-600',
+  },
   { ring: 'ring-blue-500/20', bg: 'bg-blue-500', text: 'text-blue-600' },
   { ring: 'ring-amber-500/20', bg: 'bg-amber-500', text: 'text-amber-600' },
   { ring: 'ring-cyan-500/20', bg: 'bg-cyan-500', text: 'text-cyan-600' },
@@ -66,13 +76,21 @@ interface TemplateSectionCardProps {
   onMove: (si: number, dir: -1 | 1) => void;
   onRemove: (si: number) => void;
   onAddQuestion: (si: number) => void;
-  onPatchQuestion: (si: number, qi: number, patch: Partial<DraftQuestion>) => void;
+  onPatchQuestion: (
+    si: number,
+    qi: number,
+    patch: Partial<DraftQuestion>
+  ) => void;
   onMoveQuestion: (si: number, qi: number, dir: -1 | 1) => void;
   onRemoveQuestion: (si: number, qi: number) => void;
   onDuplicateQuestion?: (si: number, qi: number) => void;
   /** Opens the AI modal pre-scoped to growing THIS section. */
   onExpandWithAi?: (si: number) => void;
-  onAssistQuestion?: (si: number, qi: number, mode: 'label' | 'options' | 'askOf') => void;
+  onAssistQuestion?: (
+    si: number,
+    qi: number,
+    mode: 'label' | 'options' | 'askOf'
+  ) => void;
   /** `${si}:${qi}` of the question whose assist is in flight, if any. */
   assistingKey?: string | null;
 }
@@ -105,7 +123,8 @@ export default function TemplateSectionCard({
   const answeredCount = section.questions.filter(
     (q) => q.label.trim() && q.askOf.length > 0
   ).length;
-  const progressPct = questionCount > 0 ? Math.round((answeredCount / questionCount) * 100) : 0;
+  const progressPct =
+    questionCount > 0 ? Math.round((answeredCount / questionCount) * 100) : 0;
   const isComplete = answeredCount === questionCount && questionCount > 0;
 
   return (
@@ -113,20 +132,29 @@ export default function TemplateSectionCard({
       layout
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ type: 'spring', stiffness: 260, damping: 26, delay: Math.min(si * 0.06, 0.3) }}
+      transition={{
+        type: 'spring',
+        stiffness: 260,
+        damping: 26,
+        delay: Math.min(si * 0.06, 0.3),
+      }}
       className={`flex flex-col rounded-2xl border bg-white shadow-sm transition-all duration-200 ${
-        hasBadField ? 'border-red-300 shadow-red-100' : 'border-gray-200 hover:shadow-md'
+        hasBadField
+          ? 'border-red-300 shadow-red-100'
+          : 'border-gray-200 hover:shadow-md'
       }`}
     >
       {/* ─── Row 1: Section number + Title input + Progress ring ─── */}
-      <div className="flex items-center gap-3 px-4 pt-4 pb-2 sm:px-5">
+      <div className="flex items-center gap-3 px-4 pb-2 pt-4 sm:px-5">
         {/* Section number badge */}
-        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${color.bg}/10 ring-1 ring-inset ${color.ring}`}>
+        <div
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${color.bg}/10 ring-1 ring-inset ${color.ring}`}
+        >
           <span className={`text-sm font-bold ${color.text}`}>{si + 1}</span>
         </div>
 
         {/* Title input (takes remaining space) */}
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <Input
             value={section.title}
             onChange={(e) => onTitleChange(si, e.target.value)}
@@ -139,14 +167,27 @@ export default function TemplateSectionCard({
         {questionCount > 0 ? (
           <div className="relative h-10 w-10 shrink-0">
             <svg className="h-10 w-10 -rotate-90" viewBox="0 0 36 36">
-              <circle cx="18" cy="18" r="15.5" fill="none" stroke="#f3f4f6" strokeWidth="3" />
+              <circle
+                cx="18"
+                cy="18"
+                r="15.5"
+                fill="none"
+                stroke="#f3f4f6"
+                strokeWidth="3"
+              />
               <motion.circle
-                cx="18" cy="18" r="15.5" fill="none"
+                cx="18"
+                cy="18"
+                r="15.5"
+                fill="none"
                 stroke={isComplete ? '#10b981' : '#b20202'}
-                strokeWidth="3" strokeLinecap="round"
+                strokeWidth="3"
+                strokeLinecap="round"
                 strokeDasharray="97.39"
                 initial={{ strokeDashoffset: 97.39 }}
-                animate={{ strokeDashoffset: 97.39 - (97.39 * progressPct) / 100 }}
+                animate={{
+                  strokeDashoffset: 97.39 - (97.39 * progressPct) / 100,
+                }}
                 transition={{ type: 'spring', stiffness: 60, damping: 15 }}
               />
             </svg>
@@ -162,9 +203,12 @@ export default function TemplateSectionCard({
         <button
           type="button"
           onClick={() => setCollapsed(!collapsed)}
-          className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+          className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
         >
-          <motion.div animate={{ rotate: collapsed ? 0 : 90 }} transition={{ duration: 0.15 }}>
+          <motion.div
+            animate={{ rotate: collapsed ? 0 : 90 }}
+            transition={{ duration: 0.15 }}
+          >
             <PiCaretRight className="h-4 w-4" />
           </motion.div>
         </button>
@@ -179,7 +223,15 @@ export default function TemplateSectionCard({
             animate={{ opacity: 1, scale: 1 }}
             className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 ring-1 ring-inset ring-emerald-100"
           >
-            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              className="h-3 w-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M20 6 9 17l-5-5" />
             </svg>
             Complete
@@ -200,7 +252,7 @@ export default function TemplateSectionCard({
             aria-label="Move section up"
             onClick={() => onMove(si, -1)}
             disabled={saving || isFirst}
-            className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 transition-colors"
+            className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30"
           >
             <PiArrowUp className="h-4 w-4" />
           </button>
@@ -209,7 +261,7 @@ export default function TemplateSectionCard({
             aria-label="Move section down"
             onClick={() => onMove(si, 1)}
             disabled={saving || isLast}
-            className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 transition-colors"
+            className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30"
           >
             <PiArrowDown className="h-4 w-4" />
           </button>
@@ -218,7 +270,7 @@ export default function TemplateSectionCard({
             aria-label="Remove section"
             onClick={() => onRemove(si)}
             disabled={saving || totalSections === 1}
-            className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30 transition-colors"
+            className="rounded p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
           >
             <PiTrash className="h-4 w-4" />
           </button>
@@ -294,7 +346,7 @@ export default function TemplateSectionCard({
             onAddQuestion(si);
           }}
           disabled={saving}
-          className="inline-flex w-fit items-center gap-1.5 text-sm font-semibold text-[#b20202] opacity-70 hover:opacity-100 hover:underline disabled:opacity-50 transition-opacity"
+          className="inline-flex w-fit items-center gap-1.5 text-sm font-semibold text-[#b20202] opacity-70 transition-opacity hover:underline hover:opacity-100 disabled:opacity-50"
         >
           <PiPlusBold className="h-3.5 w-3.5" />
           Add question
@@ -307,7 +359,7 @@ export default function TemplateSectionCard({
               onExpandWithAi(si);
             }}
             disabled={saving}
-            className="ml-4 inline-flex w-fit items-center gap-1.5 text-sm font-semibold text-[#b20202] opacity-70 hover:opacity-100 hover:underline disabled:opacity-50 transition-opacity"
+            className="ml-4 inline-flex w-fit items-center gap-1.5 text-sm font-semibold text-[#b20202] opacity-70 transition-opacity hover:underline hover:opacity-100 disabled:opacity-50"
           >
             <PiSparkle className="h-3.5 w-3.5" />
             Expand with AI

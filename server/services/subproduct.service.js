@@ -15,6 +15,7 @@ const {
   ConflictError 
 } = require('../utils/errors');
 const { generateSKU } = require('../utils/skuGenerator');
+const { assessSubProductDeletion } = require('./warehouseStock.helpers');
 const { calculateSubProductPricing, calculateSizePricing, isDiscountActive, resolveRevenueRates, calcPlatformCostPrice } = require('../utils/pricing');
 
 // Tenant-sensitive fields that must NEVER be exposed via public endpoints
@@ -2208,6 +2209,40 @@ const deleteSubProduct = async (subProductId, tenantId) => {
 
   const productId = subProduct.product;
   const wasActive = subProduct.status === 'active';
+
+  // Refuse to delete a SubProduct that still holds stock. Deleting it would
+  // strand its WarehouseStock lines on an id that no longer resolves — populate
+  // returns null for the dangling ref, and the quantity becomes invisible
+  // without ever being written off. Operators must write off or transfer the
+  // stock first, so the loss is deliberate and auditable.
+  const stockRows = await WarehouseStock.find({
+    subProduct: subProductId,
+    tenant: tenantId,
+  })
+    .populate('warehouse', 'name')
+    .lean();
+  const { blocked, blocking, removable, totalQuantity, totalReserved } =
+    assessSubProductDeletion(stockRows);
+
+  if (blocked) {
+    const where = blocking
+      .map((r) => `${(r.warehouse && r.warehouse.name) || r.warehouse}: ${r.currentQuantity || 0}`)
+      .join(', ');
+    throw new ValidationError(
+      `Cannot delete this product while it still holds stock ` +
+        `(${totalQuantity} on hand, ${totalReserved} reserved across ` +
+        `${blocking.length} warehouse line(s) — ${where}). ` +
+        `Write off or transfer the stock first.`
+    );
+  }
+
+  // Only empty lines remain, so removing them destroys no inventory — and it is
+  // what stops the refs from dangling.
+  if (removable.length > 0) {
+    await WarehouseStock.deleteMany({
+      _id: { $in: removable.map((r) => r._id) },
+    });
+  }
 
   // Delete associated sizes
   await Size.deleteMany({ subproduct: subProductId });

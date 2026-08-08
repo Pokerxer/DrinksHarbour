@@ -9,6 +9,7 @@ import { ModalCompareProvider } from "@/context/ModalCompareContext";
 import { ModalSearchProvider, ModalSearchUIProvider } from "@/context/ModalSearchContext";
 import { ModalQuickviewProvider } from "@/context/ModalQuickviewContext";
 import { TenantProvider } from "@/context/TenantContext";
+import { FirstOrderPerkProvider } from "@/context/FirstOrderPerkContext";
 
 const GlobalProvider: React.FC<{
   children: React.ReactNode;
@@ -16,6 +17,8 @@ const GlobalProvider: React.FC<{
   return (
     <AuthProvider>
       <TenantProvider>
+        {/* Reads auth state, so it must sit inside AuthProvider. */}
+        <FirstOrderPerkProvider>
         <CartProvider>
           <ModalCartProvider>
             <WishlistProvider>
@@ -35,6 +38,7 @@ const GlobalProvider: React.FC<{
             </WishlistProvider>
           </ModalCartProvider>
         </CartProvider>
+        </FirstOrderPerkProvider>
       </TenantProvider>
     </AuthProvider>
   );

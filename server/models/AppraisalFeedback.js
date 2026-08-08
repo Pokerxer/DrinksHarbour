@@ -18,6 +18,14 @@ const answerSchema = new Schema(
     questionId: { type: Schema.Types.ObjectId, required: true },
     rating: { type: Number, min: 0, max: 10 },
     text: { type: String, trim: true, maxlength: 5000 },
+    // "I haven't seen enough to judge this." Peers only — enforced in
+    // appraisalFeedback.controller.js, which also strips rating/text/selected
+    // off an answer carrying it, so a not-observed answer is never ALSO a
+    // score. Distinct from simply omitting the answer: an omission is an
+    // unanswered required question and is rejected at submit, whereas this is
+    // a deliberate, permitted abstention that satisfies the requirement and
+    // then stays out of every denominator (see buildComparison).
+    notObserved: { type: Boolean },
     // maxlength matches AppraisalTemplate's option maxlength — a stored answer
     // can never be longer than the option it was chosen from.
     selected: [{ type: String, trim: true, maxlength: 200 }],

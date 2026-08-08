@@ -102,9 +102,14 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
       setBill(res.data);
 
       // Fetch returns linked to the same PO
-      const poId = typeof res.data.purchaseOrder === 'object'
-        ? (res.data.purchaseOrder as { _id: string; poNumber?: string })._id
-        : res.data.purchaseOrder;
+      // `purchaseOrder` may be an id string, the populated doc, or null when the
+      // PO was deleted (populate resolves a dangling ref to null, and
+      // `typeof null === 'object'`).
+      const po = res.data.purchaseOrder;
+      const poId =
+        po && typeof po === 'object'
+          ? (po as { _id: string; poNumber?: string })._id
+          : po;
       if (poId) {
         const retRes = await vendorReturnService
           .getVendorReturns(token, { purchaseOrder: poId, limit: 10 })
@@ -752,7 +757,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                     {p.reference ?? '—'}
                   </td>
                   <td className="px-4 py-2.5 text-gray-500">
-                    {typeof p.recordedBy === 'object' ? (p.recordedBy as { name?: string }).name ?? '—' : '—'}
+                    {p.recordedBy && typeof p.recordedBy === 'object' ? (p.recordedBy as { name?: string }).name ?? '—' : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right font-medium text-green-700">
                     {fmtPrice(p.amount, bill.currency)}

@@ -417,10 +417,21 @@ function pickAudiences(body) {
   return ['self', 'manager', 'peer'].filter((k) => raw.includes(k));
 }
 
+/**
+ * HR's deliberate "yes, peers should score too" override. Off unless ticked:
+ * the generator otherwise scopes scored questions to self+manager, matching
+ * the seeded default template. Without this flag peer scoring would be
+ * silently impossible rather than merely discouraged.
+ */
+function pickAllowPeerScoring(body) {
+  return Boolean(body && body.allowPeerScoring);
+}
+
 /** POST /api/appraisal-templates/ai/template — generate a whole form. */
 exports.aiGenerateTemplate = async (req, res, next) => {
   try {
     const audiences = pickAudiences(req.body);
+    const allowPeerScoring = pickAllowPeerScoring(req.body);
     const brief = {
       role: req.body?.role,
       department: req.body?.department,
@@ -429,6 +440,7 @@ exports.aiGenerateTemplate = async (req, res, next) => {
       sectionCount: req.body?.sectionCount,
       questionsPerSection: req.body?.questionsPerSection,
       audiences,
+      allowPeerScoring,
     };
     if (!brief.role && !brief.purpose && !brief.notes) {
       return res.status(400).json({
@@ -440,7 +452,7 @@ exports.aiGenerateTemplate = async (req, res, next) => {
     const json = await generateJson(res, { prompt: buildTemplatePrompt(brief), maxTokens: 8192 });
     if (!json) return;
 
-    const draft = sanitizeGeneratedTemplate(json, { audiences });
+    const draft = sanitizeGeneratedTemplate(json, { audiences, allowPeerScoring });
     // Everything the model produced failed the invariants. Say so plainly —
     // handing HR an empty draft would read as a successful generation.
     if (draft.sections.length === 0) {
@@ -457,6 +469,7 @@ exports.aiGenerateTemplate = async (req, res, next) => {
 exports.aiGenerateSection = async (req, res, next) => {
   try {
     const audiences = pickAudiences(req.body);
+    const allowPeerScoring = pickAllowPeerScoring(req.body);
     const input = {
       role: req.body?.role,
       department: req.body?.department,
@@ -468,6 +481,7 @@ exports.aiGenerateSection = async (req, res, next) => {
       // duplicate is a wasted slot — better that it is never written.
       existingSections: req.body?.existingSections,
       audiences,
+      allowPeerScoring,
     };
 
     const json = await generateJson(res, { prompt: buildSectionPrompt(input), maxTokens: 4096 });
@@ -481,7 +495,7 @@ exports.aiGenerateSection = async (req, res, next) => {
       }
     }
 
-    const section = sanitizeGeneratedSection(json, { audiences, seenLabels });
+    const section = sanitizeGeneratedSection(json, { audiences, seenLabels, allowPeerScoring });
     if (!section) {
       return res.status(500).json({
         success: false,
@@ -496,6 +510,7 @@ exports.aiGenerateSection = async (req, res, next) => {
 exports.aiAssistQuestion = async (req, res, next) => {
   try {
     const audiences = pickAudiences(req.body);
+    const allowPeerScoring = pickAllowPeerScoring(req.body);
     const mode = ['label', 'options', 'askOf'].includes(req.body?.mode) ? req.body.mode : 'label';
     const question = req.body?.question;
     if (!question || typeof question !== 'object') {
@@ -507,6 +522,7 @@ exports.aiAssistQuestion = async (req, res, next) => {
         mode,
         question,
         audiences,
+        allowPeerScoring,
         role: req.body?.role,
         sectionTitle: req.body?.sectionTitle,
       }),
@@ -514,7 +530,7 @@ exports.aiAssistQuestion = async (req, res, next) => {
     });
     if (!json) return;
 
-    const merged = mergeQuestionAssist(question, json, { mode, audiences });
+    const merged = mergeQuestionAssist(question, json, { mode, audiences, allowPeerScoring });
     if (!merged) {
       return res.status(500).json({
         success: false,

@@ -11,6 +11,7 @@ import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import { viewItemListEvent, type GTagItem } from '@/lib/gtag';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
+import { FirstOrderPerkBanner } from '@/components/Banner';
 
 const CartPage = () => {
   const router = useRouter();
@@ -190,6 +191,11 @@ const CartPage = () => {
             <Icon.PiTrash size={16} />
             <span className="hidden sm:inline">Clear All</span>
           </button>
+        </div>
+
+        {/* First-order free delivery — hidden unless this shopper can claim it */}
+        <div className="mb-4 empty:mb-0">
+          <FirstOrderPerkBanner variant="card" subtotal={cartTotal} returnTo="/cart" />
         </div>
 
         {/* Validation Banner */}

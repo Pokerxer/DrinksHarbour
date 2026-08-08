@@ -10,6 +10,8 @@ const {
   STATE_ZONES,
 } = require('../data/shipping-zones');
 const { getRoadDistanceKm, getRouteDistanceKm, WAREHOUSE } = require('../services/ors.service');
+const { resolveFirstOrderPerk } = require('../services/firstOrderPerk.service');
+const { FIRST_ORDER_PERK } = require('../services/firstOrderPerk.helpers');
 
 // Lazy-load Tenant to avoid circular deps at module init time
 const getTenant = () => require('../models/Tenant');
@@ -35,6 +37,36 @@ function resolvePackageState(state) {
   )?.state || null;
 }
 
+
+/**
+ * Fold the first-purchase delivery waiver into a quote.
+ *
+ * `fee` keeps its existing meaning — what the customer actually pays — so every
+ * caller that already reads `fee`/`isFree` picks the waiver up for free. The
+ * pre-waiver number is preserved as `baseFee`, which is what the order write
+ * recomputes against; it must never recompute against the discounted figure or
+ * the waiver would compound on itself.
+ */
+async function applyFirstOrderPerk(result, { user, subtotal, state }) {
+  const baseFee = result.fee;
+
+  const perk = await resolveFirstOrderPerk({ user, subtotal, state, baseFee });
+  const fee  = perk.eligible ? perk.payableFee : baseFee;
+
+  return {
+    ...result,
+    baseFee,
+    fee,
+    isFree: fee === 0,
+    firstOrderPerk: {
+      eligible:     perk.eligible,
+      waivedAmount: perk.waivedAmount,
+      reason:       perk.reason,
+      minSubtotal:  perk.minSubtotal,
+      maxWaiver:    perk.maxWaiver,
+    },
+  };
+}
 
 /**
  * GET /api/shipping/calculate
@@ -110,7 +142,10 @@ const getShippingRate = asyncHandler(async (req, res) => {
         distanceKm = await getRoadDistanceKm(customerLat, customerLon);
       }
 
-      const result = calculateShippingByDistance(distanceKm, sub, state);
+      const result = await applyFirstOrderPerk(
+        calculateShippingByDistance(distanceKm, sub, state),
+        { user: req.user, subtotal: sub, state },
+      );
       const threshold = getFreeThreshold(state);
 
       return res.json({
@@ -131,7 +166,10 @@ const getShippingRate = asyncHandler(async (req, res) => {
   }
 
   // ── Zone / LGA fallback ───────────────────────────────────────────────────
-  const result = calculateShipping(state, lga, sub);
+  const result = await applyFirstOrderPerk(
+    calculateShipping(state, lga, sub),
+    { user: req.user, subtotal: sub, state },
+  );
   const threshold = getFreeThreshold(state);
   res.json({
     success: true,
@@ -167,4 +205,38 @@ const getZones = asyncHandler(async (req, res) => {
   res.json({ success: true, data: STATE_ZONES });
 });
 
-module.exports = { getShippingRate, getLGAs, getStates, getZones };
+/**
+ * GET /api/shipping/first-order-perk
+ *
+ * Cheap eligibility probe for the marketing surfaces — the header bar and the
+ * cart banner need to know whether to advertise the offer long before a delivery
+ * address exists. No fee is quoted here, so `eligible` answers "would this
+ * customer qualify once they enter an Abuja address", not "is a waiver applied".
+ *
+ * Optional query params `subtotal` and `state` sharpen the answer where the
+ * caller knows them (the cart page knows the subtotal), which is what lets the
+ * banner say "add ₦12,000 more" instead of a generic pitch.
+ */
+const getFirstOrderPerk = asyncHandler(async (req, res) => {
+  const { subtotal, state } = req.query;
+
+  // With no state supplied, assume the perk zone: the question being asked is
+  // whether this customer is eligible at all, not where they happen to live.
+  const perk = await resolveFirstOrderPerk({
+    user:     req.user,
+    subtotal: subtotal !== undefined ? parseFloat(subtotal) || 0 : FIRST_ORDER_PERK.minSubtotal,
+    state:    state || FIRST_ORDER_PERK.states[0],
+    baseFee:  null,
+  });
+
+  res.json({
+    success: true,
+    data: {
+      ...perk,
+      signedIn:        !!req.user,
+      subtotalApplied: subtotal !== undefined,
+    },
+  });
+});
+
+module.exports = { getShippingRate, getLGAs, getStates, getZones, getFirstOrderPerk };

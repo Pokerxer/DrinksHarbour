@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { Button, Modal, Text, Textarea, Title } from 'rizzui';
 import {
   PiChatCircleText,
+  PiFlagBannerFold,
   PiCheckCircle,
   PiStar,
   PiUserCircle,
@@ -261,6 +262,36 @@ export default function AppraisalSubjectView({
         )}
       </div>
 
+      {/* What was agreed. Given its own card immediately below the summary
+          rather than buried at the bottom: this is the only part of the review
+          that describes the future, and it is what the next cycle opens on. */}
+      {(appraisal.commitments?.length ?? 0) > 0 && (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-5">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+            <PiFlagBannerFold className="h-4 w-4 text-indigo-600" />
+            Agreed for the next period
+          </p>
+          <ol className="mt-3 flex flex-col gap-2">
+            {appraisal.commitments!.map((c, i) => (
+              <li key={i} className="flex items-start gap-2.5">
+                <span
+                  aria-hidden="true"
+                  className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-bold tabular-nums text-indigo-700"
+                >
+                  {i + 1}
+                </span>
+                <span className="min-w-0 flex-1 text-sm leading-relaxed text-gray-700">
+                  {c.text}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-xs text-gray-400">
+            These will open your next review.
+          </p>
+        </div>
+      )}
+
       <AppraisalComparison rows={comparison} />
 
       <div className="flex flex-col gap-4">
@@ -282,14 +313,18 @@ export default function AppraisalSubjectView({
             questions={questions}
           />
         )}
-        {/* Every card is headed "Peer feedback", with no ordinal.
-            The numbering that used to be here read as a neutral label but was
-            a stable index into a list the subject wrote themselves: peer rows
-            arrived in creation order, which is the order their own nominations
-            were approved. The server now also reorders these under a salted
-            hash (orderFeedbackForViewer) so position carries nothing — the
-            missing number is the second half of that, removing the affordance
-            to correlate at all. Cards are separated visually, not by rank. */}
+        {/* Peer input is NOT rendered here, and `peerFeedback` is expected to
+            be empty: the server no longer sends peer rows to the subject at
+            all (canSeePeerFeedback). Anonymising a peer card was never enough,
+            because prose identifies its author to anyone who works with them —
+            which is exactly what made peers write the vague, unfalsifiable
+            thing. Their manager reads it in full and answers for it in the
+            summary above.
+
+            The `.map` is kept as a defensive render rather than deleted: if a
+            future server change ever does send peer rows to a subject, they
+            should appear under the anonymous heading rather than vanish
+            silently. In normal operation it renders nothing. */}
         {peerFeedback.map((f) => (
           <FeedbackCard
             key={f._id}
@@ -298,6 +333,13 @@ export default function AppraisalSubjectView({
             questions={questions}
           />
         ))}
+        {typeof approvedPeerCount === 'number' && approvedPeerCount > 0 && (
+          <p className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-4 py-3 text-xs leading-relaxed text-gray-500">
+            Colleagues wrote to your manager in confidence, so their responses
+            are not shown here. What they said is reflected in the summary
+            above, which your manager wrote and stands behind.
+          </p>
+        )}
         {feedback.length === 0 && (
           <p className="text-sm text-gray-400">
             No feedback has been submitted yet.

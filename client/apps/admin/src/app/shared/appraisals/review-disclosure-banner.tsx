@@ -41,14 +41,22 @@ function formatRoleList(tokens: string[], kind: FeedbackKind): string {
 export default function ReviewDisclosureBanner({
   namedTo,
   anonymousTo,
+  withheldFrom = [],
   kind,
 }: {
   namedTo: string[];
   anonymousTo: string[];
+  /**
+   * Who does not receive this feedback AT ALL — a stronger claim than
+   * `anonymousTo`, and the one that applies to peers now. Defaulted so an
+   * older cached payload without the key still renders.
+   */
+  withheldFrom?: string[];
   kind: FeedbackKind;
 }) {
   const hasNamed = namedTo.length > 0;
   const hasAnonymous = anonymousTo.length > 0;
+  const hasWithheld = withheldFrom.length > 0;
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-amber-200/60 bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-50/40 p-5">
@@ -72,16 +80,35 @@ export default function ReviewDisclosureBanner({
               </p>
             </div>
           )}
+          {/* Deliberately stronger wording than the anonymity line below, and
+              shown first. "Anonymous" invites the reader to picture their words
+              reaching the subject with the name filed off — which is what makes
+              a peer write something unfalsifiably vague. The truth is better
+              for both sides: the subject never receives this row, so the
+              specifics that make feedback useful are safe to write down. */}
+          {hasWithheld && (
+            <div className="flex items-start gap-2 text-[13px] text-amber-800">
+              <PiEyeSlash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <p>
+                <span className="font-semibold">
+                  {formatRoleList(withheldFrom, kind)} will not see this at all
+                </span>{' '}
+                — not your name, and not what you wrote. It is read by the
+                people above, who use it to write the summary.
+              </p>
+            </div>
+          )}
           {hasAnonymous ? (
             <div className="flex items-start gap-2 text-[13px] text-amber-800">
               <PiEyeSlash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
               <p>
-                Your name is <span className="font-semibold">not shown</span> to:{' '}
-                {formatRoleList(anonymousTo, kind)}.
+                Your name is <span className="font-semibold">not shown</span>{' '}
+                to: {formatRoleList(anonymousTo, kind)}.
               </p>
             </div>
           ) : (
-            hasNamed && (
+            hasNamed &&
+            !hasWithheld && (
               <div className="flex items-start gap-2 text-[13px] text-amber-800">
                 <PiEye className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                 <p>
@@ -91,7 +118,7 @@ export default function ReviewDisclosureBanner({
               </div>
             )
           )}
-          {!hasNamed && !hasAnonymous && (
+          {!hasNamed && !hasAnonymous && !hasWithheld && (
             <p className="text-[13px] text-amber-700">
               No one has been configured to see this feedback yet.
             </p>

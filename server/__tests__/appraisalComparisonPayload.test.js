@@ -62,7 +62,7 @@ function released() {
   return { tenant, emp, mgr, peerA, peerB, appraisalId, h };
 }
 
-test('the SUBJECT gets an aggregate comparison and NO peer breakdown', async (t) => {
+test('the SUBJECT gets their own and their manager’s scores but NO peer signal', async (t) => {
   const s = released();
   t.after(s.h.restore);
 
@@ -75,7 +75,11 @@ test('the SUBJECT gets an aggregate comparison and NO peer breakdown', async (t)
   const [row] = res.body.data.comparison;
   assert.strictEqual(row.self, 5);
   assert.strictEqual(row.manager, 3);
-  assert.deepStrictEqual(row.peer, { mean: 3, n: 2, suppressed: false });
+  // Was `{ mean: 3, n: 2 }`. The subject no longer receives peer feedback rows
+  // at all, so the peer column empties out by construction — getAppraisal
+  // filters the rows before buildComparison ever sees them. Peer input now
+  // reaches the employee only through the manager's written summary.
+  assert.deepStrictEqual(row.peer, { mean: null, n: 0, suppressed: true });
   // null, never [] — an empty array is the distinct claim "no peers responded".
   assert.strictEqual(row.peerBreakdown, null);
 
@@ -85,6 +89,28 @@ test('the SUBJECT gets an aggregate comparison and NO peer breakdown', async (t)
   assert.ok(!json.includes('Sam'));
   assert.ok(!json.includes(String(s.peerA._id)));
   assert.ok(!json.includes(String(s.peerB._id)));
+});
+
+test('the subject’s peer column stays empty however many peers responded', async (t) => {
+  // The guarantee is structural, not a threshold: two submitted peers is above
+  // PEER_RELEASE_MIN and would previously have produced a visible mean.
+  for (const submittedPeers of [1, 2]) {
+    const s = released();
+    if (submittedPeers === 1) {
+      s.h.db.feedback.find((f) => String(f.reviewer) === String(s.peerB._id)).status = 'pending';
+    }
+    const res = capture();
+    await appraisals.getAppraisal(
+      asUser(s.emp, { params: { id: String(s.appraisalId) } }), res, (e) => { throw e; }
+    );
+    const [row] = res.body.data.comparison;
+    assert.strictEqual(row.peer.n, 0, `${submittedPeers} submitted peer(s)`);
+    assert.strictEqual(row.peer.mean, null, `${submittedPeers} submitted peer(s)`);
+    // The count is still reported — the employee is told what the summary
+    // rests on, they just cannot read the transcript.
+    assert.strictEqual(res.body.data.peerResponseCount, submittedPeers);
+    s.h.restore();
+  }
 });
 
 test('the MANAGER gets the per-peer breakdown with names', async (t) => {
@@ -102,16 +128,20 @@ test('the MANAGER gets the per-peer breakdown with names', async (t) => {
   assert.deepStrictEqual(names, ['Ada', 'Sam']);
 });
 
-test('a single peer response suppresses the mean for the subject', async (t) => {
+test('a single peer response still suppresses the mean, now on the manager’s view', async (t) => {
   const s = released();
   t.after(s.h.restore);
   // Drop one peer's submission back to pending.
   const peerRow = s.h.db.feedback.find((f) => String(f.reviewer) === String(s.peerB._id));
   peerRow.status = 'pending';
 
+  // Asserted against the manager because the subject no longer receives any
+  // peer data to suppress. The PEER_RELEASE_MIN mechanism itself is unchanged
+  // and still needs pinning — it is what stops a one-response "mean" being
+  // presented as an aggregate anywhere.
   const res = capture();
   await appraisals.getAppraisal(
-    asUser(s.emp, { params: { id: String(s.appraisalId) } }), res, (e) => { throw e; }
+    asUser(s.mgr, { params: { id: String(s.appraisalId) } }), res, (e) => { throw e; }
   );
 
   const [row] = res.body.data.comparison;

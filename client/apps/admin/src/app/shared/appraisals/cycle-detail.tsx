@@ -5,9 +5,13 @@ import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { Button, Modal, Title } from 'rizzui';
 import {
+  PiArrowLeft,
   PiCalendarBlank,
+  PiChatCircleText,
   PiCheckCircle,
+  PiClockCountdown,
   PiRocketLaunch,
+  PiUsersThree,
   PiWarningCircle,
 } from 'react-icons/pi';
 import {
@@ -26,6 +30,9 @@ import AppraisalStateBadge from './state-badge';
 import { CycleStatusBadge } from './cycles-list';
 import CycleRoster from './cycle-roster';
 import CycleReport from './cycle-report';
+import { cycleStats } from './cycle-detail-utils';
+// One deadline rule for the whole module — see my-appraisals-utils.ts.
+import { deadlineTone, type DeadlineTone } from './my-appraisals-utils';
 
 // launchCycle's resolved shape isn't exported as a standalone type from the
 // service (it's inlined in the function signature), so this is derived from
@@ -89,6 +96,62 @@ function DetailSkeleton() {
   );
 }
 
+const DEADLINE_STYLE: Record<DeadlineTone, string> = {
+  none: 'text-gray-400',
+  normal: 'text-gray-400',
+  soon: 'text-amber-600',
+  overdue: 'text-[#b20202]',
+};
+
+/**
+ * One headline number. `hint` carries the denominator or the caveat — a bare
+ * "12" tells HR nothing about whether that is good.
+ */
+function StatTile({
+  icon,
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-white p-4">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+        {icon}
+        {label}
+      </p>
+      <p className={`mt-1.5 text-2xl font-semibold tabular-nums ${tone ?? 'text-gray-900'}`}>
+        {value}
+      </p>
+      {hint && <p className="mt-0.5 text-[11px] text-gray-400">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * A completion bar. `pct` is null when there is nothing to be a percentage of
+ * (see cycleStats) — the bar is then not drawn at all, because a 0%-wide bar
+ * claims the work has started and gone nowhere, which is a different and worse
+ * thing to say about a cycle nobody has launched.
+ */
+function ProgressBar({ pct, tone }: { pct: number | null; tone: string }) {
+  if (pct === null) return null;
+  return (
+    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
+      <div
+        className={`h-full rounded-full transition-[width] duration-500 ${tone}`}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+}
+
 /**
  * `progress.byState` is keyed by `Appraisal.state`, which is a mongoose enum
  * matching `AppraisalState` — the server can only ever aggregate values the
@@ -148,7 +211,67 @@ function StalledList({
     );
   }
   return (
-    <div className="mt-3 overflow-x-auto">
+    <>
+      {/* Phone: a card per stalled appraisal. The 5-column table below put the
+          Action column — the only reason this list exists — off the right edge
+          behind a horizontal scroller. */}
+      <div className="mt-3 flex flex-col gap-2.5 md:hidden">
+        {rows.map((row) => {
+          const isSkipping = skippingId === row._id;
+          return (
+            <div
+              key={row._id}
+              className="rounded-xl border border-gray-100 bg-white p-3.5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900">
+                    {personName(row.employee)}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-gray-400">
+                    Manager: {personName(row.manager)}
+                  </p>
+                </div>
+                <div className="shrink-0">
+                  <AppraisalStateBadge state={row.state} />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-gray-400">
+                Since {formatDate(row.since)}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-gray-50 pt-3">
+                {row.state === 'nominating' && (
+                  <Link
+                    href={`/appraisals/${row._id}/nominate`}
+                    className="text-xs font-semibold text-[#b20202] hover:underline"
+                  >
+                    Nominate on their behalf
+                  </Link>
+                )}
+                {row.state === 'pending_peer_approval' && (
+                  <Link
+                    href={`/appraisals/${row._id}`}
+                    className="text-xs font-semibold text-[#b20202] hover:underline"
+                  >
+                    Approve peers
+                  </Link>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ms-auto"
+                  onClick={() => onSkipPeers(row._id)}
+                  disabled={isSkipping}
+                >
+                  {isSkipping ? 'Skipping…' : 'Skip peers'}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 hidden overflow-x-auto md:block">
       <table className="w-full min-w-[640px] text-left">
         <thead>
           <tr className="border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider text-gray-400">
@@ -209,7 +332,8 @@ function StalledList({
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -419,54 +543,121 @@ export default function CycleDetail({ id }: { id: string }) {
     ? `This cycle is already ${cycle.status}.`
     : null;
 
+  const stats = cycleStats(progress);
+  const tone = deadlineTone(cycle.feedbackDeadline);
+
   return (
     // Widened from max-w-3xl once the roster landed: that table is ~820px on
     // its own, so a 3xl column meant scrolling it horizontally on every screen.
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
+    // Padding steps down on a phone — px-6 on a 360px viewport spends a
+    // twelfth of the width on margins the roster cards need.
+    <div className="mx-auto flex max-w-5xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-10 sm:gap-6">
       <div>
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <Title as="h1" className="text-xl font-semibold text-gray-900">
+        <Link
+          href="/appraisals/cycles"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 transition-colors hover:text-gray-600"
+        >
+          <PiArrowLeft className="h-3.5 w-3.5" />
+          All cycles
+        </Link>
+        {/* items-start, not items-center: the badge sits beside a title that
+            wraps to two or three lines on a phone, and centring it against a
+            wrapped title floats it into the middle of nowhere. */}
+        <div className="mt-2 flex min-w-0 items-start justify-between gap-3">
+          <Title
+            as="h1"
+            className="min-w-0 text-lg font-semibold text-gray-900 sm:text-xl"
+          >
             {cycle.name}
           </Title>
-          <CycleStatusBadge status={cycle.status} />
+          <div className="shrink-0">
+            <CycleStatusBadge status={cycle.status} />
+          </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-gray-400">
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
           <span className="flex items-center gap-1.5">
-            <PiCalendarBlank className="h-3.5 w-3.5" />
+            <PiCalendarBlank className="h-3.5 w-3.5 shrink-0" />
             Launched {formatDate(cycle.launchedAt)}
           </span>
-          <span className="flex items-center gap-1.5">
-            <PiCalendarBlank className="h-3.5 w-3.5" />
+          {/* The deadline is the one date on this page HR acts on, so it is
+              the one that changes colour. `deadlineTone` returns 'none' for an
+              unparseable date rather than 'overdue' — a red badge driven by a
+              parse failure is HR chasing people who owe nothing. */}
+          <span className={`flex items-center gap-1.5 ${DEADLINE_STYLE[tone]}`}>
+            <PiClockCountdown className="h-3.5 w-3.5 shrink-0" />
             Feedback deadline {formatDate(cycle.feedbackDeadline)}
+            {tone === 'overdue' && ' · passed'}
+            {tone === 'soon' && ' · within a week'}
           </span>
           {cycle.closedAt && (
             <span className="flex items-center gap-1.5">
-              <PiCheckCircle className="h-3.5 w-3.5" />
+              <PiCheckCircle className="h-3.5 w-3.5 shrink-0" />
               Closed {formatDate(cycle.closedAt)}
             </span>
           )}
+          <span className="flex items-center gap-1.5">
+            <PiUsersThree className="h-3.5 w-3.5 shrink-0" />
+            Peer review {cycle.peerReviewEnabled ? 'on' : 'off'}
+          </span>
         </div>
       </div>
 
-      <div className="rounded-xl border border-gray-100 bg-white p-5">
-        <p className="text-sm font-semibold text-gray-900">
+      {/* Four numbers, above the fold, before any table. "Where is this cycle
+          up to" was previously answerable only by reading a row of state
+          badges and adding them up by hand. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile
+          icon={<PiUsersThree className="h-3.5 w-3.5" />}
+          label="Appraisals"
+          value={String(stats.total)}
+          hint={
+            stats.cancelled > 0
+              ? `${stats.cancelled} cancelled`
+              : `${stats.inFlight} in flight`
+          }
+        />
+        <StatTile
+          icon={<PiCheckCircle className="h-3.5 w-3.5" />}
+          label="Released"
+          value={
+            stats.completionPct === null ? '—' : `${stats.completionPct}%`
+          }
+          hint={`${stats.done} of ${stats.total - stats.cancelled}`}
+        />
+        <StatTile
+          icon={<PiChatCircleText className="h-3.5 w-3.5" />}
+          label="Feedback in"
+          value={stats.feedbackPct === null ? '—' : `${stats.feedbackPct}%`}
+          hint={`${stats.feedbackSubmitted} of ${stats.feedbackTotal}`}
+        />
+        <StatTile
+          icon={<PiWarningCircle className="h-3.5 w-3.5" />}
+          label="Stalled"
+          value={String(stats.stalledCount)}
+          hint={stats.stalledCount === 0 ? 'Nothing blocked' : 'Needs HR'}
+          tone={stats.stalledCount > 0 ? 'text-[#b20202]' : undefined}
+        />
+      </div>
+
+      <div className="rounded-xl border border-gray-100 bg-white p-4 sm:p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-sm font-semibold text-gray-900">Progress</p>
+          {stats.feedbackTotal > 0 && (
+            <p className="text-xs text-gray-400 tabular-nums">
+              {stats.feedbackSubmitted} of {stats.feedbackTotal} feedback forms
+              submitted
+            </p>
+          )}
+        </div>
+        <ProgressBar pct={stats.feedbackPct} tone="bg-[#b20202]" />
+
+        <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-400">
           Appraisals by state
         </p>
         {progress && <ProgressByState byState={progress.byState} />}
-
-        <div className="mt-4 border-t border-gray-100 pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-            Feedback submitted
-          </p>
-          <p className="mt-1 text-lg font-semibold text-gray-900">
-            {progress
-              ? `${progress.feedbackSubmitted} / ${progress.feedbackTotal}`
-              : '—'}
-          </p>
-        </div>
       </div>
 
-      <div className="rounded-xl border border-gray-100 bg-white p-5">
+      <div className="rounded-xl border border-gray-100 bg-white p-4 sm:p-5">
         <p className="text-sm font-semibold text-gray-900">
           Stalled peer review
         </p>
@@ -491,7 +682,7 @@ export default function CycleDetail({ id }: { id: string }) {
 
       <CycleReport cycleId={id} />
 
-      <div className="rounded-xl border border-gray-100 bg-white p-5">
+      <div className="rounded-xl border border-gray-100 bg-white p-4 sm:p-5">
         <p className="text-sm font-semibold text-gray-900">Actions</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {/* Confirmed, like Close. Launching is the larger of the two: it

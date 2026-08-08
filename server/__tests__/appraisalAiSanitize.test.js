@@ -22,8 +22,13 @@ const {
   buildSectionPrompt,
   buildQuestionPrompt,
 } = require('../services/appraisalAi.service');
+const { PEER_EVIDENCE_QUESTIONS } = require('../services/appraisal.helpers');
 
 const ALL = ['self', 'manager', 'peer'];
+
+/** Does any question anywhere in a sanitized template ask peers? */
+const asksPeers = (sections) =>
+  sections.some((s) => s.questions.some((q) => q.askOf.includes('peer')));
 
 // ---------------------------------------------------------------------------
 // sanitizeGeneratedQuestion — type enum
@@ -134,22 +139,30 @@ test('question: adds self BACK to a scored question when HR asked for self', () 
   // an LLM writing a competency scopes it to raters only, which drops the
   // whole thing off the self form and leaves buildComparison nothing to
   // compare against.
+  //
+  // CONTRACT CHANGED: the expectation used to be ['self','manager','peer'].
+  // Peer scoring is now stripped from scored questions (see the house-style
+  // block below), so the same input lands on self+manager. The assertion this
+  // test exists for — that `self` is added back — is unchanged and still
+  // exact.
   for (const type of ['rating', 'likert', 'scale']) {
     const q = sanitizeGeneratedQuestion(
       { type, label: 'Sets a clear direction for the team', askOf: ['manager', 'peer'] },
       { audiences: ALL }
     );
     assert.ok(q, `${type} should survive`);
-    assert.deepEqual(q.askOf, ['self', 'manager', 'peer'], `${type} must regain self`);
+    assert.deepEqual(q.askOf, ['self', 'manager'], `${type} must regain self`);
   }
 });
 
 test('question: does NOT add self back when HR did not ask for a self form', () => {
+  // CONTRACT CHANGED: was ['manager','peer']; peer is no longer scored, so the
+  // rating survives on the manager alone. Still no `self`, which is the point.
   const q = sanitizeGeneratedQuestion(
     { type: 'rating', label: 'Sets a clear direction', askOf: ['manager', 'peer'] },
     { audiences: ['manager', 'peer'] }
   );
-  assert.deepEqual(q.askOf, ['manager', 'peer']);
+  assert.deepEqual(q.askOf, ['manager']);
 });
 
 test('question: does NOT add self back to an unscored type', () => {
@@ -179,6 +192,100 @@ test('question: KEEPS a self-only scored question on a self-only form', () => {
   );
   assert.ok(q);
   assert.deepEqual(q.askOf, ['self']);
+});
+
+// ---------------------------------------------------------------------------
+// House style: peers are not asked to score
+//
+// buildDefaultTemplate scopes its four rating questions to ['self','manager']
+// and gives peers their own section of evidence-shaped text questions. A peer
+// in another function has no basis to score "quality of work"; asked anyway
+// they guess, and the guess is averaged into a mean that reads as measurement.
+// The generator has to reach the same answer as the seeded template, or the
+// form a tenant gets depends on whether HR clicked "generate".
+// ---------------------------------------------------------------------------
+test('question: strips peer from a scored question', () => {
+  for (const type of ['rating', 'likert', 'scale']) {
+    const q = sanitizeGeneratedQuestion(
+      { type, label: `Judgement under pressure (${type})`, askOf: ALL },
+      { audiences: ALL }
+    );
+    assert.ok(q, `${type} should survive`);
+    assert.deepEqual(q.askOf, ['self', 'manager'], `${type} must lose peer`);
+  }
+});
+
+test('question: leaves peer alone on an unscored type', () => {
+  // Text, choice and yes_no are exactly where peer input belongs.
+  for (const type of ['text', 'choice', 'yes_no']) {
+    const raw = { type, label: `Open input (${type})`, askOf: ALL };
+    if (type === 'choice') raw.options = ['A', 'B'];
+    const q = sanitizeGeneratedQuestion(raw, { audiences: ALL });
+    assert.deepEqual(q.askOf, ALL, `${type} must keep peer`);
+  }
+});
+
+test('question: THE TRAP — a scored question scoped [self,peer] regains manager rather than dying', () => {
+  // Stripping peer alone would collapse this to ['self'], which the existing
+  // no-rater rule then drops. Three or four of those in a section and the
+  // section goes too. Manager comes back in peer's place, because on a form
+  // that has a manager the manager is who a scored competency was always for.
+  const q = sanitizeGeneratedQuestion(
+    { type: 'rating', label: 'Handles difficult customers well', askOf: ['self', 'peer'] },
+    { audiences: ALL }
+  );
+  assert.ok(q, 'must not be dropped');
+  assert.deepEqual(q.askOf, ['self', 'manager']);
+});
+
+test('question: a scored question scoped peer-only regains BOTH manager and self', () => {
+  const q = sanitizeGeneratedQuestion(
+    { type: 'rating', label: 'Is easy to work alongside', askOf: ['peer'] },
+    { audiences: ALL }
+  );
+  assert.deepEqual(q.askOf, ['self', 'manager']);
+});
+
+test('question: manager is NOT invented when HR did not ask for a manager form', () => {
+  // audiences is HR's decision about who fills this in. Peer-stripping must
+  // not smuggle a reviewer kind onto a form that has none.
+  const q = sanitizeGeneratedQuestion(
+    { type: 'rating', label: 'Rate your own delivery', askOf: ['self', 'peer'] },
+    { audiences: ['self', 'peer'] }
+  );
+  // Left with ['self'] and a rater kind was requested, so the existing
+  // no-rater rule drops it. DELIBERATE: on a self+peer form with no manager
+  // there is nobody who can legitimately score a competency, so the generator
+  // produces an all-text form. The prompt tells the model this up front, so
+  // this path is a backstop rather than the normal outcome.
+  assert.equal(q, null);
+});
+
+test('question: a peer-only form gets no scored questions at all', () => {
+  const q = sanitizeGeneratedQuestion(
+    { type: 'likert', label: 'Collaborates well', askOf: ['peer'] },
+    { audiences: ['peer'] }
+  );
+  assert.equal(q, null);
+});
+
+test('question: allowPeerScoring lets HR deliberately keep peer ratings', () => {
+  // The house rule is a default, not a prohibition — same as the seeded
+  // template, whose askOf is HR-editable. Without an opt-in, peer scoring
+  // becomes silently impossible rather than merely discouraged.
+  const q = sanitizeGeneratedQuestion(
+    { type: 'rating', label: 'Collaboration with others', askOf: ALL },
+    { audiences: ALL, allowPeerScoring: true }
+  );
+  assert.deepEqual(q.askOf, ALL);
+});
+
+test('question: allowPeerScoring does not disable the self rule', () => {
+  const q = sanitizeGeneratedQuestion(
+    { type: 'rating', label: 'Collaboration with others', askOf: ['manager', 'peer'] },
+    { audiences: ALL, allowPeerScoring: true }
+  );
+  assert.deepEqual(q.askOf, ALL);
 });
 
 // ---------------------------------------------------------------------------
@@ -459,9 +566,13 @@ test('template: returns name, description and sanitized sections', () => {
   );
   assert.equal(out.name, 'Senior Engineer Annual Review');
   assert.equal(out.description, 'Annual performance review for senior engineers.');
-  assert.equal(out.sections.length, 1);
   // The 360 rule still applies through the template entry point.
   assert.deepEqual(out.sections[0].questions[0].askOf, ['self', 'manager']);
+  // CONTRACT CHANGED: was 1 section. The model's only question is scored, so
+  // nothing here asks peers, and the peer-coverage fallback appends a section
+  // rather than leave a peer with a blank form. Asserted in full below.
+  assert.equal(out.sections.length, 2);
+  assert.equal(out.sections[1].title, 'Working with this person');
 });
 
 test('template: truncates name to 200 and description to 2000', () => {
@@ -539,6 +650,143 @@ test('template: defaults audiences to all three kinds when the caller names none
 });
 
 // ---------------------------------------------------------------------------
+// Peer coverage — the mirror image of the 360 bug
+//
+// Stripping peer off scored questions can leave a peer with NOTHING to answer.
+// filterSectionsForKind then returns [] and the peer opens a blank review
+// form, which is exactly the failure the original self rule was written to
+// prevent, pointed the other way. The check is at TEMPLATE level on purpose: a
+// single section of scored competencies legitimately has no peer questions.
+// ---------------------------------------------------------------------------
+test('template: appends a peer section when stripping left peers nothing to answer', () => {
+  const out = sanitizeGeneratedTemplate(
+    {
+      name: 'All competencies',
+      sections: [
+        {
+          title: 'Core Competencies',
+          questions: [
+            { type: 'rating', label: 'Quality of work', askOf: ALL },
+            { type: 'rating', label: 'Reliability', askOf: ALL },
+          ],
+        },
+      ],
+    },
+    { audiences: ALL }
+  );
+
+  assert.equal(out.sections.length, 2);
+  const peerSection = out.sections[1];
+  assert.deepEqual(
+    peerSection.questions.map((q) => q.label),
+    PEER_EVIDENCE_QUESTIONS.map((q) => q.label),
+    'the fallback must be the same wording the seeded template uses'
+  );
+  for (const q of peerSection.questions) {
+    assert.equal(q.type, 'text');
+    assert.deepEqual(q.askOf, ['peer']);
+    assert.equal(q.required, true);
+  }
+  // The generated section is untouched — this adds, it does not rewrite.
+  assert.equal(out.sections[0].questions.length, 2);
+  assert.deepEqual(out.sections[0].questions[0].askOf, ['self', 'manager']);
+});
+
+test('template: does NOT append a peer section when a question already asks peers', () => {
+  const out = sanitizeGeneratedTemplate(
+    {
+      name: 'Mixed',
+      sections: [
+        {
+          title: 'Core Competencies',
+          questions: [
+            { type: 'rating', label: 'Quality of work', askOf: ALL },
+            { type: 'text', label: 'Describe a time they helped you', askOf: ['peer'] },
+          ],
+        },
+      ],
+    },
+    { audiences: ALL }
+  );
+  assert.equal(out.sections.length, 1);
+  assert.ok(asksPeers(out.sections));
+});
+
+test('template: a peer question in ANY section counts, not just the last one', () => {
+  const out = sanitizeGeneratedTemplate(
+    {
+      name: 'Mixed',
+      sections: [
+        {
+          title: 'Working together',
+          questions: [{ type: 'text', label: 'What did you see them do well?', askOf: ALL }],
+        },
+        {
+          title: 'Competencies',
+          questions: [{ type: 'rating', label: 'Quality of work', askOf: ALL }],
+        },
+      ],
+    },
+    { audiences: ALL }
+  );
+  assert.equal(out.sections.length, 2);
+});
+
+test('template: no peer section when HR did not ask for peer reviewers', () => {
+  const out = sanitizeGeneratedTemplate(
+    {
+      name: 'Self and manager only',
+      sections: [
+        { title: 'Competencies', questions: [{ type: 'rating', label: 'Quality of work', askOf: ALL }] },
+      ],
+    },
+    { audiences: ['self', 'manager'] }
+  );
+  assert.equal(out.sections.length, 1);
+  assert.ok(!asksPeers(out.sections));
+});
+
+test('template: an empty draft is NOT rescued into a two-question peer form', () => {
+  // sections:[] is the controller's signal that the model returned nothing
+  // usable, and it answers with an error. Appending the fallback here would
+  // turn that into a "successful" generation of two canned questions HR never
+  // asked for. The fallback fills a gap in a real draft; it does not make one.
+  const out = sanitizeGeneratedTemplate(
+    { name: 'Nothing usable', sections: [{ title: 'X', questions: [{ type: 'bogus', label: 'Y' }] }] },
+    { audiences: ALL }
+  );
+  assert.deepEqual(out.sections, []);
+});
+
+test('template: allowPeerScoring keeps peer ratings and so needs no fallback section', () => {
+  const out = sanitizeGeneratedTemplate(
+    {
+      name: 'Peer-scored by request',
+      sections: [
+        { title: 'Competencies', questions: [{ type: 'rating', label: 'Quality of work', askOf: ALL }] },
+      ],
+    },
+    { audiences: ALL, allowPeerScoring: true }
+  );
+  assert.equal(out.sections.length, 1);
+  assert.deepEqual(out.sections[0].questions[0].askOf, ALL);
+});
+
+test('template: the fallback section survives the 8-section cap', () => {
+  // MAX_SECTIONS bounds what the MODEL produced. A draft that hit the cap and
+  // has no peer coverage still has to be answerable by a peer, so the fallback
+  // is appended on top rather than silently dropped — the schema puts no limit
+  // on section count, the cap is a runaway guard.
+  const sections = Array.from({ length: 20 }, (_, i) => ({
+    title: `Section ${i + 1}`,
+    questions: [{ type: 'rating', label: `Competency ${i + 1}`, askOf: ALL }],
+  }));
+  const out = sanitizeGeneratedTemplate({ name: 'Big', sections }, { audiences: ALL });
+  assert.equal(out.sections.length, 9);
+  assert.ok(asksPeers(out.sections));
+});
+
+// ---------------------------------------------------------------------------
 // mergeQuestionAssist — per-question assist never rewrites what HR did not ask
 // ---------------------------------------------------------------------------
 test('assist: a label rewrite cannot change the question type', () => {
@@ -575,6 +823,9 @@ test('assist: an options run replaces options but not the label', () => {
 });
 
 test('assist: an askOf run replaces only askOf, and the 360 rule still applies', () => {
+  // CONTRACT CHANGED: was ['self','manager','peer']. An askOf run is HR asking
+  // the model to re-decide who answers, so house style governs the answer and
+  // peer is stripped off the rating.
   const current = { type: 'rating', label: 'Leads by example', required: true, scaleMax: 5, askOf: ALL };
   const q = mergeQuestionAssist(
     current,
@@ -582,7 +833,36 @@ test('assist: an askOf run replaces only askOf, and the 360 rule still applies',
     { mode: 'askOf', audiences: ALL }
   );
   assert.equal(q.label, 'Leads by example');
-  assert.deepEqual(q.askOf, ['self', 'manager', 'peer']);
+  assert.deepEqual(q.askOf, ['self', 'manager']);
+});
+
+test('assist: a label rewrite does not quietly un-scope a peer rating HR authored', () => {
+  // HR deliberately built a peer-scored rating — the seeded template's askOf
+  // is editable precisely so they can. They then click "rewrite this label".
+  // Stripping peer here is the "silently impossible" failure the opt-in
+  // exists to prevent: HR asked for new wording, not a new audience.
+  const current = { type: 'rating', label: 'Collaboration', required: true, scaleMax: 5, askOf: ALL };
+  for (const mode of ['label', 'options']) {
+    const q = mergeQuestionAssist(
+      current,
+      { label: 'Collaborates across teams without being asked', options: ['A', 'B'] },
+      { mode, audiences: ALL }
+    );
+    assert.deepEqual(q.askOf, ALL, `${mode} must leave peer scoring alone`);
+  }
+});
+
+test('assist: preserving peer scoring does not switch off the self rule', () => {
+  // The preservation is narrow: it keeps what HR already had, it does not put
+  // the question outside sanitizing. A rating HR left scoped to raters only
+  // still regains self on a label run.
+  const current = { type: 'rating', label: 'Collaboration', required: true, scaleMax: 5, askOf: ['manager', 'peer'] };
+  const q = mergeQuestionAssist(
+    current,
+    { label: 'Collaborates across teams without being asked' },
+    { mode: 'label', audiences: ALL }
+  );
+  assert.deepEqual(q.askOf, ALL);
 });
 
 test('assist: returns null when the merged result is unusable', () => {
@@ -661,6 +941,52 @@ test('buildSectionPrompt: an expansion names the section it is expanding', () =>
   });
   assert.match(p, /Service Quality/);
   assert.match(p, /more questions/i);
+});
+
+test('prompts: every builder states the scored-questions-are-not-for-peers rule', () => {
+  // The sanitizer is a backstop. A model that writes peer ratings anyway has
+  // its question silently re-scoped, which wastes the slot — the rule has to
+  // be in the prompt so the questions come back right the first time.
+  const builders = [
+    buildTemplatePrompt({ role: 'Bartender', audiences: ALL }),
+    buildSectionPrompt({ role: 'Bartender', audiences: ALL }),
+    buildQuestionPrompt({ mode: 'label', question: { type: 'rating', label: 'X' }, audiences: ALL }),
+  ];
+  for (const p of builders) {
+    assert.match(p, /never .*"peer"|not .*"peer"|never include "peer"/i);
+    assert.match(p, /specific time|specific incident/i);
+  }
+});
+
+test('prompts: every builder forbids a modelled N/A option', () => {
+  // Peers now have a native "I did not observe this" abstain on every
+  // question (AppraisalFeedback.answers.notObserved). A modelled "N/A" choice
+  // duplicates it and competes with it: two different ways to say the same
+  // thing, only one of which buildComparison knows to exclude from the
+  // denominator.
+  const builders = [
+    buildTemplatePrompt({ role: 'Bartender', audiences: ALL }),
+    buildSectionPrompt({ role: 'Bartender', audiences: ALL }),
+    buildQuestionPrompt({ mode: 'options', question: { type: 'choice', label: 'X' }, audiences: ALL }),
+  ];
+  for (const p of builders) {
+    assert.match(p, /N\/A/);
+    assert.match(p, /not observe/i);
+  }
+});
+
+test('prompts: allowPeerScoring flips the rule rather than leaving it contradictory', () => {
+  const off = buildTemplatePrompt({ role: 'Bartender', audiences: ALL });
+  const on = buildTemplatePrompt({ role: 'Bartender', audiences: ALL, allowPeerScoring: true });
+  assert.notEqual(off, on);
+  assert.match(on, /peer/i);
+});
+
+test('prompts: the peer rule is omitted when peers are not on the form', () => {
+  // A self+manager form has no peers to write text questions for; telling the
+  // model about them just invites a section nobody can answer.
+  const p = buildTemplatePrompt({ role: 'Bartender', audiences: ['self', 'manager'] });
+  assert.doesNotMatch(p, /"peer"/);
 });
 
 test('buildQuestionPrompt: carries the current question and the assist mode', () => {

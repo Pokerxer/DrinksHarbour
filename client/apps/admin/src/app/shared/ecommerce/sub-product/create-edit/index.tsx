@@ -53,6 +53,7 @@ import {
   PiList,
   PiX,
   PiSparkle,
+  PiMagnifyingGlassBold,
 } from 'react-icons/pi';
 import SubProductBasicInfo from './basic-info';
 import SubProductPricing from './pricing';
@@ -69,6 +70,10 @@ import {
 } from '@/validators/sub-product.schema';
 import { routes } from '@/config/routes';
 import { subproductService } from '@/services/subproduct.service';
+import {
+  loadSubProductSearchContext,
+  summarizeSearchContext,
+} from '../sub-product-list/search-context';
 import {
   transformFormData,
   transformBackendToForm,
@@ -399,6 +404,7 @@ export default function CreateEditSubProduct({
   // Product navigation (prev / next)
   const [navIds, setNavIds] = useState<string[]>([]);
   const [navIndex, setNavIndex] = useState<number>(-1);
+  const [navContextSummary, setNavContextSummary] = useState<string>('');
 
   const isEditMode = Boolean(slug || id);
 
@@ -434,15 +440,29 @@ export default function CreateEditSubProduct({
   }, [session]);
 
   // ── Product navigation list ───────────────────────────────────────────────
+  // Prefer the search context saved by the /sub-products list (same filtered
+  // result set, so prev/next walks the search).  Fall back to a fresh server
+  // fetch of all products when no context exists.
   const NAV_CACHE_KEY = 'dh-sp-nav-v1';
   const NAV_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   useEffect(() => {
     if (!isEditMode || !id || !session?.user?.token) return;
 
+    // 1. Try the search context saved by the list page (filtered results)
+    const ctx = loadSubProductSearchContext();
+    const ctxIds = ctx?.ids || [];
+    if (ctxIds.length > 0) {
+      setNavIds(ctxIds);
+      setNavIndex(ctxIds.indexOf(String(id)));
+      setNavContextSummary(summarizeSearchContext(ctx));
+      return;
+    }
+    setNavContextSummary('');
+
+    // 2. Fallback: fetch all products from server (existing behaviour)
     async function loadNavIds() {
       try {
-        // Try sessionStorage first
         const raw = sessionStorage.getItem(NAV_CACHE_KEY);
         if (raw) {
           const { ids, ts } = JSON.parse(raw);
@@ -452,13 +472,12 @@ export default function CreateEditSubProduct({
             return;
           }
         }
-        // Fetch fresh list — only need _id, so use a high limit
-        const res = await subproductService.getSubProducts(session.user.token, {
-          limit: 500,
-          sort: 'createdAt',
-          order: 'desc',
-        });
-        const items: any[] = res?.data?.subProducts || res?.subProducts || [];
+        const res = await subproductService.getSubProducts(
+          session.user.token,
+          { limit: 500, sort: 'createdAt', order: 'desc' }
+        );
+        const items: any[] =
+          res?.data?.subProducts || res?.subProducts || [];
         const ids: string[] = items
           .map((p: any) => String(p._id || p.id))
           .filter(Boolean);
@@ -1518,7 +1537,17 @@ export default function CreateEditSubProduct({
 
               {/* ── Prev / Next navigation ── */}
               {isEditMode && navIds.length > 1 && navIndex !== -1 && (
-                <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                  {navContextSummary && (
+                    <span
+                      className="hidden max-w-[10rem] truncate rounded-md bg-[#b20202]/5 px-2 py-1 text-[10px] font-medium text-[#b20202] md:block"
+                      title={`From search: ${navContextSummary}`}
+                    >
+                      <PiMagnifyingGlassBold className="mr-1 inline h-2.5 w-2.5" />
+                      {navContextSummary}
+                    </span>
+                  )}
+                  {navContextSummary && <div className="h-4 w-px bg-gray-200" />}
                   <button
                     type="button"
                     disabled={navIndex <= 0}

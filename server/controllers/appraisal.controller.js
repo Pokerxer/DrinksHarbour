@@ -29,6 +29,7 @@ const {
   peerReleaseGate,
   outstandingActionsFor,
   buildComparison,
+  normaliseCommitments,
   TENANT_ROLES,
 } = require('../services/appraisal.helpers');
 
@@ -316,8 +317,22 @@ exports.getAppraisal = async (req, res, next) => {
     // the order the subject's own nominations were approved — so an anonymous
     // list still ranked itself for them. orderFeedbackForViewer reorders peer
     // rows under a per-appraisal salted hash for anyone who may not see names.
+    // Peer rows are dropped ENTIRELY for a viewer without canSeePeerFeedback —
+    // in practice the subject — before anything else touches them. Removing
+    // the row beats anonymising it: stripping `reviewer` leaves the prose,
+    // and prose identifies its author to anyone who works with them. The
+    // employee gets peer input through the manager's summary instead.
+    //
+    // Done here, upstream of BOTH the projection and buildComparison, so the
+    // subject's `comparison` loses its peer column by construction rather than
+    // by a gate someone could later get wrong. There is no code path from a
+    // subject request to a peer answer left to audit.
+    const visibleFeedback = access.canSeePeerFeedback
+      ? rawFeedback
+      : rawFeedback.filter((fb) => fb.kind !== 'peer');
+
     const feedback = orderFeedbackForViewer(
-      rawFeedback.map((fb) => projectFeedbackForViewer(fb, access)),
+      visibleFeedback.map((fb) => projectFeedbackForViewer(fb, access)),
       appraisal._id,
       access
     );
@@ -339,7 +354,15 @@ exports.getAppraisal = async (req, res, next) => {
     // Explicitly 'submitted' rather than "every peer row now in `feedback`":
     // when canBackfillPeers admitted declined rows above, counting them here
     // too would inflate this past the number of peers who actually responded.
-    const peerResponseCount = feedback.filter((fb) => fb.kind === 'peer' && fb.status === 'submitted').length;
+    // Counted off rawFeedback, NOT the projected `feedback` array: the subject
+    // no longer receives peer rows at all, so counting the visible ones would
+    // report 0 to the one viewer this number exists for. They cannot read the
+    // peer input, which is exactly why they must be told how much of it the
+    // summary rests on — a summary built on one response looks identical to
+    // one built on four.
+    const peerResponseCount = rawFeedback.filter(
+      (fb) => fb.kind === 'peer' && fb.status === 'submitted'
+    ).length;
 
     res.json({
       success: true,
@@ -367,6 +390,17 @@ exports.saveSummary = async (req, res, next) => {
     }
     if (typeof req.body.summary === 'string') appraisal.summary = req.body.summary;
     if (req.body.finalRating != null) appraisal.finalRating = Number(req.body.finalRating);
+
+    // Commitments are drafted alongside the summary and autosaved with it, so
+    // the manager is not composing them for the first time in the release
+    // dialog. `commitments: null` means the key was absent — leave what is
+    // stored alone. An explicit `[]` clears them, and release will then refuse.
+    const { commitments, errors } = normaliseCommitments(req.body.commitments);
+    if (errors.length > 0) {
+      return res.status(400).json({ success: false, message: errors.join(' ') });
+    }
+    if (commitments !== null) appraisal.commitments = commitments;
+
     await appraisal.save();
 
     // Projected on principle, not because this path currently needs it: only
@@ -390,6 +424,30 @@ exports.releaseAppraisal = async (req, res, next) => {
     if (!appraisal.summary || !String(appraisal.summary).trim()) {
       return res.status(400).json({ success: false, message: 'Write a summary before releasing' });
     }
+
+    // At least one agreed action, or there is no release.
+    //
+    // Checked before the peer gate below because the two failures are
+    // different in kind: this one says the manager's own work is unfinished,
+    // whereas the peer gate is a warning about the input they had to work
+    // with and can be confirmed through. Reporting the confirmable warning
+    // first would invite the manager to dismiss it and then be blocked anyway.
+    const { commitments, errors } = normaliseCommitments(req.body.commitments);
+    if (errors.length > 0) {
+      return res.status(400).json({ success: false, message: errors.join(' ') });
+    }
+    // Fall back to whatever saveSummary already stored when release does not
+    // resend them, so a manager who drafted actions earlier is not asked again.
+    const agreed = commitments !== null ? commitments : (appraisal.commitments || []);
+    if (agreed.length === 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'NO_COMMITMENTS_AGREED',
+        message:
+          'Agree at least one action for the next period before releasing. An appraisal that ends in a rating alone changes nothing.',
+      });
+    }
+    appraisal.commitments = agreed;
 
     // A summary built on one peer response looks identical to one built on
     // four. The manager confirms explicitly; the employee is told the count

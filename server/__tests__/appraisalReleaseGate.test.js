@@ -88,6 +88,11 @@ async function release({ approvedPeers = 0, submittedPeers = 0, confirm = false 
     manager: managerId,
     state: 'summarising',
     summary: 'A fair, considered summary of the period.',
+    // Releasing also requires at least one agreed action now. Seeded here so
+    // these tests keep exercising the PEER gate rather than tripping over a
+    // different refusal on their way to it — the missing-commitments path has
+    // its own coverage in appraisalCommitments.test.js.
+    commitments: [{ text: 'Lead two tastings next quarter' }],
     peerNominations: peerNominations(approvedPeers),
     save: async function save() {
       savedSnapshot = { state: this.state };

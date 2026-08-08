@@ -80,6 +80,10 @@ export default function TemplateAiModal({
   const [purpose, setPurpose] = useState('');
   const [notes, setNotes] = useState('');
   const [audiences, setAudiences] = useState<FeedbackKind[]>(['self', 'manager']);
+  // Off by default: scored questions are generated for self+manager only,
+  // matching the seeded default form. This is the deliberate override, not a
+  // setting HR has to find — it only appears once peers are on the form.
+  const [allowPeerScoring, setAllowPeerScoring] = useState(false);
   const [sectionCount, setSectionCount] = useState(4);
   const [questionsPerSection, setQuestionsPerSection] = useState(4);
 
@@ -124,6 +128,7 @@ export default function TemplateAiModal({
           purpose: purpose.trim() || undefined,
           notes: notes.trim() || undefined,
           audiences,
+          allowPeerScoring,
           sectionCount,
           questionsPerSection,
         });
@@ -140,6 +145,7 @@ export default function TemplateAiModal({
           department: department.trim() || undefined,
           notes: notes.trim() || undefined,
           audiences,
+          allowPeerScoring,
           questionCount: questionsPerSection,
           expandSectionTitle: expand?.title || undefined,
           existingSections: currentSections,
@@ -310,6 +316,29 @@ export default function TemplateAiModal({
                     review is included — otherwise there is nothing to compare their
                     reviewers against.
                   </p>
+
+                  {audiences.includes('peer') && (
+                    <div className="mt-3 border-t border-gray-200/80 pt-3">
+                      <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={allowPeerScoring}
+                          onChange={() => setAllowPeerScoring((v) => !v)}
+                          disabled={generating}
+                          className="mt-0.5 h-4 w-4 rounded accent-[#b20202]"
+                        />
+                        <span>
+                          Let peers score too
+                          <span className="mt-0.5 block text-[11px] leading-relaxed text-gray-400">
+                            Off by default. Peers are asked for a specific example they
+                            saw rather than a rating — a colleague in another team has
+                            no basis to score something like &ldquo;quality of
+                            work&rdquo;, and the guess still ends up in an average.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 {/* Size */}

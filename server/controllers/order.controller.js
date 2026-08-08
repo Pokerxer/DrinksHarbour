@@ -14,6 +14,8 @@ const { calcPlatformCostPrice, resolveRevenueRates, resolveLineRates, resolveEff
 const inventoryService = require('../services/inventory.service');
 const { applyOrderStatus, APPLICABLE_STATUSES } = require('../services/orderStatus.service');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
+const { calculateShipping, DISTANCE_MIN_FEE } = require('../data/shipping-zones');
+const { resolveFirstOrderPerk, recordPerkUsage } = require('../services/firstOrderPerk.service');
 const { normalizePaymentMethod, buildOrderPaymentFields } = require('../utils/paymentMethods');
 const { resolveGatewayPaymentMethod } = require('../services/payment.service');
 const { ForbiddenError } = require('../utils/errors');
@@ -235,6 +237,70 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const calculatedSubtotal = orderItems.reduce((sum, item) => sum + item.itemSubtotal, 0);
   const calculatedPlatformCommission = orderItems.reduce((sum, item) => sum + (item.platformCommission || 0), 0);
 
+  // ── Delivery fee: server-authoritative ────────────────────────────────────
+  //
+  // The browser sends the fee it displayed, which for an eligible first order is
+  // already net of the waiver. Recomputing against that discounted number would
+  // let the waiver compound, so the pre-waiver figure travels separately as
+  // shippingInfo.baseFee and everything below is derived from it.
+  const deliveryState = shipping?.state || '';
+  const deliveryLga   = shipping?.lga || shipping?.city || '';
+  const clientShippingFee = Math.max(0, Math.round(Number(shippingFee) || 0));
+  const quotedBaseFee     = Math.max(0, Math.round(
+    Number(shippingInfo?.baseFee ?? shippingFee) || 0,
+  ));
+
+  // Floor guard: nothing else validated the client's delivery fee, so a crafted
+  // request could post shippingFee: 0 on any order. The zone table prices every
+  // Nigerian state without needing coordinates, and no genuine quote lands below
+  // the distance-pricing minimum, so the lower of the two is a floor that cannot
+  // reject an honest quote. Orders over the free-delivery threshold floor at 0.
+  const zoneQuote = calculateShipping(deliveryState, deliveryLga, calculatedSubtotal);
+  const feeFloor  = zoneQuote.isFree ? 0 : Math.min(zoneQuote.fee, DISTANCE_MIN_FEE);
+  if (quotedBaseFee < feeFloor) {
+    return res.status(400).json({
+      success: false,
+      message: 'Delivery fee could not be verified. Please refresh your delivery address and try again.',
+    });
+  }
+
+  const perk = await resolveFirstOrderPerk({
+    user:     req.user,
+    subtotal: calculatedSubtotal,
+    state:    deliveryState,
+    baseFee:  quotedBaseFee,
+  });
+
+  // Did the browser already charge the customer a discounted delivery fee?
+  const clientClaimedWaiver = quotedBaseFee - clientShippingFee > 0;
+
+  let resolvedShippingFee;
+  let deliveryWaiver;
+  if (perk.eligible) {
+    resolvedShippingFee = perk.payableFee;
+    deliveryWaiver = { applied: true, amount: perk.waivedAmount, reason: 'ok' };
+  } else if (clientClaimedWaiver) {
+    // The customer qualified when the quote was drawn but no longer does — the
+    // usual cause is a second order placed from another tab a moment earlier.
+    // Payment has already been captured at the lower figure, so honour it and
+    // flag the order rather than silently billing a difference we cannot collect.
+    resolvedShippingFee = clientShippingFee;
+    deliveryWaiver = {
+      applied: true,
+      amount:  quotedBaseFee - clientShippingFee,
+      reason:  `race_lost:${perk.reason}`,
+    };
+  } else {
+    resolvedShippingFee = quotedBaseFee;
+    deliveryWaiver = { applied: false, amount: 0, reason: perk.reason };
+  }
+
+  // Correct only the delivery component of the client's total. Recomputing the
+  // whole total from calculatedSubtotal would change the charge on every order
+  // where server and client subtotals legitimately differ (pack pricing), so the
+  // delta approach leaves the untouched path exactly as it was.
+  const resolvedTotal = Math.max(0, (Number(total) || 0) + (resolvedShippingFee - clientShippingFee));
+
   // Build order object with payment details if provided
   const orderData = {
     orderNumber,
@@ -243,9 +309,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
     subtotal: calculatedSubtotal,
     discountTotal,
     coupon: appliedCoupon?._id || null,
-    shippingFee,
+    shippingFee: resolvedShippingFee,
+    deliveryWaiver,
     taxAmount: 0,
-    totalAmount: total,
+    totalAmount: resolvedTotal,
     currency: 'NGN',
     paymentMethod: resolvedPaymentMethod,
     paymentStatus: paymentStatus || 'pending',
@@ -301,6 +368,18 @@ exports.createOrder = asyncHandler(async (req, res) => {
       await inventoryService.releaseReserve(stockItems, null, userId).catch(() => {});
     }
     throw saveErr;
+  }
+
+  // Attribute the waiver to the FIRSTDELIVERY coupon when one exists, so uptake
+  // shows in the analytics the admin coupon UI already renders. Best-effort —
+  // the order is saved and paid for either way.
+  if (deliveryWaiver.applied && userId) {
+    await recordPerkUsage({
+      userId,
+      orderId:      order._id,
+      orderAmount:  order.totalAmount,
+      waivedAmount: deliveryWaiver.amount,
+    });
   }
 
   // Populate order items for email notifications

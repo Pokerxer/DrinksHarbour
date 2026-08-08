@@ -11,6 +11,7 @@ import { API_URL } from '@/lib/api';
 import { purchaseEvent, type GTagItem } from '@/lib/gtag';
 import { firePurchase } from '@/lib/pixels';
 import { paymentMethodLabel } from '@/config/payment-methods';
+import { useFirstOrderPerk } from '@/context/FirstOrderPerkContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -168,6 +169,7 @@ function OrderConfirmationContent() {
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
+  const { refresh: refreshFirstOrderPerk } = useFirstOrderPerk();
   const [error, setError] = useState('');
 
   const fetchOrder = useCallback(async () => {
@@ -198,6 +200,10 @@ function OrderConfirmationContent() {
   }, [orderId]);
 
   useEffect(() => { fetchOrder(); }, [fetchOrder]);
+
+  // This order was the customer's first, so the free-delivery offer no longer
+  // applies. Re-ask, or the header keeps advertising it until a full reload.
+  useEffect(() => { if (order) refreshFirstOrderPerk(); }, [order, refreshFirstOrderPerk]);
 
   const purchaseFired = useRef(false);
   useEffect(() => {

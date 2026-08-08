@@ -9,7 +9,7 @@ import { HeaderNav } from "./HeaderNav";
 import { HeaderSearch } from "./HeaderSearch";
 import { HeaderActions } from "./HeaderActions";
 import { MobileMenu } from "./MobileMenu";
-import { AnnouncementBanner } from "@/components/Banner";
+import { AnnouncementBanner, FirstOrderPerkBanner } from "@/components/Banner";
 import { useTenant } from "@/context/TenantContext";
 
 interface HeaderProps {
@@ -123,6 +123,10 @@ export const Header: React.FC<HeaderProps> = ({
       {showAnnouncement && (
         <AnnouncementBanner placement="header" layout="static" variant="promo" />
       )}
+
+      {/* Renders only for shoppers who can actually claim it, and only until
+          dismissed — see FirstOrderPerkBanner. */}
+      <FirstOrderPerkBanner variant="bar" returnTo="/cart" />
 
       <MobileMenu
         isOpen={mobileMenuOpen}

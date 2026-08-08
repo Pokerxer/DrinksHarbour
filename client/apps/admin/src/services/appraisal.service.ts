@@ -47,6 +47,14 @@ export interface AppraisalAccess {
   relation: AppraisalRelation;
   canRead: boolean;
   canSeeReviewerNames: boolean;
+  /**
+   * Whether this viewer receives peer feedback rows AT ALL. False for the
+   * subject: the server filters peer rows out of `feedback` (and therefore out
+   * of `comparison`) before the payload is built, so for them the peer cards
+   * are not hidden by the UI — they are simply not in the response. Peer input
+   * reaches the employee through the manager's written summary instead.
+   */
+  canSeePeerFeedback: boolean;
   canSummarise: boolean;
   canRelease: boolean;
   canAcknowledge: boolean;
@@ -141,6 +149,14 @@ export interface AppraisalAnswer {
   text?: string;
   /** Chosen option LABELS for `choice` questions. Labels, not indices. */
   selected?: string[];
+  /**
+   * "I haven't seen enough to judge this." Peers only — the server rejects it
+   * on a self or manager row — and mutually exclusive with a value: the server
+   * rebuilds such an answer as `{ questionId, notObserved: true }`, dropping
+   * any rating the UI left behind. It satisfies a required question and is
+   * then excluded from every peer average.
+   */
+  notObserved?: boolean;
 }
 
 export interface AppraisalFeedback {
@@ -189,6 +205,11 @@ export interface Appraisal {
   };
   summary?: string;
   finalRating?: number;
+  /**
+   * What was agreed for the next period. At least one is required to release.
+   * The next cycle's self and manager forms open with these.
+   */
+  commitments?: AppraisalCommitment[];
   releasedAt?: string;
   acknowledgedAt?: string;
   employeeResponse?: string;
@@ -235,6 +256,18 @@ export interface AppraisalSection {
   questions: AppraisalQuestion[];
 }
 
+/** A single agreed action for the next period. */
+export interface AppraisalCommitment {
+  text: string;
+}
+
+/** What the employee agreed to last cycle, replayed at the top of this one. */
+export interface PriorCommitments {
+  cycleName: string | null;
+  releasedAt: string | null;
+  commitments: AppraisalCommitment[];
+}
+
 export interface ReviewerForm {
   feedback: AppraisalFeedback;
   kind: FeedbackKind;
@@ -242,7 +275,17 @@ export interface ReviewerForm {
   cycleName: string;
   deadline: string | null;
   sections: AppraisalSection[];
-  visibility: { namedTo: string[]; anonymousTo: string[] };
+  /**
+   * Null on peer forms (a colleague's agreed actions are not peer business)
+   * and on anyone's first-ever appraisal.
+   */
+  priorCommitments: PriorCommitments | null;
+  /**
+   * `withheldFrom` is a stronger claim than `anonymousTo` and is what peer
+   * forms now carry: the subject never receives the row, rather than receiving
+   * it with the name stripped.
+   */
+  visibility: { namedTo: string[]; anonymousTo: string[]; withheldFrom: string[] };
 }
 
 export interface AppraisalCycle {
@@ -253,6 +296,16 @@ export interface AppraisalCycle {
   launchedAt?: string;
   closedAt?: string;
   peerReviewEnabled: boolean;
+  /**
+   * Appraisal counts for THIS cycle, keyed by state — the same vocabulary
+   * `CycleProgress.byState` uses, aggregated into the list response so the
+   * cycles page can show per-row progress without a request per row.
+   *
+   * Optional because `GET /api/appraisal-cycles/:id` (fetchCycle) does not
+   * carry it — only the list does. An empty object means a real cycle with no
+   * appraisals; `undefined` means this payload never had counts.
+   */
+  byState?: Record<string, number>;
 }
 
 /** One appraisal that has sat in the same peer-review state too long. */
@@ -475,11 +528,17 @@ export const declineFeedback = (id: string, reason?: string) =>
 export const saveSummary = (
   id: string,
   summary: string,
-  finalRating?: number
+  finalRating?: number,
+  /**
+   * Omit to leave stored commitments untouched — the server distinguishes an
+   * absent key from an explicit `[]`, which clears them. Autosave must pass
+   * `undefined`, never `[]`, or it silently wipes the manager's draft actions.
+   */
+  commitments?: AppraisalCommitment[]
 ) =>
   request<Appraisal>(`/api/appraisals/${id}/summary`, {
     method: 'POST',
-    body: JSON.stringify({ summary, finalRating }),
+    body: JSON.stringify({ summary, finalRating, commitments }),
   });
 
 /**
@@ -488,10 +547,19 @@ export const saveSummary = (
  * the server otherwise rejects release with HTTP 400 when too few approved
  * peers have submitted.
  */
-export const releaseAppraisal = (id: string, confirmLowPeerCount?: boolean) =>
+export const releaseAppraisal = (
+  id: string,
+  confirmLowPeerCount?: boolean,
+  /**
+   * At least one is required. Omit only when they were already persisted via
+   * saveSummary — the server falls back to what is stored, and refuses with
+   * `code: 'NO_COMMITMENTS_AGREED'` when that is empty too.
+   */
+  commitments?: AppraisalCommitment[]
+) =>
   request<Appraisal>(`/api/appraisals/${id}/release`, {
     method: 'POST',
-    body: JSON.stringify({ confirmLowPeerCount }),
+    body: JSON.stringify({ confirmLowPeerCount, commitments }),
   });
 
 export const acknowledgeAppraisal = (id: string, employeeResponse?: string) =>
@@ -870,6 +938,14 @@ export interface TemplateBrief {
   notes?: string;
   /** Which reviewer kinds this form is for. Generation is scoped to these. */
   audiences: FeedbackKind[];
+  /**
+   * Off by default, and deliberately so: scored questions are generated for
+   * the employee and their manager only, matching the seeded default form.
+   * Peers get open-text questions asking for a specific incident instead —
+   * a peer in another team has no basis to score a competency, and a guess
+   * averaged into a mean reads as measurement. Tick this to override.
+   */
+  allowPeerScoring?: boolean;
   sectionCount?: number;
   questionsPerSection?: number;
 }
@@ -892,6 +968,8 @@ export const aiGenerateSection = (body: {
   department?: string;
   notes?: string;
   audiences: FeedbackKind[];
+  /** See TemplateBrief.allowPeerScoring. */
+  allowPeerScoring?: boolean;
   questionCount?: number;
   expandSectionTitle?: string;
   existingSections: DraftSection[];

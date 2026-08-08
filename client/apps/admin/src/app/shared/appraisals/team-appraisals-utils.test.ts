@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  TEAM_SORTS,
   filterTeamAppraisals,
   isRowOverdue,
   managerActionFor,
   sortTeamAppraisals,
+  teamCycleOptions,
   teamSummary,
 } from './team-appraisals-utils';
 import type { Appraisal, AppraisalState } from '@/services/appraisal.service';
@@ -21,6 +23,7 @@ function row(
     last?: string;
     email?: string;
     jobTitle?: string;
+    cycleId?: string;
     cycleName?: string;
     deadline?: string | undefined;
   } = {}
@@ -37,7 +40,7 @@ function row(
     },
     manager: { _id: 'm1', firstName: 'Grace', lastName: 'Hopper' },
     cycle: {
-      _id: 'c1',
+      _id: over.cycleId ?? 'c1',
       name: over.cycleName ?? 'H1 2026',
       status: 'collecting',
       feedbackDeadline: 'deadline' in over ? over.deadline : LATER,
@@ -167,6 +170,142 @@ describe('sortTeamAppraisals', () => {
     sortTeamAppraisals(rows);
     expect(rows.map((r) => r._id)).toEqual(['b', 'a']);
   });
+
+  // ── selectable orders ───────────────────────────────────────────────────
+  // The order used to be fixed. "Outstanding first" is the right DEFAULT, but
+  // it is the wrong order for "who is due this week" and useless for "find
+  // Chidi", so the manager can now pick. The default argument keeps every
+  // existing call site (and every assertion above) on the old behaviour.
+
+  it('sorts by due date, soonest first, when asked', () => {
+    const rows = [
+      row('ack-soon', 'acknowledged', { deadline: SOON }),
+      row('summ-later', 'summarising', { deadline: LATER }),
+      row('collect-past', 'collecting', { deadline: PAST }),
+    ];
+    // State is ignored entirely here — an acknowledged row with a near
+    // deadline outranks a summarising one due in September, which is the whole
+    // point of choosing a date order.
+    expect(sortTeamAppraisals(rows, 'due').map((r) => r._id)).toEqual([
+      'collect-past',
+      'ack-soon',
+      'summ-later',
+    ]);
+  });
+
+  it('still sorts undated rows last when sorting by due date', () => {
+    const rows = [
+      row('none', 'collecting', { deadline: undefined }),
+      row('dated', 'collecting', { deadline: LATER }),
+    ];
+    expect(sortTeamAppraisals(rows, 'due').map((r) => r._id)).toEqual([
+      'dated',
+      'none',
+    ]);
+  });
+
+  it('sorts by employee name A-Z when asked', () => {
+    const rows = [
+      row('z', 'summarising', { first: 'Zoe' }),
+      row('c', 'collecting', { first: 'Chidi' }),
+      row('a', 'acknowledged', { first: 'Ada' }),
+    ];
+    expect(sortTeamAppraisals(rows, 'name').map((r) => r._id)).toEqual([
+      'a',
+      'c',
+      'z',
+    ]);
+  });
+
+  it('sorts by status in LIFECYCLE order, not urgency order', () => {
+    // Deliberately different from the default: 'priority' asks "what needs me
+    // first", 'status' asks "where is everyone in the pipeline", and a
+    // pipeline runs draft → nominating → … → acknowledged. If this returned
+    // the urgency order it would be a duplicate of the default and worth
+    // deleting.
+    const rows = [
+      row('ack', 'acknowledged'),
+      row('summ', 'summarising'),
+      row('draft', 'draft'),
+      row('nom', 'nominating'),
+    ];
+    expect(sortTeamAppraisals(rows, 'status').map((r) => r._id)).toEqual([
+      'draft',
+      'nom',
+      'summ',
+      'ack',
+    ]);
+  });
+
+  it('breaks a tie by employee name in every order', () => {
+    for (const sort of ['priority', 'due', 'status'] as const) {
+      const rows = [
+        row('z', 'collecting', { first: 'Zoe', deadline: LATER }),
+        row('a', 'collecting', { first: 'Ada', deadline: LATER }),
+      ];
+      expect(sortTeamAppraisals(rows, sort).map((r) => r._id), sort).toEqual([
+        'a',
+        'z',
+      ]);
+    }
+  });
+
+  it('falls back to the default order for an unknown sort key', () => {
+    const rows = [row('ack', 'acknowledged'), row('summ', 'summarising')];
+    expect(
+      sortTeamAppraisals(rows, 'by-vibes' as never).map((r) => r._id)
+    ).toEqual(['summ', 'ack']);
+  });
+
+  it('does not mutate its input in any order', () => {
+    for (const sort of ['priority', 'due', 'name', 'status'] as const) {
+      const rows = [row('b', 'acknowledged'), row('a', 'summarising')];
+      sortTeamAppraisals(rows, sort);
+      expect(rows.map((r) => r._id), sort).toEqual(['b', 'a']);
+    }
+  });
+});
+
+describe('TEAM_SORTS', () => {
+  it('offers a label for every order sortTeamAppraisals implements', () => {
+    expect(TEAM_SORTS.map((o) => o.value)).toEqual([
+      'priority',
+      'due',
+      'name',
+      'status',
+    ]);
+    for (const o of TEAM_SORTS) expect(o.label).toBeTruthy();
+  });
+});
+
+describe('teamCycleOptions', () => {
+  it('lists each cycle once, by name', () => {
+    const rows = [
+      row('1', 'collecting', { cycleId: 'c-ops', cycleName: 'Ops H1' }),
+      row('2', 'collecting', { cycleId: 'c-sales', cycleName: 'Sales H1' }),
+      row('3', 'draft', { cycleId: 'c-ops', cycleName: 'Ops H1' }),
+    ];
+    expect(teamCycleOptions(rows)).toEqual([
+      { value: 'c-ops', label: 'Ops H1' },
+      { value: 'c-sales', label: 'Sales H1' },
+    ]);
+  });
+
+  it('skips rows whose cycle did not come back populated', () => {
+    // An unpopulated ref would otherwise put an option in the picker that
+    // matches nothing and is labelled '—'.
+    const rows = [
+      { ...row('1', 'collecting'), cycle: undefined } as unknown as Appraisal,
+      row('2', 'collecting', { cycleId: 'c1', cycleName: 'H1 2026' }),
+    ];
+    expect(teamCycleOptions(rows)).toEqual([
+      { value: 'c1', label: 'H1 2026' },
+    ]);
+  });
+
+  it('is empty for an empty team', () => {
+    expect(teamCycleOptions([])).toEqual([]);
+  });
 });
 
 describe('teamSummary', () => {
@@ -261,5 +400,53 @@ describe('filterTeamAppraisals', () => {
     expect(
       filterTeamAppraisals(rows, { scope: 'needs-action', query: 'zoe' }, NOW)
     ).toEqual([]);
+  });
+
+  // ── cycle ───────────────────────────────────────────────────────────────
+  // A manager whose reports are spread across two cycles could not narrow to
+  // one: searching the cycle NAME worked only while no employee, job title or
+  // other cycle happened to contain the same word.
+  const mixed = [
+    row('ops', 'collecting', { cycleId: 'c-ops', cycleName: 'Ops H1' }),
+    row('sales', 'summarising', { cycleId: 'c-sales', cycleName: 'Sales H1' }),
+    row('ops2', 'acknowledged', { cycleId: 'c-ops', cycleName: 'Ops H1' }),
+  ];
+
+  it('narrows to one cycle by id', () => {
+    expect(
+      filterTeamAppraisals(mixed, { cycleId: 'c-ops' }, NOW).map((r) => r._id)
+    ).toEqual(['ops', 'ops2']);
+  });
+
+  it("treats 'all' and an absent cycle the same way", () => {
+    expect(filterTeamAppraisals(mixed, { cycleId: 'all' }, NOW)).toHaveLength(3);
+    expect(filterTeamAppraisals(mixed, {}, NOW)).toHaveLength(3);
+  });
+
+  it('combines the cycle with scope and query', () => {
+    expect(
+      filterTeamAppraisals(
+        mixed,
+        { cycleId: 'c-ops', scope: 'complete' },
+        NOW
+      ).map((r) => r._id)
+    ).toEqual(['ops2']);
+    expect(
+      filterTeamAppraisals(
+        mixed,
+        { cycleId: 'c-sales', scope: 'complete' },
+        NOW
+      )
+    ).toEqual([]);
+  });
+
+  it('drops rows with no cycle when a specific cycle is selected', () => {
+    // …rather than letting an unpopulated ref slip through every filter.
+    const orphan = { ...row('x', 'collecting'), cycle: undefined } as unknown as Appraisal;
+    expect(
+      filterTeamAppraisals([...mixed, orphan], { cycleId: 'c-ops' }, NOW).map(
+        (r) => r._id
+      )
+    ).toEqual(['ops', 'ops2']);
   });
 });

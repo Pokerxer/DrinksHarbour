@@ -120,3 +120,76 @@ test('a row belonging to someone else is not found', async () => {
   const { status } = await decline({ notOwner: true, expectFail: true });
   assert.strictEqual(status, 404);
 });
+
+// ── Declining stays private and costless ────────────────────────────────────
+//
+// These pin behaviour that already holds. They exist because it is the kind of
+// property a later change breaks silently and nobody notices until a peer's
+// withheld draft has been sitting in a manager's UI for a quarter. A peer who
+// suspects declining will be read as a refusal-with-content, or seen at all,
+// answers blandly instead — which costs more than the decline would have.
+
+const { projectFeedbackForViewer } = require('../services/appraisal.helpers');
+
+const DRAFTED = 'I would rather not put this in writing.';
+
+test('a declined row never carries its draft answers to ANY viewer', () => {
+  const row = {
+    kind: 'peer',
+    status: 'declined',
+    declinedAt: new Date(),
+    declineReason: 'Barely worked with them',
+    reviewer: { _id: 'r1', firstName: 'Ada' },
+    // saveDraft only requires status 'pending', so a peer can type, save, and
+    // then decline — leaving real content on a row that never reached
+    // 'submitted'. Clearing it in declineFeedback would not reach rows already
+    // in the database, nor 'expired' ones; the projection is the choke point.
+    answers: [{ questionId: 'q1', text: DRAFTED }],
+  };
+
+  for (const access of [
+    { canSeeReviewerNames: true },  // manager / HR
+    { canSeeReviewerNames: false }, // subject
+  ]) {
+    const out = projectFeedbackForViewer(row, access);
+    assert.strictEqual(out.answers, undefined, 'withheld draft content must not survive projection');
+    assert.ok(!JSON.stringify(out).includes(DRAFTED));
+  }
+});
+
+test('but the FACT of the decline still reaches whoever can backfill', () => {
+  const row = {
+    kind: 'peer', status: 'declined', declinedAt: new Date('2026-03-01'),
+    declineReason: 'Barely worked with them',
+    reviewer: { _id: 'r1', firstName: 'Ada' },
+    answers: [{ questionId: 'q1', text: DRAFTED }],
+  };
+  const out = projectFeedbackForViewer(row, { canSeeReviewerNames: true });
+  // "Refused" must stay distinguishable from "went quiet" — a manager who can
+  // tell them apart can find a replacement while the cycle is still open.
+  assert.strictEqual(out.status, 'declined');
+  assert.ok(out.declinedAt);
+  assert.strictEqual(out.declineReason, 'Barely worked with them');
+});
+
+test('an expired row is withheld the same way, and stays a different status', () => {
+  // closeCycle expires outstanding rows. That is not the reviewer's doing and
+  // must not be reported as a refusal, but its draft is just as private.
+  const out = projectFeedbackForViewer(
+    { kind: 'peer', status: 'expired', answers: [{ questionId: 'q1', text: DRAFTED }] },
+    { canSeeReviewerNames: true }
+  );
+  assert.strictEqual(out.status, 'expired');
+  assert.strictEqual(out.answers, undefined);
+});
+
+test('declining costs nothing — no reason is required and none is invented', async () => {
+  const saved = await decline({ kind: 'peer', status: 'pending', body: {} });
+  assert.strictEqual(saved.status, 'declined');
+  assert.strictEqual(saved.declineReason, undefined, 'silence must not be backfilled with a default');
+});
+
+test('a whitespace-only reason is not stored as a reason', async () => {
+  const saved = await decline({ kind: 'peer', status: 'pending', body: { reason: '   ' } });
+  assert.strictEqual(saved.declineReason, undefined);
+});

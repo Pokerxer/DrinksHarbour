@@ -259,4 +259,4 @@ function calculateShipping(state, lga, subtotal) {
   };
 }
 
-module.exports = { calculateShipping, calculateShippingByDistance, FREE_THRESHOLD, FREE_THRESHOLD_OUTSIDE, getFreeThreshold, STATE_ZONES, LGA_OVERRIDES };
+module.exports = { calculateShipping, calculateShippingByDistance, FREE_THRESHOLD, FREE_THRESHOLD_OUTSIDE, getFreeThreshold, STATE_ZONES, LGA_OVERRIDES, DISTANCE_MIN_FEE, DISTANCE_MAX_FEE };

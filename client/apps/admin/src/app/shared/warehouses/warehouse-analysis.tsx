@@ -150,7 +150,12 @@ export default function WarehouseAnalysis() {
   const groupBy2 = groupByStack[1] ?? null;
 
   const load = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      // Without this the skeleton state (initialised true) never clears when no
+      // token arrives, and the page reads as a dead link rather than empty.
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await warehouseStockService.getAllStock(token);

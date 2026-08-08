@@ -22,6 +22,7 @@ import type {
   AppraisalAnswer,
   AppraisalQuestion,
   AppraisalSection,
+  FeedbackKind,
 } from '@/services/appraisal.service';
 
 /**
@@ -59,6 +60,12 @@ export function isAnswered(
   answer: AppraisalAnswer | undefined
 ): boolean {
   if (!answer) return false;
+  // "I haven't seen enough to judge this" IS an answer, and counting it as one
+  // is the entire point. A required question with no honest way out is what
+  // produces the defensive mid-scale 3 that makes every peer average converge
+  // on "fine". Checked before the per-type rules because such an answer
+  // deliberately carries no value in any of the fields they inspect.
+  if (answer.notObserved === true) return true;
   if (question.type === 'choice') {
     return Array.isArray(answer.selected) && answer.selected.length > 0;
   }
@@ -105,6 +112,39 @@ export function outstandingRequired(
   return flattenQuestions(sections).filter(
     (q) => q.required && !isAnswered(q, answers[q._id])
   );
+}
+
+/**
+ * May this reviewer kind abstain from a question?
+ *
+ * Peers only, matching the server, which rejects `notObserved` on a self or
+ * manager row outright. Self and manager hold the context to answer; letting
+ * a manager skip a question they are accountable for is a different feature
+ * and not a good one. Rendering the control for them would offer an out the
+ * server would then refuse — a worse experience than never showing it.
+ */
+export function canAbstain(kind: FeedbackKind): boolean {
+  return kind === 'peer';
+}
+
+/**
+ * Toggle a question between an abstention and an ordinary answer.
+ *
+ * Turning it ON discards whatever value was there. That is deliberate and
+ * matches the server, which rebuilds the answer from just the flag: a stored
+ * answer must never be both "I can't judge this" and a 5.
+ *
+ * Turning it OFF clears back to an empty answer rather than restoring the
+ * previous value. Reinstating a rating the reviewer had already moved away
+ * from would put a score they did not just choose back under their name.
+ */
+export function toggleNotObserved(
+  questionId: string,
+  answer: AppraisalAnswer | undefined,
+  on: boolean
+): AppraisalAnswer {
+  if (on) return { questionId, notObserved: true };
+  return { questionId };
 }
 
 /* ── Answer construction ──────────────────────────────────────────────────── */
@@ -163,7 +203,14 @@ export function serializeAnswers(
   for (const q of flattenQuestions(sections)) {
     const answer = answers[q._id];
     if (!isAnswered(q, answer)) continue;
-    if (q.type === 'choice') {
+    // Sent as the ONLY field, mirroring what the server stores. It rebuilds
+    // such an answer as `{ questionId, notObserved: true }` regardless, so
+    // shipping a leftover rating alongside it would be silently discarded —
+    // but sending it would make the local dirty-check disagree with what came
+    // back, and autosave would then write on every reload.
+    if (answer!.notObserved === true) {
+      out.push({ questionId: q._id, notObserved: true });
+    } else if (q.type === 'choice') {
       out.push({ questionId: q._id, selected: [...(answer!.selected ?? [])] });
     } else if (q.type === 'text') {
       out.push({ questionId: q._id, text: answer!.text!.trim() });
@@ -196,6 +243,10 @@ export function formatAnswer(
   answer: AppraisalAnswer | undefined
 ): string | null {
   if (!isAnswered(question, answer)) return null;
+  // Distinct from the null "Not answered" above: this reviewer did respond,
+  // and said they were not in a position to judge. Reading that back as
+  // "Not answered" would misreport a considered abstention as a gap.
+  if (answer!.notObserved === true) return 'Not observed';
   if (question.type === 'choice') return answer!.selected!.join(', ');
   if (question.type === 'text') return answer!.text!.trim();
   if (question.type === 'yes_no') return answer!.rating === 1 ? 'Yes' : 'No';

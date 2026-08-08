@@ -66,6 +66,10 @@ import {
   type Stats,
 } from './components/states';
 import { useSubProducts } from '@/hooks/use-sub-products';
+import {
+  saveSubProductSearchContext,
+  loadSubProductSearchContext,
+} from './search-context';
 
 export interface SizeVariant {
   _id: string;
@@ -251,6 +255,28 @@ export default function SubProductsTable({
     useState<ActiveCustomRules | null>(null);
   const searchPanelRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Restore saved search context (when navigating back from edit page) ──
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const ctx = loadSubProductSearchContext();
+    if (!ctx) return;
+    const s = ctx.state;
+    setSearchQuery(s.searchQuery);
+    setSearchChips(s.searchChips);
+    setSpActiveFilters(new Set(s.spActiveFilters));
+    setSpGroupBy(s.spGroupBy as any);
+    setActiveCustomRules(s.activeCustomRules);
+    setAdvancedFilters(s.advancedFilters);
+    setStatusFilter(s.statusFilter);
+    setVisibilityFilter(s.visibilityFilter as any);
+    setGridSort(s.gridSort as any);
+    setViewMode(s.viewMode as any);
+    setGridPageIndex(s.gridPageIndex);
+    setGridPageSize(s.gridPageSize);
+  }, []);
 
   // ── Data hook ──────────────────────────────────────────────────────────────
   // The catalog is fetched in full once (server caps at 1000), then every
@@ -659,6 +685,51 @@ export default function SubProductsTable({
     () => activeFilterCount(advancedFilters),
     [advancedFilters]
   );
+
+  // ── Persist search context (debounced) ─────────────────────────────────────
+  // Saves the ordered filtered product ids + current filter state so the edit
+  // page can walk the same result set and the list restores on return.
+  const searchContextState = useMemo(
+    () => ({
+      ids: sortedForGrid.map((p) => String(p._id || p.id)).filter(Boolean),
+      state: {
+        searchQuery,
+        searchChips,
+        spActiveFilters: Array.from(spActiveFilters),
+        spGroupBy,
+        activeCustomRules,
+        advancedFilters,
+        statusFilter,
+        visibilityFilter,
+        gridSort,
+        viewMode,
+        gridPageIndex,
+        gridPageSize,
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      sortedForGrid,
+      searchQuery,
+      searchChips,
+      spActiveFilters,
+      spGroupBy,
+      activeCustomRules,
+      advancedFilters,
+      statusFilter,
+      visibilityFilter,
+      gridSort,
+      viewMode,
+      gridPageIndex,
+      gridPageSize,
+    ]
+  );
+
+  useEffect(() => {
+    if (!session?.user?.token) return;
+    const t = setTimeout(() => saveSubProductSearchContext(searchContextState), 400);
+    return () => clearTimeout(t);
+  }, [searchContextState, session?.user?.token]);
 
   // ── Table setup (list view) ─────────────────────────────────────────────────
   const { table, setData } = useTanStackTable<SubProductListItem>({

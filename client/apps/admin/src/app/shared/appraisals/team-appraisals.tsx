@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { Button, Input } from 'rizzui';
+import { Button, Input, Select } from 'rizzui';
 import {
   PiArrowClockwise,
   PiArrowRight,
@@ -26,13 +26,20 @@ import {
   personName,
 } from './my-appraisals-utils';
 import {
+  TEAM_SORTS,
   filterTeamAppraisals,
   isRowOverdue,
   managerActionFor,
   sortTeamAppraisals,
+  teamCycleOptions,
   teamSummary,
   type TeamScope,
+  type TeamSort,
 } from './team-appraisals-utils';
+
+/** The cycle picker's leading option. Built here rather than in the utils
+ *  because 'all' is a UI affordance, not a cycle. */
+const ALL_CYCLES = { value: 'all', label: 'All cycles' };
 
 function jobTitle(person?: PersonRef | null): string {
   return person?.employeeProfile?.work?.jobTitle || '—';
@@ -142,7 +149,7 @@ function StatTile({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-gray-100 p-3.5 text-left shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b20202]/40 sm:p-4 ${
+      className={`flex min-w-0 items-center gap-3 rounded-2xl border border-gray-100 p-3.5 text-left shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b20202]/40 sm:p-4 ${
         active ? `ring-2 ${toneRing}` : 'bg-white'
       }`}
     >
@@ -169,6 +176,8 @@ export default function TeamAppraisals() {
   const [loadFailed, setLoadFailed] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<TeamScope>('all');
+  const [cycleId, setCycleId] = useState('all');
+  const [sort, setSort] = useState<TeamSort>('priority');
 
   const load = useCallback(async (signal: { cancelled: boolean }) => {
     setLoading(true);
@@ -202,11 +211,30 @@ export default function TeamAppraisals() {
 
   const summary = useMemo(() => teamSummary(items), [items]);
   const visible = useMemo(
-    () => sortTeamAppraisals(filterTeamAppraisals(items, { query, scope })),
-    [items, query, scope]
+    () =>
+      sortTeamAppraisals(
+        filterTeamAppraisals(items, { query, scope, cycleId }),
+        sort
+      ),
+    [items, query, scope, cycleId, sort]
   );
 
-  const isFiltered = scope !== 'all' || query.trim().length > 0;
+  // Derived from the rows, so the picker can only ever offer a cycle this
+  // manager's reports are actually in.
+  const cycleOptions = useMemo(
+    () => [ALL_CYCLES, ...teamCycleOptions(items)],
+    [items]
+  );
+  // One cycle is not a choice — it is a control that can only ever do nothing.
+  const showCyclePicker = cycleOptions.length > 2;
+
+  const isFiltered =
+    scope !== 'all' || cycleId !== 'all' || query.trim().length > 0;
+  function clearFilters() {
+    setScope('all');
+    setQuery('');
+    setCycleId('all');
+  }
   function toggleScope(next: TeamScope) {
     setScope((cur) => (cur === next ? 'all' : next));
   }
@@ -249,8 +277,14 @@ export default function TeamAppraisals() {
       </div>
 
       {/* Counters double as filters, so the number a manager is worried about
-          is also the way to see only those rows. */}
-      <div className="flex flex-wrap gap-3">
+          is also the way to see only those rows.
+
+          A fixed grid, not `flex flex-wrap` with `flex-1` on each tile: those
+          wrapped into a row of three and a row of one at mid widths, and the
+          orphan stretched to the full width — the strip read as a layout bug
+          rather than as four comparable numbers. Two-up on a phone, four
+          across from lg, nothing in between to be surprised by. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
           label="Need you"
           value={summary.needsAction}
@@ -281,31 +315,58 @@ export default function TeamAppraisals() {
           active={scope === 'all' && !query}
           tone="gray"
           icon={<PiUsersThree className="h-4.5 w-4.5" />}
-          onClick={() => {
-            setScope('all');
-            setQuery('');
-          }}
+          onClick={clearFilters}
         />
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <Input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search name, job title or cycle…"
           prefix={<PiMagnifyingGlass className="h-4 w-4 text-gray-400" />}
-          className="w-full sm:max-w-xs"
+          className="w-full lg:max-w-xs"
           inputClassName="rounded-xl"
         />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          {/* Hidden when there is only one cycle: a picker whose every option
+              shows the same rows is a control that can only waste a click.
+              Typing the cycle name into the search box is NOT this — it also
+              matched any employee or job title sharing a word with it. */}
+          {showCyclePicker && (
+            <Select
+              value={
+                cycleOptions.find((o) => o.value === cycleId) ?? ALL_CYCLES
+              }
+              options={cycleOptions}
+              onChange={(o: { value: string; label: string }) =>
+                setCycleId(o.value)
+              }
+              className="w-full sm:w-52"
+              selectClassName="rounded-xl"
+              aria-label="Filter by cycle"
+            />
+          )}
+          <Select
+            value={TEAM_SORTS.find((o) => o.value === sort) ?? TEAM_SORTS[0]}
+            // Spread, not cast: the constant is a ReadonlyArray and rizzui
+            // wants a mutable one.
+            options={[...TEAM_SORTS]}
+            onChange={(o: { value: TeamSort; label: string }) =>
+              setSort(o.value)
+            }
+            prefix={<span className="text-xs text-gray-400">Sort</span>}
+            className="w-full sm:w-56"
+            selectClassName="rounded-xl"
+            aria-label="Sort the list"
+          />
+        </div>
         {isFiltered && (
           <button
             type="button"
-            onClick={() => {
-              setScope('all');
-              setQuery('');
-            }}
-            className="self-start text-xs font-semibold text-gray-400 underline decoration-gray-300 underline-offset-2 transition-colors hover:text-[#b20202] sm:self-auto"
+            onClick={clearFilters}
+            className="self-start text-xs font-semibold text-gray-400 underline decoration-gray-300 underline-offset-2 transition-colors hover:text-[#b20202] lg:ms-auto lg:self-auto"
           >
             Clear filters
           </button>
@@ -325,13 +386,7 @@ export default function TeamAppraisals() {
             />
           ))
         ) : visible.length === 0 ? (
-          <EmptyState
-            isFiltered={isFiltered}
-            onClear={() => {
-              setScope('all');
-              setQuery('');
-            }}
-          />
+          <EmptyState isFiltered={isFiltered} onClear={clearFilters} />
         ) : (
           visible.map((a) => (
             <div
@@ -402,10 +457,7 @@ export default function TeamAppraisals() {
                   <td colSpan={6} className="px-5 py-16">
                     <EmptyState
                       isFiltered={isFiltered}
-                      onClear={() => {
-                        setScope('all');
-                        setQuery('');
-                      }}
+                      onClear={clearFilters}
                     />
                   </td>
                 </tr>

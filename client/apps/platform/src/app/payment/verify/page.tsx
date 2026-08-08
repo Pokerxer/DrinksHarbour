@@ -108,6 +108,7 @@ function VerifyContent() {
         cartItems: any[];
         subtotal: number;
         shippingFee: number;
+        shippingInfo?: Record<string, unknown> | null;
         total: number;
         couponCode?: string;
         utmSource?: string;
@@ -127,6 +128,9 @@ function VerifyContent() {
         },
         shipping: {
           address: pending.formData.shipping.address,
+          // The server prices the delivery floor by LGA; without it every Abuja
+          // order falls back to the coarser state rate.
+          lga: (pending.formData.shipping as { lga?: string }).lga ?? pending.formData.shipping.city,
           city: pending.formData.shipping.city,
           state: pending.formData.shipping.state,
           zipCode: pending.formData.shipping.zipCode,
@@ -158,6 +162,11 @@ function VerifyContent() {
         })),
         subtotal: pending.subtotal,
         shippingFee: pending.shippingFee,
+        // Carries baseFee — the pre-waiver delivery fee the server revalidates
+        // the first-order waiver against. Dropping it makes a waived order look
+        // like an under-quote and the order write rejects it, after the customer
+        // has already paid.
+        shippingInfo: pending.shippingInfo ?? null,
         total: pending.total,
         couponCode: pending.couponCode || undefined,
         utmSource: pending.utmSource || '',

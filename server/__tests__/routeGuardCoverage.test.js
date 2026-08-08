@@ -59,6 +59,10 @@ const PUBLIC_ALLOWLIST = new Set([
   'POST sale.routes.js /:id/view',
   'POST product.routes.js /cart/:id',
 
+  // Public TTS: read-aloud of product search results via Fish Audio. No PII,
+  // no writes — text in, audio out; rate-limited (30/15min) and char-capped.
+  'POST tts.routes.js /',
+
   // Storefront: a guest must be able to shop before signing in.
   'POST cart.routes.js /validate',
   'POST coupon.routes.js /validate',

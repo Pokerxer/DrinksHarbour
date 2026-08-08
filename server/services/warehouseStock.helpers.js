@@ -86,4 +86,44 @@ function computeStockFlags(row = {}, settings = {}, now = new Date()) {
   };
 }
 
-module.exports = { computeRollup, recalcSubProductStock, computeStockFlags };
+/**
+ * Decide whether a SubProduct may be deleted, given its WarehouseStock lines.
+ *
+ * Deleting a SubProduct used to leave its stock rows behind pointing at an id
+ * that no longer resolves. Mongoose populate turns such a ref into `null`, and
+ * because `typeof null === 'object'` the admin's render-time accessors narrowed
+ * null into the "populated" branch and threw — one orphan blanked the whole
+ * warehouse page. Worse, the rows still held real quantity (289 units across 11
+ * rows in the wyncity tenant), so the stock was neither visible nor written off.
+ *
+ * The rule: a SubProduct still holding stock cannot be deleted — the operator
+ * must write it off or transfer it first, so the loss is deliberate and
+ * auditable. Rows that are already empty carry no inventory value and are safe
+ * to remove alongside the SubProduct, which is what keeps refs from dangling.
+ *
+ * @param {Array} rows WarehouseStock docs for the SubProduct
+ * @returns {{ blocked: boolean, blocking: Array, removable: Array, totalQuantity: number, totalReserved: number }}
+ */
+function assessSubProductDeletion(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const held = (r) =>
+    Math.max(0, Number(r.currentQuantity) || 0) > 0 ||
+    Math.max(0, Number(r.reservedQuantity) || 0) > 0;
+
+  const blocking = list.filter(held);
+  return {
+    blocked: blocking.length > 0,
+    blocking,
+    // Empty lines: no inventory value, so deleting them destroys nothing.
+    removable: list.filter((r) => !held(r)),
+    totalQuantity: blocking.reduce((s, r) => s + (Number(r.currentQuantity) || 0), 0),
+    totalReserved: blocking.reduce((s, r) => s + (Number(r.reservedQuantity) || 0), 0),
+  };
+}
+
+module.exports = {
+  computeRollup,
+  recalcSubProductStock,
+  computeStockFlags,
+  assessSubProductDeletion,
+};
