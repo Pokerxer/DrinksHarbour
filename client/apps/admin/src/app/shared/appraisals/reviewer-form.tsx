@@ -681,6 +681,11 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
                       isMissing={outstanding.some((o) => o._id === q._id)}
                       readOnly={isReadOnly}
                       index={sIdx * 10 + qIdx}
+                      // Scored anchors are shown in an order derived from THIS
+                      // reviewer's row, so self and manager get different ones
+                      // — a manager who has read the self assessment must not
+                      // be able to recover the ranking from its layout.
+                      shuffleSalt={form.feedback._id}
                     />
                   ))}
                 </motion.section>

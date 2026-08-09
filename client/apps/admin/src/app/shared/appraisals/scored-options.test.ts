@@ -3,6 +3,7 @@ import {
   isScoredOptions,
   scoredOptionLabel,
   answerForScoredOption,
+  shuffledScoredOptions,
 } from './review-answer-utils';
 import { formatAnswer } from './review-answer-utils';
 import type { AppraisalQuestion } from '@/services/appraisal.service';
@@ -115,5 +116,131 @@ describe('formatAnswer on a scored-anchor question', () => {
     expect(
       formatAnswer(punctuality, { questionId: 'q1', notObserved: true })
     ).toBe('Not observed');
+  });
+});
+
+// ── Shuffling the anchors ──────────────────────────────────────────────────
+// Authored best-first (5/4/3/2/1) and rendered in that order, "the top one is
+// the good one" is learnable in about four questions and the sheet stops
+// measuring anything. These assert the four properties that make a shuffle
+// safe: it pairs, it covers, it is stable, and it varies.
+describe('shuffledScoredOptions', () => {
+  const orderOf = (pairs: { label: string; score: number }[]) =>
+    pairs.map((p) => p.score);
+
+  test('carries the label and its score together, never the labels alone', () => {
+    const pairs = shuffledScoredOptions(punctuality, 'fb1');
+    for (const { label, score } of pairs) {
+      const authored = punctuality.options!.indexOf(label);
+      expect(punctuality.optionScores![authored]).toBe(score);
+    }
+  });
+
+  test('renders every option exactly once', () => {
+    const pairs = shuffledScoredOptions(punctuality, 'fb1');
+    expect(pairs).toHaveLength(5);
+    expect([...pairs.map((p) => p.label)].sort()).toEqual(
+      [...punctuality.options!].sort()
+    );
+    expect([...orderOf(pairs)].sort()).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  test('is stable for one rater and question across repeated calls', () => {
+    // Re-randomising on re-render moves the option out from under the cursor
+    // and changes which anchor a half-made click lands on.
+    const first = orderOf(shuffledScoredOptions(punctuality, 'fb1'));
+    for (let i = 0; i < 20; i++) {
+      expect(orderOf(shuffledScoredOptions(punctuality, 'fb1'))).toEqual(first);
+    }
+  });
+
+  test('gives different questions different orders', () => {
+    const orders = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'].map((id) =>
+      orderOf(
+        shuffledScoredOptions(
+          { ...punctuality, _id: id } as AppraisalQuestion,
+          'fb1'
+        )
+      ).join()
+    );
+    expect(new Set(orders).size).toBeGreaterThan(1);
+  });
+
+  test('gives two raters of the same question different orders', () => {
+    // Salted per feedback row, so the manager cannot pattern-match positions
+    // against the self sheet, and the anchors are not learnable from a
+    // colleague's screen.
+    const orders = ['fb1', 'fb2', 'fb3', 'fb4', 'fb5', 'fb6'].map((salt) =>
+      orderOf(shuffledScoredOptions(punctuality, salt)).join()
+    );
+    expect(new Set(orders).size).toBeGreaterThan(1);
+  });
+
+  test('does not shuffle a question whose scores do not pair', () => {
+    // Same safe failure as isScoredOptions: fall back to the authored order
+    // rather than render buttons mapped to undefined.
+    const broken = {
+      ...punctuality,
+      optionScores: [5, 4],
+    } as unknown as AppraisalQuestion;
+    expect(shuffledScoredOptions(broken, 'fb1')).toEqual([]);
+  });
+
+  test('is unaffected by a missing salt rather than throwing', () => {
+    const pairs = shuffledScoredOptions(punctuality, '');
+    expect([...orderOf(pairs)].sort()).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+// A shuffle that varies is not automatically a shuffle that is unlearnable.
+// The first implementation here passed every test above while putting the
+// WORST anchor first 49% of the time and reaching only 20 of the 120 possible
+// orders — a bias a rater would pick up faster than the best-first order it
+// replaced. The cause was hashing a key whose only varying part was its last
+// character, which FNV-1a alone does not avalanche. These pin the property
+// that actually matters, so no future change to the hash can quietly undo it.
+describe('shuffledScoredOptions is not learnable', () => {
+  // Deterministic stand-ins for ObjectIds — a fixed seed keeps this test from
+  // flaking while still sampling a realistic spread of ids.
+  const ids = (n: number, prefix: string) => {
+    const out: string[] = [];
+    let x = 123456789;
+    for (let i = 0; i < n; i++) {
+      x = (x * 1103515245 + 12345) & 0x7fffffff;
+      out.push(`${prefix}${x.toString(16).padStart(8, '0')}${i}`);
+    }
+    return out;
+  };
+
+  const SAMPLE = 4000;
+  const orders = ids(SAMPLE, 'q').map((id) =>
+    shuffledScoredOptions({ ...punctuality, _id: id } as AppraisalQuestion, 'fb1')
+  );
+
+  test('spreads across most of the possible orders', () => {
+    const distinct = new Set(orders.map((o) => o.map((p) => p.score).join()));
+    expect(distinct.size).toBeGreaterThan(100); // of 5! = 120
+  });
+
+  test('puts no single anchor in the first slot disproportionately', () => {
+    // The top slot is the one that matters: it is the position a rater
+    // skimming a long sheet reads first and clicks by habit.
+    const counts = new Map<number, number>();
+    for (const o of orders) counts.set(o[0].score, (counts.get(o[0].score) ?? 0) + 1);
+    for (const n of Array.from(counts.values())) {
+      expect(n / SAMPLE).toBeLessThan(0.3); // uniform is 0.2
+      expect(n / SAMPLE).toBeGreaterThan(0.1);
+    }
+  });
+
+  test('puts no single anchor in any fixed slot disproportionately', () => {
+    for (let slot = 0; slot < 5; slot++) {
+      const counts = new Map<number, number>();
+      for (const o of orders)
+        counts.set(o[slot].score, (counts.get(o[slot].score) ?? 0) + 1);
+      expect(counts.size).toBe(5);
+      for (const n of Array.from(counts.values()))
+        expect(n / SAMPLE).toBeLessThan(0.3);
+    }
   });
 });

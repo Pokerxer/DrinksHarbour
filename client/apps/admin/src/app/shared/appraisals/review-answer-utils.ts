@@ -76,6 +76,111 @@ export function isScoredOptions(question: AppraisalQuestion): boolean {
   return options.length > 0 && options.length === scores.length;
 }
 
+/** An anchor as the rater sees it: wording, and the score it silently carries. */
+export interface ScoredOption {
+  label: string;
+  score: number;
+}
+
+/**
+ * FNV-1a, 32-bit, with a murmur3 avalanche finalizer.
+ *
+ * The server sorts by a sha256 digest (orderFeedbackForViewer), but node's
+ * crypto is not available here and SubtleCrypto is async — an ordering that
+ * has to be awaited cannot be computed during render. The cryptographic
+ * strength is not what the ordering rests on anyway: this hides which anchor
+ * is worth 5 from someone reading a form, and the template ships the scores to
+ * the browser regardless. What matters is that it is deterministic and
+ * well-mixed.
+ *
+ * The finalizer is NOT optional decoration. FNV-1a alone barely avalanches its
+ * LAST byte, and the keys hashed here differ only in a trailing index — the
+ * first version of this function reached 20 of the 120 possible orders and put
+ * the bottom anchor first 49% of the time, a bias more learnable than the
+ * best-first order the shuffle replaced. `scored-options.test.ts` pins the
+ * distribution so that cannot come back.
+ */
+function hash32(input: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    // The FNV prime, by shift-and-add: a plain `h * 16777619` overflows into
+    // float territory and stops being a 32-bit hash.
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  // murmur3 fmix32 — spreads the low bits, where a one-character difference
+  // lands, across the whole word.
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * The anchors of a scored question in the order THIS rater should see them.
+ *
+ * ── Why the authored order cannot be the rendered order ────────────────────
+ * Scored anchors are written best-first (5/4/3/2/1) because that is how a
+ * human composes a rating scale. Rendered that way, "the top one is the good
+ * one" is learnable in about four questions, and from then on the rater is
+ * picking a POSITION rather than reading a description — which is precisely
+ * the behaviour hiding the scores was meant to prevent. A twenty-criterion
+ * sheet then measures nothing but how quickly someone spotted the pattern.
+ *
+ * ── The two properties this has to hold at once ────────────────────────────
+ * The order must VARY between raters and questions, and must be STABLE for
+ * any one of them. Stability is not a nicety: re-shuffling on re-render moves
+ * an option out from under the cursor, and a half-made click then lands on a
+ * different anchor than the one the rater was reading — silently, and stored
+ * as their considered judgement. It is the same argument, for the same reason,
+ * as orderFeedbackForViewer on the server; read its comment on why
+ * re-randomising per request is a leak rather than extra safety.
+ *
+ * So the order is DERIVED, not drawn: hash the salt with the question id and
+ * the anchor's authored index, and sort on that. Same rater, same question,
+ * same order, forever, with no state to store.
+ *
+ * `salt` is the reviewer's own feedback row id. Per-rater rather than
+ * per-appraisal so the manager's sheet is not in the same order as the one the
+ * employee already filled in — otherwise a manager who had read the self
+ * assessment could recover the ranking from it.
+ *
+ * The label and its score move TOGETHER. Shuffling the labels alone would
+ * leave answerForScoredOption mapping a clicked position onto whatever score
+ * the template had at that index, storing a rating nobody chose — and nothing
+ * would throw. Returning pairs rather than a permutation of indices is what
+ * makes that mistake unavailable to the caller.
+ *
+ * Returns `[]` for a question whose arrays do not pair, matching
+ * isScoredOptions' safe failure: the caller falls back to the plain numeric
+ * scale rather than rendering buttons mapped to `undefined`.
+ */
+export function shuffledScoredOptions(
+  question: AppraisalQuestion,
+  salt: string
+): ScoredOption[] {
+  if (!isScoredOptions(question)) return [];
+  const options = question.options ?? [];
+  const scores = question.optionScores ?? [];
+  return options
+    .map((label, index) => ({
+      label,
+      score: scores[index],
+      // Index FIRST: it is the only part that varies within one question, and
+      // leading with it means every later byte of the key mixes it further.
+      rank: hash32(`${index}:${salt}:${question._id}`),
+      index,
+    }))
+    // Ties break on the authored index so the result is a total order even if
+    // two keys collide — without it, sort stability would be the only thing
+    // keeping the output deterministic, and that is not a guarantee worth
+    // resting a stored rating on.
+    .sort((a, b) => a.rank.localeCompare(b.rank) || a.index - b.index)
+    .map(({ label, score }) => ({ label, score }));
+}
+
 /** The answer produced by picking option `index` — its score, not its index. */
 export function answerForScoredOption(
   question: AppraisalQuestion,

@@ -10,6 +10,7 @@ import type {
 import {
   isAnswered,
   isScoredOptions,
+  shuffledScoredOptions,
   scaleMaxOf,
   toggleChoice,
 } from './review-answer-utils';
@@ -105,30 +106,41 @@ function QuestionLabel({
  *
  * Selection is matched on the stored `rating` rather than an index, which is
  * unambiguous only because the server rejects a question whose options share a
- * score (validateOptionScores). The order the options appear in is the
- * template's own, NOT sorted by score: the author writes them best-to-worst
- * and re-ordering them here would silently rewrite the form.
+ * score (validateOptionScores).
+ *
+ * The order is SHUFFLED per rater, and deliberately is not the template's.
+ * Anchors are authored best-first because that is how a person writes a scale,
+ * but rendered that way the pattern is learnable within a few questions and
+ * the rater starts picking a position instead of reading a description. The
+ * template editor still authors in rank order — only this render shuffles.
+ * See shuffledScoredOptions in review-answer-utils.ts for why the order has to
+ * be both varied AND stable, and why it moves (label, score) as a pair.
  */
 function ScoredOptionsField({
   question,
   value,
   onChange,
   disabled,
+  shuffleSalt,
 }: {
   question: AppraisalQuestion;
   value: number | undefined;
   onChange: (rating: number) => void;
   disabled: boolean;
+  /** This reviewer's feedback row id — see shuffledScoredOptions. */
+  shuffleSalt: string;
 }) {
-  const options = question.options ?? [];
-  const scores = question.optionScores ?? [];
+  // Rendered in an order derived from this rater and this question, NOT the
+  // best-first order the template was authored in. The pairing is done inside
+  // shuffledScoredOptions precisely so nothing here can index `optionScores`
+  // by a shuffled position and store a rating nobody picked.
+  const options = shuffledScoredOptions(question, shuffleSalt);
 
   return (
     <fieldset className="m-0 min-w-0 border-0 p-0" disabled={disabled}>
       <QuestionLabel question={question} as="legend" />
       <div className="mt-3 flex flex-col gap-2">
-        {options.map((opt, i) => {
-          const score = scores[i];
+        {options.map(({ label: opt, score }, i) => {
           const checked = value === score;
           return (
             <label
@@ -465,6 +477,7 @@ export default function ReviewQuestionCard({
   isMissing,
   readOnly,
   index,
+  shuffleSalt,
 }: {
   question: AppraisalQuestion;
   answer: AppraisalAnswer | undefined;
@@ -486,6 +499,12 @@ export default function ReviewQuestionCard({
   isMissing: boolean;
   readOnly: boolean;
   index: number;
+  /**
+   * The reviewer's own feedback row id, used to derive the order scored
+   * anchors are shown in. Per-RATER rather than per-appraisal so the manager's
+   * sheet is not in the same order as the self assessment they can read.
+   */
+  shuffleSalt: string;
 }) {
   const answered = isAnswered(question, answer);
   const abstained = answer?.notObserved === true;
@@ -510,6 +529,7 @@ export default function ReviewQuestionCard({
               value={answer?.rating}
               onChange={onRatingChange}
               disabled={fieldDisabled}
+              shuffleSalt={shuffleSalt}
             />
           );
         }
