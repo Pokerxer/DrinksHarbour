@@ -266,6 +266,14 @@ export interface AppraisalQuestion {
   scaleMax?: number;
   /** Options for choice / multi-select questions. */
   options?: string[];
+  /**
+   * Scored anchors — the points each entry of `options` is worth, paired by
+   * POSITION. Present only on an ordinal question whose options are
+   * behavioural descriptions. The rater reads and picks the description; the
+   * score is stored as an ordinary `rating` and is never rendered to them.
+   * See isScoredOptions in shared/appraisals/review-answer-utils.ts.
+   */
+  optionScores?: number[];
   /** When true the choice question allows multiple selections. */
   multiple?: boolean;
   /** Custom low/high labels for likert / scale questions. */
@@ -538,6 +546,14 @@ export const fetchAppraisal = (id: string) =>
      * reviewer either, by design.
      */
     comparison: ComparisonRow[];
+    /**
+     * The appraisal's final mark, from the MANAGER's assessment — the form is a
+     * supervisor's rating sheet, so self and peer answers are input to it, not
+     * votes in it. Computed server-side from the same ALREADY-PROJECTED
+     * `feedback` as `comparison`, so a viewer who may not see a row cannot be
+     * scored from it. Read it through shared/appraisals/score-presenter.
+     */
+    score: AppraisalScore;
   }>(`/api/appraisals/${id}`);
 
 export const fetchReviewerForm = (id: string) =>
@@ -1017,6 +1033,34 @@ export interface ComparisonRow {
    * `[]` reads as "no peers responded", which is a different fact.
    */
   peerBreakdown: { reviewer: PersonRef; rating: number }[] | null;
+}
+
+/**
+ * The appraisal's final mark — `scoreAppraisal` in appraisal.helpers.js.
+ *
+ * Points are POOLED across questions (earned summed over possible summed),
+ * which `buildComparison` deliberately refuses to do. That is not a
+ * contradiction: averaging a 5-point scale against a 10-point one is
+ * meaningless, summing earned over summed possible is not.
+ */
+export interface AppraisalScore {
+  earned: number;
+  /**
+   * The total available from the questions that were actually scored — NOT
+   * the whole form. A skipped question leaves BOTH sides of the fraction, so
+   * a partial assessment is out of less, never marked zero for the gap.
+   */
+  possible: number;
+  /**
+   * Null, not 0, when nothing has been scored. "Nothing scored yet" and
+   * "scored zero" are different facts, and rendering 0% for an appraisal the
+   * manager has not submitted reports a verdict nobody reached.
+   */
+  pct: number | null;
+  /** Questions that carried a rating. */
+  counted: number;
+  /** Scorable questions left unanswered or marked not observed. */
+  skipped: number;
 }
 
 /** Latest, non-archived version of every family the tenant owns. */

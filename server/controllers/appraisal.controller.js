@@ -29,11 +29,15 @@ const {
   peerReleaseGate,
   outstandingActionsFor,
   buildComparison,
+  scoreAppraisal,
   normaliseCommitments,
   filterSections,
   TENANT_ROLES,
 } = require('../services/appraisal.helpers');
 const { departmentScopeFor } = require('../services/appraisalScope.service');
+const {
+  deletedEmployeeIdsFor, excludeDeleted,
+} = require('../services/appraisalRoster.service');
 
 /**
  * Resolve access, WITH the caller's department scope (Phase 5 §9.4).
@@ -210,19 +214,33 @@ exports.myAppraisals = async (req, res, next) => {
 
 exports.myReviewRequests = async (req, res, next) => {
   try {
-    const rows = await AppraisalFeedback.find({
-      tenant: req.tenant._id,
-      reviewer: req.user._id,
-      status: { $in: ['pending', 'submitted'] },
-    })
-      .populate({
-        path: 'appraisal',
-        select: 'employee state',
-        populate: { path: 'employee', select: 'firstName lastName email' },
+    const [all, deletedIds] = await Promise.all([
+      AppraisalFeedback.find({
+        tenant: req.tenant._id,
+        reviewer: req.user._id,
+        status: { $in: ['pending', 'submitted'] },
       })
-      .populate('cycle', 'name feedbackDeadline')
-      .sort({ createdAt: -1 })
-      .lean();
+        .populate({
+          path: 'appraisal',
+          select: 'employee state',
+          populate: { path: 'employee', select: 'firstName lastName email' },
+        })
+        .populate('cycle', 'name feedbackDeadline')
+        .sort({ createdAt: -1 })
+        .lean(),
+      deletedEmployeeIdsFor(req),
+    ]);
+
+    // Filtered here rather than in the query: the live-employee rule is about
+    // the appraisal's SUBJECT, and a feedback row records only its reviewer, so
+    // the query has nothing to match on. `appraisal` is already populated, and
+    // its `employee` with it, so this costs no extra read.
+    const deleted = new Set(deletedIds.map(String));
+    const subjectOf = (row) => {
+      const emp = row.appraisal && row.appraisal.employee;
+      return String((emp && emp._id) || emp || '');
+    };
+    const rows = deleted.size ? all.filter((row) => !deleted.has(subjectOf(row))) : all;
 
     // `appraisal` is populated, so the id is one level down — and may be null
     // if the referenced appraisal is gone. idsOf drops the empties rather than
@@ -250,7 +268,15 @@ exports.myReviewRequests = async (req, res, next) => {
 
 exports.teamAppraisals = async (req, res, next) => {
   try {
-    const rows = await Appraisal.find({ tenant: req.tenant._id, manager: req.user._id })
+    // A report who has been removed from the tenant drops off their manager's
+    // list. The appraisal is not deleted — restoring the employee restores the
+    // row — but nobody can complete a review of someone who can no longer sign
+    // in, and leaving it here reads as work still owed.
+    const rows = await Appraisal.find({
+      tenant: req.tenant._id,
+      manager: req.user._id,
+      ...excludeDeleted(await deletedEmployeeIdsFor(req)),
+    })
       .populate('employee', 'firstName lastName email employeeProfile.work.jobTitle')
       .populate('cycle', 'name feedbackDeadline status')
       .sort({ createdAt: -1 })
@@ -381,11 +407,23 @@ exports.getAppraisal = async (req, res, next) => {
       (fb) => fb.kind === 'peer' && fb.status === 'submitted'
     ).length;
 
+    // The appraisal's final score, from the manager's assessment — the form is
+    // a supervisor's rating sheet, so the manager's row is the one that counts
+    // and self/peer answers are input to it, not votes in it.
+    //
+    // Computed from the PROJECTED `feedback`, exactly like `comparison` above
+    // and for the same reason: a viewer who may not see a row cannot be scored
+    // from it. Before the manager submits there is no submitted manager row to
+    // find, so this reports `pct: null` rather than a running total — which
+    // also means a subject polling their own appraisal mid-cycle cannot watch
+    // their score assemble.
+    const score = scoreAppraisal(sections, feedback, { kind: 'manager' });
+
     res.json({
       success: true,
       data: {
         appraisal: safeAppraisal, feedback, sections, access,
-        approvedPeerCount, peerResponseCount, comparison,
+        approvedPeerCount, peerResponseCount, comparison, score,
       },
     });
   } catch (err) { next(err); }
@@ -1003,6 +1041,20 @@ exports.nudge = async (req, res, next) => {
       return res.status(400).json({
         success: false,
         message: 'That person has nothing outstanding on this appraisal.',
+      });
+    }
+
+    // Somebody removed from the tenant keeps their pending feedback rows — the
+    // rows are not deleted, so outstandingActionsFor still reports them — but
+    // they cannot sign in to act on one. The roster already stops naming them,
+    // so this is only reachable by a stale page or a hand-made request; it is
+    // refused here anyway rather than left to send a reminder to a former
+    // employee's inbox.
+    const deleted = new Set((await deletedEmployeeIdsFor(req)).map(String));
+    if (deleted.has(String(target))) {
+      return res.status(400).json({
+        success: false,
+        message: 'That person no longer works here — reassign the review instead.',
       });
     }
 

@@ -17,6 +17,7 @@ const mongoose = require('mongoose');
 const AppraisalCycle = require('../models/AppraisalCycle');
 const Appraisal = require('../models/Appraisal');
 const AppraisalFeedback = require('../models/AppraisalFeedback');
+const User = require('../models/User');
 const cycles = require('../controllers/appraisalCycle.controller');
 
 const oid = () => new mongoose.Types.ObjectId();
@@ -66,6 +67,13 @@ async function progress({ nominationDeadline, appraisals }) {
   const originalAppraisalAggregate = Appraisal.aggregate;
   const originalAppraisalFind = Appraisal.find;
   const originalFeedbackCount = AppraisalFeedback.countDocuments;
+  const originalUserFind = User.find;
+
+  // cycleProgress excludes appraisals whose employee has been deleted, which
+  // costs it one read of the tenant's deleted users. Stubbed to "nobody has
+  // been deleted" so these tests keep asserting the stall rules alone —
+  // appraisalDeletedEmployees.test.js is what covers the exclusion itself.
+  User.find = () => ({ select: () => leanChain(() => []) });
 
   AppraisalCycle.findOne = (filter) => {
     assert.strictEqual(String(filter.tenant), String(tenantId), 'cycle lookup must be tenant-scoped');
@@ -98,6 +106,7 @@ async function progress({ nominationDeadline, appraisals }) {
     Appraisal.aggregate = originalAppraisalAggregate;
     Appraisal.find = originalAppraisalFind;
     AppraisalFeedback.countDocuments = originalFeedbackCount;
+    User.find = originalUserFind;
   }
 
   return getBody();

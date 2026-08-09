@@ -19,7 +19,12 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { PiCaretRight, PiLifebuoy, PiThumbsUp, PiUsersThree } from 'react-icons/pi';
+import {
+  PiCaretRight,
+  PiLifebuoy,
+  PiThumbsUp,
+  PiUsersThree,
+} from 'react-icons/pi';
 import {
   fetchStandingForm,
   saveStandingFeedback,
@@ -61,7 +66,8 @@ export default function StandingFeedbackStep({
         setAvailable(form.candidates.length > 0);
         setCandidates(form.candidates);
         const seeded: Draft = {};
-        for (const c of form.candidates) seeded[c._id] = { standing: null, note: '' };
+        for (const c of form.candidates)
+          seeded[c._id] = { standing: null, note: '' };
         for (const e of form.entries) {
           seeded[e.subject] = { standing: e.standing, note: e.note || '' };
         }
@@ -178,8 +184,8 @@ export default function StandingFeedbackStep({
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-blue-800/80">
                   Not shown to the person you write about, not to your manager,
-                  and not to HR. It is never part of anyone’s appraisal.
-                  Leaving this blank is a normal answer.
+                  and not to HR. It is never part of anyone’s appraisal. Leaving
+                  this blank is a normal answer.
                 </p>
               </div>
 
@@ -199,7 +205,9 @@ export default function StandingFeedbackStep({
                           <StandingButton
                             active={row.standing === 'doing_well'}
                             disabled={readOnly || saving}
-                            onClick={() => setStanding(person._id, 'doing_well')}
+                            onClick={() =>
+                              setStanding(person._id, 'doing_well')
+                            }
                             tone="emerald"
                             icon={<PiThumbsUp className="h-3.5 w-3.5" />}
                             label="Doing well"

@@ -14,6 +14,22 @@ const questionSchema = new Schema({
   // For choice / multi-select questions
   options: [{ type: String, trim: true, maxlength: 200 }],
   multiple: { type: Boolean, default: false },
+  // Scored anchors: the points each entry of `options` is worth, paired by
+  // POSITION. Present only on an ordinal question (rating/likert/scale) whose
+  // options are behavioural descriptions rather than a free choice — the rater
+  // reads and picks the description, and the score is stored on the answer as
+  // an ordinary `rating` without ever being shown to them.
+  //
+  // Kept as a parallel array rather than folded into `options` as objects
+  // because `options` is what an ANSWER stores (see answerSchema's note on
+  // storing labels, not indices), and changing its element type would change
+  // the shape of every stored answer in the system.
+  //
+  // validateOptionScores in appraisalTemplate.controller.js enforces the
+  // pairing: same length as `options`, each within 0..scaleMax. Nothing here
+  // does, because a mismatch has to be reported to the author with a message,
+  // not thrown as a cast error at save time.
+  optionScores: [{ type: Number }],
   // For likert / scale questions — custom endpoint labels
   scaleLabels: {
     low: { type: String, trim: true, maxlength: 100 },

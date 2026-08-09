@@ -24,8 +24,64 @@ function validateTemplateShape(sections) {
   sections.forEach((s, i) => {
     if (!Array.isArray(s?.questions) || s.questions.length === 0) {
       errors.push(`Section ${i + 1} ("${s?.title || 'untitled'}") needs at least one question.`);
+      return;
+    }
+    s.questions.forEach((q, j) => {
+      errors.push(...validateOptionScores(q, `Section ${i + 1} question ${j + 1}`));
+    });
+  });
+  return errors;
+}
+
+/**
+ * `optionScores` pairs positionally with `options`: the rater picks a
+ * described option and the score at the same index is what gets stored, out of
+ * sight. Every rule here exists because breaking the pairing fails SILENTLY —
+ * an index with no score maps to `undefined`, and the answer saves with no
+ * rating at all rather than raising anything the author would see.
+ *
+ * A question with neither field is an ordinary rating question and is left
+ * alone; only a question carrying scores is held to these rules.
+ */
+function validateOptionScores(q, where) {
+  const scores = q?.optionScores;
+  if (scores == null) return [];
+  const errors = [];
+  if (!Array.isArray(scores)) {
+    errors.push(`${where}: option scores must be a list.`);
+    return errors;
+  }
+  const options = Array.isArray(q?.options) ? q.options : [];
+  if (options.length === 0) {
+    errors.push(`${where}: has option scores but no options to attach them to.`);
+    return errors;
+  }
+  if (options.length !== scores.length) {
+    errors.push(
+      `${where}: has ${options.length} option(s) but ${scores.length} score(s) — every option needs exactly one score.`
+    );
+    return errors;
+  }
+  // Defaults to 5 to match the schema, so a question that omits scaleMax is
+  // held to the same ceiling the renderer and scoreAppraisal will assume.
+  const max = typeof q.scaleMax === 'number' && Number.isFinite(q.scaleMax) ? q.scaleMax : 5;
+  scores.forEach((n, k) => {
+    if (typeof n !== 'number' || !Number.isFinite(n)) {
+      errors.push(`${where}: option ${k + 1} has a non-numeric score.`);
+    } else if (n < 0 || n > max) {
+      errors.push(`${where}: option ${k + 1} scores ${n}, outside the 0–${max} range set by scaleMax.`);
     }
   });
+  if (errors.length) return errors;
+
+  // The answer stores only the number, so the score is also the IDENTITY of
+  // the anchor that was chosen — it is what the read-back view looks the
+  // wording up by. Two anchors worth the same are indistinguishable once
+  // stored, and the reader would be shown whichever happened to come first:
+  // words attributed to a rater who chose the other one.
+  if (new Set(scores).size !== scores.length) {
+    errors.push(`${where}: two or more options carry the same score — each option needs a distinct score.`);
+  }
   return errors;
 }
 
@@ -103,6 +159,13 @@ async function hasLaunchedCycleFor(tenantId, templateId) {
     .lean();
   return pinnedCycles.some((c) => c.launchedAt);
 }
+
+// Exported for scripts that edit a stored template out-of-band (see
+// scripts/fix-appraisal-template-person-wording.js). Such a script must make
+// the same in-place-vs-fork decision `updateTemplate` makes, and re-deriving
+// the predicate there is exactly the drift this function was extracted to
+// prevent. Named, not routed: the router references handlers explicitly.
+exports.hasLaunchedCycleFor = hasLaunchedCycleFor;
 
 exports.listTemplates = async (req, res, next) => {
   try {

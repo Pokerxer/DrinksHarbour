@@ -16,6 +16,7 @@ import {
   type AppraisalAnswer,
   type AppraisalFeedback,
   type AppraisalQuestion,
+  type AppraisalScore,
   type AppraisalSection,
   type ComparisonRow,
   type FeedbackKind,
@@ -23,6 +24,7 @@ import {
 } from '@/services/appraisal.service';
 import { formatAnswer, isNumericQuestion } from './review-answer-utils';
 import AppraisalStateBadge from './state-badge';
+import AppraisalScoreCard from './appraisal-score-card';
 // Only the AGGREGATE view. appraisal-peer-breakdown.tsx is deliberately not
 // imported here — see the note below on enforcement by omission.
 import AppraisalComparison from './appraisal-comparison';
@@ -179,6 +181,11 @@ export default function AppraisalSubjectView({
   // building it — and AppraisalComparison does not read that field in any
   // case. The named breakdown component is not imported here at all.
   comparison = [],
+  // The employee's own mark. Optional and rendered through
+  // AppraisalScoreCard, which shows "not scored yet" rather than a 0% when the
+  // manager's assessment is not in — the subject only reaches this screen
+  // after release, but the card must not invent a verdict either way.
+  score,
   onUpdate,
 }: {
   appraisal: Appraisal;
@@ -187,6 +194,7 @@ export default function AppraisalSubjectView({
   approvedPeerCount?: number;
   peerResponseCount?: number;
   comparison?: ComparisonRow[];
+  score?: AppraisalScore;
   onUpdate: (appraisal: Appraisal) => void;
 }) {
   const [response, setResponse] = useState(appraisal.employeeResponse ?? '');
@@ -245,6 +253,14 @@ export default function AppraisalSubjectView({
           Reviewed by {personName(appraisal.manager)}
         </p>
       </div>
+
+      {/* Above the summary: on a scored form this is the headline the employee
+          came for, and burying it under prose invites them to scroll past it.
+          Renders nothing at all on a form with no scorable questions — most
+          360 templates — so this does not push an empty card onto every
+          appraisal. `relation` is a constant because this component is only
+          ever mounted for the subject; see the dispatch in appraisal-detail. */}
+      <AppraisalScoreCard score={score} relation="subject" />
 
       <div className="rounded-xl border border-gray-100 bg-white p-5">
         <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">

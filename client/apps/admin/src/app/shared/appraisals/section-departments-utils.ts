@@ -52,7 +52,9 @@ export function describeSectionAudience(
   // rather than dropped: a section silently narrowing its audience is exactly
   // the thing HR would never notice, and silently WIDENING it by treating the
   // list as empty would be worse still.
-  const named = ids.map((id) => byId.get(id)).filter((n): n is string => Boolean(n));
+  const named = ids
+    .map((id) => byId.get(id))
+    .filter((n): n is string => Boolean(n));
   const unknown = ids.length - named.length;
 
   const parts: string[] = [];

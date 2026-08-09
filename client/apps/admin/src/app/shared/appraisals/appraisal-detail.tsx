@@ -9,6 +9,7 @@ import {
   type AppraisalAccess,
   type AppraisalFeedback,
   type AppraisalSection,
+  type AppraisalScore,
   type ComparisonRow,
 } from '@/services/appraisal.service';
 import AppraisalSubjectView from './appraisal-subject-view';
@@ -36,6 +37,13 @@ interface DetailData {
    * because anything here hides it.
    */
   comparison: ComparisonRow[];
+  /**
+   * The final mark, from the manager's assessment. Threaded to both views for
+   * the same reason as `comparison`: the server built it from the projected
+   * feedback, so the copy the subject receives already reflects what they may
+   * see — `pct` is null for them until the manager's row is submitted.
+   */
+  score: AppraisalScore;
 }
 
 // Not a shared/reusable component on purpose — the real `/access-denied`
@@ -166,6 +174,7 @@ export default function AppraisalDetail({ id }: { id: string }) {
     approvedPeerCount,
     peerResponseCount,
     comparison,
+    score,
   } = data;
 
   if (access.relation === 'subject') {
@@ -177,6 +186,7 @@ export default function AppraisalDetail({ id }: { id: string }) {
         approvedPeerCount={approvedPeerCount}
         peerResponseCount={peerResponseCount}
         comparison={comparison}
+        score={score}
         onUpdate={handleUpdate}
       />
     );
@@ -190,6 +200,7 @@ export default function AppraisalDetail({ id }: { id: string }) {
         sections={sections}
         access={access}
         comparison={comparison}
+        score={score}
         onUpdate={handleUpdate}
         onRefresh={refresh}
       />

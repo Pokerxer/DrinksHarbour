@@ -30,6 +30,7 @@ import {
   type Appraisal,
   type AppraisalAccess,
   type AppraisalFeedback,
+  type AppraisalScore,
   type AppraisalSection,
   type ComparisonRow,
   type PersonRef,
@@ -50,6 +51,7 @@ import AppraisalComparison from './appraisal-comparison';
 // see reviewer names, the employee never does, and that is enforced by which
 // view imports this file rather than by a conditional inside it.
 import AppraisalPeerBreakdown from './appraisal-peer-breakdown';
+import AppraisalScoreCard from './appraisal-score-card';
 
 /** Inclusive bounds of the final rating, matching the input's min/max. */
 const RATING_MIN = 0;
@@ -128,6 +130,11 @@ export default function AppraisalManagerView({
   // otherwise every row's is `null` and AppraisalPeerBreakdown renders
   // nothing. Defaulted to empty for the same reason `sections` is.
   comparison = [],
+  // The mark this assessment produced. Null-percent until the manager submits
+  // their own row — AppraisalScoreCard renders "not scored yet" for that, so a
+  // half-written assessment never shows a running total that would read as a
+  // verdict.
+  score,
   onUpdate,
   onRefresh,
 }: {
@@ -136,6 +143,7 @@ export default function AppraisalManagerView({
   sections?: AppraisalSection[];
   access: AppraisalAccess;
   comparison?: ComparisonRow[];
+  score?: AppraisalScore;
   onUpdate: (appraisal: Appraisal) => void;
   /**
    * Re-fetches the whole detail payload (appraisal + feedback + access) —
@@ -447,6 +455,11 @@ export default function AppraisalManagerView({
           </div>
         </div>
       )}
+
+      {/* The mark this form produced, ahead of the per-question detail: HR and
+          the manager both read the number first and then go looking for what
+          drove it. Absent entirely on a form with no scorable questions. */}
+      <AppraisalScoreCard score={score} relation={access.relation} />
 
       {/* Complements the self-vs-manager table below rather than replacing it:
           this one is rating questions only, adds the peer dimension, and

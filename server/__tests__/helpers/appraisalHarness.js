@@ -465,8 +465,14 @@ class Harness {
     return Promise.resolve({ modifiedCount: matched.length });
   }
 
-  // Minimal support for the one pipeline shape appraisalCycle.controller.js
-  // actually issues: `[{ $match }, { $group: { _id: '$field', x: {$sum:1} } }]`.
+  // Minimal support for the two pipeline shapes appraisalCycle.controller.js
+  // actually issues: `[{ $match }, { $group: { _id: '$field', x: {$sum:1} } }]`
+  // (cycleProgress) and the same with a COMPOUND key,
+  // `{_id: {cycle: '$cycle', state: '$state'}}` (listCycles). Without the
+  // compound branch that second pipeline grouped every row under the literal
+  // spec object, so `row._id.cycle` read back the string '$cycle' and every
+  // cycle came out with no counts at all — a silent empty result that reads as
+  // "this cycle is empty" rather than as the gap it is.
   aggregate(collectionName, pipeline) {
     let rows = this.db[collectionName].map(deepClone);
     for (const stage of pipeline || []) {
@@ -476,9 +482,20 @@ class Harness {
         const groupSpec = stage.$group;
         const idExpr = groupSpec._id;
         const groups = new Map();
+        // `'$field'` reads that field off the row; anything else is a literal.
+        const resolve = (row, expr) => (
+          typeof expr === 'string' && expr.startsWith('$') ? row[expr.slice(1)] : expr
+        );
+        const isCompound = idExpr
+          && typeof idExpr === 'object'
+          && !(idExpr instanceof mongoose.Types.ObjectId);
         for (const row of rows) {
-          const key = typeof idExpr === 'string' && idExpr.startsWith('$') ? row[idExpr.slice(1)] : idExpr;
-          const k = String(key);
+          const key = isCompound
+            ? Object.fromEntries(
+                Object.entries(idExpr).map(([f, expr]) => [f, resolve(row, expr)])
+              )
+            : resolve(row, idExpr);
+          const k = isCompound ? Object.values(key).map(String).join('|') : String(key);
           if (!groups.has(k)) groups.set(k, { _id: key });
           const g = groups.get(k);
           for (const [outField, accSpec] of Object.entries(groupSpec)) {

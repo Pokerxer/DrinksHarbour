@@ -102,8 +102,8 @@ describe('departmentsUsedBySections', () => {
   });
 
   it('is empty for a wholly company-wide form', () => {
-    expect(departmentsUsedBySections([{ departments: [] }, {}], OPTIONS)).toEqual(
-      []
-    );
+    expect(
+      departmentsUsedBySections([{ departments: [] }, {}], OPTIONS)
+    ).toEqual([]);
   });
 });

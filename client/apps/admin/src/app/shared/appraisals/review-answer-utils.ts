@@ -48,6 +48,59 @@ export function scaleMaxOf(question: AppraisalQuestion): number {
   return Math.floor(raw);
 }
 
+/* ── Scored anchors ───────────────────────────────────────────────────────── */
+
+/**
+ * Is this a question whose OPTIONS carry hidden scores?
+ *
+ * The rater reads five behavioural descriptions and picks one; the score that
+ * option is worth is stored as an ordinary `rating` and is never shown to
+ * them. That is the whole point — a supervisor rating sheet where the weights
+ * are visible invites people to answer the number rather than the behaviour.
+ *
+ * Requires the two arrays to pair exactly. The server refuses to save a
+ * mismatch (validateOptionScores in appraisalTemplate.controller.js), but a
+ * stale client or a hand-edited document could still present one, and the safe
+ * failure is to fall back to the plain numeric scale rather than render
+ * buttons that map to `undefined`.
+ *
+ * `choice` is excluded deliberately even if it somehow carried scores: a
+ * choice answer stores TEXT in `selected`, not a number, so nothing downstream
+ * would score it.
+ */
+export function isScoredOptions(question: AppraisalQuestion): boolean {
+  if (!NUMERIC_TYPES.has(question.type) || question.type === 'yes_no') return false;
+  const options = question.options ?? [];
+  const scores = question.optionScores ?? [];
+  return options.length > 0 && options.length === scores.length;
+}
+
+/** The answer produced by picking option `index` — its score, not its index. */
+export function answerForScoredOption(
+  question: AppraisalQuestion,
+  index: number
+): AppraisalAnswer {
+  return { questionId: question._id, rating: question.optionScores![index] };
+}
+
+/**
+ * The wording behind a stored rating, or null if it matches no option.
+ *
+ * This is a reverse lookup by score, which is only unambiguous because the
+ * server rejects a question whose options share a score. Without that rule two
+ * anchors worth 3 would be indistinguishable once stored, and this would
+ * return whichever came first — attributing words to a rater who chose the
+ * other one.
+ */
+export function scoredOptionLabel(
+  question: AppraisalQuestion,
+  rating: number | undefined
+): string | null {
+  if (typeof rating !== 'number' || !Number.isFinite(rating)) return null;
+  const i = (question.optionScores ?? []).indexOf(rating);
+  return i === -1 ? null : (question.options ?? [])[i] ?? null;
+}
+
 /**
  * Has this reviewer actually answered this question?
  *
@@ -306,5 +359,14 @@ export function formatAnswer(
   if (question.type === 'choice') return answer!.selected!.join(', ');
   if (question.type === 'text') return answer!.text!.trim();
   if (question.type === 'yes_no') return answer!.rating === 1 ? 'Yes' : 'No';
+  // A scored anchor reads back as the wording that was chosen. Falling through
+  // to the numeric form below would print "4 of 5" — the score the rater was
+  // deliberately never shown, surfaced in the one view they are most likely to
+  // read. Falls through anyway if the rating matches no option, because a
+  // number is still better than silently rendering nothing.
+  if (isScoredOptions(question)) {
+    const label = scoredOptionLabel(question, answer!.rating);
+    if (label !== null) return label;
+  }
   return `${answer!.rating} of ${scaleMaxOf(question)}`;
 }

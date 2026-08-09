@@ -16,6 +16,7 @@ const mongoose = require('mongoose');
 
 const AppraisalCycle = require('../models/AppraisalCycle');
 const Appraisal = require('../models/Appraisal');
+const User = require('../models/User');
 const cycles = require('../controllers/appraisalCycle.controller');
 
 const oid = () => new mongoose.Types.ObjectId();
@@ -39,6 +40,13 @@ async function listWith({ cycleDocs, appraisals, aggregateThrows = false }) {
   const tenantId = oid();
   const originalFind = AppraisalCycle.find;
   const originalAggregate = Appraisal.aggregate;
+  const originalUserFind = User.find;
+
+  // The counts exclude appraisals whose employee has been deleted, which costs
+  // one read of the tenant's deleted users. Stubbed to "nobody has been
+  // deleted" so these tests keep asserting the counting alone —
+  // appraisalDeletedEmployees.test.js is what covers the exclusion itself.
+  User.find = () => ({ select: () => ({ lean: async () => [] }) });
 
   AppraisalCycle.find = (filter) => {
     assert.strictEqual(
@@ -81,6 +89,7 @@ async function listWith({ cycleDocs, appraisals, aggregateThrows = false }) {
   } finally {
     AppraisalCycle.find = originalFind;
     Appraisal.aggregate = originalAggregate;
+    User.find = originalUserFind;
   }
   return { body: getBody(), status: getStatus(), thrown, tenantId };
 }

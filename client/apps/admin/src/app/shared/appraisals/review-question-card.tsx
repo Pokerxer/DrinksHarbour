@@ -7,7 +7,12 @@ import type {
   AppraisalQuestion,
   AppraisalAnswer,
 } from '@/services/appraisal.service';
-import { isAnswered, scaleMaxOf, toggleChoice } from './review-answer-utils';
+import {
+  isAnswered,
+  isScoredOptions,
+  scaleMaxOf,
+  toggleChoice,
+} from './review-answer-utils';
 
 /* ── Why every choice here is a native input ──────────────────────────────────
  * Each of these fields is a radio group or a checkbox group, and all six types
@@ -87,6 +92,74 @@ function QuestionLabel({
         </span>
       )}
     </Tag>
+  );
+}
+
+/* ── Scored anchors: an ordinal question whose options carry hidden scores ──
+ *
+ * Renders the five behavioural descriptions as radios and NOTHING ELSE. The
+ * score each one carries is deliberately absent from this markup — no number,
+ * no ordering hint, no "5 of 5" badge. Showing it would invite the rater to
+ * answer the weight instead of the behaviour, which is the entire reason the
+ * scores are stored out of sight.
+ *
+ * Selection is matched on the stored `rating` rather than an index, which is
+ * unambiguous only because the server rejects a question whose options share a
+ * score (validateOptionScores). The order the options appear in is the
+ * template's own, NOT sorted by score: the author writes them best-to-worst
+ * and re-ordering them here would silently rewrite the form.
+ */
+function ScoredOptionsField({
+  question,
+  value,
+  onChange,
+  disabled,
+}: {
+  question: AppraisalQuestion;
+  value: number | undefined;
+  onChange: (rating: number) => void;
+  disabled: boolean;
+}) {
+  const options = question.options ?? [];
+  const scores = question.optionScores ?? [];
+
+  return (
+    <fieldset className="m-0 min-w-0 border-0 p-0" disabled={disabled}>
+      <QuestionLabel question={question} as="legend" />
+      <div className="mt-3 flex flex-col gap-2">
+        {options.map((opt, i) => {
+          const score = scores[i];
+          const checked = value === score;
+          return (
+            <label
+              key={`${opt}-${i}`}
+              className={`group relative block ${
+                disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+              }`}
+            >
+              <input
+                type="radio"
+                name={`q-${question._id}`}
+                value={opt}
+                checked={checked}
+                onChange={() => onChange(score)}
+                disabled={disabled}
+                className="peer sr-only"
+              />
+              <span
+                className={`flex items-start gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm text-gray-700 transition-all duration-150 group-hover:bg-gray-50 peer-checked:border-[#b20202]/40 peer-checked:bg-[#b20202]/[0.04] peer-checked:text-gray-900 ${FOCUS_RING} peer-disabled:opacity-60`}
+              >
+                <span
+                  aria-hidden
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded-full border border-gray-300 bg-white transition-colors peer-checked:group-[]:border-[#b20202] peer-checked:group-[]:bg-[#b20202]"
+                />
+                <span className="min-w-0 flex-1">{opt}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -427,6 +500,19 @@ export default function ReviewQuestionCard({
       case 'rating':
       case 'likert':
       case 'scale':
+        // Same stored answer either way — a number in `rating`. The only
+        // difference is whether the rater picks that number directly or picks
+        // a description that carries it.
+        if (isScoredOptions(question)) {
+          return (
+            <ScoredOptionsField
+              question={question}
+              value={answer?.rating}
+              onChange={onRatingChange}
+              disabled={fieldDisabled}
+            />
+          );
+        }
         return (
           <ScaleField
             question={question}

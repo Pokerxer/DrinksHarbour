@@ -33,6 +33,7 @@ import {
   type KeyedSection,
 } from './template-draft-keys';
 import { blankSections } from './template-presets';
+import { firstOptionScoreProblem } from './template-option-scores';
 import {
   appendGeneratedSections,
   appendQuestionsToSection,
@@ -468,6 +469,11 @@ export default function TemplateEditor({ id }: { id: string }) {
   );
   const missingTitle = sections.some((s) => !s.title.trim());
   const noQuestions = sections.some((s) => s.questions.length === 0);
+  // Scored anchors pair by POSITION with their options, and a broken pairing
+  // does not throw — it stores an answer with no rating at all. The server
+  // rejects it (validateOptionScores), so blocking here only turns a 400 on a
+  // finished form into a message naming the question.
+  const scoreProblem = firstOptionScoreProblem(sections);
   const blockedReason = !name.trim()
     ? 'Give the form a name.'
     : missingTitle
@@ -478,7 +484,9 @@ export default function TemplateEditor({ id }: { id: string }) {
           ? 'Every question needs a label.'
           : emptyAskOf
             ? 'A question nobody is asked will never appear on any form.'
-            : null;
+            : scoreProblem
+              ? scoreProblem
+              : null;
 
   // --- Save handler ---
   async function handleSave() {

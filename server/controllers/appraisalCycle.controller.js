@@ -11,23 +11,29 @@ const {
   outstandingActionsFor, countApprovedPeers,
 } = require('../services/appraisal.helpers');
 const Department = require('../models/Department');
+// Department scoping reaches this file only through appraisalRoster.service,
+// which composes it with the live-employee rule — every list, count and report
+// here needs both, and applying one without the other is exactly how deleted
+// employees survived in the roster while the department scope was applied
+// around them.
 const {
-  departmentScopeFor, departmentFilter, departmentMatch,
-} = require('../services/appraisalScope.service');
+  deletedEmployeeIdsFor, visibleAppraisalFilter, visibleAppraisalMatch,
+} = require('../services/appraisalRoster.service');
 
 /**
  * The appraisal ids in this cycle the caller may see, or `null` for an
- * unrestricted viewer.
+ * unrestricted viewer with no deleted employees to hide.
  *
- * Feedback rows carry no department of their own, so a scoped admin's counts
- * and per-question means have to be narrowed through the appraisals those rows
- * belong to. `null` short-circuits the extra query for owners, who are the
- * common case.
+ * Feedback rows carry no department of their own AND no employee of their own,
+ * so both rules — the caller's department scope and the live-employee rule —
+ * have to be narrowed through the appraisals those rows belong to. `null`
+ * short-circuits the extra query for the common case: an owner in a tenant
+ * that has never removed anybody.
  */
-async function scopedAppraisalIdsFor(tenantId, cycleId, scope) {
-  if (scope === null) return null;
+async function scopedAppraisalIdsFor(tenantId, cycleId, filter) {
+  if (!Object.keys(filter).length) return null;
   const rows = await Appraisal.find({
-    tenant: tenantId, cycle: cycleId, ...departmentFilter(scope),
+    tenant: tenantId, cycle: cycleId, ...filter,
   }).select('_id').lean();
   return rows.map((r) => r._id);
 }
@@ -86,14 +92,15 @@ exports.listCycles = async (req, res, next) => {
     // ObjectId here — a string $match silently matches nothing and every
     // cycle would come back with no counts at all.
     const tenantId = new mongoose.Types.ObjectId(req.tenant._id);
-    const scope = await departmentScopeFor(req);
+    const visible = await visibleAppraisalMatch(req);
     const [cycles, counts] = await Promise.all([
       AppraisalCycle.find({ tenant: req.tenant._id }).sort({ createdAt: -1 }).lean(),
       Appraisal.aggregate([
         // Phase 5 §9.4: an admin's cycle cards count only their own
-        // departments. Applied through the one shared scope definition so this
-        // list cannot drift from the roster it links to.
-        { $match: { tenant: tenantId, ...departmentMatch(scope) } },
+        // departments, and nobody's count includes an employee who has been
+        // removed from the tenant. Applied through the one shared definition so
+        // this list cannot drift from the roster it links to.
+        { $match: { tenant: tenantId, ...visible } },
         { $group: { _id: { cycle: '$cycle', state: '$state' }, count: { $sum: 1 } } },
       ]),
     ]);
@@ -366,11 +373,15 @@ exports.cycleProgress = async (req, res, next) => {
     const cycleId = new mongoose.Types.ObjectId(req.params.id);
     const tenantId = new mongoose.Types.ObjectId(req.tenant._id);
     const filter = { tenant: req.tenant._id, cycle: req.params.id };
-    const scope = await departmentScopeFor(req);
-    // Feedback has no department; it is narrowed through the appraisals it
-    // belongs to, so a scoped admin's completion percentage describes their own
-    // departments rather than the whole tenant's.
-    const visibleIds = await scopedAppraisalIdsFor(req.tenant._id, req.params.id, scope);
+    const [visible, visibleMatch] = await Promise.all([
+      visibleAppraisalFilter(req), visibleAppraisalMatch(req),
+    ]);
+    // Feedback carries neither a department nor an employee; it is narrowed
+    // through the appraisals it belongs to, so a scoped admin's completion
+    // percentage describes their own departments rather than the whole
+    // tenant's, and nobody's counts the outstanding rows of an employee who
+    // has been removed and can no longer sign in to submit them.
+    const visibleIds = await scopedAppraisalIdsFor(req.tenant._id, req.params.id, visible);
     const feedbackFilter = visibleIds === null ? filter : { ...filter, appraisal: { $in: visibleIds } };
 
     // No .catch(() => []) here: an aggregate failure must surface as a 500,
@@ -379,7 +390,7 @@ exports.cycleProgress = async (req, res, next) => {
     const [cycle, appraisals, feedbackTotal, feedbackSubmitted] = await Promise.all([
       AppraisalCycle.findOne({ _id: cycleId, tenant: tenantId }).lean(),
       Appraisal.aggregate([
-        { $match: { tenant: tenantId, cycle: cycleId, ...departmentMatch(scope) } },
+        { $match: { tenant: tenantId, cycle: cycleId, ...visibleMatch } },
         { $group: { _id: '$state', count: { $sum: 1 } } },
       ]),
       AppraisalFeedback.countDocuments(feedbackFilter),
@@ -405,7 +416,7 @@ exports.cycleProgress = async (req, res, next) => {
           tenant: req.tenant._id,
           cycle: cycle._id,
           state: { $in: ['nominating', 'pending_peer_approval'] },
-          ...departmentFilter(scope),
+          ...visible,
         })
           .populate('employee', 'firstName lastName email')
           .populate('manager', 'firstName lastName email')
@@ -509,9 +520,13 @@ exports.cycleRoster = async (req, res, next) => {
     // Phase 5 §9.4. This is the endpoint that names peer reviewers, so it is
     // also the one where a tenant_admin seeing another department's roster
     // matters most — the mount point's admin gate is no longer the whole
-    // boundary, the department scope is the rest of it.
+    // boundary, the department scope is the rest of it. The same filter drops
+    // employees who have been removed from the tenant: their record is history,
+    // not work HR can still chase.
+    const deletedIds = await deletedEmployeeIdsFor(req);
+    const deleted = new Set(deletedIds.map(String));
     const all = await Appraisal.find({
-      tenant: tenantId, cycle: cycle._id, ...departmentFilter(await departmentScopeFor(req)),
+      tenant: tenantId, cycle: cycle._id, ...(await visibleAppraisalFilter(req)),
     })
       .populate('employee', 'firstName lastName email employeeProfile.work.jobTitle')
       .populate('manager', 'firstName lastName email')
@@ -598,10 +613,18 @@ exports.cycleRoster = async (req, res, next) => {
           declined: peers.filter((p) => p.status === 'declined').length,
           pending: peers.filter((p) => p.status === 'pending').length,
         },
-        outstanding: outstandingActionsFor(a, fb).map((o) => ({
-          reason: o.reason,
-          target: rosterPerson(people.get(String(o.target))) || { _id: o.target },
-        })),
+        // A removed employee is dropped from the chase list rather than named.
+        // Their feedback row stays pending forever — they cannot sign in to
+        // submit it — so listing them sends HR after somebody who cannot act
+        // and makes a row that is actually complete read as stalled. Filtered
+        // here rather than inside outstandingActionsFor, which is DB-free by
+        // design and has no idea who still works here.
+        outstanding: outstandingActionsFor(a, fb)
+          .filter((o) => !deleted.has(String(o.target)))
+          .map((o) => ({
+            reason: o.reason,
+            target: rosterPerson(people.get(String(o.target))) || { _id: o.target },
+          })),
         lastNudge: latestNudge.get(String(a._id)) || null,
       };
     });
@@ -667,8 +690,8 @@ exports.cycleReport = async (req, res, next) => {
     // cycle with nothing in it yet.
     if (!cycle) return res.status(404).json({ success: false, message: 'Cycle not found' });
 
-    const scope = await departmentScopeFor(req);
-    const visibleIds = await scopedAppraisalIdsFor(tenantId, cycle._id, scope);
+    const visible = await visibleAppraisalFilter(req);
+    const visibleIds = await scopedAppraisalIdsFor(tenantId, cycle._id, visible);
     const [template, released, submitted] = await Promise.all([
       // Guarded on cycle.template being present for the same reason as the
       // tenant guard above: findOne({_id: undefined, tenant}) is stripped down
@@ -681,7 +704,7 @@ exports.cycleReport = async (req, res, next) => {
         tenant: tenantId,
         cycle: cycle._id,
         state: { $in: ['released', 'acknowledged'] },
-        ...departmentFilter(scope),
+        ...visible,
       }).select('state finalRating').lean(),
       // Tenant-scoped as well as cycle-scoped: a cycle id is not a tenant
       // boundary on its own.

@@ -1160,6 +1160,78 @@ function normaliseStandingEntries(entries, { candidateIds = [], authorId } = {})
  * Mongoose document spreads to `{$__, _doc}`, which would silently empty every
  * bucket instead of failing loudly.
  */
+/**
+ * The appraisal's final score for one reviewer kind: points earned out of
+ * points available.
+ *
+ * This POOLS across questions, which buildComparison deliberately refuses to
+ * do — and the difference is not a contradiction. Averaging a /5 answer with a
+ * /10 answer produces a number that means nothing, which is why the comparison
+ * table reports every question separately. Summing earned over summed possible
+ * is well defined at any mix of scales: five out of five plus five out of ten
+ * is ten out of fifteen, and that is a true statement about the whole form.
+ *
+ * Only the ordinal types are counted, the same set buildComparison averages.
+ * `yes_no` is excluded even though it stores a number: it means 1/0 but
+ * carries the schema's default `scaleMax` of 5, so counting it would add five
+ * points of headroom to a question whose best possible answer is one. `choice`
+ * and `text` hold no number at all.
+ *
+ * A question nobody answered, and an answer marked `notObserved`, leave BOTH
+ * sides of the fraction. Scoring either as zero would mean an honest "I
+ * haven't seen enough to judge this" silently costs the subject marks, which
+ * would make abstention a punishment and drive reviewers back to the
+ * defensive mid-scale answer the flag exists to avoid. `skipped` is reported
+ * so a caller can say "18 of 20 criteria scored" rather than quietly present a
+ * partial total as if it were complete.
+ *
+ * A rating of 0 is a real answer worth no points, and is counted on both
+ * sides. The falsy check that would drop it inflates the percentage by
+ * shrinking the denominator — the same trap `isAnswered` documents.
+ */
+function scoreAppraisal(sections, feedback, { kind = 'manager' } = {}) {
+  const row = (feedback || []).find((f) => f && f.kind === kind && f.status === 'submitted');
+  const answers = new Map(
+    (row?.answers || [])
+      .filter((a) => a && a.questionId != null)
+      .map((a) => [String(a.questionId), a])
+  );
+
+  let earned = 0;
+  let possible = 0;
+  let counted = 0;
+  let skipped = 0;
+
+  for (const section of sections || []) {
+    for (const q of section?.questions || []) {
+      if (!q || !COMPARABLE_QUESTION_TYPES.has(q.type)) continue;
+      const max = typeof q.scaleMax === 'number' && Number.isFinite(q.scaleMax) ? q.scaleMax : 5;
+      const a = answers.get(String(q._id));
+      const rating = a && a.notObserved !== true && typeof a.rating === 'number' && Number.isFinite(a.rating)
+        ? a.rating
+        : null;
+      if (rating === null) {
+        skipped += 1;
+        continue;
+      }
+      earned += rating;
+      possible += max;
+      counted += 1;
+    }
+  }
+
+  return {
+    earned,
+    possible,
+    // null, not 0: "nothing scored yet" and "scored zero" are different facts,
+    // and a caller rendering 0% for an unstarted appraisal would be reporting
+    // a verdict nobody reached.
+    pct: possible > 0 ? Math.round((earned / possible) * 1000) / 10 : null,
+    counted,
+    skipped,
+  };
+}
+
 function buildComparison(sections, feedback, access) {
   const submitted = (feedback || []).filter((f) => f && f.status === 'submitted');
   const named = access?.canSeeReviewerNames === true;
@@ -1277,6 +1349,7 @@ module.exports = {
   normaliseCommitments,
   PEER_RELEASE_MIN,
   COMPARABLE_QUESTION_TYPES,
+  scoreAppraisal,
   effectiveNominationMin,
   validateNominations,
   applyNominationDecisions,

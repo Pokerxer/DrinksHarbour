@@ -79,19 +79,18 @@ export default function CycleStandingFeedback({
             Team standing feedback
           </p>
           <p className="mt-1 text-xs text-gray-400">
-            Written by employees about colleagues in their own department, as
-            an optional step on their self-assessment. Visible to you only —
-            never to the person written about, their manager, or HR — and never
-            part of anyone’s appraisal.
+            Written by employees about colleagues in their own department, as an
+            optional step on their self-assessment. Visible to you only — never
+            to the person written about, their manager, or HR — and never part
+            of anyone’s appraisal.
           </p>
         </div>
       </div>
 
       {rows.length === 0 ? (
         <p className="mt-4 text-sm text-gray-400">
-          Nobody has flagged a colleague in this cycle. That is a normal
-          result: the step is optional and saying nothing is a legitimate
-          answer.
+          Nobody has flagged a colleague in this cycle. That is a normal result:
+          the step is optional and saying nothing is a legitimate answer.
         </p>
       ) : (
         <>
