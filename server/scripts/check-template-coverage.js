@@ -37,6 +37,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), 
 const mongoose = require('mongoose');
 const AppraisalTemplate = require('../models/AppraisalTemplate');
 const Department = require('../models/Department');
+const EmployeeRole = require('../models/EmployeeRole');
 const User = require('../models/User');
 const {
   planCycleLaunch,
@@ -111,17 +112,29 @@ async function main() {
   // cannot silently produce a coverage report for the wrong company's people.
   const tenant = template.tenant;
 
-  const [departments, owner, employees] = await Promise.all([
+  const [departments, roles, owner, employees] = await Promise.all([
     Department.find({ tenant }).select('_id name manager').lean(),
+    EmployeeRole.find({ tenant }).select('_id name').lean(),
     User.findOne({ tenant, role: 'tenant_owner' }).select('_id').lean(),
     // Exactly launchCycle's employee query — copied deliberately rather than
-    // approximated. Drop `status` and this report counts deleted accounts.
+    // approximated. Drop `status` and this report counts deleted accounts;
+    // drop the planning fields and every employee looks role-less, which
+    // makes a role-scoped form look broken when it is the report that is.
     User.find({ tenant, role: { $in: TENANT_ROLES }, status: 'active' })
-      .select('_id role firstName lastName email employeeProfile.work.manager employeeProfile.work.department')
+      .select([
+        '_id', 'role', 'firstName', 'lastName', 'email',
+        'employeeProfile.work.manager',
+        'employeeProfile.work.department',
+        'employeeProfile.planning.roles',
+        'employeeProfile.planning.defaultRole',
+      ].join(' '))
       .lean(),
   ]);
 
   const departmentName = new Map(departments.map((d) => [String(d._id), d.name]));
+  const roleName = new Map(roles.map((r) => [String(r._id), r.name]));
+  const rolesOf = (row) =>
+    (row.roles || []).map((r) => roleName.get(String(r)) || String(r)).join(' + ') || 'no role';
   const departmentManagerOf = new Map(
     departments.filter((d) => d.manager).map((d) => [String(d._id), String(d.manager)])
   );
@@ -136,6 +149,10 @@ async function main() {
   const gap = employeesAskedNothing(template.sections, plan.toCreate);
   const byId = new Map(employees.map((e) => [String(e._id), e]));
   const gapIds = new Set(gap.map((g) => String(g.employee)));
+  // Keyed on the PLANNED row, not the user document: the row holds the roles
+  // a launch would snapshot (appraisalRolesFor picks them), and those are what
+  // the form is actually filtered by.
+  const rowOf = new Map(plan.toCreate.map((r) => [String(r.employee), r]));
 
   const totalQuestions = (template.sections || []).reduce(
     (n, s) => n + (s.questions || []).length, 0
@@ -163,11 +180,13 @@ async function main() {
     for (const g of gap) {
       const u = byId.get(String(g.employee));
       const dept = departmentName.get(String(g.department)) || 'NO DEPARTMENT SET';
-      console.log(`   ${nameOf(u)} <${u?.email || '?'}> — ${dept}`);
+      console.log(`   ${nameOf(u)} <${u?.email || '?'}> — ${dept} — ${rolesOf(rowOf.get(String(g.employee)) || {})}`);
     }
-    console.log('\n   Fix by giving the form a section for those departments, by leaving one');
-    console.log('   section unscoped (an empty department list reaches everybody), or by');
-    console.log('   setting the department on the employees who have none.\n');
+    console.log('\n   Fix by giving the form a section for those departments or roles, by');
+    console.log('   leaving one section unscoped (an empty department AND role list reaches');
+    console.log('   everybody), or by setting the department or role on the employees who');
+    console.log('   have none. A section naming both is an AND: it reaches only a holder of');
+    console.log('   that role INSIDE that department.\n');
   } else {
     console.log('EMPTY FORM — none. Every appraisal this launch creates has questions in it.\n');
   }
@@ -177,11 +196,14 @@ async function main() {
     for (const row of plan.toCreate) {
       if (gapIds.has(String(row.employee))) continue;
       const u = byId.get(String(row.employee));
-      const self = filterSections(template.sections, { kind: 'self', departmentId: row.department });
-      const manager = filterSections(template.sections, { kind: 'manager', departmentId: row.department });
+      const scope = { departmentId: row.department, roleIds: row.roles };
+      const self = filterSections(template.sections, { kind: 'self', ...scope });
+      const manager = filterSections(template.sections, { kind: 'manager', ...scope });
       const count = (secs) => secs.reduce((n, s) => n + s.questions.length, 0);
       const dept = departmentName.get(String(row.department)) || 'no department';
-      console.log(`   ${nameOf(u)} — ${dept} — self ${count(self)} q, manager ${count(manager)} q`);
+      console.log(
+        `   ${nameOf(u)} — ${dept} — ${rolesOf(row)} — self ${count(self)} q, manager ${count(manager)} q`
+      );
     }
   }
 }

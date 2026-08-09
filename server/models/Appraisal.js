@@ -36,6 +36,16 @@ const appraisalSchema = new Schema(
     // either (resolveAppraisalAccess reads this). Nullable: every appraisal
     // launched before Phase 5 has none, and those are the owner's alone to see.
     department: { type: Schema.Types.ObjectId, ref: 'Department', index: true },
+    // Snapshot taken at launch, for the same reason `department` above is one,
+    // and read by the same filterSections: sections can be scoped to a job
+    // role, so an employee promoted from attendant to cashier mid-cycle must
+    // keep answering the form they opened. Resolved by appraisalRolesFor —
+    // defaultRole when set, otherwise every listed role — not copied straight
+    // off employeeProfile.planning.roles.
+    //
+    // Empty on every appraisal launched before role scoping existed, which
+    // reads correctly: those forms had no role-scoped section to miss.
+    roles: [{ type: Schema.Types.ObjectId, ref: 'EmployeeRole' }],
     state: { type: String, enum: APPRAISAL_STATES, default: 'draft', index: true },
     // Denormalised list of everyone with a feedback row, so the access resolver
     // can identify a reviewer without a second query.

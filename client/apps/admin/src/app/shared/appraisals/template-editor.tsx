@@ -16,13 +16,14 @@ import {
   aiAssistQuestion,
   createTemplate,
   fetchDepartmentOptions,
+  fetchEmployeeRoleOptions,
   fetchTemplate,
   updateTemplate,
   type DraftQuestion,
   type DraftSection,
   type FeedbackKind,
 } from '@/services/appraisal.service';
-import type { DepartmentOption } from './section-departments-utils';
+import type { ScopeOption } from './section-scope-utils';
 import { useUndoRedo } from './use-undo-redo';
 import { useUnsavedChangesGuard } from './use-unsaved-changes-guard';
 import {
@@ -135,16 +136,17 @@ export default function TemplateEditor({ id }: { id: string }) {
   );
 
   /**
-   * The tenant's departments, for the per-section scope picker (Phase 5 §9.1).
+   * The tenant's departments and job roles, for the per-section scope picker
+   * (Phase 5 §9.1).
    *
    * Loaded once and INDEPENDENTLY of the template: a failure here must not
-   * block editing a form. It degrades to an empty list, which hides the picker
-   * — a section keeps whatever scope it already has, because the editor only
-   * ever writes `departments` when HR touches the control.
+   * block editing a form. Each degrades to an empty list, which hides that
+   * half of the picker — a section keeps whatever scope it already has,
+   * because the editor only ever writes `departments`/`roles` when HR touches
+   * the control.
    */
-  const [departmentOptions, setDepartmentOptions] = useState<
-    DepartmentOption[]
-  >([]);
+  const [departmentOptions, setDepartmentOptions] = useState<ScopeOption[]>([]);
+  const [roleOptions, setRoleOptions] = useState<ScopeOption[]>([]);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -208,18 +210,25 @@ export default function TemplateEditor({ id }: { id: string }) {
     return () => window.removeEventListener('keydown', handleKey);
   }, [undo, redo]);
 
-  // --- Load the department list (scope picker) ---
+  // --- Load the department and role lists (scope picker) ---
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const rows = await fetchDepartmentOptions();
-        if (cancelled) return;
-        setDepartmentOptions(rows.map((d) => ({ _id: d._id, name: d.name })));
-      } catch {
-        // Deliberately silent: a form is still perfectly editable without the
-        // scope picker, and a toast here would fire on every tenant that has
-        // not set up departments yet.
+      // Settled, not all: a tenant may have departments and no roles, or the
+      // reverse, and one missing list must not take the other picker with it.
+      const [departments, roles] = await Promise.allSettled([
+        fetchDepartmentOptions(),
+        fetchEmployeeRoleOptions(),
+      ]);
+      if (cancelled) return;
+      // Deliberately silent on failure: a form is still perfectly editable
+      // without the scope picker, and a toast here would fire on every tenant
+      // that has not set up departments or roles yet.
+      if (departments.status === 'fulfilled') {
+        setDepartmentOptions(departments.value.map((d) => ({ _id: d._id, name: d.name })));
+      }
+      if (roles.status === 'fulfilled') {
+        setRoleOptions(roles.value.map((r) => ({ _id: r._id, name: r.name })));
       }
     })();
     return () => {
@@ -365,6 +374,10 @@ export default function TemplateEditor({ id }: { id: string }) {
     setSections((prev) =>
       prev.map((s, i) => (i === si ? { ...s, departments } : s))
     );
+  }
+
+  function patchSectionRoles(si: number, roles: string[]) {
+    setSections((prev) => prev.map((s, i) => (i === si ? { ...s, roles } : s)));
   }
 
   function moveSection(si: number, dir: -1 | 1) {
@@ -736,6 +749,8 @@ export default function TemplateEditor({ id }: { id: string }) {
               assistingKey={assisting}
               departmentOptions={departmentOptions}
               onDepartmentsChange={patchSectionDepartments}
+              roleOptions={roleOptions}
+              onRolesChange={patchSectionRoles}
             />
           ))}
         </div>

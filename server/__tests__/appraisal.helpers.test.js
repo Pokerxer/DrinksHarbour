@@ -251,9 +251,12 @@ test('planCycleLaunch pairs each employee with their manager', () => {
     [{ _id: 'e1', employeeProfile: { work: { manager: 'm1' } } }],
     []
   );
-  // `department` rides along since Phase 5 and is null when the employee has
-  // none — it is snapshotted onto the Appraisal, so it is part of the plan.
-  assert.deepStrictEqual(plan.toCreate, [{ employee: 'e1', manager: 'm1', department: null }]);
+  // `department` rides along since Phase 5 and `roles` since role-scoped
+  // sections — both are null/empty when the employee has none, and both are
+  // snapshotted onto the Appraisal, so both are part of the plan.
+  assert.deepStrictEqual(plan.toCreate, [
+    { employee: 'e1', manager: 'm1', department: null, roles: [] },
+  ]);
   assert.strictEqual(plan.skipped.length, 0);
 });
 

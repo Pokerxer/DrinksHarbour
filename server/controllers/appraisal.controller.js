@@ -493,6 +493,7 @@ exports.subjectAnswers = async (req, res, next) => {
         sections: filterSections(template.sections, {
           kind: 'self',
           departmentId: appraisal.department ?? null,
+          roleIds: appraisal.roles || [],
         }),
         // Projected like every other feedback read, so a self row that somehow
         // carries a `comment` (normaliseAnswers strips them, but rows written

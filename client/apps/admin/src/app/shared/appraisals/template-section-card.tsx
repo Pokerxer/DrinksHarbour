@@ -17,9 +17,9 @@ import type { KeyedSection } from './template-draft-keys';
 import TemplateQuestionRow from './template-question-row';
 import {
   describeSectionAudience,
-  toggleSectionDepartment,
-  type DepartmentOption,
-} from './section-departments-utils';
+  toggleScopeId,
+  type ScopeOption,
+} from './section-scope-utils';
 
 // ---------------------------------------------------------------------------
 // Section-type hint
@@ -66,6 +66,41 @@ const SECTION_COLORS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Scope chip — one tickable department or job role
+//
+// Both rows of the scope picker use it, so a ticked department and a ticked
+// role cannot drift into looking like different kinds of control when they
+// are the same kind of choice.
+// ---------------------------------------------------------------------------
+function ScopeChip({
+  label,
+  on,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  on: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={on}
+      onClick={onClick}
+      className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors disabled:opacity-50 ${
+        on
+          ? 'bg-[#b20202] text-white ring-[#b20202]'
+          : 'bg-white text-gray-600 ring-gray-200 hover:bg-gray-100'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 interface TemplateSectionCardProps {
@@ -104,8 +139,15 @@ interface TemplateSectionCardProps {
    * Empty (a tenant with no departments yet, or a still-loading list) hides the
    * picker entirely rather than showing a control with nothing in it.
    */
-  departmentOptions?: DepartmentOption[];
+  departmentOptions?: ScopeOption[];
   onDepartmentsChange?: (si: number, departments: string[]) => void;
+  /**
+   * The tenant's job roles, for the other half of the same picker. Cashier and
+   * Attendant are EmployeeRoles rather than departments, and they cross
+   * departments, so they cannot be expressed as more departments.
+   */
+  roleOptions?: ScopeOption[];
+  onRolesChange?: (si: number, roles: string[]) => void;
 }
 
 export default function TemplateSectionCard({
@@ -129,6 +171,8 @@ export default function TemplateSectionCard({
   assistingKey,
   departmentOptions = [],
   onDepartmentsChange,
+  roleOptions = [],
+  onRolesChange,
 }: TemplateSectionCardProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -136,6 +180,13 @@ export default function TemplateSectionCard({
   const color = SECTION_COLORS[si % SECTION_COLORS.length];
   const hint = SECTION_HINTS[section.title.trim()] ?? undefined;
   const questionCount = section.questions.length;
+  // Either picker is enough to show the control: a tenant may have set up
+  // departments and no job roles, or the reverse.
+  const scopePickable =
+    (departmentOptions.length > 0 && Boolean(onDepartmentsChange)) ||
+    (roleOptions.length > 0 && Boolean(onRolesChange));
+  const scoped =
+    (section.departments || []).length > 0 || (section.roles || []).length > 0;
   const answeredCount = section.questions.filter(
     (q) => q.label.trim() && q.askOf.length > 0
   ).length;
@@ -215,21 +266,22 @@ export default function TemplateSectionCard({
       </div>
 
       {/* ─── Row 1b: Who is asked this section (Phase 5 §9.1) ─── */}
-      {departmentOptions.length > 0 && onDepartmentsChange ? (
+      {scopePickable ? (
         <div className="px-4 pb-2 sm:px-5">
           <button
             type="button"
             onClick={() => setScopeOpen((open) => !open)}
             disabled={saving}
             className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors disabled:opacity-50 ${
-              (section.departments || []).length === 0
-                ? 'bg-gray-50 text-gray-600 ring-gray-200 hover:bg-gray-100'
-                : `${color.bg}/10 ${color.text} ${color.ring} hover:brightness-95`
+              scoped
+                ? `${color.bg}/10 ${color.text} ${color.ring} hover:brightness-95`
+                : 'bg-gray-50 text-gray-600 ring-gray-200 hover:bg-gray-100'
             }`}
           >
             <PiBuildings className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">
-              Asked of: {describeSectionAudience(section.departments, departmentOptions)}
+              Asked of:{' '}
+              {describeSectionAudience(section, departmentOptions, roleOptions)}
             </span>
           </button>
 
@@ -242,44 +294,77 @@ export default function TemplateSectionCard({
                 transition={{ duration: 0.15 }}
                 className="overflow-hidden"
               >
-                <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+                <div className="mt-2 space-y-3 rounded-xl border border-gray-200 bg-gray-50/60 p-3">
                   {/* Said outright, because a multi-select with nothing ticked
                       normally means "nobody" and here it means the opposite. */}
-                  <p className="mb-2 text-[11px] text-gray-500">
+                  <p className="text-[11px] text-gray-500">
                     Tick none to ask this section of everyone. Tick one or more
-                    and only employees in those departments are asked it.
+                    and only those employees are asked it.
+                    {departmentOptions.length > 0 && roleOptions.length > 0 ? (
+                      <>
+                        {' '}
+                        Ticking in <span className="font-medium">both</span>{' '}
+                        rows narrows to the overlap — a section set to Retail
+                        and Cashier is asked of Retail&rsquo;s cashiers, not of
+                        everyone in Retail plus every cashier.
+                      </>
+                    ) : null}
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {departmentOptions.map((dept) => {
-                      const on = (section.departments || []).includes(dept._id);
-                      return (
-                        <button
-                          key={dept._id}
-                          type="button"
-                          disabled={saving}
-                          onClick={() =>
-                            onDepartmentsChange(
-                              si,
-                              toggleSectionDepartment(section.departments, dept._id)
-                            )
-                          }
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors disabled:opacity-50 ${
-                            on
-                              ? 'bg-[#b20202] text-white ring-[#b20202]'
-                              : 'bg-white text-gray-600 ring-gray-200 hover:bg-gray-100'
-                          }`}
-                        >
-                          {dept.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {(section.departments || []).length > 0 ? (
+
+                  {departmentOptions.length > 0 && onDepartmentsChange ? (
+                    <div>
+                      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                        Departments
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {departmentOptions.map((dept) => (
+                          <ScopeChip
+                            key={dept._id}
+                            label={dept.name}
+                            on={(section.departments || []).includes(dept._id)}
+                            disabled={saving}
+                            onClick={() =>
+                              onDepartmentsChange(
+                                si,
+                                toggleScopeId(section.departments, dept._id)
+                              )
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {roleOptions.length > 0 && onRolesChange ? (
+                    <div>
+                      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                        Job roles
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {roleOptions.map((role) => (
+                          <ScopeChip
+                            key={role._id}
+                            label={role.name}
+                            on={(section.roles || []).includes(role._id)}
+                            disabled={saving}
+                            onClick={() =>
+                              onRolesChange(si, toggleScopeId(section.roles, role._id))
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {scoped ? (
                     <button
                       type="button"
                       disabled={saving}
-                      onClick={() => onDepartmentsChange(si, [])}
-                      className="mt-2 text-[11px] font-medium text-gray-500 underline underline-offset-2 hover:text-gray-700 disabled:opacity-50"
+                      onClick={() => {
+                        onDepartmentsChange?.(si, []);
+                        onRolesChange?.(si, []);
+                      }}
+                      className="text-[11px] font-medium text-gray-500 underline underline-offset-2 hover:text-gray-700 disabled:opacity-50"
                     >
                       Ask everyone instead
                     </button>

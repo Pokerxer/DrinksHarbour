@@ -374,16 +374,34 @@ function lookupDepartmentManager(lookup, departmentId) {
  *  2. A tenant_admin is reviewed by the owner. An admin reviewed by the
  *     manager of the department they themselves run would be marking their
  *     own homework.
- *  3. Everyone else is reviewed by their department's manager.
- *  4. …unless that resolves to themselves — a department admin sitting inside
- *     their own department — in which case the owner.
- *  5. With no department, or a department nobody manages, fall back to the
- *     employee's own `work.manager`, then to the owner.
+ *  3. Everyone else is reviewed by whoever they REPORT to —
+ *     `employeeProfile.work.manager`.
+ *  4. …then, only if that is unset or points at the employee themselves, by
+ *     their department's manager.
+ *  5. …then the owner, and finally nobody, with a reason.
+ *
+ * ── Why the reporting line comes before the department (changed 2026-08-09) ──
+ * These two are not the same relationship and the department is the weaker of
+ * them. `work.manager` is the org chart the admin at /employees actually
+ * draws, and it crosses departments as a matter of course — one manager there
+ * holds direct reports in Guest Services, Cashier and Marketing at once.
+ * Resolving the department first handed a department manager every person who
+ * happened to be filed under them, including people who have never reported to
+ * them, and simultaneously took those people away from the manager who does.
+ * An appraisal written by someone with no line of sight into the work is worse
+ * than no appraisal, so the department is now only the FALLBACK, for an
+ * employee whose reporting line was never filled in.
+ *
+ * A self-referential `work.manager` falls through to the department manager
+ * rather than straight to the owner: it is a data error, and the department
+ * manager is still a real reviewer for that person.
  *
  * The result is written into the EXISTING `Appraisal.manager` field. No new
  * reviewer kind is introduced, so `kind: 'manager'` feedback rows, the
  * {tenant, manager, state} index and every downstream query keep working
- * unchanged.
+ * unchanged. It is also a SNAPSHOT taken at launch, like `department` — this
+ * change re-routes future launches only and never moves an appraisal that is
+ * already open under the person writing it.
  */
 function resolveAppraisalReviewer(employee, { departmentManagerOf, ownerId } = {}) {
   const employeeId = idOf(employee?._id);
@@ -397,28 +415,66 @@ function resolveAppraisalReviewer(employee, { departmentManagerOf, ownerId } = {
     return { reviewer: null, department, reason: 'is_owner' };
   }
 
-  // Steps 5 and the tail of 2/4: work.manager, then the owner, then nobody.
+  const reportsTo = workManager && workManager !== employeeId ? workManager : '';
+
+  // The tail every branch ends in: the owner, then nobody.
   // `self_manager` is kept distinct from `no_manager` because the two send HR
-  // to fix different things — a missing field versus a wrong one.
+  // to fix different things — a missing field versus a wrong one. It is keyed
+  // off `work.manager` specifically: that is the field HR would go and edit.
   const fallback = () => {
-    if (workManager && workManager !== employeeId) return { reviewer: workManager, department };
     if (ownerIsOther) return { reviewer: owner, department };
     return { reviewer: null, department, reason: workManager ? 'self_manager' : 'no_manager' };
   };
 
+  // An admin follows their reporting line first, exactly like everyone else,
+  // and only falls to the owner when nobody recorded one. What an admin never
+  // gets is the DEPARTMENT manager — this branch returns before that lookup —
+  // because an admin reviewed by the manager of a department they themselves
+  // run would be marking their own homework.
+  //
+  // Preferring work.manager here also makes routing independent of WHICH owner
+  // row a lookup returns. A tenant can hold two tenant_owner users — a leftover
+  // account from setup beside the actual proprietor — and `launchCycle` reads
+  // the owner with an unsorted findOne, so every admin's reviewer would
+  // otherwise be decided by whichever row Mongo handed back that day.
   if (employee?.role === 'tenant_admin') {
-    return ownerIsOther ? { reviewer: owner, department } : fallback();
+    if (reportsTo) return { reviewer: reportsTo, department };
+    return fallback();
   }
+
+  if (reportsTo) return { reviewer: reportsTo, department };
 
   const departmentManager = lookupDepartmentManager(departmentManagerOf, department);
   if (departmentManager && departmentManager !== employeeId) {
     return { reviewer: departmentManager, department };
   }
-  if (departmentManager && ownerIsOther) {
-    // Step 4: they manage the department they are in.
-    return { reviewer: owner, department };
-  }
+
   return fallback();
+}
+
+/**
+ * The job roles a launch snapshots onto an appraisal, and therefore the roles
+ * `filterSections` scopes that employee's form by.
+ *
+ * `defaultRole` WINS when it is set, rather than being unioned with `roles[]`.
+ * Each role block in a form is written to total a score out of 100 on its own,
+ * so an employee matching two of them would be marked out of 140 — and HR
+ * reads their A–E grade bands straight off that /100. The default is the role
+ * the person mostly does, and the rostering UI already treats it as primary,
+ * so it is the one that decides the form. Nobody in the live data holds two
+ * roles today; this is decided here rather than discovered in production.
+ *
+ * With no default set, every listed role is taken. That case is incomplete
+ * data rather than a genuine two-role employee, and a form that asks a little
+ * too much is recoverable in a way a blank one is not.
+ *
+ * Ids as strings, matching every other id this module hands out.
+ */
+function appraisalRolesFor(employee) {
+  const planning = employee?.employeeProfile?.planning || {};
+  const primary = idOf(planning.defaultRole);
+  if (primary) return [primary];
+  return [...new Set((planning.roles || []).map(idOf).filter(Boolean))];
 }
 
 /**
@@ -430,10 +486,11 @@ function resolveAppraisalReviewer(employee, { departmentManagerOf, ownerId } = {
  * no reviewer by definition. Employees who already have an appraisal for this
  * cycle are skipped, which makes re-launching safe.
  *
- * `department` rides along on every row and is snapshotted onto the Appraisal
- * for the same reason `manager` always was: an employee transferred mid-cycle
- * must not have the shape of a form they are already filling change under
- * them, and an admin's visibility of a record must not move with the person.
+ * `department` and `roles` ride along on every row and are snapshotted onto
+ * the Appraisal for the same reason `manager` always was: an employee
+ * transferred or reassigned mid-cycle must not have the shape of a form they
+ * are already filling change under them, and an admin's visibility of a
+ * record must not move with the person.
  */
 function planCycleLaunch(employees, existingEmployeeIds = [], routing = {}) {
   const existing = new Set(existingEmployeeIds.map(idOf));
@@ -452,7 +509,12 @@ function planCycleLaunch(employees, existingEmployeeIds = [], routing = {}) {
       skipped.push({ employee, reason: reason || 'no_manager' });
       continue;
     }
-    toCreate.push({ employee, manager: reviewer, department: department || null });
+    toCreate.push({
+      employee,
+      manager: reviewer,
+      department: department || null,
+      roles: appraisalRolesFor(emp),
+    });
   }
 
   return { toCreate, skipped, alreadyExists };
@@ -559,7 +621,8 @@ function buildDefaultTemplate(tenantId, createdBy) {
 /**
  * Filter a template's sections down to what a given reviewer is actually
  * asked: the questions their `kind` is asked (per question.askOf), within the
- * sections that apply to the employee's department (per section.departments).
+ * sections that apply to the employee's department (per section.departments)
+ * AND to their job role (per section.roles).
  *
  * A section with no `departments` — or an empty array, which is what the
  * editor stores for "everyone" — is company-wide. A section that names
@@ -567,22 +630,41 @@ function buildDefaultTemplate(tenantId, createdBy) {
  * dropped if nothing in it is asked of this reviewer kind: a section whose
  * only questions are peer-only must not open as an empty block on a self form.
  *
+ * `roles` works exactly the same way and is ANDed with it: a section matches
+ * when (departments is empty OR contains departmentId) AND (roles is empty OR
+ * intersects roleIds). AND rather than OR so a section can read "Retail
+ * cashiers" instead of "Retail or any cashier anywhere" — the difference
+ * matters here, because roles genuinely cross departments (attendants sit in
+ * both Retail and Warehouse) and a role block written for the shop floor must
+ * not follow the role into a department it was not written for.
+ *
+ * ⚠ EMPTY MEANS EVERYONE on both lists. That inversion is the trap: a
+ * multi-select with nothing ticked normally means an empty set, and here it
+ * means unrestricted. It is what keeps every pre-existing template
+ * company-wide with no migration, and it is why a role-scoped section must
+ * still be dropped for an employee with no role at all — "unscoped" is a
+ * property of the SECTION, never of the employee.
+ *
  * Shared by every appraisal-feedback read/write path so "which questions can
  * this reviewer answer" has exactly one definition instead of being
  * reimplemented per handler — and because getAskedQuestionIds derives from
  * this, required-field validation, partitionAnswersByAskedQuestions and
- * buildComparison all inherit the department rule with no further change.
+ * buildComparison all inherit both rules with no further change.
  *
- * `departmentId` is the appraisal's SNAPSHOT, not the employee's current
- * department: someone transferred mid-cycle keeps the form they started.
+ * `departmentId` and `roleIds` are the appraisal's SNAPSHOTS, not the
+ * employee's current department and roles: someone transferred or reassigned
+ * mid-cycle keeps the form they started.
  */
-function filterSections(sections, { kind, departmentId } = {}) {
+function filterSections(sections, { kind, departmentId, roleIds } = {}) {
   const dept = idOf(departmentId);
+  const held = new Set((roleIds || []).map(idOf).filter(Boolean));
   return (sections || [])
     .filter((s) => {
       const departments = (s?.departments || []).map(idOf).filter(Boolean);
-      if (departments.length === 0) return true;
-      return Boolean(dept) && departments.includes(dept);
+      if (departments.length && !(dept && departments.includes(dept))) return false;
+      const roles = (s?.roles || []).map(idOf).filter(Boolean);
+      if (roles.length && !roles.some((r) => held.has(r))) return false;
+      return true;
     })
     .map((s) => ({
       ...s,
@@ -610,7 +692,11 @@ function filterSections(sections, { kind, departmentId } = {}) {
  *
  * An employee with NO department is always reported when every section is
  * scoped: `filterSections` cannot match a scoped section against a missing
- * department, so they are as uncovered as someone in the wrong one.
+ * department, so they are as uncovered as someone in the wrong one. The same
+ * goes for an employee with no ROLE against a form written role by role, and
+ * that is the likelier gap of the two — a department everyone can see is
+ * missing from a form is easier to notice than a role nobody remembered to
+ * put on an employee record.
  *
  * Takes planned rows (`planCycleLaunch`'s `toCreate`) rather than reading
  * anything, so it stays DB-free like the rest of this module.
@@ -619,9 +705,10 @@ function employeesAskedNothing(sections, rows) {
   const out = [];
   for (const row of rows || []) {
     const departmentId = row?.department || null;
+    const roleIds = row?.roles || [];
     const asked =
-      filterSections(sections, { kind: 'self', departmentId }).length > 0 ||
-      filterSections(sections, { kind: 'manager', departmentId }).length > 0;
+      filterSections(sections, { kind: 'self', departmentId, roleIds }).length > 0 ||
+      filterSections(sections, { kind: 'manager', departmentId, roleIds }).length > 0;
     if (!asked) out.push({ employee: row.employee, department: departmentId });
   }
   return out;
@@ -1370,6 +1457,7 @@ module.exports = {
   projectFeedbackForViewer,
   orderFeedbackForViewer,
   resolveAppraisalReviewer,
+  appraisalRolesFor,
   planCycleLaunch,
   PEER_EVIDENCE_SECTION_TITLE,
   PEER_EVIDENCE_QUESTIONS,

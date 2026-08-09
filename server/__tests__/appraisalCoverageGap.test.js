@@ -9,10 +9,14 @@ const oid = () => new mongoose.Types.ObjectId();
 const FACILITIES = oid();
 const ACCOUNTS = oid();
 
-function section(title, departments, askOf = ['self', 'manager']) {
+const CASHIER = oid();
+const ATTENDANT = oid();
+
+function section(title, departments, askOf = ['self', 'manager'], roles = []) {
   return {
     title,
     departments,
+    roles,
     questions: [{ _id: oid(), type: 'rating', label: `${title} Q`, askOf }],
   };
 }
@@ -78,6 +82,64 @@ test('a form with no sections at all leaves everyone with nothing', () => {
   const rows = [{ employee: oid(), manager: oid(), department: FACILITIES }];
   assert.equal(employeesAskedNothing([], rows).length, 1);
   assert.equal(employeesAskedNothing(undefined, rows).length, 1);
+});
+
+// Roles are the second way a form goes silently empty, and the more likely
+// one: a department everybody can see is missing is easier to notice than a
+// role nobody remembered to set on an employee record.
+
+test('an employee in the right department but holding no role is reported when every section is role-scoped', () => {
+  const employee = oid();
+  const rows = [{ employee, manager: oid(), department: FACILITIES, roles: [] }];
+  const sections = [section('Cashiering', [FACILITIES], ['self', 'manager'], [CASHIER])];
+  const gap = employeesAskedNothing(sections, rows);
+  assert.equal(gap.length, 1);
+  assert.equal(String(gap[0].employee), String(employee));
+});
+
+test('a row with no roles key at all is treated as holding none, not as holding everything', () => {
+  const rows = [{ employee: oid(), manager: oid(), department: FACILITIES }];
+  const sections = [section('Cashiering', [FACILITIES], ['self', 'manager'], [CASHIER])];
+  assert.equal(employeesAskedNothing(sections, rows).length, 1);
+});
+
+test('the holder of a scoped role is covered, and the holder of another role is not', () => {
+  const attendant = oid();
+  const rows = [
+    { employee: oid(), manager: oid(), department: FACILITIES, roles: [CASHIER] },
+    { employee: attendant, manager: oid(), department: FACILITIES, roles: [ATTENDANT] },
+  ];
+  const sections = [section('Cashiering', [FACILITIES], ['self', 'manager'], [CASHIER])];
+  const gap = employeesAskedNothing(sections, rows);
+  assert.equal(gap.length, 1);
+  assert.equal(String(gap[0].employee), String(attendant));
+});
+
+test('a department-wide section rescues a role-less employee its role blocks miss', () => {
+  // The shape the Retail form takes: a shared core everyone in the department
+  // answers, plus a block per role. Nobody in the department opens an empty
+  // form, whatever their role record says.
+  const rows = [{ employee: oid(), manager: oid(), department: FACILITIES, roles: [] }];
+  const sections = [
+    section('Shared core', [FACILITIES]),
+    section('Cashiering', [FACILITIES], ['self', 'manager'], [CASHIER]),
+  ];
+  assert.deepEqual(employeesAskedNothing(sections, rows), []);
+});
+
+test('a role-scoped section reaches a holder in ANY department only if it names no department', () => {
+  const rows = [{ employee: oid(), manager: oid(), department: ACCOUNTS, roles: [ATTENDANT] }];
+  assert.deepEqual(
+    employeesAskedNothing([section('Attendants everywhere', [], ['self', 'manager'], [ATTENDANT])], rows),
+    []
+  );
+  assert.equal(
+    employeesAskedNothing(
+      [section('Facilities attendants', [FACILITIES], ['self', 'manager'], [ATTENDANT])],
+      rows
+    ).length,
+    1
+  );
 });
 
 test('no planned rows means no gap to report', () => {

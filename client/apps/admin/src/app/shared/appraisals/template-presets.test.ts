@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TEMPLATE_PRESETS } from './template-presets';
+import { sectionAppliesTo } from './section-scope-utils';
 import type {
   DraftQuestion,
   DraftSection,
@@ -17,23 +18,28 @@ const COMPARABLE: QuestionType[] = ['rating', 'likert', 'scale'];
 /**
  * Mirrors filterSections in server/services/appraisal.helpers.js.
  *
- * Carries the Phase 5 department rule too: a section naming departments is
- * asked only of an employee in one of them, and an empty/absent list means
- * everyone. Every preset ships company-wide sections, so `departmentId` is
- * omitted below — but the mirror has to model the real function, or it stops
- * being a check on the presets and becomes a check on a function that no
- * longer exists.
+ * Carries the Phase 5 department rule and the job-role rule with it: a section
+ * naming departments is asked only of an employee in one of them, a section
+ * naming roles only of a holder of one of them, the two are ANDed, and an
+ * empty/absent list on either means everyone. Every preset ships company-wide
+ * sections, so `departmentId` and `roleIds` are omitted below — but the mirror
+ * has to model the real function, or it stops being a check on the presets and
+ * becomes a check on a function that no longer exists.
+ *
+ * The scope test itself is `sectionAppliesTo` in ./section-scope-utils, which
+ * the editor also uses; only the askOf half is written out here. One mirror,
+ * not two.
  */
 function filterSections(
   sections: DraftSection[],
-  { kind, departmentId }: { kind: FeedbackKind; departmentId?: string }
+  {
+    kind,
+    departmentId,
+    roleIds,
+  }: { kind: FeedbackKind; departmentId?: string; roleIds?: string[] }
 ): DraftSection[] {
   return sections
-    .filter((s) => {
-      const departments = s.departments || [];
-      if (departments.length === 0) return true;
-      return Boolean(departmentId) && departments.includes(departmentId!);
-    })
+    .filter((s) => sectionAppliesTo(s, { departmentId, roleIds }))
     .map((s) => ({
       ...s,
       questions: s.questions.filter((q) => (q.askOf || []).includes(kind)),

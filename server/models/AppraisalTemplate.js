@@ -52,6 +52,16 @@ const sectionSchema = new Schema({
   // Filtering lives in filterSections (services/appraisal.helpers.js), which
   // every read/write path goes through; nothing here enforces it.
   departments: [{ type: Schema.Types.ObjectId, ref: 'Department' }],
+  // Which job roles are asked this section, ANDed with `departments` above.
+  // Same inversion — EMPTY MEANS EVERYONE — for the same reason: no template
+  // written before roles existed needs migrating.
+  //
+  // A second list rather than more departments because Cashier and Attendant
+  // are EmployeeRoles, and deliberately so: an earlier migration moved those
+  // values out of the department field, and shift rostering staffs shifts by
+  // EmployeeRole. Roles also cross departments (attendants sit in Retail and
+  // in Warehouse), which is exactly what no single department list can express.
+  roles: [{ type: Schema.Types.ObjectId, ref: 'EmployeeRole' }],
   questions: [questionSchema],
 });
 

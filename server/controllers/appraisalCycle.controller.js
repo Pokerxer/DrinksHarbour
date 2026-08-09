@@ -253,7 +253,20 @@ exports.launchCycle = async (req, res, next) => {
       // no appraisal, an admin is reviewed by the owner, and everybody else by
       // their department's manager. Leaving either off the projection would
       // silently collapse every employee back onto work.manager.
-      .select('_id role employeeProfile.work.manager employeeProfile.work.department')
+      //
+      // `planning.roles`/`planning.defaultRole` are the same hazard one field
+      // over: a missing select does not error, it just makes every employee
+      // look role-less, and every role-scoped section then vanishes from every
+      // form without a word. That omission is what collapsed department
+      // routing in Phase 5.
+      .select([
+        '_id',
+        'role',
+        'employeeProfile.work.manager',
+        'employeeProfile.work.department',
+        'employeeProfile.planning.roles',
+        'employeeProfile.planning.defaultRole',
+      ].join(' '))
       .lean();
 
     const existing = await Appraisal.find({ tenant: req.tenant._id, cycle: cycle._id })
@@ -319,7 +332,7 @@ exports.launchCycle = async (req, res, next) => {
     const launchState = cycle.peerReviewEnabled === false ? 'collecting' : 'nominating';
 
     const created = [];
-    for (const { employee, manager, department } of plan.toCreate) {
+    for (const { employee, manager, department, roles } of plan.toCreate) {
       const session = await mongoose.startSession();
       try {
         // Assigned inside the callback and pushed only after the transaction
@@ -335,9 +348,10 @@ exports.launchCycle = async (req, res, next) => {
             cycle: cycle._id,
             employee,
             manager,
-            // Snapshotted here and never re-read: see the field's comment on
+            // Snapshotted here and never re-read: see the fields' comments on
             // models/Appraisal.js.
             department: department || undefined,
+            roles: roles || [],
             state: launchState,
             reviewerIds: [employee, manager],
           }], { session });

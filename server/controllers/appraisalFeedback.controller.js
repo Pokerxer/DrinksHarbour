@@ -80,15 +80,17 @@ async function loadOwnFeedback(req) {
  * is in a broken state, not an empty questionnaire — throw loudly instead of
  * letting the caller silently treat "nothing to answer" as success.
  *
- * The department comes off the APPRAISAL's snapshot (Phase 5 §9.1), never off
- * the employee's current profile: a reviewer part-way through a form must not
- * have questions appear or vanish because the subject transferred this
- * morning. Callers that already hold the appraisal pass it in rather than
- * paying for the read twice.
+ * The department and roles come off the APPRAISAL's snapshot (Phase 5 §9.1),
+ * never off the employee's current profile: a reviewer part-way through a form
+ * must not have questions appear or vanish because the subject transferred or
+ * changed job this morning. Callers that already hold the appraisal pass it in
+ * rather than paying for the read twice.
  */
 async function loadAskedSections(fb, knownAppraisal) {
   const appraisal = knownAppraisal
-    || await Appraisal.findOne({ _id: fb.appraisal, tenant: fb.tenant }).select('department').lean();
+    // Both snapshots or neither. Projecting one of the two scoping fields is
+    // how a role-scoped section disappears from a form with no error anywhere.
+    || await Appraisal.findOne({ _id: fb.appraisal, tenant: fb.tenant }).select('department roles').lean();
   const cycle = await AppraisalCycle.findOne({ _id: fb.cycle, tenant: fb.tenant }).lean();
   if (!cycle) {
     const err = new Error('The appraisal cycle for this feedback could not be found.');
@@ -106,6 +108,7 @@ async function loadAskedSections(fb, knownAppraisal) {
   const sections = filterSections(template.sections, {
     kind: fb.kind,
     departmentId: appraisal?.department ?? null,
+    roleIds: appraisal?.roles || [],
   });
   return { cycle, template, sections, appraisal };
 }

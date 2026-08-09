@@ -290,6 +290,16 @@ export interface AppraisalSection {
    * that reaches a reviewer's form is one they are asked.
    */
   departments?: string[];
+  /**
+   * Which job roles are asked this section, ANDed with `departments` above:
+   * naming both reaches that role INSIDE that department, not either. Same
+   * inversion — empty or absent means everyone.
+   *
+   * A separate list because Cashier and Attendant are EmployeeRoles rather
+   * than departments, and roles cross departments in a way no single
+   * department list can express.
+   */
+  roles?: string[];
   questions: AppraisalQuestion[];
 }
 
@@ -571,27 +581,40 @@ export const submitFeedback = (id: string, answers: AppraisalAnswer[]) =>
     body: JSON.stringify({ answers }),
   });
 
-// ── Phase 5 §9.1: the tenant's departments, for the section scope picker ───
+// ── Phase 5 §9.1: departments and job roles, for the section scope picker ──
 
 /**
- * The department list, through THIS module's auth path.
+ * The department and job-role lists, through THIS module's auth path.
  *
- * `orgStructure.service.ts` already exposes a full department client, but it
- * takes an explicit token per call while everything in the appraisal module
- * resolves one internally. Re-declared here as a read-only shape rather than
- * threading a token through the template editor purely to reach one list —
+ * `orgStructure.service.ts` already exposes full clients for both, but they
+ * take an explicit token per call while everything in the appraisal module
+ * resolves one internally. Re-declared here as read-only shapes rather than
+ * threading a token through the template editor purely to reach two lists —
  * the editor would otherwise be the only screen in the module carrying auth
- * by hand. Writes stay in orgStructure.service.ts; this is a read.
+ * by hand. Writes stay in orgStructure.service.ts; these are reads.
  */
-export interface DepartmentOptionDoc {
+export interface ScopeOptionDoc {
   _id: string;
   name: string;
   isActive?: boolean;
 }
 
+/** @deprecated Kept as the old name of ScopeOptionDoc; both lists share the shape. */
+export type DepartmentOptionDoc = ScopeOptionDoc;
+
 export const fetchDepartmentOptions = () =>
-  request<{ items: DepartmentOptionDoc[] }>(
+  request<{ items: ScopeOptionDoc[] }>(
     '/api/departments?isActive=true'
+  ).then((d) => d.items || []);
+
+/**
+ * The tenant's EmployeeRoles — Cashier, Attendant, Driver — which are HR
+ * planning roles, NOT the `tenant_owner`/`tenant_admin`/`tenant_staff` access
+ * role on the user account. Shift rostering staffs shifts by these.
+ */
+export const fetchEmployeeRoleOptions = () =>
+  request<{ items: ScopeOptionDoc[] }>(
+    '/api/employee-roles?isActive=true'
   ).then((d) => d.items || []);
 
 // ── Phase 5 §9.3: the subject's own answers, for their reviewer ────────────
@@ -903,6 +926,8 @@ export interface DraftSection {
   title: string;
   /** See AppraisalSection.departments — empty means asked of everyone. */
   departments?: string[];
+  /** See AppraisalSection.roles — empty means asked of everyone, and ANDed with departments. */
+  roles?: string[];
   questions: DraftQuestion[];
 }
 
