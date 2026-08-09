@@ -84,8 +84,7 @@ const NEW_DRAFT = (today: string): RequestDraft => ({
 });
 
 const ACTION_CLASS: Record<RequestAction['tone'], string> = {
-  primary:
-    'bg-[#b20202] text-white hover:bg-[#8f0202] disabled:opacity-60',
+  primary: 'bg-[#b20202] text-white hover:bg-[#8f0202] disabled:opacity-60',
   danger:
     'border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60',
   quiet:
@@ -124,7 +123,9 @@ export default function TimeOffPage() {
       setItems(data.items);
       setCanDecide(Boolean(data.canDecide));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load time off');
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to load time off'
+      );
       setItems([]);
     } finally {
       setLoading(false);
@@ -186,7 +187,8 @@ export default function TimeOffPage() {
       // An overlapping request is the common refusal and deserves its own
       // sentence — "failed" would leave somebody re-filing the same days.
       if (err instanceof TimeOffConflictError) toast.error(err.message);
-      else toast.error(err instanceof Error ? err.message : 'Could not file it');
+      else
+        toast.error(err instanceof Error ? err.message : 'Could not file it');
     } finally {
       setSaving(false);
     }
@@ -268,7 +270,9 @@ export default function TimeOffPage() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as TimeOffStatus | '')}
+          onChange={(e) =>
+            setStatusFilter(e.target.value as TimeOffStatus | '')
+          }
           className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
         >
           <option value="">Every status</option>
@@ -315,7 +319,9 @@ export default function TimeOffPage() {
           <div className="flex items-start gap-2">
             <PiWarningCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <div className="flex-1">
-              <p className="text-sm font-semibold text-amber-900">{w.message}</p>
+              <p className="text-sm font-semibold text-amber-900">
+                {w.message}
+              </p>
               <p className="mt-0.5 text-xs text-amber-800">
                 The leave is approved. Those shifts are still assigned and need
                 re-rostering or cancelling.
@@ -508,7 +514,10 @@ export default function TimeOffPage() {
 
               <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
                 {canDecide && (
-                  <Field label="Who is it for" hint="(leave blank for yourself)">
+                  <Field
+                    label="Who is it for"
+                    hint="(leave blank for yourself)"
+                  >
                     <select
                       className={FIELD}
                       value={draft.employee}
@@ -531,7 +540,10 @@ export default function TimeOffPage() {
                     className={FIELD}
                     value={draft.type}
                     onChange={(e) =>
-                      setDraft({ ...draft, type: e.target.value as TimeOffType })
+                      setDraft({
+                        ...draft,
+                        type: e.target.value as TimeOffType,
+                      })
                     }
                   >
                     {TIME_OFF_TYPES.map((t) => (

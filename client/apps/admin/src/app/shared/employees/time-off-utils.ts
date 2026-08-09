@@ -242,15 +242,30 @@ export function timeOffActions(
   const out: RequestAction[] = [];
 
   if (viewer.canDecide && legal.includes('approved')) {
-    out.push({ action: 'approve', to: 'approved', label: 'Approve', tone: 'primary' });
+    out.push({
+      action: 'approve',
+      to: 'approved',
+      label: 'Approve',
+      tone: 'primary',
+    });
   }
   if (viewer.canDecide && legal.includes('rejected')) {
-    out.push({ action: 'reject', to: 'rejected', label: 'Reject', tone: 'danger' });
+    out.push({
+      action: 'reject',
+      to: 'rejected',
+      label: 'Reject',
+      tone: 'danger',
+    });
   }
   // Cancelling is the requester's own to do, and an admin's release valve for
   // approved leave — the only thing that frees the roster block.
   if ((viewer.canDecide || viewer.isMine) && legal.includes('cancelled')) {
-    out.push({ action: 'cancel', to: 'cancelled', label: 'Cancel', tone: 'quiet' });
+    out.push({
+      action: 'cancel',
+      to: 'cancelled',
+      label: 'Cancel',
+      tone: 'quiet',
+    });
   }
 
   return out;
@@ -283,16 +298,31 @@ export function swapActions(
   // `approve` only appears once somebody has accepted: the transition table has
   // no pending → approved edge, because there would be nobody to move it to.
   if (viewer.canDecide && legal.includes('approved')) {
-    out.push({ action: 'approve', to: 'approved', label: 'Approve', tone: 'primary' });
+    out.push({
+      action: 'approve',
+      to: 'approved',
+      label: 'Approve',
+      tone: 'primary',
+    });
   }
   if ((mayAnswer || viewer.canDecide) && legal.includes('rejected')) {
-    out.push({ action: 'reject', to: 'rejected', label: 'Decline', tone: 'danger' });
+    out.push({
+      action: 'reject',
+      to: 'rejected',
+      label: 'Decline',
+      tone: 'danger',
+    });
   }
   // Withdrawing is the requester's alone, unlike time off where an admin needs
   // it as the release valve on approved leave. Here an admin already has
   // `reject`, which says the same thing from the right side of the request.
   if (viewer.isMine && legal.includes('cancelled')) {
-    out.push({ action: 'cancel', to: 'cancelled', label: 'Withdraw', tone: 'quiet' });
+    out.push({
+      action: 'cancel',
+      to: 'cancelled',
+      label: 'Withdraw',
+      tone: 'quiet',
+    });
   }
 
   return out;
@@ -330,7 +360,8 @@ export function groupTimeOff(
   opts: { today: string; offsetMinutes?: number }
 ): TimeOffGroup[] {
   const offset = opts.offsetMinutes ?? LAGOS_OFFSET_MINUTES;
-  const todayStart = Date.parse(`${opts.today}T00:00:00.000Z`) - offset * MS_PER_MINUTE;
+  const todayStart =
+    Date.parse(`${opts.today}T00:00:00.000Z`) - offset * MS_PER_MINUTE;
 
   const buckets: Record<TimeOffGroup['key'], TimeOffRequest[]> = {
     awaiting: [],
@@ -340,7 +371,10 @@ export function groupTimeOff(
 
   for (const item of items) {
     if (item.status === 'pending') buckets.awaiting.push(item);
-    else if (item.status === 'approved' && Date.parse(item.endDate) > todayStart) {
+    else if (
+      item.status === 'approved' &&
+      Date.parse(item.endDate) > todayStart
+    ) {
       buckets.upcoming.push(item);
     } else buckets.past.push(item);
   }
