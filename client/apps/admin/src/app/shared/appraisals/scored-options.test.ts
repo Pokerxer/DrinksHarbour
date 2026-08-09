@@ -48,23 +48,35 @@ describe('isScoredOptions', () => {
     // The server refuses to save this, but a stale client or a hand-edited
     // document could still present it. Falling back to the plain numeric
     // scale is safe; rendering buttons that map to `undefined` is not.
-    const broken = { ...punctuality, optionScores: [5, 4] } as unknown as AppraisalQuestion;
+    const broken = {
+      ...punctuality,
+      optionScores: [5, 4],
+    } as unknown as AppraisalQuestion;
     expect(isScoredOptions(broken)).toBe(false);
   });
 
   test('rejects a `choice` question, which stores text and carries no score', () => {
-    const choice = { ...punctuality, type: 'choice' } as unknown as AppraisalQuestion;
+    const choice = {
+      ...punctuality,
+      type: 'choice',
+    } as unknown as AppraisalQuestion;
     expect(isScoredOptions(choice)).toBe(false);
   });
 });
 
 describe('answerForScoredOption', () => {
   test('stores the score of the chosen option, not its index', () => {
-    expect(answerForScoredOption(punctuality, 1)).toEqual({ questionId: 'q1', rating: 4 });
+    expect(answerForScoredOption(punctuality, 1)).toEqual({
+      questionId: 'q1',
+      rating: 4,
+    });
   });
 
   test('scores the bottom anchor as its real value rather than zero', () => {
-    expect(answerForScoredOption(punctuality, 4)).toEqual({ questionId: 'q1', rating: 1 });
+    expect(answerForScoredOption(punctuality, 4)).toEqual({
+      questionId: 'q1',
+      rating: 1,
+    });
   });
 });
 
@@ -94,10 +106,14 @@ describe('formatAnswer on a scored-anchor question', () => {
   });
 
   test('still shows the plain numeric form for an ordinary rating question', () => {
-    expect(formatAnswer(plainRating, { questionId: 'q2', rating: 4 })).toBe('4 of 5');
+    expect(formatAnswer(plainRating, { questionId: 'q2', rating: 4 })).toBe(
+      '4 of 5'
+    );
   });
 
   test('reports an abstention as such, not as a score', () => {
-    expect(formatAnswer(punctuality, { questionId: 'q1', notObserved: true })).toBe('Not observed');
+    expect(
+      formatAnswer(punctuality, { questionId: 'q1', notObserved: true })
+    ).toBe('Not observed');
   });
 });

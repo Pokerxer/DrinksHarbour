@@ -69,7 +69,8 @@ export function scaleMaxOf(question: AppraisalQuestion): number {
  * would score it.
  */
 export function isScoredOptions(question: AppraisalQuestion): boolean {
-  if (!NUMERIC_TYPES.has(question.type) || question.type === 'yes_no') return false;
+  if (!NUMERIC_TYPES.has(question.type) || question.type === 'yes_no')
+    return false;
   const options = question.options ?? [];
   const scores = question.optionScores ?? [];
   return options.length > 0 && options.length === scores.length;
@@ -98,7 +99,7 @@ export function scoredOptionLabel(
 ): string | null {
   if (typeof rating !== 'number' || !Number.isFinite(rating)) return null;
   const i = (question.optionScores ?? []).indexOf(rating);
-  return i === -1 ? null : (question.options ?? [])[i] ?? null;
+  return i === -1 ? null : ((question.options ?? [])[i] ?? null);
 }
 
 /**

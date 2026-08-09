@@ -14,7 +14,10 @@
 //     "74%" would silently mark the manager's abstentions as failures.
 //   * a form with no scorable questions scores 0 out of 0. That is not a
 //     result — it is a form that was never a rating sheet, and it gets no card.
-import type { AppraisalAccess, AppraisalScore } from '@/services/appraisal.service';
+import type {
+  AppraisalAccess,
+  AppraisalScore,
+} from '@/services/appraisal.service';
 
 export type ScoreCard =
   /** Nothing to show: no scorable questions, no payload, or no business here. */
@@ -66,7 +69,8 @@ export function scoreCard(
   access: Pick<AppraisalAccess, 'relation'> | undefined
 ): ScoreCard {
   if (!score) return { kind: 'hidden' };
-  if (!access || !SCORE_RELATIONS.has(access.relation)) return { kind: 'hidden' };
+  if (!access || !SCORE_RELATIONS.has(access.relation))
+    return { kind: 'hidden' };
 
   const total = score.counted + score.skipped;
   // Not a rating sheet: nothing in the form was ever scorable.
@@ -74,7 +78,11 @@ export function scoreCard(
 
   // `pct === null` only. A pct of 0 is a real mark and is NOT caught by a
   // falsy check — which is exactly why this is written this way.
-  if (score.pct === null || !Number.isFinite(score.pct) || score.possible <= 0) {
+  if (
+    score.pct === null ||
+    !Number.isFinite(score.pct) ||
+    score.possible <= 0
+  ) {
     return { kind: 'pending' };
   }
 

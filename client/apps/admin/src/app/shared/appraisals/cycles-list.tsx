@@ -126,11 +126,11 @@ function NewCycleForm({
         const rows = await fetchTemplates();
         if (cancelled) return;
         setTemplates(rows);
-        // Default to the tenant's default form, which is what the server would
-        // have fallen back to anyway — so the picker shows HR the same choice
-        // the server would make silently.
-        const fallback = rows.find((t) => t.isDefault) ?? rows[0];
-        if (fallback) setTemplateFamily(fallback.family);
+        // Deliberately NOT preselected. Preselecting the tenant default meant
+        // a cycle created without touching this control silently ran the
+        // generic six-question form, and nobody found out until employees
+        // opened an appraisal that was not the one HR had written. The form a
+        // cycle runs is the whole cycle; it has to be chosen, not defaulted.
       } catch {
         // Non-fatal: with no list the field stays empty, the request omits
         // `templateFamily`, and the server falls back to the tenant default.
@@ -153,6 +153,11 @@ function NewCycleForm({
   // — validated here first so an empty submit is a disabled button, not a
   // round trip that comes back as a generic error toast.
   const nameError = !name.trim() ? 'Cycle name is required' : null;
+  // Only enforced once the list has loaded. If fetchTemplates failed there is
+  // no choice to make, and blocking creation behind a picker that never
+  // appeared would be worse than the server's fallback.
+  const templateError =
+    templates.length > 0 && !templateFamily ? 'Choose a review form' : null;
   // Nominating happens before feedback is collected, so a nomination deadline
   // after the feedback deadline describes a cycle that cannot run. The server
   // stores both without comparing them, so this is the only place it is caught.
@@ -166,7 +171,7 @@ function NewCycleForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setTouched(true);
-    const blocked = nameError || deadlineError;
+    const blocked = nameError || templateError || deadlineError;
     if (blocked) {
       toast.error(blocked);
       return;
@@ -289,15 +294,20 @@ function NewCycleForm({
           </label>
           <Select
             value={
-              templateOptions.find((o) => o.value === templateFamily) ??
-              templateOptions[0]
+              templateOptions.find((o) => o.value === templateFamily) ?? null
             }
             options={templateOptions}
+            placeholder="Choose a form…"
             onChange={(o: { value: string; label: string }) =>
               setTemplateFamily(o.value)
             }
             disabled={submitting}
           />
+          {touched && templateError ? (
+            <Text className="mt-1.5 text-xs font-medium text-red-600">
+              {templateError}
+            </Text>
+          ) : null}
           <Text className="mt-1.5 text-xs text-gray-400">
             The cycle pins this form&apos;s current version when it launches.
             Editing the form afterwards will not change a cycle already running.
@@ -332,7 +342,9 @@ function NewCycleForm({
         </Button>
         <Button
           type="submit"
-          disabled={submitting || Boolean(nameError || deadlineError)}
+          disabled={
+            submitting || Boolean(nameError || templateError || deadlineError)
+          }
           className="rounded-xl bg-[#b20202] hover:bg-[#9f0101]"
         >
           <PiPlusBold className="me-1.5 h-4 w-4" />

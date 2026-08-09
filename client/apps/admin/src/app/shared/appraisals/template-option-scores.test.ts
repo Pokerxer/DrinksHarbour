@@ -48,7 +48,11 @@ describe('supportsOptionScores', () => {
 describe('hasOptionScores', () => {
   test('a question carrying paired options and scores has scoring on', () => {
     expect(
-      hasOptionScores({ type: 'likert', options: ['a', 'b'], optionScores: [2, 1] })
+      hasOptionScores({
+        type: 'likert',
+        options: ['a', 'b'],
+        optionScores: [2, 1],
+      })
     ).toBe(true);
   });
 
@@ -58,13 +62,21 @@ describe('hasOptionScores', () => {
 
   test('scores present but unpaired still counts as ON, so the editor can show the problem instead of silently dropping them', () => {
     expect(
-      hasOptionScores({ type: 'likert', options: ['a', 'b', 'c'], optionScores: [2, 1] })
+      hasOptionScores({
+        type: 'likert',
+        options: ['a', 'b', 'c'],
+        optionScores: [2, 1],
+      })
     ).toBe(true);
   });
 
   test('a choice question is never scored, whatever it carries', () => {
     expect(
-      hasOptionScores({ type: 'choice', options: ['a', 'b'], optionScores: [2, 1] })
+      hasOptionScores({
+        type: 'choice',
+        options: ['a', 'b'],
+        optionScores: [2, 1],
+      })
     ).toBe(false);
   });
 });
@@ -72,7 +84,11 @@ describe('hasOptionScores', () => {
 describe('enableOptionScores', () => {
   test('scores existing options best-first, down from scaleMax', () => {
     expect(
-      enableOptionScores({ type: 'likert', scaleMax: 5, options: ['a', 'b', 'c'] })
+      enableOptionScores({
+        type: 'likert',
+        scaleMax: 5,
+        options: ['a', 'b', 'c'],
+      })
     ).toEqual({ options: ['a', 'b', 'c'], optionScores: [5, 4, 3] });
   });
 
@@ -84,10 +100,12 @@ describe('enableOptionScores', () => {
   });
 
   test('defaults scaleMax to 5, matching the schema', () => {
-    expect(enableOptionScores({ type: 'rating', options: ['a', 'b'] })).toEqual({
-      options: ['a', 'b'],
-      optionScores: [5, 4],
-    });
+    expect(enableOptionScores({ type: 'rating', options: ['a', 'b'] })).toEqual(
+      {
+        options: ['a', 'b'],
+        optionScores: [5, 4],
+      }
+    );
   });
 
   test('more options than the scale can distinctly cover leaves the extras blank rather than repeating a score', () => {
@@ -125,7 +143,10 @@ describe('addScoredRow', () => {
 
 describe('removeScoredRow', () => {
   test('removes the same index from all three arrays', () => {
-    const next = removeScoredRow(rows(['a', 'b', 'c'], [5, 4, 3], [7, 8, 9]), 1);
+    const next = removeScoredRow(
+      rows(['a', 'b', 'c'], [5, 4, 3], [7, 8, 9]),
+      1
+    );
     expect(next.options).toEqual(['a', 'c']);
     expect(next.optionScores).toEqual([5, 3]);
     expect(next.keys).toEqual([7, 9]);
@@ -143,9 +164,9 @@ describe('setScoredLabel', () => {
 
 describe('setScoredScore', () => {
   test('parses a typed number', () => {
-    expect(setScoredScore(rows(['a', 'b'], [5, 4]), 1, '2').optionScores).toEqual([
-      5, 2,
-    ]);
+    expect(
+      setScoredScore(rows(['a', 'b'], [5, 4]), 1, '2').optionScores
+    ).toEqual([5, 2]);
   });
 
   test('a cleared box is blank, not zero — 0 is a real score somebody could mean', () => {
@@ -228,7 +249,10 @@ describe('firstOptionScoreProblem', () => {
   test('a draft with no scored questions is fine', () => {
     expect(
       firstOptionScoreProblem([
-        { title: 'S1', questions: [{ type: 'rating', label: 'Q', scaleMax: 5 }] },
+        {
+          title: 'S1',
+          questions: [{ type: 'rating', label: 'Q', scaleMax: 5 }],
+        },
       ])
     ).toBeNull();
   });

@@ -74,7 +74,9 @@ export default function TemplateQuestionConfig({
             question={question}
             onPatch={onPatch}
             disabled={disabled}
-            className={scored ? undefined : 'mt-4 border-t border-gray-100 pt-3.5'}
+            className={
+              scored ? undefined : 'mt-4 border-t border-gray-100 pt-3.5'
+            }
           />
         </ConfigWrapper>
       )}
@@ -91,7 +93,9 @@ export default function TemplateQuestionConfig({
             question={question}
             onPatch={onPatch}
             disabled={disabled}
-            className={scored ? undefined : 'mt-4 border-t border-gray-100 pt-3.5'}
+            className={
+              scored ? undefined : 'mt-4 border-t border-gray-100 pt-3.5'
+            }
           />
         </ConfigWrapper>
       )}

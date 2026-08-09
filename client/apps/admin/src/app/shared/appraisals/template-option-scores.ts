@@ -33,7 +33,9 @@ export function supportsOptionScores(type: string | undefined): boolean {
 
 /** The schema's ceiling, defaulted the same way the server defaults it. */
 export function scaleMaxOrDefault(scaleMax: number | undefined): number {
-  return typeof scaleMax === 'number' && Number.isFinite(scaleMax) ? scaleMax : 5;
+  return typeof scaleMax === 'number' && Number.isFinite(scaleMax)
+    ? scaleMax
+    : 5;
 }
 
 /** The minimal question shape this module reads. */
@@ -135,7 +137,7 @@ export function addScoredRow(rows: ScoredRows, scaleMax: number): ScoredRows {
 }
 
 export function removeScoredRow(rows: ScoredRows, index: number): ScoredRows {
-  const drop = <T,>(arr: T[]) => arr.filter((_, i) => i !== index);
+  const drop = <T>(arr: T[]) => arr.filter((_, i) => i !== index);
   return {
     options: drop(rows.options),
     optionScores: drop(rows.optionScores),

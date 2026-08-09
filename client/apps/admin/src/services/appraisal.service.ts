@@ -590,9 +590,9 @@ export interface DepartmentOptionDoc {
 }
 
 export const fetchDepartmentOptions = () =>
-  request<{ items: DepartmentOptionDoc[] }>('/api/departments?isActive=true').then(
-    (d) => d.items || []
-  );
+  request<{ items: DepartmentOptionDoc[] }>(
+    '/api/departments?isActive=true'
+  ).then((d) => d.items || []);
 
 // ── Phase 5 §9.3: the subject's own answers, for their reviewer ────────────
 
@@ -662,11 +662,17 @@ export const fetchStandingForm = (feedbackId: string) =>
  * Replaces the whole list rather than appending: removing a name in the UI has
  * to actually remove it. Send `[]` to withdraw the report entirely.
  */
-export const saveStandingFeedback = (feedbackId: string, entries: StandingEntry[]) =>
-  request<{ entries: StandingEntry[] }>(`/api/appraisal-feedback/${feedbackId}/standing`, {
-    method: 'POST',
-    body: JSON.stringify({ entries }),
-  });
+export const saveStandingFeedback = (
+  feedbackId: string,
+  entries: StandingEntry[]
+) =>
+  request<{ entries: StandingEntry[] }>(
+    `/api/appraisal-feedback/${feedbackId}/standing`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ entries }),
+    }
+  );
 
 /** Owner + super_admin only — the server 403s everyone else, route and handler. */
 export const fetchStandingFeedback = (cycleId: string) =>
@@ -845,6 +851,19 @@ export const launchCycle = (id: string, employeeIds?: string[]) =>
     // `{ _id }` alone when the user record cannot be found, hence the
     // optional name fields on PersonRef.
     skipped: { employee: PersonRef; reason: string }[];
+    /**
+     * Employees whose appraisal WAS created but whose form has no questions
+     * for them — every section in the launched template is scoped to a
+     * department none of theirs matches (or they have no department at all).
+     *
+     * Distinct from `skipped`: the record exists and counts towards every
+     * progress number, so this is not visible in any total. The fix is to the
+     * form's department scoping or to the employee's department, never to the
+     * launch.
+     */
+    askedNothing: { employee: PersonRef }[];
+    /** The form this launch pinned, so HR can see WHICH one it ran. */
+    templateName: string | null;
   }>(`/api/appraisal-cycles/${id}/launch`, {
     method: 'POST',
     body: JSON.stringify({ employeeIds }),

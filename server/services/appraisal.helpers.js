@@ -592,6 +592,42 @@ function filterSections(sections, { kind, departmentId } = {}) {
 }
 
 /**
+ * Planned appraisals whose subject would be asked NOTHING.
+ *
+ * A section carrying a `departments` list only reaches that department, so a
+ * form built department by department covers exactly the departments somebody
+ * wrote a section for — and an employee outside all of them gets an empty
+ * form. That failure is completely silent today: the cycle launches, the
+ * appraisal appears in every count, the employee opens it and there are no
+ * questions, and HR finds out when the deadline passes with nothing submitted.
+ *
+ * Checked against the SELF and MANAGER forms together, because those are the
+ * two rows a launch creates. A section asked only of peers does not rescue the
+ * pair: peer rows exist only once nominations are approved, and the employee
+ * and their manager still have nothing in front of them. A manager-only
+ * section does rescue it — the assessment happens, the employee just has no
+ * self-review to fill in, which is a legitimate form design.
+ *
+ * An employee with NO department is always reported when every section is
+ * scoped: `filterSections` cannot match a scoped section against a missing
+ * department, so they are as uncovered as someone in the wrong one.
+ *
+ * Takes planned rows (`planCycleLaunch`'s `toCreate`) rather than reading
+ * anything, so it stays DB-free like the rest of this module.
+ */
+function employeesAskedNothing(sections, rows) {
+  const out = [];
+  for (const row of rows || []) {
+    const departmentId = row?.department || null;
+    const asked =
+      filterSections(sections, { kind: 'self', departmentId }).length > 0 ||
+      filterSections(sections, { kind: 'manager', departmentId }).length > 0;
+    if (!asked) out.push({ employee: row.employee, department: departmentId });
+  }
+  return out;
+}
+
+/**
  * The set of question ids (as strings) present in an already
  * filtered sections array — see filterSections.
  */
@@ -1339,6 +1375,7 @@ module.exports = {
   PEER_EVIDENCE_QUESTIONS,
   buildDefaultTemplate,
   filterSections,
+  employeesAskedNothing,
   getAskedQuestionIds,
   partitionAnswersByAskedQuestions,
   isAnswered,

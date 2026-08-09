@@ -142,7 +142,9 @@ export default function TemplateEditor({ id }: { id: string }) {
    * — a section keeps whatever scope it already has, because the editor only
    * ever writes `departments` when HR touches the control.
    */
-  const [departmentOptions, setDepartmentOptions] = useState<DepartmentOption[]>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<
+    DepartmentOption[]
+  >([]);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');

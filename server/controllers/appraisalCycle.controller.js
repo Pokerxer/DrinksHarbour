@@ -7,7 +7,7 @@ const AppraisalFeedback = require('../models/AppraisalFeedback');
 const AppraisalNudge = require('../models/AppraisalNudge');
 const User = require('../models/User');
 const {
-  planCycleLaunch, buildDefaultTemplate, TENANT_ROLES,
+  planCycleLaunch, buildDefaultTemplate, TENANT_ROLES, employeesAskedNothing,
   outstandingActionsFor, countApprovedPeers,
 } = require('../services/appraisal.helpers');
 const Department = require('../models/Department');
@@ -221,13 +221,23 @@ exports.launchCycle = async (req, res, next) => {
     // family was archived after it was created is already pinned to a version
     // of that same archived family, so refusing to re-resolve would only pin an
     // older revision of the very same form.
+    //
+    // The same read also carries `sections`, which the coverage check below
+    // needs: one query for both, and the sections are guaranteed to be the
+    // ones this launch pinned rather than a second read that could race it.
+    let launchTemplate = null;
     if (!cycle.launchedAt && cycle.templateFamily) {
-      const latest = await AppraisalTemplate.findOne({
+      launchTemplate = await AppraisalTemplate.findOne({
         tenant: req.tenant._id,
         family: cycle.templateFamily,
         isLatest: true,
-      }).select('_id');
-      if (latest) cycle.template = latest._id;
+      }).select('_id name sections').lean();
+      if (launchTemplate) cycle.template = launchTemplate._id;
+    } else if (cycle.template) {
+      launchTemplate = await AppraisalTemplate.findOne({
+        _id: cycle.template,
+        tenant: req.tenant._id,
+      }).select('_id name sections').lean();
     }
 
     const scope = Array.isArray(req.body.employeeIds) && req.body.employeeIds.length
@@ -266,6 +276,20 @@ exports.launchCycle = async (req, res, next) => {
       ownerId: owner?._id || null,
     });
 
+    // Who this form would ask NOTHING. A section carrying a `departments` list
+    // reaches only that department, so a form written department by department
+    // covers exactly the departments somebody wrote a section for — and an
+    // employee outside all of them opens an appraisal with no questions in it.
+    // Read from the template the launch just pinned, so the answer describes
+    // the form these appraisals were actually written against.
+    //
+    // Reported, not refused: a form deliberately scoped to one department is a
+    // legitimate thing to launch tenant-wide, and HR is the one who can say
+    // which it is. Silence was the bug.
+    // A cycle with no resolvable template asks nobody anything, and says so
+    // rather than reporting a clean launch.
+    const gap = employeesAskedNothing(launchTemplate?.sections, plan.toCreate);
+
     // planCycleLaunch returns bare ids; HR cannot chase an ObjectId. Resolve
     // them here rather than in the helper, which stays DB-free by design.
     const skippedIds = plan.skipped.map((s) => s.employee);
@@ -277,6 +301,17 @@ exports.launchCycle = async (req, res, next) => {
     const skipped = plan.skipped.map((s) => ({
       reason: s.reason,
       employee: byId.get(String(s.employee)) || { _id: s.employee },
+    }));
+
+    // Same treatment as `skipped`: an id HR cannot put a name to is an id HR
+    // cannot act on.
+    const gapUsers = gap.length
+      ? await User.find({ _id: { $in: gap.map((g) => g.employee) }, tenant: req.tenant._id })
+          .select('firstName lastName email').lean()
+      : [];
+    const gapById = new Map(gapUsers.map((u) => [String(u._id), u]));
+    const askedNothing = gap.map((g) => ({
+      employee: gapById.get(String(g.employee)) || { _id: g.employee },
     }));
 
     // Peer review on → the employee nominates first. Off → Phase 1's path,
@@ -328,6 +363,13 @@ exports.launchCycle = async (req, res, next) => {
         created: created.length,
         alreadyExisted: plan.alreadyExists.length,
         skipped,
+        // Appraisals that WERE created but whose form is empty for the person
+        // it belongs to — see the note above. Named separately from `skipped`
+        // because the record exists and counts towards every progress number;
+        // the fix is to the form or the employee's department, not to the
+        // launch.
+        askedNothing,
+        templateName: launchTemplate?.name || null,
       },
     });
   } catch (err) { next(err); }
