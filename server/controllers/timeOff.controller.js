@@ -50,6 +50,7 @@ const {
   resolveApprover,
   buildTimeOffPayload,
   buildSwapPayload,
+  checkSwapShiftStillValid,
 } = require('../services/timeOff.helpers');
 const { assignmentContext } = require('./shift.controller');
 
@@ -505,9 +506,17 @@ const respondToSwap = asyncHandler(async (req, res) => {
 
   if (next === 'accepted') {
     const shift = await Shift.findOne({ _id: row.shift, tenant: tenantId })
-      .select('_id role start end status')
+      .select('_id employee role start end status')
       .lean();
     if (!shift) return notFound(res, 'Shift');
+
+    // Checked here as well as at approval. Not the authoritative pass — the
+    // decision re-runs it against the world as it is then — but letting
+    // somebody accept a shift that has been cancelled, re-rostered or already
+    // worked, and only telling them when a manager tries to approve it, is a
+    // worse way to find out.
+    const stillValid = checkSwapShiftStillValid(row, shift, { now: new Date() });
+    if (!stillValid.ok) return conflict(res, stillValid);
 
     const ctx = await assignmentContext(tenantId, me, shift, shift._id);
     const verdict = checkAssignment(shift, ctx.employee, {
@@ -566,12 +575,15 @@ const decideSwap = asyncHandler(async (req, res) => {
 
   const shift = await Shift.findOne({ _id: row.shift, tenant: tenantId });
   if (!shift) return notFound(res, 'Shift');
-  if (shift.status === 'cancelled') {
-    return conflict(res, {
-      code: 'shift_cancelled',
-      message: 'That shift has been cancelled — there is nothing to swap',
-    });
-  }
+
+  // The roster does not hold still between the accept and the decision, and
+  // this is the only write that moves `Shift.employee`. The rule itself is in
+  // timeOff.helpers.js — cancelled, already started, re-rostered onto somebody
+  // else, or emptied back to open are each a reason the offer no longer refers
+  // to what was offered.
+  const stillValid = checkSwapShiftStillValid(row, shift, { now: new Date() });
+  if (!stillValid.ok) return conflict(res, stillValid);
+
   // The table forbids approving a `pending` swap, so a null target here would
   // be a corrupted row rather than a normal state. Refuse loudly.
   if (!row.targetEmployee) {

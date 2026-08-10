@@ -47,6 +47,7 @@ const {
   rateAttendance,
   isExcused,
   describeDeparture,
+  unrosteredRecords,
 } = require('../services/attendanceRating.helpers');
 
 const MS_PER_MINUTE = 60_000;
@@ -425,7 +426,13 @@ const employeeHistory = asyncHandler(async (req, res) => {
     };
   });
 
-  const unrostered = items.filter((r) => !r.shift);
+  // Not `!r.shift`: a record whose shift was cancelled after it was worked, or
+  // whose shift sits outside this window, cites a shift that no timeline row
+  // will carry. Filtering on "has no shift id" left those rendering nowhere on
+  // the page while their minutes still counted towards the summary. The rule is
+  // in attendanceRating.helpers.js so the list and `counts.unrostered` cannot
+  // disagree about which punches went unaccounted for.
+  const unrostered = unrosteredRecords(items, shifts);
 
   res.json({
     success: true,

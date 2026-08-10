@@ -313,3 +313,64 @@ test('the weights are the single source of truth and total 100', () => {
     'fair',
   ]);
 });
+
+// ── A punch nothing accounts for ─────────────────────────────────────────────
+//
+// `unrostered` used to mean "the record cites no shift at all". That is one way
+// a punch can go unaccounted for, but not the only one, and the others were
+// silently dropped: the employee history page builds its timeline from the
+// shift list and appends the unrostered punches after it, so a record that is
+// in neither appears on the page NOWHERE — while still counting towards the
+// hours in the summary. Somebody's shift gets cancelled after they worked it
+// and their hours vanish from their own history.
+
+const { unrosteredRecords } = require('../services/attendanceRating.helpers');
+
+test('unrosteredRecords reports a punch that cites no shift', () => {
+  const stray = record({ _id: 'a9', shift: null });
+  assert.deepStrictEqual(
+    unrosteredRecords([record(), stray], [shift()]).map((r) => r._id),
+    ['a9']
+  );
+});
+
+test('unrosteredRecords reports a punch whose shift was cancelled afterwards', () => {
+  // The shift is gone from the roster query (it filters cancelled out), so no
+  // timeline row will ever carry this record.
+  const orphan = record({ _id: 'a9', shift: 's-cancelled' });
+  assert.deepStrictEqual(
+    unrosteredRecords([record(), orphan], [shift()]).map((r) => r._id),
+    ['a9']
+  );
+});
+
+test('unrosteredRecords reports a punch bound to a shift outside the window', () => {
+  const orphan = record({ _id: 'a9', shift: 's-last-month' });
+  assert.deepStrictEqual(unrosteredRecords([orphan], []).map((r) => r._id), ['a9']);
+});
+
+test('unrosteredRecords does not report a punch its shift accounts for', () => {
+  // Including a DRAFT shift: the rating will not judge it, but the history
+  // page still shows a row for it, so the punch is not orphaned.
+  assert.deepStrictEqual(unrosteredRecords([record()], [shift({ status: 'draft' })]), []);
+});
+
+test('unrosteredRecords reads a populated shift the same as a bare id', () => {
+  // Attendance.shift is an id, a populated doc or null depending on the query.
+  const populated = record({ shift: { _id: 's1', start: shift().start } });
+  assert.deepStrictEqual(unrosteredRecords([populated], [shift()]), []);
+});
+
+test('rateAttendance counts a punch orphaned by a cancelled shift as unrostered', () => {
+  // Previously 0: the record had a shift id, so it passed the "no shift" test,
+  // and no expected shift claimed it either. It fell through both.
+  const orphan = record({ _id: 'a9', shift: 's-cancelled' });
+  const out = rateAttendance(
+    { shifts: [shift()], records: [record(), orphan], timeOff: [] },
+    { now: NOW }
+  );
+
+  assert.strictEqual(out.counts.unrostered, 1);
+  // Still never scored — turning up is not something to be marked down for.
+  assert.strictEqual(out.score, 100);
+});

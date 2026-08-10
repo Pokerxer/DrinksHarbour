@@ -370,6 +370,85 @@ function buildSwapPayload(body = {}, opts = {}) {
   return { ok: true, value };
 }
 
+/**
+ * Is the shift under this swap still the shift that was offered?
+ *
+ * A swap passes through three hands over days — the owner offers it, the target
+ * accepts, a manager approves — and approval is the ONLY thing that writes
+ * `Shift.employee`. Between the accept and the decision the roster keeps moving:
+ * the shift can be cancelled, re-rostered onto somebody else, emptied back to
+ * open, or simply happen.
+ *
+ * WHY THIS IS NOT ONLY A ROSTER PROBLEM
+ * -------------------------------------
+ * attendanceRating.helpers.js takes its denominator from the shifts an employee
+ * holds *now*, not from who held them on the day. So rewriting `Shift.employee`
+ * on a shift that has already been worked rewrites two people's history at
+ * once: the person who actually worked it keeps an attendance record that now
+ * cites a shift belonging to somebody else (counted as `unrostered`), and the
+ * person who never worked it inherits an ended, published shift with no record
+ * against it — which is precisely the definition of an absence. Neither of them
+ * did anything, and neither is told.
+ *
+ * `checkAssignment` cannot catch any of this: it judges whether the TARGET may
+ * work the window, which stays true the whole time. This asks the other
+ * question — whether the offer still refers to the thing that was offered.
+ *
+ * @param {object} swap  - the stored request (needs requestedBy)
+ * @param {object|null} shift - the stored shift (needs employee, status, start)
+ * @param {{now?: Date|number}} [opts]
+ * @returns {{ok: true} | {ok: false, code: string, message: string}}
+ */
+function checkSwapShiftStillValid(swap, shift, opts = {}) {
+  const now = new Date(opts.now ?? Date.now()).getTime();
+
+  if (!shift) {
+    return {
+      ok: false,
+      code: 'shift_missing',
+      message: 'That shift no longer exists',
+    };
+  }
+
+  // Reported ahead of the shift merely having started: both are true of an old
+  // cancelled shift, and "it was cancelled" is the more useful of the two.
+  if (shift.status === 'cancelled') {
+    return {
+      ok: false,
+      code: 'shift_cancelled',
+      message: 'That shift has been cancelled — there is nothing to swap',
+    };
+  }
+
+  const start = new Date(shift.start).getTime();
+  if (!Number.isNaN(start) && start <= now) {
+    return {
+      ok: false,
+      code: 'shift_started',
+      message: 'That shift has already started — it is a matter for attendance now',
+    };
+  }
+
+  const holder = idOf(shift.employee);
+  if (!holder) {
+    return {
+      ok: false,
+      code: 'shift_open',
+      message: 'That shift is open again — assign it from the roster instead',
+    };
+  }
+
+  if (holder !== idOf(swap?.requestedBy)) {
+    return {
+      ok: false,
+      code: 'shift_reassigned',
+      message: 'That shift has been given to somebody else since the swap was raised',
+    };
+  }
+
+  return { ok: true };
+}
+
 module.exports = {
   TIME_OFF_TYPES,
   TIME_OFF_STATUSES,
@@ -390,4 +469,5 @@ module.exports = {
   timeOffDayKeys,
   buildTimeOffPayload,
   buildSwapPayload,
+  checkSwapShiftStillValid,
 };

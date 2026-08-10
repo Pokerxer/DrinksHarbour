@@ -43,13 +43,23 @@ function req(over: Partial<TimeOffRequest> = {}): TimeOffRequest {
   };
 }
 
+/**
+ * A swap's shift is ALWAYS in the future while the swap is live — the server
+ * refuses to raise one on a shift that has already started, and `swapActions`
+ * now withdraws the buttons that would move a started swap forward. A fixed
+ * date would have made these fixtures describe an impossible state (and quietly
+ * rotted the day it went past), so the window is relative to the run.
+ */
+const SWAP_SHIFT_START = new Date(Date.now() + 24 * 3_600_000);
+const SWAP_SHIFT_END = new Date(SWAP_SHIFT_START.getTime() + 8 * 3_600_000);
+
 function swap(over: Partial<ShiftSwapRequest> = {}): ShiftSwapRequest {
   return {
     _id: 's1',
     shift: {
       _id: 'sh1',
-      start: '2026-08-10T08:00:00.000Z',
-      end: '2026-08-10T16:00:00.000Z',
+      start: SWAP_SHIFT_START.toISOString(),
+      end: SWAP_SHIFT_END.toISOString(),
       status: 'published',
       role: { _id: 'ro1', name: 'Driver' },
     },
@@ -148,9 +158,19 @@ describe('labels a human reads', () => {
   });
 
   it('describes the shift a swap is about', () => {
-    expect(shiftWindowLabel(swap().shift, OFFSET)).toBe(
-      'Mon 10 Aug · 09:00–17:00'
-    );
+    // Its own fixed window — the shared one is relative so the swap is always
+    // still to come, which is no use for asserting a formatted label.
+    expect(
+      shiftWindowLabel(
+        {
+          _id: 'sh1',
+          start: '2026-08-10T08:00:00.000Z',
+          end: '2026-08-10T16:00:00.000Z',
+          status: 'published',
+        },
+        OFFSET
+      )
+    ).toBe('Mon 10 Aug · 09:00–17:00');
   });
 
   it('an unpopulated shift ref is an em dash, never "Invalid Date"', () => {
@@ -406,5 +426,101 @@ describe('the list', () => {
       // report leave nobody is taking.
       approvedDays: 2.5,
     });
+  });
+});
+
+// ── A swap whose shift moved underneath it ───────────────────────────────────
+//
+// MIRRORS timeOff.helpers.js#checkSwapShiftStillValid. The server is
+// authoritative and re-checks all of this, but a board that offers "Approve" on
+// a swap the server will refuse is a promise the screen cannot keep — and
+// approving a stale swap is the one action that rewrites `Shift.employee`, and
+// with it two people's attendance history.
+
+describe('a swap whose shift has moved on', () => {
+  const NOW = new Date('2026-08-09T12:00:00.000Z');
+  const boss = { canDecide: true, isMine: false, isTarget: false };
+  const accepted = (shiftOver: Record<string, unknown> = {}) =>
+    swap({
+      status: 'accepted',
+      targetEmployee: { _id: 'e2', firstName: 'Bola', lastName: 'Eze' },
+      shift: {
+        _id: 'sh1',
+        start: '2026-08-10T08:00:00.000Z',
+        end: '2026-08-10T16:00:00.000Z',
+        status: 'published',
+        employee: { _id: 'e1', firstName: 'Ada', lastName: 'Obi' },
+        ...shiftOver,
+      },
+    });
+
+  it('still offers approval while the shift is untouched', () => {
+    const offered = swapActions(accepted(), boss, { now: NOW });
+    expect(offered.map((a) => a.action)).toContain('approve');
+  });
+
+  it('withdraws approval once the shift has been cancelled', () => {
+    const offered = swapActions(accepted({ status: 'cancelled' }), boss, {
+      now: NOW,
+    });
+    expect(offered.map((a) => a.action)).not.toContain('approve');
+  });
+
+  it('withdraws approval once the shift has already started', () => {
+    // Approving now would move a name onto work somebody else has done, and
+    // mark the person who did it absent for a shift they no longer hold.
+    const offered = swapActions(accepted(), boss, {
+      now: new Date('2026-08-10T10:00:00.000Z'),
+    });
+    expect(offered.map((a) => a.action)).not.toContain('approve');
+  });
+
+  it('withdraws approval once the shift belongs to somebody else', () => {
+    const offered = swapActions(
+      accepted({ employee: { _id: 'e9', firstName: 'Chidi', lastName: 'Nwosu' } }),
+      boss,
+      { now: NOW }
+    );
+    expect(offered.map((a) => a.action)).not.toContain('approve');
+  });
+
+  it('withdraws approval once the shift is open again', () => {
+    const offered = swapActions(accepted({ employee: null }), boss, { now: NOW });
+    expect(offered.map((a) => a.action)).not.toContain('approve');
+  });
+
+  it('still offers decline on a stale swap, so it can be cleared', () => {
+    // Refusing every action would strand the row on the board forever.
+    const offered = swapActions(accepted({ status: 'cancelled' }), boss, {
+      now: NOW,
+    });
+    expect(offered.map((a) => a.action)).toContain('reject');
+  });
+
+  it('leaves the buttons alone when the shift is only an id', () => {
+    // Nothing to judge — the server is authoritative and will say so.
+    const offered = swapActions(swap({ status: 'accepted', shift: 'sh1' }), boss, {
+      now: NOW,
+    });
+    expect(offered.map((a) => a.action)).toContain('approve');
+  });
+
+  it('does not offer a target the chance to accept a started shift', () => {
+    const offered = swapActions(
+      swap({
+        status: 'pending',
+        targetEmployee: { _id: 'e2', firstName: 'Bola', lastName: 'Eze' },
+        shift: {
+          _id: 'sh1',
+          start: '2026-08-10T08:00:00.000Z',
+          end: '2026-08-10T16:00:00.000Z',
+          status: 'published',
+          employee: { _id: 'e1', firstName: 'Ada', lastName: 'Obi' },
+        },
+      }),
+      { canDecide: false, isMine: false, isTarget: true },
+      { now: new Date('2026-08-10T10:00:00.000Z') }
+    );
+    expect(offered.map((a) => a.action)).not.toContain('accept');
   });
 });

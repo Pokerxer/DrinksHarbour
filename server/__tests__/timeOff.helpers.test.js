@@ -372,3 +372,113 @@ test('a swap with a bad id is refused rather than cast', () => {
   assert.strictEqual(buildSwapPayload({ shift: 'nope' }).ok, false);
   assert.strictEqual(buildSwapPayload({ shift: OID_A, targetEmployee: 'nope' }).ok, false);
 });
+
+// ── Is the shift under a swap still the shift that was offered? ──────────────
+//
+// A swap is answered in three steps, by three different people, over days:
+// the owner offers, the target accepts, a manager approves. The roster does not
+// hold still in between, and `decideSwap` is the ONLY thing that writes
+// `Shift.employee`. Every test below is a way the world moved underneath an
+// accepted swap.
+//
+// The damage is not confined to the roster. attendanceRating.helpers.js takes
+// its denominator from the shifts an employee is on RIGHT NOW, so rewriting
+// `Shift.employee` on a shift that has already been worked marks the person who
+// worked it as unrostered and the person who did not as absent.
+
+const { checkSwapShiftStillValid } = require('../services/timeOff.helpers');
+
+const HOUR = 3_600_000;
+const NOW = new Date('2026-08-10T09:00:00.000Z');
+const future = (h) => new Date(NOW.getTime() + h * HOUR);
+const past = (h) => new Date(NOW.getTime() - h * HOUR);
+
+const swapOn = (over = {}) => ({ requestedBy: OID_A, targetEmployee: OID_B, ...over });
+const shiftOn = (over = {}) => ({
+  _id: OID_C,
+  employee: OID_A,
+  status: 'published',
+  start: future(24),
+  end: future(32),
+  ...over,
+});
+
+test('a swap whose shift is untouched is still good to approve', () => {
+  const verdict = checkSwapShiftStillValid(swapOn(), shiftOn(), { now: NOW });
+  assert.strictEqual(verdict.ok, true);
+});
+
+test('a swap is refused once its shift has been cancelled', () => {
+  const verdict = checkSwapShiftStillValid(
+    swapOn(),
+    shiftOn({ status: 'cancelled' }),
+    { now: NOW }
+  );
+  assert.strictEqual(verdict.ok, false);
+  assert.strictEqual(verdict.code, 'shift_cancelled');
+});
+
+test('a swap is refused once its shift has already started', () => {
+  // Approving here would move a name onto work somebody else has already done.
+  // Attendance answers a past shift; the swap board does not.
+  const verdict = checkSwapShiftStillValid(
+    swapOn(),
+    shiftOn({ start: past(2), end: future(6) }),
+    { now: NOW }
+  );
+  assert.strictEqual(verdict.ok, false);
+  assert.strictEqual(verdict.code, 'shift_started');
+});
+
+test('a swap is refused once its shift belongs to somebody else', () => {
+  // The manager re-rostered the shift to D from the roster screen while the
+  // swap sat in the queue. Approving it would silently take the shift off D,
+  // who was never asked and is never told.
+  const verdict = checkSwapShiftStillValid(
+    swapOn(),
+    shiftOn({ employee: OID_D }),
+    { now: NOW }
+  );
+  assert.strictEqual(verdict.ok, false);
+  assert.strictEqual(verdict.code, 'shift_reassigned');
+});
+
+test('a swap is refused once its shift has been emptied back to open', () => {
+  // `Shift.employee: null` is a value, not missing data. An open shift is
+  // assigned from the roster — there is no longer anybody to swap WITH.
+  const verdict = checkSwapShiftStillValid(
+    swapOn(),
+    shiftOn({ employee: null }),
+    { now: NOW }
+  );
+  assert.strictEqual(verdict.ok, false);
+  assert.strictEqual(verdict.code, 'shift_open');
+});
+
+test('the shift being gone is refused rather than thrown', () => {
+  const verdict = checkSwapShiftStillValid(swapOn(), null, { now: NOW });
+  assert.strictEqual(verdict.ok, false);
+  assert.strictEqual(verdict.code, 'shift_missing');
+});
+
+test('a populated employee doc counts as the same person as its id', () => {
+  // Shift.employee arrives as an id, a populated doc or null depending on the
+  // query — the id | doc | null shape that has blanked pages here before.
+  const verdict = checkSwapShiftStillValid(
+    swapOn({ requestedBy: { _id: OID_A, firstName: 'Ada' } }),
+    shiftOn({ employee: { _id: OID_A, firstName: 'Ada' } }),
+    { now: NOW }
+  );
+  assert.strictEqual(verdict.ok, true);
+});
+
+test('cancellation is reported ahead of the shift merely having started', () => {
+  // Both are true of an old cancelled shift. "It was cancelled" is the more
+  // useful thing to tell somebody staring at the swap board.
+  const verdict = checkSwapShiftStillValid(
+    swapOn(),
+    shiftOn({ status: 'cancelled', start: past(48), end: past(40) }),
+    { now: NOW }
+  );
+  assert.strictEqual(verdict.code, 'shift_cancelled');
+});

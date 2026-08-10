@@ -638,3 +638,38 @@ test('tenantToday is the tenant calendar day, not the process one', () => {
   assert.strictEqual(tenantToday(LAGOS, late), '2026-08-11');
   assert.strictEqual(tenantToday(0, late), '2026-08-10');
 });
+
+// ── Generation and time off do not meet, on purpose ──────────────────────────
+//
+// The open question from the hardening spec: `checkAssignment` blocks somebody
+// being ASSIGNED over approved leave, but `planShiftGeneration` never consults
+// time off at all. That is not an oversight to be fixed — everything generation
+// produces is an OPEN shift, so there is no employee for leave to be about. The
+// slot on a day the usual person is away is exactly what somebody else needs to
+// be able to see and cover.
+//
+// Locked in with a test because it looks like a missing feature, and "wiring
+// time off into generation" would quietly stop the roster from showing the days
+// that most need covering.
+
+test('generation still creates the slot on a day somebody is on leave', () => {
+  const tpl = {
+    _id: 't1',
+    name: 'Evening',
+    role: 'r1',
+    startTime: '17:00',
+    endTime: '23:00',
+    daysOfWeek: [1],
+  };
+
+  const { toCreate } = planShiftGeneration([tpl], {
+    from: '2026-08-10',
+    to: '2026-08-10',
+    offsetMinutes: 60,
+  });
+
+  assert.strictEqual(toCreate.length, 1);
+  // The reason leave cannot apply: nobody is on it yet.
+  assert.strictEqual(toCreate[0].employee, null);
+  assert.strictEqual(toCreate[0].status, 'draft');
+});

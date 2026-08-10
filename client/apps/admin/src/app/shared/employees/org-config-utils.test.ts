@@ -8,7 +8,9 @@ import {
   labelFor,
 } from './org-config-utils';
 
-const row = (over: Partial<Parameters<typeof sortOrgRows>[0][number]> = {}) => ({
+const row = (
+  over: Partial<Parameters<typeof sortOrgRows>[0][number]> = {}
+) => ({
   name: 'A',
   employeeCount: 0,
   isActive: true,
@@ -62,7 +64,10 @@ describe('sortOrgRows', () => {
   });
 
   it('sorts by name by default', () => {
-    const out = sortOrgRows([row({ name: 'Sales' }), row({ name: 'Admin' })], 'name');
+    const out = sortOrgRows(
+      [row({ name: 'Sales' }), row({ name: 'Admin' })],
+      'name'
+    );
     expect(out.map((r) => r.name)).toEqual(['Admin', 'Sales']);
   });
 

@@ -38,6 +38,8 @@ import { FIELD, Field } from './org-config-page';
 import { LAGOS_OFFSET_MINUTES, conflictLabel } from './shift-roster-utils';
 import {
   shiftWindowLabel,
+  staleSwapLabel,
+  staleSwapReason,
   swapActions,
   swapStatusLabel,
   swapStatusTone,
@@ -365,6 +367,12 @@ export default function ShiftSwapsPage() {
                   isMine,
                   isTarget,
                 });
+                // Only meaningful while the swap could still move forward; a
+                // finished or withdrawn one is not "stale", it is done.
+                const stale =
+                  item.status === 'pending' || item.status === 'accepted'
+                    ? staleSwapReason(item)
+                    : null;
                 const role =
                   item.shift && typeof item.shift !== 'string'
                     ? item.shift.role
@@ -417,7 +425,16 @@ export default function ShiftSwapsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1.5">
-                        {!actions.length && (
+                        {/* Why the button went away. `swapActions` withdraws
+                            accept/approve once the shift has moved on, and a
+                            button that silently vanishes is indistinguishable
+                            from one that was never there. */}
+                        {stale && (
+                          <span className="text-right text-[11px] text-amber-600">
+                            {staleSwapLabel(stale)}
+                          </span>
+                        )}
+                        {!actions.length && !stale && (
                           <span className="text-xs text-gray-300">—</span>
                         )}
                         {actions.map((a) => (

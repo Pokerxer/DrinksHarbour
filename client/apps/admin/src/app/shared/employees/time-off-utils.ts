@@ -30,7 +30,7 @@ import type {
   SwapStatus,
   SwapShiftRef,
 } from '@/services/timeOff.service';
-import type { Ref } from '@/services/orgStructure.service';
+import { refId, type Ref } from '@/services/orgStructure.service';
 
 const MS_PER_MINUTE = 60_000;
 
@@ -271,23 +271,106 @@ export function timeOffActions(
   return out;
 }
 
+/** Why a swap can no longer be moved forward, or null while it still can. */
+export type StaleSwapReason =
+  | 'missing'
+  | 'cancelled'
+  | 'started'
+  | 'open'
+  | 'reassigned';
+
+/**
+ * Has the shift under this swap moved on since it was offered?
+ *
+ * MIRRORS timeOff.helpers.js#checkSwapShiftStillValid — change one copy and you
+ * must change the other, or the board offers a button the server refuses.
+ *
+ * A swap passes through three hands over days, and the roster does not hold
+ * still in between: the shift can be cancelled, re-rostered onto a third
+ * person, emptied back to open, or simply happen. Approving is the ONE action
+ * that writes `Shift.employee`, and doing it to a shift that has already been
+ * worked rewrites two people's attendance history — the person who worked it
+ * keeps a punch citing a shift they no longer hold, and the person who did not
+ * inherits an ended shift with nothing against it, which reads as an absence.
+ *
+ * Returns null when the shift is only an id: there is nothing to judge, and the
+ * server is authoritative anyway.
+ */
+export function staleSwapReason(
+  request: Pick<ShiftSwapRequest, 'shift' | 'requestedBy'>,
+  now: Date | number = Date.now()
+): StaleSwapReason | null {
+  const shift = request.shift;
+  if (shift === null || shift === undefined) return 'missing';
+  // `typeof null === 'object'`, so the null check above has to come first —
+  // the same id | doc | null shape that has blanked pages here before.
+  if (typeof shift === 'string') return null;
+
+  if (shift.status === 'cancelled') return 'cancelled';
+
+  const start = new Date(shift.start).getTime();
+  if (!Number.isNaN(start) && start <= new Date(now).getTime()) return 'started';
+
+  // `employee` is absent from the payload on older rows; only an explicit null
+  // means the shift was genuinely emptied back to open.
+  if (shift.employee === undefined) return null;
+  if (!shift.employee) return 'open';
+
+  const holder = refId(shift.employee);
+  const owner = refId(request.requestedBy);
+  if (holder && owner && holder !== owner) return 'reassigned';
+
+  return null;
+}
+
+/** A sentence for whoever is looking at a swap that can no longer go through. */
+export function staleSwapLabel(reason: StaleSwapReason): string {
+  switch (reason) {
+    case 'missing':
+      return 'That shift no longer exists';
+    case 'cancelled':
+      return 'That shift has been cancelled';
+    case 'started':
+      return 'That shift has already started — attendance answers it now';
+    case 'open':
+      return 'That shift is open again — assign it from the roster';
+    case 'reassigned':
+      return 'That shift has been given to somebody else';
+  }
+}
+
 /**
  * The actions a viewer may take on a swap.
  *
  * `isTarget` is "this was offered to me by name". An OPEN swap (no target) is
  * answerable by anybody except the person trying to get rid of it, which is why
  * the accept branch tests `isMine` rather than only `isTarget`.
+ *
+ * A swap whose shift has moved on keeps `reject` and `cancel` but loses
+ * `accept` and `approve` — the two that would move it forward. Withdrawing
+ * every action would strand the row on the board with no way to clear it.
  */
 export function swapActions(
-  request: Pick<ShiftSwapRequest, 'status' | 'targetEmployee'>,
-  viewer: { canDecide: boolean; isMine: boolean; isTarget: boolean }
+  request: Pick<ShiftSwapRequest, 'status' | 'targetEmployee'> &
+    Partial<Pick<ShiftSwapRequest, 'shift' | 'requestedBy'>>,
+  viewer: { canDecide: boolean; isMine: boolean; isTarget: boolean },
+  opts: { now?: Date | number } = {}
 ): RequestAction[] {
   const legal = SWAP_TRANSITIONS[request.status] ?? [];
   const out: RequestAction[] = [];
   const isOpen = !request.targetEmployee;
   const mayAnswer = request.targetEmployee ? viewer.isTarget : !viewer.isMine;
+  // Only judgeable when the caller passed the shift; a viewer-only call keeps
+  // the old behaviour.
+  const stale =
+    request.shift === undefined
+      ? null
+      : staleSwapReason(
+          request as Pick<ShiftSwapRequest, 'shift' | 'requestedBy'>,
+          opts.now ?? Date.now()
+        );
 
-  if (mayAnswer && legal.includes('accepted')) {
+  if (mayAnswer && !stale && legal.includes('accepted')) {
     out.push({
       action: 'accept',
       to: 'accepted',
@@ -297,7 +380,7 @@ export function swapActions(
   }
   // `approve` only appears once somebody has accepted: the transition table has
   // no pending → approved edge, because there would be nobody to move it to.
-  if (viewer.canDecide && legal.includes('approved')) {
+  if (viewer.canDecide && !stale && legal.includes('approved')) {
     out.push({
       action: 'approve',
       to: 'approved',

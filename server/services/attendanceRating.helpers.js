@@ -153,6 +153,37 @@ function component(numerator, denominator) {
 }
 
 /**
+ * Punches that no shift in the list accounts for.
+ *
+ * "Unrostered" is not the same question as "the record cites no shift". A punch
+ * is orphaned whenever nothing on screen will carry it, and there are three ways
+ * that happens:
+ *
+ *   * it cites no shift — somebody turned up on a day nothing was rostered;
+ *   * it cites a shift that has since been CANCELLED, which the roster query
+ *     filters out;
+ *   * it cites a shift outside the window being viewed (a night shift whose
+ *     punch landed on the other side of the range edge).
+ *
+ * Only the first used to count. The other two fell through every list: the
+ * employee history page builds its timeline from the shifts and appends the
+ * unrostered punches after it, so a record in neither rendered NOWHERE — while
+ * still adding its minutes to the summary. Cancel a shift after somebody worked
+ * it and their hours vanished from their own history but stayed in the total.
+ *
+ * A DRAFT shift still accounts for its punch. The rating will not judge a draft
+ * (nobody can fail to attend a shift they were never shown), but the history
+ * page does render a row for it, so the punch is not orphaned.
+ */
+function unrosteredRecords(records = [], shifts = []) {
+  const known = new Set(shifts.map((s) => idOf(s?._id)).filter(Boolean));
+  return records.filter((r) => {
+    const cited = idOf(r?.shift);
+    return !cited || !known.has(cited);
+  });
+}
+
+/**
  * Rate an employee's attendance over a window.
  *
  * @param {{shifts?: object[], records?: object[], timeOff?: object[]}} data
@@ -239,9 +270,10 @@ function rateAttendance(data = {}, opts = {}) {
 
   const score = possible ? Math.round((earned / possible) * 100) : null;
 
-  // A punch matching no shift is a normal thing — somebody turning up on a day
-  // nothing was rostered — so it is reported and never rated.
-  const unrostered = records.filter((r) => !idOf(r?.shift)).length;
+  // A punch nothing accounts for is a normal thing — somebody turning up on a
+  // day nothing was rostered, or a shift cancelled after they worked it — so it
+  // is reported and never rated.
+  const unrostered = unrosteredRecords(records, shifts).length;
 
   return {
     score,
@@ -273,5 +305,6 @@ module.exports = {
   isExcused,
   describeDeparture,
   ratingBand,
+  unrosteredRecords,
   rateAttendance,
 };
