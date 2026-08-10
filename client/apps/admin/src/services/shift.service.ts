@@ -42,6 +42,8 @@ export interface ShiftTemplate {
   /** Local wall clock 'HH:MM'. An endTime <= startTime crosses midnight. */
   startTime: string;
   endTime: string;
+  /** Calendar days after start the shift ends on. 0 = same day (default). */
+  endDayOffset: number;
   breakMinutes: number;
   daysOfWeek: number[];
   color?: string;
@@ -59,6 +61,7 @@ export interface ShiftTemplateInput {
   department?: string | null;
   startTime: string;
   endTime: string;
+  endDayOffset?: number;
   breakMinutes?: number;
   daysOfWeek?: number[];
   color?: string;

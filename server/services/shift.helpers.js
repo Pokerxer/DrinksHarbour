@@ -98,8 +98,14 @@ function formatTimeOfDay(minutes) {
  * An end at or before the start means it does. Equal times are a 24-hour cover,
  * not a zero-length shift — nobody schedules zero minutes, and reading it that
  * way would silently create empty shifts.
+ *
+ * When `endDayOffset` is provided and > 0, the shift explicitly crosses into
+ * a later calendar day (e.g. 08:40→09:00 with offset 1 = 24h 20m), so it
+ * returns true regardless of the wall-clock comparison.
  */
-function crossesMidnight(startTime, endTime) {
+function crossesMidnight(startTime, endTime, endDayOffset) {
+  const offset = Number(endDayOffset) || 0;
+  if (offset > 0) return true;
   const s = parseTimeOfDay(startTime);
   const e = parseTimeOfDay(endTime);
   if (s === null || e === null) return false;
@@ -120,9 +126,11 @@ function parseDateOnly(dateISO) {
  * @param {string} startTime     - 'HH:MM' local
  * @param {string} endTime       - 'HH:MM' local
  * @param {number} offsetMinutes - the tenant's UTC offset (Africa/Lagos = 60)
+ * @param {number} endDayOffset  - calendar days after start the end falls on
+ *                                 (0 = same day, 1 = next day, etc.)
  * @returns {{start: Date, end: Date}|null} null when any input is unusable
  */
-function shiftWindow(dateISO, startTime, endTime, offsetMinutes = 60) {
+function shiftWindow(dateISO, startTime, endTime, offsetMinutes = 60, endDayOffset) {
   const dayMs = parseDateOnly(dateISO);
   const s = parseTimeOfDay(startTime);
   const e = parseTimeOfDay(endTime);
@@ -130,8 +138,15 @@ function shiftWindow(dateISO, startTime, endTime, offsetMinutes = 60) {
 
   const offset = Number(offsetMinutes) || 0;
   const startMs = dayMs + (s - offset) * MS_PER_MINUTE;
-  // A shift that ends at or before it starts runs into the next day.
-  const endDayMs = e <= s ? dayMs + MS_PER_DAY : dayMs;
+  // Use the explicit offset when provided (> 0); fall back to the legacy
+  // heuristic: endTime ≤ startTime means next day.
+  const daysAhead = Number(endDayOffset) || 0;
+  const endDayMs =
+    daysAhead > 0
+      ? dayMs + daysAhead * MS_PER_DAY
+      : e <= s
+        ? dayMs + MS_PER_DAY
+        : dayMs;
   const endMs = endDayMs + (e - offset) * MS_PER_MINUTE;
 
   return { start: new Date(startMs), end: new Date(endMs) };
@@ -225,7 +240,8 @@ function planShiftGeneration(templates = [], opts = {}) {
     for (const date of dates) {
       if (!days.includes(dayOfWeek(date))) continue;
 
-      const window = shiftWindow(date, tpl.startTime, tpl.endTime, offsetMinutes);
+      const endDayOffset = tpl.endDayOffset ?? 0;
+      const window = shiftWindow(date, tpl.startTime, tpl.endTime, offsetMinutes, endDayOffset);
       if (!window) {
         skipped.push({ template: name, date, reason: 'Could not build a time window' });
         continue;
@@ -504,6 +520,14 @@ function buildShiftTemplatePayload(body = {}, opts = {}) {
     } else if (!isUpdate) {
       return { ok: false, message: `${field} is required` };
     }
+  }
+
+  if (body.endDayOffset !== undefined) {
+    const n = Number(body.endDayOffset);
+    if (!Number.isFinite(n) || n < 0 || n > 6 || Math.floor(n) !== n) {
+      return { ok: false, message: 'End day offset must be a whole number from 0 to 6' };
+    }
+    value.endDayOffset = n;
   }
 
   if (body.breakMinutes !== undefined) {

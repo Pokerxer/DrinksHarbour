@@ -342,4 +342,15 @@ describe('template display', () => {
     expect(templateTimeLabel('09:00', '17:00')).toBe('09:00–17:00');
     expect(templateTimeLabel('22:00', '06:00')).toBe('22:00–06:00 +1');
   });
+
+  it('uses explicit endDayOffset when provided', () => {
+    // 08:40→09:00 with offset 1 = 24h 20m, displayed as +1
+    expect(templateTimeLabel('08:40', '09:00', 1)).toBe('08:40–09:00 +1');
+    // End after start but on a later day
+    expect(templateTimeLabel('09:00', '17:00', 1)).toBe('09:00–17:00 +1');
+    expect(templateTimeLabel('09:00', '17:00', 2)).toBe('09:00–17:00 +2');
+    // Offset 0 falls back to the legacy heuristic
+    expect(templateTimeLabel('09:00', '17:00', 0)).toBe('09:00–17:00');
+    expect(templateTimeLabel('22:00', '06:00', 0)).toBe('22:00–06:00 +1');
+  });
 });

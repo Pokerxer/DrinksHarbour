@@ -54,6 +54,14 @@ test('crossesMidnight is true when the end is at or before the start', () => {
   assert.strictEqual(crossesMidnight('10:00', '10:00'), true);
 });
 
+test('crossesMidnight returns true when endDayOffset > 0 even with end after start', () => {
+  // 08:40→09:00 with offset 1 = 24h 20m — ends on the next calendar day.
+  assert.strictEqual(crossesMidnight('08:40', '09:00', 1), true);
+  // Offset 0 falls back to the legacy heuristic.
+  assert.strictEqual(crossesMidnight('08:40', '09:00', 0), false);
+  assert.strictEqual(crossesMidnight('08:40', '09:00'), false);
+});
+
 // ── Windows ──────────────────────────────────────────────────────────────────
 
 test('shiftWindow builds a UTC window from a local date and time', () => {
@@ -73,6 +81,23 @@ test('shiftWindow rolls the end into the next day when the shift crosses midnigh
 test('shiftWindow returns null for an unusable date or time', () => {
   assert.strictEqual(shiftWindow('not-a-date', '09:00', '17:00', LAGOS), null);
   assert.strictEqual(shiftWindow('2026-08-10', '99:00', '17:00', LAGOS), null);
+});
+
+test('shiftWindow places the end on the Nth day ahead when endDayOffset is set', () => {
+  // 08:40 → 09:00, endDayOffset 1 = 24h 20m.
+  const w = shiftWindow('2026-08-10', '08:40', '09:00', LAGOS, 1);
+  assert.strictEqual(w.start.toISOString(), '2026-08-10T07:40:00.000Z');
+  assert.strictEqual(w.end.toISOString(), '2026-08-11T08:00:00.000Z');
+  // End is exactly 24h 20m after start.
+  const duration = (w.end.getTime() - w.start.getTime()) / 60_000;
+  assert.strictEqual(duration, 1460); // 24*60 + 20
+});
+
+test('shiftWindow with endDayOffset 0 falls back to the legacy heuristic', () => {
+  // Same inputs but offset 0: endTime <= startTime triggers the next-day rule.
+  const w = shiftWindow('2026-08-10', '22:00', '06:00', LAGOS, 0);
+  assert.strictEqual(w.start.toISOString(), '2026-08-10T21:00:00.000Z');
+  assert.strictEqual(w.end.toISOString(), '2026-08-11T05:00:00.000Z');
 });
 
 test('shiftDurationMinutes subtracts the unpaid break', () => {
@@ -189,6 +214,29 @@ test('planShiftGeneration reports a template with an unusable time instead of th
   });
   assert.strictEqual(plan.toCreate.length, 0);
   assert.match(plan.skipped[0].reason, /time/i);
+});
+
+test('planShiftGeneration passes endDayOffset through to the window', () => {
+  // A 24-hour template: 08:40 → 09:00, endDayOffset 1.
+  const tpl = template({
+    startTime: '08:40',
+    endTime: '09:00',
+    endDayOffset: 1,
+    daysOfWeek: [1], // Monday
+  });
+  const plan = planShiftGeneration([tpl], {
+    from: '2026-08-10', // Monday
+    to: '2026-08-10',
+    offsetMinutes: LAGOS,
+    existing: [],
+  });
+  assert.strictEqual(plan.toCreate.length, 1);
+  const shift = plan.toCreate[0];
+  // End is 2026-08-11 09:00 Lagos = 2026-08-11T08:00 UTC.
+  assert.strictEqual(shift.end.toISOString(), '2026-08-11T08:00:00.000Z');
+  // Duration = 1460 min = 24h 20m.
+  const duration = (shift.end.getTime() - shift.start.getTime()) / 60_000;
+  assert.strictEqual(duration, 1460);
 });
 
 // ── Overlaps ─────────────────────────────────────────────────────────────────

@@ -35,6 +35,7 @@ const EMPTY: ShiftTemplateInput = {
   department: null,
   startTime: '09:00',
   endTime: '17:00',
+  endDayOffset: 0,
   breakMinutes: 0,
   daysOfWeek: [1, 2, 3, 4, 5],
   color: '',
@@ -107,6 +108,7 @@ export default function ShiftTemplatesPage() {
         department: refId(t.department) || null,
         startTime: t.startTime,
         endTime: t.endTime,
+        endDayOffset: t.endDayOffset ?? 0,
         breakMinutes: t.breakMinutes,
         daysOfWeek: t.daysOfWeek ?? [],
         color: t.color ?? '',
@@ -142,7 +144,7 @@ export default function ShiftTemplatesPage() {
           header: 'Hours',
           render: (t) => (
             <span className="tabular-nums text-gray-600">
-              {templateTimeLabel(t.startTime, t.endTime)}
+              {templateTimeLabel(t.startTime, t.endTime, t.endDayOffset)}
               {t.breakMinutes > 0 && (
                 <span className="ml-1 text-xs text-gray-400">
                   · {t.breakMinutes}m break
@@ -238,7 +240,22 @@ export default function ShiftTemplatesPage() {
               />
             </Field>
           </div>
-          {draft.endTime <= draft.startTime && (
+          <Field label="End day">
+            <select
+              className={FIELD}
+              value={draft.endDayOffset ?? 0}
+              onChange={(e) => patch({ endDayOffset: Number(e.target.value) })}
+            >
+              <option value={0}>Same day</option>
+              <option value={1}>Next day</option>
+              <option value={2}>2 days later</option>
+            </select>
+          </Field>
+          {(draft.endDayOffset ?? 0) > 0 ? (
+            <p className="-mt-2 text-xs text-amber-600">
+              This shift ends on a different calendar day ({(draft.endDayOffset ?? 0)} day{(draft.endDayOffset ?? 0) > 1 ? 's' : ''} later).
+            </p>
+          ) : draft.endTime <= draft.startTime && (
             <p className="-mt-2 text-xs text-amber-600">
               This shift runs past midnight and ends the following day.
             </p>

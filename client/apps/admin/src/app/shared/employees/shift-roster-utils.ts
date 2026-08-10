@@ -108,15 +108,25 @@ export function toUtcIso(
  * An end at or before the start means it runs into the next day — the same rule
  * the server applies to a template, so a hand-made overnight shift behaves like
  * a generated one.
+ *
+ * When `endDayOffset` is provided and > 0, it overrides the legacy heuristic
+ * and places the end on the requested calendar day.
  */
 export function localWindowToUtc(
   dateISO: string,
   startTime: string,
   endTime: string,
-  offsetMinutes = LAGOS_OFFSET_MINUTES
+  offsetMinutes = LAGOS_OFFSET_MINUTES,
+  endDayOffset?: number
 ): { start: string; end: string } {
   const start = toUtcIso(dateISO, startTime, offsetMinutes);
-  const endDate = endTime <= startTime ? addDays(dateISO, 1) : dateISO;
+  const explicit = Number(endDayOffset) || 0;
+  const endDate =
+    explicit > 0
+      ? addDays(dateISO, explicit)
+      : endTime <= startTime
+        ? addDays(dateISO, 1)
+        : dateISO;
   return { start, end: toUtcIso(endDate, endTime, offsetMinutes) };
 }
 
@@ -422,8 +432,21 @@ export function templateDaysLabel(daysOfWeek: number[] | undefined): string {
   return parts.join(', ');
 }
 
-/** 'Overnight' templates read wrong without a marker on the chip. */
-export function templateTimeLabel(startTime: string, endTime: string): string {
+/**
+ * 'Overnight' templates read wrong without a marker on the chip.
+ *
+ * The offset suffix is the explicit `endDayOffset` when set, or a legacy
+ * "+1" when `endTime <= startTime` and the offset is absent.
+ */
+export function templateTimeLabel(
+  startTime: string,
+  endTime: string,
+  endDayOffset?: number
+): string {
+  const explicitOffset = Number(endDayOffset) || 0;
+  if (explicitOffset > 0) {
+    return `${startTime}–${endTime} +${explicitOffset}`;
+  }
   const overnight = endTime <= startTime;
   return `${startTime}–${endTime}${overnight ? ' +1' : ''}`;
 }

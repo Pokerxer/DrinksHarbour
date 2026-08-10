@@ -21,10 +21,15 @@ const shiftTemplateSchema = new Schema(
     role: { type: ObjectId, ref: 'EmployeeRole', required: true },
     department: { type: ObjectId, ref: 'Department', default: null },
     // 'HH:MM' local. An endTime at or before startTime means the shift runs
-    // past midnight — derived by shift.helpers.crossesMidnight, never stored,
-    // so the two can never disagree.
+    // past midnight — derived by shift.helpers.crossesMidnight when
+    // endDayOffset is unset, so the two can never disagree.
     startTime: { type: String, required: true, trim: true },
     endTime: { type: String, required: true, trim: true },
+    // How many calendar days after the start date the shift ends.
+    // 0 = same day (default). 1 = next day (e.g. 08:40→09:00 = 24h 20m).
+    // 2 = two days later, etc. When absent or 0, falls back to the legacy
+    // heuristic: endTime ≤ startTime → next day.
+    endDayOffset: { type: Number, min: 0, max: 6, default: 0 },
     // Unpaid break, subtracted from the roster's scheduled hours.
     breakMinutes: { type: Number, min: 0, default: 0 },
     // 0 = Sunday .. 6 = Saturday, matching Date#getUTCDay.

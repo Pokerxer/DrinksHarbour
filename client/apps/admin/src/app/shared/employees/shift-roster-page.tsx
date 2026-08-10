@@ -569,7 +569,7 @@ export default function ShiftRosterPage() {
                 {t.name}
               </span>
               <span className="block text-[11px] tabular-nums text-gray-500">
-                {templateTimeLabel(t.startTime, t.endTime)} ·{' '}
+                {templateTimeLabel(t.startTime, t.endTime, t.endDayOffset)} ·{' '}
                 {templateDaysLabel(t.daysOfWeek)}
               </span>
             </button>
@@ -905,7 +905,7 @@ export default function ShiftRosterPage() {
                         {t.name}
                       </span>
                       <span className="block text-xs text-gray-500">
-                        {templateTimeLabel(t.startTime, t.endTime)} ·{' '}
+                        {templateTimeLabel(t.startTime, t.endTime, t.endDayOffset)} ·{' '}
                         {templateDaysLabel(t.daysOfWeek)}
                       </span>
                     </span>
