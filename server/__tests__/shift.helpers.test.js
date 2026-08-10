@@ -10,6 +10,8 @@ const {
   shiftDurationMinutes,
   eachDateInRange,
   planShiftGeneration,
+  normaliseCycle,
+  isCycleWorkDay,
   findOverlaps,
   checkAssignment,
   summariseRoster,
@@ -237,6 +239,242 @@ test('planShiftGeneration passes endDayOffset through to the window', () => {
   // Duration = 1460 min = 24h 20m.
   const duration = (shift.end.getTime() - shift.start.getTime()) / 60_000;
   assert.strictEqual(duration, 1460);
+});
+
+// ── Cycle recurrence ─────────────────────────────────────────────────────────
+//
+// A weekday list cannot express "one day on, one day off": a cycle whose length
+// does not divide 7 changes phase every week. These tests pin the second kind of
+// recurrence — offsets within a cycle of N days, anchored to a stored date.
+
+test('normaliseCycle de-duplicates and sorts the worked offsets', () => {
+  const out = normaliseCycle({ cycleLength: 4, cycleDays: [2, 0, 2], anchorDate: '2026-08-10' });
+  assert.ok(out.ok);
+  // Same reason normaliseDaysOfWeek sorts: an unsorted list with repeats
+  // generated the same shift twice.
+  assert.deepStrictEqual(out.value.cycleDays, [0, 2]);
+  assert.strictEqual(out.value.cycleLength, 4);
+  assert.strictEqual(out.value.anchorDate, '2026-08-10');
+});
+
+test('normaliseCycle rejects a cycle shorter than a day', () => {
+  for (const bad of [0, -3, 1.5, 'two', null]) {
+    const out = normaliseCycle({ cycleLength: bad, cycleDays: [0], anchorDate: '2026-08-10' });
+    assert.ok(!out.ok, `cycleLength ${bad} should be rejected`);
+  }
+});
+
+test('normaliseCycle rejects an offset that falls outside the cycle', () => {
+  // In a 2-day cycle the only offsets that exist are 0 and 1.
+  for (const bad of [2, -1, 1.5, 'one', undefined]) {
+    const out = normaliseCycle({ cycleLength: 2, cycleDays: [bad], anchorDate: '2026-08-10' });
+    assert.ok(!out.ok, `offset ${bad} should be rejected`);
+  }
+});
+
+test('normaliseCycle accepts an empty cycle — it generates nothing, it is not "every day"', () => {
+  const out = normaliseCycle({ cycleLength: 2, cycleDays: [], anchorDate: '2026-08-10' });
+  assert.ok(out.ok);
+  assert.deepStrictEqual(out.value.cycleDays, []);
+});
+
+test('normaliseCycle requires an anchor date it can actually parse', () => {
+  for (const bad of [undefined, '', 'yesterday', '2026-8-10', '2026-13-40']) {
+    const out = normaliseCycle({ cycleLength: 2, cycleDays: [0], anchorDate: bad });
+    assert.ok(!out.ok, `anchor ${bad} should be rejected`);
+    assert.match(out.message, /anchor/i);
+  }
+});
+
+const ONE_ON_ONE_OFF = { cycleLength: 2, cycleDays: [0], anchorDate: '2026-08-10' };
+
+test('isCycleWorkDay works the anchor day and then every other day', () => {
+  assert.strictEqual(isCycleWorkDay('2026-08-10', ONE_ON_ONE_OFF), true);
+  assert.strictEqual(isCycleWorkDay('2026-08-11', ONE_ON_ONE_OFF), false);
+  assert.strictEqual(isCycleWorkDay('2026-08-12', ONE_ON_ONE_OFF), true);
+  assert.strictEqual(isCycleWorkDay('2026-08-13', ONE_ON_ONE_OFF), false);
+});
+
+test('isCycleWorkDay resolves dates BEFORE the anchor', () => {
+  // A manager backfilling last month is ordinary. JavaScript's % returns a
+  // negative here, which would never match a cycleDay — floorMod is required.
+  assert.strictEqual(isCycleWorkDay('2026-08-09', ONE_ON_ONE_OFF), false);
+  assert.strictEqual(isCycleWorkDay('2026-08-08', ONE_ON_ONE_OFF), true);
+  assert.strictEqual(isCycleWorkDay('2026-07-31', ONE_ON_ONE_OFF), true);
+});
+
+test('isCycleWorkDay changes weekday every week when the cycle does not divide 7', () => {
+  // This is the whole reason cycles exist: one-on/one-off is Mon/Wed/Fri one
+  // week and Sun/Tue/Thu the next, so no set of weekday flags can express it.
+  assert.strictEqual(isCycleWorkDay('2026-08-10', ONE_ON_ONE_OFF), true); // Mon
+  assert.strictEqual(isCycleWorkDay('2026-08-17', ONE_ON_ONE_OFF), false); // Mon, a week on
+  assert.strictEqual(isCycleWorkDay('2026-08-16', ONE_ON_ONE_OFF), true); // Sun instead
+});
+
+test('isCycleWorkDay handles a 4-on/4-off rotation', () => {
+  const cycle = { cycleLength: 8, cycleDays: [0, 1, 2, 3], anchorDate: '2026-08-10' };
+  const worked = eachDateInRange('2026-08-10', '2026-08-25').filter((d) =>
+    isCycleWorkDay(d, cycle)
+  );
+  assert.deepStrictEqual(worked, [
+    '2026-08-10',
+    '2026-08-11',
+    '2026-08-12',
+    '2026-08-13',
+    '2026-08-18',
+    '2026-08-19',
+    '2026-08-20',
+    '2026-08-21',
+  ]);
+});
+
+test('isCycleWorkDay is false rather than throwing for an unusable cycle or date', () => {
+  assert.strictEqual(isCycleWorkDay('2026-08-10', { cycleLength: 2, cycleDays: [] , anchorDate: '2026-08-10' }), false);
+  assert.strictEqual(isCycleWorkDay('2026-08-10', { cycleLength: 0, cycleDays: [0], anchorDate: '2026-08-10' }), false);
+  assert.strictEqual(isCycleWorkDay('not-a-date', ONE_ON_ONE_OFF), false);
+  assert.strictEqual(isCycleWorkDay('2026-08-10', undefined), false);
+});
+
+// ── Generation from a cycle ──────────────────────────────────────────────────
+
+const cycleTemplate = (over = {}) =>
+  template({
+    recurrence: 'cycle',
+    cycleLength: 2,
+    cycleDays: [0],
+    anchorDate: '2026-08-10',
+    // Deliberately empty: a cycle template must not be judged on weekdays at all.
+    daysOfWeek: [],
+    ...over,
+  });
+
+test('planShiftGeneration generates a one-on/one-off cycle, ignoring daysOfWeek', () => {
+  const plan = planShiftGeneration([cycleTemplate()], {
+    from: '2026-08-10',
+    to: '2026-08-16',
+    offsetMinutes: LAGOS,
+    existing: [],
+  });
+  assert.deepStrictEqual(
+    plan.toCreate.map((s) => s.date),
+    ['2026-08-10', '2026-08-12', '2026-08-14', '2026-08-16']
+  );
+});
+
+test('planShiftGeneration keeps the cycle phase when a range starts mid-cycle', () => {
+  // The phase comes from the stored anchor, never from the range start — the
+  // same dates come out whether the range begins on a worked day or an off one.
+  const plan = planShiftGeneration([cycleTemplate()], {
+    from: '2026-08-11', // an off day
+    to: '2026-08-15',
+    offsetMinutes: LAGOS,
+    existing: [],
+  });
+  assert.deepStrictEqual(
+    plan.toCreate.map((s) => s.date),
+    ['2026-08-12', '2026-08-14']
+  );
+});
+
+test('planShiftGeneration generates a cycle for dates before the anchor', () => {
+  const plan = planShiftGeneration([cycleTemplate()], {
+    from: '2026-08-05',
+    to: '2026-08-09',
+    offsetMinutes: LAGOS,
+    existing: [],
+  });
+  assert.deepStrictEqual(
+    plan.toCreate.map((s) => s.date),
+    ['2026-08-06', '2026-08-08']
+  );
+});
+
+test('planShiftGeneration stays idempotent for a cycle across overlapping ranges', () => {
+  const tpl = cycleTemplate();
+  const asStored = (s) => ({ template: 'tpl-1', start: s.start, status: 'draft' });
+
+  const first = planShiftGeneration([tpl], {
+    from: '2026-08-10',
+    to: '2026-08-20',
+    offsetMinutes: LAGOS,
+    existing: [],
+  });
+  const second = planShiftGeneration([tpl], {
+    from: '2026-08-15', // overlaps the first run
+    to: '2026-08-25',
+    offsetMinutes: LAGOS,
+    existing: first.toCreate.map(asStored),
+  });
+
+  // Nothing in the overlap is created twice, and the two runs together equal
+  // one run over the whole span.
+  const combined = [...first.toCreate, ...second.toCreate].map((s) => s.date);
+  const oneGo = planShiftGeneration([tpl], {
+    from: '2026-08-10',
+    to: '2026-08-25',
+    offsetMinutes: LAGOS,
+    existing: [],
+  }).toCreate.map((s) => s.date);
+  assert.deepStrictEqual(combined, oneGo);
+  assert.strictEqual(new Set(combined).size, combined.length);
+});
+
+test('planShiftGeneration skips a cycle template with no worked offsets', () => {
+  const plan = planShiftGeneration([cycleTemplate({ cycleDays: [] })], {
+    from: '2026-08-10',
+    to: '2026-08-16',
+    offsetMinutes: LAGOS,
+    existing: [],
+  });
+  assert.strictEqual(plan.toCreate.length, 0);
+  assert.match(plan.skipped[0].reason, /cycle/i);
+});
+
+test('planShiftGeneration reports a cycle template with no anchor instead of guessing one', () => {
+  // Guessing the phase from the range would break the idempotency guarantee.
+  const plan = planShiftGeneration([cycleTemplate({ anchorDate: null })], {
+    from: '2026-08-10',
+    to: '2026-08-16',
+    offsetMinutes: LAGOS,
+    existing: [],
+  });
+  assert.strictEqual(plan.toCreate.length, 0);
+  assert.match(plan.skipped[0].reason, /anchor/i);
+});
+
+test('planShiftGeneration leaves weekly templates exactly as they were', () => {
+  const range = { from: '2026-08-10', to: '2026-08-23', offsetMinutes: LAGOS, existing: [] };
+  // A stored template from before cycles existed has no `recurrence` at all.
+  const legacy = planShiftGeneration([template({ daysOfWeek: [1, 3, 5] })], range);
+  const explicit = planShiftGeneration(
+    [template({ daysOfWeek: [1, 3, 5], recurrence: 'weekly' })],
+    range
+  );
+  // Cycle fields present but unused must not leak into a weekly template.
+  const noisy = planShiftGeneration(
+    [
+      template({
+        daysOfWeek: [1, 3, 5],
+        recurrence: 'weekly',
+        cycleLength: 2,
+        cycleDays: [0],
+        anchorDate: '2026-08-11',
+      }),
+    ],
+    range
+  );
+
+  const dates = (p) => p.toCreate.map((s) => s.date);
+  assert.deepStrictEqual(dates(legacy), [
+    '2026-08-10',
+    '2026-08-12',
+    '2026-08-14',
+    '2026-08-17',
+    '2026-08-19',
+    '2026-08-21',
+  ]);
+  assert.deepStrictEqual(dates(explicit), dates(legacy));
+  assert.deepStrictEqual(dates(noisy), dates(legacy));
 });
 
 // ── Overlaps ─────────────────────────────────────────────────────────────────

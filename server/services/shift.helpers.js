@@ -26,6 +26,22 @@ const SHIFT_STATUSES = ['draft', 'published', 'cancelled'];
 const DAYS_OF_WEEK = [0, 1, 2, 3, 4, 5, 6];
 
 /**
+ * How a template repeats. The template enum reads from here.
+ *
+ *   weekly — the original: a set of weekdays, repeating every 7 days.
+ *   cycle  — N days on, M days off. A cycle whose length does not divide 7
+ *            changes weekday every week (one-on/one-off is Mon/Wed/Fri, then
+ *            Sun/Tue/Thu), so no set of weekday flags can express it.
+ */
+const RECURRENCE_TYPES = ['weekly', 'cycle'];
+
+/**
+ * A rotation longer than a year is a data-entry slip, not a pattern anyone
+ * works, and it would make the roster's phase impossible to reason about.
+ */
+const MAX_CYCLE_LENGTH = 366;
+
+/**
  * Africa/Lagos, the only timezone this business operates in, is UTC+1 with no
  * daylight saving. Callers pass an offset explicitly; this is what they fall
  * back to. It is deliberately NOT the server's own offset — the roster must not
@@ -188,6 +204,93 @@ function dayOfWeek(dateISO) {
   return ms === null ? null : new Date(ms).getUTCDay();
 }
 
+/**
+ * Whole days from `fromISO` to `toISO`. Negative when `toISO` is earlier.
+ * Both are UTC midnights, so this is exact — no DST hour to lose.
+ */
+function daysBetween(fromISO, toISO) {
+  const a = parseDateOnly(fromISO);
+  const b = parseDateOnly(toISO);
+  if (a === null || b === null) return null;
+  return Math.round((b - a) / MS_PER_DAY);
+}
+
+/** Remainder that is always in 0..m-1. `%` alone goes negative before the anchor. */
+function floorMod(n, m) {
+  return ((n % m) + m) % m;
+}
+
+/**
+ * Validate + normalise a cycle: `{cycleLength, cycleDays, anchorDate}`.
+ *
+ * `cycleDays` is de-duplicated and sorted for the same reason
+ * normaliseDaysOfWeek does it — a repeated offset generated the same shift
+ * twice. An EMPTY list is valid and means "nothing"; it is emphatically not
+ * "every day", which is what a permissive reading would silently produce.
+ *
+ * `anchorDate` is required and never derived. Without a stored origin, "day 0"
+ * would have to come from the range being generated, and generating March then
+ * April would land on different phases — quietly breaking the top-up guarantee
+ * planShiftGeneration makes.
+ *
+ * @returns {{ok: true, value: {cycleLength: number, cycleDays: number[], anchorDate: string}}
+ *          | {ok: false, message: string}}
+ */
+function normaliseCycle(input = {}) {
+  const length = Number(input?.cycleLength);
+  if (!Number.isInteger(length) || length < 1 || length > MAX_CYCLE_LENGTH) {
+    return {
+      ok: false,
+      message: `Cycle length must be a whole number of days from 1 to ${MAX_CYCLE_LENGTH}`,
+    };
+  }
+
+  if (!Array.isArray(input?.cycleDays)) {
+    return { ok: false, message: 'Cycle days must be a list of day numbers' };
+  }
+  const days = new Set();
+  for (const raw of input.cycleDays) {
+    // Coerced like normaliseDaysOfWeek, so a form posting "0" is not a mystery
+    // 400 — but stored as a real integer, which is what generation compares.
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0 || n >= length) {
+      return {
+        ok: false,
+        message: `Each worked day must be a whole number from 0 to ${length - 1}`,
+      };
+    }
+    days.add(n);
+  }
+
+  const anchorDate = typeof input?.anchorDate === 'string' ? input.anchorDate.trim() : '';
+  if (parseDateOnly(anchorDate) === null) {
+    return { ok: false, message: 'A cycle needs an anchor date like 2026-08-10 to fix its phase' };
+  }
+
+  return {
+    ok: true,
+    value: { cycleLength: length, cycleDays: [...days].sort((a, b) => a - b), anchorDate },
+  };
+}
+
+/**
+ * Is this local calendar date a worked day of the cycle?
+ *
+ * A pure function of the date and the stored cycle, so any range generates
+ * identically however many times, in whatever order, it is run. Unusable input
+ * is false rather than an exception — generation reports a bad template, it does
+ * not crash on one.
+ */
+function isCycleWorkDay(dateISO, cycle) {
+  const norm = normaliseCycle(cycle || {});
+  if (!norm.ok) return false;
+  const offset = daysBetween(norm.value.anchorDate, dateISO);
+  if (offset === null) return false;
+  // floorMod, not %: a manager backfilling last month is ordinary, and % would
+  // hand back a negative that matches no offset.
+  return norm.value.cycleDays.includes(floorMod(offset, norm.value.cycleLength));
+}
+
 const idOf = (v) => (v && v._id ? String(v._id) : v == null ? '' : String(v));
 
 /**
@@ -231,14 +334,33 @@ function planShiftGeneration(templates = [], opts = {}) {
       continue;
     }
 
-    const days = Array.isArray(tpl.daysOfWeek) ? tpl.daysOfWeek.map(Number) : [];
-    if (!days.length) {
-      skipped.push({ template: name, reason: 'Template has no days of the week set' });
-      continue;
+    // Two kinds of recurrence, decided once per template: a set of weekdays, or
+    // an N-day cycle anchored to a stored date. Anything that is not explicitly
+    // a cycle is weekly, so every template stored before cycles existed keeps
+    // generating exactly the roster it already generated.
+    let isWorkDay;
+    if (tpl?.recurrence === 'cycle') {
+      const cycle = normaliseCycle(tpl);
+      if (!cycle.ok) {
+        skipped.push({ template: name, reason: cycle.message });
+        continue;
+      }
+      if (!cycle.value.cycleDays.length) {
+        skipped.push({ template: name, reason: 'Template has no worked days in its cycle' });
+        continue;
+      }
+      isWorkDay = (date) => isCycleWorkDay(date, cycle.value);
+    } else {
+      const days = Array.isArray(tpl.daysOfWeek) ? tpl.daysOfWeek.map(Number) : [];
+      if (!days.length) {
+        skipped.push({ template: name, reason: 'Template has no days of the week set' });
+        continue;
+      }
+      isWorkDay = (date) => days.includes(dayOfWeek(date));
     }
 
     for (const date of dates) {
-      if (!days.includes(dayOfWeek(date))) continue;
+      if (!isWorkDay(date)) continue;
 
       const endDayOffset = tpl.endDayOffset ?? 0;
       const window = shiftWindow(date, tpl.startTime, tpl.endTime, offsetMinutes, endDayOffset);
@@ -544,6 +666,39 @@ function buildShiftTemplatePayload(body = {}, opts = {}) {
     value.daysOfWeek = days.value;
   }
 
+  // Recurrence. Absent means weekly on create and "leave it alone" on update, so
+  // an existing template's rotation cannot be lost by a patch that never
+  // mentions it.
+  const recurrence = body.recurrence === undefined ? (isUpdate ? null : 'weekly') : body.recurrence;
+  if (recurrence !== null) {
+    if (!RECURRENCE_TYPES.includes(recurrence)) {
+      return { ok: false, message: `recurrence must be one of: ${RECURRENCE_TYPES.join(', ')}` };
+    }
+    value.recurrence = recurrence;
+  }
+
+  if (recurrence === 'cycle') {
+    // Validated as a whole: length, offsets and anchor only mean anything
+    // together, and a half-set cycle would generate on the wrong days.
+    const cycle = normaliseCycle(body);
+    if (!cycle.ok) return { ok: false, message: cycle.message };
+    Object.assign(value, cycle.value);
+  } else if (recurrence === 'weekly') {
+    // Cleared, not merely ignored: a stale anchor left behind would silently
+    // resurrect the old rotation if the template were switched back.
+    value.cycleLength = null;
+    value.cycleDays = [];
+    value.anchorDate = null;
+  } else if (
+    body.cycleLength !== undefined ||
+    body.cycleDays !== undefined ||
+    body.anchorDate !== undefined
+  ) {
+    // A patch touching the cycle without saying which recurrence it is for
+    // cannot be checked against a length it may not have sent.
+    return { ok: false, message: 'Send recurrence along with the cycle it describes' };
+  }
+
   if (body.color !== undefined) {
     const color = trimmed(body.color);
     if (color && !HEX_COLOR_RE.test(color)) {
@@ -661,6 +816,8 @@ module.exports = {
   SHIFT_STATUSES,
   SHIFT_TRANSITIONS,
   DAYS_OF_WEEK,
+  RECURRENCE_TYPES,
+  MAX_CYCLE_LENGTH,
   DEFAULT_OFFSET_MINUTES,
   MAX_GENERATION_DAYS,
   tenantOffsetMinutes,
@@ -672,6 +829,9 @@ module.exports = {
   shiftDurationMinutes,
   eachDateInRange,
   dayOfWeek,
+  daysBetween,
+  normaliseCycle,
+  isCycleWorkDay,
   planShiftGeneration,
   findOverlaps,
   overlapsTimeOff,

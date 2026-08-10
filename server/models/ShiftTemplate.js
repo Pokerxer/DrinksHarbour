@@ -10,7 +10,11 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
 
-const { DAYS_OF_WEEK } = require('../services/shift.helpers');
+const {
+  DAYS_OF_WEEK,
+  RECURRENCE_TYPES,
+  MAX_CYCLE_LENGTH,
+} = require('../services/shift.helpers');
 
 const shiftTemplateSchema = new Schema(
   {
@@ -32,8 +36,25 @@ const shiftTemplateSchema = new Schema(
     endDayOffset: { type: Number, min: 0, max: 6, default: 0 },
     // Unpaid break, subtracted from the roster's scheduled hours.
     breakMinutes: { type: Number, min: 0, default: 0 },
-    // 0 = Sunday .. 6 = Saturday, matching Date#getUTCDay.
+    // How the pattern repeats. 'weekly' reads daysOfWeek; 'cycle' reads the
+    // three fields below and ignores daysOfWeek entirely. Defaulting to weekly
+    // is what keeps every template written before cycles existed generating the
+    // roster it already generated.
+    recurrence: { type: String, enum: RECURRENCE_TYPES, default: 'weekly' },
+    // 0 = Sunday .. 6 = Saturday, matching Date#getUTCDay. Used by 'weekly'.
     daysOfWeek: { type: [{ type: Number, enum: DAYS_OF_WEEK }], default: [] },
+    // ── 'cycle' only ──
+    // Days in one turn of the rotation: 2 = one on, one off; 8 = four on, four
+    // off. Null on a weekly template.
+    cycleLength: { type: Number, min: 1, max: MAX_CYCLE_LENGTH, default: null },
+    // Which offsets within the cycle are worked, 0-based and sorted. Empty
+    // generates nothing — it is not "every day".
+    cycleDays: { type: [Number], default: [] },
+    // 'YYYY-MM-DD' local, the day the cycle's offset 0 falls on. Stored, never
+    // derived from the range being generated: the phase has to be a pure
+    // function of the calendar date or generating March then April would land
+    // on different days and break the generator's top-up guarantee.
+    anchorDate: { type: String, trim: true, default: null },
     // Falls back to the role's colour on the roster when unset.
     color: { type: String, trim: true, maxlength: 9 },
     note: { type: String, trim: true, maxlength: 1000 },

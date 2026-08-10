@@ -18,6 +18,14 @@ import {
   summariseSkips,
   templateDaysLabel,
   templateTimeLabel,
+  isCycleWorkDay,
+  cyclePreview,
+  cycleSummaryLabel,
+  templateRepeatLabel,
+  cycleOffsets,
+  toggleCycleDay,
+  clampCycleDays,
+  weekdayShort,
 } from './shift-roster-utils';
 import type { Shift } from '@/services/shift.service';
 
@@ -352,5 +360,135 @@ describe('template display', () => {
     // Offset 0 falls back to the legacy heuristic
     expect(templateTimeLabel('09:00', '17:00', 0)).toBe('09:00–17:00');
     expect(templateTimeLabel('22:00', '06:00', 0)).toBe('22:00–06:00 +1');
+  });
+});
+
+describe('cycle recurrence', () => {
+  // 2026-08-10 is a Monday. One day on, one day off, anchored to it.
+  const ONE_ON_ONE_OFF = {
+    cycleLength: 2,
+    cycleDays: [0],
+    anchorDate: '2026-08-10',
+  };
+
+  it('works the anchor day and then every other day', () => {
+    expect(isCycleWorkDay('2026-08-10', ONE_ON_ONE_OFF)).toBe(true);
+    expect(isCycleWorkDay('2026-08-11', ONE_ON_ONE_OFF)).toBe(false);
+    expect(isCycleWorkDay('2026-08-12', ONE_ON_ONE_OFF)).toBe(true);
+  });
+
+  it('resolves dates before the anchor', () => {
+    // The preview opens on today, which is often earlier than the anchor an
+    // admin just typed. A plain % would go negative and match nothing.
+    expect(isCycleWorkDay('2026-08-09', ONE_ON_ONE_OFF)).toBe(false);
+    expect(isCycleWorkDay('2026-08-08', ONE_ON_ONE_OFF)).toBe(true);
+  });
+
+  it('agrees with the server that an empty cycle generates nothing', () => {
+    expect(
+      isCycleWorkDay('2026-08-10', { ...ONE_ON_ONE_OFF, cycleDays: [] })
+    ).toBe(false);
+  });
+
+  it('is false rather than throwing on a half-filled cycle', () => {
+    expect(isCycleWorkDay('2026-08-10', { ...ONE_ON_ONE_OFF, anchorDate: '' })).toBe(false);
+    expect(isCycleWorkDay('2026-08-10', { ...ONE_ON_ONE_OFF, cycleLength: 0 })).toBe(false);
+    expect(isCycleWorkDay('nonsense', ONE_ON_ONE_OFF)).toBe(false);
+  });
+
+  it('previews consecutive days from a start date, marked on or off', () => {
+    const days = cyclePreview(ONE_ON_ONE_OFF, '2026-08-10', 4);
+    expect(days).toEqual([
+      { date: '2026-08-10', worked: true },
+      { date: '2026-08-11', worked: false },
+      { date: '2026-08-12', worked: true },
+      { date: '2026-08-13', worked: false },
+    ]);
+  });
+
+  it('previews a 4-on/4-off rotation drifting across the week', () => {
+    const cycle = {
+      cycleLength: 8,
+      cycleDays: [0, 1, 2, 3],
+      anchorDate: '2026-08-10',
+    };
+    const worked = cyclePreview(cycle, '2026-08-10', 14)
+      .filter((d) => d.worked)
+      .map((d) => d.date);
+    expect(worked).toEqual([
+      '2026-08-10',
+      '2026-08-11',
+      '2026-08-12',
+      '2026-08-13',
+      '2026-08-18',
+      '2026-08-19',
+      '2026-08-20',
+      '2026-08-21',
+    ]);
+  });
+
+  it('previews nothing when the cycle cannot be resolved', () => {
+    expect(cyclePreview({ ...ONE_ON_ONE_OFF, anchorDate: '' }, '2026-08-10', 5)).toEqual([]);
+    expect(cyclePreview(ONE_ON_ONE_OFF, 'nonsense', 5)).toEqual([]);
+  });
+
+  it('describes a run starting at day 0 as N on / M off', () => {
+    expect(cycleSummaryLabel(2, [0])).toBe('1 on / 1 off');
+    expect(cycleSummaryLabel(8, [0, 1, 2, 3])).toBe('4 on / 4 off');
+    expect(cycleSummaryLabel(5, [0, 1, 2, 3, 4])).toBe('Every day');
+  });
+
+  it('describes a scattered cycle by how many days of how many', () => {
+    expect(cycleSummaryLabel(5, [0, 2])).toBe('2 days in every 5');
+    expect(cycleSummaryLabel(2, [])).toBe('No cycle days set');
+  });
+
+  it('labels a template by whichever recurrence it actually uses', () => {
+    expect(
+      templateRepeatLabel({ recurrence: 'weekly', daysOfWeek: [1, 2, 3, 4, 5] })
+    ).toBe('Mon–Fri');
+    // A template stored before cycles existed has no recurrence at all.
+    expect(templateRepeatLabel({ daysOfWeek: [1, 3, 5] })).toBe('Mon, Wed, Fri');
+    expect(
+      templateRepeatLabel({ recurrence: 'cycle', ...ONE_ON_ONE_OFF })
+    ).toBe('1 on / 1 off');
+  });
+});
+
+describe('cycle form helpers', () => {
+  it('lists one offset per day of the cycle, capped and never negative', () => {
+    expect(cycleOffsets(3)).toEqual([0, 1, 2]);
+    expect(cycleOffsets(0)).toEqual([]);
+    expect(cycleOffsets(-2)).toEqual([]);
+    expect(cycleOffsets(undefined)).toEqual([]);
+    // A rotation longer than a month is a typo, not a pattern anyone works.
+    expect(cycleOffsets(400)).toHaveLength(31);
+  });
+
+  it('toggles a worked offset, keeping the list sorted and unique', () => {
+    expect(toggleCycleDay([0, 2], 1)).toEqual([0, 1, 2]);
+    expect(toggleCycleDay([0, 1, 2], 1)).toEqual([0, 2]);
+    expect(toggleCycleDay(undefined, 3)).toEqual([3]);
+  });
+
+  it('drops worked offsets that a shortened cycle no longer has', () => {
+    // Left in place they would be rejected by the server as outside the cycle.
+    expect(clampCycleDays([0, 2, 4], 3)).toEqual([0, 2]);
+    expect(clampCycleDays([0, 1], 5)).toEqual([0, 1]);
+    expect(clampCycleDays([0, 1], 0)).toEqual([]);
+  });
+});
+
+describe('weekdayShort', () => {
+  it('names the weekday of a local date key', () => {
+    // 2026-08-10 is a Monday. The preview leans on this to show the weekday
+    // drift that is the whole reason a cycle is not a weekday list.
+    expect(weekdayShort('2026-08-10')).toBe('Mon');
+    expect(weekdayShort('2026-08-16')).toBe('Sun');
+  });
+
+  it('is empty rather than wrong for an unparseable date', () => {
+    expect(weekdayShort('nonsense')).toBe('');
+    expect(weekdayShort('')).toBe('');
   });
 });

@@ -12,8 +12,15 @@ import {
   labelFor,
 } from '@/app/shared/employees/org-config-utils';
 import {
-  templateDaysLabel,
+  clampCycleDays,
+  cycleOffsets,
+  cyclePreview,
+  cycleSummaryLabel,
+  localToday,
+  templateRepeatLabel,
   templateTimeLabel,
+  toggleCycleDay,
+  weekdayShort,
 } from '@/app/shared/employees/shift-roster-utils';
 import {
   shiftTemplateService,
@@ -37,11 +44,21 @@ const EMPTY: ShiftTemplateInput = {
   endTime: '17:00',
   endDayOffset: 0,
   breakMinutes: 0,
+  recurrence: 'weekly',
   daysOfWeek: [1, 2, 3, 4, 5],
+  // Only read when recurrence is 'cycle'; one on, one off is the pattern that
+  // weekday flags could not express and the reason cycles exist.
+  cycleLength: 2,
+  cycleDays: [0],
+  anchorDate: null,
   color: '',
   note: '',
   isActive: true,
 };
+
+/** How many days of the rotation the form previews. Two full weeks makes the
+ *  weekday drift of a cycle visible, which one week would hide. */
+const PREVIEW_DAYS = 14;
 
 // A template has no headcount — nobody is assigned to one — so the shared
 // screen's "Headcount" sort would be a dead option.
@@ -110,7 +127,13 @@ export default function ShiftTemplatesPage() {
         endTime: t.endTime,
         endDayOffset: t.endDayOffset ?? 0,
         breakMinutes: t.breakMinutes,
+        recurrence: t.recurrence ?? 'weekly',
         daysOfWeek: t.daysOfWeek ?? [],
+        // A weekly template has no stored cycle, so the form falls back to the
+        // same starting rotation a new template offers.
+        cycleLength: t.cycleLength ?? 2,
+        cycleDays: t.cycleDays?.length ? t.cycleDays : [0],
+        anchorDate: t.anchorDate ?? null,
         color: t.color ?? '',
         note: t.note ?? '',
         isActive: t.isActive,
@@ -134,7 +157,10 @@ export default function ShiftTemplatesPage() {
               <div>
                 <span className="font-semibold text-gray-900">{t.name}</span>
                 <p className="text-xs text-gray-400">
-                  {templateDaysLabel(t.daysOfWeek)}
+                  {templateRepeatLabel(t)}
+                  {t.recurrence === 'cycle' && t.anchorDate && (
+                    <span className="text-gray-300"> · from {t.anchorDate}</span>
+                  )}
                 </p>
               </div>
             </div>
@@ -271,28 +297,172 @@ export default function ShiftTemplatesPage() {
             />
           </Field>
 
-          <Field label="Repeats on">
-            <div className="flex flex-wrap gap-1.5">
-              {DAY_LABELS.map((label, day) => {
-                const on = (draft.daysOfWeek ?? []).includes(day);
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => patch({ daysOfWeek: toggleDay(draft, day) })}
-                    className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                      on
-                        ? 'bg-[#b20202] text-white'
-                        : 'border border-gray-200 bg-white text-gray-500 hover:text-gray-900'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+          <Field label="Repeats">
+            <div className="flex gap-1.5">
+              {(
+                [
+                  ['weekly', 'On weekdays'],
+                  ['cycle', 'On a rotation'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={(draft.recurrence ?? 'weekly') === value}
+                  onClick={() =>
+                    patch({
+                      recurrence: value,
+                      // A rotation cannot be generated without an anchor, so one
+                      // is offered the moment the admin asks for a rotation.
+                      ...(value === 'cycle' && !draft.anchorDate
+                        ? { anchorDate: localToday() }
+                        : {}),
+                    })
+                  }
+                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                    (draft.recurrence ?? 'weekly') === value
+                      ? 'bg-[#b20202] text-white'
+                      : 'border border-gray-200 bg-white text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </Field>
+
+          {(draft.recurrence ?? 'weekly') === 'weekly' ? (
+            <Field label="Repeats on">
+              <div className="flex flex-wrap gap-1.5">
+                {DAY_LABELS.map((label, day) => {
+                  const on = (draft.daysOfWeek ?? []).includes(day);
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => patch({ daysOfWeek: toggleDay(draft, day) })}
+                      className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                        on
+                          ? 'bg-[#b20202] text-white'
+                          : 'border border-gray-200 bg-white text-gray-500 hover:text-gray-900'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+          ) : (
+            <>
+              <Field
+                label="Cycle length"
+                hint="(days before the pattern repeats)"
+              >
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  className={FIELD}
+                  value={draft.cycleLength ?? 2}
+                  onChange={(e) => {
+                    const length = Number(e.target.value);
+                    patch({
+                      cycleLength: length,
+                      // Offsets the shorter cycle no longer has would be
+                      // rejected by the server as outside it.
+                      cycleDays: clampCycleDays(draft.cycleDays, length),
+                    });
+                  }}
+                />
+              </Field>
+
+              <Field label="Days worked in the cycle">
+                <div className="flex flex-wrap gap-1.5">
+                  {cycleOffsets(draft.cycleLength).map((offset) => {
+                    const on = (draft.cycleDays ?? []).includes(offset);
+                    return (
+                      <button
+                        key={offset}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() =>
+                          patch({
+                            cycleDays: toggleCycleDay(draft.cycleDays, offset),
+                          })
+                        }
+                        className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold tabular-nums transition-colors ${
+                          on
+                            ? 'bg-[#b20202] text-white'
+                            : 'border border-gray-200 bg-white text-gray-500 hover:text-gray-900'
+                        }`}
+                      >
+                        {offset + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1.5 text-xs text-gray-400">
+                  {cycleSummaryLabel(draft.cycleLength, draft.cycleDays)}
+                </p>
+              </Field>
+
+              <Field
+                label="Cycle starts on"
+                hint="(day 1 of the rotation)"
+              >
+                <input
+                  type="date"
+                  className={FIELD}
+                  value={draft.anchorDate ?? ''}
+                  onChange={(e) => patch({ anchorDate: e.target.value || null })}
+                />
+              </Field>
+
+              {/* A rotation is hard to picture and a wrong anchor is invisible
+                  until the roster is generated — by which point it has invented
+                  absences on days nobody was meant to work. */}
+              <Field label={`Next ${PREVIEW_DAYS} days`}>
+                {(() => {
+                  const preview = cyclePreview(
+                    {
+                      cycleLength: draft.cycleLength,
+                      cycleDays: draft.cycleDays,
+                      anchorDate: draft.anchorDate,
+                    },
+                    localToday(),
+                    PREVIEW_DAYS
+                  );
+                  if (!preview.length) {
+                    return (
+                      <p className="text-xs text-amber-600">
+                        Pick a start date and at least one worked day to see the
+                        rotation.
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="flex flex-wrap gap-1">
+                      {preview.map((d) => (
+                        <span
+                          key={d.date}
+                          title={d.date}
+                          className={`rounded-md px-1.5 py-1 text-[11px] font-semibold tabular-nums ${
+                            d.worked
+                              ? 'bg-[#b20202]/10 text-[#b20202]'
+                              : 'bg-gray-100 text-gray-400'
+                          }`}
+                        >
+                          {weekdayShort(d.date)} {d.date.slice(8)}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </Field>
+            </>
+          )}
 
           <Field label="Colour" hint="(used on the roster)">
             <div className="flex items-center gap-2">
@@ -337,7 +507,17 @@ export default function ShiftTemplatesPage() {
           return 'Start time must be like 09:00';
         if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(d.endTime))
           return 'End time must be like 17:00';
-        if (!(d.daysOfWeek ?? []).length)
+        if ((d.recurrence ?? 'weekly') === 'cycle') {
+          const length = Number(d.cycleLength);
+          if (!Number.isInteger(length) || length < 1)
+            return 'A cycle must be at least one day long';
+          if (!(d.cycleDays ?? []).length)
+            return 'Pick at least one worked day — a cycle with none generates nothing';
+          // Without an anchor the phase would have to be guessed from whatever
+          // range is generated, and March and April would disagree.
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(d.anchorDate ?? ''))
+            return 'Choose the date the cycle starts on';
+        } else if (!(d.daysOfWeek ?? []).length)
           return 'Pick at least one day — a template with none generates nothing';
         if (d.color && !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(d.color)) {
           return 'Colour must be a hex value like #b20202';

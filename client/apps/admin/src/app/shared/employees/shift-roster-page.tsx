@@ -47,7 +47,7 @@ import {
   startOfWeek,
   statusTone,
   summariseSkips,
-  templateDaysLabel,
+  templateRepeatLabel,
   templateTimeLabel,
   toLocalDateKey,
   toLocalTimeLabel,
@@ -570,7 +570,7 @@ export default function ShiftRosterPage() {
               </span>
               <span className="block text-[11px] tabular-nums text-gray-500">
                 {templateTimeLabel(t.startTime, t.endTime, t.endDayOffset)} ·{' '}
-                {templateDaysLabel(t.daysOfWeek)}
+                {templateRepeatLabel(t)}
               </span>
             </button>
           ))}
@@ -906,7 +906,7 @@ export default function ShiftRosterPage() {
                       </span>
                       <span className="block text-xs text-gray-500">
                         {templateTimeLabel(t.startTime, t.endTime, t.endDayOffset)} ·{' '}
-                        {templateDaysLabel(t.daysOfWeek)}
+                        {templateRepeatLabel(t)}
                       </span>
                     </span>
                   </label>

@@ -28,6 +28,15 @@ export const DAY_LABELS = [
   'Sat',
 ] as const;
 
+/**
+ * How a template repeats. 'weekly' reads daysOfWeek; 'cycle' reads
+ * cycleLength/cycleDays/anchorDate and ignores the weekdays entirely — a
+ * rotation like one-on/one-off changes weekday every week, so no set of weekday
+ * flags can express it. Mirrors RECURRENCE_TYPES on the server.
+ */
+export const SHIFT_RECURRENCES = ['weekly', 'cycle'] as const;
+export type ShiftRecurrence = (typeof SHIFT_RECURRENCES)[number];
+
 export interface RoleRef {
   _id: string;
   name: string;
@@ -45,7 +54,15 @@ export interface ShiftTemplate {
   /** Calendar days after start the shift ends on. 0 = same day (default). */
   endDayOffset: number;
   breakMinutes: number;
+  recurrence: ShiftRecurrence;
+  /** 'weekly' only. 0 = Sunday .. 6 = Saturday. */
   daysOfWeek: number[];
+  /** 'cycle' only. Days in one turn of the rotation: 2 = one on, one off. */
+  cycleLength: number | null;
+  /** 'cycle' only. Which 0-based offsets of the cycle are worked. */
+  cycleDays: number[];
+  /** 'cycle' only. The local date the cycle's day 0 falls on; it fixes the phase. */
+  anchorDate: string | null;
   color?: string;
   note?: string;
   isActive: boolean;
@@ -63,7 +80,11 @@ export interface ShiftTemplateInput {
   endTime: string;
   endDayOffset?: number;
   breakMinutes?: number;
+  recurrence?: ShiftRecurrence;
   daysOfWeek?: number[];
+  cycleLength?: number | null;
+  cycleDays?: number[];
+  anchorDate?: string | null;
   color?: string;
   note?: string;
   isActive?: boolean;

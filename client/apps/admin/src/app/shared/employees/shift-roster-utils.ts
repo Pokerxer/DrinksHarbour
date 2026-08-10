@@ -432,6 +432,150 @@ export function templateDaysLabel(daysOfWeek: number[] | undefined): string {
   return parts.join(', ');
 }
 
+// ── Cycle recurrence ─────────────────────────────────────────────────────────
+//
+// A mirror of `isCycleWorkDay` in server/services/shift.helpers.js, and it has
+// to stay one: this is what the template form previews, and a preview that
+// disagrees with the generator is worse than no preview at all. The rule is
+// deliberately tiny — offset from a stored anchor, floor-modulo the cycle
+// length — so the two copies can be read against each other.
+
+/** What pins a rotation to the calendar. */
+export interface ShiftCycle {
+  cycleLength?: number | null;
+  cycleDays?: number[] | null;
+  anchorDate?: string | null;
+}
+
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 'Mon' … 'Sun' for a local date key. Empty when it cannot be read. */
+export function weekdayShort(dateISO: string): string {
+  if (!DATE_KEY_RE.test(dateISO ?? '')) return '';
+  const ms = dayMs(dateISO);
+  return Number.isNaN(ms) ? '' : WEEKDAY_SHORT[new Date(ms).getUTCDay()];
+}
+
+/** Remainder that is always in 0..m-1, so dates before the anchor still resolve. */
+function floorMod(n: number, m: number): number {
+  return ((n % m) + m) % m;
+}
+
+/** Is this local calendar day a worked day of the cycle? False if unusable. */
+export function isCycleWorkDay(
+  dateISO: string,
+  cycle: ShiftCycle | null | undefined
+): boolean {
+  const length = Number(cycle?.cycleLength);
+  if (!Number.isInteger(length) || length < 1) return false;
+
+  const days = (cycle?.cycleDays ?? []).map(Number);
+  if (!days.length) return false; // empty means nothing, never "every day"
+
+  const anchor = (cycle?.anchorDate ?? '').trim();
+  if (!DATE_KEY_RE.test(anchor) || !DATE_KEY_RE.test(dateISO)) return false;
+  const anchorMs = dayMs(anchor);
+  const ms = dayMs(dateISO);
+  if (Number.isNaN(anchorMs) || Number.isNaN(ms)) return false;
+
+  const offset = Math.round((ms - anchorMs) / MS_PER_DAY);
+  return days.includes(floorMod(offset, length));
+}
+
+/**
+ * `count` consecutive days from `fromISO`, each marked worked or off.
+ *
+ * A rotation is hard to picture and a wrong anchor is invisible until the
+ * roster is generated, so the form shows the next fortnight rather than asking
+ * the admin to do the arithmetic.
+ */
+export function cyclePreview(
+  cycle: ShiftCycle | null | undefined,
+  fromISO: string,
+  count = 14
+): { date: string; worked: boolean }[] {
+  if (!DATE_KEY_RE.test(fromISO ?? '')) return [];
+  const days = (cycle?.cycleDays ?? []).map(Number);
+  const length = Number(cycle?.cycleLength);
+  const anchor = (cycle?.anchorDate ?? '').trim();
+  if (!days.length || !Number.isInteger(length) || length < 1) return [];
+  if (!DATE_KEY_RE.test(anchor)) return [];
+
+  return Array.from({ length: Math.max(0, count) }, (_, i) => {
+    const date = addDays(fromISO, i);
+    return { date, worked: isCycleWorkDay(date, cycle) };
+  });
+}
+
+/** '4 on / 4 off', 'Every day', or '2 days in every 5' when it is not a run. */
+export function cycleSummaryLabel(
+  cycleLength: number | null | undefined,
+  cycleDays: number[] | null | undefined
+): string {
+  const length = Number(cycleLength);
+  const days = Array.from(new Set((cycleDays ?? []).map(Number)))
+    .filter((d) => Number.isInteger(d) && d >= 0 && d < length)
+    .sort((a, b) => a - b);
+
+  if (!Number.isInteger(length) || length < 1) return 'No cycle set';
+  if (!days.length) return 'No cycle days set';
+  if (days.length === length) return 'Every day';
+
+  // A run from day 0 is the shape people actually name ("four on, four off");
+  // anything else has no such name and is better stated as a proportion.
+  const isRunFromZero = days.every((d, i) => d === i);
+  return isRunFromZero
+    ? `${days.length} on / ${length - days.length} off`
+    : `${days.length} days in every ${length}`;
+}
+
+/**
+ * The form caps a rotation at a month. Longer is a typo — nobody works a
+ * 400-day pattern — and it would render hundreds of toggles.
+ */
+const MAX_FORM_CYCLE_LENGTH = 31;
+
+/** One offset per day of the cycle, for the "which days are worked" toggles. */
+export function cycleOffsets(cycleLength: number | null | undefined): number[] {
+  const n = Math.floor(Number(cycleLength) || 0);
+  if (!Number.isFinite(n) || n < 1) return [];
+  return Array.from({ length: Math.min(n, MAX_FORM_CYCLE_LENGTH) }, (_, i) => i);
+}
+
+/** Add or remove a worked offset, keeping the list sorted and unique. */
+export function toggleCycleDay(
+  cycleDays: number[] | null | undefined,
+  offset: number
+): number[] {
+  const days = cycleDays ?? [];
+  return days.includes(offset)
+    ? days.filter((d) => d !== offset)
+    : [...days, offset].sort((a, b) => a - b);
+}
+
+/**
+ * Drop offsets a shortened cycle no longer has.
+ * Left behind they are simply outside the cycle, which the server rejects.
+ */
+export function clampCycleDays(
+  cycleDays: number[] | null | undefined,
+  cycleLength: number | null | undefined
+): number[] {
+  const n = Math.floor(Number(cycleLength) || 0);
+  return (cycleDays ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d < n);
+}
+
+/** How a template repeats, whichever kind of recurrence it uses. */
+export function templateRepeatLabel(
+  template: ShiftCycle & { recurrence?: string; daysOfWeek?: number[] }
+): string {
+  if (template?.recurrence !== 'cycle') {
+    return templateDaysLabel(template?.daysOfWeek);
+  }
+  if (!(template.anchorDate ?? '').trim()) return 'Cycle needs an anchor date';
+  return cycleSummaryLabel(template.cycleLength, template.cycleDays);
+}
+
 /**
  * 'Overnight' templates read wrong without a marker on the chip.
  *

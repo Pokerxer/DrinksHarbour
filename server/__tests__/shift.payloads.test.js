@@ -114,6 +114,76 @@ test('buildShiftTemplatePayload on update patches only what was sent', () => {
   assert.strictEqual('isActive' in out.value, false);
 });
 
+// ── Cycle recurrence on a template ───────────────────────────────────────────
+
+const VALID_CYCLE = {
+  ...VALID_TEMPLATE,
+  recurrence: 'cycle',
+  cycleLength: 2,
+  cycleDays: [0],
+  anchorDate: '2026-08-10',
+};
+
+test('buildShiftTemplatePayload accepts a cycle template and normalises its offsets', () => {
+  const out = buildShiftTemplatePayload({ ...VALID_CYCLE, cycleLength: 4, cycleDays: [2, 0, 2] });
+  assert.ok(out.ok);
+  assert.strictEqual(out.value.recurrence, 'cycle');
+  assert.strictEqual(out.value.cycleLength, 4);
+  assert.deepStrictEqual(out.value.cycleDays, [0, 2]);
+  assert.strictEqual(out.value.anchorDate, '2026-08-10');
+});
+
+test('buildShiftTemplatePayload defaults a template with no recurrence to weekly', () => {
+  const out = buildShiftTemplatePayload(VALID_TEMPLATE);
+  assert.ok(out.ok);
+  assert.strictEqual(out.value.recurrence, 'weekly');
+  // A weekly template carries an empty cycle rather than a half-set one.
+  assert.strictEqual(out.value.anchorDate, null);
+  assert.deepStrictEqual(out.value.cycleDays, []);
+});
+
+test('buildShiftTemplatePayload rejects a recurrence it does not know', () => {
+  const out = buildShiftTemplatePayload({ ...VALID_TEMPLATE, recurrence: 'fortnightly' });
+  assert.ok(!out.ok);
+  assert.match(out.message, /recurrence/i);
+});
+
+test('buildShiftTemplatePayload requires the whole cycle when recurrence is cycle', () => {
+  for (const missing of ['cycleLength', 'cycleDays', 'anchorDate']) {
+    const body = { ...VALID_CYCLE };
+    delete body[missing];
+    const out = buildShiftTemplatePayload(body);
+    assert.ok(!out.ok, `${missing} should be required`);
+  }
+});
+
+test('buildShiftTemplatePayload rejects an offset outside the cycle', () => {
+  assert.ok(!buildShiftTemplatePayload({ ...VALID_CYCLE, cycleDays: [2] }).ok);
+  assert.ok(!buildShiftTemplatePayload({ ...VALID_CYCLE, cycleDays: [-1] }).ok);
+  assert.ok(!buildShiftTemplatePayload({ ...VALID_CYCLE, cycleLength: 0 }).ok);
+  assert.ok(!buildShiftTemplatePayload({ ...VALID_CYCLE, anchorDate: 'yesterday' }).ok);
+});
+
+test('buildShiftTemplatePayload switching a template back to weekly clears the cycle', () => {
+  // Left in place, a stale anchor would silently resurrect the old rotation if
+  // the template were ever switched back.
+  const out = buildShiftTemplatePayload({ recurrence: 'weekly' }, { isUpdate: true });
+  assert.ok(out.ok);
+  assert.strictEqual(out.value.recurrence, 'weekly');
+  assert.strictEqual(out.value.anchorDate, null);
+  assert.deepStrictEqual(out.value.cycleDays, []);
+  assert.strictEqual(out.value.cycleLength, null);
+});
+
+test('buildShiftTemplatePayload validates a cycle sent on its own in an update', () => {
+  const out = buildShiftTemplatePayload(
+    { recurrence: 'cycle', cycleLength: 3, cycleDays: [0, 1], anchorDate: '2026-09-01' },
+    { isUpdate: true }
+  );
+  assert.ok(out.ok);
+  assert.deepStrictEqual(out.value.cycleDays, [0, 1]);
+});
+
 // ── Shift payload ────────────────────────────────────────────────────────────
 
 const VALID_SHIFT = {
