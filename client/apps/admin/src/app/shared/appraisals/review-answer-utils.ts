@@ -164,21 +164,23 @@ export function shuffledScoredOptions(
   if (!isScoredOptions(question)) return [];
   const options = question.options ?? [];
   const scores = question.optionScores ?? [];
-  return options
-    .map((label, index) => ({
-      label,
-      score: scores[index],
-      // Index FIRST: it is the only part that varies within one question, and
-      // leading with it means every later byte of the key mixes it further.
-      rank: hash32(`${index}:${salt}:${question._id}`),
-      index,
-    }))
-    // Ties break on the authored index so the result is a total order even if
-    // two keys collide — without it, sort stability would be the only thing
-    // keeping the output deterministic, and that is not a guarantee worth
-    // resting a stored rating on.
-    .sort((a, b) => a.rank.localeCompare(b.rank) || a.index - b.index)
-    .map(({ label, score }) => ({ label, score }));
+  return (
+    options
+      .map((label, index) => ({
+        label,
+        score: scores[index],
+        // Index FIRST: it is the only part that varies within one question, and
+        // leading with it means every later byte of the key mixes it further.
+        rank: hash32(`${index}:${salt}:${question._id}`),
+        index,
+      }))
+      // Ties break on the authored index so the result is a total order even if
+      // two keys collide — without it, sort stability would be the only thing
+      // keeping the output deterministic, and that is not a guarantee worth
+      // resting a stored rating on.
+      .sort((a, b) => a.rank.localeCompare(b.rank) || a.index - b.index)
+      .map(({ label, score }) => ({ label, score }))
+  );
 }
 
 /** The answer produced by picking option `index` — its score, not its index. */

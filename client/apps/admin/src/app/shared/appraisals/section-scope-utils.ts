@@ -48,7 +48,10 @@ const PLURAL: Record<ScopeKey, string> = {
  * Returns a NEW array — the editor's undo/redo stack diffs by identity, so
  * mutating in place would make a scope change invisible to Cmd+Z.
  */
-export function toggleScopeId(current: string[] | undefined, id: string): string[] {
+export function toggleScopeId(
+  current: string[] | undefined,
+  id: string
+): string[] {
   const list = current || [];
   return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 }
@@ -62,14 +65,20 @@ export function toggleScopeId(current: string[] | undefined, id: string): string
  * makes them open the picker to find out which. Past three it does collapse,
  * because a full list stops being scannable and the picker is right there.
  */
-function describeScopeList(ids: string[], options: ScopeOption[], key: ScopeKey): string {
+function describeScopeList(
+  ids: string[],
+  options: ScopeOption[],
+  key: ScopeKey
+): string {
   const byId = new Map(options.map((o) => [o._id, o.name]));
   // An id with no matching option was deleted (or belongs to another tenant)
   // after this template was written. Reported as "1 unknown" rather than
   // dropped: a section silently narrowing its audience is exactly the thing HR
   // would never notice, and silently WIDENING it by treating the list as empty
   // would be worse still.
-  const named = ids.map((id) => byId.get(id)).filter((n): n is string => Boolean(n));
+  const named = ids
+    .map((id) => byId.get(id))
+    .filter((n): n is string => Boolean(n));
   const unknown = ids.length - named.length;
 
   const parts: string[] = [];
@@ -100,7 +109,10 @@ export function describeSectionAudience(
   if (departments.length === 0 && roles.length === 0) return 'Everyone';
 
   const parts: string[] = [];
-  if (departments.length) parts.push(describeScopeList(departments, departmentOptions, 'departments'));
+  if (departments.length)
+    parts.push(
+      describeScopeList(departments, departmentOptions, 'departments')
+    );
   if (roles.length) parts.push(describeScopeList(roles, roleOptions, 'roles'));
   return parts.join(' · ');
 }
@@ -115,10 +127,17 @@ export function describeSectionAudience(
  */
 export function sectionAppliesTo(
   section: SectionScope,
-  { departmentId, roleIds }: { departmentId?: string | null; roleIds?: string[] }
+  {
+    departmentId,
+    roleIds,
+  }: { departmentId?: string | null; roleIds?: string[] }
 ): boolean {
   const departments = section.departments || [];
-  if (departments.length && !(departmentId && departments.includes(departmentId))) return false;
+  if (
+    departments.length &&
+    !(departmentId && departments.includes(departmentId))
+  )
+    return false;
   const roles = section.roles || [];
   const held = roleIds || [];
   if (roles.length && !roles.some((r) => held.includes(r))) return false;

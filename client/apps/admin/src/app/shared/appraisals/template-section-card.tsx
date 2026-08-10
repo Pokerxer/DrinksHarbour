@@ -303,7 +303,9 @@ export default function TemplateSectionCard({
                     {departmentOptions.length > 0 && roleOptions.length > 0 ? (
                       <>
                         {' '}
-                        Ticking in <span className="font-medium">both</span>{' '}
+                        Ticking in <span className="font-medium">
+                          both
+                        </span>{' '}
                         rows narrows to the overlap — a section set to Retail
                         and Cashier is asked of Retail&rsquo;s cashiers, not of
                         everyone in Retail plus every cashier.
@@ -348,7 +350,10 @@ export default function TemplateSectionCard({
                             on={(section.roles || []).includes(role._id)}
                             disabled={saving}
                             onClick={() =>
-                              onRolesChange(si, toggleScopeId(section.roles, role._id))
+                              onRolesChange(
+                                si,
+                                toggleScopeId(section.roles, role._id)
+                              )
                             }
                           />
                         ))}

@@ -603,9 +603,9 @@ export interface ScopeOptionDoc {
 export type DepartmentOptionDoc = ScopeOptionDoc;
 
 export const fetchDepartmentOptions = () =>
-  request<{ items: ScopeOptionDoc[] }>(
-    '/api/departments?isActive=true'
-  ).then((d) => d.items || []);
+  request<{ items: ScopeOptionDoc[] }>('/api/departments?isActive=true').then(
+    (d) => d.items || []
+  );
 
 /**
  * The tenant's EmployeeRoles — Cashier, Attendant, Driver — which are HR
