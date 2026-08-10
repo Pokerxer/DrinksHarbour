@@ -31,6 +31,21 @@ const DEFAULT_MATCH_WINDOW_MINUTES = 240;
 /** Minutes after a shift's start that still count as on time. */
 const DEFAULT_GRACE_MINUTES = 5;
 
+/**
+ * The floor between one employee's punches.
+ *
+ * A camera kiosk decodes whatever is held in front of it about ten times a
+ * second, so without a floor a badge left against the lens clocks somebody in
+ * and straight back out. resolveAttendanceTimes cannot stop that — a punch
+ * 300ms later genuinely IS after the clock-in, so it closes the record with
+ * zero minutes on it and the day reads as if the person never worked.
+ *
+ * Sixty seconds: longer than any accidental re-read, far shorter than the
+ * shortest real stretch anybody works. It is enforced on the server rather
+ * than only in the pad because the pad is not the only thing that can post.
+ */
+const MIN_PUNCH_INTERVAL_SECONDS = 60;
+
 const idOf = (v) => (v && v._id ? String(v._id) : v == null ? '' : String(v));
 
 const msOf = (v) => {
@@ -245,11 +260,51 @@ function resolveAttendanceTimes(clockIn, clockOut) {
   };
 }
 
+/**
+ * When an employee's most recent punch happened, from their latest record.
+ *
+ * The clock-out if the record has one, otherwise the clock-in: a record is a
+ * pair, and the punch that matters for the floor is whichever end of it was
+ * written last.
+ *
+ * @param {object|null} record
+ * @returns {number|null} epoch ms, or null when there is no readable punch
+ */
+function lastPunchAt(record) {
+  if (!record) return null;
+  return msOf(record.clockOut) ?? msOf(record.clockIn);
+}
+
+/**
+ * Whether a punch lands too close behind the previous one to be real.
+ *
+ * Deliberately answers false whenever it cannot read a clock: no previous
+ * punch is not "too soon" — there is nothing to be too soon after — and a
+ * guard that cannot parse a timestamp must fail open rather than lock an
+ * employee out of their own shift.
+ *
+ * @param {Date|string|number|null} previous
+ * @param {Date|string|number} at
+ * @param {{minSeconds?: number}} [opts]
+ * @returns {boolean}
+ */
+function isPunchTooSoon(previous, at, opts = {}) {
+  const { minSeconds = MIN_PUNCH_INTERVAL_SECONDS } = opts;
+  const last = typeof previous === 'number' ? previous : msOf(previous);
+  if (last === null) return false;
+  const now = typeof at === 'number' ? at : msOf(at);
+  if (now === null) return false;
+  return now - last < minSeconds * 1000;
+}
+
 module.exports = {
   ATTENDANCE_STATUSES,
   ATTENDANCE_SOURCES,
   DEFAULT_MATCH_WINDOW_MINUTES,
   DEFAULT_GRACE_MINUTES,
+  MIN_PUNCH_INTERVAL_SECONDS,
+  lastPunchAt,
+  isPunchTooSoon,
   attendanceMinutes,
   resolveClockAction,
   matchShiftForClock,

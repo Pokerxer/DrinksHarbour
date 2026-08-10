@@ -6,9 +6,10 @@
 // out of everyone else's hours.
 //
 // The kiosk is NOT an exception to that. The device is signed in as a manager,
-// so the JWT says which tenant; the PIN in the body says which employee. That
-// split is why /clock can be behind the same guards as the log and still be
-// usable by a driver who has no admin account of their own.
+// so the JWT says which tenant; the credential in the body (a badge or a PIN)
+// says which employee. That split is why /clock can be behind the same guards
+// as the log and still be usable by a driver who has no admin account of their
+// own — and, with a badge, no PIN either.
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 
@@ -45,6 +46,10 @@ router.use(tenantAdminOrSuperAdmin);
 
 // Declared before '/:id' so 'clock' is never read as an id.
 router.post('/clock', clockLimiter, c.clock);
+
+// One person's history and the rating it adds up to. Also declared ahead of
+// '/:id' so 'employee' cannot be mistaken for a record id.
+router.get('/employee/:employeeId', c.employeeHistory);
 
 router.route('/').get(c.list).post(c.create);
 router.route('/:id').patch(c.update).delete(c.remove);

@@ -22,6 +22,7 @@ const asyncHandler = require('../utils/asyncHandler');
 
 const Attendance = require('../models/Attendance');
 const Shift = require('../models/Shift');
+const TimeOffRequest = require('../models/TimeOffRequest');
 const User = require('../models/User');
 
 const { isObjectIdLike } = require('../services/orgStructure.helpers');
@@ -39,7 +40,14 @@ const {
   summariseAttendance,
   buildAttendancePayload,
   resolveAttendanceTimes,
+  lastPunchAt,
+  isPunchTooSoon,
 } = require('../services/attendance.helpers');
+const {
+  rateAttendance,
+  isExcused,
+  describeDeparture,
+} = require('../services/attendanceRating.helpers');
 
 const MS_PER_MINUTE = 60_000;
 
@@ -96,46 +104,93 @@ async function employeeInTenant(tenantId, employeeId) {
 // ── Kiosk ────────────────────────────────────────────────────────────────────
 
 /**
- * POST /api/attendance/clock  { pin }
+ * POST /api/attendance/clock  { pin } | { badge }
  *
  * One endpoint, not two: the employee presses one button and the state of their
  * last record decides whether it is an in or an out. A separate /clock-out
  * would let the two disagree — someone clocking out twice, or in twice — and
  * the pad would have to know which to show before it knew who was standing at
  * it, which it must not.
+ *
+ * Two credentials, deliberately different:
+ *   * `pin`   — a secret. Resolved by bcrypt compare over the tenant's
+ *     staff who have one, and answered with ONE generic 401 on any failure.
+ *   * `badge` — the QR payload printed on the employee's badge card
+ *     (employeeProfile.attendance.rfidBadge, or the employee _id as the
+ *     fallback the badge generator encodes). Physical possession is the
+ *     credential, so it is NOT secret: a scan is answered with a distinct
+ *     message when no employee matches, and no PIN needs to exist for the
+ *     badge to work.
  */
 const clock = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   const pin = req.body?.pin;
+  const badge = req.body?.badge;
 
   // A missing field is a broken client, not a failed guess — distinguishing it
-  // discloses nothing, because no PIN was offered to confirm or deny.
-  if (!pin) return badRequest(res, 'PIN required');
-
-  // The candidate set deliberately does NOT filter on posAccess. Clocking in is
-  // not a till privilege: drivers, attendants and office staff have to be able
-  // to punch without being handed the ability to take money. The consequence,
-  // accepted knowingly, is that User.posPinHash is the only PIN that exists, so
-  // anybody expected to clock in must have one set on their profile.
-  const candidates = await User.find({
-    tenant: tenantId,
-    status: 'active',
-    posPinHash: { $exists: true, $ne: null },
-  }).select('+posPinHash firstName lastName email avatar');
+  // discloses nothing, because no credential was offered to confirm or deny.
+  if (!pin && !badge) return badRequest(res, 'PIN or badge required');
+  if (pin && badge) return badRequest(res, 'Provide either a PIN or a badge, not both');
 
   let matched = null;
-  for (const u of candidates) {
-    // eslint-disable-next-line no-await-in-loop -- sequential by design: bcrypt
-    // is intentionally slow and the set is one tenant's staff, not a user table.
-    if (await bcrypt.compare(String(pin), u.posPinHash)) {
-      matched = u;
-      break;
-    }
-  }
 
-  // One answer for every failure. Never "no such PIN" vs "that account is
-  // suspended" — either would turn the pad into a directory of valid codes.
-  if (!matched) return res.status(401).json({ success: false, message: 'Invalid PIN' });
+  if (badge) {
+    // The badge lookup deliberately does NOT filter on posPinHash: a driver
+    // or attendant must be able to punch with the card on their lanyard even
+    // though nobody has handed them a till PIN.
+    const code = String(badge).trim();
+
+    // rfidBadge first, then the _id fallback — a card's payload is whichever
+    // one the generator encoded, and a raw 24-hex string could be either.
+    matched = await User.findOne({
+      tenant: tenantId,
+      status: 'active',
+      'employeeProfile.attendance.rfidBadge': code,
+    }).select('firstName lastName email avatar');
+
+    if (!matched && isObjectIdLike(code)) {
+      matched = await User.findOne({
+        tenant: tenantId,
+        _id: code,
+        status: 'active',
+      }).select('firstName lastName email avatar');
+    }
+
+    // Distinct from the PIN's answer on purpose: a badge is printed on a card
+    // in public, so naming the failure leaks nothing worth hiding. What it
+    // still refuses to do is say WHY — suspended, other tenant, never issued —
+    // all of which are a manager's business, not the shop floor's.
+    if (!matched) {
+      return res.status(401).json({
+        success: false,
+        message: 'Badge not recognised',
+      });
+    }
+  } else {
+    // The candidate set deliberately does NOT filter on posAccess. Clocking in is
+    // not a till privilege: drivers, attendants and office staff have to be able
+    // to punch without being handed the ability to take money. The consequence,
+    // accepted knowingly, is that User.posPinHash is the only PIN that exists, so
+    // anybody expected to clock in by PIN must have one set on their profile.
+    const candidates = await User.find({
+      tenant: tenantId,
+      status: 'active',
+      posPinHash: { $exists: true, $ne: null },
+    }).select('+posPinHash firstName lastName email avatar');
+
+    for (const u of candidates) {
+      // eslint-disable-next-line no-await-in-loop -- sequential by design: bcrypt
+      // is intentionally slow and the set is one tenant's staff, not a user table.
+      if (await bcrypt.compare(String(pin), u.posPinHash)) {
+        matched = u;
+        break;
+      }
+    }
+
+    // One answer for every failure. Never "no such PIN" vs "that account is
+    // suspended" — either would turn the pad into a directory of valid codes.
+    if (!matched) return res.status(401).json({ success: false, message: 'Invalid PIN' });
+  }
 
   const now = new Date();
   const open = await Attendance.findOne({
@@ -145,6 +200,34 @@ const clock = asyncHandler(async (req, res) => {
   }).sort({ clockIn: -1 });
 
   const action = resolveClockAction(open);
+
+  // The double-punch floor, enforced here rather than only in the pad because
+  // the pad is not the only thing that can post to this endpoint. A camera
+  // kiosk decodes the badge in front of it about ten times a second, so a card
+  // resting against the lens would otherwise clock somebody in and straight
+  // back out — writing a closed record with zero minutes on it.
+  //
+  // Whichever record is relevant carries the previous punch: the open one's
+  // clock-in when this press is an out, and the last closed one's clock-out
+  // when it is an in.
+  const previous =
+    open ||
+    (await Attendance.findOne({
+      tenant: tenantId,
+      employee: matched._id,
+      status: 'closed',
+    })
+      .sort({ clockOut: -1 })
+      .select('clockIn clockOut')
+      .lean());
+
+  if (isPunchTooSoon(lastPunchAt(previous), now)) {
+    return res.status(409).json({
+      success: false,
+      code: 'too_soon',
+      message: 'That was just registered. Try again in a moment.',
+    });
+  }
 
   if (action === 'out') {
     const times = resolveAttendanceTimes(open.clockIn, now);
@@ -245,6 +328,115 @@ const list = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: { items, summary: summariseAttendance(items), range: { from: range.from, to: range.to } },
+  });
+});
+
+/**
+ * GET /api/attendance/employee/:employeeId?from=&to=
+ *
+ * One person's history over a window, with the rating it adds up to.
+ *
+ * Three collections, because a rating cannot be built from punches alone: the
+ * ROSTER supplies the denominator (a no-show leaves no record to count), and
+ * approved TIME OFF removes the shifts nobody should be marked down for. The
+ * arithmetic itself is in attendanceRating.helpers.js — this function only
+ * fetches.
+ *
+ * The timeline is shift-led rather than punch-led for the same reason: it has
+ * to be able to show a row for a shift that produced nothing at all.
+ */
+const employeeHistory = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const offsetMinutes = tenantOffsetMinutes(req);
+  const { employeeId } = req.params;
+
+  if (!isObjectIdLike(employeeId)) return badRequest(res, 'Invalid employee id');
+
+  const employee = await employeeInTenant(tenantId, employeeId);
+  if (!employee) {
+    return res.status(404).json({ success: false, message: 'Employee not found' });
+  }
+
+  const today = tenantToday(offsetMinutes);
+  const range = parseRosterRange(
+    { from: req.query.from || today, to: req.query.to || req.query.from || today },
+    offsetMinutes
+  );
+  if (!range.ok) return badRequest(res, range.message);
+
+  const [rows, shifts, timeOff] = await Promise.all([
+    Attendance.find({
+      tenant: tenantId,
+      employee: employeeId,
+      clockIn: { $gte: range.start, $lt: range.end },
+    })
+      .populate(RECORD_POPULATE)
+      .sort({ clockIn: -1 })
+      .lean(),
+
+    // Cancelled shifts are dropped here; draft and not-yet-ended ones are left
+    // for pairShiftsWithAttendance, which owns that rule and is tested on it.
+    Shift.find({
+      tenant: tenantId,
+      employee: employeeId,
+      status: { $ne: 'cancelled' },
+      start: { $gte: range.start, $lt: range.end },
+    })
+      .select('_id start end status role breakMinutes')
+      .populate({ path: 'role', select: 'name color' })
+      .sort({ start: -1 })
+      .lean(),
+
+    // Approved only — pending leave is still a question. overlapsTimeOff
+    // re-checks this, but there is no reason to ship the rest over the wire.
+    TimeOffRequest.find({
+      tenant: tenantId,
+      employee: employeeId,
+      status: 'approved',
+      startDate: { $lt: range.end },
+      endDate: { $gt: range.start },
+    })
+      .select('_id startDate endDate status type')
+      .lean(),
+  ]);
+
+  const items = withPunctuality(rows);
+  const rating = rateAttendance(
+    { shifts, records: items, timeOff },
+    { now: new Date() }
+  );
+
+  // Shift-led, so an absence gets a row. Unrostered punches are appended after
+  // it, because they belong to no shift but still happened.
+  const byShift = new Map();
+  for (const r of items) {
+    const key = r.shift?._id ? String(r.shift._id) : '';
+    if (key) byShift.set(key, r);
+  }
+
+  const timeline = shifts.map((s) => {
+    const record = byShift.get(String(s._id)) || null;
+    return {
+      shift: s,
+      record,
+      excused: isExcused(s, timeOff),
+      punctuality: record ? record.punctuality : null,
+      departure: describeDeparture(record, s),
+    };
+  });
+
+  const unrostered = items.filter((r) => !r.shift);
+
+  res.json({
+    success: true,
+    data: {
+      employee: publicEmployee(employee),
+      range: { from: range.from, to: range.to },
+      rating,
+      timeline,
+      unrostered,
+      summary: summariseAttendance(items),
+    },
   });
 });
 
@@ -381,4 +573,4 @@ const remove = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Attendance record deleted' });
 });
 
-module.exports = { clock, list, create, update, remove };
+module.exports = { clock, list, employeeHistory, create, update, remove };

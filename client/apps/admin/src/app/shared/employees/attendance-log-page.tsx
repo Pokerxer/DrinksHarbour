@@ -434,9 +434,23 @@ export default function AttendanceLogPage() {
                       <td className="px-4 py-3">
                         {i === 0 ? (
                           <div>
-                            <span className="font-semibold text-gray-900">
-                              {group.name}
-                            </span>
+                            {/* Through to their history and rating. Plain text
+                                when the ref did not populate — there is no id
+                                to route to. */}
+                            {group.employeeId ? (
+                              <Link
+                                href={routes.employees.attendanceFor(
+                                  group.employeeId
+                                )}
+                                className="font-semibold text-gray-900 underline-offset-2 hover:text-[#b20202] hover:underline"
+                              >
+                                {group.name}
+                              </Link>
+                            ) : (
+                              <span className="font-semibold text-gray-900">
+                                {group.name}
+                              </span>
+                            )}
                             <p className="text-xs text-gray-400">
                               {group.isIn ? (
                                 <span className="font-semibold text-green-600">

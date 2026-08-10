@@ -52,6 +52,9 @@ export const routes = {
     shiftTemplates: '/employees/shifts/templates',
     attendance: '/employees/attendance',
     attendanceKiosk: '/employees/attendance/kiosk',
+    // One person's history and rating. `kiosk` above is a static segment, so
+    // it still wins over this dynamic one.
+    attendanceFor: (id: string) => `/employees/attendance/${id}`,
     timeOff: '/employees/time-off',
     swaps: '/employees/swaps',
   },

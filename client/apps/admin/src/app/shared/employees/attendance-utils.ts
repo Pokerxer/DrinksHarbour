@@ -233,6 +233,120 @@ export function recordDateKey(
   return toLocalDateKey(record.clockIn, offsetMinutes);
 }
 
+// ── The badge scan ───────────────────────────────────────────────────────────
+
+/**
+ * An upper bound for a scanned code. The server's rfidBadge is free text, so
+ * the guard exists to keep a garbage read (a blurry QR, a hand in front of
+ * the lens) from being POSTed to a rate-limited endpoint — not to police
+ * badge lengths.
+ */
+export const BADGE_SCAN_MAX_LENGTH = 256;
+
+/**
+ * Normalise whatever delivered the code into the string the server stores.
+ *
+ * Two scanners exist on a kiosk: a camera decodes the QR payload verbatim,
+ * and a USB HID reader is a keyboard that types the payload and hits Enter,
+ * so the captured text can carry a trailing newline (or a stray `\0` from a
+ * decoder that pads its buffer). Both need the same trim before the code is
+ * sent anywhere.
+ *
+ * Deliberately nothing more opinionated than whitespace and null bytes:
+ * rfidBadge is free text, so a badge number containing spaces must survive
+ * verbatim.
+ */
+export function normaliseBadgeScan(raw: string): string {
+  if (raw == null) return '';
+  return String(raw).replace(/\0/g, '').trim();
+}
+
+/** Whether a scan is worth sending to the clock. */
+export function isValidBadgeScan(code: string): boolean {
+  return code.length > 0 && code.length <= BADGE_SCAN_MAX_LENGTH;
+}
+
+/**
+ * How long the same badge is ignored after it has been read.
+ *
+ * The camera decodes whatever is in front of it about ten times a second, so a
+ * card resting against the lens would punch, punch, punch. Five seconds is
+ * longer than it takes to lower your hand and shorter than anybody's patience.
+ *
+ * The server enforces its own, much longer floor (MIN_PUNCH_INTERVAL_SECONDS)
+ * — that one protects the timesheet. This one keeps the pad from showing a
+ * refusal to somebody who did nothing wrong.
+ */
+export const SCAN_COOLDOWN_MS = 5000;
+
+/** The last code this pad accepted, and when. */
+export interface LastScan {
+  code: string;
+  at: number;
+}
+
+/**
+ * Whether a decoded code should be sent to the clock.
+ *
+ * Deduplicated BY CODE rather than by time alone: two people at a handover
+ * queue behind each other, and the second must not be made to wait out the
+ * first's cooldown.
+ */
+export function shouldAcceptScan(
+  code: string,
+  last: LastScan | null,
+  now: number,
+  cooldownMs: number = SCAN_COOLDOWN_MS
+): boolean {
+  if (!last || last.code !== code) return true;
+  return now - last.at >= cooldownMs;
+}
+
+// ── The HID scanner buffer ───────────────────────────────────────────────────
+
+/** A USB reader is a keyboard: the whole burst lands within this window. */
+export const SCAN_BURST_MS = 150;
+
+/** Characters typed so far, and when the last one arrived. */
+export interface ScanBuffer {
+  text: string;
+  at: number;
+}
+
+/**
+ * Fold one keystroke into the scanner buffer.
+ *
+ * Modifier and navigation keys are IGNORED rather than treated as the end of
+ * the burst. A reader types an uppercase character as Shift then the letter,
+ * so ending the burst on a non-printable key submitted a truncated prefix of
+ * every badge code containing a capital — invisible while testing with the
+ * lowercase-hex employee-id fallback, and broken for every real badge number.
+ *
+ * @returns the next buffer, and the code to submit when Enter completed one
+ */
+export function pushScanKey(
+  buffer: ScanBuffer,
+  key: string,
+  now: number,
+  burstMs: number = SCAN_BURST_MS
+): { buffer: ScanBuffer; submit: string | null } {
+  if (key === 'Enter') {
+    const text = buffer.text;
+    return { buffer: { text: '', at: now }, submit: text || null };
+  }
+
+  // Printable keys are the only thing a badge is made of.
+  if (key.length === 1) {
+    const stale = now - buffer.at > burstMs;
+    return {
+      buffer: { text: (stale ? '' : buffer.text) + key, at: now },
+      submit: null,
+    };
+  }
+
+  return { buffer, submit: null };
+}
+
 // ── The kiosk's confirmation ─────────────────────────────────────────────────
 
 export interface ClockConfirmation {

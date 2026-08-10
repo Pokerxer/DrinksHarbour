@@ -57,6 +57,7 @@
     "framer-motion": "^11.0.0",
     "fs-extra": "^11.3.0",
     "glob": "^11.0.1",
+    "html5-qrcode": "^2.3.8",
     "jotai": "2.12.2",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

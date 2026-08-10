@@ -60,6 +60,102 @@ export interface AttendanceRecord {
   updatedAt: string;
 }
 
+/** How the shift ended — the mirror of `Punctuality` for the other end. */
+export type DepartureCode =
+  | 'no_shift'
+  | 'open'
+  | 'early'
+  | 'on_time'
+  | 'overtime';
+
+export interface Departure {
+  code: DepartureCode;
+  /** Always non-negative — `code` carries the direction. */
+  minutes: number;
+}
+
+export const RATING_BANDS = [
+  'excellent',
+  'good',
+  'fair',
+  'needs_attention',
+  'unrated',
+] as const;
+export type RatingBand = (typeof RATING_BANDS)[number];
+
+/**
+ * One input to the score. `rate` is NULL, never 0, when there was nothing to
+ * measure: an employee nobody rostered has not scored zero on punctuality,
+ * they have no punctuality. The overall score renormalises over whichever
+ * components applied.
+ */
+export interface RatingComponent {
+  rate: number | null;
+  of: number;
+  count: number;
+}
+
+export interface AttendanceRating {
+  /** null = unrated. Nothing countable in the window. */
+  score: number | null;
+  band: RatingBand;
+  components: {
+    attendance: RatingComponent;
+    punctuality: RatingComponent;
+    completeness: RatingComponent;
+    duration: RatingComponent;
+  };
+  counts: {
+    rostered: number;
+    expected: number;
+    excused: number;
+    attended: number;
+    absent: number;
+    onTime: number;
+    late: number;
+    closed: number;
+    open: number;
+    earlyLeave: number;
+    /** Reported, never scored — staying late is not a fault, nor a credit. */
+    overtimeMinutes: number;
+    unrostered: number;
+    minutesWorked: number;
+  };
+}
+
+export interface TimelineShift {
+  _id: string;
+  start: string;
+  end: string;
+  status: string;
+  breakMinutes?: number;
+  role?: Ref<{ _id: string; name: string; color?: string }>;
+}
+
+/**
+ * One rostered shift and what answered it. Shift-led, not punch-led: an
+ * absence has no record, and a row still has to exist for it.
+ */
+export interface AttendanceTimelineEntry {
+  shift: TimelineShift;
+  /** null = nobody punched for this shift. */
+  record: AttendanceRecord | null;
+  /** Covered by approved leave, so it is out of the reckoning entirely. */
+  excused: boolean;
+  punctuality: Punctuality | null;
+  departure: Departure;
+}
+
+export interface AttendanceHistoryResponse {
+  employee: PersonRef;
+  range: { from: string; to: string };
+  rating: AttendanceRating;
+  timeline: AttendanceTimelineEntry[];
+  /** Punches that matched no shift. Reported, never rated. */
+  unrostered: AttendanceRecord[];
+  summary: AttendanceSummary;
+}
+
 export interface AttendanceSummary {
   total: number;
   open: number;
@@ -166,6 +262,32 @@ export const attendanceService = {
   },
 
   /**
+   * One employee's history over a window, and the rating it adds up to.
+   *
+   * The rating is computed on the SERVER and never here: it needs the roster
+   * as its denominator (an absence leaves no record to count) and approved
+   * time-off to excuse what it should not mark down. Recomputing any of that
+   * client-side would be a second definition of the rule.
+   */
+  async history(
+    employeeId: string,
+    params: { from?: string; to?: string },
+    token: string
+  ): Promise<AttendanceHistoryResponse> {
+    const qs = new URLSearchParams();
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    const json = await handle<AttendanceHistoryResponse>(
+      await fetch(
+        `${ATTENDANCE}/employee/${employeeId}${qs.toString() ? `?${qs}` : ''}`,
+        { headers: auth(token) }
+      ),
+      'Failed to load this employee’s attendance'
+    );
+    return json.data;
+  },
+
+  /**
    * One toggle, never two endpoints: the server decides from the employee's
    * open record whether this press is an in or an out. A 401 here means only
    * "invalid PIN" — the API deliberately never says whether the code existed.
@@ -178,6 +300,25 @@ export const attendanceService = {
         body: JSON.stringify({ pin }),
       }),
       'Could not read that PIN'
+    );
+    return json.data;
+  },
+
+  /**
+   * The badge path of the same single toggle: the QR payload printed on the
+   * employee's badge card (`attendance.rfidBadge`, or their `_id` when no
+   * badge number was set). No PIN needs to exist for a badge to work — the
+   * card itself is the credential. The server answers a scan nobody matches
+   * with "Badge not recognised".
+   */
+  async clockWithBadge(badge: string, token: string): Promise<ClockResponse> {
+    const json = await handle<ClockResponse>(
+      await fetch(`${ATTENDANCE}/clock`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify({ badge }),
+      }),
+      'Could not read that badge'
     );
     return json.data;
   },

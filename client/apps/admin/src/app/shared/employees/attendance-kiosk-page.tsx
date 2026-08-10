@@ -5,66 +5,95 @@
 // This screen is mounted on a wall in a shop, so it is built for one hand, at
 // arm's length, by somebody in a hurry. Big targets, one action, no chrome.
 //
+// THE CREDENTIAL IS THE BADGE. Employees scan the QR on their badge card
+// (the same QR `employee-badge.tsx` prints), the server decides whether the
+// press is an in or an out, and the pad answers with the employee's name.
+// Camera scanning is the default; a USB HID scanner is a keyboard and gets
+// caught by a global key buffer while the camera is on; the PIN pad remains
+// as the fallback for whoever left their card at home.
+//
 // TWO THINGS IT DELIBERATELY DOES NOT DO
 // --------------------------------------
 // 1. It shows NO employee list, ever. A pad that names the staff is a directory
-//    of who works here, mounted where anyone walking past can read it — and it
-//    would turn a PIN into the only remaining secret rather than one of two.
-// 2. It never tells you whether a PIN exists. The API answers a bad code with
-//    one generic 401 and this page repeats it verbatim; anything more specific
-//    ("no such PIN", "that account is suspended") makes the pad an oracle.
-//
-// There is one button because there is one action: the server reads the
-// employee's open record and decides whether this press is an in or an out.
-// A pad with separate In and Out buttons has to guess before it knows who is
-// standing at it, and gets it wrong for the person who forgot to clock out.
+//    of who works here, mounted where anyone walking past can read it.
+// 2. It never discloses WHY a credential was refused. The API answers a bad
+//    PIN with one generic 401 and this page repeats it verbatim; anything more
+//    specific ("no such PIN", "that account is suspended") makes the pad an
+//    oracle.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   PiArrowUUpLeft,
-  PiBackspace,
-  PiCheckBold,
   PiFingerprintDuotone,
-  PiSignInDuotone,
-  PiSignOutDuotone,
-  PiWarningCircle,
+  PiUsersDuotone,
 } from 'react-icons/pi';
 import { fraunces } from './employees-fonts';
 import {
-  PIN_MAX_LENGTH,
   describeClock,
   isPinReady,
-  pinSlots,
+  isValidBadgeScan,
+  normaliseBadgeScan,
   pressBackspace,
   pressDigit,
+  pushScanKey,
+  shouldAcceptScan,
+  PIN_MAX_LENGTH,
   type ClockConfirmation,
+  type LastScan,
+  type ScanBuffer,
 } from './attendance-utils';
+import { localToday } from './shift-roster-utils';
+import KioskScanView from './kiosk-scan-view';
+import KioskPinPad from './kiosk-pin-pad';
+import KioskConfirmation from './kiosk-confirmation';
 import { attendanceService } from '@/services/attendance.service';
 import { routes } from '@/config/routes';
 
 /** How long the confirmation stays up before the pad resets for the next person. */
 const RESET_AFTER_MS = 4000;
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+/**
+ * How long after the last keystroke a scan is submitted when the reader was
+ * configured without a trailing Enter. Long enough to outlast the burst,
+ * short enough that the employee is still standing there.
+ */
+const SCAN_IDLE_FLUSH_MS = 300;
+
+/** Three surface modes — camera/keyboard for badge scans, pin for the numpad. */
+type KioskMode = 'camera' | 'keyboard' | 'pin';
 
 export default function AttendanceKioskPage() {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
 
+  const [mode, setMode] = useState<KioskMode>('camera');
   const [entry, setEntry] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState<ClockConfirmation | null>(
     null
   );
-  const [now, setNow] = useState<string>('');
+  const [now, setNow] = useState('');
+  const [onShift, setOnShift] = useState<number | null>(null);
 
   // A ref, not state: the timer has to be cleared by whichever press comes
   // next, and a stale one would blank a confirmation the moment it appeared.
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The scanner's idle flush gets its OWN timer. Sharing one ref with the
+  // confirmation reset meant a single keystroke could cancel the reset, and
+  // the previous employee's name then stayed on a wall-mounted screen until
+  // somebody else punched.
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // HID scanner key buffer (camera mode only — see the keydown effect below).
+  const scanBuffer = useRef<ScanBuffer>({ text: '', at: 0 });
+
+  // The last code accepted, so a badge left against the lens is read once.
+  const lastScan = useRef<LastScan | null>(null);
 
   useEffect(() => {
     const tick = () =>
@@ -83,6 +112,7 @@ export default function AttendanceKioskPage() {
   useEffect(
     () => () => {
       if (resetTimer.current) clearTimeout(resetTimer.current);
+      if (flushTimer.current) clearTimeout(flushTimer.current);
     },
     []
   );
@@ -95,212 +125,238 @@ export default function AttendanceKioskPage() {
     }, RESET_AFTER_MS);
   }, []);
 
-  const submit = useCallback(async () => {
-    if (busy || !isPinReady(entry)) return;
-    setBusy(true);
-    setError('');
-    setConfirmation(null);
+  /** How many people are currently clocked in — a count, never names. */
+  const refreshOnShift = useCallback(async () => {
+    if (!token) return;
     try {
-      const result = await attendanceService.clock(entry, token);
-      setConfirmation(describeClock(result));
-      clearLater();
-    } catch (err) {
-      // Repeated verbatim. The API says "Invalid PIN" for every failure on
-      // purpose, and dressing it up here would undo that.
-      setError(err instanceof Error ? err.message : 'Could not read that PIN');
-      clearLater();
-    } finally {
-      // Always cleared, so a network failure cannot leave the pad frozen for
-      // the whole shift with nobody able to reach the person who owns it.
-      setEntry('');
-      setBusy(false);
+      const log = await attendanceService.log({ from: localToday() }, token);
+      setOnShift(log.summary.open);
+    } catch {
+      setOnShift(null);
     }
-  }, [busy, entry, token, clearLater]);
+  }, [token]);
 
-  const press = useCallback((digit: string) => {
-    setConfirmation(null);
-    setError('');
-    setEntry((e) => pressDigit(e, digit, PIN_MAX_LENGTH));
-  }, []);
-
-  // A USB numpad is the cheapest possible kiosk input, so the physical keys
-  // work exactly like the on-screen ones.
   useEffect(() => {
+    if (token) void refreshOnShift();
+  }, [token, refreshOnShift]);
+
+  const punch = useCallback(
+    async (
+      call: () => Promise<import('@/services/attendance.service').ClockResponse>
+    ) => {
+      if (busy) return;
+      setBusy(true);
+      setError('');
+      setConfirmation(null);
+      try {
+        const result = await call();
+        setConfirmation(describeClock(result));
+        clearLater();
+        void refreshOnShift();
+      } catch (err) {
+        // Repeated verbatim. The API says one generic thing per credential on
+        // purpose, and dressing it up here would undo that.
+        setError(
+          err instanceof Error ? err.message : 'Could not read that code'
+        );
+        clearLater();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, clearLater, refreshOnShift]
+  );
+
+  const submitBadge = useCallback(
+    (raw: string) => {
+      const code = normaliseBadgeScan(raw);
+      if (!isValidBadgeScan(code)) {
+        // A garbage read (blurry QR, hand over the lens) gets a soft refusal,
+        // not a trip to the rate-limited endpoint.
+        setError('Could not read that badge — try again.');
+        clearLater();
+        return;
+      }
+
+      // The camera decodes the card in front of it about ten times a second.
+      // Ignored SILENTLY, not refused: the employee has done nothing wrong and
+      // their confirmation is still on the screen, so an error here would
+      // replace "Welcome, Alice" with a complaint while she lowers her hand.
+      const at = Date.now();
+      if (!shouldAcceptScan(code, lastScan.current, at)) return;
+      lastScan.current = { code, at };
+
+      void punch(() => attendanceService.clockWithBadge(code, token));
+    },
+    [punch, token, clearLater]
+  );
+
+  const submitPin = useCallback(() => {
+    if (!isPinReady(entry)) return;
+    const pin = entry;
+    setEntry('');
+    void punch(() => attendanceService.clock(pin, token));
+  }, [entry, punch, token]);
+
+  // A USB numpad works like the on-screen keys, but only while the PIN pad is
+  // showing — digit presses must not also feed the badge buffer.
+  useEffect(() => {
+    if (mode !== 'pin') return;
     function onKey(e: KeyboardEvent) {
-      if (/^[0-9]$/.test(e.key)) press(e.key);
+      if (/^[0-9]$/.test(e.key))
+        setEntry((s) => pressDigit(s, e.key, PIN_MAX_LENGTH));
       else if (e.key === 'Backspace') setEntry(pressBackspace);
-      else if (e.key === 'Enter') void submit();
+      else if (e.key === 'Enter') submitPin();
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [press, submit]);
+  }, [mode, submitPin]);
 
-  const slots = pinSlots(entry);
-  const ready = isPinReady(entry);
+  // HID scanner catch-all: while the camera is scanning, a USB reader's
+  // keystrokes accumulate in a burst buffer and submit on Enter (or on a
+  // pause, for readers configured to skip the Enter). The folding rule lives
+  // in pushScanKey so it can be tested — notably that Shift, which a reader
+  // sends before every capital, does not end the burst.
+  useEffect(() => {
+    if (mode !== 'camera') return;
+    function onKey(e: KeyboardEvent) {
+      if (busy) return;
+      if (e.key === 'Enter') e.preventDefault();
+
+      const { buffer, submit } = pushScanKey(
+        scanBuffer.current,
+        e.key,
+        Date.now()
+      );
+      scanBuffer.current = buffer;
+
+      if (flushTimer.current) clearTimeout(flushTimer.current);
+
+      if (submit) {
+        submitBadge(submit);
+        return;
+      }
+
+      // Readers configured without a trailing Enter: flush once it goes quiet.
+      if (buffer.text) {
+        flushTimer.current = setTimeout(() => {
+          const code = scanBuffer.current.text;
+          scanBuffer.current = { text: '', at: 0 };
+          if (code) submitBadge(code);
+        }, SCAN_IDLE_FLUSH_MS);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mode, busy, submitBadge]);
+
+  const showOverlay = busy || !!confirmation || !!error;
 
   return (
-    <div className="flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4 py-8">
-      <div className="w-full max-w-sm">
-        {/* Header */}
-        <div className="mb-6 text-center">
-          <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#b20202] text-white [&>svg]:h-7 [&>svg]:w-7">
+    <div className="relative flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center overflow-hidden bg-[#0b0d12] px-4 py-10 text-white">
+      {/* Backdrop glows */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-40 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-[#b20202]/20 blur-3xl" />
+        <div className="absolute -bottom-40 left-1/4 h-[300px] w-[300px] rounded-full bg-[#b20202]/10 blur-3xl" />
+        <div className="absolute -bottom-32 right-1/4 h-[260px] w-[260px] rounded-full bg-[#1e3a8a]/10 blur-3xl" />
+      </div>
+
+      {/* Brand + clock header */}
+      <header className="relative z-10 mb-10 flex w-full max-w-xl items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <span className="[&>svg]:h-4.5 [&>svg]:w-4.5 flex h-9 w-9 items-center justify-center rounded-xl bg-[#b20202] text-white [&>svg]:h-5 [&>svg]:w-5">
             <PiFingerprintDuotone />
           </span>
-          <h1
-            className={`${fraunces.className} text-3xl font-black text-gray-900`}
+          <div className="leading-tight">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">
+              DrinksHarbour
+            </p>
+            <p
+              className={`${fraunces.className} text-sm font-bold text-white/90`}
+            >
+              Staff clock
+            </p>
+          </div>
+        </div>
+
+        <div className="text-right">
+          <p
+            className={`${fraunces.className} text-3xl font-black tabular-nums tracking-tight text-white`}
           >
-            Clock in
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Enter your PIN
-            {now && (
-              <span className="ml-1 tabular-nums text-gray-400">· {now}</span>
-            )}
+            {now || '--:--'}
+          </p>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-white/40">
+            {new Date().toLocaleDateString(undefined, {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+            })}
           </p>
         </div>
+      </header>
 
-        {/* Result — one person, the one at the screen. Never a list. */}
-        <div className="mb-5 min-h-[84px]">
-          <AnimatePresence mode="wait">
-            {confirmation && (
-              <motion.div
-                key="ok"
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className={`flex items-start gap-3 rounded-2xl border p-4 ${
-                  confirmation.tone === 'in'
-                    ? 'border-green-200 bg-green-50'
-                    : 'border-sky-200 bg-sky-50'
-                }`}
-              >
-                <span
-                  className={`mt-0.5 [&>svg]:h-6 [&>svg]:w-6 ${
-                    confirmation.tone === 'in'
-                      ? 'text-green-700'
-                      : 'text-sky-700'
-                  }`}
-                >
-                  {confirmation.tone === 'in' ? (
-                    <PiSignInDuotone />
-                  ) : (
-                    <PiSignOutDuotone />
-                  )}
-                </span>
-                <div>
-                  <p
-                    className={`text-base font-bold ${
-                      confirmation.tone === 'in'
-                        ? 'text-green-900'
-                        : 'text-sky-900'
-                    }`}
-                  >
-                    {confirmation.headline}
-                  </p>
-                  <p
-                    className={`mt-0.5 text-sm ${
-                      confirmation.tone === 'in'
-                        ? 'text-green-800'
-                        : 'text-sky-800'
-                    }`}
-                  >
-                    {confirmation.detail}
-                  </p>
-                </div>
-              </motion.div>
-            )}
+      {/* Main surface */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="relative z-10 w-full max-w-sm rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-md"
+      >
+        {mode === 'pin' ? (
+          <KioskPinPad
+            entry={entry}
+            busy={busy}
+            onDigit={(d) => {
+              setError('');
+              setConfirmation(null);
+              setEntry((s) => pressDigit(s, d, PIN_MAX_LENGTH));
+            }}
+            onBackspace={() => setEntry(pressBackspace)}
+            onSubmit={submitPin}
+            onSwitchToBadge={() => setMode('camera')}
+          />
+        ) : (
+          <KioskScanView
+            mode={mode as 'camera' | 'keyboard'}
+            onModeChange={(m) => setMode(m)}
+            onScan={submitBadge}
+            onSwitchToPin={() => setMode('pin')}
+            busy={busy}
+          />
+        )}
 
-            {error && !confirmation && (
-              <motion.div
-                key="err"
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4"
-              >
-                <PiWarningCircle className="mt-0.5 h-6 w-6 shrink-0 text-amber-700" />
-                <div>
-                  <p className="text-base font-bold text-amber-900">{error}</p>
-                  <p className="mt-0.5 text-sm text-amber-800">
-                    Try again, or ask a manager to check your PIN.
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        {/* Count of people currently clocked in — a number, never names. */}
+        {onShift !== null && mode !== 'pin' && (
+          <div className="mt-6 flex items-center justify-center gap-2 border-t border-white/5 pt-5">
+            <PiUsersDuotone className="h-3.5 w-3.5 text-white/30" />
+            <p className="text-xs font-medium text-white/40">
+              <span className="font-bold tabular-nums text-white/70">
+                {onShift}
+              </span>{' '}
+              {onShift === 1 ? 'person is' : 'people are'} on shift now
+            </p>
+          </div>
+        )}
+      </motion.div>
 
-        {/* Entry */}
-        <div
-          className="mb-6 flex items-center justify-center gap-3"
-          aria-label="PIN entry"
+      <div className="relative z-10 mt-8 text-center">
+        <Link
+          href={routes.employees.attendance}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/30 transition-colors hover:text-white/60"
         >
-          {slots.map((filled, i) => (
-            <span
-              key={i}
-              className={`h-4 w-4 rounded-full transition-colors ${
-                filled ? 'bg-[#b20202]' : 'border-2 border-gray-300'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Pad */}
-        <div className="grid grid-cols-3 gap-3">
-          {KEYS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => press(k)}
-              className="h-[68px] rounded-2xl border border-gray-200 bg-white text-2xl font-semibold tabular-nums text-gray-900 shadow-sm transition-colors active:bg-gray-100"
-            >
-              {k}
-            </button>
-          ))}
-
-          <button
-            type="button"
-            onClick={() => setEntry(pressBackspace)}
-            aria-label="Delete last digit"
-            className="flex h-[68px] items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors active:bg-gray-100"
-          >
-            <PiBackspace className="h-6 w-6" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => press('0')}
-            className="h-[68px] rounded-2xl border border-gray-200 bg-white text-2xl font-semibold tabular-nums text-gray-900 shadow-sm transition-colors active:bg-gray-100"
-          >
-            0
-          </button>
-
-          {/* One button, because there is one action. The server decides which. */}
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={!ready || busy}
-            aria-label="Clock in or out"
-            className="flex h-[68px] items-center justify-center rounded-2xl bg-[#b20202] text-white shadow-sm transition-colors active:bg-[#8f0202] disabled:bg-gray-200 disabled:text-gray-400"
-          >
-            {busy ? (
-              <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-            ) : (
-              <PiCheckBold className="h-6 w-6" />
-            )}
-          </button>
-        </div>
-
-        <div className="mt-8 text-center">
-          <Link
-            href={routes.employees.attendance}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-400 transition-colors hover:text-gray-700"
-          >
-            <PiArrowUUpLeft className="h-3.5 w-3.5" />
-            Back to the attendance log
-          </Link>
-        </div>
+          <PiArrowUUpLeft className="h-3.5 w-3.5" />
+          Back to the attendance log
+        </Link>
       </div>
+
+      {/* Result overlay — one person, the one at the screen. Never a list. */}
+      {showOverlay && (
+        <KioskConfirmation
+          confirmation={confirmation}
+          error={error}
+          busy={busy}
+        />
+      )}
     </div>
   );
 }

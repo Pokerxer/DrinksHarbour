@@ -11,6 +11,8 @@ const {
   summariseAttendance,
   buildAttendancePayload,
   resolveAttendanceTimes,
+  lastPunchAt,
+  isPunchTooSoon,
 } = require('../services/attendance.helpers');
 
 const EMP = '507f1f77bcf86cd799439021';
@@ -212,4 +214,64 @@ test('resolveAttendanceTimes refuses a clock-out at or before the clock-in', () 
   assert.ok(!resolveAttendanceTimes('2026-08-10T08:00:00.000Z', '2026-08-10T08:00:00.000Z').ok);
   assert.ok(!resolveAttendanceTimes('2026-08-10T08:00:00.000Z', '2026-08-10T07:00:00.000Z').ok);
   assert.ok(!resolveAttendanceTimes(null, null).ok);
+});
+
+// ── The double-punch guard ───────────────────────────────────────────────────
+//
+// A camera kiosk decodes the badge held in front of it ten times a second, so
+// without a floor between punches one held card clocks the employee in and
+// straight back out. resolveAttendanceTimes cannot catch that: a punch 300ms
+// later is genuinely after the clock-in, so it writes a closed record with
+// zero minutes on it.
+
+test('lastPunchAt reads the clock-out of a closed record', () => {
+  assert.strictEqual(
+    lastPunchAt({ clockIn: '2026-08-10T08:00:00.000Z', clockOut: '2026-08-10T16:00:00.000Z' }),
+    new Date('2026-08-10T16:00:00.000Z').getTime()
+  );
+});
+
+test('lastPunchAt reads the clock-in while the record is still open', () => {
+  assert.strictEqual(
+    lastPunchAt({ clockIn: '2026-08-10T08:00:00.000Z', clockOut: null }),
+    new Date('2026-08-10T08:00:00.000Z').getTime()
+  );
+});
+
+test('lastPunchAt reports nothing for a missing or junk record', () => {
+  assert.strictEqual(lastPunchAt(null), null);
+  assert.strictEqual(lastPunchAt({}), null);
+  assert.strictEqual(lastPunchAt({ clockIn: 'not a date' }), null);
+});
+
+test('isPunchTooSoon refuses a second punch inside the interval', () => {
+  // The held-badge case: the same card decoded again a third of a second later.
+  assert.strictEqual(
+    isPunchTooSoon('2026-08-10T08:00:00.000Z', '2026-08-10T08:00:00.300Z'),
+    true
+  );
+});
+
+test('isPunchTooSoon allows a punch once the interval has passed', () => {
+  assert.strictEqual(
+    isPunchTooSoon('2026-08-10T08:00:00.000Z', '2026-08-10T08:01:00.000Z'),
+    false
+  );
+});
+
+test('isPunchTooSoon lets a first-ever punch through', () => {
+  // No previous record is not "too soon" — there is nothing to be too soon after.
+  assert.strictEqual(isPunchTooSoon(null, '2026-08-10T08:00:00.000Z'), false);
+});
+
+test('isPunchTooSoon honours a custom interval', () => {
+  const at = '2026-08-10T08:00:10.000Z';
+  assert.strictEqual(isPunchTooSoon('2026-08-10T08:00:00.000Z', at, { minSeconds: 5 }), false);
+  assert.strictEqual(isPunchTooSoon('2026-08-10T08:00:00.000Z', at, { minSeconds: 30 }), true);
+});
+
+test('isPunchTooSoon never refuses on a junk timestamp', () => {
+  // A guard that cannot read the clock must not become a lockout.
+  assert.strictEqual(isPunchTooSoon('nonsense', '2026-08-10T08:00:00.000Z'), false);
+  assert.strictEqual(isPunchTooSoon('2026-08-10T08:00:00.000Z', 'nonsense'), false);
 });

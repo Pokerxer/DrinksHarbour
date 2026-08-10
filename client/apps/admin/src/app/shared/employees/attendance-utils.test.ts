@@ -16,6 +16,12 @@ import {
   groupAttendance,
   recordDateKey,
   describeClock,
+  normaliseBadgeScan,
+  isValidBadgeScan,
+  shouldAcceptScan,
+  SCAN_COOLDOWN_MS,
+  pushScanKey,
+  SCAN_BURST_MS,
 } from './attendance-utils';
 import type { AttendanceRecord } from '@/services/attendance.service';
 
@@ -71,6 +77,101 @@ describe('the PIN pad', () => {
     expect(isPinReady('1234')).toBe(true);
     expect(isPinReady('123456')).toBe(true);
     expect(PIN_MIN_LENGTH).toBe(4);
+  });
+});
+
+describe('the badge scan', () => {
+  it('strips scanner framing noise but keeps internal spaces', () => {
+    // A HID reader is a keyboard: payload + Enter. A decoder may pad with \0.
+    expect(normaliseBadgeScan('ABC-123\n')).toBe('ABC-123');
+    expect(normaliseBadgeScan('\r\n  7C9F 2210\r\n')).toBe('7C9F 2210');
+    expect(normaliseBadgeScan('badge\u0000code\u0000')).toBe('badgecode');
+  });
+
+  it('treats empty and absurd reads as invalid', () => {
+    expect(isValidBadgeScan(normaliseBadgeScan('   \n'))).toBe(false);
+    expect(isValidBadgeScan('')).toBe(false);
+    expect(isValidBadgeScan('x'.repeat(257))).toBe(false);
+    expect(isValidBadgeScan('x'.repeat(256))).toBe(true);
+  });
+
+  it('survives a non-string payload from a decoder', () => {
+    expect(normaliseBadgeScan(undefined as unknown as string)).toBe('');
+    expect(normaliseBadgeScan(null as unknown as string)).toBe('');
+  });
+});
+
+describe('the scan cooldown', () => {
+  it('refuses the same badge held against the lens', () => {
+    // The camera decodes about ten times a second. Without this, one card left
+    // in front of it clocks the employee in and straight back out.
+    const last = { code: 'BADGE-1', at: 1_000 };
+    expect(shouldAcceptScan('BADGE-1', last, 1_100)).toBe(false);
+    expect(shouldAcceptScan('BADGE-1', last, 1_000 + SCAN_COOLDOWN_MS - 1)).toBe(false);
+  });
+
+  it('accepts the same badge once the cooldown has passed', () => {
+    const last = { code: 'BADGE-1', at: 1_000 };
+    expect(shouldAcceptScan('BADGE-1', last, 1_000 + SCAN_COOLDOWN_MS)).toBe(true);
+  });
+
+  it('accepts a different badge straight away', () => {
+    // Two people in a queue at handover must not be made to wait on each other.
+    const last = { code: 'BADGE-1', at: 1_000 };
+    expect(shouldAcceptScan('BADGE-2', last, 1_100)).toBe(true);
+  });
+
+  it('accepts the first scan of the shift', () => {
+    expect(shouldAcceptScan('BADGE-1', null, 1_000)).toBe(true);
+  });
+});
+
+describe('the HID scanner buffer', () => {
+  const empty = { text: '', at: 0 };
+
+  it('accumulates the characters a reader types', () => {
+    let buf = empty;
+    for (const key of ['a', 'b', 'c']) {
+      buf = pushScanKey(buf, key, 100).buffer;
+    }
+    expect(buf.text).toBe('abc');
+  });
+
+  it('submits on Enter and clears the buffer', () => {
+    const out = pushScanKey({ text: 'ABC-123', at: 100 }, 'Enter', 120);
+    expect(out.submit).toBe('ABC-123');
+    expect(out.buffer.text).toBe('');
+  });
+
+  it('ignores modifier keys so an uppercase badge is not truncated', () => {
+    // A reader types uppercase as Shift+key. Treating Shift as the end of the
+    // burst submitted a truncated prefix — the bug this guards.
+    let buf = empty;
+    buf = pushScanKey(buf, 'Shift', 100).buffer;
+    buf = pushScanKey(buf, 'A', 101).buffer;
+    buf = pushScanKey(buf, 'Shift', 102).buffer;
+    buf = pushScanKey(buf, 'B', 103).buffer;
+    expect(buf.text).toBe('AB');
+
+    const out = pushScanKey(buf, 'Enter', 104);
+    expect(out.submit).toBe('AB');
+  });
+
+  it('never submits on a modifier key', () => {
+    expect(pushScanKey({ text: 'AB', at: 100 }, 'Shift', 110).submit).toBeNull();
+    expect(pushScanKey({ text: 'AB', at: 100 }, 'Tab', 110).submit).toBeNull();
+  });
+
+  it('starts a fresh burst after a pause', () => {
+    // A person typing is not a scanner. A gap means the previous keys were
+    // not part of this code.
+    const stale = { text: 'old', at: 100 };
+    const out = pushScanKey(stale, 'n', 100 + SCAN_BURST_MS + 1);
+    expect(out.buffer.text).toBe('n');
+  });
+
+  it('submits nothing when Enter arrives on an empty buffer', () => {
+    expect(pushScanKey(empty, 'Enter', 100).submit).toBeNull();
   });
 });
 
