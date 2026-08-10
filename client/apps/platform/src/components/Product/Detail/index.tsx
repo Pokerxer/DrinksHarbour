@@ -388,6 +388,20 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   const images = productData?.images || [];
   const hasMultipleImages = images.length > 1;
 
+  // Safe canonical share URL — only when hostname matches (stripped www)
+  // so tenant subdomains keep their own storefront context.
+  const shareUrl = (() => {
+    const canonical = productData?.canonicalUrl;
+    if (!canonical) return undefined;
+    try {
+      const canonicalHost = new URL(canonical).hostname.replace(/^www\./, '');
+      const currentHost = window.location.hostname.replace(/^www\./, '');
+      return canonicalHost === currentHost ? canonical : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+
   return (
     <div className="product-detail bg-white">
       {renderToast()}
@@ -862,6 +876,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 <ShareButton
                   name={productData.name}
                   description={productData.shortDescription || productData.description}
+                  url={shareUrl}
                 />
               </div>
 
