@@ -2,5 +2,5 @@
   "installCommand": "npm install --legacy-peer-deps --include=dev",
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
-  "ignoreCommand": "cd \"$(git rev-parse --show-toplevel)\" && BASE=\"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\" && git rev-parse --verify --quiet \"$BASE^{commit}\" > /dev/null && git diff --quiet \"$BASE\" HEAD -- client/apps/platform client/packages client/package.json client/pnpm-lock.yaml client/pnpm-workspace.yaml"
+  "ignoreCommand": "cd \"$(git rev-parse --show-toplevel)\" && git diff --quiet \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\" HEAD -- client/apps/platform client/packages client/package.json client/pnpm-lock.yaml client/pnpm-workspace.yaml || exit 1"
 }
