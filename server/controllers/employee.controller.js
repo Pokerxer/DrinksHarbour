@@ -21,6 +21,13 @@ const {
   isValidPin,
   sanitizeAvatar,
 } = require('../services/employee.helpers');
+const {
+  assignBadgeNumber,
+  needsBadgeNumber,
+  withBadgeNumber,
+  carryOverBadgeNumber,
+  isDuplicateBadgeNumberError,
+} = require('../services/badgeNumber.helpers');
 
 /**
  * Build the tenant's reporting graph: employeeId → their current managerId, for
@@ -154,7 +161,39 @@ exports.createEmployee = asyncHandler(async (req, res) => {
     userData.employeeProfile = profile;
   }
 
-  const user = await User.create(userData);
+  // Issue a badge number unless this employee already carries one. It is what
+  // the card's 1-D barcode encodes, so an employee without one has a card no
+  // laser scanner can read — which is why it is assigned here, on creation,
+  // rather than left to whoever eventually prints the badge.
+  //
+  // The retry redraws the number and rebuilds the payload from scratch each
+  // time: `userData` must not be mutated, or a rejected number would be carried
+  // into the next attempt and clash again on exactly the number that failed.
+  let user;
+  try {
+    if (needsBadgeNumber(userData.employeeProfile)) {
+      user = await assignBadgeNumber((code) =>
+        User.create({
+          ...userData,
+          employeeProfile: withBadgeNumber(userData.employeeProfile, code),
+        })
+      );
+    } else {
+      user = await User.create(userData);
+    }
+  } catch (err) {
+    // Only reachable for a badge the CALLER supplied — one we generated is
+    // retried above. Redrawing somebody's hand-entered number would silently
+    // replace what they typed, so this is a 409 for them to resolve.
+    if (isDuplicateBadgeNumberError(err)) {
+      return res.status(409).json({
+        success: false,
+        message: 'That badge number is already in use by another employee',
+      });
+    }
+    throw err;
+  }
+
   res.status(201).json({ success: true, data: { employee: present(user) } });
 });
 
@@ -195,7 +234,11 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, message: check.message });
       }
     }
-    user.employeeProfile = profile;
+    // The full-replace would otherwise delete an issued badge number whenever
+    // the submission omits it — and that number is on a card in somebody's
+    // pocket, so losing it silently stops the card working. An explicit value
+    // still wins: overwriting is how an employee moves to a pre-printed card.
+    user.employeeProfile = carryOverBadgeNumber(profile, user.employeeProfile);
     user.markModified('employeeProfile');
   }
 
@@ -211,7 +254,20 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
     }
   }
 
-  await user.save();
+  try {
+    await user.save();
+  } catch (err) {
+    // A badge number the caller typed that another employee in this tenant
+    // already holds. Named, because it is theirs to resolve — the per-tenant
+    // unique index is what stops two cards clocking in as each other.
+    if (isDuplicateBadgeNumberError(err)) {
+      return res.status(409).json({
+        success: false,
+        message: 'That badge number is already in use by another employee',
+      });
+    }
+    throw err;
+  }
   res.json({ success: true, data: { employee: present(user) } });
 });
 

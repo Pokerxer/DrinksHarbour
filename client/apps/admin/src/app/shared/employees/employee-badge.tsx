@@ -8,6 +8,15 @@ import toast from 'react-hot-toast';
 import { PiX, PiPrinterBold, PiDownloadSimpleBold } from 'react-icons/pi';
 import { type Employee } from '@/services/employee.service';
 import { ROLE_META, fullName, initials } from './employee-profile-form';
+import { CODE128_QUIET_ZONE } from './barcode-utils';
+import {
+  CARD_W_MM,
+  CARD_H_MM,
+  badgePdfLayout,
+  badgePayload,
+  badgeBarcodeLayout,
+  formatBadgeNumber,
+} from './badge-utils';
 
 const BRAND = '#b20202';
 
@@ -16,10 +25,39 @@ function shortId(id: string): string {
   return id.slice(-8).toUpperCase();
 }
 
-// What the QR encodes: the RFID/badge number when present (so a single scan
-// works at the POS / attendance reader), otherwise the employee id.
-function qrPayload(e: Employee): string {
-  return e.employeeProfile?.attendance?.rfidBadge?.trim() || e._id;
+/**
+ * The 1-D barcode, in module units — the same numbers the PDF draws with.
+ *
+ * `preserveAspectRatio="none"` so the symbol stretches to the card's width
+ * while the bars keep their RELATIVE widths, which is the only thing a scanner
+ * reads. `shapeRendering="crispEdges"` because an anti-aliased edge on a
+ * half-millimetre bar is a decoding error.
+ */
+function Barcode({ bars, modules }: { bars: Array<{ x: number; width: number }>; modules: number }) {
+  const total = modules + CODE128_QUIET_ZONE * 2;
+  return (
+    <svg
+      viewBox={`0 0 ${total} 28`}
+      width="100%"
+      height="40"
+      preserveAspectRatio="none"
+      shapeRendering="crispEdges"
+      role="img"
+      aria-label="Badge barcode"
+    >
+      <rect x={0} y={0} width={total} height={28} fill="#fff" />
+      {bars.map((bar) => (
+        <rect
+          key={bar.x}
+          x={CODE128_QUIET_ZONE + bar.x}
+          y={0}
+          width={bar.width}
+          height={28}
+          fill="#000"
+        />
+      ))}
+    </svg>
+  );
 }
 
 // Fetch a remote image and inline it as a data URL (needed for jsPDF, which
@@ -67,8 +105,13 @@ export default function EmployeeBadge({
   const name = fullName(employee);
   const role = ROLE_META[employee.role];
   const code = shortId(employee._id);
-  const rfid = employee.employeeProfile?.attendance?.rfidBadge?.trim() || '';
-  const qrValue = qrPayload(employee);
+  const qrValue = badgePayload(employee);
+  // One decision for both surfaces, and it is the PRINTED card's: a symbol that
+  // would not survive being cut down to CR80 is not drawn on screen either,
+  // because the preview is a preview of the card, not of the screen. Null means
+  // this employee has no badge number yet, so the payload is their 24-character
+  // id — 0.15mm a bar, which nothing on a shop counter can read.
+  const barcode = badgeBarcodeLayout(qrValue, CARD_W_MM);
   const issued = new Date().toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -89,8 +132,18 @@ export default function EmployeeBadge({
     setDownloading(true);
     try {
       // CR80 portrait card: 53.98 × 85.6 mm.
-      const W = 53.98;
-      const H = 85.6;
+      //
+      // Every position comes from badgePdfLayout, which owns the vertical
+      // budget — the barcode left the card with no slack at all, and the
+      // arithmetic is tested there because it cannot be tested here.
+      const W = CARD_W_MM;
+      const H = CARD_H_MM;
+      const rows: [string, string][] = [
+        ['EMPLOYEE ID', code],
+        ['EMAIL', employee.email],
+        ['ISSUED', issued],
+      ];
+      const L = badgePdfLayout(rows.length);
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -101,19 +154,19 @@ export default function EmployeeBadge({
 
       // Header band.
       doc.setFillColor(...R);
-      doc.rect(0, 0, W, 22, 'F');
+      doc.rect(0, 0, W, L.headerH, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6);
-      doc.text('DRINKSHARBOUR', W / 2, 9, { align: 'center' });
+      doc.text('DRINKSHARBOUR', W / 2, L.brandY, { align: 'center' });
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('STAFF ID CARD', W / 2, 16, { align: 'center' });
+      doc.setFontSize(9);
+      doc.text('STAFF ID CARD', W / 2, L.titleY, { align: 'center' });
 
       // Photo (or initials disc) straddling the header.
-      const pSize = 22;
-      const px = (W - pSize) / 2;
-      const py = 11;
+      const pSize = L.photo.size;
+      const px = L.photo.x;
+      const py = L.photo.y;
       const photo = employee.avatar ? await toDataUrl(employee.avatar) : null;
       if (photo) {
         try {
@@ -124,39 +177,41 @@ export default function EmployeeBadge({
         } catch {
           /* ignore unsupported image format */
         }
-        doc.setDrawColor(255, 255, 255);
-        doc.setLineWidth(0.8);
+        // A light ring, not the white one it used to have: the photo now sits
+        // almost entirely BELOW the header band, so a white edge on white card
+        // is invisible and the photo bleeds into the page.
+        doc.setDrawColor(229, 231, 235);
+        doc.setLineWidth(0.5);
         doc.roundedRect(px, py, pSize, pSize, 3, 3, 'S');
       } else {
-        doc.setFillColor(255, 255, 255);
+        // Same reason: tinted and ringed so the disc reads as a disc instead of
+        // disappearing into the card, leaving the initials floating.
+        doc.setFillColor(250, 248, 243);
         doc.circle(W / 2, py + pSize / 2, pSize / 2, 'F');
+        doc.setDrawColor(...R);
+        doc.setLineWidth(0.4);
+        doc.circle(W / 2, py + pSize / 2, pSize / 2, 'S');
         doc.setTextColor(...R);
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
-        doc.text(initials(employee), W / 2, py + pSize / 2 + 1.8, {
+        doc.setFontSize(12);
+        doc.text(initials(employee), W / 2, py + pSize / 2 + 1.5, {
           align: 'center',
         });
       }
 
       // Name + role.
-      let y = py + pSize + 6;
       doc.setTextColor(31, 41, 55);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
-      doc.text(name, W / 2, y, { align: 'center', maxWidth: W - 6 });
-      y += 5;
+      doc.text(name, W / 2, L.nameY, { align: 'center', maxWidth: W - 6 });
       doc.setTextColor(...R);
       doc.setFontSize(7);
-      doc.text(role.label.toUpperCase(), W / 2, y, { align: 'center' });
+      doc.text(role.label.toUpperCase(), W / 2, L.roleY, { align: 'center' });
 
-      // Info rows.
-      y += 5;
-      const rows: [string, string][] = [
-        ['EMPLOYEE ID', code],
-        ['BADGE / RFID', rfid || '—'],
-        ['EMAIL', employee.email],
-        ['ISSUED', issued],
-      ];
+      // Info rows. No BADGE / RFID row: the number is printed under the bars
+      // below, grouped and larger — repeating it here in 6pt would cost the
+      // barcode the height it needs and tell nobody anything new.
+      let y = L.rowsY;
       doc.setFontSize(6);
       for (const [k, v] of rows) {
         doc.setTextColor(156, 163, 175);
@@ -167,19 +222,53 @@ export default function EmployeeBadge({
         doc.setDrawColor(229, 231, 235);
         doc.setLineWidth(0.1);
         doc.line(M, y + 1.2, W - M, y + 1.2);
-        y += 4.2;
+        y += L.rowStep;
       }
 
-      // QR code.
+      // QR code — for a phone camera, which does not care how long the payload
+      // is. 12mm rather than the 20mm it used to have, because the barcode
+      // below cannot give up any height: an 8-digit payload is a version-1
+      // symbol, 21 modules plus margin, so even at 12mm a module is 0.48mm and
+      // a phone reads it instantly.
+      //
+      // Its position, and the barcode's below it, are anchored UP from the
+      // footer band by badgePdfLayout — see the budget there.
       const qr = qrDataUrl();
       if (qr) {
-        const q = 20;
-        doc.addImage(qr, 'PNG', (W - q) / 2, y + 1, q, q);
-        y += q + 3.5;
+        const q = L.qr.size;
+        doc.addImage(qr, 'PNG', (W - q) / 2, L.qr.y, q, q);
+      }
+
+      // The 1-D barcode — the whole point of the exercise, since a laser
+      // scanner cannot read the QR above it. Drawn bar by bar from the shared
+      // encoder, so the card, this PDF and the tests cannot disagree.
+      if (barcode) {
+        const barsY = L.bars.y;
+        const barsH = L.bars.height;
+        doc.setFillColor(0, 0, 0);
+        for (const bar of barcode.encoding.bars) {
+          doc.rect(
+            barcode.x + bar.x * barcode.moduleMm,
+            barsY,
+            bar.width * barcode.moduleMm,
+            barsH,
+            'F'
+          );
+        }
+        // The number under the bars, grouped: what somebody reads out when a
+        // scanner is broken and the number has to be typed at the kiosk.
+        doc.setTextColor(31, 41, 55);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text(formatBadgeNumber(qrValue), W / 2, L.captionY, { align: 'center' });
+      } else {
+        // No badge number issued yet, so the payload is the employee id and a
+        // barcode of it would be unreadable. Print the payload as text instead
+        // of bars that only look like they work.
         doc.setTextColor(107, 114, 128);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(5);
-        doc.text(qrValue, W / 2, y, { align: 'center', maxWidth: W - 6 });
+        doc.text(qrValue, W / 2, L.bars.y + 2, { align: 'center', maxWidth: W - 6 });
       }
 
       // Footer.
@@ -276,18 +365,29 @@ export default function EmployeeBadge({
               </span>
               <div className="mt-3 text-left">
                 <InfoRow label="Employee ID" value={code} />
-                <InfoRow label="Badge / RFID" value={rfid} />
                 <InfoRow label="Email" value={employee.email} />
                 <InfoRow label="Issued" value={issued} />
               </div>
-              <div className="mt-4 flex flex-col items-center gap-1.5">
+              <div className="mt-3 flex flex-col items-center gap-1">
                 <QRCodeCanvas
                   value={qrValue}
-                  size={108}
+                  size={84}
                   level="M"
                   marginSize={1}
                 />
-                <code className="text-[10px] text-gray-400">{qrValue}</code>
+                {barcode ? (
+                  <div className="mt-1 w-full">
+                    <Barcode
+                      bars={barcode.encoding.bars}
+                      modules={barcode.encoding.modules}
+                    />
+                    <p className="text-center text-sm font-bold tracking-[0.15em] text-gray-900">
+                      {formatBadgeNumber(qrValue)}
+                    </p>
+                  </div>
+                ) : (
+                  <code className="text-[10px] text-gray-400">{qrValue}</code>
+                )}
               </div>
             </div>
             <div className="bg-[#faf8f3] py-2 text-center text-[9px] font-bold uppercase tracking-wider text-[#b20202]">

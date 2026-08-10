@@ -515,6 +515,30 @@ userSchema.virtual('isCustomer').get(function () {
 // Note: googleId, facebookId, appleId already have indexes from unique: true
 // Note: email already has index from unique: true
 
+// The badge number printed on a staff card, which the kiosk accepts TYPED as
+// well as scanned — so it is a credential, and two people in one shop must
+// never hold the same one.
+//
+// COMPOUND on `tenant`, never a field-level `unique: true`: isolation here is
+// shared-DB row-level, so a field-level unique would enforce uniqueness across
+// EVERY tenant in the collection and refuse tenant B a number tenant A happens
+// to hold. (Mongoose never re-options or drops an index once created, so that
+// mistake would outlive the line asking for it.)
+//
+// PARTIAL because most Users have no badge at all — every customer, and all
+// staff before the backfill. A plain unique index treats "missing" as a value
+// and the second such document collides. `$type: 'string'` with `$gt: ''` also
+// keeps out any legacy empty string, which would collide the same way.
+userSchema.index(
+  { tenant: 1, 'employeeProfile.attendance.rfidBadge': 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      'employeeProfile.attendance.rfidBadge': { $type: 'string', $gt: '' },
+    },
+  }
+);
+
 // ────────────────────────────────────────────────
 // Instance Methods
 // ────────────────────────────────────────────────
