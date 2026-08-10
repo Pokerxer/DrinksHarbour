@@ -21,6 +21,7 @@ import {
   PiFingerprintBold,
 } from 'react-icons/pi';
 import { fraunces } from './employees-fonts';
+import { startScannerSession } from './kiosk-scanner-utils';
 
 const SCAN_CONTAINER_ID = 'kiosk-qr-reader';
 
@@ -54,19 +55,18 @@ function CameraScanner({
   busyRef.current = busy;
 
   useEffect(() => {
-    let disposed = false;
-    let scanner: import('html5-qrcode').Html5Qrcode | null = null;
-
-    async function start() {
-      try {
+    // Everything decidable lives in kiosk-scanner-utils so it can be tested;
+    // this effect is only the IO. In particular the teardown MUST go through
+    // stopScannerSafely — html5-qrcode's stop() throws synchronously for a
+    // scanner that never reached SCANNING, which escapes .catch()/.finally()
+    // and took the whole kiosk down via the error boundary.
+    const session = startScannerSession({
+      createScanner: async () => {
         // Lazy-load so the module isn't pulled into the server bundle.
         const mod = await import('html5-qrcode');
-        if (disposed) return;
-
         // QR codes AND barcodes — covers every badge format in use.
-        const QR = mod.Html5Qrcode;
         const F = mod.Html5QrcodeSupportedFormats;
-        scanner = new QR(SCAN_CONTAINER_ID, {
+        return new mod.Html5Qrcode(SCAN_CONTAINER_ID, {
           verbose: false,
           formatsToSupport: [
             F.QR_CODE,
@@ -77,40 +77,23 @@ function CameraScanner({
             F.UPC_EAN_EXTENSION,
           ],
         });
-
-        const cameras = await QR.getCameras();
-        if (disposed) return;
-        if (!cameras.length) {
-          onErrorRef.current();
-          return;
-        }
-
-        await scanner.start(
-          // Prefer the back camera when a kiosk tablet has two.
-          cameras.length > 1 ? cameras[cameras.length - 1].id : cameras[0].id,
-          {
-            fps: 10,
-            qrbox: { width: 240, height: 240 },
-            aspectRatio: 1.0,
-          },
-          (text: string) => {
-            if (!disposed && !busyRef.current) onScanRef.current(text);
-          },
-          () => {} // per-frame decode errors are expected
-        );
-      } catch {
-        if (!disposed) onErrorRef.current();
-      }
-    }
-
-    start();
+      },
+      listCameras: async () => {
+        const mod = await import('html5-qrcode');
+        return mod.Html5Qrcode.getCameras();
+      },
+      config: {
+        fps: 10,
+        qrbox: { width: 240, height: 240 },
+        aspectRatio: 1.0,
+      },
+      onDecode: (text) => onScanRef.current(text),
+      onUnavailable: () => onErrorRef.current(),
+      isBusy: () => busyRef.current,
+    });
 
     return () => {
-      disposed = true;
-      scanner
-        ?.stop()
-        .catch(() => {})
-        .finally(() => scanner?.clear());
+      void session.dispose();
     };
     // Only re-start if the component remounts (StrictMode).  Not triggered
     // by busy/parent re-renders — the effect is stable across props.
