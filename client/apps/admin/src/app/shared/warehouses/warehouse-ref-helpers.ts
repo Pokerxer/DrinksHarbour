@@ -24,12 +24,16 @@ import type { WarehouseStockRow } from '@/services/warehouseStock.service';
  * Narrows a Mongoose ref to its populated-document form. Unlike a bare
  * `typeof v === 'object'`, this excludes `null` — see the file header.
  */
-export const isPopulated = <T,>(v: T | string | null | undefined): v is T =>
+export const isPopulated = <T>(v: T | string | null | undefined): v is T =>
   typeof v === 'object' && v !== null;
 
 /** Id of a ref, whether populated, unpopulated, or dangling (`''`). */
 export const refIdOf = (
-  v: WarehouseStockRow['warehouse'] | WarehouseStockRow['size'] | null | undefined
+  v:
+    | WarehouseStockRow['warehouse']
+    | WarehouseStockRow['size']
+    | null
+    | undefined
 ): string => (isPopulated(v) ? (v._id ?? '') : (v ?? ''));
 
 // ── subProduct ────────────────────────────────────────────────────────────────

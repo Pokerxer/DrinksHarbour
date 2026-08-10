@@ -16,8 +16,14 @@ import {
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { vendorBillService, type VendorBill } from '@/services/vendorBill.service';
-import { vendorReturnService, type VendorReturn } from '@/services/vendorReturn.service';
+import {
+  vendorBillService,
+  type VendorBill,
+} from '@/services/vendorBill.service';
+import {
+  vendorReturnService,
+  type VendorReturn,
+} from '@/services/vendorReturn.service';
 import { printBillInvoice } from '@/utils/purchaseInvoice';
 import { fmtPrice } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
@@ -129,7 +135,9 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
 
   // Auto-refresh on window focus so bill stays in sync with returns
   useEffect(() => {
-    const onFocus = () => { load(); };
+    const onFocus = () => {
+      load();
+    };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [load]);
@@ -226,11 +234,14 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
             >
               {bill.status}
             </span>
-            {bill.dueDate && new Date(bill.dueDate) < new Date() && bill.status !== 'paid' && bill.status !== 'cancelled' && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
-                <PiWarning className="h-3.5 w-3.5" /> Overdue
-              </span>
-            )}
+            {bill.dueDate &&
+              new Date(bill.dueDate) < new Date() &&
+              bill.status !== 'paid' &&
+              bill.status !== 'cancelled' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                  <PiWarning className="h-3.5 w-3.5" /> Overdue
+                </span>
+              )}
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${matchInfo.cls}`}
             >
@@ -248,7 +259,9 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => bill && printBillInvoice(bill, tenant?.name || 'DrinksHarbour')}
+            onClick={() =>
+              bill && printBillInvoice(bill, tenant?.name || 'DrinksHarbour')
+            }
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <PiPrinter className="h-4 w-4" /> Print / Download
@@ -284,12 +297,15 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
           <p className="mb-3 text-sm font-medium text-green-800">
             Record Payment — Due: {fmtPrice(amountDue, bill.currency)}
           </p>
-          {bill.dueDate && new Date(bill.dueDate) < new Date() && bill.status !== 'paid' && (
-            <div className="mb-3 flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              <PiWarning className="h-4 w-4 shrink-0" />
-              This bill is overdue since {new Date(bill.dueDate).toLocaleDateString()}
-            </div>
-          )}
+          {bill.dueDate &&
+            new Date(bill.dueDate) < new Date() &&
+            bill.status !== 'paid' && (
+              <div className="mb-3 flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <PiWarning className="h-4 w-4 shrink-0" />
+                This bill is overdue since{' '}
+                {new Date(bill.dueDate).toLocaleDateString()}
+              </div>
+            )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-green-700">
@@ -310,7 +326,9 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                   <button
                     key={pct}
                     type="button"
-                    onClick={() => setPayAmount(((amountDue * pct) / 100).toFixed(2))}
+                    onClick={() =>
+                      setPayAmount(((amountDue * pct) / 100).toFixed(2))
+                    }
                     className="rounded border border-green-300 px-1.5 py-0.5 text-[10px] text-green-700 hover:bg-green-100"
                   >
                     {pct}%
@@ -391,48 +409,63 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
 
       {/* Stat cards */}
       {(() => {
-        const isOverdue = bill.dueDate && new Date(bill.dueDate) < new Date() && bill.status !== 'paid' && bill.status !== 'cancelled';
+        const isOverdue =
+          bill.dueDate &&
+          new Date(bill.dueDate) < new Date() &&
+          bill.status !== 'paid' &&
+          bill.status !== 'cancelled';
         return (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {[
-            {
-              label: 'Bill Date',
-              value: bill.billDate
-                ? new Date(bill.billDate).toLocaleDateString()
-                : '—',
-            },
-            {
-              label: 'Due Date',
-              value: bill.dueDate
-                ? new Date(bill.dueDate).toLocaleDateString()
-                : '—',
-              overdue: isOverdue,
-            },
-            { label: 'Currency', value: bill.currency },
-            { label: 'Total', value: fmtPrice(bill.totalAmount, bill.currency) },
-            { label: 'Paid', value: fmtPrice(bill.paidAmount, bill.currency) },
-            {
-              label: 'Balance Due',
-              value: amountDue > 0 ? fmtPrice(amountDue, bill.currency) : 'Paid',
-              overdue: isOverdue && amountDue > 0,
-            },
-          ].map(({ label, value, overdue }) => (
-            <div
-              key={label}
-              className={`rounded-xl border bg-white p-4 ${overdue ? 'border-red-200' : 'border-gray-200'}`}
-            >
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className={`mt-0.5 truncate font-medium ${overdue ? 'text-red-600' : 'text-gray-900'}`}>
-                {value}
-                {overdue && label === 'Due Date' && (
-                  <span className="ml-1.5 text-[10px] font-normal text-red-500">(Overdue)</span>
-                )}
-              </p>
-            </div>
-          ))}
-        </div>
-      );
-    })()}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              {
+                label: 'Bill Date',
+                value: bill.billDate
+                  ? new Date(bill.billDate).toLocaleDateString()
+                  : '—',
+              },
+              {
+                label: 'Due Date',
+                value: bill.dueDate
+                  ? new Date(bill.dueDate).toLocaleDateString()
+                  : '—',
+                overdue: isOverdue,
+              },
+              { label: 'Currency', value: bill.currency },
+              {
+                label: 'Total',
+                value: fmtPrice(bill.totalAmount, bill.currency),
+              },
+              {
+                label: 'Paid',
+                value: fmtPrice(bill.paidAmount, bill.currency),
+              },
+              {
+                label: 'Balance Due',
+                value:
+                  amountDue > 0 ? fmtPrice(amountDue, bill.currency) : 'Paid',
+                overdue: isOverdue && amountDue > 0,
+              },
+            ].map(({ label, value, overdue }) => (
+              <div
+                key={label}
+                className={`rounded-xl border bg-white p-4 ${overdue ? 'border-red-200' : 'border-gray-200'}`}
+              >
+                <p className="text-xs text-gray-500">{label}</p>
+                <p
+                  className={`mt-0.5 truncate font-medium ${overdue ? 'text-red-600' : 'text-gray-900'}`}
+                >
+                  {value}
+                  {overdue && label === 'Due Date' && (
+                    <span className="ml-1.5 text-[10px] font-normal text-red-500">
+                      (Overdue)
+                    </span>
+                  )}
+                </p>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* 3-Way Matching */}
       {bill.matchingDetails && (
@@ -580,7 +613,10 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
               for (const r of returnsData) {
                 for (const ri of r.items || []) {
                   const key = `${ri.subProductId ?? ''}-${ri.sizeId ?? ''}`;
-                  returnMap.set(key, (returnMap.get(key) || 0) + (ri.quantity || 0));
+                  returnMap.set(
+                    key,
+                    (returnMap.get(key) || 0) + (ri.quantity || 0)
+                  );
                 }
               }
               return bill.items.map((item, i) => {
@@ -655,7 +691,9 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                       amountDue > 0 ? 'text-red-600' : 'text-green-600'
                     }
                   >
-                    {amountDue > 0 ? fmtPrice(amountDue, bill.currency) : 'Paid'}
+                    {amountDue > 0
+                      ? fmtPrice(amountDue, bill.currency)
+                      : 'Paid'}
                   </span>
                 </div>
                 <div className="flex justify-end">
@@ -684,11 +722,21 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-orange-100 bg-orange-50/50">
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Return #</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Date</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Items</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Total</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Status</th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
+                  Return #
+                </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
+                  Date
+                </th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">
+                  Items
+                </th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">
+                  Total
+                </th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">
+                  Status
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-orange-100">
@@ -703,7 +751,9 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                     </Link>
                   </td>
                   <td className="px-4 py-2.5 text-gray-700">
-                    {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}
+                    {r.createdAt
+                      ? new Date(r.createdAt).toLocaleDateString()
+                      : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right text-gray-700">
                     {r.items?.reduce((s, i) => s + (i.quantity || 0), 0) ?? 0}
@@ -728,7 +778,9 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-5 py-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-700">Payment History</h2>
+              <h2 className="text-sm font-semibold text-gray-700">
+                Payment History
+              </h2>
               <span className="text-xs text-gray-400">
                 Total paid: {fmtPrice(bill.paidAmount, bill.currency)}
               </span>
@@ -737,11 +789,21 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Date</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Method</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Reference</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Recorded By</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Amount</th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
+                  Date
+                </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
+                  Method
+                </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
+                  Reference
+                </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
+                  Recorded By
+                </th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">
+                  Amount
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -757,7 +819,9 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                     {p.reference ?? '—'}
                   </td>
                   <td className="px-4 py-2.5 text-gray-500">
-                    {p.recordedBy && typeof p.recordedBy === 'object' ? (p.recordedBy as { name?: string }).name ?? '—' : '—'}
+                    {p.recordedBy && typeof p.recordedBy === 'object'
+                      ? ((p.recordedBy as { name?: string }).name ?? '—')
+                      : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right font-medium text-green-700">
                     {fmtPrice(p.amount, bill.currency)}

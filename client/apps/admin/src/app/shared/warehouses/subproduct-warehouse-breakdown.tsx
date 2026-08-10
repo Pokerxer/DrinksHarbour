@@ -6,10 +6,7 @@ import {
   warehouseStockService,
   type WarehouseStockRow,
 } from '@/services/warehouseStock.service';
-import {
-  warehouseNameOf,
-  sizeLabelOf,
-} from './warehouse-ref-helpers';
+import { warehouseNameOf, sizeLabelOf } from './warehouse-ref-helpers';
 
 export default function SubproductWarehouseBreakdown({
   subProductId,
