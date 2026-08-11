@@ -812,9 +812,73 @@ function parseRosterRange(query = {}, offsetMinutes = DEFAULT_OFFSET_MINUTES) {
   return { ok: true, from, to, start: new Date(startMs), end: new Date(endMs) };
 }
 
+/**
+ * The part of a requested range a publish is actually allowed to reach.
+ *
+ * WHY PUBLISHING CANNOT REACH BACKWARDS
+ * ------------------------------------
+ * Publishing is what makes a roster visible to the people on it — a draft is a
+ * plan the staff have never seen. Attendance, separately, counts a PUBLISHED
+ * shift that produced no punch as an absence, because the roster is the
+ * denominator (see attendanceRating.helpers.js).
+ *
+ * Put those together and publishing a range that reaches into the past marks
+ * people absent, retroactively, for shifts nobody ever told them about — and
+ * there is no action they could have taken, because the day is over. It damages
+ * an attendance rating that managers use to judge people. A draft in the past is
+ * a plan that did not happen, and it stays a draft.
+ *
+ * The floor is the START OF TODAY, not the current instant. Refusing a shift
+ * that began an hour ago would be an hourly moving target no manager can
+ * predict, and that shift is one somebody may be standing in the shop working
+ * right now — publishing today's roster at 09:00 has to include the 08:00
+ * opening. Whole past DAYS are the harm; the current day is not.
+ *
+ * The far end is never moved: this is a floor, not a window.
+ *
+ * @param {object} range the result of parseRosterRange — a failed parse is
+ *   passed straight back so the caller reports the real reason rather than
+ *   this function turning it into a publishing verdict.
+ * @param {number} offsetMinutes the tenant's UTC offset. "Today" is the
+ *   TENANT's today: at 00:30 in Lagos it is still yesterday in UTC, and taking
+ *   the floor from the wrong calendar publishes an extra day of past drafts.
+ * @param {number} [now]
+ * @returns {{ok: true, start: Date, end: Date, from: string, to: string,
+ *   clamped: boolean} | {ok: false, message: string}}
+ */
+function clampPublishRange(range, offsetMinutes, now = Date.now()) {
+  if (!range?.ok) return range;
+
+  const today = tenantToday(offsetMinutes, now);
+  const floor = parseRosterRange({ from: today, to: today }, offsetMinutes);
+  // Unreachable in practice — tenantToday always yields a parseable date — but
+  // falling back to the range as asked would silently restore the old
+  // behaviour, so a floor we cannot compute refuses instead.
+  if (!floor.ok) return { ok: false, message: 'Could not work out today’s date' };
+
+  if (range.end <= floor.start) {
+    return {
+      ok: false,
+      message:
+        'That range is in the past. Publishing it would mark staff absent for shifts they were never shown.',
+    };
+  }
+
+  const clamped = range.start < floor.start;
+  return {
+    ok: true,
+    from: range.from,
+    to: range.to,
+    start: clamped ? floor.start : range.start,
+    end: range.end,
+    clamped,
+  };
+}
+
 module.exports = {
   SHIFT_STATUSES,
   SHIFT_TRANSITIONS,
+  clampPublishRange,
   DAYS_OF_WEEK,
   RECURRENCE_TYPES,
   MAX_CYCLE_LENGTH,

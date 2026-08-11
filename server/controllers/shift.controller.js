@@ -29,6 +29,7 @@ const {
   buildShiftPayload,
   validateShiftTimes,
   parseRosterRange,
+  clampPublishRange,
   planShiftGeneration,
   checkAssignment,
   summariseRoster,
@@ -434,14 +435,41 @@ const generateShifts = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * POST /api/shifts/publish — make a stretch of the roster visible to staff.
+ *
+ * NEVER REACHES INTO THE PAST. Publishing is what staff can see, and attendance
+ * counts a published shift with no punch against it as an absence — so
+ * publishing last week marks people absent for shifts they were never shown,
+ * on a day they can no longer do anything about. The floor is the start of
+ * today, and it lives in clampPublishRange where it is tested.
+ *
+ * What was held back is REPORTED rather than quietly dropped. "Published 3" on
+ * a fortnight the manager selected is indistinguishable from a broken button;
+ * the same reasoning as `skipped` on generation, a few functions above.
+ */
 const publishShifts = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
-  const range = parseRosterRange(req.body, tenantOffsetMinutes(req));
+  const offsetMinutes = tenantOffsetMinutes(req);
+  const asked = parseRosterRange(req.body, offsetMinutes);
+  if (!asked.ok) return badRequest(res, asked.message);
+
+  const range = clampPublishRange(asked, offsetMinutes);
   if (!range.ok) return badRequest(res, range.message);
 
   // Derived from the transition table rather than hard-coding `draft`, so the
   // bulk move and the single-shift move can never disagree about what is legal.
   const publishable = statusesThatCanBecome('published');
+
+  // Counted BEFORE the write, and only when the range was actually clamped: it
+  // is the number the manager is owed an explanation for. These stay drafts.
+  const heldBack = range.clamped
+    ? await Shift.countDocuments({
+        tenant: tenantId,
+        status: { $in: publishable },
+        start: { $gte: asked.start, $lt: range.start },
+      })
+    : 0;
 
   const result = await Shift.updateMany(
     {
@@ -454,7 +482,14 @@ const publishShifts = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: { published: result.modifiedCount ?? 0, range: { from: range.from, to: range.to } },
+    data: {
+      published: result.modifiedCount ?? 0,
+      // Named for what it is from the manager's side: shifts they asked to
+      // publish that are still drafts, and why.
+      heldBack,
+      clamped: range.clamped,
+      range: { from: range.from, to: range.to },
+    },
   });
 });
 

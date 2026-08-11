@@ -18,6 +18,8 @@ const {
   canTransitionShift,
   tenantOffsetMinutes,
   tenantToday,
+  parseRosterRange,
+  clampPublishRange,
 } = require('../services/shift.helpers');
 
 const ROLE = '507f1f77bcf86cd799439011';
@@ -672,4 +674,74 @@ test('generation still creates the slot on a day somebody is on leave', () => {
   // The reason leave cannot apply: nobody is on it yet.
   assert.strictEqual(toCreate[0].employee, null);
   assert.strictEqual(toCreate[0].status, 'draft');
+});
+
+// ── What a publish is allowed to reach ───────────────────────────────────────
+//
+// Publishing is what makes a roster VISIBLE to the people on it, and attendance
+// counts a published shift nobody turned up to as an absence. Those two facts
+// together are the bug: publishing a range that reaches into the past marks
+// people absent for shifts they were never told about, retroactively, and there
+// is no way for them to have turned up. A draft in the past is a plan that did
+// not happen; it must stay a draft.
+
+test('a range wholly in the future is published exactly as asked', () => {
+  const range = parseRosterRange({ from: '2026-08-20', to: '2026-08-26' }, 60);
+  const out = clampPublishRange(range, 60, Date.parse('2026-08-11T09:00:00+01:00'));
+  assert.strictEqual(out.ok, true);
+  assert.strictEqual(out.clamped, false);
+  assert.strictEqual(out.start.getTime(), range.start.getTime());
+  assert.strictEqual(out.end.getTime(), range.end.getTime());
+});
+
+test('a range that reaches back into the past starts at today instead', () => {
+  // The common way in: a manager builds a fortnight, selects the whole thing,
+  // and presses Publish. Last week's drafts must not come with it.
+  const range = parseRosterRange({ from: '2026-08-04', to: '2026-08-17' }, 60);
+  const out = clampPublishRange(range, 60, Date.parse('2026-08-11T09:00:00+01:00'));
+  assert.strictEqual(out.ok, true);
+  assert.strictEqual(out.clamped, true);
+  const today = parseRosterRange({ from: '2026-08-11', to: '2026-08-11' }, 60);
+  assert.strictEqual(out.start.getTime(), today.start.getTime());
+  // The far end is never moved — clamping is a floor, not a window.
+  assert.strictEqual(out.end.getTime(), range.end.getTime());
+});
+
+test('a shift earlier TODAY is still publishable', () => {
+  // The floor is the start of today, NOT the current instant. A manager
+  // publishing at 09:00 means today's roster including the 08:00 opening
+  // shift — refusing that would be an hourly moving target nobody can predict,
+  // and the shift is one somebody is standing in the shop working right now.
+  const range = parseRosterRange({ from: '2026-08-11', to: '2026-08-11' }, 60);
+  const out = clampPublishRange(range, 60, Date.parse('2026-08-11T09:00:00+01:00'));
+  assert.strictEqual(out.ok, true);
+  assert.strictEqual(out.clamped, false);
+  assert.strictEqual(out.start.getTime(), range.start.getTime());
+});
+
+test('a range wholly in the past publishes nothing at all', () => {
+  // Refused rather than silently clamped to an empty window: "published 0" with
+  // no reason is exactly the kind of answer that reads as a broken button.
+  const range = parseRosterRange({ from: '2026-07-01', to: '2026-07-07' }, 60);
+  const out = clampPublishRange(range, 60, Date.parse('2026-08-11T09:00:00+01:00'));
+  assert.strictEqual(out.ok, false);
+  assert.match(out.message, /past/i);
+});
+
+test('today is the tenant’s today, not UTC’s', () => {
+  // At 00:30 in Lagos it is still yesterday in UTC. Taking the floor from the
+  // wrong calendar would publish a whole extra day of past drafts — or refuse a
+  // day the manager can see on their own screen.
+  const range = parseRosterRange({ from: '2026-08-01', to: '2026-08-31' }, 60);
+  const out = clampPublishRange(range, 60, Date.parse('2026-08-11T00:30:00+01:00'));
+  const today = parseRosterRange({ from: '2026-08-11', to: '2026-08-11' }, 60);
+  assert.strictEqual(out.start.getTime(), today.start.getTime());
+});
+
+test('a range that fails to parse is passed straight through', () => {
+  // The caller reports the parse error; this must not turn it into a
+  // publishing verdict and lose the reason.
+  const out = clampPublishRange({ ok: false, message: 'bad dates' }, 60, Date.now());
+  assert.strictEqual(out.ok, false);
+  assert.strictEqual(out.message, 'bad dates');
 });

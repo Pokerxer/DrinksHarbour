@@ -44,6 +44,7 @@ import {
   formatMinutes,
   localToday,
   localWindowToUtc,
+  publishOutcomeMessage,
   startOfWeek,
   statusTone,
   summariseSkips,
@@ -341,12 +342,11 @@ export default function ShiftRosterPage() {
   async function publish() {
     setBusy(true);
     try {
-      const { published } = await shiftService.publish({ from, to }, token);
-      toast.success(
-        published
-          ? `${published} shift${published === 1 ? '' : 's'} published`
-          : 'Nothing left to publish this week'
-      );
+      const result = await shiftService.publish({ from, to }, token);
+      // The message is a rule, not a template: the server holds back past
+      // drafts on purpose, and saying only how many went through reads as a
+      // partial failure. See publishOutcomeMessage.
+      toast.success(publishOutcomeMessage(result));
       await loadRoster();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Publishing failed');

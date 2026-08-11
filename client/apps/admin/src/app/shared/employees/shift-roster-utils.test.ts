@@ -10,6 +10,7 @@ import {
   buildWeek,
   weekRangeLabel,
   shiftMinutes,
+  publishOutcomeMessage,
   formatMinutes,
   employeeName,
   buildRosterLanes,
@@ -490,5 +491,52 @@ describe('weekdayShort', () => {
   it('is empty rather than wrong for an unparseable date', () => {
     expect(weekdayShort('nonsense')).toBe('');
     expect(weekdayShort('')).toBe('');
+  });
+});
+
+describe('what a publish tells the manager', () => {
+  it('reports a clean publish', () => {
+    expect(publishOutcomeMessage({ published: 4, heldBack: 0 })).toBe(
+      '4 shifts published'
+    );
+  });
+
+  it('counts one shift in the singular', () => {
+    expect(publishOutcomeMessage({ published: 1, heldBack: 0 })).toBe(
+      '1 shift published'
+    );
+  });
+
+  it('says nothing was outstanding when there was nothing to do', () => {
+    expect(publishOutcomeMessage({ published: 0, heldBack: 0 })).toBe(
+      'Nothing left to publish'
+    );
+  });
+
+  it('explains the shifts it would not publish', () => {
+    // The whole reason this function exists. The server refuses to publish into
+    // the past, because a published shift with no punch against it counts as an
+    // absence — so publishing last week marks staff absent for shifts they were
+    // never shown. Reporting only the 4 that went through would read as a
+    // partial failure, and the manager would press it again.
+    const msg = publishOutcomeMessage({ published: 4, heldBack: 3 });
+    expect(msg).toContain('4 shifts published');
+    expect(msg).toContain('3');
+    expect(msg).toMatch(/past/i);
+  });
+
+  it('explains a publish that did nothing BUT held things back', () => {
+    // Selecting a week that has already gone. "Nothing left to publish" here
+    // would be a lie: there is plenty, and it is deliberately not being done.
+    const msg = publishOutcomeMessage({ published: 0, heldBack: 6 });
+    expect(msg).not.toBe('Nothing left to publish');
+    expect(msg).toMatch(/past/i);
+    expect(msg).toContain('6');
+  });
+
+  it('treats a missing heldBack as none', () => {
+    // The server did not always return this field; an older response must not
+    // render "undefined shifts are in the past".
+    expect(publishOutcomeMessage({ published: 2 })).toBe('2 shifts published');
   });
 });

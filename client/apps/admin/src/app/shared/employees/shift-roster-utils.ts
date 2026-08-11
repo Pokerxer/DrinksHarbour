@@ -605,3 +605,36 @@ const STATUS_TONES: Record<ShiftStatus, string> = {
 export function statusTone(status: ShiftStatus): string {
   return STATUS_TONES[status] ?? 'border-solid';
 }
+
+/**
+ * What to tell the manager after pressing Publish.
+ *
+ * A rule rather than a template string, because the interesting case is the one
+ * that is easy to render as a failure. The server will not publish into the
+ * past: a published shift with no punch against it counts as an ABSENCE, so
+ * publishing last week marks staff absent for shifts they were never shown, on
+ * days they can no longer do anything about. Those stay drafts, deliberately.
+ *
+ * Reporting only the shifts that went through would read as a partial failure —
+ * the manager presses it again, gets the same number, and concludes the button
+ * is broken. And "Nothing left to publish" when six past shifts were held back
+ * is simply untrue: there is plenty, and it is being withheld on purpose.
+ */
+export function publishOutcomeMessage(result: {
+  published: number;
+  heldBack?: number;
+}): string {
+  const { published } = result;
+  // The server did not always send this field. Rendering "undefined shifts are
+  // in the past" is worse than saying nothing about them.
+  const heldBack = result.heldBack ?? 0;
+
+  const shifts = (n: number) => `${n} shift${n === 1 ? '' : 's'}`;
+  const past = `${shifts(heldBack)} in the past stayed as drafts, so nobody is marked absent for them`;
+
+  if (published > 0) {
+    const done = `${shifts(published)} published`;
+    return heldBack > 0 ? `${done} · ${past}` : done;
+  }
+  return heldBack > 0 ? `Nothing published — ${past}` : 'Nothing left to publish';
+}

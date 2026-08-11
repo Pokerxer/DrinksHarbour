@@ -357,11 +357,24 @@ export const shiftService = {
     return json.data;
   },
 
+  /**
+   * Make a stretch of the roster visible to staff.
+   *
+   * `heldBack` is drafts the server REFUSED to publish because they are in the
+   * past — a published shift with no punch counts as an absence, so publishing
+   * last week would mark staff absent for shifts they were never shown. They
+   * stay drafts. It is reported rather than silently dropped, or a publish that
+   * moved fewer shifts than the manager selected reads as a broken button.
+   */
   async publish(
     input: { from: string; to: string },
     token: string
-  ): Promise<{ published: number }> {
-    const json = await handle<{ published: number }>(
+  ): Promise<{ published: number; heldBack?: number; clamped?: boolean }> {
+    const json = await handle<{
+      published: number;
+      heldBack?: number;
+      clamped?: boolean;
+    }>(
       await fetch(`${SHIFTS}/publish`, {
         method: 'POST',
         headers: jsonAuth(token),
