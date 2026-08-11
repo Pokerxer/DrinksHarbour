@@ -41,6 +41,7 @@ import {
 import { fraunces } from './employees-fonts';
 import {
   describeClock,
+  describeEarlyLeavePrompt,
   isPinReady,
   resolveKioskAuth,
   isValidBadgeScan,
@@ -51,6 +52,7 @@ import {
   shouldAcceptScan,
   PIN_MAX_LENGTH,
   type ClockConfirmation,
+  type EarlyLeavePrompt,
   type LastScan,
   type ScanBuffer,
 } from './attendance-utils';
@@ -58,7 +60,12 @@ import { localToday } from './shift-roster-utils';
 import KioskScanView from './kiosk-scan-view';
 import KioskPinPad from './kiosk-pin-pad';
 import KioskConfirmation from './kiosk-confirmation';
-import { attendanceService } from '@/services/attendance.service';
+import KioskEarlyLeave from './kiosk-early-leave';
+import {
+  attendanceService,
+  AttendanceConflictError,
+  LEAVING_EARLY,
+} from '@/services/attendance.service';
 import { useTenant } from '@/context/TenantContext';
 import { routes } from '@/config/routes';
 
@@ -104,6 +111,19 @@ export default function AttendanceKioskPage({
   const [confirmation, setConfirmation] = useState<ClockConfirmation | null>(
     null
   );
+  /**
+   * A clock-out the server is holding until the employee acknowledges it.
+   *
+   * `retry` re-sends the SAME credential with the acknowledgement attached
+   * rather than re-reading the badge: the card is already back in a pocket by
+   * the time the question is answered, and asking for a second scan would be a
+   * different, worse question.
+   */
+  const [earlyLeave, setEarlyLeave] = useState<{
+    prompt: EarlyLeavePrompt;
+    retry: () => Promise<void>;
+  } | null>(null);
+
   const [now, setNow] = useState('');
   const [onShift, setOnShift] = useState<number | null>(null);
 
@@ -193,18 +213,57 @@ export default function AttendanceKioskPage({
 
   const punch = useCallback(
     async (
-      call: () => Promise<import('@/services/attendance.service').ClockResponse>
+      call: (opts: {
+        confirmEarlyLeave?: boolean;
+      }) => Promise<import('@/services/attendance.service').ClockResponse>
     ) => {
       if (busy) return;
       setBusy(true);
       setError('');
       setConfirmation(null);
       try {
-        const result = await call();
+        const result = await call({});
         setConfirmation(describeClock(result));
         clearLater();
         void refreshOnShift();
       } catch (err) {
+        // Leaving early is a QUESTION, not a failure. The server withheld the
+        // write and told us what it wants acknowledged, so the pad asks instead
+        // of showing a refusal the employee cannot act on. No reset timer is
+        // started: this one waits for an answer rather than clearing itself
+        // while somebody is reading it.
+        if (
+          err instanceof AttendanceConflictError &&
+          err.code === LEAVING_EARLY &&
+          err.details
+        ) {
+          const details = err.details;
+          setEarlyLeave({
+            prompt: describeEarlyLeavePrompt(details),
+            retry: async () => {
+              setBusy(true);
+              try {
+                const result = await call({ confirmEarlyLeave: true });
+                setEarlyLeave(null);
+                setConfirmation(describeClock(result));
+                clearLater();
+                void refreshOnShift();
+              } catch (retryErr) {
+                setEarlyLeave(null);
+                setError(
+                  retryErr instanceof Error
+                    ? retryErr.message
+                    : 'Could not clock you out'
+                );
+                clearLater();
+              } finally {
+                setBusy(false);
+              }
+            },
+          });
+          return;
+        }
+
         // Repeated verbatim. The API says one generic thing per credential on
         // purpose, and dressing it up here would undo that.
         setError(
@@ -220,6 +279,11 @@ export default function AttendanceKioskPage({
 
   const submitBadge = useCallback(
     (raw: string) => {
+      // A question is on the screen and the camera is still running. Scans are
+      // dropped until it is answered — otherwise the card still in somebody's
+      // hand punches again behind the dialog they are reading.
+      if (earlyLeave) return;
+
       const code = normaliseBadgeScan(raw);
       if (!isValidBadgeScan(code)) {
         // A garbage read (blurry QR, hand over the lens) gets a soft refusal,
@@ -237,13 +301,13 @@ export default function AttendanceKioskPage({
       if (!shouldAcceptScan(code, lastScan.current, at)) return;
       lastScan.current = { code, at };
 
-      void punch(() =>
+      void punch((opts) =>
         isDevice
-          ? attendanceService.clockWithKioskBadge(code, token)
-          : attendanceService.clockWithBadge(code, token)
+          ? attendanceService.clockWithKioskBadge(code, token, opts)
+          : attendanceService.clockWithBadge(code, token, opts)
       );
     },
-    [punch, token, isDevice, clearLater]
+    [punch, token, isDevice, clearLater, earlyLeave]
   );
 
   const submitPin = useCallback(() => {
@@ -279,7 +343,7 @@ export default function AttendanceKioskPage({
   useEffect(() => {
     if (mode !== 'camera') return;
     function onKey(e: KeyboardEvent) {
-      if (busy) return;
+      if (busy || earlyLeave) return;
       if (e.key === 'Enter') e.preventDefault();
 
       const { buffer, submit } = pushScanKey(
@@ -307,12 +371,14 @@ export default function AttendanceKioskPage({
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mode, busy, submitBadge]);
+  }, [mode, busy, submitBadge, earlyLeave]);
 
-  const showOverlay = busy || !!confirmation || !!error;
+  // The early-leave question owns the screen while it is up: the spinner and
+  // the confirmation would otherwise stack on top of the thing being read.
+  const showOverlay = !earlyLeave && (busy || !!confirmation || !!error);
 
   return (
-    <div className="relative flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center overflow-hidden bg-[#0b0d12] px-4 py-10 text-white">
+    <div className="relative flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center overflow-hidden bg-[#0b0d12] px-4 py-8 text-white sm:px-8">
       {/* Backdrop glows */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -top-40 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-[#b20202]/20 blur-3xl" />
@@ -321,18 +387,21 @@ export default function AttendanceKioskPage({
       </div>
 
       {/* Brand + clock header */}
-      <header className="relative z-10 mb-10 flex w-full max-w-xl items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="[&>svg]:h-4.5 [&>svg]:w-4.5 flex h-9 w-9 items-center justify-center rounded-xl bg-[#b20202] text-white [&>svg]:h-5 [&>svg]:w-5">
+      <header className="relative z-10 mb-8 flex w-full max-w-md items-center justify-between sm:mb-10">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#b20202] text-white [&>svg]:h-6 [&>svg]:w-6">
             <PiFingerprintDuotone />
           </span>
           <div className="leading-tight">
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">
+            {/* The shop's own name, at a size somebody can read on the way in —
+                this is the only thing on screen that says which door they are
+                standing at. */}
+            <p
+              className={`${fraunces.className} text-lg font-black tracking-tight text-white sm:text-xl`}
+            >
               {shopName || 'DrinksHarbour'}
             </p>
-            <p
-              className={`${fraunces.className} text-sm font-bold text-white/90`}
-            >
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/40">
               Staff clock
             </p>
           </div>
@@ -340,11 +409,11 @@ export default function AttendanceKioskPage({
 
         <div className="text-right">
           <p
-            className={`${fraunces.className} text-3xl font-black tabular-nums tracking-tight text-white`}
+            className={`${fraunces.className} text-4xl font-black tabular-nums leading-none tracking-tight text-white sm:text-5xl`}
           >
             {now || '--:--'}
           </p>
-          <p className="text-[10px] font-medium uppercase tracking-wider text-white/40">
+          <p className="mt-1.5 text-[11px] font-medium uppercase tracking-wider text-white/40">
             {new Date().toLocaleDateString(undefined, {
               weekday: 'short',
               day: 'numeric',
@@ -359,7 +428,7 @@ export default function AttendanceKioskPage({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative z-10 w-full max-w-sm rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-md"
+        className="relative z-10 w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-md sm:p-8"
       >
         {mode === 'pin' ? (
           <KioskPinPad
@@ -375,7 +444,18 @@ export default function AttendanceKioskPage({
             onSwitchToBadge={() => setMode('camera')}
           />
         ) : (
-          <KioskScanView
+          <>
+            <div className="mb-6 text-center">
+              <h1
+                className={`${fraunces.className} text-2xl font-black tracking-tight text-white sm:text-3xl`}
+              >
+                Scan your badge
+              </h1>
+              <p className="mt-1.5 text-sm text-white/40">
+                Hold the card up to the camera
+              </p>
+            </div>
+            <KioskScanView
             mode={mode as 'camera' | 'keyboard'}
             onModeChange={(m) => setMode(m)}
             onScan={submitBadge}
@@ -383,14 +463,15 @@ export default function AttendanceKioskPage({
               auth.pinOffered ? () => setMode('pin') : undefined
             }
             busy={busy}
-          />
+            />
+          </>
         )}
 
         {/* Count of people currently clocked in — a number, never names. */}
         {onShift !== null && mode !== 'pin' && (
-          <div className="mt-6 flex items-center justify-center gap-2 border-t border-white/5 pt-5">
-            <PiUsersDuotone className="h-3.5 w-3.5 text-white/30" />
-            <p className="text-xs font-medium text-white/40">
+          <div className="mt-7 flex items-center justify-center gap-2.5 border-t border-white/5 pt-6">
+            <PiUsersDuotone className="h-4 w-4 text-white/30" />
+            <p className="text-sm font-medium text-white/40">
               <span className="font-bold tabular-nums text-white/70">
                 {onShift}
               </span>{' '}
@@ -434,6 +515,17 @@ export default function AttendanceKioskPage({
           confirmation={confirmation}
           error={error}
           busy={busy}
+        />
+      )}
+
+      {/* Clocking out with shift left to run. Waits for an answer — no reset
+          timer, because it is a decision rather than a notification. */}
+      {earlyLeave && (
+        <KioskEarlyLeave
+          prompt={earlyLeave.prompt}
+          busy={busy}
+          onConfirm={() => void earlyLeave.retry()}
+          onCancel={() => setEarlyLeave(null)}
         />
       )}
     </div>

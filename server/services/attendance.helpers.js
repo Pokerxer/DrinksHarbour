@@ -143,6 +143,40 @@ function describePunctuality(clockIn, shift, opts = {}) {
 }
 
 /**
+ * Is this clock-out leaving before the shift was due to end?
+ *
+ * The mirror of `describePunctuality`, against `shift.end` instead of
+ * `shift.start`, and it keeps that function's two conventions on purpose:
+ * `minutes` is non-negative and the CODE says which side of the boundary it
+ * falls on, and `no_shift` is a distinct answer from `on_time`.
+ *
+ * That last one is the load-bearing part. Nothing rostered means there is
+ * nothing to leave early FROM, so an unrostered punch must report `no_shift`
+ * and not `on_time` — the kiosk turns `early` into a confirmation prompt, and
+ * an unrostered shop would otherwise get that prompt on every single clock-out,
+ * asking a question nobody can answer.
+ *
+ * Note it FAILS OPEN on an unreadable date: a clock-out that cannot be placed
+ * against a shift is not early, it is unknown, and refusing it would strand
+ * somebody with an open record they have no way to close.
+ *
+ * @returns {{code: 'no_shift'|'early'|'on_time', minutes: number}} `minutes` is
+ *   how much of the shift was left when they left.
+ */
+function describeEarlyLeave(clockOut, shift, opts = {}) {
+  const { graceMinutes = DEFAULT_GRACE_MINUTES } = opts;
+  const at = msOf(clockOut);
+  const end = msOf(shift?.end);
+  if (at === null || end === null) return { code: 'no_shift', minutes: 0 };
+
+  const remaining = Math.round((end - at) / MS_PER_MINUTE);
+  if (remaining <= Math.max(0, Number(graceMinutes) || 0)) {
+    return { code: 'on_time', minutes: Math.max(0, remaining) };
+  }
+  return { code: 'early', minutes: remaining };
+}
+
+/**
  * Headline numbers for a day or a range.
  * `minutes` counts closed records only, because an open one has none yet.
  */
@@ -356,6 +390,7 @@ module.exports = {
   resolveClockAction,
   matchShiftForClock,
   describePunctuality,
+  describeEarlyLeave,
   summariseAttendance,
   buildAttendancePayload,
   resolveAttendanceTimes,

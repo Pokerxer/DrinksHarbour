@@ -6,6 +6,7 @@
 // testing has to live outside them — the same split as shift-roster-utils.ts,
 // whose time-zone helpers this file reuses rather than restating.
 
+import type { LaneEmployee } from './shift-roster-utils';
 import {
   LAGOS_OFFSET_MINUTES,
   employeeName,
@@ -15,6 +16,7 @@ import {
 } from './shift-roster-utils';
 import type {
   AttendanceRecord,
+  EarlyLeave,
   Punctuality,
   PunctualityCode,
 } from '@/services/attendance.service';
@@ -376,6 +378,7 @@ export function describeClock(
       'clockIn' | 'clockOut' | 'status' | 'minutesWorked' | 'shift'
     >;
     punctuality?: Punctuality;
+    earlyLeave?: EarlyLeave;
   },
   offsetMinutes = LAGOS_OFFSET_MINUTES
 ): ClockConfirmation {
@@ -383,9 +386,18 @@ export function describeClock(
   const times = recordTimes(result.item, offsetMinutes);
 
   if (result.action === 'out') {
+    const parts = [
+      `Clocked out at ${times.out}`,
+      `${recordDuration(result.item)} worked`,
+    ];
+    // Only when they actually left early. `no_shift` must not produce a note:
+    // nobody rostered them, so "on time" and "early" are both inventions.
+    if (result.earlyLeave?.code === 'early') {
+      parts.push(`${formatMinutes(result.earlyLeave.minutes)} early`);
+    }
     return {
       headline: `Goodbye, ${name}`,
-      detail: `Clocked out at ${times.out} · ${recordDuration(result.item)} worked`,
+      detail: parts.join(' · '),
       tone: 'out',
     };
   }
@@ -406,6 +418,48 @@ export function describeClock(
     headline: `Welcome, ${name}`,
     detail: parts.join(' · '),
     tone: 'in',
+  };
+}
+
+// ── Leaving before the shift ends ────────────────────────────────────────────
+
+export interface EarlyLeavePrompt {
+  headline: string;
+  detail: string;
+  question: string;
+}
+
+/**
+ * The words on the "you are leaving early" confirmation.
+ *
+ * Composed HERE, not on the server, for one reason: the shop's time zone. The
+ * server sends the shift end as an ISO instant and how many minutes are left,
+ * and this turns that into "18:00" — the number the employee can compare to the
+ * clock above the door. A UTC timestamp on a wall-mounted screen is a puzzle.
+ *
+ * Phrased as a QUESTION, never a refusal. The employee is allowed to go: they
+ * may be ill, or sent home, and the one thing worse than an early clock-out is
+ * no clock-out at all, which leaves a record open for a manager to invent an
+ * end for. `question` exists so the wording and the buttons cannot drift apart.
+ */
+export function describeEarlyLeavePrompt(
+  details: {
+    employee: LaneEmployee;
+    minutesRemaining: number;
+    shiftEnd: string;
+  },
+  offsetMinutes = LAGOS_OFFSET_MINUTES
+): EarlyLeavePrompt {
+  const name = employeeName(details.employee);
+  const end = toLocalTimeLabel(details.shiftEnd, offsetMinutes);
+  const left = formatMinutes(Math.max(0, details.minutesRemaining));
+
+  return {
+    // employeeName falls back to the email, then to a generic label, so a
+    // profile with no name never reaches a wall as "undefined, your shift…".
+    headline: `${name}, your shift is not over`,
+    detail: `You are rostered until ${end} — ${left} still to go.`,
+    question: 'Clock out anyway?',
   };
 }
 

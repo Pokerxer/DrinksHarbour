@@ -83,8 +83,8 @@ export default function KioskConfirmation({
             exit={{ opacity: 0 }}
             className='flex flex-col items-center'
           >
-            <span className='h-16 w-16 animate-spin rounded-full border-[3px] border-white/10 border-t-[#b20202]' />
-            <p className='mt-4 text-sm font-medium text-white/60'>
+            <span className='h-20 w-20 animate-spin rounded-full border-[3px] border-white/10 border-t-[#b20202]' />
+            <p className='mt-5 text-base font-medium text-white/60'>
               Reading your badge…
             </p>
           </motion.div>
@@ -125,7 +125,7 @@ export default function KioskConfirmation({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.25 }}
-              className={`z-10 mt-6 ${fraunces.className} text-3xl font-black ${tone.titleClass}`}
+              className={`z-10 mt-7 px-6 text-center ${fraunces.className} text-4xl font-black leading-tight sm:text-5xl ${tone.titleClass}`}
             >
               {confirmation.headline}
             </motion.p>
@@ -133,7 +133,7 @@ export default function KioskConfirmation({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4 }}
-              className={`z-10 mt-2 max-w-xs text-center text-sm leading-relaxed ${tone.detailClass}`}
+              className={`z-10 mt-3 max-w-md px-6 text-center text-lg leading-relaxed sm:text-xl ${tone.detailClass}`}
             >
               {confirmation.detail}
             </motion.p>
@@ -148,11 +148,11 @@ export default function KioskConfirmation({
             exit={{ opacity: 0 }}
             className='rounded-2xl border border-amber-400/20 bg-amber-500/10 p-6 backdrop-blur-sm'
           >
-            <PiWarningCircle className='mx-auto h-12 w-12 text-amber-400' />
-            <p className='mt-3 text-center text-lg font-bold text-amber-300'>
+            <PiWarningCircle className='mx-auto h-14 w-14 text-amber-400' />
+            <p className='mt-4 max-w-md text-center text-2xl font-bold text-amber-300'>
               {error}
             </p>
-            <p className='mt-1 text-center text-sm text-amber-200/60'>
+            <p className='mt-2 text-center text-base text-amber-200/60'>
               Please try again.
             </p>
           </motion.div>

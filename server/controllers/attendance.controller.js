@@ -37,6 +37,7 @@ const {
   resolveClockAction,
   matchShiftForClock,
   describePunctuality,
+  describeEarlyLeave,
   summariseAttendance,
   buildAttendancePayload,
   resolveAttendanceTimes,
@@ -245,6 +246,42 @@ const clock = asyncHandler(async (req, res) => {
         message: 'You have only just clocked in. Try again in a moment.',
       });
     }
+    // Leaving before the shift was due to end is CONFIRMED, never refused.
+    //
+    // Refusing would leave the record open on somebody who has already gone
+    // home — sick, sent home, shift cut short — and an open record is worse
+    // than an early one: it has no end at all until a manager invents one by
+    // hand. So the first press asks, and only the second writes.
+    //
+    // The question is asked HERE rather than only in the kiosk because the pad
+    // is not the only thing that can post to this endpoint, and because "was
+    // this acknowledged" is exactly the kind of rule that stops being enforced
+    // the moment it lives in one of two clients.
+    //
+    // No shift rostered means no question: see describeEarlyLeave.
+    const rostered = open.shift
+      ? await Shift.findOne({ _id: open.shift, tenant: tenantId })
+          .select('start end')
+          .lean()
+      : null;
+    const earlyLeave = describeEarlyLeave(now, rostered);
+
+    if (earlyLeave.code === 'early' && req.body?.confirmEarlyLeave !== true) {
+      return res.status(409).json({
+        success: false,
+        code: 'leaving_early',
+        // Deliberately plain. The sentence the employee reads is composed by
+        // the client, which knows the shop's time zone and can say "18:00"
+        // rather than an ISO string on a wall-mounted screen.
+        message: 'Your shift has not finished yet.',
+        data: {
+          employee: publicEmployee(matched),
+          minutesRemaining: earlyLeave.minutes,
+          shiftEnd: rostered.end,
+        },
+      });
+    }
+
     open.clockOut = now;
     open.status = times.status;
     open.minutesWorked = times.minutesWorked;
@@ -258,6 +295,10 @@ const clock = asyncHandler(async (req, res) => {
         employee: publicEmployee(matched),
         item,
         punctuality: describePunctuality(item.clockIn, item.shift),
+        // Reported on the way out too, so the goodbye can acknowledge a short
+        // day rather than the screen pretending nothing happened after the
+        // employee just confirmed it.
+        earlyLeave: describeEarlyLeave(item.clockOut, item.shift),
       },
     });
   }

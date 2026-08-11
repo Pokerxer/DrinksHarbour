@@ -6,6 +6,7 @@ import {
   pressBackspace,
   pinSlots,
   isPinReady,
+  describeEarlyLeavePrompt,
   punctualityLabel,
   punctualityTone,
   recordDuration,
@@ -403,5 +404,82 @@ describe('how a kiosk screen authenticates itself', () => {
     expect(resolveKioskAuth({ kioskToken: '   ', sessionToken: '' }).mode).toBe(
       'none'
     );
+  });
+});
+
+// ── Leaving before the shift ends ────────────────────────────────────────────
+
+describe('describeEarlyLeavePrompt', () => {
+  const details = {
+    employee: { _id: 'e1', firstName: 'Faith', lastName: 'Okon' },
+    minutesRemaining: 135,
+    shiftEnd: '2026-08-11T17:00:00Z', // 18:00 Lagos
+  };
+
+  it('names the person, the end time and what is left', () => {
+    const out = describeEarlyLeavePrompt(details);
+    expect(out.headline).toBe('Faith Okon, your shift is not over');
+    // The end time is shown in the SHOP's time, not UTC — this is read off a
+    // wall by somebody comparing it to the clock above the door.
+    expect(out.detail).toContain('18:00');
+    expect(out.detail).toContain('2h 15m');
+  });
+
+  it('asks a question the buttons can answer', () => {
+    // The prompt is a decision, so it must not read as a refusal: the employee
+    // can go ahead, and the wording has to make that obvious or they will walk
+    // away with the record still open.
+    expect(describeEarlyLeavePrompt(details).question).toMatch(/clock out anyway/i);
+  });
+
+  it('survives a missing name without printing "undefined" on a wall', () => {
+    const out = describeEarlyLeavePrompt({
+      ...details,
+      employee: { _id: 'e2' },
+    });
+    expect(out.headline).not.toContain('undefined');
+    expect(out.detail).toContain('18:00');
+  });
+
+  it('handles a shift ending in under an hour', () => {
+    const out = describeEarlyLeavePrompt({ ...details, minutesRemaining: 20 });
+    expect(out.detail).toContain('20m');
+  });
+});
+
+describe('describeClock on an early departure', () => {
+  it('acknowledges the short day in the goodbye rather than ignoring it', () => {
+    const out = describeClock({
+      action: 'out',
+      employee: { _id: 'e1', firstName: 'Faith', lastName: 'Okon' },
+      item: {
+        clockIn: '2026-08-11T08:00:00Z',
+        clockOut: '2026-08-11T14:45:00Z',
+        status: 'closed',
+        minutesWorked: 405,
+        shift: null,
+      } as never,
+      punctuality: { code: 'on_time', minutes: 0 },
+      earlyLeave: { code: 'early', minutes: 135 },
+    });
+    expect(out.headline).toBe('Goodbye, Faith Okon');
+    expect(out.detail).toContain('2h 15m early');
+  });
+
+  it('says nothing extra when the shift was seen out in full', () => {
+    const out = describeClock({
+      action: 'out',
+      employee: { _id: 'e1', firstName: 'Faith', lastName: 'Okon' },
+      item: {
+        clockIn: '2026-08-11T08:00:00Z',
+        clockOut: '2026-08-11T17:00:00Z',
+        status: 'closed',
+        minutesWorked: 540,
+        shift: null,
+      } as never,
+      punctuality: { code: 'on_time', minutes: 0 },
+      earlyLeave: { code: 'on_time', minutes: 0 },
+    });
+    expect(out.detail).not.toContain('early');
   });
 });

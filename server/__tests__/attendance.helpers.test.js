@@ -328,3 +328,77 @@ test('a refused credential says which one it wanted, and nothing about the guess
   assert.match(out.message, /badge/i);
   assert.doesNotMatch(out.message, /PIN/);
 });
+
+// ── Leaving before the shift ends ────────────────────────────────────────────
+//
+// The mirror of describePunctuality, against shift.END. It exists so the kiosk
+// can warn somebody who is clocking out with hours still to go, and the two
+// have to agree about what "no shift" means: nothing was rostered, so there is
+// nothing to be early FOR, and reporting that as "on time" would invent a shift.
+
+const { describeEarlyLeave } = require('../services/attendance.helpers');
+
+const at = (iso) => new Date(iso);
+const shiftEnding = (iso) => ({ start: at('2026-08-11T09:00:00Z'), end: at(iso) });
+
+test('leaving with hours left is early, and says how many minutes', () => {
+  const out = describeEarlyLeave(
+    at('2026-08-11T15:45:00Z'),
+    shiftEnding('2026-08-11T18:00:00Z')
+  );
+  assert.deepStrictEqual(out, { code: 'early', minutes: 135 });
+});
+
+test('leaving within the grace window is not early', () => {
+  // Symmetric with lateness: a few minutes either side of the boundary is noise,
+  // and nagging somebody who left three minutes early trains them to ignore the
+  // one warning that matters.
+  const out = describeEarlyLeave(
+    at('2026-08-11T17:57:00Z'),
+    shiftEnding('2026-08-11T18:00:00Z')
+  );
+  assert.strictEqual(out.code, 'on_time');
+});
+
+test('leaving after the shift has ended is never early', () => {
+  const out = describeEarlyLeave(
+    at('2026-08-11T19:30:00Z'),
+    shiftEnding('2026-08-11T18:00:00Z')
+  );
+  assert.deepStrictEqual(out, { code: 'on_time', minutes: 0 });
+});
+
+test('with no shift there is nothing to leave early from', () => {
+  // NOT 'on_time'. The kiosk must not warn somebody who was never rostered:
+  // the warning would be unanswerable, and it would fire for every unrostered
+  // punch in the shop.
+  assert.deepStrictEqual(describeEarlyLeave(at('2026-08-11T12:00:00Z'), null), {
+    code: 'no_shift',
+    minutes: 0,
+  });
+  assert.strictEqual(describeEarlyLeave(at('2026-08-11T12:00:00Z'), {}).code, 'no_shift');
+});
+
+test('an unreadable clock-out is treated as no shift, not as early', () => {
+  // Failing OPEN here is deliberate: a bad date must not block a clock-out and
+  // strand somebody with an open record they cannot close.
+  assert.strictEqual(
+    describeEarlyLeave(null, shiftEnding('2026-08-11T18:00:00Z')).code,
+    'no_shift'
+  );
+});
+
+test('minutes is never negative, whichever side of the end it falls on', () => {
+  for (const iso of ['2026-08-11T12:00:00Z', '2026-08-11T18:00:00Z', '2026-08-11T23:00:00Z']) {
+    assert.ok(describeEarlyLeave(at(iso), shiftEnding('2026-08-11T18:00:00Z')).minutes >= 0);
+  }
+});
+
+test('the grace window is adjustable, like describePunctuality', () => {
+  const out = describeEarlyLeave(
+    at('2026-08-11T17:30:00Z'),
+    shiftEnding('2026-08-11T18:00:00Z'),
+    { graceMinutes: 45 }
+  );
+  assert.strictEqual(out.code, 'on_time');
+});

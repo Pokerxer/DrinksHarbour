@@ -68,50 +68,10 @@ const isProduction = process.env.NODE_ENV === 'production';
 // ────────────────────────────────────────────────
 // CORS Configuration
 // ────────────────────────────────────────────────
-const allowedOrigins = [
-  'http://localhost:3002',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://localhost:3003',
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:3001',
-  'http://127.0.0.1:5173',
-  'https://www.drinksharbour.com',
-  'https://drinksharbour.com',
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow no-origin requests (mobile apps, curl, server-to-server)
-    if (!origin) return callback(null, true);
-    // Allow exact matches
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Allow any *.drinksharbour.com subdomain
-    if (/^https:\/\/([a-z0-9-]+\.)*drinksharbour\.com$/.test(origin)) return callback(null, true);
-    // Allow Vercel preview deployments for this project
-    if (/^https:\/\/drinks-harbour[a-z0-9-]*\.vercel\.app$/.test(origin)) return callback(null, true);
-    callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'X-Requested-With',
-    'Accept',
-    'Origin',
-    'x-tenant-slug',
-    'x-is-tenant-site',
-    'x-mfa-token',
-    'x-csrf-token',
-  ],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400,
-  preflightContinue: false,
-  optionsSuccessStatus: 204,
-};
+// Lives in config/cors.js so the allowlist can be asserted in the test suite —
+// a header missing from it is invisible to curl and to every server-side test,
+// and only ever shows up as "Failed to fetch" in a browser.
+const { corsOptions } = require('./config/cors');
 
 app.use(cors(corsOptions));
 

@@ -172,11 +172,21 @@ export interface AttendanceLogResponse {
 }
 
 /** What the pad shows after a press: who, in or out, and against which shift. */
+export type EarlyLeaveCode = 'no_shift' | 'early' | 'on_time';
+
+/** How much of the shift was left at clock-out. `no_shift` is not `on_time`. */
+export interface EarlyLeave {
+  code: EarlyLeaveCode;
+  minutes: number;
+}
+
 export interface ClockResponse {
   action: 'in' | 'out';
   employee: PersonRef;
   item: AttendanceRecord;
   punctuality: Punctuality;
+  /** Clock-outs only. Absent on a clock-in, which cannot be an early leave. */
+  earlyLeave?: EarlyLeave;
 }
 
 export interface AttendanceInput {
@@ -195,11 +205,34 @@ export interface AttendanceInput {
 export class AttendanceConflictError extends Error {
   code: string;
 
-  constructor(message: string, code: string) {
+  /**
+   * The server's `data` for this conflict, when it sent one.
+   *
+   * Carried rather than dropped because `leaving_early` is a QUESTION, not a
+   * failure: the kiosk has to say which shift and how much of it is left, and
+   * an error with only a message cannot. Every other conflict code sends
+   * nothing and this stays undefined.
+   */
+  details?: EarlyLeaveDetails;
+
+  constructor(message: string, code: string, details?: EarlyLeaveDetails) {
     super(message);
     this.name = 'AttendanceConflictError';
     this.code = code;
+    this.details = details;
   }
+}
+
+/** The conflict code the server uses when a clock-out needs acknowledging. */
+export const LEAVING_EARLY = 'leaving_early';
+
+/** What the server sends with a `leaving_early` refusal. */
+export interface EarlyLeaveDetails {
+  employee: PersonRef;
+  /** How much of the rostered shift was still to run. Non-negative. */
+  minutesRemaining: number;
+  /** ISO — the client formats it, because it knows the shop's time zone. */
+  shiftEnd: string;
 }
 
 /**
@@ -245,9 +278,14 @@ async function handle<T>(
     const err = (await res.json().catch(() => ({}))) as {
       message?: string;
       code?: string;
+      data?: EarlyLeaveDetails;
     };
     if (res.status === 409 && err.code) {
-      throw new AttendanceConflictError(err.message || fallback, err.code);
+      throw new AttendanceConflictError(
+        err.message || fallback,
+        err.code,
+        err.data
+      );
     }
     throw new Error(err.message || fallback);
   }
@@ -355,12 +393,16 @@ export const attendanceService = {
    * card itself is the credential. The server answers a scan nobody matches
    * with "Badge not recognised".
    */
-  async clockWithBadge(badge: string, token: string): Promise<ClockResponse> {
+  async clockWithBadge(
+    badge: string,
+    token: string,
+    opts: { confirmEarlyLeave?: boolean } = {}
+  ): Promise<ClockResponse> {
     const json = await handle<ClockResponse>(
       await fetch(`${ATTENDANCE}/clock`, {
         method: 'POST',
         headers: jsonAuth(token),
-        body: JSON.stringify({ badge }),
+        body: JSON.stringify({ badge, ...opts }),
       }),
       'Could not read that badge'
     );
@@ -378,13 +420,14 @@ export const attendanceService = {
    */
   async clockWithKioskBadge(
     badge: string,
-    kioskToken: string
+    kioskToken: string,
+    opts: { confirmEarlyLeave?: boolean } = {}
   ): Promise<ClockResponse> {
     const json = await handle<ClockResponse>(
       await fetch(`${ATTENDANCE}/clock`, {
         method: 'POST',
         headers: kioskJsonAuth(kioskToken),
-        body: JSON.stringify({ badge }),
+        body: JSON.stringify({ badge, ...opts }),
       }),
       'Could not read that badge'
     );
