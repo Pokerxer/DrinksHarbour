@@ -15,7 +15,10 @@ import {
   employeeName,
   buildRosterLanes,
   conflictLabel,
-  canForce,
+  mergeAvailability,
+  summariseAssignmentResult,
+  assignedLabel,
+  toggleTicked,
   summariseSkips,
   templateDaysLabel,
   templateTimeLabel,
@@ -29,6 +32,7 @@ import {
   weekdayShort,
 } from './shift-roster-utils';
 import type { Shift } from '@/services/shift.service';
+import { ShiftConflictError } from '@/services/shift.service';
 
 const ROLE = { _id: 'r1', name: 'Bartender', color: '#b20202' };
 
@@ -309,13 +313,6 @@ describe('conflicts', () => {
     expect(conflictLabel('something_new')).toBe('Could not be scheduled');
   });
 
-  it('offers force only for a role mismatch', () => {
-    // The server refuses an overlap even with force, so offering the button
-    // would just produce a second identical 409.
-    expect(canForce('role_mismatch')).toBe(true);
-    expect(canForce('overlap')).toBe(false);
-    expect(canForce('time_off')).toBe(false);
-  });
 });
 
 describe('summariseSkips', () => {
@@ -538,5 +535,297 @@ describe('what a publish tells the manager', () => {
     // The server did not always return this field; an older response must not
     // render "undefined shifts are in the past".
     expect(publishOutcomeMessage({ published: 2 })).toBe('2 shifts published');
+  });
+});
+
+// ── Multi-select picker ──────────────────────────────────────────────────────
+
+const EMP_A = { _id: 'a', firstName: 'Ada', lastName: 'Obi' };
+const EMP_B = { _id: 'b', firstName: 'Chidi', lastName: 'Nwosu' };
+const EMP_C = { _id: 'c', firstName: 'Ngozi', lastName: 'Eze' };
+
+describe('mergeAvailability', () => {
+  it('attaches each verdict to its employee by id', () => {
+    const rows = mergeAvailability(
+      [EMP_A, EMP_B],
+      [
+        { employee: EMP_A, ok: true, code: null, message: null, forceable: false },
+        {
+          employee: EMP_B,
+          ok: false,
+          code: 'time_off',
+          message: 'This employee has approved time off covering that period',
+          forceable: false,
+        },
+      ]
+    );
+    expect(rows.map((r) => [r.id, r.ok, r.code])).toEqual([
+      ['a', true, null],
+      ['b', false, 'time_off'],
+    ]);
+    expect(rows[1].reason).toBe('On approved time off');
+    expect(rows[1].forceable).toBe(false);
+  });
+
+  it('leaves an employee with no verdict unbadged rather than hiding them', () => {
+    const rows = mergeAvailability([EMP_A, EMP_C], [
+      { employee: EMP_A, ok: true, code: null, message: null, forceable: false },
+    ]);
+    expect(rows).toHaveLength(2);
+    const ngozi = rows.find((r) => r.id === 'c');
+    expect(ngozi?.ok).toBe(true);
+    expect(ngozi?.reason).toBeNull();
+  });
+
+  it('renders no badges at all before the verdicts arrive', () => {
+    const rows = mergeAvailability([EMP_A, EMP_B], []);
+    expect(rows.every((r) => r.ok && r.reason === null)).toBe(true);
+  });
+
+  it('names each row the same way the roster lanes do', () => {
+    expect(mergeAvailability([EMP_A], [])[0].name).toBe('Ada Obi');
+  });
+
+  it('sorts rows by name, independent of input order', () => {
+    // `bindEditedAssignment` binds the FIRST ticked id to the row already being
+    // edited, so who inherits that row must track what is on screen (name
+    // order), not the API's own createdAt: -1 ordering.
+    const rows = mergeAvailability([EMP_C, EMP_A, EMP_B], []);
+    expect(rows.map((r) => r.name)).toEqual([
+      'Ada Obi',
+      'Chidi Nwosu',
+      'Ngozi Eze',
+    ]);
+  });
+
+  it('includes an extra person not in the active employee list', () => {
+    // The shift's current holder, suspended or terminated since the shift was
+    // made — the page loads employees with { status: 'active' }, so they would
+    // otherwise be missing from the picker entirely, with nothing on screen
+    // explaining why "1 selected" shows no ticked row.
+    const inactiveHolder = { _id: 'z', firstName: 'Zainab', lastName: 'Musa' };
+    const rows = mergeAvailability([EMP_A], [], [inactiveHolder]);
+    expect(rows.map((r) => r.id)).toEqual(['a', 'z']);
+    expect(rows.find((r) => r.id === 'z')?.name).toBe('Zainab Musa');
+  });
+
+  it('does not duplicate an extra person who is already in the active list', () => {
+    const rows = mergeAvailability([EMP_A], [], [EMP_A]);
+    expect(rows).toHaveLength(1);
+  });
+});
+
+describe('summariseAssignmentResult', () => {
+  const conflictErr = (
+    blocked: { employee: typeof EMP_A | null; code: string; message: string; forceable: boolean }[],
+    allowedCount: number
+  ) =>
+    new ShiftConflictError(
+      'x',
+      'assignment_conflicts',
+      [],
+      blocked.map((b) => ({ ...b, conflicts: [] })),
+      Array.from({ length: allowedCount }, () => ({ employee: EMP_A, warnings: [] }))
+    );
+
+  it('offers "assign anyway" only when every block is forceable', () => {
+    const all = summariseAssignmentResult(
+      conflictErr(
+        [{ employee: EMP_B, code: 'role_mismatch', message: 'm', forceable: true }],
+        2
+      )
+    );
+    expect(all.canForceAll).toBe(true);
+
+    const mixed = summariseAssignmentResult(
+      conflictErr(
+        [
+          { employee: EMP_B, code: 'role_mismatch', message: 'm', forceable: true },
+          { employee: EMP_C, code: 'overlap', message: 'm', forceable: false },
+        ],
+        2
+      )
+    );
+    expect(mixed.canForceAll).toBe(false);
+  });
+
+  it('offers "skip these" only when somebody would still be scheduled', () => {
+    const some = summariseAssignmentResult(
+      conflictErr([{ employee: EMP_B, code: 'overlap', message: 'm', forceable: false }], 3)
+    );
+    expect(some.canSkip).toBe(true);
+    expect(some.heading).toBe('1 of 4 people cannot be scheduled');
+
+    const none = summariseAssignmentResult(
+      conflictErr([{ employee: EMP_B, code: 'overlap', message: 'm', forceable: false }], 0)
+    );
+    expect(none.canSkip).toBe(false);
+    expect(none.heading).toBe('Nobody selected can be scheduled');
+  });
+
+  it('names every blocked person and why', () => {
+    const out = summariseAssignmentResult(
+      conflictErr(
+        [
+          { employee: EMP_B, code: 'overlap', message: 'm', forceable: false },
+          { employee: EMP_C, code: 'time_off', message: 'm', forceable: false },
+        ],
+        1
+      )
+    );
+    expect(out.lines).toEqual([
+      { id: 'b', name: 'Chidi Nwosu', reason: 'Already scheduled at that time' },
+      { id: 'c', name: 'Ngozi Eze', reason: 'On approved time off' },
+    ]);
+  });
+
+  it('gives a blocked no_employee entry a stable, non-colliding id', () => {
+    // `employee` can legitimately be null for a `no_employee` verdict, so the
+    // id cannot come from `employee._id` — the li key would collide with any
+    // other such line instead of just falling back to undefined.
+    const out = summariseAssignmentResult(
+      conflictErr(
+        [
+          { employee: null, code: 'no_employee', message: 'm', forceable: false },
+          { employee: null, code: 'no_employee', message: 'm', forceable: false },
+        ],
+        0
+      )
+    );
+    expect(out.lines[0].id).toBeTruthy();
+    expect(out.lines[1].id).toBeTruthy();
+    expect(out.lines[0].id).not.toBe(out.lines[1].id);
+  });
+
+  it('refuses to offer "skip these" when the kept person is themselves blocked (pinned)', () => {
+    // Editing a shift: untick the current holder, tick Ada (who overlaps) and
+    // Ben (clear). Ada becomes the `keep` because she is first in display
+    // order, so her refusal is PINNED to the row and cannot be skipped —
+    // skipping never touches the row being edited, that IS the edit that was
+    // asked for. Offering the button anyway would just be refused again.
+    const out = summariseAssignmentResult(
+      new ShiftConflictError(
+        'x',
+        'assignment_conflicts',
+        [],
+        [
+          {
+            employee: EMP_A,
+            code: 'overlap',
+            message: 'm',
+            forceable: false,
+            conflicts: [],
+            pinned: true,
+          },
+        ],
+        [{ employee: EMP_B, warnings: [] }]
+      )
+    );
+    expect(out.canSkip).toBe(false);
+  });
+
+  it('still offers "skip these" when the only block is unpinned', () => {
+    const out = summariseAssignmentResult(
+      new ShiftConflictError(
+        'x',
+        'assignment_conflicts',
+        [],
+        [
+          {
+            employee: EMP_B,
+            code: 'overlap',
+            message: 'm',
+            forceable: false,
+            conflicts: [],
+            pinned: false,
+          },
+        ],
+        [{ employee: EMP_A, warnings: [] }]
+      )
+    );
+    expect(out.canSkip).toBe(true);
+  });
+
+  it('falls back to the single-employee 409 shape', () => {
+    const out = summariseAssignmentResult(
+      new ShiftConflictError('Already scheduled', 'overlap', [])
+    );
+    expect(out.lines).toEqual([
+      { id: 'single', name: 'This employee', reason: 'Already scheduled at that time' },
+    ]);
+    expect(out.canForceAll).toBe(false);
+    expect(out.canSkip).toBe(false);
+  });
+});
+
+describe('toggleTicked', () => {
+  // The picker's own display order — independent of click order, and of the
+  // filter term, which only ever narrows what is RENDERED from this list.
+  const ROWS = [
+    { id: 'a', name: 'Ada Obi', ok: true, code: null, reason: null, forceable: false },
+    { id: 'b', name: 'Chidi Nwosu', ok: true, code: null, reason: null, forceable: false },
+    { id: 'c', name: 'Ngozi Eze', ok: true, code: null, reason: null, forceable: false },
+  ];
+
+  it('rebuilds in display order, not click order', () => {
+    // Click the third row, then the first — the server binds the FIRST id in
+    // the array to the row being edited, so the outcome must track what is
+    // on screen, not which button the admin happened to hit first.
+    let ticked = toggleTicked(ROWS, [], 'c', true);
+    ticked = toggleTicked(ROWS, ticked, 'a', true);
+    expect(ticked).toEqual(['a', 'c']);
+  });
+
+  it('unticking removes only that id and leaves the rest in order', () => {
+    const ticked = toggleTicked(ROWS, ['a', 'b', 'c'], 'b', false);
+    expect(ticked).toEqual(['a', 'c']);
+  });
+
+  it('keeps a ticked id that the filter is currently hiding', () => {
+    // 'b' is ticked but not in visibleRows right now (filtered out) — it must
+    // still be passed in `ticked`, and must survive ticking someone else.
+    const ticked = toggleTicked(ROWS, ['b'], 'a', true);
+    expect(ticked).toEqual(['a', 'b']);
+  });
+
+  it('does not duplicate an id that is already ticked', () => {
+    const ticked = toggleTicked(ROWS, ['a'], 'a', true);
+    expect(ticked).toEqual(['a']);
+  });
+
+  it('unticking the last one yields an empty, open-shift list', () => {
+    const ticked = toggleTicked(ROWS, ['a'], 'a', false);
+    expect(ticked).toEqual([]);
+  });
+
+  it('keeps an id absent from pickerRows when ticking someone else', () => {
+    // The shift's current holder can be ticked (openExisting seeds
+    // draft.employees from the shift regardless of employee status) without
+    // appearing in pickerRows (built from the active-only employee list).
+    // Rebuilding purely from pickerRows would silently drop them — and on
+    // save, `bindEditedAssignment` would then reassign the row to whoever was
+    // left, with nothing on screen having said so.
+    const ticked = toggleTicked(ROWS, ['unknown-holder'], 'a', true);
+    expect(ticked).toContain('unknown-holder');
+    expect(ticked).toContain('a');
+  });
+
+  it('sorts an id unknown to pickerRows ahead of known ids, so it stays the keep', () => {
+    // `bindEditedAssignment` binds the FIRST id in the array to the row being
+    // edited. The unrecognised id IS the incumbent, so it must stay first —
+    // demoting it behind a freshly ticked colleague would reassign the row.
+    const ticked = toggleTicked(ROWS, ['unknown-holder'], 'a', true);
+    expect(ticked).toEqual(['unknown-holder', 'a']);
+  });
+});
+
+describe('assignedLabel', () => {
+  it('says an empty pick is an open shift', () => {
+    expect(assignedLabel(0)).toBe('Open shift — nobody yet');
+  });
+
+  it('counts the pick', () => {
+    expect(assignedLabel(1)).toBe('1 selected');
+    expect(assignedLabel(3)).toBe('3 selected');
   });
 });

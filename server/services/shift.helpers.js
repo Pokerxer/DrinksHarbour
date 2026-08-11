@@ -512,6 +512,138 @@ function checkAssignment(shift, employee, ctx = {}) {
 }
 
 /**
+ * Which refusals an admin may push through with `force`.
+ *
+ * Only `role_mismatch` — a judgement call about who can cover what. An overlap
+ * is physics and time off is a commitment already made to the person; neither
+ * is the admin's to wave away, and offering a button that will be refused again
+ * is worse than offering none.
+ *
+ * Exported so the browser stops keeping a second copy of this list: the picker
+ * reads the `forceable` flag off the server's own verdict.
+ */
+const FORCEABLE_CODES = new Set(['role_mismatch']);
+
+/** One employee's slice of a batched context, with empty lists rather than holes. */
+function contextFor(ctxById, employeeId) {
+  const entry = ctxById instanceof Map ? ctxById.get(employeeId) : ctxById?.[employeeId];
+  return { shifts: entry?.shifts || [], timeOff: entry?.timeOff || [] };
+}
+
+/**
+ * Judge one shift against several candidates at once.
+ *
+ * Adds NO rules of its own — every verdict is `checkAssignment`'s. That is the
+ * point: the pre-flight badges in the picker and the refusal on save come from
+ * the same judge, so they cannot drift apart. Pure; the caller loads the
+ * context and passes it in.
+ *
+ * A `null` entry in `employees` is a candidate id that matched no user in the
+ * tenant, and `checkAssignment` already answers `no_employee` for it.
+ *
+ * @param {object} shift    - { role, start, end, _id? }
+ * @param {object[]} employees
+ * @param {Map<string, {shifts: object[], timeOff: object[]}>|object} ctxById
+ * @param {{force?: boolean}} opts
+ * @returns {{allowed: object[], blocked: object[]}}
+ */
+function judgeAssignments(shift, employees = [], ctxById = new Map(), opts = {}) {
+  const { force = false } = opts;
+  const allowed = [];
+  const blocked = [];
+
+  for (const employee of employees) {
+    const ctx = contextFor(ctxById, idOf(employee?._id));
+    const verdict = checkAssignment(shift, employee, {
+      shifts: ctx.shifts,
+      timeOff: ctx.timeOff,
+      force,
+    });
+
+    if (verdict.ok) {
+      allowed.push({ employee, warnings: verdict.warnings });
+    } else {
+      blocked.push({
+        employee,
+        code: verdict.code,
+        message: verdict.message,
+        conflicts: verdict.conflicts || [],
+        forceable: FORCEABLE_CODES.has(verdict.code),
+      });
+    }
+  }
+
+  return { allowed, blocked };
+}
+
+/**
+ * Split a ticked employee set across the shift being edited and the new rows it
+ * fans out into.
+ *
+ * The edited row keeps its identity: it holds the original person if they are
+ * still ticked, otherwise the first newcomer — an ordinary reassignment — and
+ * everybody left over gets a row of their own. Unticking everybody UNASSIGNS
+ * the row: `employee: null` is an open shift waiting to be filled, not a
+ * deletion. Cancelling has its own action and this is not it.
+ *
+ * `ticked` is taken in the order it arrives (the picker sends display order),
+ * so which person lands on the existing row never depends on click order.
+ *
+ * @param {string|object|null} currentEmployeeId
+ * @param {Array<string|object>} ticked
+ * @returns {{keep: string|null, create: string[]}}
+ */
+function bindEditedAssignment(currentEmployeeId, ticked = []) {
+  const current = idOf(currentEmployeeId);
+
+  const ids = [];
+  for (const t of ticked) {
+    const id = idOf(t);
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+
+  if (!ids.length) return { keep: null, create: [] };
+
+  const keep = current && ids.includes(current) ? current : ids[0];
+  return { keep, create: ids.filter((id) => id !== keep) };
+}
+
+/**
+ * Fan flat `$in` query results back out, one context per candidate.
+ *
+ * Split from the controller so the grouping is testable without a database —
+ * the queries themselves stay in the controller, where the IO belongs.
+ *
+ * Every candidate gets an entry, and an employee with nothing scheduled gets
+ * EMPTY ARRAYS rather than `undefined`: `checkAssignment` iterates both lists,
+ * and a missing one would read as "no context was loaded" instead of the true
+ * "nothing is booked".
+ *
+ * @param {object[]} employees - the User docs that were found
+ * @param {object[]} shifts    - every nearby shift for any of them
+ * @param {object[]} timeOff   - every nearby approved request for any of them
+ * @returns {Map<string, {employee: object, shifts: object[], timeOff: object[]}>}
+ */
+function groupAssignmentContexts(employees = [], shifts = [], timeOff = []) {
+  const byId = new Map();
+
+  for (const employee of employees) {
+    const id = idOf(employee?._id);
+    if (id) byId.set(id, { employee, shifts: [], timeOff: [] });
+  }
+  for (const s of shifts) {
+    const entry = byId.get(idOf(s?.employee));
+    if (entry) entry.shifts.push(s);
+  }
+  for (const t of timeOff) {
+    const entry = byId.get(idOf(t?.employee));
+    if (entry) entry.timeOff.push(t);
+  }
+
+  return byId;
+}
+
+/**
  * Headline numbers for a roster view. Cancelled shifts are excluded from every
  * count and from the hours — they are kept for audit, not for planning.
  */
@@ -900,6 +1032,10 @@ module.exports = {
   findOverlaps,
   overlapsTimeOff,
   checkAssignment,
+  FORCEABLE_CODES,
+  judgeAssignments,
+  bindEditedAssignment,
+  groupAssignmentContexts,
   summariseRoster,
   canTransitionShift,
   statusesThatCanBecome,

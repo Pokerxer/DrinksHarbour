@@ -38,35 +38,42 @@ import {
   addDays,
   buildWeek,
   buildRosterLanes,
-  canForce,
+  assignedLabel,
   conflictLabel,
   employeeName,
   formatMinutes,
   localToday,
   localWindowToUtc,
+  mergeAvailability,
   publishOutcomeMessage,
   startOfWeek,
   statusTone,
+  summariseAssignmentResult,
   summariseSkips,
   templateRepeatLabel,
   templateTimeLabel,
+  toggleTicked,
   toLocalDateKey,
   toLocalTimeLabel,
   weekRangeLabel,
+  type AssignmentOutcome,
   type RosterLane,
 } from './shift-roster-utils';
 import {
   shiftService,
   shiftTemplateService,
   ShiftConflictError,
+  type AvailabilityVerdict,
   type RosterSummary,
   type Shift,
   type ShiftTemplate,
+  type ShiftWriteResult,
 } from '@/services/shift.service';
 import {
   employeeRoleService,
   refId,
   type EmployeeRole,
+  type PersonRef,
 } from '@/services/orgStructure.service';
 import { employeeService, type Employee } from '@/services/employee.service';
 import { routes } from '@/config/routes';
@@ -81,7 +88,11 @@ interface ShiftDraft {
   endTime: string;
   breakMinutes: number;
   role: string;
-  employee: string;
+  /**
+   * The ticked people, in display order. Empty is an OPEN SHIFT — the state the
+   * roster is built in — not "nothing chosen yet".
+   */
+  employees: string[];
   note: string;
   status: Shift['status'];
 }
@@ -97,7 +108,7 @@ const NEW_DRAFT = (
   endTime: '17:00',
   breakMinutes: 0,
   role,
-  employee,
+  employees: employee ? [employee] : [],
   note: '',
   status: 'draft',
 });
@@ -120,11 +131,15 @@ export default function ShiftRosterPage() {
   const [busy, setBusy] = useState(false);
 
   const [draft, setDraft] = useState<ShiftDraft | null>(null);
+  // The shift-being-edited's own holder, kept aside from `employees` so they
+  // still appear (and stay ticked) in the picker even when the active-only
+  // employee list does not carry them — suspended or terminated since the
+  // shift was made. Without this, "1 selected" would show no ticked row, and
+  // ticking a colleague on top of it would silently reassign the shift away
+  // from them. See mergeAvailability's `extra` param.
+  const [incumbent, setIncumbent] = useState<PersonRef | null>(null);
   const [saving, setSaving] = useState(false);
-  const [conflict, setConflict] = useState<{
-    code: string;
-    message: string;
-  } | null>(null);
+  const [conflict, setConflict] = useState<AssignmentOutcome | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [chosenTemplates, setChosenTemplates] = useState<string[]>([]);
 
@@ -172,6 +187,61 @@ export default function ShiftRosterPage() {
     };
   }, [token]);
 
+  const [availability, setAvailability] = useState<AvailabilityVerdict[]>([]);
+
+  // Debounced: the badges follow the SLOT (role, day, times), so they must not
+  // refire while somebody types in the filter box or drags a time field.
+  useEffect(() => {
+    // The badges describe the SLOT. The instant the slot changes — role, day,
+    // start, or end — the previous verdicts describe a slot that no longer
+    // exists, so they are cleared here rather than left on screen for the
+    // 300ms debounce plus the round trip it takes the new ones to arrive.
+    setAvailability([]);
+    if (!token || !draft?.role) {
+      return;
+    }
+    const slot = localWindowToUtc(
+      draft.date,
+      draft.startTime,
+      draft.endTime,
+      OFFSET
+    );
+    let cancelled = false;
+    const t = setTimeout(() => {
+      shiftService
+        .availability(
+          { role: draft.role, start: slot.start, end: slot.end, excludeId: draft.id },
+          token
+        )
+        .then((items) => {
+          if (!cancelled) setAvailability(items);
+        })
+        // A failed pre-flight is not a failed save: the list stays unbadged and
+        // the server still judges on save, so this must not shout at the admin.
+        .catch(() => {
+          if (!cancelled) setAvailability([]);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [token, draft?.role, draft?.date, draft?.startTime, draft?.endTime, draft?.id]);
+
+  const [pickerFilter, setPickerFilter] = useState('');
+
+  const pickerRows = useMemo(
+    () => mergeAvailability(employees, availability, incumbent ? [incumbent] : []),
+    [employees, availability, incumbent]
+  );
+
+  const visibleRows = useMemo(() => {
+    const term = pickerFilter.trim().toLowerCase();
+    return term
+      ? pickerRows.filter((r) => r.name.toLowerCase().includes(term))
+      : pickerRows;
+  }, [pickerRows, pickerFilter]);
+
   const { open, rows } = useMemo(
     () => buildRosterLanes({ shifts, days, employees, offsetMinutes: OFFSET }),
     [shifts, days, employees]
@@ -187,11 +257,19 @@ export default function ShiftRosterPage() {
 
   function openNew(date: string, employeeId: string | null) {
     setConflict(null);
+    setIncumbent(null);
     setDraft(NEW_DRAFT(date, employeeId ?? '', roles[0]?._id ?? ''));
   }
 
   function openExisting(shift: Shift) {
     setConflict(null);
+    // Populated by the API (SHIFT_POPULATE) even when the holder is no longer
+    // active, which is exactly the case this exists for — a bare id string
+    // means there is nobody to add to the picker beyond what mergeAvailability
+    // already does from `employees`.
+    setIncumbent(
+      shift.employee && typeof shift.employee === 'object' ? shift.employee : null
+    );
     setDraft({
       id: shift._id,
       date: toLocalDateKey(shift.start, OFFSET),
@@ -199,7 +277,7 @@ export default function ShiftRosterPage() {
       endTime: toLocalTimeLabel(shift.end, OFFSET),
       breakMinutes: shift.breakMinutes,
       role: refId(shift.role),
-      employee: refId(shift.employee),
+      employees: refId(shift.employee) ? [refId(shift.employee)] : [],
       note: shift.note ?? '',
       status: shift.status,
     });
@@ -211,6 +289,7 @@ export default function ShiftRosterPage() {
     employeeId: string | null
   ) {
     setConflict(null);
+    setIncumbent(null);
     setDraft({
       id: null,
       date,
@@ -218,13 +297,13 @@ export default function ShiftRosterPage() {
       endTime: template.endTime,
       breakMinutes: template.breakMinutes,
       role: refId(template.role),
-      employee: employeeId ?? '',
+      employees: employeeId ? [employeeId] : [],
       note: '',
       status: 'draft',
     });
   }
 
-  async function save(force = false) {
+  async function save(opts: { force?: boolean; skipBlocked?: boolean } = {}) {
     if (!draft) return;
     if (!draft.role) {
       toast.error('Choose the role this shift needs');
@@ -237,32 +316,54 @@ export default function ShiftRosterPage() {
       OFFSET
     );
     const payload = {
-      employee: draft.employee || null,
+      // An open shift is `employee: null` with NO `employees` — a null never
+      // rides inside the list, which is the whole reason the two fields coexist.
+      ...(draft.employees.length
+        ? { employees: draft.employees }
+        : draft.id
+          ? { employees: [] } // an edit may unassign; a create cannot send []
+          : { employee: null }),
       role: draft.role,
       start: window.start,
       end: window.end,
       breakMinutes: draft.breakMinutes,
       note: draft.note,
-      force,
+      force: Boolean(opts.force),
+      skipBlocked: Boolean(opts.skipBlocked),
     };
 
     setSaving(true);
     setConflict(null);
     try {
-      const result = draft.id
+      const result: ShiftWriteResult = draft.id
         ? await shiftService.update(draft.id, payload, token)
         : await shiftService.create(payload, token);
-      // A forced assignment is reported back, never silent.
-      for (const w of result.warnings ?? []) toast(w.message, { icon: '⚠️' });
-      toast.success(draft.id ? 'Shift updated' : 'Shift added');
+
+      // A forced assignment is reported back, never silent — and now by name.
+      for (const w of result.warnings ?? []) {
+        const who = w.employee ? `${employeeName(w.employee)}: ` : '';
+        toast(`${who}${w.message}`, { icon: '⚠️' });
+      }
+      for (const s of result.skipped ?? []) {
+        const who = s.employee ? employeeName(s.employee) : 'Someone';
+        toast(`Skipped ${who} — ${conflictLabel(s.code)}`, { icon: '↷' });
+      }
+
+      const added = (result.items?.length ?? 0) + (result.created?.length ?? 0);
+      toast.success(
+        draft.id
+          ? added
+            ? `Shift updated, ${added} more added`
+            : 'Shift updated'
+          : `${added || 1} shift${added > 1 ? 's' : ''} added`
+      );
       setDraft(null);
+      setIncumbent(null);
+      setPickerFilter('');
       await loadRoster();
     } catch (err) {
       if (err instanceof ShiftConflictError) {
-        setConflict({
-          code: err.code,
-          message: conflictLabel(err.code, err.message),
-        });
+        setConflict(summariseAssignmentResult(err));
       } else {
         toast.error(err instanceof Error ? err.message : 'Save failed');
       }
@@ -278,6 +379,8 @@ export default function ShiftRosterPage() {
       await shiftService.update(draft.id, { status: 'cancelled' }, token);
       toast.success('Shift cancelled');
       setDraft(null);
+      setIncumbent(null);
+      setPickerFilter('');
       await loadRoster();
     } catch (err) {
       toast.error(
@@ -295,6 +398,8 @@ export default function ShiftRosterPage() {
       await shiftService.remove(draft.id, token);
       toast.success('Shift deleted');
       setDraft(null);
+      setIncumbent(null);
+      setPickerFilter('');
       await loadRoster();
     } catch (err) {
       toast.error(
@@ -647,7 +752,12 @@ export default function ShiftRosterPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => !saving && setDraft(null)}
+              onClick={() => {
+                if (saving) return;
+                setDraft(null);
+                setIncumbent(null);
+                setPickerFilter('');
+              }}
               className="fixed inset-0 z-40 bg-gray-900/30"
             />
             <motion.div
@@ -663,7 +773,11 @@ export default function ShiftRosterPage() {
                 </h2>
                 <button
                   type="button"
-                  onClick={() => setDraft(null)}
+                  onClick={() => {
+                    setDraft(null);
+                    setIncumbent(null);
+                    setPickerFilter('');
+                  }}
                   aria-label="Close"
                   className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
                 >
@@ -672,45 +786,116 @@ export default function ShiftRosterPage() {
               </div>
 
               <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
-                <Field label="Assigned to" hint="(leave open to fill later)">
-                  <select
-                    className={FIELD}
-                    value={draft.employee}
-                    onChange={(e) => {
-                      setConflict(null);
-                      setDraft({ ...draft, employee: e.target.value });
-                    }}
-                  >
-                    <option value="">Open shift — nobody yet</option>
-                    {employees.map((e) => (
-                      <option key={e._id} value={e._id}>
-                        {employeeName(e)}
-                      </option>
-                    ))}
-                  </select>
+                <Field
+                  label="Assigned to"
+                  hint={assignedLabel(draft.employees.length)}
+                >
+                  <div className="rounded-xl border border-gray-200">
+                    <input
+                      type="search"
+                      value={pickerFilter}
+                      onChange={(e) => setPickerFilter(e.target.value)}
+                      placeholder="Filter…"
+                      aria-label="Filter employees"
+                      className="w-full rounded-t-xl border-b border-gray-200 px-3 py-2 text-sm outline-none"
+                    />
+                    <div className="max-h-56 overflow-y-auto p-1">
+                      {!visibleRows.length && (
+                        <p className="px-2 py-3 text-center text-xs text-gray-400">
+                          No matching employees
+                        </p>
+                      )}
+                      {visibleRows.map((row) => (
+                        <label
+                          key={row.id}
+                          className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={draft.employees.includes(row.id)}
+                            onChange={(e) => {
+                              setConflict(null);
+                              setDraft({
+                                ...draft,
+                                employees: toggleTicked(
+                                  pickerRows,
+                                  draft.employees,
+                                  row.id,
+                                  e.target.checked
+                                ),
+                              });
+                            }}
+                            className="h-4 w-4 shrink-0 accent-[#b20202]"
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm text-gray-900">
+                            {row.name}
+                          </span>
+                          {/* Badged, never disabled: role_mismatch is forceable,
+                              and a greyed-out row hides its own reason. */}
+                          {row.reason && (
+                            <span
+                              className={`shrink-0 text-[11px] ${
+                                row.forceable ? 'text-amber-600' : 'text-gray-400'
+                              }`}
+                            >
+                              ⚠ {row.reason}
+                            </span>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Tick nobody to leave this an open shift, waiting to be
+                    filled.
+                  </p>
                 </Field>
 
                 {conflict && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                     <p className="flex items-start gap-2 text-sm font-semibold text-amber-900">
                       <PiWarningCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                      {conflict.message}
+                      {conflict.heading}
                     </p>
-                    {canForce(conflict.code) ? (
-                      <button
-                        type="button"
-                        onClick={() => save(true)}
-                        disabled={saving}
-                        className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
-                      >
-                        Assign anyway
-                      </button>
-                    ) : (
-                      <p className="mt-1 text-xs text-amber-800">
-                        This one cannot be overridden — pick someone else or
-                        move the times.
-                      </p>
-                    )}
+                    <ul className="mt-2 space-y-1">
+                      {conflict.lines.map((line) => (
+                        <li
+                          key={line.id}
+                          className="flex justify-between gap-3 text-xs text-amber-900"
+                        >
+                          <span className="font-medium">{line.name}</span>
+                          <span className="text-amber-700">{line.reason}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {conflict.canForceAll && (
+                        <button
+                          type="button"
+                          onClick={() => save({ force: true })}
+                          disabled={saving}
+                          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                        >
+                          Assign anyway ({conflict.lines.length})
+                        </button>
+                      )}
+                      {conflict.canSkip && (
+                        <button
+                          type="button"
+                          onClick={() => save({ skipBlocked: true })}
+                          disabled={saving}
+                          className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                        >
+                          Add the others, skip these
+                        </button>
+                      )}
+                      {!conflict.canForceAll && !conflict.canSkip && (
+                        <p className="text-xs text-amber-800">
+                          This one cannot be overridden — pick someone else or
+                          move the times.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -826,14 +1011,18 @@ export default function ShiftRosterPage() {
               <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4">
                 <button
                   type="button"
-                  onClick={() => setDraft(null)}
+                  onClick={() => {
+                    setDraft(null);
+                    setIncumbent(null);
+                    setPickerFilter('');
+                  }}
                   className="rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900"
                 >
                   Close
                 </button>
                 <button
                   type="button"
-                  onClick={() => save(false)}
+                  onClick={() => save()}
                   disabled={saving}
                   className="rounded-xl bg-[#b20202] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#8f0202] disabled:opacity-60"
                 >

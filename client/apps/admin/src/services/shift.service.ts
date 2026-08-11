@@ -119,6 +119,14 @@ export interface ShiftInput {
   status?: ShiftStatus;
   /** Overrides a role_mismatch. It never overrides an overlap. */
   force?: boolean;
+  /**
+   * The multi-select fan-out: N ticked people become N shift rows, one each.
+   * Absent means the original single-or-open behaviour. An OPEN shift is
+   * `employee: null` with no `employees` — a null never rides inside this list.
+   */
+  employees?: string[];
+  /** Create only the people who passed, and report the rest in `skipped`. */
+  skipBlocked?: boolean;
 }
 
 export interface RosterSummary {
@@ -152,21 +160,75 @@ export interface GenerateResponse {
 export interface AssignmentWarning {
   code: string;
   message: string;
+  /** Set on a fan-out save: a forced assignment must say WHO it was forced for. */
+  employee?: PersonRef | null;
+}
+
+/** One person the server refused to schedule, and whether `force` can override it. */
+export interface BlockedAssignment {
+  employee: PersonRef | null;
+  code: string;
+  message: string;
+  conflicts: Shift[];
+  /**
+   * Decided by the SERVER, from its own FORCEABLE_CODES. The browser used to
+   * keep a second copy of this list; one judge means the badges in the picker
+   * and the refusal on save cannot drift apart.
+   */
+  forceable: boolean;
+  /**
+   * Set only on an edit's fan-out 409, and only for the person going onto the
+   * row being edited. `skipBlocked` never skips that person — that IS the edit
+   * that was asked for — so a "skip these" retry would be refused again, byte
+   * for byte. `summariseAssignmentResult` reads this to withhold the button
+   * rather than offer one that cannot work.
+   */
+  pinned?: boolean;
+}
+
+/** One person the server would schedule, with any warning a `force` produced. */
+export interface AllowedAssignment {
+  employee: PersonRef | null;
+  warnings: AssignmentWarning[];
+}
+
+/** A pre-flight verdict for one employee against a candidate slot. */
+export interface AvailabilityVerdict {
+  employee: PersonRef | null;
+  ok: boolean;
+  code: string | null;
+  message: string | null;
+  forceable: boolean;
 }
 
 /**
- * A 409 from the roster. `code` is the helper's own verdict code, so callers
- * can branch on it — notably `role_mismatch`, the only one `force` overrides.
+ * A 409 from the roster.
+ *
+ * Two shapes arrive here. A single-employee save answers with the helper's own
+ * `code` (overlap / role_mismatch / …) and `conflicts`. A multi-select save
+ * answers `code: 'assignment_conflicts'` and fills `blocked` / `allowed`
+ * instead, so the drawer can name every person that stood in the way rather
+ * than reporting the first one.
  */
 export class ShiftConflictError extends Error {
   code: string;
   conflicts: Shift[];
+  blocked: BlockedAssignment[];
+  allowed: AllowedAssignment[];
 
-  constructor(message: string, code: string, conflicts: Shift[]) {
+  constructor(
+    message: string,
+    code: string,
+    conflicts: Shift[],
+    blocked: BlockedAssignment[] = [],
+    allowed: AllowedAssignment[] = []
+  ) {
     super(message);
     this.name = 'ShiftConflictError';
     this.code = code;
     this.conflicts = conflicts;
+    this.blocked = blocked;
+    this.allowed = allowed;
   }
 }
 
@@ -186,12 +248,16 @@ async function handle<T>(
       message?: string;
       code?: string;
       conflicts?: Shift[];
+      blocked?: BlockedAssignment[];
+      allowed?: AllowedAssignment[];
     };
     if (res.status === 409 && err.code) {
       throw new ShiftConflictError(
         err.message || fallback,
         err.code,
-        err.conflicts ?? []
+        err.conflicts ?? [],
+        err.blocked ?? [],
+        err.allowed ?? []
       );
     }
     throw new Error(err.message || fallback);
@@ -286,6 +352,18 @@ export interface RosterParams {
   status?: ShiftStatus;
 }
 
+/**
+ * A roster write's answer. `item` is the single/edited row; `items` and
+ * `created` are the fan-out's rows. Exactly one of `item` / `items` is present.
+ */
+export interface ShiftWriteResult {
+  item?: Shift;
+  items?: Shift[];
+  created?: Shift[];
+  warnings: AssignmentWarning[];
+  skipped?: { employee: PersonRef | null; code: string; message: string }[];
+}
+
 export const shiftService = {
   async roster(params: RosterParams, token: string): Promise<RosterResponse> {
     const qs = new URLSearchParams({ from: params.from, to: params.to });
@@ -300,11 +378,8 @@ export const shiftService = {
     return json.data;
   },
 
-  async create(
-    input: ShiftInput,
-    token: string
-  ): Promise<{ item: Shift; warnings: AssignmentWarning[] }> {
-    const json = await handle<{ item: Shift; warnings: AssignmentWarning[] }>(
+  async create(input: ShiftInput, token: string): Promise<ShiftWriteResult> {
+    const json = await handle<ShiftWriteResult>(
       await fetch(SHIFTS, {
         method: 'POST',
         headers: jsonAuth(token),
@@ -319,8 +394,8 @@ export const shiftService = {
     id: string,
     input: ShiftInput,
     token: string
-  ): Promise<{ item: Shift; warnings: AssignmentWarning[] }> {
-    const json = await handle<{ item: Shift; warnings: AssignmentWarning[] }>(
+  ): Promise<ShiftWriteResult> {
+    const json = await handle<ShiftWriteResult>(
       await fetch(`${SHIFTS}/${id}`, {
         method: 'PATCH',
         headers: jsonAuth(token),
@@ -329,6 +404,27 @@ export const shiftService = {
       'Failed to update the shift'
     );
     return json.data;
+  },
+
+  /**
+   * Who can work this slot, before anybody is ticked.
+   *
+   * A POST because it carries a window and a role, not because it changes
+   * anything. The verdicts come from the same `checkAssignment` the save uses.
+   */
+  async availability(
+    input: { role: string; start: string; end: string; excludeId?: string | null },
+    token: string
+  ): Promise<AvailabilityVerdict[]> {
+    const json = await handle<{ items: AvailabilityVerdict[] }>(
+      await fetch(`${SHIFTS}/availability`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify(input),
+      }),
+      'Failed to check who is available'
+    );
+    return json.data.items;
   },
 
   /** Only a draft may be deleted; a published shift must be cancelled instead. */

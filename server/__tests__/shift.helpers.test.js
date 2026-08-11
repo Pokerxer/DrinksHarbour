@@ -14,6 +14,10 @@ const {
   isCycleWorkDay,
   findOverlaps,
   checkAssignment,
+  judgeAssignments,
+  bindEditedAssignment,
+  groupAssignmentContexts,
+  FORCEABLE_CODES,
   summariseRoster,
   canTransitionShift,
   tenantOffsetMinutes,
@@ -744,4 +748,175 @@ test('a range that fails to parse is passed straight through', () => {
   const out = clampPublishRange({ ok: false, message: 'bad dates' }, 60, Date.now());
   assert.strictEqual(out.ok, false);
   assert.strictEqual(out.message, 'bad dates');
+});
+
+// ── judgeAssignments ─────────────────────────────────────────────────────────
+
+const EMP3 = '507f1f77bcf86cd799439023';
+const other = (id, over = {}) => employee({ _id: id, ...over });
+const ctxOf = (entries) => new Map(Object.entries(entries));
+
+test('judgeAssignments allows everyone who is clear', () => {
+  const shift = { role: ROLE, ...win('09:00', '17:00') };
+  const r = judgeAssignments(shift, [employee(), other(EMP2)], ctxOf({}), {});
+  assert.strictEqual(r.allowed.length, 2);
+  assert.deepStrictEqual(r.blocked, []);
+});
+
+test('judgeAssignments blocks only the double-booked person, and that block is not forceable', () => {
+  const shift = { role: ROLE, ...win('09:00', '17:00') };
+  const ctx = ctxOf({
+    [EMP2]: { shifts: [{ _id: 'a', employee: EMP2, ...win('08:00', '12:00') }], timeOff: [] },
+  });
+  const r = judgeAssignments(shift, [employee(), other(EMP2)], ctx, {});
+  assert.strictEqual(r.allowed.length, 1);
+  assert.strictEqual(r.allowed[0].employee._id, EMP);
+  assert.strictEqual(r.blocked.length, 1);
+  assert.strictEqual(r.blocked[0].employee._id, EMP2);
+  assert.strictEqual(r.blocked[0].code, 'overlap');
+  assert.strictEqual(r.blocked[0].forceable, false);
+});
+
+test('judgeAssignments marks a role mismatch forceable', () => {
+  const shift = { role: OTHER_ROLE, ...win('09:00', '17:00') };
+  const r = judgeAssignments(shift, [employee()], ctxOf({}), {});
+  assert.strictEqual(r.blocked.length, 1);
+  assert.strictEqual(r.blocked[0].code, 'role_mismatch');
+  assert.strictEqual(r.blocked[0].forceable, true);
+});
+
+test('judgeAssignments reports overlap and role_mismatch side by side with different flags', () => {
+  const shift = { role: OTHER_ROLE, ...win('09:00', '17:00') };
+  const ctx = ctxOf({
+    [EMP2]: { shifts: [{ _id: 'a', employee: EMP2, ...win('08:00', '12:00') }], timeOff: [] },
+  });
+  const r = judgeAssignments(shift, [employee(), other(EMP2)], ctx, {});
+  assert.deepStrictEqual(
+    r.blocked.map((b) => [b.code, b.forceable]),
+    [
+      ['role_mismatch', true],
+      ['overlap', false],
+    ]
+  );
+});
+
+test('force moves a role mismatch into allowed WITH a warning, and leaves an overlap blocked', () => {
+  const shift = { role: OTHER_ROLE, ...win('09:00', '17:00') };
+  const ctx = ctxOf({
+    [EMP2]: { shifts: [{ _id: 'a', employee: EMP2, ...win('08:00', '12:00') }], timeOff: [] },
+  });
+  const r = judgeAssignments(shift, [employee(), other(EMP2)], ctx, { force: true });
+  assert.strictEqual(r.allowed.length, 1);
+  assert.strictEqual(r.allowed[0].employee._id, EMP);
+  assert.strictEqual(r.allowed[0].warnings[0].code, 'role_mismatch');
+  assert.strictEqual(r.blocked.length, 1);
+  assert.strictEqual(r.blocked[0].code, 'overlap');
+});
+
+test('judgeAssignments blocks a candidate id that matched no user', () => {
+  const shift = { role: ROLE, ...win('09:00', '17:00') };
+  const r = judgeAssignments(shift, [null], ctxOf({}), {});
+  assert.strictEqual(r.blocked[0].code, 'no_employee');
+  assert.strictEqual(r.blocked[0].forceable, false);
+});
+
+test('judgeAssignments on an empty list is empty, not a throw', () => {
+  const r = judgeAssignments({ role: ROLE, ...win('09:00', '17:00') }, [], ctxOf({}), {});
+  assert.deepStrictEqual(r, { allowed: [], blocked: [] });
+});
+
+test('a missing context entry means nothing booked, not missing data', () => {
+  const shift = { role: ROLE, ...win('09:00', '17:00') };
+  const r = judgeAssignments(shift, [other(EMP3)], ctxOf({}), {});
+  assert.strictEqual(r.allowed.length, 1);
+});
+
+// ── bindEditedAssignment ─────────────────────────────────────────────────────
+
+test('the edited row keeps its person when they are still ticked; the rest fan out', () => {
+  assert.deepStrictEqual(bindEditedAssignment(EMP, [EMP, EMP2, EMP3]), {
+    keep: EMP,
+    create: [EMP2, EMP3],
+  });
+});
+
+test('unticking the original and ticking others reassigns the row to the first of them', () => {
+  assert.deepStrictEqual(bindEditedAssignment(EMP, [EMP2, EMP3]), {
+    keep: EMP2,
+    create: [EMP3],
+  });
+});
+
+test('ticking nobody unassigns the row — an open shift, not a deletion', () => {
+  assert.deepStrictEqual(bindEditedAssignment(EMP, []), { keep: null, create: [] });
+});
+
+test('ticking exactly the person already on the shift creates nothing', () => {
+  assert.deepStrictEqual(bindEditedAssignment(EMP, [EMP]), { keep: EMP, create: [] });
+});
+
+test('an open shift being filled binds the first ticked person to the existing row', () => {
+  assert.deepStrictEqual(bindEditedAssignment(null, [EMP2, EMP3]), {
+    keep: EMP2,
+    create: [EMP3],
+  });
+});
+
+test('bindEditedAssignment reads a populated employee ref, not just an id', () => {
+  assert.deepStrictEqual(bindEditedAssignment({ _id: EMP }, [EMP, EMP2]), {
+    keep: EMP,
+    create: [EMP2],
+  });
+});
+
+test('a duplicated tick does not produce two rows for one person', () => {
+  assert.deepStrictEqual(bindEditedAssignment(null, [EMP2, EMP2, EMP3]), {
+    keep: EMP2,
+    create: [EMP3],
+  });
+});
+
+// ── groupAssignmentContexts ──────────────────────────────────────────────────
+
+test('groupAssignmentContexts files each row under its own employee', () => {
+  const emps = [employee(), other(EMP2)];
+  const shifts = [
+    { _id: 'a', employee: EMP, ...win('09:00', '17:00') },
+    { _id: 'b', employee: EMP2, ...win('09:00', '17:00') },
+    { _id: 'c', employee: EMP, ...win('18:00', '22:00') },
+  ];
+  const off = [{ _id: 'x', employee: EMP2, status: 'approved' }];
+
+  const byId = groupAssignmentContexts(emps, shifts, off);
+  assert.deepStrictEqual(byId.get(EMP).shifts.map((s) => s._id), ['a', 'c']);
+  assert.deepStrictEqual(byId.get(EMP).timeOff, []);
+  assert.deepStrictEqual(byId.get(EMP2).shifts.map((s) => s._id), ['b']);
+  assert.deepStrictEqual(byId.get(EMP2).timeOff.map((t) => t._id), ['x']);
+});
+
+test('an employee with nothing booked gets EMPTY ARRAYS, not undefined', () => {
+  const byId = groupAssignmentContexts([employee()], [], []);
+  const entry = byId.get(EMP);
+  assert.deepStrictEqual(entry.shifts, []);
+  assert.deepStrictEqual(entry.timeOff, []);
+  assert.strictEqual(entry.employee._id, EMP);
+});
+
+test('groupAssignmentContexts drops rows belonging to nobody it was asked about', () => {
+  const byId = groupAssignmentContexts(
+    [employee()],
+    [{ _id: 'a', employee: EMP2, ...win('09:00', '17:00') }],
+    []
+  );
+  assert.deepStrictEqual(byId.get(EMP).shifts, []);
+  assert.strictEqual(byId.has(EMP2), false);
+});
+
+test('groupAssignmentContexts reads a populated employee ref on a row', () => {
+  const byId = groupAssignmentContexts(
+    [employee()],
+    [{ _id: 'a', employee: { _id: EMP }, ...win('09:00', '17:00') }],
+    []
+  );
+  assert.deepStrictEqual(byId.get(EMP).shifts.map((s) => s._id), ['a']);
 });

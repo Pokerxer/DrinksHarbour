@@ -12,7 +12,11 @@
 // the Lagos morning shift land on the wrong column. Africa/Lagos is UTC+1 with
 // no daylight saving, which is why a fixed offset is exact.
 
-import type { Shift, ShiftStatus } from '@/services/shift.service';
+import type {
+  Shift,
+  ShiftStatus,
+  AvailabilityVerdict,
+} from '@/services/shift.service';
 import { refId } from '@/services/orgStructure.service';
 
 /** Africa/Lagos. Mirrors DEFAULT_OFFSET_MINUTES on the server. */
@@ -356,16 +360,196 @@ export function conflictLabel(
   return CONFLICT_LABELS[code] ?? fallback;
 }
 
+/** One line in the assignment picker: a person, and what stands in their way. */
+export interface PickerRow {
+  id: string;
+  name: string;
+  ok: boolean;
+  code: string | null;
+  reason: string | null;
+  forceable: boolean;
+}
+
 /**
- * May the admin push this refusal through?
+ * Pair the employee list with the server's pre-flight verdicts.
  *
- * Only `role_mismatch` — a judgement call about who can cover what. An overlap
- * is physics and time off is a commitment already made to the person; neither
- * is the admin's to wave away, and offering a button that will be refused again
- * is worse than offering none.
+ * An employee with no verdict is left UNBADGED rather than hidden or blocked:
+ * the verdicts arrive after the list does, and a picker that empties itself
+ * while a request is in flight is worse than one that shows no warnings yet.
+ * The server judges again on save regardless, so nothing here can let a bad
+ * assignment through.
+ *
+ * `extra` is for someone who has to be IN the picker without being in the
+ * active-employee list — the clearest case is a shift's current holder, since
+ * the page loads `employees` filtered to `status: 'active'` while a shift's own
+ * ref can point at someone since suspended or terminated. Left out, that
+ * person's tick has nowhere to render: "1 selected" shows with no ticked row,
+ * and ticking a colleague on top of it would silently reassign the shift away
+ * from them (see toggleTicked). Somebody already in `employees` is not
+ * duplicated — `extra` only ever ADDS people, never re-orders the ones already
+ * there ahead of the final sort.
  */
-export function canForce(code: string): boolean {
-  return code === 'role_mismatch';
+export function mergeAvailability(
+  employees: LaneEmployee[],
+  // Typed as the service's own verdict, NOT a narrower structural shape: the
+  // tests pass object literals, and an omitted field would trip TypeScript's
+  // excess-property check on every one of them.
+  verdicts: AvailabilityVerdict[],
+  extra: LaneEmployee[] = []
+): PickerRow[] {
+  const byId = new Map(
+    (verdicts ?? [])
+      .filter((v) => v.employee?._id)
+      .map((v) => [String(v.employee!._id), v] as const)
+  );
+
+  const known = new Set((employees ?? []).map((e) => String(e._id)));
+  const combined = (employees ?? []).concat(
+    (extra ?? []).filter((e) => !known.has(String(e._id)))
+  );
+
+  return combined
+    .map((e) => {
+      const id = String(e._id);
+      const v = byId.get(id);
+      return {
+        id,
+        name: employeeName(e),
+        ok: v ? v.ok : true,
+        code: v && !v.ok ? v.code : null,
+        reason: v && !v.ok && v.code ? conflictLabel(v.code) : null,
+        forceable: v ? v.forceable : false,
+      };
+    })
+    // Sorted by name here rather than trusted from `employees`: the employee
+    // API orders by `createdAt: -1` for other pages, and `bindEditedAssignment`
+    // on the server binds the FIRST ticked id to the row being edited — so
+    // which person inherits a row has to track name order, the picker's own
+    // stated display order, not an unrelated reverse-creation order that
+    // happens to be what this list arrived in.
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Rebuild the ticked list in the picker's OWN display order, not the order the
+ * admin happened to click things in.
+ *
+ * `bindEditedAssignment` on the server binds the FIRST id in the array to the
+ * row already being edited, so if ticking simply appended to a click-ordered
+ * list, who inherits that row would depend on which button was pressed first
+ * rather than anything visible on screen. Sorting against a position index
+ * built from the full, unfiltered `pickerRows` on every tick fixes that — and
+ * using the full list rather than whatever the filter currently shows means a
+ * person hidden behind a filter term stays ticked instead of silently falling
+ * out of the selection the moment someone else is ticked.
+ *
+ * A ticked id that `pickerRows` does not recognise is KEPT, not dropped, and
+ * sorted AHEAD of every recognised id. That id is how a shift's current
+ * holder can be ticked (`openExisting` seeds `draft.employees` from the shift
+ * itself) while missing from the active-employee list the picker is built
+ * from (see `mergeAvailability`'s `extra` param for making them visible, too).
+ * Dropping them here — filtering the ticked list down to what `pickerRows`
+ * recognises, as this used to — would silently un-tick them the moment
+ * anyone else was ticked, and losing the FIRST position on top of that would
+ * hand `bindEditedAssignment`'s `keep` to whoever was left, reassigning the
+ * row with nothing on screen having said so.
+ */
+export function toggleTicked(
+  pickerRows: PickerRow[],
+  ticked: string[],
+  id: string,
+  checked: boolean
+): string[] {
+  if (!checked) return ticked.filter((t) => t !== id);
+  const want = new Set([...ticked, id]);
+  const position = new Map(pickerRows.map((r, i) => [r.id, i]));
+  // Array.prototype.sort is a stable sort (guaranteed since ES2019), so two
+  // ids that both fail to resolve — position -1 — keep the relative order
+  // they had in `want`, i.e. Set insertion order, rather than being shuffled.
+  return Array.from(want).sort(
+    (a, b) => (position.get(a) ?? -1) - (position.get(b) ?? -1)
+  );
+}
+
+/** What the conflict panel shows, and which of its two escapes are offered. */
+export interface AssignmentOutcome {
+  heading: string;
+  lines: { id: string; name: string; reason: string }[];
+  /** Every block is a judgement call, so "Assign anyway" will actually work. */
+  canForceAll: boolean;
+  /** Somebody would still be scheduled, so "skip these" means something. */
+  canSkip: boolean;
+}
+
+/**
+ * Turn a 409 into the panel.
+ *
+ * Both 409 shapes land here: the multi-select one carries `blocked`/`allowed`,
+ * and a single-employee save carries only a `code`. The two escape hatches are
+ * offered from the SERVER's `forceable` flag, never from a list kept here —
+ * offering a button that will be refused again is worse than offering none.
+ */
+export function summariseAssignmentResult(err: {
+  code: string;
+  blocked?: {
+    employee: LaneEmployee | null;
+    code: string;
+    forceable: boolean;
+    /** Set only on an edit's fan-out: this refusal belongs to the row's OWN
+     * reassignment, not one of the newcomers. See the `canSkip` line below. */
+    pinned?: boolean;
+  }[];
+  allowed?: unknown[];
+}): AssignmentOutcome {
+  const blocked = err.blocked ?? [];
+  const allowedCount = (err.allowed ?? []).length;
+
+  if (!blocked.length) {
+    // This is the single-employee 409 — a bare `{ code, conflicts }` with no
+    // `blocked` array at all, from the back-compat single-or-open save path.
+    // It is currently unreachable from THIS drawer (every save here either
+    // sends `employees` or assigns nobody), kept as a legacy fallback rather
+    // than deleted outright. `canForceAll` stays false deliberately: whether a
+    // code is forceable is a decision `judgeAssignments`' `forceable` flag
+    // makes on the SERVER, and this shape does not carry one — reintroducing a
+    // browser-side FORCEABLE_CODES list to answer it here would be exactly the
+    // duplicated rule this feature deleted the last copy of.
+    return {
+      heading: conflictLabel(err.code),
+      lines: [{ id: 'single', name: 'This employee', reason: conflictLabel(err.code) }],
+      canForceAll: false,
+      canSkip: false,
+    };
+  }
+
+  const total = blocked.length + allowedCount;
+  return {
+    heading: allowedCount
+      ? `${blocked.length} of ${total} people cannot be scheduled`
+      : 'Nobody selected can be scheduled',
+    lines: blocked.map((b, i) => ({
+      // `employee` can legitimately be null for a `no_employee` verdict, so a
+      // real id is preferred but the line's position is the fallback rather
+      // than leaving two such lines to collide on the same rendered key.
+      id: b.employee?._id ?? `blocked-${i}`,
+      name: employeeName(b.employee),
+      reason: conflictLabel(b.code),
+    })),
+    canForceAll: blocked.every((b) => b.forceable),
+    // A block PINNED to the row's own reassignment can never be skipped away —
+    // `skipBlocked` on the server never touches that person, so offering the
+    // button here would just be refused again, byte for byte. Somebody being
+    // allowed is not enough on its own; none of the blocks may be pinned.
+    canSkip: allowedCount > 0 && !blocked.some((b) => b.pinned),
+  };
+}
+
+/**
+ * The picker's own summary. Zero ticked is not "none" — it is an OPEN SHIFT,
+ * the state the whole roster is built in, and the label has to say so.
+ */
+export function assignedLabel(count: number): string {
+  return count ? `${count} selected` : 'Open shift — nobody yet';
 }
 
 // ── Generation results ───────────────────────────────────────────────────────
