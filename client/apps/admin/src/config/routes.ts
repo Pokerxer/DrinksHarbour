@@ -51,13 +51,28 @@ export const routes = {
     shifts: '/employees/shifts',
     shiftTemplates: '/employees/shifts/templates',
     attendance: '/employees/attendance',
+    // The kiosk a signed-in manager opens. Gated with everything else under
+    // /employees — see publicKiosk below for the one anybody can open.
     attendanceKiosk: '/employees/attendance/kiosk',
+    // Pairing screens that clock staff in with no login. Admin-only, and
+    // therefore under /employees; the screens it pairs are not.
+    attendanceDevices: '/employees/attendance/devices',
     // One person's history and rating. `kiosk` above is a static segment, so
     // it still wins over this dynamic one.
     attendanceFor: (id: string) => `/employees/attendance/${id}`,
     timeOff: '/employees/time-off',
     swaps: '/employees/swaps',
   },
+
+  /**
+   * The clock on a screen nobody signs in to.
+   *
+   * A TOP-LEVEL path, not one under `/employees`, and that is the whole design:
+   * `middleware.ts` gates by an explicit list which includes `/employees/:path*`,
+   * so a page that must render logged out has to live outside it. The token is
+   * the credential — see the comments in middleware.ts and app/kiosk/[token].
+   */
+  publicKiosk: (token: string) => `/kiosk/${encodeURIComponent(token)}`,
   contacts: {
     list: '/contacts',
     // `key` is the "source:id" handle returned on each Contact.

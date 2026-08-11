@@ -1,12 +1,20 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { motion } from 'framer-motion';
 import { QRCodeCanvas } from 'qrcode.react';
 import jsPDF from 'jspdf';
 import toast from 'react-hot-toast';
-import { PiX, PiPrinterBold, PiDownloadSimpleBold } from 'react-icons/pi';
-import { type Employee } from '@/services/employee.service';
+import {
+  PiX,
+  PiPrinterBold,
+  PiDownloadSimpleBold,
+  PiBarcodeBold,
+  PiWarningCircleBold,
+} from 'react-icons/pi';
+import { employeeService, type Employee } from '@/services/employee.service';
+import { useTenant } from '@/context/TenantContext';
 import { ROLE_META, fullName, initials } from './employee-profile-form';
 import { CODE128_QUIET_ZONE } from './barcode-utils';
 import {
@@ -15,10 +23,11 @@ import {
   badgePdfLayout,
   badgePayload,
   badgeBarcodeLayout,
+  badgeBrand,
+  badgeBrandColor,
+  badgeIssueState,
   formatBadgeNumber,
 } from './badge-utils';
-
-const BRAND = '#b20202';
 
 // A stable, human-readable employee code derived from the Mongo id.
 function shortId(id: string): string {
@@ -33,7 +42,13 @@ function shortId(id: string): string {
  * reads. `shapeRendering="crispEdges"` because an anti-aliased edge on a
  * half-millimetre bar is a decoding error.
  */
-function Barcode({ bars, modules }: { bars: Array<{ x: number; width: number }>; modules: number }) {
+function Barcode({
+  bars,
+  modules,
+}: {
+  bars: Array<{ x: number; width: number }>;
+  modules: number;
+}) {
   const total = modules + CODE128_QUIET_ZONE * 2;
   return (
     <svg
@@ -94,18 +109,38 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 export default function EmployeeBadge({
   employee,
   onClose,
+  onIssued,
 }: {
   employee: Employee;
   onClose: () => void;
+  /**
+   * Hand the updated employee back to whoever owns that state.
+   *
+   * This modal takes `employee` as a PROP and has no way to refetch. Without
+   * this the card would issue a number and then carry on printing the blank
+   * one it was handed — the exact failure the button exists to fix.
+   */
+  onIssued?: (employee: Employee) => void;
 }) {
+  const { data: session } = useSession();
+  const token = (session?.user as { token?: string })?.token ?? '';
+  const { tenant } = useTenant();
+
   // Hidden, high-resolution QR canvas used to rasterise into the PDF / print.
   const qrRef = useRef<HTMLCanvasElement>(null);
   const [downloading, setDownloading] = useState(false);
+  const [issuing, setIssuing] = useState(false);
 
-  const name = fullName(employee);
-  const role = ROLE_META[employee.role];
-  const code = shortId(employee._id);
-  const qrValue = badgePayload(employee);
+  // The card follows the employee the PARENT holds once a number is issued —
+  // the prop is stale from that moment until the list refetches.
+  const [current, setCurrent] = useState(employee);
+
+  const name = fullName(current);
+  const role = ROLE_META[current.role];
+  const code = shortId(current._id);
+  const qrValue = badgePayload(current);
+  const brand = badgeBrand(tenant?.name);
+  const { hex: BRAND, rgb: BRAND_RGB } = badgeBrandColor(tenant?.primaryColor);
   // One decision for both surfaces, and it is the PRINTED card's: a symbol that
   // would not survive being cut down to CR80 is not drawn on screen either,
   // because the preview is a preview of the card, not of the screen. Null means
@@ -118,7 +153,41 @@ export default function EmployeeBadge({
     day: 'numeric',
   });
 
+  const issueState = badgeIssueState(current, CARD_W_MM);
+
   const qrDataUrl = () => qrRef.current?.toDataURL('image/png') ?? '';
+
+  /**
+   * Draw a badge number for somebody who has not got one.
+   *
+   * Behind a button rather than on open, deliberately: viewing an employee is a
+   * GET a manager makes while browsing, and issuing on open would turn every
+   * one of those into a write — handing numbers to people nobody intends to
+   * print a card for.
+   *
+   * The response replaces the whole employee, here AND in the parent. The
+   * modal has no refetch path, so without the second half the card would print
+   * the blank number it was handed however many times it is asked to.
+   */
+  const handleIssueBadgeNumber = async () => {
+    setIssuing(true);
+    try {
+      const res = await employeeService.issueBadgeNumber(current._id, token);
+      setCurrent(res.data.employee);
+      onIssued?.(res.data.employee);
+      toast.success(
+        res.data.issued
+          ? 'Badge number issued'
+          : 'This employee already has a badge number'
+      );
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : 'Could not issue a badge number'
+      );
+    } finally {
+      setIssuing(false);
+    }
+  };
 
   // Print the on-screen badge directly via the browser's print dialog. A
   // print-only stylesheet (rendered below) hides everything except the badge
@@ -140,7 +209,7 @@ export default function EmployeeBadge({
       const H = CARD_H_MM;
       const rows: [string, string][] = [
         ['EMPLOYEE ID', code],
-        ['EMAIL', employee.email],
+        ['EMAIL', current.email],
         ['ISSUED', issued],
       ];
       const L = badgePdfLayout(rows.length);
@@ -150,7 +219,7 @@ export default function EmployeeBadge({
         format: [W, H],
       });
       const M = 5;
-      const R: [number, number, number] = [178, 2, 2]; // brand red, numeric RGB
+      const R = BRAND_RGB; // the tenant's colour, as jsPDF's three numbers
 
       // Header band.
       doc.setFillColor(...R);
@@ -158,7 +227,7 @@ export default function EmployeeBadge({
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6);
-      doc.text('DRINKSHARBOUR', W / 2, L.brandY, { align: 'center' });
+      doc.text(brand.headerLine, W / 2, L.brandY, { align: 'center' });
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.text('STAFF ID CARD', W / 2, L.titleY, { align: 'center' });
@@ -167,7 +236,7 @@ export default function EmployeeBadge({
       const pSize = L.photo.size;
       const px = L.photo.x;
       const py = L.photo.y;
-      const photo = employee.avatar ? await toDataUrl(employee.avatar) : null;
+      const photo = current.avatar ? await toDataUrl(current.avatar) : null;
       if (photo) {
         try {
           // No format argument: jsPDF sniffs the MIME type from the data URL,
@@ -194,7 +263,7 @@ export default function EmployeeBadge({
         doc.setTextColor(...R);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(12);
-        doc.text(initials(employee), W / 2, py + pSize / 2 + 1.5, {
+        doc.text(initials(current), W / 2, py + pSize / 2 + 1.5, {
           align: 'center',
         });
       }
@@ -260,7 +329,9 @@ export default function EmployeeBadge({
         doc.setTextColor(31, 41, 55);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
-        doc.text(formatBadgeNumber(qrValue), W / 2, L.captionY, { align: 'center' });
+        doc.text(formatBadgeNumber(qrValue), W / 2, L.captionY, {
+          align: 'center',
+        });
       } else {
         // No badge number issued yet, so the payload is the employee id and a
         // barcode of it would be unreadable. Print the payload as text instead
@@ -268,7 +339,10 @@ export default function EmployeeBadge({
         doc.setTextColor(107, 114, 128);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(5);
-        doc.text(qrValue, W / 2, L.bars.y + 2, { align: 'center', maxWidth: W - 6 });
+        doc.text(qrValue, W / 2, L.bars.y + 2, {
+          align: 'center',
+          maxWidth: W - 6,
+        });
       }
 
       // Footer.
@@ -277,7 +351,7 @@ export default function EmployeeBadge({
       doc.setTextColor(...R);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(4.5);
-      doc.text('DRINKSHARBOUR · PROPERTY OF THE COMPANY', W / 2, H - 2.2, {
+      doc.text(brand.footerLine.toUpperCase(), W / 2, H - 2.2, {
         align: 'center',
       });
 
@@ -329,6 +403,48 @@ export default function EmployeeBadge({
           </button>
         </div>
 
+        {/* No badge number yet — the reason the card below prints no bars.
+            Above the preview rather than inside it, because it is a fact about
+            the EMPLOYEE, not something that should ever appear on the card. */}
+        {issueState === 'missing' && (
+          <div className="flex items-start gap-3 border-b border-amber-100 bg-amber-50 px-5 py-3 print:hidden">
+            <PiWarningCircleBold className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-amber-900">
+                No badge number yet
+              </p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-amber-800">
+                The card will print without a barcode, so it cannot be scanned
+                at the clock. Issue a number before printing it.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleIssueBadgeNumber}
+              disabled={issuing || !token}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-60"
+            >
+              <PiBarcodeBold className="h-3.5 w-3.5" />
+              {issuing ? 'Issuing…' : 'Issue badge number'}
+            </button>
+          </div>
+        )}
+
+        {/* A number exists but is too long to print as bars — somebody's own
+            numbering scheme. NO button: re-issuing over it would stop the card
+            already in their drawer working, which is exactly what the server
+            refuses to do. */}
+        {issueState === 'unscannable' && (
+          <div className="flex items-start gap-3 border-b border-gray-100 bg-gray-50 px-5 py-3 print:hidden">
+            <PiWarningCircleBold className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+            <p className="text-[11px] leading-relaxed text-gray-600">
+              This employee&rsquo;s badge number is too long to print as a
+              barcode on a card this size, so the card carries the QR code and
+              the number as text. It can still be typed at the clock.
+            </p>
+          </div>
+        )}
+
         {/* Preview */}
         <div className="bg-gray-50 px-5 py-6">
           <div
@@ -340,32 +456,38 @@ export default function EmployeeBadge({
               style={{ background: BRAND }}
             >
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] opacity-85">
-                DrinksHarbour
+                {brand.name}
               </p>
               <p className="mt-0.5 text-lg font-extrabold">Staff ID Card</p>
             </div>
             <div className="-mt-9 flex justify-center">
-              {employee.avatar ? (
+              {current.avatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={employee.avatar}
+                  src={current.avatar}
                   alt={name}
                   className="h-24 w-24 rounded-full object-cover ring-4 ring-white"
                 />
               ) : (
-                <div className="flex h-24 w-24 items-center justify-center rounded-full bg-white text-2xl font-bold text-[#b20202] ring-4 ring-white">
-                  {initials(employee)}
+                <div
+                  className="flex h-24 w-24 items-center justify-center rounded-full bg-white text-2xl font-bold ring-4 ring-white"
+                  style={{ color: BRAND }}
+                >
+                  {initials(current)}
                 </div>
               )}
             </div>
             <div className="px-5 pb-5 pt-2 text-center">
               <p className="text-lg font-extrabold text-gray-900">{name}</p>
-              <span className="mt-1 inline-block rounded-full bg-[#b20202]/10 px-3 py-0.5 text-[11px] font-bold text-[#b20202]">
+              <span
+                className="mt-1 inline-block rounded-full px-3 py-0.5 text-[11px] font-bold"
+                style={{ color: BRAND, background: `${BRAND}1a` }}
+              >
                 {role.label}
               </span>
               <div className="mt-3 text-left">
                 <InfoRow label="Employee ID" value={code} />
-                <InfoRow label="Email" value={employee.email} />
+                <InfoRow label="Email" value={current.email} />
                 <InfoRow label="Issued" value={issued} />
               </div>
               <div className="mt-3 flex flex-col items-center gap-1">
@@ -390,8 +512,11 @@ export default function EmployeeBadge({
                 )}
               </div>
             </div>
-            <div className="bg-[#faf8f3] py-2 text-center text-[9px] font-bold uppercase tracking-wider text-[#b20202]">
-              DrinksHarbour · Property of the company
+            <div
+              className="bg-[#faf8f3] py-2 text-center text-[9px] font-bold uppercase tracking-wider"
+              style={{ color: BRAND }}
+            >
+              {brand.footerLine}
             </div>
           </div>
         </div>
@@ -409,7 +534,8 @@ export default function EmployeeBadge({
             type="button"
             onClick={handleDownloadPdf}
             disabled={downloading}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#9f0101] disabled:opacity-60"
+            style={{ background: BRAND }}
+            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
           >
             <PiDownloadSimpleBold className="h-4 w-4" />
             {downloading ? 'Building…' : 'Download PDF'}

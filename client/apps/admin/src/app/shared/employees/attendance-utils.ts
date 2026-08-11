@@ -408,3 +408,53 @@ export function describeClock(
     tone: 'in',
   };
 }
+
+// ── How a kiosk screen authenticates itself ──────────────────────────────────
+
+export type KioskAuthMode = 'device' | 'session' | 'none';
+
+export interface KioskAuth {
+  mode: KioskAuthMode;
+  /** The credential to send, whichever kind it is. */
+  token: string;
+  /** Whether the pad may offer the PIN fallback at all. */
+  pinOffered: boolean;
+}
+
+/**
+ * Which credential this kiosk screen holds, and what it is therefore allowed to
+ * offer.
+ *
+ * The URL decides, NOT whoever happens to be signed in to the browser. That
+ * order is the whole rule, and it is not obvious:
+ *
+ * `/kiosk/<token>` is a public page, and it will very often be opened in a
+ * browser that still holds a manager's session cookie — the manager who paired
+ * the tablet in the first place. If the session won, that one device would
+ * quietly get the PIN pad back, posting typed secrets to an endpoint that
+ * accepts them because the request happened to carry a JWT. It would work
+ * perfectly, so nobody would ever find out. A screen paired as a device is a
+ * device, whatever else the browser is carrying.
+ *
+ * `mode: 'none'` is a real state, not an error: the in-app page renders before
+ * `useSession()` resolves, and it must show that it is not ready rather than
+ * posting scans that will come back 401.
+ */
+export function resolveKioskAuth(input: {
+  kioskToken?: string | null;
+  sessionToken?: string | null;
+}): KioskAuth {
+  const kioskToken = (input.kioskToken ?? '').trim();
+  if (kioskToken) {
+    // Badges only. The server refuses a typed PIN on this path, so a pad that
+    // showed one would be a button that always fails.
+    return { mode: 'device', token: kioskToken, pinOffered: false };
+  }
+
+  const sessionToken = (input.sessionToken ?? '').trim();
+  if (sessionToken) {
+    return { mode: 'session', token: sessionToken, pinOffered: true };
+  }
+
+  return { mode: 'none', token: '', pinOffered: false };
+}

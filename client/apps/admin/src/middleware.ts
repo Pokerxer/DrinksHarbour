@@ -248,6 +248,21 @@ export default async function middleware(req: NextRequest) {
  * `/warehouses`, `/purchases`, `/sales`, `/settings`, `/contacts`, `/blog`,
  * `/store-analytics` and `/profile` were all missing for exactly that reason.
  * When adding a new top-level module, add it here too.
+ *
+ * ONE ROUTE IS ABSENT ON PURPOSE: `/kiosk/:token`.
+ *
+ * It is the attendance clock on a screen in a shop, which by definition nobody
+ * signs in to — the whole point of the work that added it. It is not
+ * unprotected: the token in its URL is a long random per-device credential that
+ * the API resolves to a tenant and that an admin can revoke from /settings, and
+ * every call the page makes carries it (see server/middleware/kiosk.middleware.js).
+ * The page renders nothing about the shop until that token comes back valid.
+ *
+ * Adding it to this list would send the counter tablet to /signin, which is the
+ * one thing it must never do. Do NOT "fix" the omission — and do NOT reach for
+ * the other shortcut either: un-gating `/employees` instead would make the
+ * staff list and every HR profile public, which is what `isUnder()`'s comment
+ * above is warning about.
  */
 export const config = {
   matcher: [

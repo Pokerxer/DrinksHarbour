@@ -20,6 +20,7 @@ import {
   PiClockCounterClockwiseDuotone,
   PiClockUserDuotone,
   PiFingerprintDuotone,
+  PiDeviceTabletDuotone,
   PiUmbrellaDuotone,
   PiArrowsLeftRightDuotone,
 } from 'react-icons/pi';
@@ -94,7 +95,13 @@ const navItems: NavItem[] = [
         label: 'Clock Kiosk',
         href: routes.employees.attendanceKiosk,
         icon: <PiFingerprintDuotone />,
-        desc: 'The PIN pad staff clock in on',
+        desc: 'The pad staff clock in on',
+      },
+      {
+        label: 'Kiosk Screens',
+        href: routes.employees.attendanceDevices,
+        icon: <PiDeviceTabletDuotone />,
+        desc: 'Screens that clock in without a login',
       },
       {
         label: 'Time Off',

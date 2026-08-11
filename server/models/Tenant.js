@@ -670,6 +670,42 @@ const tenantSchema = new Schema(
       // Days before expiry at which batches start raising expiry notifications.
       expiryWarningDays: { type: Number, min: 1, max: 365, default: 90 },
     },
+
+    // ────────────────────────────────────────────────
+    // Attendance kiosk devices
+    // ────────────────────────────────────────────────
+    //
+    // Each row is one screen paired to clock staff in WITHOUT anybody logging
+    // in — the tablet on the counter, the panel by the warehouse door. The
+    // token handed out at pairing is `<_id>.<secret>`; only the secret's hash
+    // is kept, so this array is not a set of working kiosks if it leaks.
+    //
+    // Per DEVICE rather than per tenant so a tablet left in a taxi can be
+    // revoked on its own, without re-pairing every other screen in the shop.
+    // The rules live in services/kioskToken.helpers.js.
+    kioskDevices: {
+      type: [
+        {
+          name: { type: String, trim: true, maxlength: 60, default: 'Kiosk' },
+          // sha256 of the secret. Never selected into a response — see
+          // presentKioskDevice.
+          tokenHash: { type: String, required: true },
+          // The last few characters of the secret, so an admin can tell which
+          // of two tablets a token in front of them belongs to without the
+          // token itself being recoverable from this row.
+          tokenHint: { type: String, default: '' },
+          createdAt: { type: Date, default: Date.now },
+          createdBy: { type: ObjectId, ref: 'User', default: null },
+          // Touched on use, so the settings list can show a screen nobody has
+          // punched at for a month — the ones worth revoking.
+          lastSeenAt: { type: Date, default: null },
+          // Kept rather than pulled: revoking is an event worth being able to
+          // see afterwards. isKioskDeviceActive is what enforces it.
+          revokedAt: { type: Date, default: null },
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -701,6 +737,9 @@ tenantSchema.index({ slug: 1, status: 1 });
 tenantSchema.index({ status: 1, subscriptionStatus: 1 });
 tenantSchema.index({ normalizedState: 1, status: 1 });    // shipping lookups
 tenantSchema.index({ 'location.lat': 1, 'location.lon': 1 }); // geo queries
+// A kiosk token names its device and nothing else — with no session there is no
+// tenant to scope by, so this index IS the lookup on every clock press.
+tenantSchema.index({ 'kioskDevices._id': 1 });
 
 // ────────────────────────────────────────────────
 // State normalisation helper (mirrors shipping-zones logic)

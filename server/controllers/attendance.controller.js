@@ -42,6 +42,7 @@ const {
   resolveAttendanceTimes,
   lastPunchAt,
   isPunchTooSoon,
+  resolveClockCredential,
 } = require('../services/attendance.helpers');
 const {
   rateAttendance,
@@ -122,20 +123,23 @@ async function employeeInTenant(tenantId, employeeId) {
  *     credential, so it is NOT secret: a scan is answered with a distinct
  *     message when no employee matches, and no PIN needs to exist for the
  *     badge to work.
+ *
+ * WHICH of the two is on offer now depends on how the request authenticated.
+ * `req.kioskDevice` means a screen paired by token with nobody signed in behind
+ * it, and there the pad takes badges only — the rule, and the reasoning, are in
+ * resolveClockCredential.
  */
 const clock = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   const pin = req.body?.pin;
   const badge = req.body?.badge;
 
-  // A missing field is a broken client, not a failed guess — distinguishing it
-  // discloses nothing, because no credential was offered to confirm or deny.
-  if (!pin && !badge) return badRequest(res, 'PIN or badge required');
-  if (pin && badge) return badRequest(res, 'Provide either a PIN or a badge, not both');
+  const credential = resolveClockCredential(req.body, { allowPin: !req.kioskDevice });
+  if (!credential.ok) return badRequest(res, credential.message);
 
   let matched = null;
 
-  if (badge) {
+  if (credential.kind === 'badge') {
     // The badge lookup deliberately does NOT filter on posPinHash: a driver
     // or attendant must be able to punch with the card on their lanyard even
     // though nobody has handed them a till PIN.

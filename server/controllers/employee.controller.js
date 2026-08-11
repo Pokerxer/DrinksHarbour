@@ -290,6 +290,72 @@ exports.deleteEmployee = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Employee removed' });
 });
 
+// ─── Issue a badge number ──────────────────────────────────────────────────────
+
+/**
+ * POST /api/employees/:id/badge-number — draw a badge number for somebody who
+ * hasn't got one.
+ *
+ * A POST, not a PATCH of `rfidBadge`: the client does not choose the number.
+ * It is a credential the kiosk matches, so a sequential or client-picked value
+ * would let anybody work out a colleague's badge from their own.
+ *
+ * IDEMPOTENT IN THE WAY THAT MATTERS. An employee who already has a badge —
+ * ours, or a business's own hand-entered `STAFF-0042` — gets that one back
+ * unchanged, and `issued: false` says so. Re-drawing would invalidate a card
+ * already in somebody's pocket, which is the one failure this endpoint exists
+ * to prevent rather than cause. `needsBadgeNumber` is the predicate, the same
+ * one create and the backfill use.
+ *
+ * The write goes through `assignBadgeNumber` like every other assignment path,
+ * so a collision with a number another manager issued in the same moment is
+ * redrawn rather than reported — the per-tenant partial index is the arbiter,
+ * and the only honest way to learn a number is free is to try to write it.
+ */
+exports.issueBadgeNumber = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const user = await User.findOne({ _id: req.params.id, tenant: tenantId }).select(
+    '+posPinHash'
+  );
+  if (!user || user.status === 'deleted') {
+    return res.status(404).json({ success: false, message: 'Employee not found' });
+  }
+
+  if (!needsBadgeNumber(user.employeeProfile)) {
+    return res.json({
+      success: true,
+      data: { employee: present(user), issued: false },
+    });
+  }
+
+  // The profile is rebuilt from the STORED one on every attempt rather than
+  // mutated in place: assignBadgeNumber may call this more than once, and a
+  // document carrying the number the index just rejected would clash on that
+  // same number for ever.
+  const base = user.employeeProfile?.toObject
+    ? user.employeeProfile.toObject()
+    : user.employeeProfile;
+
+  const updated = await assignBadgeNumber(async (code) => {
+    const next = await User.findOneAndUpdate(
+      { _id: user._id, tenant: tenantId },
+      { $set: { employeeProfile: withBadgeNumber(base, code) } },
+      { new: true, runValidators: true }
+    ).select('+posPinHash');
+    if (!next) {
+      // The employee vanished between the read above and this write. Reported
+      // rather than retried — redrawing would burn every attempt on a row that
+      // is not there.
+      const err = new Error('Employee not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    return next;
+  });
+
+  res.json({ success: true, data: { employee: present(updated), issued: true } });
+});
+
 // ─── Set / reset PIN ───────────────────────────────────────────────────────────
 
 exports.setEmployeePin = asyncHandler(async (req, res) => {

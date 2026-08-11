@@ -31,7 +31,11 @@ interface KioskScanViewProps {
   mode: ScanMode;
   onModeChange: (m: ScanMode) => void;
   onScan: (code: string) => void;
-  onSwitchToPin: () => void;
+  /**
+   * Absent on a device-paired kiosk, which takes badge scans only. Not merely
+   * disabled — an offer the server will refuse is worse than no offer.
+   */
+  onSwitchToPin?: () => void;
   busy: boolean;
 }
 
@@ -298,16 +302,20 @@ export default function KioskScanView({
           )}
         </button>
 
-        <span className="h-3 w-px bg-white/10" />
+        {onSwitchToPin && (
+          <>
+            <span className="h-3 w-px bg-white/10" />
 
-        <button
-          type="button"
-          onClick={onSwitchToPin}
-          className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium text-white/40 transition-colors hover:text-white/70"
-        >
-          <PiFingerprintBold className="h-3.5 w-3.5" />
-          Use PIN
-        </button>
+            <button
+              type="button"
+              onClick={onSwitchToPin}
+              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium text-white/40 transition-colors hover:text-white/70"
+            >
+              <PiFingerprintBold className="h-3.5 w-3.5" />
+              Use PIN
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

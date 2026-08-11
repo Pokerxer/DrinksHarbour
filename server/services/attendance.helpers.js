@@ -297,11 +297,58 @@ function isPunchTooSoon(previous, at, opts = {}) {
   return now - last < minSeconds * 1000;
 }
 
+/**
+ * Which credential this clock press offered, and whether this pad will take it.
+ *
+ * The "one of, not both" part was always here; what makes it a rule worth
+ * testing is `allowPin`. A kiosk paired with a device token has nobody signed
+ * in behind it, and the two credentials are not equally safe to expose:
+ *
+ *   * a BADGE number is printed on a card somebody has to be holding, and the
+ *     card is the reason the laser scanner is on the counter at all;
+ *   * a PIN is four to six digits typed from memory. Behind a login, guessing
+ *     one costs an attacker an admin account first. On an open endpoint it is
+ *     a space small enough to walk through, and `clockLimiter` is per-IP.
+ *
+ * So the in-app kiosk keeps the pad and the public one does not.
+ *
+ * The refusal names what this pad accepts — which is written on the device
+ * anyway — and never anything about the value offered.
+ *
+ * @param {{pin?: unknown, badge?: unknown}} body
+ * @param {{allowPin?: boolean}} [opts]
+ * @returns {{ok: true, kind: 'pin'|'badge'} | {ok: false, message: string}}
+ */
+function resolveClockCredential(body, opts = {}) {
+  const { allowPin = true } = opts;
+  const pin = body?.pin;
+  const badge = body?.badge;
+
+  if (pin && !allowPin) {
+    return { ok: false, message: 'This kiosk accepts a badge scan only' };
+  }
+
+  // A missing field is a broken client, not a failed guess — saying so
+  // discloses nothing, because no credential was offered to confirm or deny.
+  if (!pin && !badge) {
+    return {
+      ok: false,
+      message: allowPin ? 'PIN or badge required' : 'Badge required',
+    };
+  }
+  if (pin && badge) {
+    return { ok: false, message: 'Provide either a PIN or a badge, not both' };
+  }
+
+  return { ok: true, kind: badge ? 'badge' : 'pin' };
+}
+
 module.exports = {
   ATTENDANCE_STATUSES,
   ATTENDANCE_SOURCES,
   DEFAULT_MATCH_WINDOW_MINUTES,
   DEFAULT_GRACE_MINUTES,
+  resolveClockCredential,
   MIN_PUNCH_INTERVAL_SECONDS,
   lastPunchAt,
   isPunchTooSoon,

@@ -149,12 +149,20 @@ export interface EmployeeListParams {
   search?: string;
 }
 
-async function handle(res: Response, fallback: string) {
+/**
+ * Generic, following shift.service.ts and attendance.service.ts.
+ *
+ * `res.json()` is `unknown` under this tsconfig, so an untyped return made
+ * every method in this file a TS2322 against its own declared shape — eight of
+ * them, all reported and all ignored. Threading the caller's type through here
+ * is the same fix those two services already carry.
+ */
+async function handle<T>(res: Response, fallback: string): Promise<T> {
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(err.message || fallback);
   }
-  return res.json();
+  return (await res.json()) as T;
 }
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -244,6 +252,33 @@ export const employeeService = {
         headers: auth(token),
       }),
       'Failed to remove employee'
+    );
+  },
+
+  /**
+   * Draw a badge number for an employee who hasn't got one.
+   *
+   * A POST with no body: the server picks the number. The client never names
+   * it, because the number is what the kiosk matches — a value a caller could
+   * choose would let anybody work out a colleague's badge from their own.
+   *
+   * Safe to call on an employee who already has one: the server returns that
+   * one unchanged with `issued: false`, rather than re-drawing and quietly
+   * invalidating a card already in somebody's pocket.
+   */
+  async issueBadgeNumber(
+    id: string,
+    token: string
+  ): Promise<{
+    success: boolean;
+    data: { employee: Employee; issued: boolean };
+  }> {
+    return handle(
+      await fetch(`${API_URL}/api/employees/${id}/badge-number`, {
+        method: 'POST',
+        headers: auth(token),
+      }),
+      'Failed to issue a badge number'
     );
   },
 

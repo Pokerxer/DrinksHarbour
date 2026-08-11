@@ -273,6 +273,7 @@ const shiftRouters = require('./routes/shift.routes');
 app.use('/api/shift-templates',    shiftRouters.shiftTemplateRouter);
 app.use('/api/shifts',             shiftRouters.shiftRouter);
 app.use('/api/attendance',         require('./routes/attendance.routes'));
+app.use('/api/kiosk',              require('./routes/kiosk.routes'));
 const timeOffRouters = require('./routes/timeOff.routes');
 app.use('/api/time-off',           timeOffRouters.timeOffRouter);
 app.use('/api/shift-swaps',        timeOffRouters.shiftSwapRouter);

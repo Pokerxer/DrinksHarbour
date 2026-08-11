@@ -28,7 +28,12 @@ const MUTATING = new Set(['post', 'put', 'patch', 'delete']);
 
 // optionalProtect is deliberately absent: it calls next() when no token is
 // present, so it authenticates nobody. Routes that use it are allowlisted below.
-const NOT_A_GUARD = new Set(['optionalProtect']);
+//
+// hasKioskToken is absent for a stronger reason: it is a PREDICATE, not a gate.
+// It answers "did this request claim to be a kiosk", which is the question
+// kioskOrAdmin asks before choosing a chain — used on its own in front of a
+// route it would authenticate precisely nobody.
+const NOT_A_GUARD = new Set(['optionalProtect', 'hasKioskToken']);
 
 /** Every exported middleware that actually refuses an unauthenticated caller. */
 function collectGuards() {
@@ -37,6 +42,13 @@ function collectGuards() {
     '../middleware/auth.middleware',
     '../middleware/tenant.middleware',
     '../middleware/pos.middleware',
+    // The attendance kiosk. Its guards authenticate a paired DEVICE rather than
+    // a person — a long random token that names the tenant and is revocable —
+    // so /clock is guarded without being behind a login. It is listed here, and
+    // NOT on the public allowlist below, because the distinction matters: the
+    // allowlist turns the check off, and this endpoint genuinely refuses an
+    // unauthenticated caller.
+    '../middleware/kiosk.middleware',
   ]) {
     for (const [name, value] of Object.entries(require(mod))) {
       if (typeof value === 'function' && !NOT_A_GUARD.has(name)) guards.add(value);

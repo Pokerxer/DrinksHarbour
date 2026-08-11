@@ -672,7 +672,19 @@ export default function EmployeesList() {
       </AnimatePresence>
 
       {badgeFor && (
-        <EmployeeBadge employee={badgeFor} onClose={() => setBadgeFor(null)} />
+        <EmployeeBadge
+          employee={badgeFor}
+          onClose={() => setBadgeFor(null)}
+          // The card can issue a badge number, which changes the employee. The
+          // row behind the modal has to learn about it too, or reopening the
+          // badge shows the blank card again and offers to issue a second one.
+          onIssued={(updated) => {
+            setBadgeFor(updated);
+            setItems((rows) =>
+              rows.map((r) => (r._id === updated._id ? updated : r))
+            );
+          }}
+        />
       )}
     </div>
   );

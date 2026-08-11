@@ -13,6 +13,7 @@ const {
   resolveAttendanceTimes,
   lastPunchAt,
   isPunchTooSoon,
+  resolveClockCredential,
 } = require('../services/attendance.helpers');
 
 const EMP = '507f1f77bcf86cd799439021';
@@ -274,4 +275,56 @@ test('isPunchTooSoon never refuses on a junk timestamp', () => {
   // A guard that cannot read the clock must not become a lockout.
   assert.strictEqual(isPunchTooSoon('nonsense', '2026-08-10T08:00:00.000Z'), false);
   assert.strictEqual(isPunchTooSoon('2026-08-10T08:00:00.000Z', 'nonsense'), false);
+});
+
+// ── Which credential the clock will take ─────────────────────────────────────
+//
+// This used to be two inline `if`s at the top of the controller. It became a
+// rule worth testing when the kiosk stopped requiring a login: on a screen
+// paired by a device token there is no manager standing behind the endpoint, so
+// what the pad is allowed to accept now depends on HOW it authenticated.
+
+test('a clock press must carry a credential', () => {
+  const out = resolveClockCredential({}, { allowPin: true });
+  assert.strictEqual(out.ok, false);
+});
+
+test('a clock press may not carry both a PIN and a badge', () => {
+  // Not pedantry: with both, whichever branch runs first silently decides who
+  // gets clocked in, and the two can name different people.
+  const out = resolveClockCredential({ pin: '1234', badge: '12345678' }, { allowPin: true });
+  assert.strictEqual(out.ok, false);
+});
+
+test('a badge is accepted', () => {
+  const out = resolveClockCredential({ badge: '12345678' }, { allowPin: true });
+  assert.deepStrictEqual(out, { ok: true, kind: 'badge' });
+});
+
+test('a PIN is accepted behind a login', () => {
+  const out = resolveClockCredential({ pin: '1234' }, { allowPin: true });
+  assert.deepStrictEqual(out, { ok: true, kind: 'pin' });
+});
+
+test('a PIN is refused on a kiosk that nobody logged in to', () => {
+  // The difference between the two credentials on a public endpoint. A badge
+  // number is printed on a card somebody has to physically hold; a PIN is four
+  // to six digits typed from memory, and on an internet-facing endpoint that is
+  // a space small enough to walk through. So the public kiosk takes badges.
+  const out = resolveClockCredential({ pin: '1234' }, { allowPin: false });
+  assert.strictEqual(out.ok, false);
+});
+
+test('a badge is still accepted on a kiosk that nobody logged in to', () => {
+  // The scanner on the counter is the entire point of the public kiosk.
+  const out = resolveClockCredential({ badge: '12345678' }, { allowPin: false });
+  assert.deepStrictEqual(out, { ok: true, kind: 'badge' });
+});
+
+test('a refused credential says which one it wanted, and nothing about the guess', () => {
+  // The message reaches a screen in a shop. It may say what this pad accepts —
+  // that is written on the device — but never whether the code was close.
+  const out = resolveClockCredential({}, { allowPin: false });
+  assert.match(out.message, /badge/i);
+  assert.doesNotMatch(out.message, /PIN/);
 });

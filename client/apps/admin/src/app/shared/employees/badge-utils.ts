@@ -99,6 +99,134 @@ export function badgeBarcodeLayout(
   };
 }
 
+/**
+ * Why this card cannot be printed with a working barcode, if it cannot.
+ *
+ *   'ready'       — the payload prints as bars a shop scanner will read.
+ *   'missing'     — no badge number at all, so the payload is the employee id.
+ *                   This is the one the "Issue badge number" button fixes.
+ *   'unscannable' — a badge number exists, but it does not fit the card as
+ *                   bars: letters cost a whole CODE_128 symbol each where a
+ *                   PAIR of digits costs one, so `STAFF-0042` is far wider than
+ *                   an 8-digit code.
+ *
+ * The last two are what makes this a rule rather than an `if`. Both show no
+ * barcode, so `badgeBarcodeLayout(...) === null` cannot tell them apart — and
+ * reading that as "has no badge number" would put an Issue button in front of a
+ * business's own numbering. Pressing it does nothing: the server will not
+ * re-issue over an existing value, because that value is printed on a card in
+ * somebody's drawer.
+ */
+export function badgeIssueState(
+  e: Employee,
+  cardWidth: number
+): 'ready' | 'missing' | 'unscannable' {
+  const payload = badgePayload(e);
+  if (badgeBarcodeLayout(payload, cardWidth)) return 'ready';
+  // badgePayload falls back to the id, so this IS "no number issued".
+  return payload === e._id ? 'missing' : 'unscannable';
+}
+
+// ── Whose card this is ───────────────────────────────────────────────────────
+//
+// The card is printed BY a tenant, FOR that tenant's staff, and handed to
+// somebody who works in that shop. It used to say DRINKSHARBOUR, which is the
+// platform the shop rents — not the employer whose door the card opens.
+//
+// The name comes from `useTenant()`, which is populated from the tenant
+// subdomain. On the platform domain there is no tenant in context at all, which
+// is why the fallback below is not decoration: without it that header band
+// prints empty.
+
+/** What a card says when nothing better is known. */
+export const BADGE_BRAND_FALLBACK = 'DrinksHarbour';
+
+/**
+ * How much name the header band will take.
+ *
+ * The band is a fixed 16mm and the avatar disc is drawn AFTER the text, so
+ * anything that spills paints under a photo. jsPDF's centred `text` does not
+ * wrap unless given a maxWidth — it simply runs off both edges of the card —
+ * and a maxWidth would wrap it down into the title instead. So the name is cut
+ * HERE, where it can be tested, rather than at the pen. 28 characters at 6pt
+ * with the band's letter-spacing is comfortably inside 54mm.
+ */
+export const BADGE_BRAND_MAX_CHARS = 28;
+
+/** The red the card was always printed in, and what a bad colour falls back to. */
+export const BADGE_BRAND_COLOR_FALLBACK = '#b20202';
+
+const HEX_COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+export interface BadgeBrand {
+  /** The shop's name, trimmed and cut to fit. */
+  name: string;
+  /** The PDF header band. */
+  headerLine: string;
+  /** The footer band, on both surfaces. */
+  footerLine: string;
+}
+
+/** Cut to fit, keeping the front — the part that identifies the shop. */
+function fitBrandName(name: string): string {
+  if (name.length <= BADGE_BRAND_MAX_CHARS) return name;
+  return `${name.slice(0, BADGE_BRAND_MAX_CHARS - 1).trimEnd()}…`;
+}
+
+/**
+ * What the card says about who issued it.
+ *
+ * @param tenantName `useTenant().tenant?.name` — absent on the platform domain.
+ */
+export function badgeBrand(tenantName?: string | null): BadgeBrand {
+  const trimmed = typeof tenantName === 'string' ? tenantName.trim() : '';
+  const name = fitBrandName(trimmed || BADGE_BRAND_FALLBACK);
+  return {
+    name,
+    headerLine: name.toUpperCase(),
+    // The wording is the reason the band is there: it is what a finder reads.
+    footerLine: `${name} · Property of the company`,
+  };
+}
+
+export interface BadgeBrandColor {
+  hex: string;
+  /** jsPDF's setFillColor/setTextColor take three numbers, not a hex string. */
+  rgb: [number, number, number];
+}
+
+/**
+ * The colour the card is printed in.
+ *
+ * Validated rather than trusted, because the failure is silent: `setFillColor`
+ * takes three NUMBERS, and feeding it NaN paints nothing at all — the header
+ * band simply disappears and the white title is printed on white card.
+ */
+export function badgeBrandColor(primaryColor?: string | null): BadgeBrandColor {
+  const raw = typeof primaryColor === 'string' ? primaryColor.trim() : '';
+  const hex = HEX_COLOR_RE.test(raw) ? raw : BADGE_BRAND_COLOR_FALLBACK;
+
+  // #abc is shorthand for #aabbcc — expanded before parsing, so a three-digit
+  // brand colour is the colour the tenant picked rather than a fallback.
+  const body = hex.slice(1);
+  const full =
+    body.length === 3
+      ? body
+          .split('')
+          .map((ch) => ch + ch)
+          .join('')
+      : body;
+
+  return {
+    hex,
+    rgb: [
+      parseInt(full.slice(0, 2), 16),
+      parseInt(full.slice(2, 4), 16),
+      parseInt(full.slice(4, 6), 16),
+    ],
+  };
+}
+
 // ── The vertical budget ──────────────────────────────────────────────────────
 //
 // 85.6mm has to hold a header band, a photo, a name, a role, the info rows, the
@@ -157,7 +285,10 @@ export function badgePdfLayout(rowCount: number): BadgePdfLayout {
   // The rows absorb the slack: they compress rather than pushing the barcode
   // into the footer, so adding a row back costs legibility, never the scan.
   const rowSpace = qrY - ROWS_Y;
-  const rowStep = Math.min(ROW_STEP_MAX, rowCount > 0 ? rowSpace / rowCount : ROW_STEP_MAX);
+  const rowStep = Math.min(
+    ROW_STEP_MAX,
+    rowCount > 0 ? rowSpace / rowCount : ROW_STEP_MAX
+  );
 
   return {
     headerH: HEADER_H,

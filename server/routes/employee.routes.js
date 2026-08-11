@@ -16,6 +16,10 @@ router.route('/:id')
   .patch(tenantAdminOrSuperAdmin, c.updateEmployee)
   .delete(tenantAdminOrSuperAdmin, c.deleteEmployee);
 
+// A POST, not a PATCH: the server draws the number, the client never names it.
+router.route('/:id/badge-number')
+  .post(tenantAdminOrSuperAdmin, c.issueBadgeNumber);
+
 router.route('/:id/pin')
   .post(tenantAdminOrSuperAdmin, c.setEmployeePin)
   .delete(tenantAdminOrSuperAdmin, c.clearEmployeePin);

@@ -1,6 +1,14 @@
 'use client';
 
-// The clock kiosk — `/employees/attendance/kiosk`.
+// The clock kiosk — `/employees/attendance/kiosk` when a manager is signed in,
+// and `/kiosk/<token>` on a screen left on the counter that nobody logs in to.
+//
+// ONE COMPONENT, TWO CREDENTIALS. The public page passes a device token; the
+// in-app page passes nothing and the session is used. resolveKioskAuth decides
+// between them, and the URL wins over the session on purpose — see the rule
+// there. A device-paired screen takes badge scans only, because a four-digit
+// secret typed into an internet-facing endpoint is a different risk from a card
+// somebody has to be holding.
 //
 // This screen is mounted on a wall in a shop, so it is built for one hand, at
 // arm's length, by somebody in a hurry. Big targets, one action, no chrome.
@@ -34,6 +42,7 @@ import { fraunces } from './employees-fonts';
 import {
   describeClock,
   isPinReady,
+  resolveKioskAuth,
   isValidBadgeScan,
   normaliseBadgeScan,
   pressBackspace,
@@ -50,6 +59,7 @@ import KioskScanView from './kiosk-scan-view';
 import KioskPinPad from './kiosk-pin-pad';
 import KioskConfirmation from './kiosk-confirmation';
 import { attendanceService } from '@/services/attendance.service';
+import { useTenant } from '@/context/TenantContext';
 import { routes } from '@/config/routes';
 
 /** How long the confirmation stays up before the pad resets for the next person. */
@@ -65,9 +75,27 @@ const SCAN_IDLE_FLUSH_MS = 300;
 /** Three surface modes — camera/keyboard for badge scans, pin for the numpad. */
 type KioskMode = 'camera' | 'keyboard' | 'pin';
 
-export default function AttendanceKioskPage() {
+export default function AttendanceKioskPage({
+  kioskToken,
+}: {
+  /** Present only on the public `/kiosk/<token>` page. */
+  kioskToken?: string;
+} = {}) {
   const { data: session } = useSession();
-  const token = (session?.user as { token?: string })?.token ?? '';
+  const { tenant } = useTenant();
+  const auth = resolveKioskAuth({
+    kioskToken,
+    sessionToken: (session?.user as { token?: string })?.token,
+  });
+  const { token } = auth;
+  const isDevice = auth.mode === 'device';
+
+  // The shop's own name. On the in-app page it comes from the tenant subdomain;
+  // on a logged-out screen there is no session to read it from, so the device
+  // token's own resolution endpoint brings it back — the same call that proves
+  // the screen is still paired.
+  const [shopName, setShopName] = useState(tenant?.name ?? '');
+  const [unpaired, setUnpaired] = useState('');
 
   const [mode, setMode] = useState<KioskMode>('camera');
   const [entry, setEntry] = useState('');
@@ -125,16 +153,39 @@ export default function AttendanceKioskPage() {
     }, RESET_AFTER_MS);
   }, []);
 
-  /** How many people are currently clocked in — a count, never names. */
+  /**
+   * How many people are currently clocked in — a count, never names.
+   *
+   * Two different calls for the same number, and that is deliberate. The
+   * manager's page reads the attendance LOG, which carries every punch and the
+   * people who made them. A device token must never reach that: it would put a
+   * list of who works here on a screen anybody can walk up to. The kiosk
+   * session endpoint answers with the count alone.
+   */
   const refreshOnShift = useCallback(async () => {
     if (!token) return;
     try {
-      const log = await attendanceService.log({ from: localToday() }, token);
-      setOnShift(log.summary.open);
-    } catch {
+      if (isDevice) {
+        const s = await attendanceService.kioskSession(token);
+        setOnShift(s.onShift);
+        setShopName(s.tenant.name);
+        setUnpaired('');
+      } else {
+        const log = await attendanceService.log({ from: localToday() }, token);
+        setOnShift(log.summary.open);
+      }
+    } catch (err) {
       setOnShift(null);
+      // A revoked or mistyped pairing is not a transient failure — the screen
+      // will never work again until somebody pairs it, so it says so instead of
+      // waiting silently for scans it cannot post.
+      if (isDevice) {
+        setUnpaired(
+          err instanceof Error ? err.message : 'This kiosk is not paired'
+        );
+      }
     }
-  }, [token]);
+  }, [token, isDevice]);
 
   useEffect(() => {
     if (token) void refreshOnShift();
@@ -186,17 +237,25 @@ export default function AttendanceKioskPage() {
       if (!shouldAcceptScan(code, lastScan.current, at)) return;
       lastScan.current = { code, at };
 
-      void punch(() => attendanceService.clockWithBadge(code, token));
+      void punch(() =>
+        isDevice
+          ? attendanceService.clockWithKioskBadge(code, token)
+          : attendanceService.clockWithBadge(code, token)
+      );
     },
-    [punch, token, clearLater]
+    [punch, token, isDevice, clearLater]
   );
 
   const submitPin = useCallback(() => {
+    // Unreachable on a device-paired screen: the pad is never mounted and the
+    // server would refuse it anyway. Guarded here too so a stray key event
+    // cannot post a PIN the endpoint will only reject.
+    if (!auth.pinOffered) return;
     if (!isPinReady(entry)) return;
     const pin = entry;
     setEntry('');
     void punch(() => attendanceService.clock(pin, token));
-  }, [entry, punch, token]);
+  }, [entry, punch, token, auth.pinOffered]);
 
   // A USB numpad works like the on-screen keys, but only while the PIN pad is
   // showing — digit presses must not also feed the badge buffer.
@@ -269,7 +328,7 @@ export default function AttendanceKioskPage() {
           </span>
           <div className="leading-tight">
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">
-              DrinksHarbour
+              {shopName || 'DrinksHarbour'}
             </p>
             <p
               className={`${fraunces.className} text-sm font-bold text-white/90`}
@@ -320,7 +379,9 @@ export default function AttendanceKioskPage() {
             mode={mode as 'camera' | 'keyboard'}
             onModeChange={(m) => setMode(m)}
             onScan={submitBadge}
-            onSwitchToPin={() => setMode('pin')}
+            onSwitchToPin={
+              auth.pinOffered ? () => setMode('pin') : undefined
+            }
             busy={busy}
           />
         )}
@@ -339,15 +400,33 @@ export default function AttendanceKioskPage() {
         )}
       </motion.div>
 
-      <div className="relative z-10 mt-8 text-center">
-        <Link
-          href={routes.employees.attendance}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/30 transition-colors hover:text-white/60"
-        >
-          <PiArrowUUpLeft className="h-3.5 w-3.5" />
-          Back to the attendance log
-        </Link>
-      </div>
+      {/* Only on the in-app kiosk. On a public screen this link leads to a
+          gated route, so it is an invitation to a sign-in page on a device
+          nobody is meant to sign in to — and it names the shop's admin area to
+          whoever is standing in front of it. */}
+      {!isDevice && (
+        <div className="relative z-10 mt-8 text-center">
+          <Link
+            href={routes.employees.attendance}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/30 transition-colors hover:text-white/60"
+          >
+            <PiArrowUUpLeft className="h-3.5 w-3.5" />
+            Back to the attendance log
+          </Link>
+        </div>
+      )}
+
+      {/* A pairing that was revoked, or a mistyped URL. Terminal, not
+          transient — the screen cannot recover on its own, so it says so
+          rather than silently swallowing every scan. */}
+      {isDevice && unpaired && (
+        <div className="relative z-10 mt-8 max-w-sm text-center">
+          <p className="text-xs font-semibold text-white/70">{unpaired}</p>
+          <p className="mt-1 text-[11px] text-white/40">
+            Ask a manager to pair this screen again from Settings.
+          </p>
+        </div>
+      )}
 
       {/* Result overlay — one person, the one at the screen. Never a list. */}
       {showOverlay && (

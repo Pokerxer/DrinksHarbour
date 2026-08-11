@@ -481,6 +481,10 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
         <EmployeeBadge
           employee={employee}
           onClose={() => setShowBadge(false)}
+          // Issuing a number rewrites the employee this page is editing, so the
+          // page takes the new one — otherwise the next save would submit the
+          // profile it loaded, without the number.
+          onIssued={setEmployee}
         />
       )}
     </div>

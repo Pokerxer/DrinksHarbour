@@ -17,6 +17,7 @@ import {
   recordDateKey,
   describeClock,
   normaliseBadgeScan,
+  resolveKioskAuth,
   isValidBadgeScan,
   shouldAcceptScan,
   SCAN_COOLDOWN_MS,
@@ -351,5 +352,56 @@ describe('the kiosk confirmation', () => {
     expect(out.detail).toContain('17:00');
     expect(out.detail).toContain('8h');
     expect(out.tone).toBe('out');
+  });
+});
+
+describe('how a kiosk screen authenticates itself', () => {
+  it('uses the device token when the page carries one', () => {
+    const auth = resolveKioskAuth({ kioskToken: 'abc.def', sessionToken: '' });
+    expect(auth.mode).toBe('device');
+  });
+
+  it('offers no PIN pad on a device-paired kiosk', () => {
+    // The server refuses a typed PIN from a device token, so a pad that showed
+    // one would be a button that always fails.
+    const auth = resolveKioskAuth({ kioskToken: 'abc.def', sessionToken: '' });
+    expect(auth.pinOffered).toBe(false);
+  });
+
+  it('prefers the device token even when somebody is signed in', () => {
+    // THE SUBTLE ONE. /kiosk/<token> is a public URL, and it will often be
+    // opened in a browser that still holds a manager's session cookie — the
+    // manager who paired the tablet in the first place. Preferring the session
+    // there would quietly turn the PIN pad back on for that one device, and it
+    // would work, so nobody would notice. The URL decides what this screen is,
+    // not whoever happens to be logged in to the browser showing it.
+    const auth = resolveKioskAuth({
+      kioskToken: 'abc.def',
+      sessionToken: 'a-real-admin-jwt',
+    });
+    expect(auth.mode).toBe('device');
+    expect(auth.pinOffered).toBe(false);
+  });
+
+  it('uses the session on the in-app kiosk, PIN pad and all', () => {
+    // A manager with the kiosk open on a signed-in tablet must not be broken by
+    // the public route existing.
+    const auth = resolveKioskAuth({ sessionToken: 'a-real-admin-jwt' });
+    expect(auth.mode).toBe('session');
+    expect(auth.pinOffered).toBe(true);
+  });
+
+  it('is not ready when it has neither', () => {
+    // The signed-out in-app page, or a session still loading. It must show that
+    // it is not ready rather than posting scans that will 401.
+    const auth = resolveKioskAuth({});
+    expect(auth.mode).toBe('none');
+    expect(auth.pinOffered).toBe(false);
+  });
+
+  it('ignores a blank token rather than treating it as one', () => {
+    expect(resolveKioskAuth({ kioskToken: '   ', sessionToken: '' }).mode).toBe(
+      'none'
+    );
   });
 });

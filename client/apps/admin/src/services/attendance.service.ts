@@ -202,6 +202,34 @@ export class AttendanceConflictError extends Error {
   }
 }
 
+/**
+ * What a paired kiosk is allowed to know about itself.
+ *
+ * Note what is NOT here: any employee, by name or otherwise. The kiosk has
+ * refused to show a staff directory since it was written — a pad that names the
+ * staff is a list of who works here, mounted where anyone walking past can read
+ * it — and `onShift` is a COUNT for exactly that reason.
+ */
+export interface KioskSession {
+  tenant: { name: string; logo: string; primaryColor: string };
+  device: { name: string };
+  onShift: number;
+  /** False on the public kiosk. The pad must not offer a fallback the server refuses. */
+  pinAccepted: boolean;
+}
+
+/** One paired screen, as the settings list sees it. Never the secret. */
+export interface KioskDevice {
+  _id: string;
+  name: string;
+  /** The last few characters of the token, to tell two tablets apart. */
+  tokenHint: string;
+  createdAt: string | null;
+  lastSeenAt: string | null;
+  revokedAt: string | null;
+  active: boolean;
+}
+
 /** The API's envelope. `res.json()` is `unknown` under this tsconfig. */
 interface ApiEnvelope<T> {
   success: boolean;
@@ -232,7 +260,23 @@ const jsonAuth = (token: string) => ({
   ...auth(token),
 });
 
+/**
+ * A kiosk paired by device token, which has NO session at all.
+ *
+ * A separate header rather than a Bearer, deliberately: this is not a user's
+ * credential and must never be picked up by anything that expects one. The
+ * server chooses a whole middleware chain on the presence of this header (see
+ * kiosk.middleware.js), so sending both would be ambiguous — and sending this
+ * one alone is what makes the clock refuse a typed PIN.
+ */
+const kioskAuth = (kioskToken: string) => ({ 'x-kiosk-token': kioskToken });
+const kioskJsonAuth = (kioskToken: string) => ({
+  'Content-Type': 'application/json',
+  ...kioskAuth(kioskToken),
+});
+
 const ATTENDANCE = `${API_URL}/api/attendance`;
+const KIOSK = `${API_URL}/api/kiosk`;
 
 export interface AttendanceLogParams {
   /** 'YYYY-MM-DD'. Omitted, the server answers for today in the tenant's zone. */
@@ -321,6 +365,91 @@ export const attendanceService = {
       'Could not read that badge'
     );
     return json.data;
+  },
+
+  /**
+   * The same single toggle, from a screen nobody logged in to.
+   *
+   * Badge only. The public endpoint does not accept a PIN — four to six digits
+   * typed from memory is a guessable secret on something reachable from the
+   * internet, where a badge number is a thing somebody has to be holding. The
+   * rule is enforced on the server (resolveClockCredential); this function
+   * simply has no way to express the other one.
+   */
+  async clockWithKioskBadge(
+    badge: string,
+    kioskToken: string
+  ): Promise<ClockResponse> {
+    const json = await handle<ClockResponse>(
+      await fetch(`${ATTENDANCE}/clock`, {
+        method: 'POST',
+        headers: kioskJsonAuth(kioskToken),
+        body: JSON.stringify({ badge }),
+      }),
+      'Could not read that badge'
+    );
+    return json.data;
+  },
+
+  /**
+   * Who is this screen, and whose shop is it in?
+   *
+   * The device token is the ONLY thing a logged-out kiosk has that knows which
+   * tenant it belongs to, so this one call does both jobs: it proves the screen
+   * is still paired, and it brings back the shop's name and colour for the
+   * header. A 401 here means the pairing was revoked or the URL is wrong.
+   */
+  async kioskSession(kioskToken: string): Promise<KioskSession> {
+    const json = await handle<KioskSession>(
+      await fetch(`${KIOSK}/session`, { headers: kioskAuth(kioskToken) }),
+      'This kiosk is not paired'
+    );
+    return json.data;
+  },
+
+  // ── Pairing screens (admin) ────────────────────────────────────────────────
+
+  /** The screens paired to this shop. Never carries a token or its hash. */
+  async kioskDevices(token: string): Promise<KioskDevice[]> {
+    const json = await handle<{ devices: KioskDevice[] }>(
+      await fetch(`${KIOSK}/devices`, { headers: auth(token) }),
+      'Failed to load kiosk devices'
+    );
+    return json.data.devices;
+  },
+
+  /**
+   * Pair a new screen.
+   *
+   * The response carries the ONLY plaintext copy of the token that will ever
+   * exist — nothing stores it, so it cannot be shown again. A manager who loses
+   * it pairs the screen again and revokes the old row, which is the same
+   * operation as replacing a lost tablet.
+   */
+  async pairKioskDevice(
+    name: string,
+    token: string
+  ): Promise<{ device: KioskDevice; token: string }> {
+    const json = await handle<{ device: KioskDevice; token: string }>(
+      await fetch(`${KIOSK}/devices`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify({ name }),
+      }),
+      'Failed to pair this screen'
+    );
+    return json.data;
+  },
+
+  /** Cut one screen off. The URL on that tablet stops working immediately. */
+  async revokeKioskDevice(deviceId: string, token: string): Promise<void> {
+    await handle<unknown>(
+      await fetch(`${KIOSK}/devices/${deviceId}`, {
+        method: 'DELETE',
+        headers: auth(token),
+      }),
+      'Failed to revoke this screen'
+    );
   },
 
   /** A manual entry. The server stamps `source: 'admin'`; it is not settable. */
