@@ -61,7 +61,15 @@ describe('encoding a badge number', () => {
     // per symbol; Code Set B manages one character. Eight digits is four
     // symbols, not eight.
     const encoded = encodeCode128('12345678')!;
-    expect(encoded.symbols).toEqual([105, 12, 34, 56, 78, expect.any(Number), 106]);
+    expect(encoded.symbols).toEqual([
+      105,
+      12,
+      34,
+      56,
+      78,
+      expect.any(Number),
+      106,
+    ]);
   });
 
   it('prints an 8-digit badge in 79 modules', () => {
@@ -154,15 +162,19 @@ describe('deciding whether it is worth printing', () => {
     // 10 modules each side, per the spec. Left out, the scanner reads the card
     // edge as a bar. They are part of the width the layout has to find.
     expect(CODE128_QUIET_ZONE).toBe(10);
-    expect(barWidthMm(79 + CODE128_QUIET_ZONE * 2, 44)).toBeLessThan(barWidthMm(79, 44));
+    expect(barWidthMm(79 + CODE128_QUIET_ZONE * 2, 44)).toBeLessThan(
+      barWidthMm(79, 44)
+    );
   });
 
   it('passes a badge number on a CR80 card and fails an ObjectId', () => {
     const printable = 44;
-    expect(isScannableAtWidth(encodeCode128('12345678')!, printable)).toBe(true);
-    expect(isScannableAtWidth(encodeCode128('507f1f77bcf86cd799439011')!, printable)).toBe(
-      false
+    expect(isScannableAtWidth(encodeCode128('12345678')!, printable)).toBe(
+      true
     );
+    expect(
+      isScannableAtWidth(encodeCode128('507f1f77bcf86cd799439011')!, printable)
+    ).toBe(false);
   });
 
   it('holds the threshold at the entry-level scanner, not the good one', () => {

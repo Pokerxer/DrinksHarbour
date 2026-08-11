@@ -59,9 +59,7 @@ export interface CameraLike {
  */
 export function pickCameraId(cameras: readonly CameraLike[]): string | null {
   if (cameras.length === 0) return null;
-  return cameras.length > 1
-    ? cameras[cameras.length - 1].id
-    : cameras[0].id;
+  return cameras.length > 1 ? cameras[cameras.length - 1].id : cameras[0].id;
 }
 
 /**

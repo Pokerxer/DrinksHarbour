@@ -309,7 +309,8 @@ export function staleSwapReason(
   if (shift.status === 'cancelled') return 'cancelled';
 
   const start = new Date(shift.start).getTime();
-  if (!Number.isNaN(start) && start <= new Date(now).getTime()) return 'started';
+  if (!Number.isNaN(start) && start <= new Date(now).getTime())
+    return 'started';
 
   // `employee` is absent from the payload on older rows; only an explicit null
   // means the shift was genuinely emptied back to open.

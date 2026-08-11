@@ -477,7 +477,9 @@ describe('a swap whose shift has moved on', () => {
 
   it('withdraws approval once the shift belongs to somebody else', () => {
     const offered = swapActions(
-      accepted({ employee: { _id: 'e9', firstName: 'Chidi', lastName: 'Nwosu' } }),
+      accepted({
+        employee: { _id: 'e9', firstName: 'Chidi', lastName: 'Nwosu' },
+      }),
       boss,
       { now: NOW }
     );
@@ -485,7 +487,9 @@ describe('a swap whose shift has moved on', () => {
   });
 
   it('withdraws approval once the shift is open again', () => {
-    const offered = swapActions(accepted({ employee: null }), boss, { now: NOW });
+    const offered = swapActions(accepted({ employee: null }), boss, {
+      now: NOW,
+    });
     expect(offered.map((a) => a.action)).not.toContain('approve');
   });
 
@@ -499,9 +503,13 @@ describe('a swap whose shift has moved on', () => {
 
   it('leaves the buttons alone when the shift is only an id', () => {
     // Nothing to judge — the server is authoritative and will say so.
-    const offered = swapActions(swap({ status: 'accepted', shift: 'sh1' }), boss, {
-      now: NOW,
-    });
+    const offered = swapActions(
+      swap({ status: 'accepted', shift: 'sh1' }),
+      boss,
+      {
+        now: NOW,
+      }
+    );
     expect(offered.map((a) => a.action)).toContain('approve');
   });
 
