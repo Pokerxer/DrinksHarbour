@@ -26,6 +26,16 @@ const shiftSchema = new Schema(
     // null = an open shift, waiting to be filled.
     employee: { type: ObjectId, ref: 'User', default: null },
     role: { type: ObjectId, ref: 'EmployeeRole', required: true },
+    // The other roles this shift accepts, beyond `role`. Empty = single-role,
+    // which is what every row written before crews existed means — which is
+    // why this could be added without touching a single existing document.
+    // checkAssignment tests the INTERSECTION of [role, ...altRoles] against
+    // what the employee holds.
+    altRoles: { type: [{ type: ObjectId, ref: 'EmployeeRole' }], default: [] },
+    // Which template position this row fills. Null for a hand-made shift and
+    // for every row generated before positions existed. This is what makes the
+    // generation idempotency key derivable from the row.
+    templatePosition: { type: ObjectId, default: null },
     department: { type: ObjectId, ref: 'Department', default: null },
     start: { type: Date, required: true },
     end: { type: Date, required: true },

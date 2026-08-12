@@ -22,7 +22,33 @@ const shiftTemplateSchema = new Schema(
     name: { type: String, required: true, trim: true, maxlength: 120 },
     // What the shift needs someone to be able to do. Required: a shift nobody
     // is qualified for cannot be checked against an employee's capabilities.
+    // Now also the DISPLAY role — mirrored from positions[0].roles[0] on save,
+    // so TEMPLATE_POPULATE, the ?role= filter and the roster colour fallback
+    // keep working unchanged.
     role: { type: ObjectId, ref: 'EmployeeRole', required: true },
+    // The crew this shift needs: "1 bartender-or-barback, 2 servers". Each
+    // entry generates `count` open rows a worked day, each accepting any of
+    // `roles`. Empty means the legacy single-role shape, which
+    // shift.helpers.templatePositions normalises to one position of count 1 —
+    // that fallback is why no backfill was ever needed.
+    //
+    // The subdocument _id is LOAD-BEARING: it is the generation idempotency
+    // handle, and it survives both reordering and edits to `roles`.
+    positions: {
+      type: [
+        new Schema({
+          roles: {
+            type: [{ type: ObjectId, ref: 'EmployeeRole' }],
+            validate: {
+              validator: (v) => Array.isArray(v) && v.length > 0,
+              message: 'A position must accept at least one role',
+            },
+          },
+          count: { type: Number, min: 1, max: 20, default: 1 },
+        }),
+      ],
+      default: [],
+    },
     department: { type: ObjectId, ref: 'Department', default: null },
     // 'HH:MM' local. An endTime at or before startTime means the shift runs
     // past midnight — derived by shift.helpers.crossesMidnight when

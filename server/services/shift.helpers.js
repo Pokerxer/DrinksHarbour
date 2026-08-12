@@ -348,6 +348,38 @@ function patternDates(template, dates = []) {
 }
 
 /**
+ * A template's positions, with a legacy single-role template normalised into
+ * one position of count 1.
+ *
+ * THE ONE READER of `positions` — every planner goes through it, exactly as
+ * patternDates is the one reader of recurrence/cycleDays/anchorDate. A second
+ * reader is how a template written before positions existed starts generating a
+ * different roster from the one it has generated for months.
+ *
+ * A position with no roles is dropped rather than normalised: a shift nobody
+ * can be checked against is the thing ShiftTemplate.role was made required to
+ * prevent.
+ *
+ * @param {object} template
+ * @returns {{_id: string|null, roles: string[], count: number}[]}
+ */
+function templatePositions(template) {
+  const raw = Array.isArray(template?.positions) ? template.positions : [];
+  const positions = raw
+    .map((p) => ({
+      _id: p?._id ? idOf(p._id) : null,
+      roles: (Array.isArray(p?.roles) ? p.roles : []).map(idOf).filter(Boolean),
+      count: Math.max(1, Math.floor(Number(p?.count)) || 1),
+    }))
+    .filter((p) => p.roles.length);
+
+  if (positions.length) return positions;
+
+  const role = template?.role ? idOf(template.role) : null;
+  return role ? [{ _id: null, roles: [role], count: 1 }] : [];
+}
+
+/**
  * Plan the shifts to create for a date range from a set of templates.
  *
  * Everything it produces is an OPEN draft: the roster is built first and filled
@@ -1261,4 +1293,5 @@ module.exports = {
   validateShiftTimes,
   parseRosterRange,
   fillContextWindow,
+  templatePositions,
 };

@@ -1,5 +1,6 @@
 // server/__tests__/shift.helpers.test.js
 const test = require('node:test');
+const { describe, it } = test;
 const assert = require('node:assert');
 const {
   SHIFT_STATUSES,
@@ -28,6 +29,7 @@ const {
   clampPublishRange,
   fillContextWindow,
   MAX_FILL_ROWS,
+  templatePositions,
 } = require('../services/shift.helpers');
 
 const ROLE = '507f1f77bcf86cd799439011';
@@ -1140,4 +1142,44 @@ test('fillContextWindow treats a missing endDayOffset as 0', () => {
   const range = { start: new Date('2026-09-01T00:00:00.000Z'), end: new Date('2026-09-08T00:00:00.000Z') };
   const got = fillContextWindow(range, template({}));
   assert.strictEqual(got.end.getTime(), new Date('2026-09-09T00:00:00.000Z').getTime());
+});
+
+// ── templatePositions ────────────────────────────────────────────────────────
+
+describe('templatePositions', () => {
+  it('normalises a legacy single-role template into one position of count 1', () => {
+    const out = templatePositions({ role: 'r1' });
+    assert.deepEqual(out, [{ _id: null, roles: ['r1'], count: 1 }]);
+  });
+
+  it('returns the template positions when it has them', () => {
+    const out = templatePositions({
+      role: 'r1',
+      positions: [
+        { _id: 'p1', roles: ['r1', 'r2'], count: 1 },
+        { _id: 'p2', roles: ['r3'], count: 2 },
+      ],
+    });
+    assert.deepEqual(out, [
+      { _id: 'p1', roles: ['r1', 'r2'], count: 1 },
+      { _id: 'p2', roles: ['r3'], count: 2 },
+    ]);
+  });
+
+  it('drops a position with no roles rather than emitting a role-less shift', () => {
+    const out = templatePositions({
+      role: 'r1',
+      positions: [{ _id: 'p1', roles: [], count: 3 }, { _id: 'p2', roles: ['r3'], count: 1 }],
+    });
+    assert.deepEqual(out, [{ _id: 'p2', roles: ['r3'], count: 1 }]);
+  });
+
+  it('floors a bad count to 1 rather than generating nothing', () => {
+    const out = templatePositions({ positions: [{ _id: 'p1', roles: ['r1'], count: 0 }] });
+    assert.equal(out[0].count, 1);
+  });
+
+  it('returns nothing for a template with neither positions nor a role', () => {
+    assert.deepEqual(templatePositions({}), []);
+  });
 });
