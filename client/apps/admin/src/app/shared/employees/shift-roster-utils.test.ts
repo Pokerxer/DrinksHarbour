@@ -30,6 +30,10 @@ import {
   toggleCycleDay,
   clampCycleDays,
   weekdayShort,
+  fillPreview,
+  fillSummaryLabel,
+  fillDatesLabel,
+  summariseFillResult,
 } from './shift-roster-utils';
 import type { Shift } from '@/services/shift.service';
 import { ShiftConflictError } from '@/services/shift.service';
@@ -312,7 +316,6 @@ describe('conflicts', () => {
     expect(conflictLabel('time_off')).toMatch(/time off/i);
     expect(conflictLabel('something_new')).toBe('Could not be scheduled');
   });
-
 });
 
 describe('summariseSkips', () => {
@@ -389,8 +392,12 @@ describe('cycle recurrence', () => {
   });
 
   it('is false rather than throwing on a half-filled cycle', () => {
-    expect(isCycleWorkDay('2026-08-10', { ...ONE_ON_ONE_OFF, anchorDate: '' })).toBe(false);
-    expect(isCycleWorkDay('2026-08-10', { ...ONE_ON_ONE_OFF, cycleLength: 0 })).toBe(false);
+    expect(
+      isCycleWorkDay('2026-08-10', { ...ONE_ON_ONE_OFF, anchorDate: '' })
+    ).toBe(false);
+    expect(
+      isCycleWorkDay('2026-08-10', { ...ONE_ON_ONE_OFF, cycleLength: 0 })
+    ).toBe(false);
     expect(isCycleWorkDay('nonsense', ONE_ON_ONE_OFF)).toBe(false);
   });
 
@@ -426,7 +433,9 @@ describe('cycle recurrence', () => {
   });
 
   it('previews nothing when the cycle cannot be resolved', () => {
-    expect(cyclePreview({ ...ONE_ON_ONE_OFF, anchorDate: '' }, '2026-08-10', 5)).toEqual([]);
+    expect(
+      cyclePreview({ ...ONE_ON_ONE_OFF, anchorDate: '' }, '2026-08-10', 5)
+    ).toEqual([]);
     expect(cyclePreview(ONE_ON_ONE_OFF, 'nonsense', 5)).toEqual([]);
   });
 
@@ -446,7 +455,9 @@ describe('cycle recurrence', () => {
       templateRepeatLabel({ recurrence: 'weekly', daysOfWeek: [1, 2, 3, 4, 5] })
     ).toBe('Mon–Fri');
     // A template stored before cycles existed has no recurrence at all.
-    expect(templateRepeatLabel({ daysOfWeek: [1, 3, 5] })).toBe('Mon, Wed, Fri');
+    expect(templateRepeatLabel({ daysOfWeek: [1, 3, 5] })).toBe(
+      'Mon, Wed, Fri'
+    );
     expect(
       templateRepeatLabel({ recurrence: 'cycle', ...ONE_ON_ONE_OFF })
     ).toBe('1 on / 1 off');
@@ -549,7 +560,13 @@ describe('mergeAvailability', () => {
     const rows = mergeAvailability(
       [EMP_A, EMP_B],
       [
-        { employee: EMP_A, ok: true, code: null, message: null, forceable: false },
+        {
+          employee: EMP_A,
+          ok: true,
+          code: null,
+          message: null,
+          forceable: false,
+        },
         {
           employee: EMP_B,
           ok: false,
@@ -568,9 +585,18 @@ describe('mergeAvailability', () => {
   });
 
   it('leaves an employee with no verdict unbadged rather than hiding them', () => {
-    const rows = mergeAvailability([EMP_A, EMP_C], [
-      { employee: EMP_A, ok: true, code: null, message: null, forceable: false },
-    ]);
+    const rows = mergeAvailability(
+      [EMP_A, EMP_C],
+      [
+        {
+          employee: EMP_A,
+          ok: true,
+          code: null,
+          message: null,
+          forceable: false,
+        },
+      ]
+    );
     expect(rows).toHaveLength(2);
     const ngozi = rows.find((r) => r.id === 'c');
     expect(ngozi?.ok).toBe(true);
@@ -617,7 +643,12 @@ describe('mergeAvailability', () => {
 
 describe('summariseAssignmentResult', () => {
   const conflictErr = (
-    blocked: { employee: typeof EMP_A | null; code: string; message: string; forceable: boolean }[],
+    blocked: {
+      employee: typeof EMP_A | null;
+      code: string;
+      message: string;
+      forceable: boolean;
+    }[],
     allowedCount: number
   ) =>
     new ShiftConflictError(
@@ -625,13 +656,23 @@ describe('summariseAssignmentResult', () => {
       'assignment_conflicts',
       [],
       blocked.map((b) => ({ ...b, conflicts: [] })),
-      Array.from({ length: allowedCount }, () => ({ employee: EMP_A, warnings: [] }))
+      Array.from({ length: allowedCount }, () => ({
+        employee: EMP_A,
+        warnings: [],
+      }))
     );
 
   it('offers "assign anyway" only when every block is forceable', () => {
     const all = summariseAssignmentResult(
       conflictErr(
-        [{ employee: EMP_B, code: 'role_mismatch', message: 'm', forceable: true }],
+        [
+          {
+            employee: EMP_B,
+            code: 'role_mismatch',
+            message: 'm',
+            forceable: true,
+          },
+        ],
         2
       )
     );
@@ -640,7 +681,12 @@ describe('summariseAssignmentResult', () => {
     const mixed = summariseAssignmentResult(
       conflictErr(
         [
-          { employee: EMP_B, code: 'role_mismatch', message: 'm', forceable: true },
+          {
+            employee: EMP_B,
+            code: 'role_mismatch',
+            message: 'm',
+            forceable: true,
+          },
           { employee: EMP_C, code: 'overlap', message: 'm', forceable: false },
         ],
         2
@@ -651,13 +697,19 @@ describe('summariseAssignmentResult', () => {
 
   it('offers "skip these" only when somebody would still be scheduled', () => {
     const some = summariseAssignmentResult(
-      conflictErr([{ employee: EMP_B, code: 'overlap', message: 'm', forceable: false }], 3)
+      conflictErr(
+        [{ employee: EMP_B, code: 'overlap', message: 'm', forceable: false }],
+        3
+      )
     );
     expect(some.canSkip).toBe(true);
     expect(some.heading).toBe('1 of 4 people cannot be scheduled');
 
     const none = summariseAssignmentResult(
-      conflictErr([{ employee: EMP_B, code: 'overlap', message: 'm', forceable: false }], 0)
+      conflictErr(
+        [{ employee: EMP_B, code: 'overlap', message: 'm', forceable: false }],
+        0
+      )
     );
     expect(none.canSkip).toBe(false);
     expect(none.heading).toBe('Nobody selected can be scheduled');
@@ -674,7 +726,11 @@ describe('summariseAssignmentResult', () => {
       )
     );
     expect(out.lines).toEqual([
-      { id: 'b', name: 'Chidi Nwosu', reason: 'Already scheduled at that time' },
+      {
+        id: 'b',
+        name: 'Chidi Nwosu',
+        reason: 'Already scheduled at that time',
+      },
       { id: 'c', name: 'Ngozi Eze', reason: 'On approved time off' },
     ]);
   });
@@ -686,8 +742,18 @@ describe('summariseAssignmentResult', () => {
     const out = summariseAssignmentResult(
       conflictErr(
         [
-          { employee: null, code: 'no_employee', message: 'm', forceable: false },
-          { employee: null, code: 'no_employee', message: 'm', forceable: false },
+          {
+            employee: null,
+            code: 'no_employee',
+            message: 'm',
+            forceable: false,
+          },
+          {
+            employee: null,
+            code: 'no_employee',
+            message: 'm',
+            forceable: false,
+          },
         ],
         0
       )
@@ -751,7 +817,11 @@ describe('summariseAssignmentResult', () => {
       new ShiftConflictError('Already scheduled', 'overlap', [])
     );
     expect(out.lines).toEqual([
-      { id: 'single', name: 'This employee', reason: 'Already scheduled at that time' },
+      {
+        id: 'single',
+        name: 'This employee',
+        reason: 'Already scheduled at that time',
+      },
     ]);
     expect(out.canForceAll).toBe(false);
     expect(out.canSkip).toBe(false);
@@ -762,9 +832,30 @@ describe('toggleTicked', () => {
   // The picker's own display order — independent of click order, and of the
   // filter term, which only ever narrows what is RENDERED from this list.
   const ROWS = [
-    { id: 'a', name: 'Ada Obi', ok: true, code: null, reason: null, forceable: false },
-    { id: 'b', name: 'Chidi Nwosu', ok: true, code: null, reason: null, forceable: false },
-    { id: 'c', name: 'Ngozi Eze', ok: true, code: null, reason: null, forceable: false },
+    {
+      id: 'a',
+      name: 'Ada Obi',
+      ok: true,
+      code: null,
+      reason: null,
+      forceable: false,
+    },
+    {
+      id: 'b',
+      name: 'Chidi Nwosu',
+      ok: true,
+      code: null,
+      reason: null,
+      forceable: false,
+    },
+    {
+      id: 'c',
+      name: 'Ngozi Eze',
+      ok: true,
+      code: null,
+      reason: null,
+      forceable: false,
+    },
   ];
 
   it('rebuilds in display order, not click order', () => {
@@ -827,5 +918,167 @@ describe('assignedLabel', () => {
   it('counts the pick', () => {
     expect(assignedLabel(1)).toBe('1 selected');
     expect(assignedLabel(3)).toBe('3 selected');
+  });
+});
+
+// ── Fill (pattern across a date range) ──────────────────────────────────────
+
+const tpl = {
+  recurrence: 'cycle' as const,
+  cycleLength: 2,
+  cycleDays: [0],
+  anchorDate: '2026-08-10',
+  daysOfWeek: [],
+};
+
+describe('fillPreview', () => {
+  it('lists the worked days of a 1-on/1-off cycle across a week', () => {
+    const got = fillPreview(tpl, '2026-08-10', '2026-08-16');
+    expect(got.dates).toEqual([
+      '2026-08-10',
+      '2026-08-12',
+      '2026-08-14',
+      '2026-08-16',
+    ]);
+    expect(got.count).toBe(4);
+  });
+
+  it('lists the worked weekdays of a weekly template', () => {
+    const got = fillPreview(
+      {
+        recurrence: 'weekly',
+        daysOfWeek: [1, 3],
+        cycleLength: null,
+        cycleDays: [],
+        anchorDate: null,
+      },
+      '2026-08-10',
+      '2026-08-16'
+    );
+    expect(got.dates).toEqual(['2026-08-10', '2026-08-12']);
+  });
+
+  it('is empty for a cycle with no worked offsets — empty is not every day', () => {
+    expect(
+      fillPreview({ ...tpl, cycleDays: [] }, '2026-08-10', '2026-08-16').count
+    ).toBe(0);
+  });
+
+  it('is empty when the range is backwards', () => {
+    expect(fillPreview(tpl, '2026-08-16', '2026-08-10').count).toBe(0);
+  });
+});
+
+describe('fillSummaryLabel', () => {
+  it('multiplies days by people', () => {
+    expect(fillSummaryLabel(4, 2)).toBe('4 days × 2 people = 8 shifts');
+  });
+
+  it('uses singulars', () => {
+    expect(fillSummaryLabel(1, 1)).toBe('1 day × 1 person = 1 shift');
+  });
+
+  it('says nothing will be created when either side is zero', () => {
+    expect(fillSummaryLabel(0, 3)).toBe(
+      'No days in this range — nothing to create'
+    );
+    expect(fillSummaryLabel(4, 0)).toBe('Nobody selected — nothing to create');
+  });
+});
+
+describe('fillDatesLabel', () => {
+  it('renders a short list in full', () => {
+    expect(
+      fillDatesLabel(['2026-08-10', '2026-08-12', '2026-08-14', '2026-08-16'])
+    ).toBe('Mon 10, Wed 12, Fri 14, Sun 16 · 4 days');
+  });
+
+  it('uses the singular for one day', () => {
+    expect(fillDatesLabel(['2026-08-10'])).toBe('Mon 10 · 1 day');
+  });
+
+  it('truncates a long range to the first 8 plus a +N more suffix', () => {
+    const dates = Array.from({ length: 10 }, (_, i) =>
+      addDays('2026-08-10', i)
+    );
+    const got = fillDatesLabel(dates);
+    expect(got.startsWith('Mon 10, Tue 11')).toBe(true);
+    expect(got).toContain('+2 more');
+    expect(got.endsWith('· 10 days')).toBe(true);
+    // Exactly 8 shown dates before the "+N more" suffix.
+    expect(got.split(',').length).toBe(8);
+  });
+
+  it('renders something sensible for an empty list', () => {
+    expect(fillDatesLabel([])).toBe('No days in this range');
+  });
+});
+
+describe('summariseFillResult', () => {
+  it('groups skips by person', () => {
+    const got = summariseFillResult({
+      created: 5,
+      skipped: [
+        {
+          employee: 'b',
+          name: 'Bola Eze',
+          date: '2026-09-17',
+          code: 'time_off',
+          reason: 'Approved time off',
+          forceable: false,
+        },
+        {
+          employee: 'b',
+          name: 'Bola Eze',
+          date: '2026-09-23',
+          code: 'overlap',
+          reason: 'Already scheduled',
+          forceable: false,
+        },
+      ],
+    });
+    expect(got.heading).toBe('5 shifts created · all draft, unpublished');
+    expect(got.groups).toHaveLength(1);
+    expect(got.groups[0].name).toBe('Bola Eze');
+    expect(got.groups[0].lines).toHaveLength(2);
+  });
+
+  it('reports a clean fill with no groups', () => {
+    expect(summariseFillResult({ created: 8, skipped: [] }).groups).toEqual([]);
+  });
+
+  it('does not claim success when nothing was created', () => {
+    const got = summariseFillResult({
+      created: 0,
+      skipped: [
+        {
+          employee: 'a',
+          name: 'Ada Obi',
+          date: '2026-09-01',
+          code: 'overlap',
+          reason: 'Already scheduled',
+          forceable: false,
+        },
+      ],
+    });
+    expect(got.heading).toBe('No shifts created');
+  });
+
+  it('files a whole-template refusal under the pattern, not a person', () => {
+    const got = summariseFillResult({
+      created: 0,
+      skipped: [
+        {
+          template: 'Morning bar',
+          reason: 'Template has no days of the week set',
+        },
+      ],
+    });
+    expect(got.heading).toBe('No shifts created');
+    expect(got.groups).toHaveLength(1);
+    expect(got.groups[0].name).toBe('Pattern: Morning bar');
+    expect(got.groups[0].lines).toEqual([
+      'Template has no days of the week set',
+    ]);
   });
 });

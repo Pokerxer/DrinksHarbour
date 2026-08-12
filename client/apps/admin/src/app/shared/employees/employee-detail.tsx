@@ -24,6 +24,22 @@ import {
   type Employee,
   type EmployeeInput,
 } from '@/services/employee.service';
+import {
+  shiftService,
+  shiftTemplateService,
+  type ShiftTemplate,
+} from '@/services/shift.service';
+import {
+  LAGOS_OFFSET_MINUTES,
+  addDays,
+  localToday,
+  fillPreview,
+  fillSummaryLabel,
+  fillDatesLabel,
+  summariseFillResult,
+} from './shift-roster-utils';
+
+const OFFSET = LAGOS_OFFSET_MINUTES;
 import { routes } from '@/config/routes';
 import { fraunces } from './employees-fonts';
 import EmployeeProfileForm, {
@@ -35,6 +51,7 @@ import EmployeeProfileForm, {
   employeeToForm,
 } from './employee-profile-form';
 import EmployeeBadge from './employee-badge';
+import FillReportModal from './fill-report-modal';
 
 export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
   const router = useRouter();
@@ -57,6 +74,14 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
   const [resettingPin, setResettingPin] = useState(false);
   const [showBadge, setShowBadge] = useState(false);
   const [activeSection, setActiveSection] = useState('details');
+
+  const [patternOpen, setPatternOpen] = useState(false);
+  const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
+  const [patternBusy, setPatternBusy] = useState(false);
+  const [patternReport, setPatternReport] = useState<ReturnType<
+    typeof summariseFillResult
+  > | null>(null);
+  const [pattern, setPattern] = useState({ templateId: '', from: '', to: '' });
 
   const dirty = useMemo(
     () => !!form && JSON.stringify(form) !== baseline,
@@ -107,6 +132,18 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
       cancelled = true;
     };
   }, [token]);
+
+  // Shift patterns for the "Add to a shift pattern" drawer, loaded on first open.
+  useEffect(() => {
+    if (!patternOpen || templates.length) return;
+    shiftTemplateService
+      .list(token)
+      .then((rows) => setTemplates(rows.filter((t) => t.isActive)))
+      .catch(() => toast.error('Could not load shift patterns'));
+  }, [patternOpen, templates.length, token]);
+
+  const chosenTemplate =
+    templates.find((t) => t._id === pattern.templateId) ?? null;
 
   // Warn before closing/reloading the tab with unsaved edits.
   useEffect(() => {
@@ -235,6 +272,38 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
     }
   };
 
+  // Fill this employee's rota from a chosen shift pattern. Same endpoint,
+  // same rules as the roster's fill drawer — this just pre-selects one person.
+  async function addToPattern() {
+    if (!pattern.templateId) {
+      toast.error('Choose a shift pattern');
+      return;
+    }
+    setPatternBusy(true);
+    try {
+      const result = await shiftService.fill(
+        {
+          templateId: pattern.templateId,
+          employees: [employeeId],
+          from: pattern.from,
+          to: pattern.to,
+        },
+        token
+      );
+      setPatternOpen(false);
+      setPatternReport(summariseFillResult(result));
+      toast.success(
+        `${result.created} shift${result.created === 1 ? '' : 's'} created`
+      );
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : 'Failed to fill the pattern'
+      );
+    } finally {
+      setPatternBusy(false);
+    }
+  }
+
   // Revert in-progress edits back to the last saved state.
   const reset = () => {
     if (!employee) return;
@@ -324,6 +393,25 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
               >
                 <PiIdentificationCard className="h-4 w-4" />
                 Generate badge
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Default to the visible week, same as the roster's own fill
+                  // entry point, so the two never behave differently — an empty
+                  // from/to left Fill enabled with a preview that had already
+                  // collapsed to "nothing to create".
+                  const today = localToday(OFFSET);
+                  setPattern((p) => ({
+                    ...p,
+                    from: p.from || today,
+                    to: p.to || addDays(today, 6),
+                  }));
+                  setPatternOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/25"
+              >
+                Add to a shift pattern
               </button>
             </div>
           </div>
@@ -485,6 +573,113 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
           // page takes the new one — otherwise the next save would submit the
           // profile it loaded, without the number.
           onIssued={setEmployee}
+        />
+      )}
+
+      {/* Fill this employee's rota from a chosen shift pattern — the same
+          `/fill` endpoint and rules as the roster's fill drawer, pre-selected
+          to this one person. */}
+      {patternOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => !patternBusy && setPatternOpen(false)}
+          />
+          <div className="relative w-full max-w-lg rounded-t-2xl bg-white p-5 sm:rounded-2xl">
+            <h2 className="text-base font-bold text-gray-900">
+              Add to a shift pattern
+            </h2>
+
+            <label className="mt-3 block text-xs font-semibold text-gray-600">
+              Pattern
+              <select
+                value={pattern.templateId}
+                onChange={(e) =>
+                  setPattern({ ...pattern, templateId: e.target.value })
+                }
+                className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+              >
+                <option value="">Choose a pattern…</option>
+                {templates.map((t) => (
+                  <option key={t._id} value={t._id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-3 flex gap-2">
+              <label className="flex-1 text-xs font-semibold text-gray-600">
+                From
+                <input
+                  type="date"
+                  value={pattern.from}
+                  onChange={(e) =>
+                    setPattern({ ...pattern, from: e.target.value })
+                  }
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="flex-1 text-xs font-semibold text-gray-600">
+                To
+                <input
+                  type="date"
+                  value={pattern.to}
+                  onChange={(e) =>
+                    setPattern({ ...pattern, to: e.target.value })
+                  }
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+            </div>
+
+            <p className="mt-2 text-xs text-gray-500">
+              {chosenTemplate
+                ? fillSummaryLabel(
+                    fillPreview(chosenTemplate, pattern.from, pattern.to).count,
+                    1
+                  )
+                : 'Choose a pattern to preview the days'}
+            </p>
+            {chosenTemplate && (
+              <p className="mt-0.5 text-xs text-gray-400">
+                {fillDatesLabel(
+                  fillPreview(chosenTemplate, pattern.from, pattern.to).dates
+                )}
+              </p>
+            )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPatternOpen(false)}
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={addToPattern}
+                disabled={
+                  patternBusy ||
+                  !pattern.templateId ||
+                  !pattern.from ||
+                  !pattern.to ||
+                  pattern.from > pattern.to
+                }
+                className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {patternBusy ? 'Filling…' : 'Fill'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {patternReport && (
+        <FillReportModal
+          report={patternReport}
+          onClose={() => setPatternReport(null)}
         />
       )}
     </div>

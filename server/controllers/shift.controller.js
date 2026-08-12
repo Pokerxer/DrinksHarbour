@@ -40,6 +40,11 @@ const {
   judgeAssignments,
   bindEditedAssignment,
   groupAssignmentContexts,
+  planPatternFill,
+  fillContextWindow,
+  eachDateInRange,
+  patternDates,
+  MAX_FILL_ROWS,
 } = require('../services/shift.helpers');
 
 const DUPLICATE_KEY = 11000;
@@ -835,6 +840,129 @@ const generateShifts = asyncHandler(async (req, res) => {
 });
 
 /**
+ * POST /api/shifts/fill — put several people on one repeating pattern.
+ *
+ * Where /generate builds an open roster from many templates, this fills ONE
+ * template with named people across a range: N people x M worked days.
+ *
+ * Blocked person-days are SKIPPED, not refused — see planPatternFill. `skipped`
+ * is returned in full and never swallowed: "created 0 shifts" with no reason is
+ * indistinguishable from a broken feature.
+ */
+const fillPattern = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const offsetMinutes = tenantOffsetMinutes(req);
+  const range = parseRosterRange(req.body, offsetMinutes);
+  if (!range.ok) return badRequest(res, range.message);
+
+  if (!isObjectIdLike(req.body.templateId)) {
+    return badRequest(res, 'Choose a shift pattern to fill from');
+  }
+
+  const employeeIds = Array.isArray(req.body.employees)
+    ? [...new Set(req.body.employees.filter(isObjectIdLike).map(String))]
+    : [];
+  if (!employeeIds.length) {
+    return badRequest(res, 'Choose at least one employee to put on this pattern');
+  }
+
+  const template = await ShiftTemplate.findOne({
+    tenant: tenantId,
+    _id: req.body.templateId,
+  }).lean();
+  if (!template) {
+    return badRequest(res, 'That shift pattern does not exist in your organisation');
+  }
+
+  // Bound the N (employees) x M (worked days) product before planning anything
+  // — days alone are already capped by parseRosterRange/MAX_GENERATION_DAYS,
+  // but nothing else bounds the person axis. Counted in WORKED days, not
+  // calendar days: a template that only works alternate days (the common
+  // one-on/one-off rota) would otherwise be refused at roughly half the real
+  // cap. When the template can't be planned at all (inactive, empty
+  // cycleDays, invalid time) the count is 0 here so the request falls
+  // through to the planner below, which reports the specific reason in
+  // `skipped` instead of this generic row-cap message masking it.
+  const plan = patternDates(template, eachDateInRange(range.from, range.to));
+  const workedDays = plan.ok ? plan.dates.length : 0;
+  if (employeeIds.length * workedDays > MAX_FILL_ROWS) {
+    return badRequest(
+      res,
+      `That would create ${employeeIds.length * workedDays} shifts, more than the ${MAX_FILL_ROWS} allowed in one fill — narrow the date range or choose fewer people`
+    );
+  }
+
+  // ONE context load for the WHOLE range. A per-day load would be up to
+  // MAX_GENERATION_DAYS round trips; the planner judges day by day in memory.
+  //
+  // Widened past `range.end`: a candidate shift built per date can run PAST it
+  // whenever the template crosses midnight or carries endDayOffset > 0, and an
+  // un-widened window would silently hide an existing shift or approved leave
+  // that starts exactly at that boundary from checkAssignment.
+  const contextWindow = fillContextWindow(range, template);
+  const ctxById = await assignmentContexts(
+    tenantId,
+    employeeIds,
+    contextWindow,
+    null
+  );
+
+  // Only rows from THIS template matter for idempotency — an unrelated hand-made
+  // shift at the same time is a legitimate second slot, and any genuine clash
+  // with one is caught by checkAssignment as an overlap instead.
+  const existing = await Shift.find({
+    tenant: tenantId,
+    template: template._id,
+    start: { $gte: range.start, $lt: range.end },
+  })
+    .select('_id template employee start status')
+    .lean();
+
+  // Only the employees who actually resolved — assignmentContexts drops deleted
+  // and cross-tenant ids, and a missing person must not become a silent no-op.
+  const employees = employeeIds
+    .map((id) => ctxById.get(id)?.employee)
+    .filter(Boolean);
+  const missing = employeeIds.filter((id) => !ctxById.get(id)?.employee);
+
+  const { toCreate, skipped } = planPatternFill(template, employees, {
+    from: range.from,
+    to: range.to,
+    offsetMinutes,
+    existing,
+    ctxById,
+    force: req.body.force === true,
+  });
+
+  // `date` is the planner's own bookkeeping — the instant is already in start.
+  const docs = toCreate.map(({ date, ...s }) => ({
+    ...s,
+    tenant: tenantId,
+    createdBy: req.user?._id,
+  }));
+
+  const created = docs.length ? await Shift.insertMany(docs) : [];
+
+  res.status(201).json({
+    success: true,
+    data: {
+      created: created.length,
+      items: created.map((d) => d.toObject()),
+      skipped: [
+        ...missing.map((id) => ({
+          employee: id,
+          name: 'Unknown employee',
+          code: 'no_employee',
+          reason: 'That employee is no longer in your organisation',
+          forceable: false,
+        })),
+        ...skipped,
+      ],
+    },
+  });
+});
+
+/**
  * POST /api/shifts/publish — make a stretch of the roster visible to staff.
  *
  * NEVER REACHES INTO THE PAST. Publishing is what staff can see, and attendance
@@ -909,6 +1037,7 @@ module.exports = {
     update: updateShift,
     remove: deleteShift,
     generate: generateShifts,
+    fill: fillPattern,
     publish: publishShifts,
     availability: shiftAvailability,
   },

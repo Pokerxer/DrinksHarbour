@@ -10,6 +10,8 @@ const {
   shiftDurationMinutes,
   eachDateInRange,
   planShiftGeneration,
+  patternDates,
+  planPatternFill,
   normaliseCycle,
   isCycleWorkDay,
   findOverlaps,
@@ -24,6 +26,8 @@ const {
   tenantToday,
   parseRosterRange,
   clampPublishRange,
+  fillContextWindow,
+  MAX_FILL_ROWS,
 } = require('../services/shift.helpers');
 
 const ROLE = '507f1f77bcf86cd799439011';
@@ -353,6 +357,196 @@ const cycleTemplate = (over = {}) =>
     daysOfWeek: [],
     ...over,
   });
+
+// ── patternDates ─────────────────────────────────────────────────────────────
+
+test('patternDates returns the worked weekdays in a range', () => {
+  const got = patternDates(template({ daysOfWeek: [1, 3] }), [
+    '2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13',
+  ]);
+  assert.strictEqual(got.ok, true);
+  assert.deepStrictEqual(got.dates, ['2026-08-10', '2026-08-12']);
+});
+
+test('patternDates returns one-on/one-off offsets for a cycle template', () => {
+  const got = patternDates(cycleTemplate(), [
+    '2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13', '2026-08-14',
+  ]);
+  assert.strictEqual(got.ok, true);
+  assert.deepStrictEqual(got.dates, ['2026-08-10', '2026-08-12', '2026-08-14']);
+});
+
+test('patternDates works for dates before the anchor', () => {
+  const got = patternDates(cycleTemplate({ anchorDate: '2026-08-14' }), [
+    '2026-08-10', '2026-08-11', '2026-08-12',
+  ]);
+  assert.strictEqual(got.ok, true);
+  // floorMod, not %: 10th and 12th are both an even number of days from the 14th.
+  assert.deepStrictEqual(got.dates, ['2026-08-10', '2026-08-12']);
+});
+
+test('patternDates refuses an inactive template', () => {
+  const got = patternDates(template({ isActive: false }), ['2026-08-10']);
+  assert.strictEqual(got.ok, false);
+  assert.strictEqual(got.reason, 'Template is inactive');
+});
+
+test('patternDates refuses a template with an unusable time', () => {
+  const got = patternDates(template({ startTime: '99:99' }), ['2026-08-10']);
+  assert.strictEqual(got.ok, false);
+  assert.strictEqual(got.reason, 'Template has an invalid start or end time');
+});
+
+test('patternDates refuses a weekly template with no days set', () => {
+  const got = patternDates(template({ daysOfWeek: [] }), ['2026-08-10']);
+  assert.strictEqual(got.ok, false);
+  assert.strictEqual(got.reason, 'Template has no days of the week set');
+});
+
+test('patternDates refuses a cycle with no worked offsets — empty is not "every day"', () => {
+  const got = patternDates(cycleTemplate({ cycleDays: [] }), ['2026-08-10']);
+  assert.strictEqual(got.ok, false);
+  assert.strictEqual(got.reason, 'Template has no worked days in its cycle');
+});
+
+// ── planPatternFill ──────────────────────────────────────────────────────────
+
+const ada = { _id: 'emp-ada', firstName: 'Ada', lastName: 'Obi', status: 'active',
+  employeeProfile: { planning: { roles: [ROLE] } } };
+const bola = { _id: 'emp-bola', firstName: 'Bola', lastName: 'Eze', status: 'active',
+  employeeProfile: { planning: { roles: [ROLE] } } };
+
+test('planPatternFill writes one row per person per worked day', () => {
+  const plan = planPatternFill(cycleTemplate(), [ada, bola], {
+    from: '2026-08-10',
+    to: '2026-08-14',
+    offsetMinutes: LAGOS,
+  });
+  // 3 worked days (10th, 12th, 14th) x 2 people
+  assert.strictEqual(plan.toCreate.length, 6);
+  assert.strictEqual(plan.skipped.length, 0);
+  assert.deepStrictEqual(
+    [...new Set(plan.toCreate.map((r) => r.employee))].sort(),
+    ['emp-ada', 'emp-bola']
+  );
+  assert.ok(plan.toCreate.every((r) => r.status === 'draft'));
+});
+
+test('planPatternFill skips a blocked person-day and still writes everyone else', () => {
+  // Ada already has a shift on the 12th; nothing blocks Bola.
+  const ctx = new Map([
+    ['emp-ada', { employee: ada, timeOff: [], shifts: [
+      { _id: 'other', employee: 'emp-ada', status: 'draft',
+        start: new Date('2026-08-12T08:00:00.000Z'),
+        end: new Date('2026-08-12T16:00:00.000Z') },
+    ] }],
+    ['emp-bola', { employee: bola, timeOff: [], shifts: [] }],
+  ]);
+
+  const plan = planPatternFill(cycleTemplate(), [ada, bola], {
+    from: '2026-08-10',
+    to: '2026-08-14',
+    offsetMinutes: LAGOS,
+    ctxById: ctx,
+  });
+
+  assert.strictEqual(plan.toCreate.length, 5);
+  assert.strictEqual(plan.skipped.length, 1);
+  assert.strictEqual(plan.skipped[0].employee, 'emp-ada');
+  assert.strictEqual(plan.skipped[0].name, 'Ada Obi');
+  assert.strictEqual(plan.skipped[0].date, '2026-08-12');
+  assert.strictEqual(plan.skipped[0].code, 'overlap');
+  assert.strictEqual(plan.skipped[0].forceable, false);
+});
+
+test('planPatternFill judges a row against others planned in the SAME batch', () => {
+  // A 24h20m shift: each day's shift runs into the next worked day.
+  const tpl = cycleTemplate({
+    startTime: '08:40', endTime: '09:00', endDayOffset: 1,
+    cycleLength: 1, cycleDays: [0], // every day
+  });
+  const plan = planPatternFill(tpl, [ada], {
+    from: '2026-08-10',
+    to: '2026-08-12',
+    offsetMinutes: LAGOS,
+  });
+  // The 10th is written: 10th 08:40 → 11th 09:00.
+  // The 11th is SKIPPED: it starts 08:40, inside the row just planned for the
+  // 10th — this is the in-batch property under test.
+  // The 12th is WRITTEN: the only row that exists is the 10th's, which ended on
+  // the 11th at 09:00. A day that was skipped left no shift behind, so it must
+  // NOT block anything — only rows actually planned become conflicts.
+  assert.strictEqual(plan.toCreate.length, 2);
+  assert.deepStrictEqual(
+    plan.toCreate.map((r) => r.date),
+    ['2026-08-10', '2026-08-12']
+  );
+  assert.strictEqual(plan.skipped.length, 1);
+  assert.strictEqual(plan.skipped[0].date, '2026-08-11');
+  assert.strictEqual(plan.skipped[0].code, 'overlap');
+});
+
+test('planPatternFill is idempotent per employee — a re-run creates nothing', () => {
+  const opts = { from: '2026-08-10', to: '2026-08-14', offsetMinutes: LAGOS };
+  const first = planPatternFill(cycleTemplate(), [ada, bola], opts);
+
+  const second = planPatternFill(cycleTemplate(), [ada, bola], {
+    ...opts,
+    existing: first.toCreate.map((r) => ({
+      template: r.template, start: r.start, employee: r.employee, status: 'draft',
+    })),
+  });
+
+  assert.strictEqual(second.toCreate.length, 0);
+  assert.strictEqual(second.skipped.length, 6);
+  assert.ok(second.skipped.every((s) => s.code === 'exists'));
+});
+
+test('planPatternFill does not treat an OPEN generated row as this person\'s shift', () => {
+  // /generate wrote an open row for the same template+instant. It keys as
+  // `template@start@` and must not block Ada's row.
+  const open = planShiftGeneration([cycleTemplate()], {
+    from: '2026-08-10', to: '2026-08-10', offsetMinutes: LAGOS, existing: [],
+  }).toCreate.map((r) => ({
+    template: r.template, start: r.start, employee: null, status: 'draft',
+  }));
+
+  const plan = planPatternFill(cycleTemplate(), [ada], {
+    from: '2026-08-10', to: '2026-08-10', offsetMinutes: LAGOS, existing: open,
+  });
+  assert.strictEqual(plan.toCreate.length, 1);
+});
+
+test('planPatternFill reports role_mismatch as forceable, overlap as not', () => {
+  const chidi = { _id: 'emp-chidi', firstName: 'Chidi', lastName: 'Nwosu',
+    status: 'active', employeeProfile: { planning: { roles: [] } } };
+
+  const plan = planPatternFill(cycleTemplate(), [chidi], {
+    from: '2026-08-10', to: '2026-08-10', offsetMinutes: LAGOS,
+  });
+  assert.strictEqual(plan.toCreate.length, 0);
+  assert.strictEqual(plan.skipped[0].code, 'role_mismatch');
+  assert.strictEqual(plan.skipped[0].forceable, true);
+});
+
+test('planPatternFill writes a role_mismatch row when forced', () => {
+  const chidi = { _id: 'emp-chidi', firstName: 'Chidi', lastName: 'Nwosu',
+    status: 'active', employeeProfile: { planning: { roles: [] } } };
+
+  const plan = planPatternFill(cycleTemplate(), [chidi], {
+    from: '2026-08-10', to: '2026-08-10', offsetMinutes: LAGOS, force: true,
+  });
+  assert.strictEqual(plan.toCreate.length, 1);
+});
+
+test('planPatternFill refuses the whole template when it has no worked days', () => {
+  const plan = planPatternFill(cycleTemplate({ cycleDays: [] }), [ada], {
+    from: '2026-08-10', to: '2026-08-14', offsetMinutes: LAGOS,
+  });
+  assert.strictEqual(plan.toCreate.length, 0);
+  assert.strictEqual(plan.skipped.length, 1);
+  assert.strictEqual(plan.skipped[0].reason, 'Template has no worked days in its cycle');
+});
 
 test('planShiftGeneration generates a one-on/one-off cycle, ignoring daysOfWeek', () => {
   const plan = planShiftGeneration([cycleTemplate()], {
@@ -919,4 +1113,31 @@ test('groupAssignmentContexts reads a populated employee ref on a row', () => {
     []
   );
   assert.deepStrictEqual(byId.get(EMP).shifts.map((s) => s._id), ['a']);
+});
+
+// ── fillContextWindow ────────────────────────────────────────────────────────
+
+test('fillContextWindow widens the end by one day for a same-day template', () => {
+  const range = { start: new Date('2026-09-01T00:00:00.000Z'), end: new Date('2026-09-08T00:00:00.000Z') };
+  const got = fillContextWindow(range, template({ endDayOffset: 0 }));
+  assert.strictEqual(got.start.getTime(), range.start.getTime());
+  assert.strictEqual(got.end.getTime(), new Date('2026-09-09T00:00:00.000Z').getTime());
+});
+
+test('fillContextWindow widens the end by endDayOffset + 1 days', () => {
+  const range = { start: new Date('2026-09-01T00:00:00.000Z'), end: new Date('2026-09-08T00:00:00.000Z') };
+  const got = fillContextWindow(range, template({ endDayOffset: 2 }));
+  assert.strictEqual(got.end.getTime(), new Date('2026-09-11T00:00:00.000Z').getTime());
+});
+
+test('fillContextWindow never moves the start', () => {
+  const range = { start: new Date('2026-09-01T00:00:00.000Z'), end: new Date('2026-09-08T00:00:00.000Z') };
+  const got = fillContextWindow(range, template({ endDayOffset: 3 }));
+  assert.strictEqual(got.start.getTime(), range.start.getTime());
+});
+
+test('fillContextWindow treats a missing endDayOffset as 0', () => {
+  const range = { start: new Date('2026-09-01T00:00:00.000Z'), end: new Date('2026-09-08T00:00:00.000Z') };
+  const got = fillContextWindow(range, template({}));
+  assert.strictEqual(got.end.getTime(), new Date('2026-09-09T00:00:00.000Z').getTime());
 });

@@ -81,6 +81,11 @@ const SHIFT_TRANSITIONS = {
 // a bad form value) and would write thousands of rows before anyone noticed.
 const MAX_GENERATION_DAYS = 92;
 
+// N employees x M days is a product, and MAX_GENERATION_DAYS only bounds M. A
+// direct request with a huge employee list and a long range would otherwise
+// plan and insertMany thousands of rows in a single call.
+const MAX_FILL_ROWS = 2000;
+
 const MINUTES_PER_DAY = 24 * 60;
 const MS_PER_MINUTE = 60_000;
 const MS_PER_DAY = 24 * 60 * MS_PER_MINUTE;
@@ -294,6 +299,55 @@ function isCycleWorkDay(dateISO, cycle) {
 const idOf = (v) => (v && v._id ? String(v._id) : v == null ? '' : String(v));
 
 /**
+ * Which dates in a range does this template actually work?
+ *
+ * The ONE reader of `recurrence` / `daysOfWeek` / `cycleDays` / `anchorDate` on
+ * the server. Both planners call it, so a cycle bug fixed in one path cannot
+ * silently survive in the other.
+ *
+ * Refusal reasons are the strings `planShiftGeneration` has always reported in
+ * its `skipped` list — they are user-visible and must not drift.
+ *
+ * @param {object} template
+ * @param {string[]} dates - 'YYYY-MM-DD', from eachDateInRange
+ * @returns {{ok: true, template: string, dates: string[]}
+ *          |{ok: false, template: string, reason: string}}
+ */
+function patternDates(template, dates = []) {
+  const name = template?.name || idOf(template?._id);
+  const no = (reason) => ({ ok: false, template: name, reason });
+
+  if (template?.isActive === false) return no('Template is inactive');
+  if (
+    parseTimeOfDay(template?.startTime) === null ||
+    parseTimeOfDay(template?.endTime) === null
+  ) {
+    return no('Template has an invalid start or end time');
+  }
+
+  // Two kinds of recurrence, decided once. Anything not explicitly a cycle is
+  // weekly, so every template written before cycles existed keeps generating
+  // exactly the roster it already generated.
+  let isWorkDay;
+  if (template?.recurrence === 'cycle') {
+    const cycle = normaliseCycle(template);
+    if (!cycle.ok) return no(cycle.message);
+    if (!cycle.value.cycleDays.length) {
+      return no('Template has no worked days in its cycle');
+    }
+    isWorkDay = (date) => isCycleWorkDay(date, cycle.value);
+  } else {
+    const days = Array.isArray(template.daysOfWeek)
+      ? template.daysOfWeek.map(Number)
+      : [];
+    if (!days.length) return no('Template has no days of the week set');
+    isWorkDay = (date) => days.includes(dayOfWeek(date));
+  }
+
+  return { ok: true, template: name, dates: dates.filter(isWorkDay) };
+}
+
+/**
  * Plan the shifts to create for a date range from a set of templates.
  *
  * Everything it produces is an OPEN draft: the roster is built first and filled
@@ -323,47 +377,22 @@ function planShiftGeneration(templates = [], opts = {}) {
   const skipped = [];
 
   for (const tpl of templates) {
-    const name = tpl?.name || idOf(tpl?._id);
-
-    if (tpl?.isActive === false) {
-      skipped.push({ template: name, reason: 'Template is inactive' });
+    const plan = patternDates(tpl, dates);
+    if (!plan.ok) {
+      skipped.push({ template: plan.template, reason: plan.reason });
       continue;
     }
-    if (parseTimeOfDay(tpl?.startTime) === null || parseTimeOfDay(tpl?.endTime) === null) {
-      skipped.push({ template: name, reason: 'Template has an invalid start or end time' });
-      continue;
-    }
+    const name = plan.template;
 
-    // Two kinds of recurrence, decided once per template: a set of weekdays, or
-    // an N-day cycle anchored to a stored date. Anything that is not explicitly
-    // a cycle is weekly, so every template stored before cycles existed keeps
-    // generating exactly the roster it already generated.
-    let isWorkDay;
-    if (tpl?.recurrence === 'cycle') {
-      const cycle = normaliseCycle(tpl);
-      if (!cycle.ok) {
-        skipped.push({ template: name, reason: cycle.message });
-        continue;
-      }
-      if (!cycle.value.cycleDays.length) {
-        skipped.push({ template: name, reason: 'Template has no worked days in its cycle' });
-        continue;
-      }
-      isWorkDay = (date) => isCycleWorkDay(date, cycle.value);
-    } else {
-      const days = Array.isArray(tpl.daysOfWeek) ? tpl.daysOfWeek.map(Number) : [];
-      if (!days.length) {
-        skipped.push({ template: name, reason: 'Template has no days of the week set' });
-        continue;
-      }
-      isWorkDay = (date) => days.includes(dayOfWeek(date));
-    }
-
-    for (const date of dates) {
-      if (!isWorkDay(date)) continue;
-
+    for (const date of plan.dates) {
       const endDayOffset = tpl.endDayOffset ?? 0;
-      const window = shiftWindow(date, tpl.startTime, tpl.endTime, offsetMinutes, endDayOffset);
+      const window = shiftWindow(
+        date,
+        tpl.startTime,
+        tpl.endTime,
+        offsetMinutes,
+        endDayOffset
+      );
       if (!window) {
         skipped.push({ template: name, date, reason: 'Could not build a time window' });
         continue;
@@ -386,6 +415,159 @@ function planShiftGeneration(templates = [], opts = {}) {
         end: window.end,
         breakMinutes: Number(tpl.breakMinutes) || 0,
         status: 'draft',
+      });
+    }
+  }
+
+  return { toCreate, skipped };
+}
+
+/** "Ada Obi", or the id when a name is missing — skips must always name someone. */
+const employeeLabel = (e) =>
+  [e?.firstName, e?.lastName].filter(Boolean).join(' ') || idOf(e?._id);
+
+/**
+ * Plan the shifts to create when several people are put on one pattern.
+ *
+ * Where planShiftGeneration builds an OPEN roster, this fills a pattern with
+ * named people: one row per person per worked day.
+ *
+ * SKIPS RATHER THAN REFUSING. The multi-select create is all-or-nothing — if
+ * anyone is blocked it writes nothing and answers 409 — which is right for 3
+ * people on 1 day. Here it would be 3 x 30 = 90 judgements, and one overlap on
+ * day 17 would refuse all 90 rows. So a blocked person-day is skipped and
+ * reported, and everything else is still written. THIS DIVERGENCE IS
+ * DELIBERATE — do not "fix" it back into all-or-nothing.
+ *
+ * Every verdict is checkAssignment's; this adds no rules of its own.
+ *
+ * @param {object} template
+ * @param {object[]} employees - User docs (need status + employeeProfile.planning.roles)
+ * @param {{from: string, to: string, offsetMinutes?: number, existing?: object[],
+ *          ctxById?: Map, force?: boolean}} opts
+ * @returns {{toCreate: object[], skipped: object[]}}
+ */
+function planPatternFill(template, employees = [], opts = {}) {
+  const {
+    from,
+    to,
+    offsetMinutes = DEFAULT_OFFSET_MINUTES,
+    existing = [],
+    ctxById = new Map(),
+    force = false,
+  } = opts;
+
+  const plan = patternDates(template, eachDateInRange(from, to));
+  if (!plan.ok) {
+    return { toCreate: [], skipped: [{ template: plan.template, reason: plan.reason }] };
+  }
+
+  // Three-part key. Two people's shifts from one template on one day are two
+  // different rows, which `template@start` alone cannot express. An open row
+  // from /generate keys as `template@start@` and so never collides with a
+  // person's row.
+  const taken = new Set(
+    existing
+      .filter((s) => s.status !== 'cancelled')
+      .map(
+        (s) =>
+          `${idOf(s.template)}@${new Date(s.start).getTime()}@${idOf(s.employee)}`
+      )
+  );
+
+  // A MUTABLE copy of each person's shifts, so a row planned earlier in this
+  // batch is a conflict for the rows planned after it. Without this a template
+  // with endDayOffset >= 1 would write overlapping shifts for one person on
+  // consecutive worked days — neither exists in the database yet when the other
+  // is judged, and checkAssignment only sees the context it is handed.
+  const batchShifts = new Map();
+  for (const e of employees) {
+    const id = idOf(e?._id);
+    batchShifts.set(id, [...contextFor(ctxById, id).shifts]);
+  }
+
+  const toCreate = [];
+  const skipped = [];
+  const endDayOffset = template.endDayOffset ?? 0;
+
+  for (const date of plan.dates) {
+    const window = shiftWindow(
+      date,
+      template.startTime,
+      template.endTime,
+      offsetMinutes,
+      endDayOffset
+    );
+    if (!window) {
+      skipped.push({ template: plan.template, date, reason: 'Could not build a time window' });
+      continue;
+    }
+
+    const candidate = {
+      role: idOf(template.role),
+      start: window.start,
+      end: window.end,
+    };
+
+    for (const employee of employees) {
+      const id = idOf(employee?._id);
+      const name = employeeLabel(employee);
+
+      const key = `${idOf(template._id)}@${window.start.getTime()}@${id}`;
+      if (taken.has(key)) {
+        skipped.push({
+          employee: id,
+          name,
+          date,
+          code: 'exists',
+          reason: 'A shift already exists for this slot',
+          forceable: false,
+        });
+        continue;
+      }
+
+      const verdict = checkAssignment(candidate, employee, {
+        shifts: batchShifts.get(id) || [],
+        timeOff: contextFor(ctxById, id).timeOff,
+        force,
+      });
+
+      if (!verdict.ok) {
+        skipped.push({
+          employee: id,
+          name,
+          date,
+          code: verdict.code,
+          reason: verdict.message,
+          forceable: FORCEABLE_CODES.has(verdict.code),
+        });
+        continue;
+      }
+
+      taken.add(key);
+      toCreate.push({
+        template: idOf(template._id),
+        date,
+        employee: id,
+        role: idOf(template.role),
+        department: template.department ? idOf(template.department) : null,
+        start: window.start,
+        end: window.end,
+        breakMinutes: Number(template.breakMinutes) || 0,
+        status: 'draft',
+      });
+
+      // Feed this date's slot back so the NEXT date is judged against it —
+      // only rows actually planned become conflicts, because a skipped day
+      // leaves no shift behind. A template with endDayOffset >= 1 chains its
+      // worked days end-to-start; the day after must be judged against the
+      // day before's WRITTEN row, not a phantom slot that was never created.
+      batchShifts.get(id).push({
+        _id: null,
+        employee: id,
+        status: 'draft',
+        start: window.start,
+        end: window.end,
       });
     }
   }
@@ -1007,6 +1189,38 @@ function clampPublishRange(range, offsetMinutes, now = Date.now()) {
   };
 }
 
+/**
+ * Widen a roster range's context window so it covers every candidate shift a
+ * pattern fill can produce, not just the ones that start and end inside the
+ * requested range.
+ *
+ * `parseRosterRange` sets `end` to the start of the day AFTER `to`, which is
+ * exactly right for a same-day shift. But a fill candidate is built per date
+ * and can run PAST that boundary — whenever the template crosses midnight
+ * (`endTime <= startTime`) or carries `endDayOffset > 0`. Loading scheduling
+ * context with the un-widened `end` would silently exclude an existing shift
+ * or approved time-off request that starts exactly at (or after) that
+ * boundary, and `checkAssignment` — the one judge of an assignment — would
+ * never see it.
+ *
+ * Only the end needs widening: a candidate never starts before `range.start`,
+ * and a shift straddling `range.start` is already caught by
+ * `assignmentContexts`' `end: { $gt: window.start }` condition.
+ *
+ * Widening the window only ever makes `checkAssignment` better informed, so
+ * it cannot cause a false refusal for a shift that genuinely does not
+ * overlap — overlap is still decided by the real window comparison.
+ *
+ * @param {{start: Date, end: Date}} range
+ * @param {{endDayOffset?: number}} template
+ * @returns {{start: Date, end: Date}}
+ */
+function fillContextWindow(range, template = {}) {
+  const offset = Number(template?.endDayOffset) || 0;
+  const widenedEnd = new Date(range.end.getTime() + (offset + 1) * MS_PER_DAY);
+  return { start: range.start, end: widenedEnd };
+}
+
 module.exports = {
   SHIFT_STATUSES,
   SHIFT_TRANSITIONS,
@@ -1016,6 +1230,7 @@ module.exports = {
   MAX_CYCLE_LENGTH,
   DEFAULT_OFFSET_MINUTES,
   MAX_GENERATION_DAYS,
+  MAX_FILL_ROWS,
   tenantOffsetMinutes,
   tenantToday,
   parseTimeOfDay,
@@ -1028,7 +1243,9 @@ module.exports = {
   daysBetween,
   normaliseCycle,
   isCycleWorkDay,
+  patternDates,
   planShiftGeneration,
+  planPatternFill,
   findOverlaps,
   overlapsTimeOff,
   checkAssignment,
@@ -1043,4 +1260,5 @@ module.exports = {
   buildShiftPayload,
   validateShiftTimes,
   parseRosterRange,
+  fillContextWindow,
 };

@@ -408,26 +408,28 @@ export function mergeAvailability(
     (extra ?? []).filter((e) => !known.has(String(e._id)))
   );
 
-  return combined
-    .map((e) => {
-      const id = String(e._id);
-      const v = byId.get(id);
-      return {
-        id,
-        name: employeeName(e),
-        ok: v ? v.ok : true,
-        code: v && !v.ok ? v.code : null,
-        reason: v && !v.ok && v.code ? conflictLabel(v.code) : null,
-        forceable: v ? v.forceable : false,
-      };
-    })
-    // Sorted by name here rather than trusted from `employees`: the employee
-    // API orders by `createdAt: -1` for other pages, and `bindEditedAssignment`
-    // on the server binds the FIRST ticked id to the row being edited — so
-    // which person inherits a row has to track name order, the picker's own
-    // stated display order, not an unrelated reverse-creation order that
-    // happens to be what this list arrived in.
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return (
+    combined
+      .map((e) => {
+        const id = String(e._id);
+        const v = byId.get(id);
+        return {
+          id,
+          name: employeeName(e),
+          ok: v ? v.ok : true,
+          code: v && !v.ok ? v.code : null,
+          reason: v && !v.ok && v.code ? conflictLabel(v.code) : null,
+          forceable: v ? v.forceable : false,
+        };
+      })
+      // Sorted by name here rather than trusted from `employees`: the employee
+      // API orders by `createdAt: -1` for other pages, and `bindEditedAssignment`
+      // on the server binds the FIRST ticked id to the row being edited — so
+      // which person inherits a row has to track name order, the picker's own
+      // stated display order, not an unrelated reverse-creation order that
+      // happens to be what this list arrived in.
+      .sort((a, b) => a.name.localeCompare(b.name))
+  );
 }
 
 /**
@@ -516,7 +518,13 @@ export function summariseAssignmentResult(err: {
     // duplicated rule this feature deleted the last copy of.
     return {
       heading: conflictLabel(err.code),
-      lines: [{ id: 'single', name: 'This employee', reason: conflictLabel(err.code) }],
+      lines: [
+        {
+          id: 'single',
+          name: 'This employee',
+          reason: conflictLabel(err.code),
+        },
+      ],
       canForceAll: false,
       canSkip: false,
     };
@@ -723,7 +731,10 @@ const MAX_FORM_CYCLE_LENGTH = 31;
 export function cycleOffsets(cycleLength: number | null | undefined): number[] {
   const n = Math.floor(Number(cycleLength) || 0);
   if (!Number.isFinite(n) || n < 1) return [];
-  return Array.from({ length: Math.min(n, MAX_FORM_CYCLE_LENGTH) }, (_, i) => i);
+  return Array.from(
+    { length: Math.min(n, MAX_FORM_CYCLE_LENGTH) },
+    (_, i) => i
+  );
 }
 
 /** Add or remove a worked offset, keeping the list sorted and unique. */
@@ -746,7 +757,9 @@ export function clampCycleDays(
   cycleLength: number | null | undefined
 ): number[] {
   const n = Math.floor(Number(cycleLength) || 0);
-  return (cycleDays ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d < n);
+  return (cycleDays ?? []).filter(
+    (d) => Number.isInteger(d) && d >= 0 && d < n
+  );
 }
 
 /** How a template repeats, whichever kind of recurrence it uses. */
@@ -820,5 +833,168 @@ export function publishOutcomeMessage(result: {
     const done = `${shifts(published)} published`;
     return heldBack > 0 ? `${done} · ${past}` : done;
   }
-  return heldBack > 0 ? `Nothing published — ${past}` : 'Nothing left to publish';
+  return heldBack > 0
+    ? `Nothing published — ${past}`
+    : 'Nothing left to publish';
+}
+
+// ── Fill (pattern across a date range) ──────────────────────────────────────
+
+/**
+ * The shape of a skip as the /fill endpoint reports it.
+ *
+ * Two different entries share this type: a per person-day skip carries
+ * `employee`/`name`/`date`/`code`, but a whole-template refusal (the pattern
+ * itself is unusable — no worked days, no days of the week, a bad start/end
+ * time, or an inactive template) carries only `template` — the template's
+ * NAME — and `reason`. `template` has to be declared here or that name is
+ * silently dropped and the refusal reads as if it were about a person.
+ */
+export type FillSkip = {
+  employee?: string;
+  name?: string;
+  date?: string;
+  code?: string;
+  reason: string;
+  forceable?: boolean;
+  template?: string;
+};
+
+/** Every date from `from` to `to` inclusive, as 'YYYY-MM-DD'. */
+function eachDate(from: string, to: string): string[] {
+  const a = dayMs(from);
+  const b = dayMs(to);
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return [];
+  const out: string[] = [];
+  for (let ms = a; ms <= b && out.length < 92; ms += MS_PER_DAY) {
+    out.push(new Date(ms).toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+/**
+ * Which days a pattern would fill between two dates.
+ *
+ * A LABEL, not an instruction: the server re-derives this from the same
+ * template and its answer is the one that gets written. If the two ever
+ * disagree the server is right and this is the bug.
+ */
+export function fillPreview(
+  template: {
+    recurrence?: string | null;
+    daysOfWeek?: number[] | null;
+    cycleLength?: number | null;
+    cycleDays?: number[] | null;
+    anchorDate?: string | null;
+  },
+  from: string,
+  to: string
+): { dates: string[]; count: number } {
+  const all = eachDate(from, to);
+
+  let dates: string[];
+  if (template.recurrence === 'cycle') {
+    const cycleLength = Number(template.cycleLength) || 0;
+    const cycleDays = template.cycleDays ?? [];
+    const anchorDate = template.anchorDate ?? '';
+    dates =
+      cycleLength >= 1 && cycleDays.length && anchorDate
+        ? all.filter((d) =>
+            isCycleWorkDay(d, { cycleLength, cycleDays, anchorDate })
+          )
+        : [];
+  } else {
+    const days = template.daysOfWeek ?? [];
+    dates = days.length
+      ? all.filter((d) => days.includes(new Date(`${d}T00:00:00Z`).getUTCDay()))
+      : [];
+  }
+
+  return { dates, count: dates.length };
+}
+
+/**
+ * The maximum number of individual dates a fill preview spells out before
+ * collapsing the rest into a "+N more" suffix — a 92-day fill must not print
+ * 92 dates into the drawer.
+ */
+const MAX_FILL_DATES_SHOWN = 8;
+
+/**
+ * "Mon 10, Wed 12, Fri 14, Sun 16 · 4 days" — the worked dates a pattern fill
+ * would actually create, so an admin can spot a wrong cycle anchor BEFORE
+ * writing rows, not after. "4 days" alone does not show that.
+ *
+ * Reuses `weekdayShort` rather than writing new date formatting, so this stays
+ * whatever that already agrees with the server about.
+ */
+export function fillDatesLabel(
+  dates: string[],
+  maxShown = MAX_FILL_DATES_SHOWN
+): string {
+  const total = dates.length;
+  if (!total) return 'No days in this range';
+
+  const label = (d: string): string => {
+    const wd = weekdayShort(d);
+    const dayNumber = Number(d.slice(8, 10));
+    return wd && Number.isFinite(dayNumber) ? `${wd} ${dayNumber}` : d;
+  };
+
+  const shown = dates.slice(0, maxShown).map(label).join(', ');
+  const remaining = total - maxShown;
+  const list = remaining > 0 ? `${shown} +${remaining} more` : shown;
+  const days = `${total} day${total === 1 ? '' : 's'}`;
+  return `${list} · ${days}`;
+}
+
+/** "4 days × 2 people = 8 shifts", or why nothing would be created. */
+export function fillSummaryLabel(days: number, people: number): string {
+  if (days <= 0) return 'No days in this range — nothing to create';
+  if (people <= 0) return 'Nobody selected — nothing to create';
+  const total = days * people;
+  const d = `${days} day${days === 1 ? '' : 's'}`;
+  const p = `${people} ${people === 1 ? 'person' : 'people'}`;
+  const t = `${total} shift${total === 1 ? '' : 's'}`;
+  return `${d} × ${p} = ${t}`;
+}
+
+/**
+ * The created/skipped report, grouped by person.
+ *
+ * Never claims success when nothing was written: a fill that created 0 rows and
+ * said "0 shifts created" cheerfully is indistinguishable from a broken button.
+ */
+export function summariseFillResult(result: {
+  created: number;
+  skipped: FillSkip[];
+}): { heading: string; groups: { name: string; lines: string[] }[] } {
+  const created = Number(result.created) || 0;
+  const heading =
+    created > 0
+      ? `${created} shift${created === 1 ? '' : 's'} created · all draft, unpublished`
+      : 'No shifts created';
+
+  const byPerson = new Map<string, string[]>();
+  for (const s of result.skipped ?? []) {
+    // A whole-template refusal (no `employee`/`name` — see FillSkip) is a
+    // judgement about the PATTERN, not any person, so it must never be filed
+    // under "This employee": that would send an admin looking for a member
+    // of staff to blame when the template itself is misconfigured.
+    const name =
+      s.name || (s.template ? `Pattern: ${s.template}` : 'This employee');
+    const when = s.date ? `${s.date} — ` : '';
+    if (!byPerson.has(name)) byPerson.set(name, []);
+    byPerson.get(name)!.push(`${when}${s.reason}`);
+  }
+
+  return {
+    heading,
+    // Array.from, not spread: this tsconfig targets ES5 iteration, where
+    // spreading a Map iterator is a TS2802 (see buildRosterLanes above).
+    groups: Array.from(byPerson.entries()).map(([name, lines]) => ({
+      name,
+      lines,
+    })),
+  };
 }

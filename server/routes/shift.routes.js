@@ -35,9 +35,10 @@ shiftTemplateRouter
   .patch(c.templates.update)
   .delete(c.templates.remove);
 
-// Declared before '/:id' so 'generate', 'publish' and 'availability' are never
-// read as ids.
+// Declared before '/:id' so 'generate', 'fill', 'publish' and 'availability'
+// are never read as ids.
 shiftRouter.post('/generate', c.shifts.generate);
+shiftRouter.post('/fill', c.shifts.fill);
 shiftRouter.post('/publish', c.shifts.publish);
 shiftRouter.post('/availability', c.shifts.availability);
 shiftRouter.route('/').get(c.shifts.list).post(c.shifts.create);

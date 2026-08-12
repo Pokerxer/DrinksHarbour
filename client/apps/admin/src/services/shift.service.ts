@@ -11,6 +11,7 @@
 //     shifts, so the UI can name the clash. `ShiftConflictError` preserves them
 //     where a plain Error would flatten it to a string.
 import type { Ref, PersonRef } from './orgStructure.service';
+import type { FillSkip } from '../app/shared/employees/shift-roster-utils';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -413,7 +414,12 @@ export const shiftService = {
    * anything. The verdicts come from the same `checkAssignment` the save uses.
    */
   async availability(
-    input: { role: string; start: string; end: string; excludeId?: string | null },
+    input: {
+      role: string;
+      start: string;
+      end: string;
+      excludeId?: string | null;
+    },
     token: string
   ): Promise<AvailabilityVerdict[]> {
     const json = await handle<{ items: AvailabilityVerdict[] }>(
@@ -449,6 +455,39 @@ export const shiftService = {
         body: JSON.stringify(input),
       }),
       'Failed to generate shifts'
+    );
+    return json.data;
+  },
+
+  /**
+   * Put several people on one repeating pattern across a range.
+   *
+   * `skipped` is person-days the server REFUSED — approved leave, an overlap, a
+   * role the person is not marked for. Unlike the single-shift create, which
+   * refuses the whole write, a fill writes everything it can and reports the
+   * rest: one clash on day 17 must not refuse a month.
+   */
+  async fill(
+    input: {
+      templateId: string;
+      employees: string[];
+      from: string;
+      to: string;
+      force?: boolean;
+    },
+    token: string
+  ): Promise<{ created: number; items: Shift[]; skipped: FillSkip[] }> {
+    const json = await handle<{
+      created: number;
+      items: Shift[];
+      skipped: FillSkip[];
+    }>(
+      await fetch(`${SHIFTS}/fill`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify(input),
+      }),
+      'Failed to fill the pattern'
     );
     return json.data;
   },

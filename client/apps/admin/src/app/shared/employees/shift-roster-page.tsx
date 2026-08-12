@@ -41,6 +41,9 @@ import {
   assignedLabel,
   conflictLabel,
   employeeName,
+  fillPreview,
+  fillSummaryLabel,
+  fillDatesLabel,
   formatMinutes,
   localToday,
   localWindowToUtc,
@@ -49,6 +52,7 @@ import {
   startOfWeek,
   statusTone,
   summariseAssignmentResult,
+  summariseFillResult,
   summariseSkips,
   templateRepeatLabel,
   templateTimeLabel,
@@ -59,6 +63,7 @@ import {
   type AssignmentOutcome,
   type RosterLane,
 } from './shift-roster-utils';
+import FillReportModal from './fill-report-modal';
 import {
   shiftService,
   shiftTemplateService,
@@ -143,6 +148,16 @@ export default function ShiftRosterPage() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [chosenTemplates, setChosenTemplates] = useState<string[]>([]);
 
+  const [fill, setFill] = useState<{
+    template: ShiftTemplate;
+    from: string;
+    to: string;
+    employees: string[];
+  } | null>(null);
+  const [fillReport, setFillReport] = useState<ReturnType<
+    typeof summariseFillResult
+  > | null>(null);
+
   const loadRoster = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -210,7 +225,12 @@ export default function ShiftRosterPage() {
     const t = setTimeout(() => {
       shiftService
         .availability(
-          { role: draft.role, start: slot.start, end: slot.end, excludeId: draft.id },
+          {
+            role: draft.role,
+            start: slot.start,
+            end: slot.end,
+            excludeId: draft.id,
+          },
           token
         )
         .then((items) => {
@@ -226,12 +246,20 @@ export default function ShiftRosterPage() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [token, draft?.role, draft?.date, draft?.startTime, draft?.endTime, draft?.id]);
+  }, [
+    token,
+    draft?.role,
+    draft?.date,
+    draft?.startTime,
+    draft?.endTime,
+    draft?.id,
+  ]);
 
   const [pickerFilter, setPickerFilter] = useState('');
 
   const pickerRows = useMemo(
-    () => mergeAvailability(employees, availability, incumbent ? [incumbent] : []),
+    () =>
+      mergeAvailability(employees, availability, incumbent ? [incumbent] : []),
     [employees, availability, incumbent]
   );
 
@@ -268,7 +296,9 @@ export default function ShiftRosterPage() {
     // means there is nobody to add to the picker beyond what mergeAvailability
     // already does from `employees`.
     setIncumbent(
-      shift.employee && typeof shift.employee === 'object' ? shift.employee : null
+      shift.employee && typeof shift.employee === 'object'
+        ? shift.employee
+        : null
     );
     setDraft({
       id: shift._id,
@@ -439,6 +469,34 @@ export default function ShiftRosterPage() {
       await loadRoster();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Generation failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runFill() {
+    if (!fill) return;
+    setBusy(true);
+    try {
+      const result = await shiftService.fill(
+        {
+          templateId: fill.template._id,
+          employees: fill.employees,
+          from: fill.from,
+          to: fill.to,
+        },
+        token
+      );
+      setFill(null);
+      setFillReport(summariseFillResult(result));
+      toast.success(
+        `${result.created} shift${result.created === 1 ? '' : 's'} created`
+      );
+      await loadRoster();
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : 'Failed to fill the pattern'
+      );
     } finally {
       setBusy(false);
     }
@@ -660,13 +718,14 @@ export default function ShiftRosterPage() {
               key={t._id}
               type="button"
               onClick={() =>
-                fromTemplate(
-                  t,
-                  today >= from && today <= to ? today : from,
-                  null
-                )
+                setFill({
+                  template: t,
+                  from,
+                  to,
+                  employees: [],
+                })
               }
-              title={`Add an open ${t.name} shift`}
+              title={`Put people on ${t.name} across ${weekRangeLabel(days)}`}
               style={{ borderColor: t.color || '#e5e7eb' }}
               className="rounded-lg border-l-4 bg-gray-50 px-2.5 py-1.5 text-left transition-colors hover:bg-gray-100"
             >
@@ -835,7 +894,9 @@ export default function ShiftRosterPage() {
                           {row.reason && (
                             <span
                               className={`shrink-0 text-[11px] ${
-                                row.forceable ? 'text-amber-600' : 'text-gray-400'
+                                row.forceable
+                                  ? 'text-amber-600'
+                                  : 'text-gray-400'
                               }`}
                             >
                               ⚠ {row.reason}
@@ -1094,8 +1155,12 @@ export default function ShiftRosterPage() {
                         {t.name}
                       </span>
                       <span className="block text-xs text-gray-500">
-                        {templateTimeLabel(t.startTime, t.endTime, t.endDayOffset)} ·{' '}
-                        {templateRepeatLabel(t)}
+                        {templateTimeLabel(
+                          t.startTime,
+                          t.endTime,
+                          t.endDayOffset
+                        )}{' '}
+                        · {templateRepeatLabel(t)}
                       </span>
                     </span>
                   </label>
@@ -1123,6 +1188,108 @@ export default function ShiftRosterPage() {
           </>
         )}
       </AnimatePresence>
+
+      {/* Fill: put several people on one repeating pattern across a range */}
+      {fill && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => !busy && setFill(null)}
+          />
+          <div className="relative w-full max-w-lg rounded-t-2xl bg-white p-5 sm:rounded-2xl">
+            <h2 className="text-base font-bold text-gray-900">
+              Fill {fill.template.name}
+            </h2>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {templateRepeatLabel(fill.template)} · from the pattern
+            </p>
+
+            <div className="mt-3 flex gap-2">
+              <label className="flex-1 text-xs font-semibold text-gray-600">
+                From
+                <input
+                  type="date"
+                  value={fill.from}
+                  onChange={(e) => setFill({ ...fill, from: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="flex-1 text-xs font-semibold text-gray-600">
+                To
+                <input
+                  type="date"
+                  value={fill.to}
+                  onChange={(e) => setFill({ ...fill, to: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+            </div>
+
+            <p className="mt-2 text-xs text-gray-500">
+              {fillSummaryLabel(
+                fillPreview(fill.template, fill.from, fill.to).count,
+                fill.employees.length
+              )}
+            </p>
+            <p className="mt-0.5 text-xs text-gray-400">
+              {fillDatesLabel(
+                fillPreview(fill.template, fill.from, fill.to).dates
+              )}
+            </p>
+
+            <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-gray-200">
+              {pickerRows.map((row) => (
+                <label
+                  key={row.id}
+                  className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 last:border-0"
+                >
+                  <input
+                    type="checkbox"
+                    checked={fill.employees.includes(row.id)}
+                    onChange={(e) =>
+                      setFill({
+                        ...fill,
+                        employees: toggleTicked(
+                          pickerRows,
+                          fill.employees,
+                          row.id,
+                          e.target.checked
+                        ),
+                      })
+                    }
+                  />
+                  <span className="text-sm text-gray-900">{row.name}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setFill(null)}
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={runFill}
+                disabled={busy || !fill.employees.length}
+                className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {busy ? 'Filling…' : 'Fill'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fillReport && (
+        <FillReportModal
+          report={fillReport}
+          onClose={() => setFillReport(null)}
+        />
+      )}
     </div>
   );
 }
