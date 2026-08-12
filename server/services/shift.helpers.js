@@ -397,13 +397,33 @@ function planShiftGeneration(templates = [], opts = {}) {
   const { from, to, offsetMinutes = 60, existing = [] } = opts;
   const dates = eachDateInRange(from, to);
 
-  // Key on template + exact start instant: the same template on the same day is
-  // one shift, however many times generation is re-run.
-  const taken = new Set(
-    existing
-      .filter((s) => s.status !== 'cancelled')
-      .map((s) => `${idOf(s.template)}@${new Date(s.start).getTime()}`)
-  );
+  // Key on template + exact start instant + POSITION, and COUNT rather than
+  // flag. One template now emits a row per position per day, so
+  // `template@start` alone is no longer unique and a boolean "taken" can no
+  // longer express "2 of the 3 servers this slot wants already exist".
+  //
+  // The position's _id is the handle because it survives BOTH reordering and
+  // edits to its roles. A key derived from the role SET survives reordering
+  // only: widening "Server" to "Server OR Runner" would rekey every day
+  // already generated, and the next run would duplicate the lot.
+  //
+  // A legacy template has no positions, so templatePositions hands back
+  // _id: null, the key is `template@start@`, and both an old row (no
+  // templatePosition field at all) and a new one land on it — which is what
+  // makes generation of an untouched template byte-identical to before.
+  const keyOf = (templateId, startMs, positionId) =>
+    `${templateId}@${startMs}@${positionId || ''}`;
+
+  const counts = new Map();
+  for (const s of existing) {
+    if (s.status === 'cancelled') continue;
+    const key = keyOf(
+      idOf(s.template),
+      new Date(s.start).getTime(),
+      s.templatePosition ? idOf(s.templatePosition) : ''
+    );
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
 
   const toCreate = [];
   const skipped = [];
@@ -415,6 +435,12 @@ function planShiftGeneration(templates = [], opts = {}) {
       continue;
     }
     const name = plan.template;
+
+    const positions = templatePositions(tpl);
+    if (!positions.length) {
+      skipped.push({ template: name, reason: 'Template has no role to fill' });
+      continue;
+    }
 
     for (const date of plan.dates) {
       const endDayOffset = tpl.endDayOffset ?? 0;
@@ -430,24 +456,36 @@ function planShiftGeneration(templates = [], opts = {}) {
         continue;
       }
 
-      const key = `${idOf(tpl._id)}@${window.start.getTime()}`;
-      if (taken.has(key)) {
-        skipped.push({ template: name, date, reason: 'A shift already exists for this slot' });
-        continue;
-      }
-      taken.add(key);
+      for (const pos of positions) {
+        const key = keyOf(idOf(tpl._id), window.start.getTime(), pos._id);
+        const have = counts.get(key) || 0;
+        if (have >= pos.count) {
+          skipped.push({
+            template: name,
+            date,
+            position: pos._id,
+            reason: 'A shift already exists for this slot',
+          });
+          continue;
+        }
 
-      toCreate.push({
-        template: idOf(tpl._id),
-        date,
-        employee: null, // open by design
-        role: idOf(tpl.role),
-        department: tpl.department ? idOf(tpl.department) : null,
-        start: window.start,
-        end: window.end,
-        breakMinutes: Number(tpl.breakMinutes) || 0,
-        status: 'draft',
-      });
+        for (let i = have; i < pos.count; i += 1) {
+          toCreate.push({
+            template: idOf(tpl._id),
+            templatePosition: pos._id,
+            date,
+            employee: null, // open by design
+            role: pos.roles[0], // the primary: colours and labels the row
+            altRoles: pos.roles.slice(1),
+            department: tpl.department ? idOf(tpl.department) : null,
+            start: window.start,
+            end: window.end,
+            breakMinutes: Number(tpl.breakMinutes) || 0,
+            status: 'draft',
+          });
+        }
+        counts.set(key, pos.count);
+      }
     }
   }
 

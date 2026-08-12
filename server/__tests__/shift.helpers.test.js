@@ -1183,3 +1183,132 @@ describe('templatePositions', () => {
     assert.deepEqual(templatePositions({}), []);
   });
 });
+
+// ── planShiftGeneration with positions ──────────────────────────────────────
+
+describe('planShiftGeneration with positions', () => {
+  const crew = {
+    _id: 't1',
+    name: 'Friday night',
+    role: 'bartender',
+    startTime: '18:00',
+    endTime: '22:00',
+    recurrence: 'weekly',
+    daysOfWeek: [5], // Friday
+    positions: [
+      { _id: 'p1', roles: ['bartender', 'barback'], count: 1 },
+      { _id: 'p2', roles: ['server', 'runner'], count: 2 },
+    ],
+  };
+  const oneFriday = { from: '2026-08-14', to: '2026-08-14', offsetMinutes: 60 };
+
+  it('emits one row per required position per worked day', () => {
+    const { toCreate } = planShiftGeneration([crew], oneFriday);
+    assert.equal(toCreate.length, 3);
+    assert.deepEqual(
+      toCreate.map((r) => r.role),
+      ['bartender', 'server', 'server']
+    );
+    assert.deepEqual(toCreate[0].altRoles, ['barback']);
+    assert.deepEqual(toCreate[1].altRoles, ['runner']);
+    assert.deepEqual(
+      toCreate.map((r) => r.templatePosition),
+      ['p1', 'p2', 'p2']
+    );
+  });
+
+  it('leaves every generated row open and draft', () => {
+    const { toCreate } = planShiftGeneration([crew], oneFriday);
+    assert.ok(toCreate.every((r) => r.employee === null));
+    assert.ok(toCreate.every((r) => r.status === 'draft'));
+  });
+
+  // The idempotency guarantee, four ways.
+  const generated = () =>
+    planShiftGeneration([crew], oneFriday).toCreate.map((r) => ({
+      template: 't1',
+      templatePosition: r.templatePosition,
+      start: r.start,
+      status: 'draft',
+    }));
+
+  it('creates nothing on a re-run and reports every skip', () => {
+    const { toCreate, skipped } = planShiftGeneration([crew], {
+      ...oneFriday,
+      existing: generated(),
+    });
+    assert.equal(toCreate.length, 0);
+    assert.equal(skipped.length, 2); // one per position, not one per row
+  });
+
+  it('creates nothing after the positions are REORDERED', () => {
+    const reordered = { ...crew, positions: [crew.positions[1], crew.positions[0]] };
+    const { toCreate } = planShiftGeneration([reordered], {
+      ...oneFriday,
+      existing: generated(),
+    });
+    assert.equal(toCreate.length, 0);
+  });
+
+  it("creates nothing after a position's ROLES are edited", () => {
+    // The regression templatePosition exists for. A key derived from the role
+    // SET rekeys here and duplicates the whole already-generated range.
+    const widened = {
+      ...crew,
+      positions: [
+        { _id: 'p1', roles: ['bartender', 'barback', 'manager'], count: 1 },
+        { _id: 'p2', roles: ['server', 'runner'], count: 2 },
+      ],
+    };
+    const { toCreate } = planShiftGeneration([widened], {
+      ...oneFriday,
+      existing: generated(),
+    });
+    assert.equal(toCreate.length, 0);
+  });
+
+  it('tops up by exactly the difference when a count is raised', () => {
+    const bigger = {
+      ...crew,
+      positions: [crew.positions[0], { _id: 'p2', roles: ['server', 'runner'], count: 3 }],
+    };
+    const { toCreate } = planShiftGeneration([bigger], {
+      ...oneFriday,
+      existing: generated(),
+    });
+    assert.equal(toCreate.length, 1);
+    assert.equal(toCreate[0].templatePosition, 'p2');
+  });
+
+  it('ignores cancelled rows when counting what already exists', () => {
+    const existing = generated().map((r) => ({ ...r, status: 'cancelled' }));
+    const { toCreate } = planShiftGeneration([crew], { ...oneFriday, existing });
+    assert.equal(toCreate.length, 3);
+  });
+
+  it('generates a legacy single-role template exactly as before', () => {
+    const legacy = { ...crew, positions: [] };
+    const { toCreate } = planShiftGeneration([legacy], oneFriday);
+    assert.equal(toCreate.length, 1);
+    assert.equal(toCreate[0].role, 'bartender');
+    assert.deepEqual(toCreate[0].altRoles, []);
+    assert.equal(toCreate[0].templatePosition, null);
+  });
+
+  it('suppresses a legacy template from a row written before positions existed', () => {
+    const legacy = { ...crew, positions: [] };
+    const before = planShiftGeneration([legacy], oneFriday).toCreate;
+    const { toCreate } = planShiftGeneration([legacy], {
+      ...oneFriday,
+      existing: [{ template: 't1', start: before[0].start, status: 'draft' }], // no templatePosition
+    });
+    assert.equal(toCreate.length, 0);
+  });
+
+  it('skips a template with neither positions nor a role', () => {
+    const roleless = { ...crew, role: null, positions: [] };
+    const { toCreate, skipped } = planShiftGeneration([roleless], oneFriday);
+    assert.equal(toCreate.length, 0);
+    assert.match(skipped[0].reason, /role/i);
+  });
+});
