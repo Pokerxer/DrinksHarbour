@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { PiClockCounterClockwiseDuotone } from 'react-icons/pi';
+import {
+  PiClockCounterClockwiseDuotone,
+  PiPlus,
+  PiTrash,
+} from 'react-icons/pi';
 import OrgConfigPage, {
   Field,
   FIELD,
@@ -23,6 +27,10 @@ import {
   weekdayShort,
 } from '@/app/shared/employees/shift-roster-utils';
 import {
+  templatePositions,
+  positionLabel,
+} from '@/app/shared/employees/shift-position-utils';
+import {
   shiftTemplateService,
   DAY_LABELS,
   type ShiftTemplate,
@@ -38,7 +46,11 @@ import {
 
 const EMPTY: ShiftTemplateInput = {
   name: '',
+  // Superseded by `positions` below as the source of truth — kept because the
+  // server still mirrors positions[0].roles[0] onto it (TEMPLATE_POPULATE,
+  // ?role= filtering and the roster colour fallback all still read it).
   role: '',
+  positions: [{ roles: [], count: 1 }],
   department: null,
   startTime: '09:00',
   endTime: '17:00',
@@ -110,6 +122,10 @@ export default function ShiftTemplatesPage() {
       : [...days, day].sort((a, b) => a - b);
   }
 
+  function toggleRole(roles: string[], id: string): string[] {
+    return roles.includes(id) ? roles.filter((r) => r !== id) : [...roles, id];
+  }
+
   return (
     <OrgConfigPage<ShiftTemplate, ShiftTemplateInput>
       title="Shift templates"
@@ -122,6 +138,13 @@ export default function ShiftTemplatesPage() {
       toDraft={(t) => ({
         name: t.name,
         role: refId(t.role),
+        // The normaliser turns a legacy single-role template into one position
+        // so it opens the same way a template already using positions does.
+        positions: templatePositions(t).map((p) => ({
+          _id: p._id ?? undefined,
+          roles: p.roles,
+          count: p.count,
+        })),
         department: refId(t.department) || null,
         startTime: t.startTime,
         endTime: t.endTime,
@@ -179,7 +202,13 @@ export default function ShiftTemplatesPage() {
             </span>
           ),
         },
-        { header: 'Role', render: (t) => labelFor(refId(t.role), roleNames) },
+        {
+          header: 'Positions',
+          render: (t) =>
+            templatePositions(t)
+              .map((p) => positionLabel(p, roleNames))
+              .join(', '),
+        },
         {
           header: 'Department',
           render: (t) => labelFor(refId(t.department), deptNames),
@@ -218,19 +247,98 @@ export default function ShiftTemplatesPage() {
             />
           </Field>
 
-          <Field label="Role required">
-            <select
-              className={FIELD}
-              value={draft.role}
-              onChange={(e) => patch({ role: e.target.value })}
-            >
-              <option value="">Choose a role…</option>
-              {roles.map((r) => (
-                <option key={r._id} value={r._id}>
-                  {r.name}
-                </option>
+          <Field label="Positions this shift needs">
+            <div className="space-y-2">
+              {(draft.positions ?? []).map((pos, i) => (
+                <div
+                  key={i}
+                  className="rounded-xl border border-gray-200 p-3"
+                >
+                  <div className="flex flex-wrap gap-1.5">
+                    {roles.map((r) => {
+                      const on = pos.roles.includes(r._id);
+                      return (
+                        <button
+                          key={r._id}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() =>
+                            patch({
+                              positions: (draft.positions ?? []).map((p, j) =>
+                                j === i
+                                  ? { ...p, roles: toggleRole(p.roles, r._id) }
+                                  : p
+                              ),
+                            })
+                          }
+                          className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                            on
+                              ? 'bg-[#b20202] text-white'
+                              : 'border border-gray-200 bg-white text-gray-500 hover:text-gray-900'
+                          }`}
+                        >
+                          {r.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2.5 flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                      Needed
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                        value={pos.count}
+                        onChange={(e) => {
+                          const count = Number(e.target.value) || 1;
+                          patch({
+                            positions: (draft.positions ?? []).map((p, j) =>
+                              j === i ? { ...p, count } : p
+                            ),
+                          });
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={(draft.positions ?? []).length === 1}
+                      onClick={() =>
+                        patch({
+                          positions: (draft.positions ?? []).filter(
+                            (_, j) => j !== i
+                          ),
+                        })
+                      }
+                      title="Remove position"
+                      className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                    >
+                      <PiTrash className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
               ))}
-            </select>
+              <button
+                type="button"
+                onClick={() =>
+                  patch({
+                    positions: [
+                      ...(draft.positions ?? []),
+                      { roles: [], count: 1 },
+                    ],
+                  })
+                }
+                className="flex items-center gap-1 text-xs font-semibold text-[#b20202] hover:underline"
+              >
+                <PiPlus className="h-3.5 w-3.5" /> Add a position
+              </button>
+              <p className="text-xs text-gray-400">
+                Pick every role that can cover a position — someone holding
+                any of them qualifies. The first one picked is shown on the
+                roster.
+              </p>
+            </div>
           </Field>
 
           <Field label="Department" hint="(optional)">
@@ -502,7 +610,11 @@ export default function ShiftTemplatesPage() {
         </>
       )}
       validate={(d) => {
-        if (!d.role) return 'Choose the role this shift requires';
+        if (!d.positions?.length)
+          return 'Add at least one position this shift needs';
+        if (d.positions.some((p) => !p.roles.length)) {
+          return 'Every position needs at least one role that can cover it';
+        }
         if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(d.startTime))
           return 'Start time must be like 09:00';
         if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(d.endTime))
