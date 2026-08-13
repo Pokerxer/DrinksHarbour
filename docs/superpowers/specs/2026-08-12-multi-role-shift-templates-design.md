@@ -131,6 +131,32 @@ A legacy template has no positions, so `templatePositions` hands back
 `_id: null` and the key is `template@start@` — the same suppression behaviour
 as today.
 
+#### The `_id` must survive an edit — by identity, not by position in the array
+
+Because the key is the position's `_id`, an edit that changes it re-keys every
+day already generated and the next run duplicates the lot. Mongoose mints new
+subdocument `_id`s on a `$set` of a whole array, so the update path has to carry
+them across deliberately.
+
+It carries them **by identity**: the client round-trips each surviving
+position's `_id` in the update body, and the server keeps an `_id` it recognises
+on the stored template and mints a fresh one otherwise. An unrecognised `_id` is
+dropped rather than trusted, so a caller cannot graft another template's
+position id onto this one.
+
+Recovering the ids by array *index* instead — which this design originally
+specified — is not equivalent, and was replaced on 2026-08-13. Index recovery
+holds for a plain edit and for appending, but silently corrupts the roster when
+an admin removes a non-trailing position: given `[A: Bartender ×1, B: Server
+×2]`, removing Bartender re-stamps the surviving Server position with A's `_id`,
+so the one stale Bartender row counts toward the Server quota while both real
+Server rows are orphaned, and the next generate leaves four rows on a day whose
+crew declares two. Minting a fresh `_id` on shrink is worse, not a repair: the
+count then reads zero and generation adds two more.
+
+Deleting a position still orphans its already-generated rows. That is correct
+and unchanged — it is what already happens when a template's role changes.
+
 ### 4.3 Count reconciliation, not a boolean
 
 ```

@@ -1699,8 +1699,18 @@ Add to `ShiftTemplate`:
 Add to `ShiftTemplateInput`:
 
 ```ts
-  positions?: { roles: string[]; count: number }[];
+  positions?: { _id?: string; roles: string[]; count: number }[];
 ```
+
+**`_id` is load-bearing on an update, not decoration.** A position's `_id` is the
+generation idempotency handle — `planShiftGeneration` counts existing rows per
+`template@startInstant@templatePosition`. The server matches an updated
+template's positions **by identity**, keeping an `_id` it recognises and minting
+a fresh one otherwise. If the editor drops the `_id`s, every save re-mints them,
+every already-generated day is orphaned, and the next generate duplicates the
+lot. An earlier revision of this plan recovered the ids by array *index*
+instead; that silently corrupted the roster whenever an admin removed a
+non-trailing position, and was replaced on 2026-08-13.
 
 Add to the `Shift` interface (find it in the same file):
 
@@ -1769,8 +1779,21 @@ At line 41, the draft's `role: ''` becomes:
 At line 124, load positions off the fetched template rather than the flat role, using the normaliser so a legacy template opens correctly:
 
 ```ts
-        positions: templatePositions(t).map((p) => ({ roles: p.roles, count: p.count })),
+        positions: templatePositions(t).map((p) => ({
+          _id: p._id ?? undefined,
+          roles: p.roles,
+          count: p.count,
+        })),
 ```
+
+**Carry `_id` through the draft and send it back on save.** It is the generation
+idempotency handle: the server matches an updated template's positions by
+identity, keeping an `_id` it recognises and minting a fresh one otherwise. An
+editor that drops the ids re-mints them on every save, orphaning every
+already-generated day so the next generate duplicates the lot. A row the admin
+adds with "Add a position" has no `_id` — that is correct, and the server mints
+one. A row the admin removes takes its `_id` out of the array, which is what
+tells the server that position is gone.
 
 Import `templatePositions` from `@/app/shared/employees/shift-position-utils`.
 
