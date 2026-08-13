@@ -6,6 +6,7 @@ import {
   seatOptions,
   seatOptionToPosition,
   clampPositionCount,
+  defaultSeatPosition,
 } from './shift-position-utils';
 
 const roleNames = new Map([
@@ -200,5 +201,35 @@ describe('a seat built from a seatOptions value', () => {
     // is the behaviour they get back.
     const seats = [{ employee: 'a', position: '' }];
     expect(seatOptions(legacy, seats, roleNames)[0].remaining).toBe(1);
+  });
+});
+
+describe('defaultSeatPosition', () => {
+  it('picks the first position with room', () => {
+    expect(defaultSeatPosition(crew, [], roleNames)).toBe('p1');
+  });
+
+  it('skips a full position for the next one with room', () => {
+    const seats = [{ employee: 'a', position: 'p1' }];
+    expect(defaultSeatPosition(crew, seats, roleNames)).toBe('p2');
+  });
+
+  it('falls back to the first position once everything is full', () => {
+    const seats = [
+      { employee: 'a', position: 'p1' },
+      { employee: 'b', position: 'p2' },
+      { employee: 'c', position: 'p2' },
+    ];
+    expect(defaultSeatPosition(crew, seats, roleNames)).toBe('p1');
+  });
+
+  it('maps a legacy template back to null, not the empty string', () => {
+    const legacy = { role: 'r1', positions: [] } as never;
+    expect(defaultSeatPosition(legacy, [], roleNames)).toBeNull();
+  });
+
+  it('is null for a template with no positions at all', () => {
+    const empty = { positions: [] } as never;
+    expect(defaultSeatPosition(empty, [], roleNames)).toBeNull();
   });
 });

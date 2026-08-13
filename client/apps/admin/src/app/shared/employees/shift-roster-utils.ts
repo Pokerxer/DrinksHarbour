@@ -350,6 +350,13 @@ const CONFLICT_LABELS: Record<string, string> = {
   inactive: 'Not an active employee',
   no_employee: 'Employee not found',
   not_draft: 'Published — cancel it instead of deleting',
+  // Fill-only: a seat's position was already staffed, or points at a position
+  // the pattern doesn't have (edited out from under an in-flight fill). Both
+  // are judgements about the SEAT, not the person, so they read as such —
+  // display text only; `role_mismatch` stays the only forceable code (that
+  // decision is the server's `forceable` flag, never a client-side list).
+  position_full: 'That position is already fully staffed',
+  no_position: 'That position is not on this shift pattern',
 };
 
 /** A 409's `code` as a short line for the assignment form. */

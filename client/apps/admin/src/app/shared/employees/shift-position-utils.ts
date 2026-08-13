@@ -122,3 +122,24 @@ export function seatOptions(
     };
   });
 }
+
+/**
+ * Which position a newly-ticked person lands in, before the admin has touched
+ * the dropdown: the first position with room, or the first position at all
+ * once every position is already full — so ticking someone always seats them
+ * on a real crew rather than leaving `position: null` on a template that has
+ * positions to choose from. `null` only for a template with no positions at
+ * all (nothing to seat them into).
+ *
+ * Already runs its answer through `seatOptionToPosition`, so a caller never
+ * has to — see the warning on `SeatOption.value` for why that step matters.
+ */
+export function defaultSeatPosition(
+  template: ShiftTemplate,
+  seats: Seat[],
+  roleNames: Map<string, string>
+): string | null {
+  const options = seatOptions(template, seats, roleNames);
+  const open = options.find((o) => !o.full) ?? options[0];
+  return open ? seatOptionToPosition(open.value) : null;
+}

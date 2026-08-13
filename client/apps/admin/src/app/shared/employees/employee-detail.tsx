@@ -38,6 +38,13 @@ import {
   fillDatesLabel,
   summariseFillResult,
 } from './shift-roster-utils';
+import {
+  seatOptions,
+  seatOptionToPosition,
+  defaultSeatPosition,
+} from './shift-position-utils';
+import { buildLabelMap } from './org-config-utils';
+import { employeeRoleService, type EmployeeRole } from '@/services/orgStructure.service';
 
 const OFFSET = LAGOS_OFFSET_MINUTES;
 import { routes } from '@/config/routes';
@@ -77,11 +84,17 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
 
   const [patternOpen, setPatternOpen] = useState(false);
   const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
+  const [roles, setRoles] = useState<EmployeeRole[]>([]);
   const [patternBusy, setPatternBusy] = useState(false);
   const [patternReport, setPatternReport] = useState<ReturnType<
     typeof summariseFillResult
   > | null>(null);
   const [pattern, setPattern] = useState({ templateId: '', from: '', to: '' });
+  // Which crew position this employee fills on the chosen pattern — the same
+  // explicit-per-seat choice as the roster's own fill drawer, just for the one
+  // person this page is about. Reset to the pattern's own default whenever the
+  // pattern changes, see the effect below.
+  const [position, setPosition] = useState<string | null>(null);
 
   const dirty = useMemo(
     () => !!form && JSON.stringify(form) !== baseline,
@@ -133,17 +146,31 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
     };
   }, [token]);
 
-  // Shift patterns for the "Add to a shift pattern" drawer, loaded on first open.
+  // Shift patterns (and the roles behind their crew positions) for the "Add to
+  // a shift pattern" drawer, loaded on first open.
   useEffect(() => {
     if (!patternOpen || templates.length) return;
-    shiftTemplateService
-      .list(token)
-      .then((rows) => setTemplates(rows.filter((t) => t.isActive)))
+    Promise.all([shiftTemplateService.list(token), employeeRoleService.list(token)])
+      .then(([t, r]) => {
+        setTemplates(t.filter((tpl) => tpl.isActive));
+        setRoles(r);
+      })
       .catch(() => toast.error('Could not load shift patterns'));
   }, [patternOpen, templates.length, token]);
 
+  const roleNames = useMemo(() => buildLabelMap(roles), [roles]);
+
   const chosenTemplate =
     templates.find((t) => t._id === pattern.templateId) ?? null;
+
+  // The position defaults to the pattern's own first-with-room choice — same
+  // rule as ticking a person in the roster's fill drawer (defaultSeatPosition)
+  // — whenever the chosen pattern changes, so switching patterns never leaves
+  // a position id from the PREVIOUS one's crew silently attached to this seat.
+  useEffect(() => {
+    const t = templates.find((x) => x._id === pattern.templateId) ?? null;
+    setPosition(t ? defaultSeatPosition(t, [], roleNames) : null);
+  }, [pattern.templateId, templates, roleNames]);
 
   // Warn before closing/reloading the tab with unsaved edits.
   useEffect(() => {
@@ -284,7 +311,7 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
       const result = await shiftService.fill(
         {
           templateId: pattern.templateId,
-          employees: [employeeId],
+          employees: [{ employee: employeeId, position }],
           from: pattern.from,
           to: pattern.to,
         },
@@ -607,6 +634,28 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
                 ))}
               </select>
             </label>
+
+            {/* Which of the pattern's crew positions this employee fills —
+                explicit, same as ticking a person in the roster's own fill
+                drawer, never guessed on their behalf. */}
+            {chosenTemplate && (
+              <label className="mt-3 block text-xs font-semibold text-gray-600">
+                Position
+                <select
+                  value={position ?? ''}
+                  onChange={(e) =>
+                    setPosition(seatOptionToPosition(e.target.value))
+                  }
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                >
+                  {seatOptions(chosenTemplate, [], roleNames).map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <div className="mt-3 flex gap-2">
               <label className="flex-1 text-xs font-semibold text-gray-600">
