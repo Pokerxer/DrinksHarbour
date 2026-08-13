@@ -164,7 +164,8 @@ export default function ShiftTemplatesPage() {
         update: (id, input, token) => {
           const keepPositions =
             originalHasPositionsRef.current || positionsTouchedRef.current;
-          if (keepPositions) return shiftTemplateService.update(id, input, token);
+          if (keepPositions)
+            return shiftTemplateService.update(id, input, token);
           const { positions: _omit, ...withoutPositions } = input;
           return shiftTemplateService.update(id, withoutPositions, token);
         },
@@ -226,7 +227,10 @@ export default function ShiftTemplatesPage() {
                 <p className="text-xs text-gray-400">
                   {templateRepeatLabel(t)}
                   {t.recurrence === 'cycle' && t.anchorDate && (
-                    <span className="text-gray-300"> · from {t.anchorDate}</span>
+                    <span className="text-gray-300">
+                      {' '}
+                      · from {t.anchorDate}
+                    </span>
                   )}
                 </p>
               </div>
@@ -294,10 +298,7 @@ export default function ShiftTemplatesPage() {
           <Field label="Positions this shift needs">
             <div className="space-y-2">
               {(draft.positions ?? []).map((pos, i) => (
-                <div
-                  key={i}
-                  className="rounded-xl border border-gray-200 p-3"
-                >
+                <div key={i} className="rounded-xl border border-gray-200 p-3">
                   <div className="flex flex-wrap gap-1.5">
                     {roles.map((r) => {
                       const on = pos.roles.includes(r._id);
@@ -357,7 +358,9 @@ export default function ShiftTemplatesPage() {
                         const positions = draft.positions ?? [];
                         if (positions.length <= 1) return;
                         markPositionsTouched();
-                        patch({ positions: positions.filter((_, j) => j !== i) });
+                        patch({
+                          positions: positions.filter((_, j) => j !== i),
+                        });
                       }}
                       title="Remove position"
                       className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
@@ -383,9 +386,8 @@ export default function ShiftTemplatesPage() {
                 <PiPlus className="h-3.5 w-3.5" /> Add a position
               </button>
               <p className="text-xs text-gray-400">
-                Pick every role that can cover a position — someone holding
-                any of them qualifies. The first one picked is shown on the
-                roster.
+                Pick every role that can cover a position — someone holding any
+                of them qualifies. The first one picked is shown on the roster.
               </p>
             </div>
           </Field>
@@ -436,12 +438,16 @@ export default function ShiftTemplatesPage() {
           </Field>
           {(draft.endDayOffset ?? 0) > 0 ? (
             <p className="-mt-2 text-xs text-amber-600">
-              This shift ends on a different calendar day ({(draft.endDayOffset ?? 0)} day{(draft.endDayOffset ?? 0) > 1 ? 's' : ''} later).
+              This shift ends on a different calendar day (
+              {draft.endDayOffset ?? 0} day
+              {(draft.endDayOffset ?? 0) > 1 ? 's' : ''} later).
             </p>
-          ) : draft.endTime <= draft.startTime && (
-            <p className="-mt-2 text-xs text-amber-600">
-              This shift runs past midnight and ends the following day.
-            </p>
+          ) : (
+            draft.endTime <= draft.startTime && (
+              <p className="-mt-2 text-xs text-amber-600">
+                This shift runs past midnight and ends the following day.
+              </p>
+            )
           )}
 
           <Field label="Unpaid break" hint="(minutes)">
@@ -498,7 +504,9 @@ export default function ShiftTemplatesPage() {
                       key={label}
                       type="button"
                       aria-pressed={on}
-                      onClick={() => patch({ daysOfWeek: toggleDay(draft, day) })}
+                      onClick={() =>
+                        patch({ daysOfWeek: toggleDay(draft, day) })
+                      }
                       className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                         on
                           ? 'bg-[#b20202] text-white'
@@ -565,15 +573,14 @@ export default function ShiftTemplatesPage() {
                 </p>
               </Field>
 
-              <Field
-                label="Cycle starts on"
-                hint="(day 1 of the rotation)"
-              >
+              <Field label="Cycle starts on" hint="(day 1 of the rotation)">
                 <input
                   type="date"
                   className={FIELD}
                   value={draft.anchorDate ?? ''}
-                  onChange={(e) => patch({ anchorDate: e.target.value || null })}
+                  onChange={(e) =>
+                    patch({ anchorDate: e.target.value || null })
+                  }
                 />
               </Field>
 

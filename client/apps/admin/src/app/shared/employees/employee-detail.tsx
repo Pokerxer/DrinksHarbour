@@ -44,7 +44,10 @@ import {
   defaultSeatPosition,
 } from './shift-position-utils';
 import { buildLabelMap } from './org-config-utils';
-import { employeeRoleService, type EmployeeRole } from '@/services/orgStructure.service';
+import {
+  employeeRoleService,
+  type EmployeeRole,
+} from '@/services/orgStructure.service';
 
 const OFFSET = LAGOS_OFFSET_MINUTES;
 import { routes } from '@/config/routes';
@@ -150,7 +153,10 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
   // a shift pattern" drawer, loaded on first open.
   useEffect(() => {
     if (!patternOpen || templates.length) return;
-    Promise.all([shiftTemplateService.list(token), employeeRoleService.list(token)])
+    Promise.all([
+      shiftTemplateService.list(token),
+      employeeRoleService.list(token),
+    ])
       .then(([t, r]) => {
         setTemplates(t.filter((tpl) => tpl.isActive));
         setRoles(r);

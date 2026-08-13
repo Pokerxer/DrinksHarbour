@@ -55,7 +55,9 @@ export function templatePositions(template: ShiftTemplate): ShiftPosition[] {
   const positions = raw
     .map((p) => ({
       _id: p?._id ? String(p._id) : null,
-      roles: (Array.isArray(p?.roles) ? p.roles : []).map(refId).filter(Boolean),
+      roles: (Array.isArray(p?.roles) ? p.roles : [])
+        .map(refId)
+        .filter(Boolean),
       count: Math.max(1, Math.floor(Number(p?.count)) || 1),
     }))
     .filter((p) => p.roles.length);
@@ -95,7 +97,10 @@ export function positionLabel(
 }
 
 /** How many of this position are still unseated. Never negative. */
-export function remainingForPosition(position: ShiftPosition, seats: Seat[]): number {
+export function remainingForPosition(
+  position: ShiftPosition,
+  seats: Seat[]
+): number {
   const taken = seats.filter((s) => s.position === position._id).length;
   return Math.max(0, position.count - taken);
 }
@@ -113,7 +118,8 @@ export function seatOptions(
   return templatePositions(template).map((p) => {
     const remaining = remainingForPosition(p, seats);
     const base = positionLabel(p, roleNames);
-    const suffix = remaining === 0 ? ' (full)' : p.count > 1 ? ` (${remaining} left)` : '';
+    const suffix =
+      remaining === 0 ? ' (full)' : p.count > 1 ? ` (${remaining} left)` : '';
     return {
       value: p._id ?? '',
       label: `${base}${suffix}`,

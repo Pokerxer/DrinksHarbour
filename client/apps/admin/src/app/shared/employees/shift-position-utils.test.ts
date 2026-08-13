@@ -72,7 +72,9 @@ describe('templatePositions', () => {
   it('reads a role that arrived populated rather than as a bare id', () => {
     expect(
       templatePositions({
-        positions: [{ _id: 'p1', roles: [{ _id: 'r1', name: 'Bartender' }], count: 1 }],
+        positions: [
+          { _id: 'p1', roles: [{ _id: 'r1', name: 'Bartender' }], count: 1 },
+        ],
       } as never)
     ).toEqual([{ _id: 'p1', roles: ['r1'], count: 1 }]);
   });
@@ -114,17 +116,21 @@ describe('clampPositionCount', () => {
 
 describe('positionLabel', () => {
   it('names a single role with its count', () => {
-    expect(positionLabel({ _id: 'p2', roles: ['r3'], count: 2 }, roleNames)).toBe('Server ×2');
+    expect(
+      positionLabel({ _id: 'p2', roles: ['r3'], count: 2 }, roleNames)
+    ).toBe('Server ×2');
   });
 
   it('joins alternatives with "or" and omits a count of one', () => {
-    expect(positionLabel({ _id: 'p1', roles: ['r1', 'r2'], count: 1 }, roleNames)).toBe(
-      'Bartender or Barback'
-    );
+    expect(
+      positionLabel({ _id: 'p1', roles: ['r1', 'r2'], count: 1 }, roleNames)
+    ).toBe('Bartender or Barback');
   });
 
   it('falls back for a role that has been deleted', () => {
-    expect(positionLabel({ _id: 'p9', roles: ['gone'], count: 1 }, roleNames)).toBe('Role removed');
+    expect(
+      positionLabel({ _id: 'p9', roles: ['gone'], count: 1 }, roleNames)
+    ).toBe('Role removed');
   });
 });
 
@@ -136,7 +142,9 @@ describe('remainingForPosition', () => {
   });
 
   it('drops by one per seat already taken', () => {
-    expect(remainingForPosition(positions[1], [{ employee: 'a', position: 'p2' }])).toBe(1);
+    expect(
+      remainingForPosition(positions[1], [{ employee: 'a', position: 'p2' }])
+    ).toBe(1);
   });
 
   it('never goes below zero', () => {
@@ -150,7 +158,11 @@ describe('remainingForPosition', () => {
 
 describe('seatOptions', () => {
   it('shows what is left against each position', () => {
-    const out = seatOptions(crew, [{ employee: 'a', position: 'p2' }], roleNames);
+    const out = seatOptions(
+      crew,
+      [{ employee: 'a', position: 'p2' }],
+      roleNames
+    );
     expect(out).toEqual([
       { value: 'p1', label: 'Bartender or Barback', remaining: 1, full: false },
       { value: 'p2', label: 'Server ×2 (1 left)', remaining: 1, full: false },
@@ -158,7 +170,11 @@ describe('seatOptions', () => {
   });
 
   it('marks a position full rather than hiding it', () => {
-    const out = seatOptions(crew, [{ employee: 'a', position: 'p1' }], roleNames);
+    const out = seatOptions(
+      crew,
+      [{ employee: 'a', position: 'p1' }],
+      roleNames
+    );
     expect(out[0]).toEqual({
       value: 'p1',
       label: 'Bartender or Barback (full)',
@@ -187,7 +203,9 @@ describe('a seat built from a seatOptions value', () => {
 
   it('counts against the legacy position once mapped back', () => {
     const [option] = seatOptions(legacy, [], roleNames);
-    const seats = [{ employee: 'a', position: seatOptionToPosition(option.value) }];
+    const seats = [
+      { employee: 'a', position: seatOptionToPosition(option.value) },
+    ];
     expect(seatOptions(legacy, seats, roleNames)[0]).toEqual({
       value: '',
       label: 'Bartender (full)',

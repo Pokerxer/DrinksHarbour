@@ -488,7 +488,11 @@ export default function ShiftRosterPage() {
    * the admin can still change it from the dropdown afterwards. An untick just
    * drops their seat — no position bookkeeping to undo.
    */
-  function toggleSeat(seats: Seat[], employee: string, template: ShiftTemplate): Seat[] {
+  function toggleSeat(
+    seats: Seat[],
+    employee: string,
+    template: ShiftTemplate
+  ): Seat[] {
     if (seats.some((s) => s.employee === employee)) {
       return seats.filter((s) => s.employee !== employee);
     }
@@ -1284,7 +1288,11 @@ export default function ShiftRosterPage() {
                         onChange={() =>
                           setFill({
                             ...fill,
-                            seats: toggleSeat(fill.seats, row.id, fill.template),
+                            seats: toggleSeat(
+                              fill.seats,
+                              row.id,
+                              fill.template
+                            ),
                           })
                         }
                       />
@@ -1303,7 +1311,9 @@ export default function ShiftRosterPage() {
                               s.employee === row.id
                                 ? {
                                     ...s,
-                                    position: seatOptionToPosition(e.target.value),
+                                    position: seatOptionToPosition(
+                                      e.target.value
+                                    ),
                                   }
                                 : s
                             ),
