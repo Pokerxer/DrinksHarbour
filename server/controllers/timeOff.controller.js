@@ -506,7 +506,12 @@ const respondToSwap = asyncHandler(async (req, res) => {
 
   if (next === 'accepted') {
     const shift = await Shift.findOne({ _id: row.shift, tenant: tenantId })
-      .select('_id employee role start end status')
+      // `altRoles` is load-bearing, not decoration: checkAssignment judges a
+      // candidate against role PLUS altRoles, so projecting it away silently
+      // narrows a crew shift to its primary role. A barback would be refused a
+      // "Bartender or Barback" shift here — with no force on this path — while
+      // decideSwap, which reads the full document, would have allowed it.
+      .select('_id employee role altRoles start end status')
       .lean();
     if (!shift) return notFound(res, 'Shift');
 
