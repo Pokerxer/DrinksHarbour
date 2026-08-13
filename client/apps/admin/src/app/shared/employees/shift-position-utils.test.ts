@@ -5,6 +5,7 @@ import {
   remainingForPosition,
   seatOptions,
   seatOptionToPosition,
+  clampPositionCount,
 } from './shift-position-utils';
 
 const roleNames = new Map([
@@ -73,6 +74,40 @@ describe('templatePositions', () => {
         positions: [{ _id: 'p1', roles: [{ _id: 'r1', name: 'Bartender' }], count: 1 }],
       } as never)
     ).toEqual([{ _id: 'p1', roles: ['r1'], count: 1 }]);
+  });
+});
+
+describe('clampPositionCount', () => {
+  it('keeps a count the server will accept', () => {
+    expect(clampPositionCount(3)).toBe(3);
+    expect(clampPositionCount('7')).toBe(7);
+  });
+
+  it('holds the ends of the range', () => {
+    expect(clampPositionCount(1)).toBe(1);
+    expect(clampPositionCount(20)).toBe(20);
+  });
+
+  it('pulls a count above the cap back to it', () => {
+    // The editor's max attribute never fires — Save is an onClick, not a form
+    // submit — so without this the admin gets a bare rejection toast instead.
+    expect(clampPositionCount(50)).toBe(20);
+  });
+
+  it('floors a count below one, including a negative', () => {
+    expect(clampPositionCount(0)).toBe(1);
+    expect(clampPositionCount(-3)).toBe(1);
+  });
+
+  it('rounds a fraction rather than storing one', () => {
+    expect(clampPositionCount(1.5)).toBe(2);
+    expect(clampPositionCount(2.4)).toBe(2);
+  });
+
+  it('falls back to one for a cleared or nonsense field', () => {
+    expect(clampPositionCount('')).toBe(1);
+    expect(clampPositionCount('abc')).toBe(1);
+    expect(clampPositionCount(undefined)).toBe(1);
   });
 });
 

@@ -66,6 +66,24 @@ export function templatePositions(template: ShiftTemplate): ShiftPosition[] {
   return role ? [{ _id: null, roles: [role], count: 1 }] : [];
 }
 
+/** The most people one position may ask for. Mirrors the ShiftTemplate schema. */
+export const MAX_POSITION_COUNT = 20;
+
+/**
+ * A typed count, clamped to what the server will actually accept.
+ *
+ * The editor's `min`/`max` attributes do NOT enforce this: Save is an onClick
+ * handler, not a native form submit, so the browser's constraint validation
+ * never runs. Without this an admin can type 50, save, and get a bare rejection
+ * toast from `buildShiftTemplatePayload` instead of a field that simply refuses
+ * the bad value.
+ */
+export function clampPositionCount(value: unknown): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(MAX_POSITION_COUNT, n);
+}
+
 /** "Bartender or Barback", "Server ×2". */
 export function positionLabel(
   position: ShiftPosition,

@@ -29,6 +29,7 @@ import {
 import {
   templatePositions,
   positionLabel,
+  clampPositionCount,
 } from '@/app/shared/employees/shift-position-utils';
 import {
   shiftTemplateService,
@@ -292,7 +293,7 @@ export default function ShiftTemplatesPage() {
                         className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
                         value={pos.count}
                         onChange={(e) => {
-                          const count = Number(e.target.value) || 1;
+                          const count = clampPositionCount(e.target.value);
                           patch({
                             positions: (draft.positions ?? []).map((p, j) =>
                               j === i ? { ...p, count } : p
@@ -304,13 +305,14 @@ export default function ShiftTemplatesPage() {
                     <button
                       type="button"
                       disabled={(draft.positions ?? []).length === 1}
-                      onClick={() =>
-                        patch({
-                          positions: (draft.positions ?? []).filter(
-                            (_, j) => j !== i
-                          ),
-                        })
-                      }
+                      onClick={() => {
+                        // Guarded in state as well as by `disabled`: a template
+                        // with no positions has nothing to generate, and the
+                        // disabled attribute is one refactor away from gone.
+                        const positions = draft.positions ?? [];
+                        if (positions.length <= 1) return;
+                        patch({ positions: positions.filter((_, j) => j !== i) });
+                      }}
                       title="Remove position"
                       className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
                     >
