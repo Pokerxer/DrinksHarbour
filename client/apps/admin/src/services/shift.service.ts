@@ -44,10 +44,25 @@ export interface RoleRef {
   color?: string;
 }
 
+/**
+ * One slot in a template's crew: `count` open shifts, each accepting any of
+ * `roles`. Mirrors the `positions` subdocument on the server's ShiftTemplate
+ * model — `_id` is load-bearing there (the generation idempotency handle) so
+ * it is never optional here either.
+ */
+export interface ShiftTemplatePosition {
+  _id: string;
+  roles: Ref<RoleRef>[];
+  count: number;
+}
+
 export interface ShiftTemplate {
   _id: string;
   name: string;
   role: Ref<RoleRef>;
+  /** The crew this shift needs. Empty means the legacy single-role shape —
+   * see shift-position-utils.templatePositions for the normalisation. */
+  positions?: ShiftTemplatePosition[];
   department?: Ref<{ _id: string; name: string; color?: string }>;
   /** Local wall clock 'HH:MM'. An endTime <= startTime crosses midnight. */
   startTime: string;
