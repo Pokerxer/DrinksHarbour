@@ -32,6 +32,7 @@ const {
   parseRosterRange,
   clampPublishRange,
   planShiftGeneration,
+  reconcilePositionIds,
   checkAssignment,
   summariseRoster,
   canTransitionShift,
@@ -264,13 +265,12 @@ const updateTemplate = asyncHandler(async (req, res) => {
   // yet mutated) — an unrecognised _id is dropped so a caller cannot graft
   // another template's position onto this one, and Mongoose mints a fresh one
   // for it instead.
+  // Which position _ids survive this edit decides whether the template keeps
+  // its generated roster or re-keys and duplicates it, so the rule lives in
+  // shift.helpers.js where it is unit-tested — `row` is the CURRENTLY STORED
+  // template, loaded above and not yet mutated.
   if (built.value.positions) {
-    const currentIds = new Set((row.positions || []).map((p) => String(p._id)));
-    built.value.positions = built.value.positions.map((p) => {
-      if (p._id && currentIds.has(String(p._id))) return p;
-      const { _id, ...rest } = p;
-      return rest;
-    });
+    built.value.positions = reconcilePositionIds(row.positions, built.value.positions);
   }
 
   Object.assign(row, built.value);

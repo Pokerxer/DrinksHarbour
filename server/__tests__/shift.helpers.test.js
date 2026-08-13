@@ -11,6 +11,7 @@ const {
   shiftDurationMinutes,
   eachDateInRange,
   planShiftGeneration,
+  reconcilePositionIds,
   patternDates,
   planPatternFill,
   normaliseCycle,
@@ -1480,5 +1481,107 @@ describe('planShiftGeneration with positions', () => {
     const { toCreate, skipped } = planShiftGeneration([roleless], oneFriday);
     assert.equal(toCreate.length, 0);
     assert.match(skipped[0].reason, /role/i);
+  });
+});
+
+// ── reconcilePositionIds ─────────────────────────────────────────────────────
+//
+// A position's _id is the generation idempotency handle, so this function
+// decides whether an edit keeps a template's generated roster or re-keys and
+// duplicates it. It lives here, not in the controller, precisely so it can be
+// tested — the server suite has no database and cannot reach a controller.
+
+describe('reconcilePositionIds', () => {
+  it('keeps an _id that still names a position on the stored template', () => {
+    const stored = [{ _id: 'p1' }, { _id: 'p2' }];
+    const out = reconcilePositionIds(stored, [
+      { _id: 'p2', roles: ['server'], count: 2 },
+      { _id: 'p1', roles: ['bartender'], count: 1 },
+    ]);
+    // Identity, not index: reordering must not re-stamp either one.
+    assert.deepEqual(
+      out.map((p) => p._id),
+      ['p2', 'p1']
+    );
+  });
+
+  it('keeps the survivor its OWN id when a non-trailing position is removed', () => {
+    // The whole reason matching is by identity. An index match would hand the
+    // surviving server position the removed bartender's _id, so the one stale
+    // bartender row would count toward the server quota while both real server
+    // rows orphaned — 4 rows on a day declaring 2.
+    const stored = [{ _id: 'p1' }, { _id: 'p2' }];
+    const out = reconcilePositionIds(stored, [{ _id: 'p2', roles: ['server'], count: 2 }]);
+    assert.equal(out.length, 1);
+    assert.equal(out[0]._id, 'p2');
+  });
+
+  it('drops an _id that no position on the stored template carries', () => {
+    // Otherwise a caller could graft another template's position onto this one
+    // and silently take over its generated rows.
+    const out = reconcilePositionIds([{ _id: 'p1' }, { _id: 'p2' }], [
+      { _id: 'p1', roles: ['bartender'], count: 1 },
+      { _id: 'stolen', roles: ['server'], count: 1 },
+    ]);
+    assert.equal(out[0]._id, 'p1');
+    assert.equal('_id' in out[1], false);
+  });
+
+  it('leaves a brand-new position with no _id, so Mongoose mints one', () => {
+    const out = reconcilePositionIds([{ _id: 'p1' }], [
+      { _id: 'p1', roles: ['bartender'], count: 1 },
+      { roles: ['server'], count: 2 },
+    ]);
+    assert.equal(out[0]._id, 'p1');
+    assert.equal('_id' in out[1], false);
+  });
+
+  it('adopts the LEGACY key when a template with no positions first declares a crew', () => {
+    // A legacy template generated under `template@start@` and every row it wrote
+    // carries templatePosition: null. Minting here would strand all of them and
+    // write a second full crew on the next run — for the most natural first edit
+    // anyone makes: "my Server template should also accept Runners".
+    const out = reconcilePositionIds([], [{ roles: ['server', 'runner'], count: 1 }]);
+    assert.equal(out[0]._id, null);
+  });
+
+  it('keeps the legacy key adopted on later edits', () => {
+    // The stored template now has one position whose _id is null, and the
+    // editor cannot send null back — so a falsy stored _id at position 0 is
+    // what marks the template as still on the legacy key.
+    const out = reconcilePositionIds(
+      [{ _id: null, roles: ['server', 'runner'] }],
+      [{ roles: ['server', 'runner'], count: 3 }]
+    );
+    assert.equal(out[0]._id, null);
+  });
+
+  it('only position 0 adopts it — a second position still mints', () => {
+    const out = reconcilePositionIds([], [
+      { roles: ['server'], count: 1 },
+      { roles: ['runner'], count: 2 },
+    ]);
+    assert.equal(out[0]._id, null);
+    assert.equal('_id' in out[1], false);
+  });
+
+  it('gives the legacy key up when a real id takes position 0', () => {
+    // What removing the legacy position looks like: the survivor shifts into
+    // index 0 carrying its own id. Forcing null there would steal the legacy
+    // rows for a position that never wrote them.
+    const out = reconcilePositionIds(
+      [{ _id: null }, { _id: 'p2' }],
+      [{ _id: 'p2', roles: ['runner'], count: 2 }]
+    );
+    assert.equal(out[0]._id, 'p2');
+  });
+
+  it('does not adopt for a template that already has real positions', () => {
+    const out = reconcilePositionIds([{ _id: 'p1' }], [{ roles: ['server'], count: 1 }]);
+    assert.equal('_id' in out[0], false);
+  });
+
+  it('treats an empty incoming list as nothing to reconcile', () => {
+    assert.deepEqual(reconcilePositionIds([{ _id: 'p1' }], []), []);
   });
 });

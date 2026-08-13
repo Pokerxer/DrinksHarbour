@@ -380,6 +380,56 @@ function templatePositions(template) {
 }
 
 /**
+ * Settle which position `_id`s an update may keep, and which must be minted.
+ *
+ * A position's `_id` is the generation idempotency handle (see `keyOf`), so
+ * this is the rule that decides whether an edit re-keys a template's whole
+ * generated roster. Two things it must get right:
+ *
+ * 1. **Identity, never index.** An `_id` is kept only if it still names a
+ *    position on the stored template. Matching by array index instead would,
+ *    when a non-trailing position is removed, re-stamp a SURVIVING position
+ *    with the removed one's `_id` — corrupting the survivor's count rather
+ *    than the removed one's. An unrecognised `_id` is dropped rather than
+ *    trusted, so a caller cannot graft another template's position onto this
+ *    one; Mongoose then mints a fresh one.
+ *
+ * 2. **The first widening of a legacy template keeps the legacy key.** A
+ *    template with no stored `positions` generates under `template@start@`,
+ *    because `templatePositions` synthesizes `{_id: null}` for it and every
+ *    row it wrote carries `templatePosition: null`. The moment an admin
+ *    declares a crew — "my Server template should also accept Runners", the
+ *    most natural first edit here — a minted `_id` would re-key the template,
+ *    stranding every day already generated and writing a second full crew over
+ *    it on the next run. So position 0 ADOPTS the null key. It stays adopted
+ *    on later edits, because a template on the legacy key still has a falsy
+ *    `_id` at position 0. It is given up only when the body sends a real,
+ *    recognised `_id` there — which is what removing the legacy position looks
+ *    like once the survivor shifts into index 0. Those legacy rows then
+ *    orphan, which is correct: that position is gone.
+ *
+ * @param {object[]} stored the CURRENTLY STORED positions
+ * @param {object[]} incoming validated positions from the request body
+ * @returns {object[]} positions to persist
+ */
+function reconcilePositionIds(stored = [], incoming = []) {
+  const currentIds = new Set(
+    (stored || []).filter((p) => p?._id).map((p) => String(p._id))
+  );
+  const positions = (incoming || []).map((p) => {
+    if (p._id && currentIds.has(String(p._id))) return p;
+    const { _id, ...rest } = p;
+    return rest;
+  });
+
+  const onLegacyKey = !stored?.length || !stored[0]?._id;
+  const first = positions[0];
+  if (onLegacyKey && first && !first._id) first._id = null;
+
+  return positions;
+}
+
+/**
  * Plan the shifts to create for a date range from a set of templates.
  *
  * Everything it produces is an OPEN draft: the roster is built first and filled
@@ -1535,4 +1585,5 @@ module.exports = {
   parseRosterRange,
   fillContextWindow,
   templatePositions,
+  reconcilePositionIds,
 };
