@@ -1099,11 +1099,42 @@ function buildShiftTemplatePayload(body = {}, opts = {}) {
     return { ok: false, message: 'Template name is required' };
   }
 
+  // Positions first: when a body supplies them they are the source of truth,
+  // and `role` is MIRRORED from the first so TEMPLATE_POPULATE, the ?role=
+  // filter and the roster colour fallback keep working untouched.
+  let mirroredRole = null;
+  if (body.positions !== undefined) {
+    if (!Array.isArray(body.positions)) {
+      return { ok: false, message: 'positions must be a list' };
+    }
+    const positions = [];
+    for (const raw of body.positions) {
+      const roles = [];
+      for (const r of Array.isArray(raw?.roles) ? raw.roles : []) {
+        const ref = refField(r);
+        if (ref.bad || !ref.value) return { ok: false, message: 'role must be a valid id' };
+        if (!roles.includes(ref.value)) roles.push(ref.value);
+      }
+      if (!roles.length) {
+        return { ok: false, message: 'Each position must accept at least one role' };
+      }
+      const count = Number(raw?.count ?? 1);
+      if (!Number.isFinite(count) || count < 1 || count > 20 || Math.floor(count) !== count) {
+        return { ok: false, message: 'A position count must be a whole number from 1 to 20' };
+      }
+      positions.push({ roles, count });
+    }
+    value.positions = positions;
+    mirroredRole = positions.length ? positions[0].roles[0] : null;
+  }
+
   // A shift exists to be filled by someone qualified, so the role it needs is
   // the one ref that is never optional.
   const role = refField(body.role);
   if (role.bad) return { ok: false, message: 'role must be a valid id' };
-  if (!role.skip) {
+  if (mirroredRole) {
+    value.role = mirroredRole;
+  } else if (!role.skip) {
     if (!role.value) return { ok: false, message: 'A template must require a role' };
     value.role = role.value;
   } else if (!isUpdate) {
@@ -1241,6 +1272,23 @@ function buildShiftPayload(body = {}, opts = {}) {
   }
 
   if (body.note !== undefined) value.note = trimmed(body.note);
+
+  if (body.altRoles !== undefined) {
+    if (!Array.isArray(body.altRoles)) {
+      return { ok: false, message: 'altRoles must be a list' };
+    }
+    const alt = [];
+    for (const r of body.altRoles) {
+      const ref = refField(r);
+      if (ref.bad || !ref.value) return { ok: false, message: 'role must be a valid id' };
+      if (!alt.includes(ref.value)) alt.push(ref.value);
+    }
+    value.altRoles = alt;
+  }
+
+  const position = refField(body.templatePosition);
+  if (position.bad) return { ok: false, message: 'templatePosition must be a valid id' };
+  if (!position.skip) value.templatePosition = position.value;
 
   return { ok: true, value };
 }
