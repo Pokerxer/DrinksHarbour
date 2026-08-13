@@ -550,6 +550,110 @@ test('planPatternFill refuses the whole template when it has no worked days', ()
   assert.strictEqual(plan.skipped[0].reason, 'Template has no worked days in its cycle');
 });
 
+describe('planPatternFill with crew positions', () => {
+  const crew = {
+    _id: 't1',
+    name: 'Friday night',
+    role: 'bartender',
+    startTime: '18:00',
+    endTime: '22:00',
+    recurrence: 'weekly',
+    daysOfWeek: [5],
+    positions: [
+      { _id: 'p1', roles: ['bartender', 'barback'], count: 1 },
+      { _id: 'p2', roles: ['server', 'runner'], count: 2 },
+    ],
+  };
+  const oneFriday = { from: '2026-08-14', to: '2026-08-14', offsetMinutes: 60 };
+  const person = (id, roles) => ({
+    _id: id,
+    firstName: id,
+    lastName: 'Test',
+    status: 'active',
+    employeeProfile: { planning: { roles } },
+  });
+
+  it('seats each person on the position they were given', () => {
+    const seats = [
+      { employee: person('ada', ['bartender']), position: 'p1' },
+      { employee: person('ben', ['server']), position: 'p2' },
+      { employee: person('cid', ['runner']), position: 'p2' },
+    ];
+    const { toCreate, skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(skipped.length, 0);
+    assert.equal(toCreate.length, 3);
+    assert.deepEqual(
+      toCreate.map((r) => [r.employee, r.templatePosition, r.role]),
+      [
+        ['ada', 'p1', 'bartender'],
+        ['ben', 'p2', 'server'],
+        ['cid', 'p2', 'server'],
+      ]
+    );
+    assert.deepEqual(toCreate[2].altRoles, ['runner']);
+  });
+
+  it('accepts someone who holds only the position alternative role', () => {
+    const seats = [{ employee: person('cid', ['runner']), position: 'p2' }];
+    const { toCreate, skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(skipped.length, 0);
+    assert.equal(toCreate.length, 1);
+  });
+
+  it('refuses a seat on a position that is already full', () => {
+    const seats = [
+      { employee: person('ada', ['bartender']), position: 'p1' },
+      { employee: person('ben', ['barback']), position: 'p1' },
+    ];
+    const { toCreate, skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(toCreate.length, 1);
+    assert.equal(skipped.length, 1);
+    assert.equal(skipped[0].code, 'position_full');
+    assert.equal(skipped[0].forceable, false);
+    assert.equal(skipped[0].employee, 'ben');
+  });
+
+  it('counts rows already on the position toward the cap', () => {
+    const seats = [{ employee: person('ada', ['bartender']), position: 'p1' }];
+    const start = planPatternFill(crew, seats, oneFriday).toCreate[0].start;
+    const { toCreate, skipped } = planPatternFill(crew, seats, {
+      ...oneFriday,
+      existing: [
+        { template: 't1', templatePosition: 'p1', employee: 'zoe', start, status: 'draft' },
+      ],
+    });
+    assert.equal(toCreate.length, 0);
+    assert.equal(skipped[0].code, 'position_full');
+  });
+
+  it('still refuses someone qualified for no role on the position', () => {
+    const seats = [{ employee: person('dee', ['chef']), position: 'p2' }];
+    const { skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(skipped[0].code, 'role_mismatch');
+    assert.equal(skipped[0].forceable, true);
+  });
+
+  it('accepts a bare employee doc against a legacy single-position template', () => {
+    const legacy = { ...crew, positions: [] };
+    const { toCreate, skipped } = planPatternFill(
+      legacy,
+      [person('ada', ['bartender'])],
+      oneFriday
+    );
+    assert.equal(skipped.length, 0);
+    assert.equal(toCreate.length, 1);
+    assert.equal(toCreate[0].templatePosition, null);
+    assert.deepEqual(toCreate[0].altRoles, []);
+  });
+
+  it('skips a seat naming a position the template does not have', () => {
+    const seats = [{ employee: person('ada', ['bartender']), position: 'nope' }];
+    const { toCreate, skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(toCreate.length, 0);
+    assert.match(skipped[0].reason, /position/i);
+  });
+});
+
 test('planShiftGeneration generates a one-on/one-off cycle, ignoring daysOfWeek', () => {
   const plan = planShiftGeneration([cycleTemplate()], {
     from: '2026-08-10',

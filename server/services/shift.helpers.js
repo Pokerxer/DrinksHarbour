@@ -497,6 +497,29 @@ const employeeLabel = (e) =>
   [e?.firstName, e?.lastName].filter(Boolean).join(' ') || idOf(e?._id);
 
 /**
+ * Seats for a fill: who is going on the pattern, and in which position.
+ *
+ * Accepts a bare User doc as well as {employee, position}, because
+ * POST /api/shifts/fill shipped in f91201bb taking a flat list of employee ids
+ * and that contract must keep working. A bare entry takes the template's sole
+ * position, or null when the template is a legacy single-role one.
+ *
+ * @param {object[]} entries
+ * @param {{_id: string|null}[]} positions - from templatePositions
+ * @returns {{employee: object, position: string|null}[]}
+ */
+function normaliseSeats(entries = [], positions = []) {
+  const sole = positions.length === 1 ? positions[0]._id : null;
+  return entries.filter(Boolean).map((entry) => {
+    const isSeat = entry.employee !== undefined;
+    return {
+      employee: isSeat ? entry.employee : entry,
+      position: isSeat ? (entry.position ? idOf(entry.position) : sole) : sole,
+    };
+  });
+}
+
+/**
  * Plan the shifts to create when several people are put on one pattern.
  *
  * Where planShiftGeneration builds an OPEN roster, this fills a pattern with
@@ -512,12 +535,13 @@ const employeeLabel = (e) =>
  * Every verdict is checkAssignment's; this adds no rules of its own.
  *
  * @param {object} template
- * @param {object[]} employees - User docs (need status + employeeProfile.planning.roles)
+ * @param {object[]} seatEntries - each either a User doc (legacy, mapped to the
+ *   template's sole position) or {employee: <User doc>, position: <positionId|null>}
  * @param {{from: string, to: string, offsetMinutes?: number, existing?: object[],
  *          ctxById?: Map, force?: boolean}} opts
  * @returns {{toCreate: object[], skipped: object[]}}
  */
-function planPatternFill(template, employees = [], opts = {}) {
+function planPatternFill(template, seatEntries = [], opts = {}) {
   const {
     from,
     to,
@@ -532,10 +556,20 @@ function planPatternFill(template, employees = [], opts = {}) {
     return { toCreate: [], skipped: [{ template: plan.template, reason: plan.reason }] };
   }
 
-  // Three-part key. Two people's shifts from one template on one day are two
-  // different rows, which `template@start` alone cannot express. An open row
-  // from /generate keys as `template@start@` and so never collides with a
-  // person's row.
+  const positions = templatePositions(template);
+  if (!positions.length) {
+    return {
+      toCreate: [],
+      skipped: [{ template: plan.template, reason: 'Template has no role to fill' }],
+    };
+  }
+  const byPosition = new Map(positions.map((p) => [p._id, p]));
+  const seats = normaliseSeats(seatEntries, positions);
+
+  // Three-part key, unchanged. Two people's shifts from one template on one day
+  // are two different rows, which `template@start` alone cannot express. An
+  // open row from /generate keys as `template@start@` and so never collides
+  // with a person's row.
   const taken = new Set(
     existing
       .filter((s) => s.status !== 'cancelled')
@@ -545,14 +579,29 @@ function planPatternFill(template, employees = [], opts = {}) {
       )
   );
 
+  // How full each position already is, per instant. ONE cap in ONE place: the
+  // same want-vs-have arithmetic planShiftGeneration does, so a night cannot be
+  // staffed past its count from either entry point.
+  const filled = new Map();
+  const fillKey = (startMs, positionId) =>
+    `${idOf(template._id)}@${startMs}@${positionId || ''}`;
+  for (const s of existing) {
+    if (s.status === 'cancelled') continue;
+    const key = fillKey(
+      new Date(s.start).getTime(),
+      s.templatePosition ? idOf(s.templatePosition) : ''
+    );
+    filled.set(key, (filled.get(key) || 0) + 1);
+  }
+
   // A MUTABLE copy of each person's shifts, so a row planned earlier in this
   // batch is a conflict for the rows planned after it. Without this a template
   // with endDayOffset >= 1 would write overlapping shifts for one person on
   // consecutive worked days — neither exists in the database yet when the other
   // is judged, and checkAssignment only sees the context it is handed.
   const batchShifts = new Map();
-  for (const e of employees) {
-    const id = idOf(e?._id);
+  for (const seat of seats) {
+    const id = idOf(seat.employee?._id);
     batchShifts.set(id, [...contextFor(ctxById, id).shifts]);
   }
 
@@ -573,15 +622,23 @@ function planPatternFill(template, employees = [], opts = {}) {
       continue;
     }
 
-    const candidate = {
-      role: idOf(template.role),
-      start: window.start,
-      end: window.end,
-    };
-
-    for (const employee of employees) {
+    for (const seat of seats) {
+      const employee = seat.employee;
       const id = idOf(employee?._id);
       const name = employeeLabel(employee);
+
+      const pos = byPosition.get(seat.position);
+      if (!pos) {
+        skipped.push({
+          employee: id,
+          name,
+          date,
+          code: 'no_position',
+          reason: 'That position is not on this shift pattern',
+          forceable: false,
+        });
+        continue;
+      }
 
       const key = `${idOf(template._id)}@${window.start.getTime()}@${id}`;
       if (taken.has(key)) {
@@ -595,6 +652,33 @@ function planPatternFill(template, employees = [], opts = {}) {
         });
         continue;
       }
+
+      // A null-id position is templatePositions's LEGACY fallback — a template
+      // with no real `positions` array, standing in for the old bare `role`.
+      // Its count:1 is right for planShiftGeneration (one open slot to
+      // generate), but it is not a seat cap here: the pre-crew fill contract
+      // (f91201bb) always let several named people cover one legacy role on
+      // the same day, and that must keep working. Only a REAL, explicitly
+      // defined position enforces a capacity.
+      const capKey = fillKey(window.start.getTime(), pos._id);
+      if (pos._id && (filled.get(capKey) || 0) >= pos.count) {
+        skipped.push({
+          employee: id,
+          name,
+          date,
+          code: 'position_full',
+          reason: `That position is already filled ${pos.count} time${pos.count === 1 ? '' : 's'} — raise its count to add another`,
+          forceable: false,
+        });
+        continue;
+      }
+
+      const candidate = {
+        role: pos.roles[0],
+        altRoles: pos.roles.slice(1),
+        start: window.start,
+        end: window.end,
+      };
 
       const verdict = checkAssignment(candidate, employee, {
         shifts: batchShifts.get(id) || [],
@@ -615,11 +699,14 @@ function planPatternFill(template, employees = [], opts = {}) {
       }
 
       taken.add(key);
+      filled.set(capKey, (filled.get(capKey) || 0) + 1);
       toCreate.push({
         template: idOf(template._id),
+        templatePosition: pos._id,
         date,
         employee: id,
-        role: idOf(template.role),
+        role: pos.roles[0],
+        altRoles: pos.roles.slice(1),
         department: template.department ? idOf(template.department) : null,
         start: window.start,
         end: window.end,
@@ -1322,6 +1409,7 @@ module.exports = {
   patternDates,
   planShiftGeneration,
   planPatternFill,
+  normaliseSeats,
   findOverlaps,
   overlapsTimeOff,
   checkAssignment,
