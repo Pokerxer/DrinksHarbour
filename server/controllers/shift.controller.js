@@ -651,6 +651,10 @@ const updateShift = asyncHandler(async (req, res) => {
             newVerdict.allowed.map((a) => ({
               employee: a.employee._id,
               role: built.value.role ?? target.role,
+              // Same set the candidate was judged against. A row spawned off a
+              // "Bartender or Barback" shift that accepted only Bartender would
+              // refuse its own holder as role_mismatch on the very next edit.
+              altRoles: built.value.altRoles ?? target.altRoles,
               department: target.department,
               start,
               end,
