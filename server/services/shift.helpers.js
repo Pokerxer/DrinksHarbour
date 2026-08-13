@@ -744,14 +744,20 @@ function checkAssignment(shift, employee, ctx = {}) {
     };
   }
 
-  const held = (employee.employeeProfile?.planning?.roles || []).map(idOf);
-  const required = idOf(shift.role);
-  if (required && !held.includes(required)) {
+  // A shift generated from a crew position accepts several roles — "bartender
+  // OR barback" — so the test is whether the sets INTERSECT, not whether one
+  // id matches. With altRoles empty this is the old `held.includes(required)`
+  // exactly, which is what keeps every shift written before crews existed
+  // judged the way it has always been judged.
+  const held = new Set((employee.employeeProfile?.planning?.roles || []).map(idOf));
+  const accepted = [idOf(shift.role), ...(shift.altRoles || []).map(idOf)].filter(Boolean);
+  if (accepted.length && !accepted.some((r) => held.has(r))) {
+    const what = accepted.length > 1 ? 'any of the roles this shift accepts' : 'that role';
     if (!force) {
       return {
         ok: false,
         code: 'role_mismatch',
-        message: 'This employee is not marked as able to work that role',
+        message: `This employee is not marked as able to work ${what}`,
       };
     }
     warnings.push({

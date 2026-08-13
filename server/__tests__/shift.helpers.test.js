@@ -785,6 +785,72 @@ test('checkAssignment blocks over approved time off, ignoring pending requests',
   assert.strictEqual(checkAssignment(shift, employee(), { shifts: [], timeOff: pending }).ok, true);
 });
 
+describe('checkAssignment with several acceptable roles', () => {
+  const worker = (roles) => ({
+    _id: 'e1',
+    status: 'active',
+    employeeProfile: { planning: { roles } },
+  });
+  const slot = {
+    role: 'bartender',
+    altRoles: ['barback'],
+    start: new Date('2026-08-14T17:00:00Z'),
+    end: new Date('2026-08-14T21:00:00Z'),
+  };
+
+  it('accepts someone who holds only the alternative role', () => {
+    const v = checkAssignment(slot, worker(['barback']), { shifts: [], timeOff: [] });
+    assert.equal(v.ok, true);
+    assert.deepEqual(v.warnings, []);
+  });
+
+  it('accepts someone who holds the primary role', () => {
+    assert.equal(
+      checkAssignment(slot, worker(['bartender']), { shifts: [], timeOff: [] }).ok,
+      true
+    );
+  });
+
+  it('refuses someone who holds neither, and the refusal stays forceable', () => {
+    const v = checkAssignment(slot, worker(['chef']), { shifts: [], timeOff: [] });
+    assert.equal(v.ok, false);
+    assert.equal(v.code, 'role_mismatch');
+    assert.equal(FORCEABLE_CODES.has(v.code), true);
+  });
+
+  it('lets an admin force past it, with a warning', () => {
+    const v = checkAssignment(slot, worker(['chef']), {
+      shifts: [],
+      timeOff: [],
+      force: true,
+    });
+    assert.equal(v.ok, true);
+    assert.equal(v.warnings[0].code, 'role_mismatch');
+  });
+
+  it('behaves exactly as before when altRoles is absent', () => {
+    const single = { ...slot, altRoles: undefined };
+    assert.equal(checkAssignment(single, worker(['bartender']), { shifts: [], timeOff: [] }).ok, true);
+    assert.equal(checkAssignment(single, worker(['barback']), { shifts: [], timeOff: [] }).code, 'role_mismatch');
+  });
+
+  it('still reports an overlap ahead of the role check', () => {
+    const v = checkAssignment(slot, worker(['chef']), {
+      shifts: [
+        {
+          _id: 's9',
+          employee: 'e1',
+          status: 'draft',
+          start: new Date('2026-08-14T16:00:00Z'),
+          end: new Date('2026-08-14T20:00:00Z'),
+        },
+      ],
+      timeOff: [],
+    });
+    assert.equal(v.code, 'overlap');
+  });
+});
+
 // ── Roster summary ───────────────────────────────────────────────────────────
 
 test('summariseRoster counts open vs assigned and totals scheduled hours', () => {
