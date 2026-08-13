@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { PiClockCounterClockwiseDuotone } from 'react-icons/pi';
+import {
+  PiClockCounterClockwiseDuotone,
+  PiPlus,
+  PiTrash,
+} from 'react-icons/pi';
 import OrgConfigPage, {
   Field,
   FIELD,
@@ -23,6 +27,11 @@ import {
   weekdayShort,
 } from '@/app/shared/employees/shift-roster-utils';
 import {
+  templatePositions,
+  positionLabel,
+  clampPositionCount,
+} from '@/app/shared/employees/shift-position-utils';
+import {
   shiftTemplateService,
   DAY_LABELS,
   type ShiftTemplate,
@@ -38,7 +47,11 @@ import {
 
 const EMPTY: ShiftTemplateInput = {
   name: '',
+  // Superseded by `positions` below as the source of truth — kept because the
+  // server still mirrors positions[0].roles[0] onto it (TEMPLATE_POPULATE,
+  // ?role= filtering and the roster colour fallback all still read it).
   role: '',
+  positions: [{ roles: [], count: 1 }],
   department: null,
   startTime: '09:00',
   endTime: '17:00',
@@ -81,6 +94,29 @@ export default function ShiftTemplatesPage() {
   const roleNames = buildLabelMap(roles);
   const deptNames = buildLabelMap(departments);
 
+  // ── C2 guard: an untouched legacy template must stay legacy ────────────────
+  //
+  // `templatePositions` synthesizes `{_id: null, roles: [role], count: 1}` for
+  // a legacy template so the editor can open it uniformly. If that synthesized
+  // position round-trips back to the server as `positions: [{roles, count}]`
+  // (no `_id`, because there never was one), buildShiftTemplatePayload sees a
+  // real `positions` array and stores it — minting a fresh `_id` for the
+  // position since none was sent. That `_id` is the generation idempotency
+  // key (see keyOf in shift.helpers.js): every day already generated under
+  // the OLD key (`template@start@`, from `templatePosition: null`) is now
+  // orphaned, and the next generate writes a second full crew on top of it.
+  //
+  // So `positions` is sent on an update ONLY when the template already had
+  // real declared positions (round-tripping their `_id`s keeps working
+  // exactly as before), OR the admin actually edited the positions list this
+  // session. Merely opening the editor and saving something else (break
+  // minutes, colour, name) must not silently convert a legacy template.
+  const originalHasPositionsRef = useRef(false);
+  const positionsTouchedRef = useRef(false);
+  function markPositionsTouched() {
+    positionsTouchedRef.current = true;
+  }
+
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
@@ -110,34 +146,66 @@ export default function ShiftTemplatesPage() {
       : [...days, day].sort((a, b) => a - b);
   }
 
+  function toggleRole(roles: string[], id: string): string[] {
+    return roles.includes(id) ? roles.filter((r) => r !== id) : [...roles, id];
+  }
+
   return (
     <OrgConfigPage<ShiftTemplate, ShiftTemplateInput>
       title="Shift templates"
       subtitle="Repeating patterns the weekly roster is generated from."
       icon={<PiClockCounterClockwiseDuotone />}
       noun="template"
-      service={shiftTemplateService}
+      service={{
+        ...shiftTemplateService,
+        // See the C2 guard comment above `originalHasPositionsRef`. Only this
+        // wrapped `update` decides whether `positions` rides along; `create`
+        // is untouched — a brand-new template always has positions to send.
+        update: (id, input, token) => {
+          const keepPositions =
+            originalHasPositionsRef.current || positionsTouchedRef.current;
+          if (keepPositions)
+            return shiftTemplateService.update(id, input, token);
+          const { positions: _omit, ...withoutPositions } = input;
+          return shiftTemplateService.update(id, withoutPositions, token);
+        },
+      }}
       emptyDraft={EMPTY}
       sorts={SORTS}
-      toDraft={(t) => ({
-        name: t.name,
-        role: refId(t.role),
-        department: refId(t.department) || null,
-        startTime: t.startTime,
-        endTime: t.endTime,
-        endDayOffset: t.endDayOffset ?? 0,
-        breakMinutes: t.breakMinutes,
-        recurrence: t.recurrence ?? 'weekly',
-        daysOfWeek: t.daysOfWeek ?? [],
-        // A weekly template has no stored cycle, so the form falls back to the
-        // same starting rotation a new template offers.
-        cycleLength: t.cycleLength ?? 2,
-        cycleDays: t.cycleDays?.length ? t.cycleDays : [0],
-        anchorDate: t.anchorDate ?? null,
-        color: t.color ?? '',
-        note: t.note ?? '',
-        isActive: t.isActive,
-      })}
+      toDraft={(t) => {
+        // A fresh edit session: the touch tracker starts clean, and whether
+        // this template already had real crew positions is fixed for the
+        // whole session (re-crewing it mid-session is itself "touched").
+        originalHasPositionsRef.current =
+          Array.isArray(t.positions) && t.positions.length > 0;
+        positionsTouchedRef.current = false;
+        return {
+          name: t.name,
+          role: refId(t.role),
+          // The normaliser turns a legacy single-role template into one position
+          // so it opens the same way a template already using positions does.
+          positions: templatePositions(t).map((p) => ({
+            _id: p._id ?? undefined,
+            roles: p.roles,
+            count: p.count,
+          })),
+          department: refId(t.department) || null,
+          startTime: t.startTime,
+          endTime: t.endTime,
+          endDayOffset: t.endDayOffset ?? 0,
+          breakMinutes: t.breakMinutes,
+          recurrence: t.recurrence ?? 'weekly',
+          daysOfWeek: t.daysOfWeek ?? [],
+          // A weekly template has no stored cycle, so the form falls back to
+          // the same starting rotation a new template offers.
+          cycleLength: t.cycleLength ?? 2,
+          cycleDays: t.cycleDays?.length ? t.cycleDays : [0],
+          anchorDate: t.anchorDate ?? null,
+          color: t.color ?? '',
+          note: t.note ?? '',
+          isActive: t.isActive,
+        };
+      }}
       describeDelete={(t) =>
         t.shiftCount > 0
           ? `${t.shiftCount} upcoming ${
@@ -159,7 +227,10 @@ export default function ShiftTemplatesPage() {
                 <p className="text-xs text-gray-400">
                   {templateRepeatLabel(t)}
                   {t.recurrence === 'cycle' && t.anchorDate && (
-                    <span className="text-gray-300"> · from {t.anchorDate}</span>
+                    <span className="text-gray-300">
+                      {' '}
+                      · from {t.anchorDate}
+                    </span>
                   )}
                 </p>
               </div>
@@ -179,7 +250,13 @@ export default function ShiftTemplatesPage() {
             </span>
           ),
         },
-        { header: 'Role', render: (t) => labelFor(refId(t.role), roleNames) },
+        {
+          header: 'Positions',
+          render: (t) =>
+            templatePositions(t)
+              .map((p) => positionLabel(p, roleNames))
+              .join(', '),
+        },
         {
           header: 'Department',
           render: (t) => labelFor(refId(t.department), deptNames),
@@ -218,19 +295,101 @@ export default function ShiftTemplatesPage() {
             />
           </Field>
 
-          <Field label="Role required">
-            <select
-              className={FIELD}
-              value={draft.role}
-              onChange={(e) => patch({ role: e.target.value })}
-            >
-              <option value="">Choose a role…</option>
-              {roles.map((r) => (
-                <option key={r._id} value={r._id}>
-                  {r.name}
-                </option>
+          <Field label="Positions this shift needs">
+            <div className="space-y-2">
+              {(draft.positions ?? []).map((pos, i) => (
+                <div key={i} className="rounded-xl border border-gray-200 p-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {roles.map((r) => {
+                      const on = pos.roles.includes(r._id);
+                      return (
+                        <button
+                          key={r._id}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => {
+                            markPositionsTouched();
+                            patch({
+                              positions: (draft.positions ?? []).map((p, j) =>
+                                j === i
+                                  ? { ...p, roles: toggleRole(p.roles, r._id) }
+                                  : p
+                              ),
+                            });
+                          }}
+                          className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                            on
+                              ? 'bg-[#b20202] text-white'
+                              : 'border border-gray-200 bg-white text-gray-500 hover:text-gray-900'
+                          }`}
+                        >
+                          {r.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2.5 flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                      Needed
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                        value={pos.count}
+                        onChange={(e) => {
+                          markPositionsTouched();
+                          const count = clampPositionCount(e.target.value);
+                          patch({
+                            positions: (draft.positions ?? []).map((p, j) =>
+                              j === i ? { ...p, count } : p
+                            ),
+                          });
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={(draft.positions ?? []).length === 1}
+                      onClick={() => {
+                        // Guarded in state as well as by `disabled`: a template
+                        // with no positions has nothing to generate, and the
+                        // disabled attribute is one refactor away from gone.
+                        const positions = draft.positions ?? [];
+                        if (positions.length <= 1) return;
+                        markPositionsTouched();
+                        patch({
+                          positions: positions.filter((_, j) => j !== i),
+                        });
+                      }}
+                      title="Remove position"
+                      className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                    >
+                      <PiTrash className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
               ))}
-            </select>
+              <button
+                type="button"
+                onClick={() => {
+                  markPositionsTouched();
+                  patch({
+                    positions: [
+                      ...(draft.positions ?? []),
+                      { roles: [], count: 1 },
+                    ],
+                  });
+                }}
+                className="flex items-center gap-1 text-xs font-semibold text-[#b20202] hover:underline"
+              >
+                <PiPlus className="h-3.5 w-3.5" /> Add a position
+              </button>
+              <p className="text-xs text-gray-400">
+                Pick every role that can cover a position — someone holding any
+                of them qualifies. The first one picked is shown on the roster.
+              </p>
+            </div>
           </Field>
 
           <Field label="Department" hint="(optional)">
@@ -279,12 +438,16 @@ export default function ShiftTemplatesPage() {
           </Field>
           {(draft.endDayOffset ?? 0) > 0 ? (
             <p className="-mt-2 text-xs text-amber-600">
-              This shift ends on a different calendar day ({(draft.endDayOffset ?? 0)} day{(draft.endDayOffset ?? 0) > 1 ? 's' : ''} later).
+              This shift ends on a different calendar day (
+              {draft.endDayOffset ?? 0} day
+              {(draft.endDayOffset ?? 0) > 1 ? 's' : ''} later).
             </p>
-          ) : draft.endTime <= draft.startTime && (
-            <p className="-mt-2 text-xs text-amber-600">
-              This shift runs past midnight and ends the following day.
-            </p>
+          ) : (
+            draft.endTime <= draft.startTime && (
+              <p className="-mt-2 text-xs text-amber-600">
+                This shift runs past midnight and ends the following day.
+              </p>
+            )
           )}
 
           <Field label="Unpaid break" hint="(minutes)">
@@ -341,7 +504,9 @@ export default function ShiftTemplatesPage() {
                       key={label}
                       type="button"
                       aria-pressed={on}
-                      onClick={() => patch({ daysOfWeek: toggleDay(draft, day) })}
+                      onClick={() =>
+                        patch({ daysOfWeek: toggleDay(draft, day) })
+                      }
                       className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                         on
                           ? 'bg-[#b20202] text-white'
@@ -408,15 +573,14 @@ export default function ShiftTemplatesPage() {
                 </p>
               </Field>
 
-              <Field
-                label="Cycle starts on"
-                hint="(day 1 of the rotation)"
-              >
+              <Field label="Cycle starts on" hint="(day 1 of the rotation)">
                 <input
                   type="date"
                   className={FIELD}
                   value={draft.anchorDate ?? ''}
-                  onChange={(e) => patch({ anchorDate: e.target.value || null })}
+                  onChange={(e) =>
+                    patch({ anchorDate: e.target.value || null })
+                  }
                 />
               </Field>
 
@@ -502,7 +666,11 @@ export default function ShiftTemplatesPage() {
         </>
       )}
       validate={(d) => {
-        if (!d.role) return 'Choose the role this shift requires';
+        if (!d.positions?.length)
+          return 'Add at least one position this shift needs';
+        if (d.positions.some((p) => !p.roles.length)) {
+          return 'Every position needs at least one role that can cover it';
+        }
         if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(d.startTime))
           return 'Start time must be like 09:00';
         if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(d.endTime))

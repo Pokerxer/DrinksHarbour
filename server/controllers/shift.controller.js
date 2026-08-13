@@ -32,6 +32,7 @@ const {
   parseRosterRange,
   clampPublishRange,
   planShiftGeneration,
+  reconcilePositionIds,
   checkAssignment,
   summariseRoster,
   canTransitionShift,
@@ -52,11 +53,13 @@ const DUPLICATE_KEY = 11000;
 const TEMPLATE_POPULATE = [
   { path: 'role', select: 'name color' },
   { path: 'department', select: 'name color' },
+  { path: 'positions.roles', select: 'name color' },
 ];
 
 const SHIFT_POPULATE = [
   { path: 'employee', select: 'firstName lastName email avatar' },
   { path: 'role', select: 'name color' },
+  { path: 'altRoles', select: 'name color' },
   { path: 'department', select: 'name color' },
   { path: 'template', select: 'name color' },
 ];
@@ -249,6 +252,27 @@ const updateTemplate = asyncHandler(async (req, res) => {
   const built = buildShiftTemplatePayload(req.body, { isUpdate: true });
   if (!built.ok) return badRequest(res, built.message);
 
+  // Positions carry the generation idempotency handle (see `keyOf` in
+  // shift.helpers.js), so an edit must keep the _id of a position that is
+  // still recognisably the SAME one. Matching is by IDENTITY, never by array
+  // index: removing a non-trailing position shifts every index after it, and
+  // an index match would silently re-stamp a surviving position with a
+  // removed one's _id — corrupting its generation count instead of the
+  // removed position's. `built.value.positions` was already validated by
+  // buildShiftTemplatePayload, which preserves any `_id` the body sent (or
+  // rejects a malformed one); here that _id is trusted only if it still names
+  // a position on the CURRENTLY STORED template (`row`, loaded above and not
+  // yet mutated) — an unrecognised _id is dropped so a caller cannot graft
+  // another template's position onto this one, and Mongoose mints a fresh one
+  // for it instead.
+  // Which position _ids survive this edit decides whether the template keeps
+  // its generated roster or re-keys and duplicates it, so the rule lives in
+  // shift.helpers.js where it is unit-tested — `row` is the CURRENTLY STORED
+  // template, loaded above and not yet mutated.
+  if (built.value.positions) {
+    built.value.positions = reconcilePositionIds(row.positions, built.value.positions);
+  }
+
   Object.assign(row, built.value);
   try {
     await row.save();
@@ -358,7 +382,11 @@ const listShifts = asyncHandler(async (req, res) => {
 
   const filter = { tenant: tenantId, start: { $gte: range.start, $lt: range.end } };
   if (isObjectIdLike(req.query.department)) filter.department = req.query.department;
-  if (isObjectIdLike(req.query.role)) filter.role = req.query.role;
+  // "Show me the server shifts" must find a shift that accepts server as an
+  // alternative, not only one where server is the primary.
+  if (isObjectIdLike(req.query.role)) {
+    filter.$or = [{ role: req.query.role }, { altRoles: req.query.role }];
+  }
   if (isObjectIdLike(req.query.employee)) filter.employee = req.query.employee;
   // `?employee=open` is the open-shift lane, which is a null ref rather than an
   // id — the one filter value that cannot be expressed as an ObjectId.
@@ -523,7 +551,17 @@ const updateShift = asyncHandler(async (req, res) => {
     // ── The fan-out edit ─────────────────────────────────────────────────────
     // The edited row keeps its identity and the newcomers get rows of their own.
     const bind = bindEditedAssignment(row.employee, fan.ids);
-    const candidate = { role: built.value.role ?? row.role, start, end };
+    // altRoles falls back to the shift's OWN stored value, not to nothing — a
+    // crew shift generated for "Bartender or Barback" must keep accepting a
+    // barback on every subsequent edit, not just the ones that happen to
+    // resend altRoles. checkAssignment is the only judge of role fit; this is
+    // just handing it the full accepted set.
+    const candidate = {
+      role: built.value.role ?? row.role,
+      altRoles: built.value.altRoles ?? row.altRoles,
+      start,
+      end,
+    };
 
     // `excludeId` drops the row being edited from EVERY candidate's overlap
     // query. Only the person who currently holds it could ever match it, and for
@@ -613,6 +651,10 @@ const updateShift = asyncHandler(async (req, res) => {
             newVerdict.allowed.map((a) => ({
               employee: a.employee._id,
               role: built.value.role ?? target.role,
+              // Same set the candidate was judged against. A row spawned off a
+              // "Bartender or Barback" shift that accepted only Bartender would
+              // refuse its own holder as role_mismatch on the very next edit.
+              altRoles: built.value.altRoles ?? target.altRoles,
               department: target.department,
               start,
               end,
@@ -665,7 +707,14 @@ const updateShift = asyncHandler(async (req, res) => {
 
   let warnings = [];
   if (employee && rechecked && live) {
-    const candidate = { role: built.value.role ?? row.role, start, end, _id: row._id };
+    // Same altRoles fallback as the fan-out path above.
+    const candidate = {
+      role: built.value.role ?? row.role,
+      altRoles: built.value.altRoles ?? row.altRoles,
+      start,
+      end,
+      _id: row._id,
+    };
     const ctx = await assignmentContext(tenantId, employee, { start, end }, row._id);
     const verdict = checkAssignment(candidate, ctx.employee, {
       shifts: ctx.shifts,
@@ -699,6 +748,14 @@ const shiftAvailability = asyncHandler(async (req, res) => {
   if (!isObjectIdLike(req.body.role)) {
     return badRequest(res, 'Choose the role this shift needs');
   }
+  // Optional: the OTHER roles this shift accepts. A crew position generated
+  // as "Bartender or Barback" must widen the picker the same way it widens
+  // the save-time check — without this the picker blocks exactly the people
+  // /fill would happily seat, and force becomes the only way through.
+  const altRolesRaw = Array.isArray(req.body.altRoles) ? req.body.altRoles : [];
+  if (!altRolesRaw.every(isObjectIdLike)) {
+    return badRequest(res, 'altRoles must be a list of valid ids');
+  }
   const times = validateShiftTimes(req.body.start, req.body.end);
   if (!times.ok) return badRequest(res, times.message);
 
@@ -726,7 +783,12 @@ const shiftAvailability = asyncHandler(async (req, res) => {
   // force:false always — this answers "is anything in the way?", and forcing is
   // a decision the admin makes afterwards, from the `forceable` flag.
   const { allowed, blocked } = judgeAssignments(
-    { role: req.body.role, ...window, ...(excludeId ? { _id: excludeId } : {}) },
+    {
+      role: req.body.role,
+      altRoles: altRolesRaw,
+      ...window,
+      ...(excludeId ? { _id: excludeId } : {}),
+    },
     candidates,
     byId,
     { force: false }
@@ -807,7 +869,7 @@ const generateShifts = asyncHandler(async (req, res) => {
     template: { $in: templates.map((t) => t._id) },
     start: { $gte: range.start, $lt: range.end },
   })
-    .select('_id template start status')
+    .select('_id template templatePosition start status')
     .lean();
 
   const { toCreate, skipped } = planShiftGeneration(templates, {
@@ -859,9 +921,20 @@ const fillPattern = asyncHandler(async (req, res) => {
     return badRequest(res, 'Choose a shift pattern to fill from');
   }
 
-  const employeeIds = Array.isArray(req.body.employees)
-    ? [...new Set(req.body.employees.filter(isObjectIdLike).map(String))]
-    : [];
+  // Seats: {employee, position}. A bare id is still accepted — f91201bb shipped
+  // this endpoint taking a flat list and planPatternFill.normaliseSeats maps a
+  // bare entry onto the template's sole position.
+  const rawSeats = Array.isArray(req.body.employees) ? req.body.employees : [];
+  const seatSpecs = [];
+  const seen = new Set();
+  for (const raw of rawSeats) {
+    const employeeId = isObjectIdLike(raw) ? String(raw) : String(raw?.employee ?? '');
+    if (!isObjectIdLike(employeeId) || seen.has(employeeId)) continue;
+    seen.add(employeeId);
+    const position = isObjectIdLike(raw?.position) ? String(raw.position) : null;
+    seatSpecs.push({ employeeId, position });
+  }
+  const employeeIds = seatSpecs.map((s) => s.employeeId);
   if (!employeeIds.length) {
     return badRequest(res, 'Choose at least one employee to put on this pattern');
   }
@@ -915,7 +988,7 @@ const fillPattern = asyncHandler(async (req, res) => {
     template: template._id,
     start: { $gte: range.start, $lt: range.end },
   })
-    .select('_id template employee start status')
+    .select('_id template templatePosition employee start status')
     .lean();
 
   // Only the employees who actually resolved — assignmentContexts drops deleted
@@ -925,7 +998,12 @@ const fillPattern = asyncHandler(async (req, res) => {
     .filter(Boolean);
   const missing = employeeIds.filter((id) => !ctxById.get(id)?.employee);
 
-  const { toCreate, skipped } = planPatternFill(template, employees, {
+  const employeeById = new Map(employees.map((e) => [String(e._id), e]));
+  const seats = seatSpecs
+    .filter((s) => employeeById.has(s.employeeId))
+    .map((s) => ({ employee: employeeById.get(s.employeeId), position: s.position }));
+
+  const { toCreate, skipped } = planPatternFill(template, seats, {
     from: range.from,
     to: range.to,
     offsetMinutes,

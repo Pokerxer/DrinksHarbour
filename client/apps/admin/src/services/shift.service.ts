@@ -44,10 +44,31 @@ export interface RoleRef {
   color?: string;
 }
 
+/**
+ * One slot in a template's crew: `count` open shifts, each accepting any of
+ * `roles`. Mirrors the `positions` subdocument on the server's ShiftTemplate
+ * model — `_id` is load-bearing there (the generation idempotency handle) so
+ * it is never optional here either.
+ */
+export interface ShiftTemplatePosition {
+  _id: string;
+  roles: Ref<RoleRef>[];
+  count: number;
+}
+
+/** A seat on a fill: who, and in which template position. */
+export interface FillSeat {
+  employee: string;
+  position: string | null;
+}
+
 export interface ShiftTemplate {
   _id: string;
   name: string;
   role: Ref<RoleRef>;
+  /** The crew this shift needs. Empty means the legacy single-role shape —
+   * see shift-position-utils.templatePositions for the normalisation. */
+  positions?: ShiftTemplatePosition[];
   department?: Ref<{ _id: string; name: string; color?: string }>;
   /** Local wall clock 'HH:MM'. An endTime <= startTime crosses midnight. */
   startTime: string;
@@ -76,6 +97,15 @@ export interface ShiftTemplate {
 export interface ShiftTemplateInput {
   name: string;
   role: string;
+  /**
+   * The crew this shift needs. `_id` is optional and load-bearing: it is the
+   * generation idempotency handle — the server matches an updated template's
+   * positions BY IDENTITY, keeping an `_id` it recognises and minting a fresh
+   * one otherwise. Omit it for a position the admin has just added; send back
+   * every `_id` the server gave you for the rest, or every already-generated
+   * day for that position is orphaned and the next generate duplicates it.
+   */
+  positions?: { _id?: string; roles: string[]; count: number }[];
   department?: string | null;
   startTime: string;
   endTime: string;
@@ -97,6 +127,10 @@ export interface Shift {
   /** null = an open shift nobody has been assigned to yet. */
   employee: Ref<PersonRef>;
   role: Ref<RoleRef>;
+  /** Other roles this shift accepts beyond `role`. Empty = single-role. */
+  altRoles?: Ref<RoleRef>[];
+  /** Which template position this row fills. Null for a hand-made shift. */
+  templatePosition?: string | null;
   department?: Ref<{ _id: string; name: string; color?: string }>;
   start: string;
   end: string;
@@ -416,6 +450,8 @@ export const shiftService = {
   async availability(
     input: {
       role: string;
+      /** The OTHER roles this shift accepts — a crew position's roles[1:]. */
+      altRoles?: string[];
       start: string;
       end: string;
       excludeId?: string | null;
@@ -470,7 +506,8 @@ export const shiftService = {
   async fill(
     input: {
       templateId: string;
-      employees: string[];
+      /** Seats. Bare ids are still accepted by the server for compatibility. */
+      employees: FillSeat[];
       from: string;
       to: string;
       force?: boolean;

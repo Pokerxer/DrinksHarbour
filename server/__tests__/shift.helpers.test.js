@@ -1,5 +1,6 @@
 // server/__tests__/shift.helpers.test.js
 const test = require('node:test');
+const { describe, it } = test;
 const assert = require('node:assert');
 const {
   SHIFT_STATUSES,
@@ -10,6 +11,7 @@ const {
   shiftDurationMinutes,
   eachDateInRange,
   planShiftGeneration,
+  reconcilePositionIds,
   patternDates,
   planPatternFill,
   normaliseCycle,
@@ -28,6 +30,7 @@ const {
   clampPublishRange,
   fillContextWindow,
   MAX_FILL_ROWS,
+  templatePositions,
 } = require('../services/shift.helpers');
 
 const ROLE = '507f1f77bcf86cd799439011';
@@ -548,6 +551,110 @@ test('planPatternFill refuses the whole template when it has no worked days', ()
   assert.strictEqual(plan.skipped[0].reason, 'Template has no worked days in its cycle');
 });
 
+describe('planPatternFill with crew positions', () => {
+  const crew = {
+    _id: 't1',
+    name: 'Friday night',
+    role: 'bartender',
+    startTime: '18:00',
+    endTime: '22:00',
+    recurrence: 'weekly',
+    daysOfWeek: [5],
+    positions: [
+      { _id: 'p1', roles: ['bartender', 'barback'], count: 1 },
+      { _id: 'p2', roles: ['server', 'runner'], count: 2 },
+    ],
+  };
+  const oneFriday = { from: '2026-08-14', to: '2026-08-14', offsetMinutes: 60 };
+  const person = (id, roles) => ({
+    _id: id,
+    firstName: id,
+    lastName: 'Test',
+    status: 'active',
+    employeeProfile: { planning: { roles } },
+  });
+
+  it('seats each person on the position they were given', () => {
+    const seats = [
+      { employee: person('ada', ['bartender']), position: 'p1' },
+      { employee: person('ben', ['server']), position: 'p2' },
+      { employee: person('cid', ['runner']), position: 'p2' },
+    ];
+    const { toCreate, skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(skipped.length, 0);
+    assert.equal(toCreate.length, 3);
+    assert.deepEqual(
+      toCreate.map((r) => [r.employee, r.templatePosition, r.role]),
+      [
+        ['ada', 'p1', 'bartender'],
+        ['ben', 'p2', 'server'],
+        ['cid', 'p2', 'server'],
+      ]
+    );
+    assert.deepEqual(toCreate[2].altRoles, ['runner']);
+  });
+
+  it('accepts someone who holds only the position alternative role', () => {
+    const seats = [{ employee: person('cid', ['runner']), position: 'p2' }];
+    const { toCreate, skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(skipped.length, 0);
+    assert.equal(toCreate.length, 1);
+  });
+
+  it('refuses a seat on a position that is already full', () => {
+    const seats = [
+      { employee: person('ada', ['bartender']), position: 'p1' },
+      { employee: person('ben', ['barback']), position: 'p1' },
+    ];
+    const { toCreate, skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(toCreate.length, 1);
+    assert.equal(skipped.length, 1);
+    assert.equal(skipped[0].code, 'position_full');
+    assert.equal(skipped[0].forceable, false);
+    assert.equal(skipped[0].employee, 'ben');
+  });
+
+  it('counts rows already on the position toward the cap', () => {
+    const seats = [{ employee: person('ada', ['bartender']), position: 'p1' }];
+    const start = planPatternFill(crew, seats, oneFriday).toCreate[0].start;
+    const { toCreate, skipped } = planPatternFill(crew, seats, {
+      ...oneFriday,
+      existing: [
+        { template: 't1', templatePosition: 'p1', employee: 'zoe', start, status: 'draft' },
+      ],
+    });
+    assert.equal(toCreate.length, 0);
+    assert.equal(skipped[0].code, 'position_full');
+  });
+
+  it('still refuses someone qualified for no role on the position', () => {
+    const seats = [{ employee: person('dee', ['chef']), position: 'p2' }];
+    const { skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(skipped[0].code, 'role_mismatch');
+    assert.equal(skipped[0].forceable, true);
+  });
+
+  it('accepts a bare employee doc against a legacy single-position template', () => {
+    const legacy = { ...crew, positions: [] };
+    const { toCreate, skipped } = planPatternFill(
+      legacy,
+      [person('ada', ['bartender'])],
+      oneFriday
+    );
+    assert.equal(skipped.length, 0);
+    assert.equal(toCreate.length, 1);
+    assert.equal(toCreate[0].templatePosition, null);
+    assert.deepEqual(toCreate[0].altRoles, []);
+  });
+
+  it('skips a seat naming a position the template does not have', () => {
+    const seats = [{ employee: person('ada', ['bartender']), position: 'nope' }];
+    const { toCreate, skipped } = planPatternFill(crew, seats, oneFriday);
+    assert.equal(toCreate.length, 0);
+    assert.match(skipped[0].reason, /position/i);
+  });
+});
+
 test('planShiftGeneration generates a one-on/one-off cycle, ignoring daysOfWeek', () => {
   const plan = planShiftGeneration([cycleTemplate()], {
     from: '2026-08-10',
@@ -781,6 +888,72 @@ test('checkAssignment blocks over approved time off, ignoring pending requests',
   // Pending is not yet a commitment.
   const pending = [{ ...approved[0], status: 'pending' }];
   assert.strictEqual(checkAssignment(shift, employee(), { shifts: [], timeOff: pending }).ok, true);
+});
+
+describe('checkAssignment with several acceptable roles', () => {
+  const worker = (roles) => ({
+    _id: 'e1',
+    status: 'active',
+    employeeProfile: { planning: { roles } },
+  });
+  const slot = {
+    role: 'bartender',
+    altRoles: ['barback'],
+    start: new Date('2026-08-14T17:00:00Z'),
+    end: new Date('2026-08-14T21:00:00Z'),
+  };
+
+  it('accepts someone who holds only the alternative role', () => {
+    const v = checkAssignment(slot, worker(['barback']), { shifts: [], timeOff: [] });
+    assert.equal(v.ok, true);
+    assert.deepEqual(v.warnings, []);
+  });
+
+  it('accepts someone who holds the primary role', () => {
+    assert.equal(
+      checkAssignment(slot, worker(['bartender']), { shifts: [], timeOff: [] }).ok,
+      true
+    );
+  });
+
+  it('refuses someone who holds neither, and the refusal stays forceable', () => {
+    const v = checkAssignment(slot, worker(['chef']), { shifts: [], timeOff: [] });
+    assert.equal(v.ok, false);
+    assert.equal(v.code, 'role_mismatch');
+    assert.equal(FORCEABLE_CODES.has(v.code), true);
+  });
+
+  it('lets an admin force past it, with a warning', () => {
+    const v = checkAssignment(slot, worker(['chef']), {
+      shifts: [],
+      timeOff: [],
+      force: true,
+    });
+    assert.equal(v.ok, true);
+    assert.equal(v.warnings[0].code, 'role_mismatch');
+  });
+
+  it('behaves exactly as before when altRoles is absent', () => {
+    const single = { ...slot, altRoles: undefined };
+    assert.equal(checkAssignment(single, worker(['bartender']), { shifts: [], timeOff: [] }).ok, true);
+    assert.equal(checkAssignment(single, worker(['barback']), { shifts: [], timeOff: [] }).code, 'role_mismatch');
+  });
+
+  it('still reports an overlap ahead of the role check', () => {
+    const v = checkAssignment(slot, worker(['chef']), {
+      shifts: [
+        {
+          _id: 's9',
+          employee: 'e1',
+          status: 'draft',
+          start: new Date('2026-08-14T16:00:00Z'),
+          end: new Date('2026-08-14T20:00:00Z'),
+        },
+      ],
+      timeOff: [],
+    });
+    assert.equal(v.code, 'overlap');
+  });
 });
 
 // ── Roster summary ───────────────────────────────────────────────────────────
@@ -1140,4 +1313,275 @@ test('fillContextWindow treats a missing endDayOffset as 0', () => {
   const range = { start: new Date('2026-09-01T00:00:00.000Z'), end: new Date('2026-09-08T00:00:00.000Z') };
   const got = fillContextWindow(range, template({}));
   assert.strictEqual(got.end.getTime(), new Date('2026-09-09T00:00:00.000Z').getTime());
+});
+
+// ── templatePositions ────────────────────────────────────────────────────────
+
+describe('templatePositions', () => {
+  it('normalises a legacy single-role template into one position of count 1', () => {
+    const out = templatePositions({ role: 'r1' });
+    assert.deepEqual(out, [{ _id: null, roles: ['r1'], count: 1 }]);
+  });
+
+  it('returns the template positions when it has them', () => {
+    const out = templatePositions({
+      role: 'r1',
+      positions: [
+        { _id: 'p1', roles: ['r1', 'r2'], count: 1 },
+        { _id: 'p2', roles: ['r3'], count: 2 },
+      ],
+    });
+    assert.deepEqual(out, [
+      { _id: 'p1', roles: ['r1', 'r2'], count: 1 },
+      { _id: 'p2', roles: ['r3'], count: 2 },
+    ]);
+  });
+
+  it('drops a position with no roles rather than emitting a role-less shift', () => {
+    const out = templatePositions({
+      role: 'r1',
+      positions: [{ _id: 'p1', roles: [], count: 3 }, { _id: 'p2', roles: ['r3'], count: 1 }],
+    });
+    assert.deepEqual(out, [{ _id: 'p2', roles: ['r3'], count: 1 }]);
+  });
+
+  it('floors a bad count to 1 rather than generating nothing', () => {
+    const out = templatePositions({ positions: [{ _id: 'p1', roles: ['r1'], count: 0 }] });
+    assert.equal(out[0].count, 1);
+  });
+
+  it('returns nothing for a template with neither positions nor a role', () => {
+    assert.deepEqual(templatePositions({}), []);
+  });
+});
+
+// ── planShiftGeneration with positions ──────────────────────────────────────
+
+describe('planShiftGeneration with positions', () => {
+  const crew = {
+    _id: 't1',
+    name: 'Friday night',
+    role: 'bartender',
+    startTime: '18:00',
+    endTime: '22:00',
+    recurrence: 'weekly',
+    daysOfWeek: [5], // Friday
+    positions: [
+      { _id: 'p1', roles: ['bartender', 'barback'], count: 1 },
+      { _id: 'p2', roles: ['server', 'runner'], count: 2 },
+    ],
+  };
+  const oneFriday = { from: '2026-08-14', to: '2026-08-14', offsetMinutes: 60 };
+
+  it('emits one row per required position per worked day', () => {
+    const { toCreate } = planShiftGeneration([crew], oneFriday);
+    assert.equal(toCreate.length, 3);
+    assert.deepEqual(
+      toCreate.map((r) => r.role),
+      ['bartender', 'server', 'server']
+    );
+    assert.deepEqual(toCreate[0].altRoles, ['barback']);
+    assert.deepEqual(toCreate[1].altRoles, ['runner']);
+    assert.deepEqual(
+      toCreate.map((r) => r.templatePosition),
+      ['p1', 'p2', 'p2']
+    );
+  });
+
+  it('leaves every generated row open and draft', () => {
+    const { toCreate } = planShiftGeneration([crew], oneFriday);
+    assert.ok(toCreate.every((r) => r.employee === null));
+    assert.ok(toCreate.every((r) => r.status === 'draft'));
+  });
+
+  // The idempotency guarantee, four ways.
+  const generated = () =>
+    planShiftGeneration([crew], oneFriday).toCreate.map((r) => ({
+      template: 't1',
+      templatePosition: r.templatePosition,
+      start: r.start,
+      status: 'draft',
+    }));
+
+  it('creates nothing on a re-run and reports every skip', () => {
+    const { toCreate, skipped } = planShiftGeneration([crew], {
+      ...oneFriday,
+      existing: generated(),
+    });
+    assert.equal(toCreate.length, 0);
+    assert.equal(skipped.length, 2); // one per position, not one per row
+  });
+
+  it('creates nothing after the positions are REORDERED', () => {
+    const reordered = { ...crew, positions: [crew.positions[1], crew.positions[0]] };
+    const { toCreate } = planShiftGeneration([reordered], {
+      ...oneFriday,
+      existing: generated(),
+    });
+    assert.equal(toCreate.length, 0);
+  });
+
+  it("creates nothing after a position's ROLES are edited", () => {
+    // The regression templatePosition exists for. A key derived from the role
+    // SET rekeys here and duplicates the whole already-generated range.
+    const widened = {
+      ...crew,
+      positions: [
+        { _id: 'p1', roles: ['bartender', 'barback', 'manager'], count: 1 },
+        { _id: 'p2', roles: ['server', 'runner'], count: 2 },
+      ],
+    };
+    const { toCreate } = planShiftGeneration([widened], {
+      ...oneFriday,
+      existing: generated(),
+    });
+    assert.equal(toCreate.length, 0);
+  });
+
+  it('tops up by exactly the difference when a count is raised', () => {
+    const bigger = {
+      ...crew,
+      positions: [crew.positions[0], { _id: 'p2', roles: ['server', 'runner'], count: 3 }],
+    };
+    const { toCreate } = planShiftGeneration([bigger], {
+      ...oneFriday,
+      existing: generated(),
+    });
+    assert.equal(toCreate.length, 1);
+    assert.equal(toCreate[0].templatePosition, 'p2');
+  });
+
+  it('ignores cancelled rows when counting what already exists', () => {
+    const existing = generated().map((r) => ({ ...r, status: 'cancelled' }));
+    const { toCreate } = planShiftGeneration([crew], { ...oneFriday, existing });
+    assert.equal(toCreate.length, 3);
+  });
+
+  it('generates a legacy single-role template exactly as before', () => {
+    const legacy = { ...crew, positions: [] };
+    const { toCreate } = planShiftGeneration([legacy], oneFriday);
+    assert.equal(toCreate.length, 1);
+    assert.equal(toCreate[0].role, 'bartender');
+    assert.deepEqual(toCreate[0].altRoles, []);
+    assert.equal(toCreate[0].templatePosition, null);
+  });
+
+  it('suppresses a legacy template from a row written before positions existed', () => {
+    const legacy = { ...crew, positions: [] };
+    const before = planShiftGeneration([legacy], oneFriday).toCreate;
+    const { toCreate } = planShiftGeneration([legacy], {
+      ...oneFriday,
+      existing: [{ template: 't1', start: before[0].start, status: 'draft' }], // no templatePosition
+    });
+    assert.equal(toCreate.length, 0);
+  });
+
+  it('skips a template with neither positions nor a role', () => {
+    const roleless = { ...crew, role: null, positions: [] };
+    const { toCreate, skipped } = planShiftGeneration([roleless], oneFriday);
+    assert.equal(toCreate.length, 0);
+    assert.match(skipped[0].reason, /role/i);
+  });
+});
+
+// ── reconcilePositionIds ─────────────────────────────────────────────────────
+//
+// A position's _id is the generation idempotency handle, so this function
+// decides whether an edit keeps a template's generated roster or re-keys and
+// duplicates it. It lives here, not in the controller, precisely so it can be
+// tested — the server suite has no database and cannot reach a controller.
+
+describe('reconcilePositionIds', () => {
+  it('keeps an _id that still names a position on the stored template', () => {
+    const stored = [{ _id: 'p1' }, { _id: 'p2' }];
+    const out = reconcilePositionIds(stored, [
+      { _id: 'p2', roles: ['server'], count: 2 },
+      { _id: 'p1', roles: ['bartender'], count: 1 },
+    ]);
+    // Identity, not index: reordering must not re-stamp either one.
+    assert.deepEqual(
+      out.map((p) => p._id),
+      ['p2', 'p1']
+    );
+  });
+
+  it('keeps the survivor its OWN id when a non-trailing position is removed', () => {
+    // The whole reason matching is by identity. An index match would hand the
+    // surviving server position the removed bartender's _id, so the one stale
+    // bartender row would count toward the server quota while both real server
+    // rows orphaned — 4 rows on a day declaring 2.
+    const stored = [{ _id: 'p1' }, { _id: 'p2' }];
+    const out = reconcilePositionIds(stored, [{ _id: 'p2', roles: ['server'], count: 2 }]);
+    assert.equal(out.length, 1);
+    assert.equal(out[0]._id, 'p2');
+  });
+
+  it('drops an _id that no position on the stored template carries', () => {
+    // Otherwise a caller could graft another template's position onto this one
+    // and silently take over its generated rows.
+    const out = reconcilePositionIds([{ _id: 'p1' }, { _id: 'p2' }], [
+      { _id: 'p1', roles: ['bartender'], count: 1 },
+      { _id: 'stolen', roles: ['server'], count: 1 },
+    ]);
+    assert.equal(out[0]._id, 'p1');
+    assert.equal('_id' in out[1], false);
+  });
+
+  it('leaves a brand-new position with no _id, so Mongoose mints one', () => {
+    const out = reconcilePositionIds([{ _id: 'p1' }], [
+      { _id: 'p1', roles: ['bartender'], count: 1 },
+      { roles: ['server'], count: 2 },
+    ]);
+    assert.equal(out[0]._id, 'p1');
+    assert.equal('_id' in out[1], false);
+  });
+
+  it('adopts the LEGACY key when a template with no positions first declares a crew', () => {
+    // A legacy template generated under `template@start@` and every row it wrote
+    // carries templatePosition: null. Minting here would strand all of them and
+    // write a second full crew on the next run — for the most natural first edit
+    // anyone makes: "my Server template should also accept Runners".
+    const out = reconcilePositionIds([], [{ roles: ['server', 'runner'], count: 1 }]);
+    assert.equal(out[0]._id, null);
+  });
+
+  it('keeps the legacy key adopted on later edits', () => {
+    // The stored template now has one position whose _id is null, and the
+    // editor cannot send null back — so a falsy stored _id at position 0 is
+    // what marks the template as still on the legacy key.
+    const out = reconcilePositionIds(
+      [{ _id: null, roles: ['server', 'runner'] }],
+      [{ roles: ['server', 'runner'], count: 3 }]
+    );
+    assert.equal(out[0]._id, null);
+  });
+
+  it('only position 0 adopts it — a second position still mints', () => {
+    const out = reconcilePositionIds([], [
+      { roles: ['server'], count: 1 },
+      { roles: ['runner'], count: 2 },
+    ]);
+    assert.equal(out[0]._id, null);
+    assert.equal('_id' in out[1], false);
+  });
+
+  it('gives the legacy key up when a real id takes position 0', () => {
+    // What removing the legacy position looks like: the survivor shifts into
+    // index 0 carrying its own id. Forcing null there would steal the legacy
+    // rows for a position that never wrote them.
+    const out = reconcilePositionIds(
+      [{ _id: null }, { _id: 'p2' }],
+      [{ _id: 'p2', roles: ['runner'], count: 2 }]
+    );
+    assert.equal(out[0]._id, 'p2');
+  });
+
+  it('does not adopt for a template that already has real positions', () => {
+    const out = reconcilePositionIds([{ _id: 'p1' }], [{ roles: ['server'], count: 1 }]);
+    assert.equal('_id' in out[0], false);
+  });
+
+  it('treats an empty incoming list as nothing to reconcile', () => {
+    assert.deepEqual(reconcilePositionIds([{ _id: 'p1' }], []), []);
+  });
 });

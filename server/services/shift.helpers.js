@@ -348,6 +348,88 @@ function patternDates(template, dates = []) {
 }
 
 /**
+ * A template's positions, with a legacy single-role template normalised into
+ * one position of count 1.
+ *
+ * THE ONE READER of `positions` — every planner goes through it, exactly as
+ * patternDates is the one reader of recurrence/cycleDays/anchorDate. A second
+ * reader is how a template written before positions existed starts generating a
+ * different roster from the one it has generated for months.
+ *
+ * A position with no roles is dropped rather than normalised: a shift nobody
+ * can be checked against is the thing ShiftTemplate.role was made required to
+ * prevent.
+ *
+ * @param {object} template
+ * @returns {{_id: string|null, roles: string[], count: number}[]}
+ */
+function templatePositions(template) {
+  const raw = Array.isArray(template?.positions) ? template.positions : [];
+  const positions = raw
+    .map((p) => ({
+      _id: p?._id ? idOf(p._id) : null,
+      roles: (Array.isArray(p?.roles) ? p.roles : []).map(idOf).filter(Boolean),
+      count: Math.max(1, Math.floor(Number(p?.count)) || 1),
+    }))
+    .filter((p) => p.roles.length);
+
+  if (positions.length) return positions;
+
+  const role = template?.role ? idOf(template.role) : null;
+  return role ? [{ _id: null, roles: [role], count: 1 }] : [];
+}
+
+/**
+ * Settle which position `_id`s an update may keep, and which must be minted.
+ *
+ * A position's `_id` is the generation idempotency handle (see `keyOf`), so
+ * this is the rule that decides whether an edit re-keys a template's whole
+ * generated roster. Two things it must get right:
+ *
+ * 1. **Identity, never index.** An `_id` is kept only if it still names a
+ *    position on the stored template. Matching by array index instead would,
+ *    when a non-trailing position is removed, re-stamp a SURVIVING position
+ *    with the removed one's `_id` — corrupting the survivor's count rather
+ *    than the removed one's. An unrecognised `_id` is dropped rather than
+ *    trusted, so a caller cannot graft another template's position onto this
+ *    one; Mongoose then mints a fresh one.
+ *
+ * 2. **The first widening of a legacy template keeps the legacy key.** A
+ *    template with no stored `positions` generates under `template@start@`,
+ *    because `templatePositions` synthesizes `{_id: null}` for it and every
+ *    row it wrote carries `templatePosition: null`. The moment an admin
+ *    declares a crew — "my Server template should also accept Runners", the
+ *    most natural first edit here — a minted `_id` would re-key the template,
+ *    stranding every day already generated and writing a second full crew over
+ *    it on the next run. So position 0 ADOPTS the null key. It stays adopted
+ *    on later edits, because a template on the legacy key still has a falsy
+ *    `_id` at position 0. It is given up only when the body sends a real,
+ *    recognised `_id` there — which is what removing the legacy position looks
+ *    like once the survivor shifts into index 0. Those legacy rows then
+ *    orphan, which is correct: that position is gone.
+ *
+ * @param {object[]} stored the CURRENTLY STORED positions
+ * @param {object[]} incoming validated positions from the request body
+ * @returns {object[]} positions to persist
+ */
+function reconcilePositionIds(stored = [], incoming = []) {
+  const currentIds = new Set(
+    (stored || []).filter((p) => p?._id).map((p) => String(p._id))
+  );
+  const positions = (incoming || []).map((p) => {
+    if (p._id && currentIds.has(String(p._id))) return p;
+    const { _id, ...rest } = p;
+    return rest;
+  });
+
+  const onLegacyKey = !stored?.length || !stored[0]?._id;
+  const first = positions[0];
+  if (onLegacyKey && first && !first._id) first._id = null;
+
+  return positions;
+}
+
+/**
  * Plan the shifts to create for a date range from a set of templates.
  *
  * Everything it produces is an OPEN draft: the roster is built first and filled
@@ -365,13 +447,45 @@ function planShiftGeneration(templates = [], opts = {}) {
   const { from, to, offsetMinutes = 60, existing = [] } = opts;
   const dates = eachDateInRange(from, to);
 
-  // Key on template + exact start instant: the same template on the same day is
-  // one shift, however many times generation is re-run.
-  const taken = new Set(
-    existing
-      .filter((s) => s.status !== 'cancelled')
-      .map((s) => `${idOf(s.template)}@${new Date(s.start).getTime()}`)
-  );
+  // Key on template + exact start instant + POSITION, and COUNT rather than
+  // flag. One template now emits a row per position per day, so
+  // `template@start` alone is no longer unique and a boolean "taken" can no
+  // longer express "2 of the 3 servers this slot wants already exist".
+  //
+  // The position's _id is the handle because it survives BOTH reordering and
+  // edits to its roles. A key derived from the role SET survives reordering
+  // only: widening "Server" to "Server OR Runner" would rekey every day
+  // already generated, and the next run would duplicate the lot.
+  //
+  // A legacy template has no positions, so templatePositions hands back
+  // _id: null, the key is `template@start@`, and both an old row (no
+  // templatePosition field at all) and a new one land on it — which is what
+  // makes generation of an untouched template byte-identical to before.
+  //
+  // ⚠️ CALLER CONTRACT: `existing` rows MUST be fetched with `templatePosition`
+  // included in the projection. This function only ever sees what the caller
+  // selected — it cannot tell "this row has no position" (legacy, correct)
+  // apart from "the field was silently projected away" (bug). Both controller
+  // sites that feed `existing` here — generateShifts's `.select(...)` and
+  // fillPattern's `.select(...)` in server/controllers/shift.controller.js —
+  // learned this the hard way: an inclusive Mongoose `.select()` that omits
+  // templatePosition makes every declared-position row key as `@start@`
+  // (empty), `have` reads as permanently 0, and generation duplicates a full
+  // crew on every re-run with no error and no skip. If you trim either
+  // projection, add templatePosition back or you will reintroduce that bug.
+  const keyOf = (templateId, startMs, positionId) =>
+    `${templateId}@${startMs}@${positionId || ''}`;
+
+  const counts = new Map();
+  for (const s of existing) {
+    if (s.status === 'cancelled') continue;
+    const key = keyOf(
+      idOf(s.template),
+      new Date(s.start).getTime(),
+      s.templatePosition ? idOf(s.templatePosition) : ''
+    );
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
 
   const toCreate = [];
   const skipped = [];
@@ -383,6 +497,12 @@ function planShiftGeneration(templates = [], opts = {}) {
       continue;
     }
     const name = plan.template;
+
+    const positions = templatePositions(tpl);
+    if (!positions.length) {
+      skipped.push({ template: name, reason: 'Template has no role to fill' });
+      continue;
+    }
 
     for (const date of plan.dates) {
       const endDayOffset = tpl.endDayOffset ?? 0;
@@ -398,24 +518,36 @@ function planShiftGeneration(templates = [], opts = {}) {
         continue;
       }
 
-      const key = `${idOf(tpl._id)}@${window.start.getTime()}`;
-      if (taken.has(key)) {
-        skipped.push({ template: name, date, reason: 'A shift already exists for this slot' });
-        continue;
-      }
-      taken.add(key);
+      for (const pos of positions) {
+        const key = keyOf(idOf(tpl._id), window.start.getTime(), pos._id);
+        const have = counts.get(key) || 0;
+        if (have >= pos.count) {
+          skipped.push({
+            template: name,
+            date,
+            position: pos._id,
+            reason: 'A shift already exists for this slot',
+          });
+          continue;
+        }
 
-      toCreate.push({
-        template: idOf(tpl._id),
-        date,
-        employee: null, // open by design
-        role: idOf(tpl.role),
-        department: tpl.department ? idOf(tpl.department) : null,
-        start: window.start,
-        end: window.end,
-        breakMinutes: Number(tpl.breakMinutes) || 0,
-        status: 'draft',
-      });
+        for (let i = have; i < pos.count; i += 1) {
+          toCreate.push({
+            template: idOf(tpl._id),
+            templatePosition: pos._id,
+            date,
+            employee: null, // open by design
+            role: pos.roles[0], // the primary: colours and labels the row
+            altRoles: pos.roles.slice(1),
+            department: tpl.department ? idOf(tpl.department) : null,
+            start: window.start,
+            end: window.end,
+            breakMinutes: Number(tpl.breakMinutes) || 0,
+            status: 'draft',
+          });
+        }
+        counts.set(key, pos.count);
+      }
     }
   }
 
@@ -425,6 +557,29 @@ function planShiftGeneration(templates = [], opts = {}) {
 /** "Ada Obi", or the id when a name is missing — skips must always name someone. */
 const employeeLabel = (e) =>
   [e?.firstName, e?.lastName].filter(Boolean).join(' ') || idOf(e?._id);
+
+/**
+ * Seats for a fill: who is going on the pattern, and in which position.
+ *
+ * Accepts a bare User doc as well as {employee, position}, because
+ * POST /api/shifts/fill shipped in f91201bb taking a flat list of employee ids
+ * and that contract must keep working. A bare entry takes the template's sole
+ * position, or null when the template is a legacy single-role one.
+ *
+ * @param {object[]} entries
+ * @param {{_id: string|null}[]} positions - from templatePositions
+ * @returns {{employee: object, position: string|null}[]}
+ */
+function normaliseSeats(entries = [], positions = []) {
+  const sole = positions.length === 1 ? positions[0]._id : null;
+  return entries.filter(Boolean).map((entry) => {
+    const isSeat = entry.employee !== undefined;
+    return {
+      employee: isSeat ? entry.employee : entry,
+      position: isSeat ? (entry.position ? idOf(entry.position) : sole) : sole,
+    };
+  });
+}
 
 /**
  * Plan the shifts to create when several people are put on one pattern.
@@ -442,12 +597,13 @@ const employeeLabel = (e) =>
  * Every verdict is checkAssignment's; this adds no rules of its own.
  *
  * @param {object} template
- * @param {object[]} employees - User docs (need status + employeeProfile.planning.roles)
+ * @param {object[]} seatEntries - each either a User doc (legacy, mapped to the
+ *   template's sole position) or {employee: <User doc>, position: <positionId|null>}
  * @param {{from: string, to: string, offsetMinutes?: number, existing?: object[],
  *          ctxById?: Map, force?: boolean}} opts
  * @returns {{toCreate: object[], skipped: object[]}}
  */
-function planPatternFill(template, employees = [], opts = {}) {
+function planPatternFill(template, seatEntries = [], opts = {}) {
   const {
     from,
     to,
@@ -462,10 +618,31 @@ function planPatternFill(template, employees = [], opts = {}) {
     return { toCreate: [], skipped: [{ template: plan.template, reason: plan.reason }] };
   }
 
-  // Three-part key. Two people's shifts from one template on one day are two
-  // different rows, which `template@start` alone cannot express. An open row
-  // from /generate keys as `template@start@` and so never collides with a
-  // person's row.
+  const positions = templatePositions(template);
+  if (!positions.length) {
+    return {
+      toCreate: [],
+      skipped: [{ template: plan.template, reason: 'Template has no role to fill' }],
+    };
+  }
+  const byPosition = new Map(positions.map((p) => [p._id, p]));
+  const seats = normaliseSeats(seatEntries, positions);
+
+  // The capacity cap binds DECLARED crew positions only. A template with no
+  // `positions` normalises to one synthesized position of count 1, standing in
+  // for the old bare `role`; that count is right for planShiftGeneration (one
+  // open slot to generate) but is not a seat cap here. The pre-crew fill
+  // contract (f91201bb) always let several named people cover one legacy role
+  // on the same day, and that must keep working. Read off the template itself
+  // rather than the synthesized position's null _id, so the rule does not
+  // depend on how templatePositions happens to shape its fallback.
+  const hasDeclaredPositions =
+    Array.isArray(template.positions) && template.positions.length > 0;
+
+  // Three-part key, unchanged. Two people's shifts from one template on one day
+  // are two different rows, which `template@start` alone cannot express. An
+  // open row from /generate keys as `template@start@` and so never collides
+  // with a person's row.
   const taken = new Set(
     existing
       .filter((s) => s.status !== 'cancelled')
@@ -475,14 +652,38 @@ function planPatternFill(template, employees = [], opts = {}) {
       )
   );
 
+  // How full each position already is, per instant. ONE cap in ONE place: the
+  // same want-vs-have arithmetic planShiftGeneration does, so a night cannot be
+  // staffed past its count from either entry point.
+  // ⚠️ CALLER CONTRACT: `existing` rows MUST be fetched with `templatePosition`
+  // included in the projection (see fillPattern's `.select(...)` in
+  // server/controllers/shift.controller.js). Same failure mode as
+  // planShiftGeneration's keyOf above: omit it and every row keys as
+  // `@start@`, `filled` undercounts, and the position_full cap can never fire.
+  const filled = new Map();
+  const fillKey = (startMs, positionId) =>
+    `${idOf(template._id)}@${startMs}@${positionId || ''}`;
+  for (const s of existing) {
+    if (s.status === 'cancelled') continue;
+    // Counting uses the EXISTING row's own template — mirroring the `taken`
+    // set above — not `template._id`. `fillPattern` currently only ever
+    // passes rows already scoped to this one template, so the two are always
+    // equal today, but a future caller passing wider rows must not have
+    // another template's shifts silently counted into this one's cap.
+    const key = `${idOf(s.template)}@${new Date(s.start).getTime()}@${
+      s.templatePosition ? idOf(s.templatePosition) : ''
+    }`;
+    filled.set(key, (filled.get(key) || 0) + 1);
+  }
+
   // A MUTABLE copy of each person's shifts, so a row planned earlier in this
   // batch is a conflict for the rows planned after it. Without this a template
   // with endDayOffset >= 1 would write overlapping shifts for one person on
   // consecutive worked days — neither exists in the database yet when the other
   // is judged, and checkAssignment only sees the context it is handed.
   const batchShifts = new Map();
-  for (const e of employees) {
-    const id = idOf(e?._id);
+  for (const seat of seats) {
+    const id = idOf(seat.employee?._id);
     batchShifts.set(id, [...contextFor(ctxById, id).shifts]);
   }
 
@@ -503,15 +704,23 @@ function planPatternFill(template, employees = [], opts = {}) {
       continue;
     }
 
-    const candidate = {
-      role: idOf(template.role),
-      start: window.start,
-      end: window.end,
-    };
-
-    for (const employee of employees) {
+    for (const seat of seats) {
+      const employee = seat.employee;
       const id = idOf(employee?._id);
       const name = employeeLabel(employee);
+
+      const pos = byPosition.get(seat.position);
+      if (!pos) {
+        skipped.push({
+          employee: id,
+          name,
+          date,
+          code: 'no_position',
+          reason: 'That position is not on this shift pattern',
+          forceable: false,
+        });
+        continue;
+      }
 
       const key = `${idOf(template._id)}@${window.start.getTime()}@${id}`;
       if (taken.has(key)) {
@@ -525,6 +734,26 @@ function planPatternFill(template, employees = [], opts = {}) {
         });
         continue;
       }
+
+      const capKey = fillKey(window.start.getTime(), pos._id);
+      if (hasDeclaredPositions && (filled.get(capKey) || 0) >= pos.count) {
+        skipped.push({
+          employee: id,
+          name,
+          date,
+          code: 'position_full',
+          reason: `That position is already filled ${pos.count} time${pos.count === 1 ? '' : 's'} — raise its count to add another`,
+          forceable: false,
+        });
+        continue;
+      }
+
+      const candidate = {
+        role: pos.roles[0],
+        altRoles: pos.roles.slice(1),
+        start: window.start,
+        end: window.end,
+      };
 
       const verdict = checkAssignment(candidate, employee, {
         shifts: batchShifts.get(id) || [],
@@ -545,11 +774,14 @@ function planPatternFill(template, employees = [], opts = {}) {
       }
 
       taken.add(key);
+      filled.set(capKey, (filled.get(capKey) || 0) + 1);
       toCreate.push({
         template: idOf(template._id),
+        templatePosition: pos._id,
         date,
         employee: id,
-        role: idOf(template.role),
+        role: pos.roles[0],
+        altRoles: pos.roles.slice(1),
         department: template.department ? idOf(template.department) : null,
         start: window.start,
         end: window.end,
@@ -674,14 +906,20 @@ function checkAssignment(shift, employee, ctx = {}) {
     };
   }
 
-  const held = (employee.employeeProfile?.planning?.roles || []).map(idOf);
-  const required = idOf(shift.role);
-  if (required && !held.includes(required)) {
+  // A shift generated from a crew position accepts several roles — "bartender
+  // OR barback" — so the test is whether the sets INTERSECT, not whether one
+  // id matches. With altRoles empty this is the old `held.includes(required)`
+  // exactly, which is what keeps every shift written before crews existed
+  // judged the way it has always been judged.
+  const held = new Set((employee.employeeProfile?.planning?.roles || []).map(idOf));
+  const accepted = [idOf(shift.role), ...(shift.altRoles || []).map(idOf)].filter(Boolean);
+  if (accepted.length && !accepted.some((r) => held.has(r))) {
+    const what = accepted.length > 1 ? 'any of the roles this shift accepts' : 'that role';
     if (!force) {
       return {
         ok: false,
         code: 'role_mismatch',
-        message: 'This employee is not marked as able to work that role',
+        message: `This employee is not marked as able to work ${what}`,
       };
     }
     warnings.push({
@@ -914,6 +1152,28 @@ function normaliseDaysOfWeek(input) {
 }
 
 /**
+ * Parse and de-duplicate a list of role references.
+ *
+ * Returns success with the de-duplicated list, or failure if any entry is
+ * not a valid ObjectId. De-duplication preserves order: the first occurrence
+ * of each role stays, later ones are skipped.
+ *
+ * @param {any[]} input
+ * @returns {{ok: true, value: string[]} | {ok: false, message: string}}
+ */
+function parseRoleIdList(input = []) {
+  const out = [];
+  for (const r of input) {
+    const ref = refField(r);
+    if (ref.bad || !ref.value) {
+      return { ok: false, message: 'role must be a valid id' };
+    }
+    if (!out.includes(ref.value)) out.push(ref.value);
+  }
+  return { ok: true, value: out };
+}
+
+/**
  * Validate + normalise a ShiftTemplate payload.
  *
  * @param {object} body
@@ -932,11 +1192,60 @@ function buildShiftTemplatePayload(body = {}, opts = {}) {
     return { ok: false, message: 'Template name is required' };
   }
 
+  // Positions first: when a body supplies them they are the source of truth,
+  // and `role` is MIRRORED from the first so TEMPLATE_POPULATE, the ?role=
+  // filter and the roster colour fallback keep working untouched.
+  let mirroredRole = null;
+  if (body.positions !== undefined) {
+    if (!Array.isArray(body.positions)) {
+      return { ok: false, message: 'positions must be a list' };
+    }
+    const positions = [];
+    const seenIds = new Set();
+    for (const raw of body.positions) {
+      const rolesResult = parseRoleIdList(Array.isArray(raw?.roles) ? raw.roles : []);
+      if (!rolesResult.ok) return { ok: false, message: rolesResult.message };
+      const roles = rolesResult.value;
+      if (!roles.length) {
+        return { ok: false, message: 'Each position must accept at least one role' };
+      }
+      const count = Number(raw?.count ?? 1);
+      if (!Number.isFinite(count) || count < 1 || count > 20 || Math.floor(count) !== count) {
+        return { ok: false, message: 'A position count must be a whole number from 1 to 20' };
+      }
+      // The _id, when the caller sends one, is what lets updateTemplate match
+      // this position back to the stored one by IDENTITY rather than by array
+      // index — see the controller. Absent is an ordinary new position; a
+      // value that fails refField's own ObjectId check is a validation error,
+      // not something to silently drop.
+      const idRef = refField(raw?._id);
+      if (idRef.bad) return { ok: false, message: 'position _id must be a valid id' };
+      // Two positions sharing one _id both pass the identity check above, and
+      // that shared id is also the generation idempotency key (see keyOf in
+      // shift.helpers.js) — planShiftGeneration would fold their counts onto
+      // ONE key and under-generate silently rather than error. Reject at the
+      // door instead.
+      if (idRef.value) {
+        if (seenIds.has(idRef.value)) {
+          return { ok: false, message: 'Two positions cannot share the same _id' };
+        }
+        seenIds.add(idRef.value);
+      }
+      const position = { roles, count };
+      if (idRef.value) position._id = idRef.value;
+      positions.push(position);
+    }
+    value.positions = positions;
+    mirroredRole = positions.length ? positions[0].roles[0] : null;
+  }
+
   // A shift exists to be filled by someone qualified, so the role it needs is
   // the one ref that is never optional.
   const role = refField(body.role);
   if (role.bad) return { ok: false, message: 'role must be a valid id' };
-  if (!role.skip) {
+  if (mirroredRole) {
+    value.role = mirroredRole;
+  } else if (!role.skip) {
     if (!role.value) return { ok: false, message: 'A template must require a role' };
     value.role = role.value;
   } else if (!isUpdate) {
@@ -1074,6 +1383,19 @@ function buildShiftPayload(body = {}, opts = {}) {
   }
 
   if (body.note !== undefined) value.note = trimmed(body.note);
+
+  if (body.altRoles !== undefined) {
+    if (!Array.isArray(body.altRoles)) {
+      return { ok: false, message: 'altRoles must be a list' };
+    }
+    const altResult = parseRoleIdList(body.altRoles);
+    if (!altResult.ok) return { ok: false, message: altResult.message };
+    value.altRoles = altResult.value;
+  }
+
+  const position = refField(body.templatePosition);
+  if (position.bad) return { ok: false, message: 'templatePosition must be a valid id' };
+  if (!position.skip) value.templatePosition = position.value;
 
   return { ok: true, value };
 }
@@ -1246,6 +1568,7 @@ module.exports = {
   patternDates,
   planShiftGeneration,
   planPatternFill,
+  normaliseSeats,
   findOverlaps,
   overlapsTimeOff,
   checkAssignment,
@@ -1261,4 +1584,6 @@ module.exports = {
   validateShiftTimes,
   parseRosterRange,
   fillContextWindow,
+  templatePositions,
+  reconcilePositionIds,
 };

@@ -278,3 +278,127 @@ test('statusesThatCanBecome derives the publishable set from the transition tabl
   assert.deepStrictEqual(statusesThatCanBecome('cancelled'), ['draft', 'published']);
   assert.deepStrictEqual(statusesThatCanBecome('draft'), []);
 });
+
+// ── Shift template payload with positions ────────────────────────────────────
+
+{
+  const base = {
+    name: 'Friday night',
+    startTime: '18:00',
+    endTime: '22:00',
+    daysOfWeek: [5],
+  };
+  const oid = (n) => `5f${'0'.repeat(20)}${String(n).padStart(2, '0')}`;
+
+  test('buildShiftTemplatePayload accepts positions and mirrors role from the first one', () => {
+    const out = buildShiftTemplatePayload({
+      ...base,
+      positions: [
+        { roles: [oid(1), oid(2)], count: 1 },
+        { roles: [oid(3)], count: 2 },
+      ],
+    });
+    assert.equal(out.ok, true);
+    assert.equal(out.value.role, oid(1));
+    assert.equal(out.value.positions.length, 2);
+    assert.equal(out.value.positions[1].count, 2);
+  });
+
+  test('buildShiftTemplatePayload rejects a position with no roles', () => {
+    const out = buildShiftTemplatePayload({ ...base, positions: [{ roles: [], count: 1 }] });
+    assert.equal(out.ok, false);
+    assert.match(out.message, /at least one role/i);
+  });
+
+  test('buildShiftTemplatePayload rejects a position role that is not an id', () => {
+    const out = buildShiftTemplatePayload({ ...base, positions: [{ roles: ['nope'], count: 1 }] });
+    assert.equal(out.ok, false);
+    assert.match(out.message, /valid id/i);
+  });
+
+  test('buildShiftTemplatePayload rejects a count outside 1..20', () => {
+    const out = buildShiftTemplatePayload({ ...base, positions: [{ roles: [oid(1)], count: 0 }] });
+    assert.equal(out.ok, false);
+    assert.match(out.message, /count/i);
+  });
+
+  test('buildShiftTemplatePayload still refuses a template with neither positions nor a role', () => {
+    const out = buildShiftTemplatePayload(base);
+    assert.equal(out.ok, false);
+    assert.equal(out.message, 'A template must require a role');
+  });
+
+  test('buildShiftTemplatePayload still accepts a legacy single-role body', () => {
+    const out = buildShiftTemplatePayload({ ...base, role: oid(1) });
+    assert.equal(out.ok, true);
+    assert.equal(out.value.role, oid(1));
+  });
+
+  test('buildShiftTemplatePayload preserves a valid position _id', () => {
+    const out = buildShiftTemplatePayload({
+      ...base,
+      positions: [{ _id: oid(9), roles: [oid(1)], count: 1 }],
+    });
+    assert.equal(out.ok, true);
+    assert.equal(out.value.positions[0]._id, oid(9));
+  });
+
+  test('buildShiftTemplatePayload leaves a new position with no _id', () => {
+    const out = buildShiftTemplatePayload({
+      ...base,
+      positions: [{ roles: [oid(1)], count: 1 }],
+    });
+    assert.equal(out.ok, true);
+    assert.equal('_id' in out.value.positions[0], false);
+  });
+
+  test('buildShiftTemplatePayload rejects a malformed position _id', () => {
+    const out = buildShiftTemplatePayload({
+      ...base,
+      positions: [{ _id: 'nope', roles: [oid(1)], count: 1 }],
+    });
+    assert.equal(out.ok, false);
+    assert.match(out.message, /valid id/i);
+  });
+
+  test('buildShiftTemplatePayload rejects two positions sharing one _id', () => {
+    const out = buildShiftTemplatePayload({
+      ...base,
+      positions: [
+        { _id: oid(9), roles: [oid(1)], count: 1 },
+        { _id: oid(9), roles: [oid(2)], count: 2 },
+      ],
+    });
+    assert.equal(out.ok, false);
+    assert.match(out.message, /same _id/i);
+  });
+}
+
+// ── Shift payload with altRoles ──────────────────────────────────────────────
+
+{
+  const oid = (n) => `5f${'0'.repeat(20)}${String(n).padStart(2, '0')}`;
+  const base = {
+    role: oid(1),
+    start: '2026-08-14T17:00:00.000Z',
+    end: '2026-08-14T21:00:00.000Z',
+  };
+
+  test('buildShiftPayload accepts altRoles', () => {
+    const out = buildShiftPayload({ ...base, altRoles: [oid(2)] });
+    assert.equal(out.ok, true);
+    assert.deepEqual(out.value.altRoles, [oid(2)]);
+  });
+
+  test('buildShiftPayload rejects an altRole that is not an id', () => {
+    const out = buildShiftPayload({ ...base, altRoles: ['nope'] });
+    assert.equal(out.ok, false);
+    assert.match(out.message, /valid id/i);
+  });
+
+  test('buildShiftPayload still refuses a shift with no role', () => {
+    const out = buildShiftPayload({ start: base.start, end: base.end });
+    assert.equal(out.ok, false);
+    assert.equal(out.message, 'A shift must require a role');
+  });
+}

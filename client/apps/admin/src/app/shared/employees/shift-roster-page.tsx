@@ -33,6 +33,13 @@ import {
 } from 'react-icons/pi';
 import { fraunces } from './employees-fonts';
 import { FIELD, Field } from './org-config-page';
+import { buildLabelMap } from './org-config-utils';
+import {
+  defaultSeatPosition,
+  seatOptions,
+  seatOptionToPosition,
+  type Seat,
+} from './shift-position-utils';
 import {
   LAGOS_OFFSET_MINUTES,
   addDays,
@@ -94,6 +101,13 @@ interface ShiftDraft {
   breakMinutes: number;
   role: string;
   /**
+   * Other roles this shift accepts besides `role` — a crew position generated
+   * as "Bartender or Barback" carries both. Threaded into the availability
+   * probe so the picker widens the same way the save-time check does; see
+   * server/services/shift.helpers.js checkAssignment.
+   */
+  altRoles: string[];
+  /**
    * The ticked people, in display order. Empty is an OPEN SHIFT — the state the
    * roster is built in — not "nothing chosen yet".
    */
@@ -113,6 +127,7 @@ const NEW_DRAFT = (
   endTime: '17:00',
   breakMinutes: 0,
   role,
+  altRoles: [],
   employees: employee ? [employee] : [],
   note: '',
   status: 'draft',
@@ -152,7 +167,8 @@ export default function ShiftRosterPage() {
     template: ShiftTemplate;
     from: string;
     to: string;
-    employees: string[];
+    /** Who, and which crew position each fills — see shift-position-utils. */
+    seats: Seat[];
   } | null>(null);
   const [fillReport, setFillReport] = useState<ReturnType<
     typeof summariseFillResult
@@ -227,6 +243,7 @@ export default function ShiftRosterPage() {
         .availability(
           {
             role: draft.role,
+            altRoles: draft.altRoles,
             start: slot.start,
             end: slot.end,
             excludeId: draft.id,
@@ -249,6 +266,11 @@ export default function ShiftRosterPage() {
   }, [
     token,
     draft?.role,
+    // altRoles never changes independently of which shift is open (no UI
+    // edits it), so its identity — not a new array each render — is what
+    // must gate the refetch; joining avoids re-firing on every render from a
+    // fresh array reference.
+    draft?.altRoles?.join(','),
     draft?.date,
     draft?.startTime,
     draft?.endTime,
@@ -281,6 +303,10 @@ export default function ShiftRosterPage() {
   );
   const today = localToday(OFFSET);
 
+  // The fill drawer's crew-position labels and dropdowns need role names by
+  // id — same map the template editor builds from the same `roles` list.
+  const roleNames = useMemo(() => buildLabelMap(roles), [roles]);
+
   // ── Actions ────────────────────────────────────────────────────────────────
 
   function openNew(date: string, employeeId: string | null) {
@@ -307,29 +333,10 @@ export default function ShiftRosterPage() {
       endTime: toLocalTimeLabel(shift.end, OFFSET),
       breakMinutes: shift.breakMinutes,
       role: refId(shift.role),
+      altRoles: (shift.altRoles ?? []).map(refId).filter(Boolean),
       employees: refId(shift.employee) ? [refId(shift.employee)] : [],
       note: shift.note ?? '',
       status: shift.status,
-    });
-  }
-
-  function fromTemplate(
-    template: ShiftTemplate,
-    date: string,
-    employeeId: string | null
-  ) {
-    setConflict(null);
-    setIncumbent(null);
-    setDraft({
-      id: null,
-      date,
-      startTime: template.startTime,
-      endTime: template.endTime,
-      breakMinutes: template.breakMinutes,
-      role: refId(template.role),
-      employees: employeeId ? [employeeId] : [],
-      note: '',
-      status: 'draft',
     });
   }
 
@@ -474,6 +481,27 @@ export default function ShiftRosterPage() {
     }
   }
 
+  /**
+   * Tick/untick a person in the fill drawer. A tick seats them into the first
+   * position with room (falling back to the first position once everything is
+   * full — `defaultSeatPosition`, so the arithmetic lives where it is tested);
+   * the admin can still change it from the dropdown afterwards. An untick just
+   * drops their seat — no position bookkeeping to undo.
+   */
+  function toggleSeat(
+    seats: Seat[],
+    employee: string,
+    template: ShiftTemplate
+  ): Seat[] {
+    if (seats.some((s) => s.employee === employee)) {
+      return seats.filter((s) => s.employee !== employee);
+    }
+    return [
+      ...seats,
+      { employee, position: defaultSeatPosition(template, seats, roleNames) },
+    ];
+  }
+
   async function runFill() {
     if (!fill) return;
     setBusy(true);
@@ -481,7 +509,7 @@ export default function ShiftRosterPage() {
       const result = await shiftService.fill(
         {
           templateId: fill.template._id,
-          employees: fill.employees,
+          employees: fill.seats,
           from: fill.from,
           to: fill.to,
         },
@@ -722,7 +750,7 @@ export default function ShiftRosterPage() {
                   template: t,
                   from,
                   to,
-                  employees: [],
+                  seats: [],
                 })
               }
               title={`Put people on ${t.name} across ${weekRangeLabel(days)}`}
@@ -1228,7 +1256,7 @@ export default function ShiftRosterPage() {
             <p className="mt-2 text-xs text-gray-500">
               {fillSummaryLabel(
                 fillPreview(fill.template, fill.from, fill.to).count,
-                fill.employees.length
+                fill.seats.length
               )}
             </p>
             <p className="mt-0.5 text-xs text-gray-400">
@@ -1236,31 +1264,80 @@ export default function ShiftRosterPage() {
                 fillPreview(fill.template, fill.from, fill.to).dates
               )}
             </p>
+            {/* The crew itself, updating live as seats fill — the same labels
+                the per-person dropdowns below offer, so "why is Server full"
+                never requires opening a select to find out. */}
+            <p className="mt-0.5 text-xs text-gray-400">
+              {seatOptions(fill.template, fill.seats, roleNames)
+                .map((o) => o.label)
+                .join(' · ')}
+            </p>
 
             <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-gray-200">
-              {pickerRows.map((row) => (
-                <label
-                  key={row.id}
-                  className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 last:border-0"
-                >
-                  <input
-                    type="checkbox"
-                    checked={fill.employees.includes(row.id)}
-                    onChange={(e) =>
-                      setFill({
-                        ...fill,
-                        employees: toggleTicked(
-                          pickerRows,
-                          fill.employees,
-                          row.id,
-                          e.target.checked
-                        ),
-                      })
-                    }
-                  />
-                  <span className="text-sm text-gray-900">{row.name}</span>
-                </label>
-              ))}
+              {pickerRows.map((row) => {
+                const seat = fill.seats.find((s) => s.employee === row.id);
+                return (
+                  <div
+                    key={row.id}
+                    className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 last:border-0"
+                  >
+                    <label className="flex flex-1 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={!!seat}
+                        onChange={() =>
+                          setFill({
+                            ...fill,
+                            seats: toggleSeat(
+                              fill.seats,
+                              row.id,
+                              fill.template
+                            ),
+                          })
+                        }
+                      />
+                      <span className="text-sm text-gray-900">{row.name}</span>
+                    </label>
+                    {/* Only a ticked person has a seat to assign — untick and
+                        the dropdown goes with it, no position to leave behind. */}
+                    {seat && (
+                      <select
+                        aria-label={`Position for ${row.name}`}
+                        value={seat.position ?? ''}
+                        onChange={(e) =>
+                          setFill({
+                            ...fill,
+                            seats: fill.seats.map((s) =>
+                              s.employee === row.id
+                                ? {
+                                    ...s,
+                                    position: seatOptionToPosition(
+                                      e.target.value
+                                    ),
+                                  }
+                                : s
+                            ),
+                          })
+                        }
+                        className="w-40 shrink-0 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                      >
+                        {/* This person's own seat is excluded so it never counts
+                            against itself — without it every option would read
+                            one short of the real remaining count. */}
+                        {seatOptions(
+                          fill.template,
+                          fill.seats.filter((s) => s.employee !== row.id),
+                          roleNames
+                        ).map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
@@ -1274,7 +1351,7 @@ export default function ShiftRosterPage() {
               <button
                 type="button"
                 onClick={runFill}
-                disabled={busy || !fill.employees.length}
+                disabled={busy || !fill.seats.length}
                 className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
                 {busy ? 'Filling…' : 'Fill'}
