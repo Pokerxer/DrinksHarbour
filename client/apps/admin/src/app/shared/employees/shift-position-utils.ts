@@ -20,10 +20,29 @@ export interface Seat {
 }
 
 export interface SeatOption {
+  /**
+   * The position's id, as a `<select>` option value — so a legacy template's
+   * null-id position surfaces as `''`, because the DOM has no null.
+   *
+   * **A consumer MUST map it back with `value || null` before storing it on a
+   * `Seat`.** `remainingForPosition` compares positions with `===`, and
+   * `'' === null` is false: a seat left holding `''` never counts against the
+   * legacy position, so the drawer would report it open however many people
+   * were on it. `seatOptionToPosition` does this — use it rather than
+   * open-coding the check.
+   */
   value: string;
   label: string;
   remaining: number;
   full: boolean;
+}
+
+/**
+ * A `SeatOption.value` as a `Seat.position`. `''` is the legacy single-position
+ * template, whose id is genuinely null — see the warning on `value`.
+ */
+export function seatOptionToPosition(value: string): string | null {
+  return value || null;
 }
 
 /**
