@@ -157,6 +157,36 @@ count then reads zero and generation adds two more.
 Deleting a position still orphans its already-generated rows. That is correct
 and unchanged — it is what already happens when a template's role changes.
 
+#### The first widening of a legacy template keeps the legacy key
+
+A template with no stored `positions` generates under `template@start@`, because
+§3's normaliser synthesizes `{_id: null}` for it and every row it wrote carries
+`templatePosition: null`.
+
+The moment an admin declares a crew on it — *"my Server template should also
+accept Runners"*, which is the most natural first edit anyone makes to this
+feature, and **every template in the system is legacy today** — minting a fresh
+`_id` would re-key the template. Every day already generated would be stranded
+under the old key and the next run would write a second full crew over it. That
+is precisely what the `_id` handle exists to prevent: widening a position's
+roles must not re-key days already generated.
+
+So **position 0 adopts the legacy null key** rather than minting one. It stays
+adopted across later edits, because a template still on the legacy key has a
+falsy `_id` at position 0 — the editor cannot send `null` back, so the stored
+value is what marks it. The key is given up only when the body sends a real,
+recognised `_id` at position 0, which is what removing the legacy position looks
+like once the survivor shifts into index 0. Those legacy rows then orphan, which
+is right: that position is gone.
+
+Only position 0 adopts. A second position minted in the same save gets a real
+`_id` as usual.
+
+The whole reconciliation lives in `reconcilePositionIds` in
+`shift.helpers.js` — not in the controller. It decides whether an edit keeps a
+roster or duplicates it, and the server suite is unit-only with no database, so
+a rule in a controller is a rule no test can reach.
+
 ### 4.3 Count reconciliation, not a boolean
 
 ```
