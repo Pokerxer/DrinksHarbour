@@ -566,6 +566,17 @@ function planPatternFill(template, seatEntries = [], opts = {}) {
   const byPosition = new Map(positions.map((p) => [p._id, p]));
   const seats = normaliseSeats(seatEntries, positions);
 
+  // The capacity cap binds DECLARED crew positions only. A template with no
+  // `positions` normalises to one synthesized position of count 1, standing in
+  // for the old bare `role`; that count is right for planShiftGeneration (one
+  // open slot to generate) but is not a seat cap here. The pre-crew fill
+  // contract (f91201bb) always let several named people cover one legacy role
+  // on the same day, and that must keep working. Read off the template itself
+  // rather than the synthesized position's null _id, so the rule does not
+  // depend on how templatePositions happens to shape its fallback.
+  const hasDeclaredPositions =
+    Array.isArray(template.positions) && template.positions.length > 0;
+
   // Three-part key, unchanged. Two people's shifts from one template on one day
   // are two different rows, which `template@start` alone cannot express. An
   // open row from /generate keys as `template@start@` and so never collides
@@ -653,15 +664,8 @@ function planPatternFill(template, seatEntries = [], opts = {}) {
         continue;
       }
 
-      // A null-id position is templatePositions's LEGACY fallback — a template
-      // with no real `positions` array, standing in for the old bare `role`.
-      // Its count:1 is right for planShiftGeneration (one open slot to
-      // generate), but it is not a seat cap here: the pre-crew fill contract
-      // (f91201bb) always let several named people cover one legacy role on
-      // the same day, and that must keep working. Only a REAL, explicitly
-      // defined position enforces a capacity.
       const capKey = fillKey(window.start.getTime(), pos._id);
-      if (pos._id && (filled.get(capKey) || 0) >= pos.count) {
+      if (hasDeclaredPositions && (filled.get(capKey) || 0) >= pos.count) {
         skipped.push({
           employee: id,
           name,

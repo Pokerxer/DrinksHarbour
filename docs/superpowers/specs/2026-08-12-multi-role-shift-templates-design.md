@@ -227,6 +227,30 @@ two rows for one slot. Under a shared cap the second action now reports
 If this proves wrong in use, the fallback is to count only filled rows toward
 the fill cap, leaving the two lanes independent as they are today.
 
+#### The one exemption: a template with no declared `positions`
+
+The cap binds **declared crew positions only**. A legacy template — no
+`positions` array, only the bare `role` — normalises (§3) to a single
+synthesized position `{_id: null, roles: [role], count: 1}`. That `count: 1` is
+correct for generation, where it means "one open slot to create", but it is
+**not** a seat cap: `f91201bb`'s shipped fill contract lets several named people
+cover one legacy role on the same day, and eight existing `planPatternFill`
+tests depend on it. Capping there would seat one person and refuse the rest on
+every pre-existing pattern.
+
+So `planPatternFill` skips the cap entirely when the template declares no
+positions. The discriminator is read off the template itself —
+
+```js
+const hasDeclaredPositions =
+  Array.isArray(template.positions) && template.positions.length > 0;
+```
+
+— and deliberately **not** off the synthesized position's null `_id`. Nothing in
+`templatePositions`'s contract promises that a null `_id` means "no cap"; a
+hand-built template object supplying a declared position without an `_id` would
+silently lose its cap. Same rule, sounder discriminator.
+
 ---
 
 ## 7. UI
