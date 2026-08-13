@@ -835,7 +835,7 @@ const generateShifts = asyncHandler(async (req, res) => {
     template: { $in: templates.map((t) => t._id) },
     start: { $gte: range.start, $lt: range.end },
   })
-    .select('_id template start status')
+    .select('_id template templatePosition start status')
     .lean();
 
   const { toCreate, skipped } = planShiftGeneration(templates, {
@@ -954,7 +954,7 @@ const fillPattern = asyncHandler(async (req, res) => {
     template: template._id,
     start: { $gte: range.start, $lt: range.end },
   })
-    .select('_id template employee start status')
+    .select('_id template templatePosition employee start status')
     .lean();
 
   // Only the employees who actually resolved — assignmentContexts drops deleted

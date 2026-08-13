@@ -411,6 +411,18 @@ function planShiftGeneration(templates = [], opts = {}) {
   // _id: null, the key is `template@start@`, and both an old row (no
   // templatePosition field at all) and a new one land on it — which is what
   // makes generation of an untouched template byte-identical to before.
+  //
+  // ⚠️ CALLER CONTRACT: `existing` rows MUST be fetched with `templatePosition`
+  // included in the projection. This function only ever sees what the caller
+  // selected — it cannot tell "this row has no position" (legacy, correct)
+  // apart from "the field was silently projected away" (bug). Both controller
+  // sites that feed `existing` here — generateShifts's `.select(...)` and
+  // fillPattern's `.select(...)` in server/controllers/shift.controller.js —
+  // learned this the hard way: an inclusive Mongoose `.select()` that omits
+  // templatePosition makes every declared-position row key as `@start@`
+  // (empty), `have` reads as permanently 0, and generation duplicates a full
+  // crew on every re-run with no error and no skip. If you trim either
+  // projection, add templatePosition back or you will reintroduce that bug.
   const keyOf = (templateId, startMs, positionId) =>
     `${templateId}@${startMs}@${positionId || ''}`;
 
