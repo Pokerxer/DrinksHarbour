@@ -56,6 +56,12 @@ export interface ShiftTemplatePosition {
   count: number;
 }
 
+/** A seat on a fill: who, and in which template position. */
+export interface FillSeat {
+  employee: string;
+  position: string | null;
+}
+
 export interface ShiftTemplate {
   _id: string;
   name: string;
@@ -91,6 +97,15 @@ export interface ShiftTemplate {
 export interface ShiftTemplateInput {
   name: string;
   role: string;
+  /**
+   * The crew this shift needs. `_id` is optional and load-bearing: it is the
+   * generation idempotency handle — the server matches an updated template's
+   * positions BY IDENTITY, keeping an `_id` it recognises and minting a fresh
+   * one otherwise. Omit it for a position the admin has just added; send back
+   * every `_id` the server gave you for the rest, or every already-generated
+   * day for that position is orphaned and the next generate duplicates it.
+   */
+  positions?: { _id?: string; roles: string[]; count: number }[];
   department?: string | null;
   startTime: string;
   endTime: string;
@@ -112,6 +127,10 @@ export interface Shift {
   /** null = an open shift nobody has been assigned to yet. */
   employee: Ref<PersonRef>;
   role: Ref<RoleRef>;
+  /** Other roles this shift accepts beyond `role`. Empty = single-role. */
+  altRoles?: Ref<RoleRef>[];
+  /** Which template position this row fills. Null for a hand-made shift. */
+  templatePosition?: string | null;
   department?: Ref<{ _id: string; name: string; color?: string }>;
   start: string;
   end: string;
@@ -485,7 +504,8 @@ export const shiftService = {
   async fill(
     input: {
       templateId: string;
-      employees: string[];
+      /** Seats. Bare ids are still accepted by the server for compatibility. */
+      employees: FillSeat[];
       from: string;
       to: string;
       force?: boolean;
