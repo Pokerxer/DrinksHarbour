@@ -1141,7 +1141,16 @@ function buildShiftTemplatePayload(body = {}, opts = {}) {
       if (!Number.isFinite(count) || count < 1 || count > 20 || Math.floor(count) !== count) {
         return { ok: false, message: 'A position count must be a whole number from 1 to 20' };
       }
-      positions.push({ roles, count });
+      // The _id, when the caller sends one, is what lets updateTemplate match
+      // this position back to the stored one by IDENTITY rather than by array
+      // index — see the controller. Absent is an ordinary new position; a
+      // value that fails refField's own ObjectId check is a validation error,
+      // not something to silently drop.
+      const idRef = refField(raw?._id);
+      if (idRef.bad) return { ok: false, message: 'position _id must be a valid id' };
+      const position = { roles, count };
+      if (idRef.value) position._id = idRef.value;
+      positions.push(position);
     }
     value.positions = positions;
     mirroredRole = positions.length ? positions[0].roles[0] : null;

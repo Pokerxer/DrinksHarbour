@@ -333,6 +333,33 @@ test('statusesThatCanBecome derives the publishable set from the transition tabl
     assert.equal(out.ok, true);
     assert.equal(out.value.role, oid(1));
   });
+
+  test('buildShiftTemplatePayload preserves a valid position _id', () => {
+    const out = buildShiftTemplatePayload({
+      ...base,
+      positions: [{ _id: oid(9), roles: [oid(1)], count: 1 }],
+    });
+    assert.equal(out.ok, true);
+    assert.equal(out.value.positions[0]._id, oid(9));
+  });
+
+  test('buildShiftTemplatePayload leaves a new position with no _id', () => {
+    const out = buildShiftTemplatePayload({
+      ...base,
+      positions: [{ roles: [oid(1)], count: 1 }],
+    });
+    assert.equal(out.ok, true);
+    assert.equal('_id' in out.value.positions[0], false);
+  });
+
+  test('buildShiftTemplatePayload rejects a malformed position _id', () => {
+    const out = buildShiftTemplatePayload({
+      ...base,
+      positions: [{ _id: 'nope', roles: [oid(1)], count: 1 }],
+    });
+    assert.equal(out.ok, false);
+    assert.match(out.message, /valid id/i);
+  });
 }
 
 // ── Shift payload with altRoles ──────────────────────────────────────────────

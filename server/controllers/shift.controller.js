@@ -251,17 +251,26 @@ const updateTemplate = asyncHandler(async (req, res) => {
   const built = buildShiftTemplatePayload(req.body, { isUpdate: true });
   if (!built.ok) return badRequest(res, built.message);
 
-  // Positions carry the generation idempotency handle, so an edit must KEEP
-  // the _id of a position that is still recognisably the same one. Losing it
-  // silently re-generates the whole range as duplicates.
+  // Positions carry the generation idempotency handle (see `keyOf` in
+  // shift.helpers.js), so an edit must keep the _id of a position that is
+  // still recognisably the SAME one. Matching is by IDENTITY, never by array
+  // index: removing a non-trailing position shifts every index after it, and
+  // an index match would silently re-stamp a surviving position with a
+  // removed one's _id — corrupting its generation count instead of the
+  // removed position's. `built.value.positions` was already validated by
+  // buildShiftTemplatePayload, which preserves any `_id` the body sent (or
+  // rejects a malformed one); here that _id is trusted only if it still names
+  // a position on the CURRENTLY STORED template (`row`, loaded above and not
+  // yet mutated) — an unrecognised _id is dropped so a caller cannot graft
+  // another template's position onto this one, and Mongoose mints a fresh one
+  // for it instead.
   if (built.value.positions) {
-    const current = await ShiftTemplate.findOne({ tenant: req.tenant?._id, _id: req.params.id })
-      .select('positions')
-      .lean();
-    const byIndex = current?.positions || [];
-    built.value.positions = built.value.positions.map((p, i) =>
-      byIndex[i]?._id ? { ...p, _id: byIndex[i]._id } : p
-    );
+    const currentIds = new Set((row.positions || []).map((p) => String(p._id)));
+    built.value.positions = built.value.positions.map((p) => {
+      if (p._id && currentIds.has(String(p._id))) return p;
+      const { _id, ...rest } = p;
+      return rest;
+    });
   }
 
   Object.assign(row, built.value);
