@@ -360,6 +360,18 @@ test('statusesThatCanBecome derives the publishable set from the transition tabl
     assert.equal(out.ok, false);
     assert.match(out.message, /valid id/i);
   });
+
+  test('buildShiftTemplatePayload rejects two positions sharing one _id', () => {
+    const out = buildShiftTemplatePayload({
+      ...base,
+      positions: [
+        { _id: oid(9), roles: [oid(1)], count: 1 },
+        { _id: oid(9), roles: [oid(2)], count: 2 },
+      ],
+    });
+    assert.equal(out.ok, false);
+    assert.match(out.message, /same _id/i);
+  });
 }
 
 // ── Shift payload with altRoles ──────────────────────────────────────────────

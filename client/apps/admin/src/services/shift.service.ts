@@ -450,6 +450,8 @@ export const shiftService = {
   async availability(
     input: {
       role: string;
+      /** The OTHER roles this shift accepts — a crew position's roles[1:]. */
+      altRoles?: string[];
       start: string;
       end: string;
       excludeId?: string | null;

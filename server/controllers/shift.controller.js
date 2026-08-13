@@ -551,7 +551,17 @@ const updateShift = asyncHandler(async (req, res) => {
     // ── The fan-out edit ─────────────────────────────────────────────────────
     // The edited row keeps its identity and the newcomers get rows of their own.
     const bind = bindEditedAssignment(row.employee, fan.ids);
-    const candidate = { role: built.value.role ?? row.role, start, end };
+    // altRoles falls back to the shift's OWN stored value, not to nothing — a
+    // crew shift generated for "Bartender or Barback" must keep accepting a
+    // barback on every subsequent edit, not just the ones that happen to
+    // resend altRoles. checkAssignment is the only judge of role fit; this is
+    // just handing it the full accepted set.
+    const candidate = {
+      role: built.value.role ?? row.role,
+      altRoles: built.value.altRoles ?? row.altRoles,
+      start,
+      end,
+    };
 
     // `excludeId` drops the row being edited from EVERY candidate's overlap
     // query. Only the person who currently holds it could ever match it, and for
@@ -693,7 +703,14 @@ const updateShift = asyncHandler(async (req, res) => {
 
   let warnings = [];
   if (employee && rechecked && live) {
-    const candidate = { role: built.value.role ?? row.role, start, end, _id: row._id };
+    // Same altRoles fallback as the fan-out path above.
+    const candidate = {
+      role: built.value.role ?? row.role,
+      altRoles: built.value.altRoles ?? row.altRoles,
+      start,
+      end,
+      _id: row._id,
+    };
     const ctx = await assignmentContext(tenantId, employee, { start, end }, row._id);
     const verdict = checkAssignment(candidate, ctx.employee, {
       shifts: ctx.shifts,
@@ -727,6 +744,14 @@ const shiftAvailability = asyncHandler(async (req, res) => {
   if (!isObjectIdLike(req.body.role)) {
     return badRequest(res, 'Choose the role this shift needs');
   }
+  // Optional: the OTHER roles this shift accepts. A crew position generated
+  // as "Bartender or Barback" must widen the picker the same way it widens
+  // the save-time check — without this the picker blocks exactly the people
+  // /fill would happily seat, and force becomes the only way through.
+  const altRolesRaw = Array.isArray(req.body.altRoles) ? req.body.altRoles : [];
+  if (!altRolesRaw.every(isObjectIdLike)) {
+    return badRequest(res, 'altRoles must be a list of valid ids');
+  }
   const times = validateShiftTimes(req.body.start, req.body.end);
   if (!times.ok) return badRequest(res, times.message);
 
@@ -754,7 +779,12 @@ const shiftAvailability = asyncHandler(async (req, res) => {
   // force:false always — this answers "is anything in the way?", and forcing is
   // a decision the admin makes afterwards, from the `forceable` flag.
   const { allowed, blocked } = judgeAssignments(
-    { role: req.body.role, ...window, ...(excludeId ? { _id: excludeId } : {}) },
+    {
+      role: req.body.role,
+      altRoles: altRolesRaw,
+      ...window,
+      ...(excludeId ? { _id: excludeId } : {}),
+    },
     candidates,
     byId,
     { force: false }

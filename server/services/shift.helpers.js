@@ -605,15 +605,24 @@ function planPatternFill(template, seatEntries = [], opts = {}) {
   // How full each position already is, per instant. ONE cap in ONE place: the
   // same want-vs-have arithmetic planShiftGeneration does, so a night cannot be
   // staffed past its count from either entry point.
+  // ⚠️ CALLER CONTRACT: `existing` rows MUST be fetched with `templatePosition`
+  // included in the projection (see fillPattern's `.select(...)` in
+  // server/controllers/shift.controller.js). Same failure mode as
+  // planShiftGeneration's keyOf above: omit it and every row keys as
+  // `@start@`, `filled` undercounts, and the position_full cap can never fire.
   const filled = new Map();
   const fillKey = (startMs, positionId) =>
     `${idOf(template._id)}@${startMs}@${positionId || ''}`;
   for (const s of existing) {
     if (s.status === 'cancelled') continue;
-    const key = fillKey(
-      new Date(s.start).getTime(),
+    // Counting uses the EXISTING row's own template — mirroring the `taken`
+    // set above — not `template._id`. `fillPattern` currently only ever
+    // passes rows already scoped to this one template, so the two are always
+    // equal today, but a future caller passing wider rows must not have
+    // another template's shifts silently counted into this one's cap.
+    const key = `${idOf(s.template)}@${new Date(s.start).getTime()}@${
       s.templatePosition ? idOf(s.templatePosition) : ''
-    );
+    }`;
     filled.set(key, (filled.get(key) || 0) + 1);
   }
 
@@ -1142,6 +1151,7 @@ function buildShiftTemplatePayload(body = {}, opts = {}) {
       return { ok: false, message: 'positions must be a list' };
     }
     const positions = [];
+    const seenIds = new Set();
     for (const raw of body.positions) {
       const rolesResult = parseRoleIdList(Array.isArray(raw?.roles) ? raw.roles : []);
       if (!rolesResult.ok) return { ok: false, message: rolesResult.message };
@@ -1160,6 +1170,17 @@ function buildShiftTemplatePayload(body = {}, opts = {}) {
       // not something to silently drop.
       const idRef = refField(raw?._id);
       if (idRef.bad) return { ok: false, message: 'position _id must be a valid id' };
+      // Two positions sharing one _id both pass the identity check above, and
+      // that shared id is also the generation idempotency key (see keyOf in
+      // shift.helpers.js) — planShiftGeneration would fold their counts onto
+      // ONE key and under-generate silently rather than error. Reject at the
+      // door instead.
+      if (idRef.value) {
+        if (seenIds.has(idRef.value)) {
+          return { ok: false, message: 'Two positions cannot share the same _id' };
+        }
+        seenIds.add(idRef.value);
+      }
       const position = { roles, count };
       if (idRef.value) position._id = idRef.value;
       positions.push(position);

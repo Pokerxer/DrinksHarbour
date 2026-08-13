@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import {
   PiClockCounterClockwiseDuotone,
@@ -94,6 +94,29 @@ export default function ShiftTemplatesPage() {
   const roleNames = buildLabelMap(roles);
   const deptNames = buildLabelMap(departments);
 
+  // ── C2 guard: an untouched legacy template must stay legacy ────────────────
+  //
+  // `templatePositions` synthesizes `{_id: null, roles: [role], count: 1}` for
+  // a legacy template so the editor can open it uniformly. If that synthesized
+  // position round-trips back to the server as `positions: [{roles, count}]`
+  // (no `_id`, because there never was one), buildShiftTemplatePayload sees a
+  // real `positions` array and stores it — minting a fresh `_id` for the
+  // position since none was sent. That `_id` is the generation idempotency
+  // key (see keyOf in shift.helpers.js): every day already generated under
+  // the OLD key (`template@start@`, from `templatePosition: null`) is now
+  // orphaned, and the next generate writes a second full crew on top of it.
+  //
+  // So `positions` is sent on an update ONLY when the template already had
+  // real declared positions (round-tripping their `_id`s keeps working
+  // exactly as before), OR the admin actually edited the positions list this
+  // session. Merely opening the editor and saving something else (break
+  // minutes, colour, name) must not silently convert a legacy template.
+  const originalHasPositionsRef = useRef(false);
+  const positionsTouchedRef = useRef(false);
+  function markPositionsTouched() {
+    positionsTouchedRef.current = true;
+  }
+
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
@@ -133,35 +156,55 @@ export default function ShiftTemplatesPage() {
       subtitle="Repeating patterns the weekly roster is generated from."
       icon={<PiClockCounterClockwiseDuotone />}
       noun="template"
-      service={shiftTemplateService}
+      service={{
+        ...shiftTemplateService,
+        // See the C2 guard comment above `originalHasPositionsRef`. Only this
+        // wrapped `update` decides whether `positions` rides along; `create`
+        // is untouched — a brand-new template always has positions to send.
+        update: (id, input, token) => {
+          const keepPositions =
+            originalHasPositionsRef.current || positionsTouchedRef.current;
+          if (keepPositions) return shiftTemplateService.update(id, input, token);
+          const { positions: _omit, ...withoutPositions } = input;
+          return shiftTemplateService.update(id, withoutPositions, token);
+        },
+      }}
       emptyDraft={EMPTY}
       sorts={SORTS}
-      toDraft={(t) => ({
-        name: t.name,
-        role: refId(t.role),
-        // The normaliser turns a legacy single-role template into one position
-        // so it opens the same way a template already using positions does.
-        positions: templatePositions(t).map((p) => ({
-          _id: p._id ?? undefined,
-          roles: p.roles,
-          count: p.count,
-        })),
-        department: refId(t.department) || null,
-        startTime: t.startTime,
-        endTime: t.endTime,
-        endDayOffset: t.endDayOffset ?? 0,
-        breakMinutes: t.breakMinutes,
-        recurrence: t.recurrence ?? 'weekly',
-        daysOfWeek: t.daysOfWeek ?? [],
-        // A weekly template has no stored cycle, so the form falls back to the
-        // same starting rotation a new template offers.
-        cycleLength: t.cycleLength ?? 2,
-        cycleDays: t.cycleDays?.length ? t.cycleDays : [0],
-        anchorDate: t.anchorDate ?? null,
-        color: t.color ?? '',
-        note: t.note ?? '',
-        isActive: t.isActive,
-      })}
+      toDraft={(t) => {
+        // A fresh edit session: the touch tracker starts clean, and whether
+        // this template already had real crew positions is fixed for the
+        // whole session (re-crewing it mid-session is itself "touched").
+        originalHasPositionsRef.current =
+          Array.isArray(t.positions) && t.positions.length > 0;
+        positionsTouchedRef.current = false;
+        return {
+          name: t.name,
+          role: refId(t.role),
+          // The normaliser turns a legacy single-role template into one position
+          // so it opens the same way a template already using positions does.
+          positions: templatePositions(t).map((p) => ({
+            _id: p._id ?? undefined,
+            roles: p.roles,
+            count: p.count,
+          })),
+          department: refId(t.department) || null,
+          startTime: t.startTime,
+          endTime: t.endTime,
+          endDayOffset: t.endDayOffset ?? 0,
+          breakMinutes: t.breakMinutes,
+          recurrence: t.recurrence ?? 'weekly',
+          daysOfWeek: t.daysOfWeek ?? [],
+          // A weekly template has no stored cycle, so the form falls back to
+          // the same starting rotation a new template offers.
+          cycleLength: t.cycleLength ?? 2,
+          cycleDays: t.cycleDays?.length ? t.cycleDays : [0],
+          anchorDate: t.anchorDate ?? null,
+          color: t.color ?? '',
+          note: t.note ?? '',
+          isActive: t.isActive,
+        };
+      }}
       describeDelete={(t) =>
         t.shiftCount > 0
           ? `${t.shiftCount} upcoming ${
@@ -263,15 +306,16 @@ export default function ShiftTemplatesPage() {
                           key={r._id}
                           type="button"
                           aria-pressed={on}
-                          onClick={() =>
+                          onClick={() => {
+                            markPositionsTouched();
                             patch({
                               positions: (draft.positions ?? []).map((p, j) =>
                                 j === i
                                   ? { ...p, roles: toggleRole(p.roles, r._id) }
                                   : p
                               ),
-                            })
-                          }
+                            });
+                          }}
                           className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                             on
                               ? 'bg-[#b20202] text-white'
@@ -293,6 +337,7 @@ export default function ShiftTemplatesPage() {
                         className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-center text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
                         value={pos.count}
                         onChange={(e) => {
+                          markPositionsTouched();
                           const count = clampPositionCount(e.target.value);
                           patch({
                             positions: (draft.positions ?? []).map((p, j) =>
@@ -311,6 +356,7 @@ export default function ShiftTemplatesPage() {
                         // disabled attribute is one refactor away from gone.
                         const positions = draft.positions ?? [];
                         if (positions.length <= 1) return;
+                        markPositionsTouched();
                         patch({ positions: positions.filter((_, j) => j !== i) });
                       }}
                       title="Remove position"
@@ -323,14 +369,15 @@ export default function ShiftTemplatesPage() {
               ))}
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  markPositionsTouched();
                   patch({
                     positions: [
                       ...(draft.positions ?? []),
                       { roles: [], count: 1 },
                     ],
-                  })
-                }
+                  });
+                }}
                 className="flex items-center gap-1 text-xs font-semibold text-[#b20202] hover:underline"
               >
                 <PiPlus className="h-3.5 w-3.5" /> Add a position

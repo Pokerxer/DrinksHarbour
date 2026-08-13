@@ -101,6 +101,13 @@ interface ShiftDraft {
   breakMinutes: number;
   role: string;
   /**
+   * Other roles this shift accepts besides `role` — a crew position generated
+   * as "Bartender or Barback" carries both. Threaded into the availability
+   * probe so the picker widens the same way the save-time check does; see
+   * server/services/shift.helpers.js checkAssignment.
+   */
+  altRoles: string[];
+  /**
    * The ticked people, in display order. Empty is an OPEN SHIFT — the state the
    * roster is built in — not "nothing chosen yet".
    */
@@ -120,6 +127,7 @@ const NEW_DRAFT = (
   endTime: '17:00',
   breakMinutes: 0,
   role,
+  altRoles: [],
   employees: employee ? [employee] : [],
   note: '',
   status: 'draft',
@@ -235,6 +243,7 @@ export default function ShiftRosterPage() {
         .availability(
           {
             role: draft.role,
+            altRoles: draft.altRoles,
             start: slot.start,
             end: slot.end,
             excludeId: draft.id,
@@ -257,6 +266,11 @@ export default function ShiftRosterPage() {
   }, [
     token,
     draft?.role,
+    // altRoles never changes independently of which shift is open (no UI
+    // edits it), so its identity — not a new array each render — is what
+    // must gate the refetch; joining avoids re-firing on every render from a
+    // fresh array reference.
+    draft?.altRoles?.join(','),
     draft?.date,
     draft?.startTime,
     draft?.endTime,
@@ -319,6 +333,7 @@ export default function ShiftRosterPage() {
       endTime: toLocalTimeLabel(shift.end, OFFSET),
       breakMinutes: shift.breakMinutes,
       role: refId(shift.role),
+      altRoles: (shift.altRoles ?? []).map(refId).filter(Boolean),
       employees: refId(shift.employee) ? [refId(shift.employee)] : [],
       note: shift.note ?? '',
       status: shift.status,
