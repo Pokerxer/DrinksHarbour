@@ -52,11 +52,13 @@ const DUPLICATE_KEY = 11000;
 const TEMPLATE_POPULATE = [
   { path: 'role', select: 'name color' },
   { path: 'department', select: 'name color' },
+  { path: 'positions.roles', select: 'name color' },
 ];
 
 const SHIFT_POPULATE = [
   { path: 'employee', select: 'firstName lastName email avatar' },
   { path: 'role', select: 'name color' },
+  { path: 'altRoles', select: 'name color' },
   { path: 'department', select: 'name color' },
   { path: 'template', select: 'name color' },
 ];
@@ -249,6 +251,19 @@ const updateTemplate = asyncHandler(async (req, res) => {
   const built = buildShiftTemplatePayload(req.body, { isUpdate: true });
   if (!built.ok) return badRequest(res, built.message);
 
+  // Positions carry the generation idempotency handle, so an edit must KEEP
+  // the _id of a position that is still recognisably the same one. Losing it
+  // silently re-generates the whole range as duplicates.
+  if (built.value.positions) {
+    const current = await ShiftTemplate.findOne({ tenant: req.tenant?._id, _id: req.params.id })
+      .select('positions')
+      .lean();
+    const byIndex = current?.positions || [];
+    built.value.positions = built.value.positions.map((p, i) =>
+      byIndex[i]?._id ? { ...p, _id: byIndex[i]._id } : p
+    );
+  }
+
   Object.assign(row, built.value);
   try {
     await row.save();
@@ -358,7 +373,11 @@ const listShifts = asyncHandler(async (req, res) => {
 
   const filter = { tenant: tenantId, start: { $gte: range.start, $lt: range.end } };
   if (isObjectIdLike(req.query.department)) filter.department = req.query.department;
-  if (isObjectIdLike(req.query.role)) filter.role = req.query.role;
+  // "Show me the server shifts" must find a shift that accepts server as an
+  // alternative, not only one where server is the primary.
+  if (isObjectIdLike(req.query.role)) {
+    filter.$or = [{ role: req.query.role }, { altRoles: req.query.role }];
+  }
   if (isObjectIdLike(req.query.employee)) filter.employee = req.query.employee;
   // `?employee=open` is the open-shift lane, which is a null ref rather than an
   // id — the one filter value that cannot be expressed as an ObjectId.
@@ -859,9 +878,20 @@ const fillPattern = asyncHandler(async (req, res) => {
     return badRequest(res, 'Choose a shift pattern to fill from');
   }
 
-  const employeeIds = Array.isArray(req.body.employees)
-    ? [...new Set(req.body.employees.filter(isObjectIdLike).map(String))]
-    : [];
+  // Seats: {employee, position}. A bare id is still accepted — f91201bb shipped
+  // this endpoint taking a flat list and planPatternFill.normaliseSeats maps a
+  // bare entry onto the template's sole position.
+  const rawSeats = Array.isArray(req.body.employees) ? req.body.employees : [];
+  const seatSpecs = [];
+  const seen = new Set();
+  for (const raw of rawSeats) {
+    const employeeId = isObjectIdLike(raw) ? String(raw) : String(raw?.employee ?? '');
+    if (!isObjectIdLike(employeeId) || seen.has(employeeId)) continue;
+    seen.add(employeeId);
+    const position = isObjectIdLike(raw?.position) ? String(raw.position) : null;
+    seatSpecs.push({ employeeId, position });
+  }
+  const employeeIds = seatSpecs.map((s) => s.employeeId);
   if (!employeeIds.length) {
     return badRequest(res, 'Choose at least one employee to put on this pattern');
   }
@@ -925,7 +955,12 @@ const fillPattern = asyncHandler(async (req, res) => {
     .filter(Boolean);
   const missing = employeeIds.filter((id) => !ctxById.get(id)?.employee);
 
-  const { toCreate, skipped } = planPatternFill(template, employees, {
+  const employeeById = new Map(employees.map((e) => [String(e._id), e]));
+  const seats = seatSpecs
+    .filter((s) => employeeById.has(s.employeeId))
+    .map((s) => ({ employee: employeeById.get(s.employeeId), position: s.position }));
+
+  const { toCreate, skipped } = planPatternFill(template, seats, {
     from: range.from,
     to: range.to,
     offsetMinutes,
