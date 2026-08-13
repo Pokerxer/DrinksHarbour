@@ -1081,6 +1081,28 @@ function normaliseDaysOfWeek(input) {
 }
 
 /**
+ * Parse and de-duplicate a list of role references.
+ *
+ * Returns success with the de-duplicated list, or failure if any entry is
+ * not a valid ObjectId. De-duplication preserves order: the first occurrence
+ * of each role stays, later ones are skipped.
+ *
+ * @param {any[]} input
+ * @returns {{ok: true, value: string[]} | {ok: false, message: string}}
+ */
+function parseRoleIdList(input = []) {
+  const out = [];
+  for (const r of input) {
+    const ref = refField(r);
+    if (ref.bad || !ref.value) {
+      return { ok: false, message: 'role must be a valid id' };
+    }
+    if (!out.includes(ref.value)) out.push(ref.value);
+  }
+  return { ok: true, value: out };
+}
+
+/**
  * Validate + normalise a ShiftTemplate payload.
  *
  * @param {object} body
@@ -1109,12 +1131,9 @@ function buildShiftTemplatePayload(body = {}, opts = {}) {
     }
     const positions = [];
     for (const raw of body.positions) {
-      const roles = [];
-      for (const r of Array.isArray(raw?.roles) ? raw.roles : []) {
-        const ref = refField(r);
-        if (ref.bad || !ref.value) return { ok: false, message: 'role must be a valid id' };
-        if (!roles.includes(ref.value)) roles.push(ref.value);
-      }
+      const rolesResult = parseRoleIdList(Array.isArray(raw?.roles) ? raw.roles : []);
+      if (!rolesResult.ok) return { ok: false, message: rolesResult.message };
+      const roles = rolesResult.value;
       if (!roles.length) {
         return { ok: false, message: 'Each position must accept at least one role' };
       }
@@ -1277,13 +1296,9 @@ function buildShiftPayload(body = {}, opts = {}) {
     if (!Array.isArray(body.altRoles)) {
       return { ok: false, message: 'altRoles must be a list' };
     }
-    const alt = [];
-    for (const r of body.altRoles) {
-      const ref = refField(r);
-      if (ref.bad || !ref.value) return { ok: false, message: 'role must be a valid id' };
-      if (!alt.includes(ref.value)) alt.push(ref.value);
-    }
-    value.altRoles = alt;
+    const altResult = parseRoleIdList(body.altRoles);
+    if (!altResult.ok) return { ok: false, message: altResult.message };
+    value.altRoles = altResult.value;
   }
 
   const position = refField(body.templatePosition);
