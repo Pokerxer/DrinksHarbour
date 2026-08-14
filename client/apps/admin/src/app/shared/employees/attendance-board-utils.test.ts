@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAttendanceBoard } from './attendance-board-utils';
+import { attendanceRate, buildAttendanceBoard } from './attendance-board-utils';
 import type { AttendanceRecord } from '@/services/attendance.service';
 import type { Shift } from '@/services/shift.service';
 import type { TimeOffRequest } from '@/services/timeOff.service';
@@ -262,5 +262,68 @@ describe('buildAttendanceBoard', () => {
     expect(board.totals.minutes).toBe(480);
     expect(board.totals.expected).toBe(2);
     expect(board.totals.attended).toBe(1);
+  });
+});
+
+describe('attendanceRate', () => {
+  it('is null, never 0, when nothing was expected — no rostered shifts', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(attendanceRate(board.totals)).toBeNull();
+  });
+
+  it('is a normal percentage when some but not all attended', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ shift: 's1' })],
+      shifts: [
+        shift(),
+        shift({ _id: 's2', employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' } }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(attendanceRate(board.totals)).toBe(50);
+  });
+
+  it('a due shift does not drag the rate down — 100%, not 50%', () => {
+    // Ada rostered 08:00-16:00 and clocked in; Musa rostered 18:00-22:00,
+    // still due at 10:00. Nothing has gone wrong, so the KPI must not blame
+    // Musa's not-yet-started shift.
+    const now = Date.parse(D('10:00'));
+    const board = buildAttendanceBoard({
+      records: [record({ shift: 's1', clockOut: null, status: 'open', minutesWorked: 0 })],
+      shifts: [
+        shift(),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Musa', lastName: 'B' },
+          start: D('18:00'),
+          end: D('22:00'),
+        }),
+      ],
+      timeOff: [],
+      now,
+    });
+
+    expect(board.people.find((p) => p.name === 'Musa B')?.entries[0].state).toBe('due');
+    expect(attendanceRate(board.totals)).toBe(100);
+  });
+
+  it('an absent entry lowers the rate', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.people[0].entries[0].state).toBe('absent');
+    expect(attendanceRate(board.totals)).toBe(0);
   });
 });

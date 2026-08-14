@@ -357,6 +357,13 @@ function totalsFor(people: BoardPerson[]): BoardTotals {
       // Excused and unrostered slots are outside the reckoning entirely: one
       // was forgiven, the other was never owed.
       if (!entry.shift || entry.excused) continue;
+      // A `due` shift has not ended yet, so nobody has failed to show up for
+      // it — it is not owed YET. Counting it in `expected` would drag the KPI
+      // down every time a manager opens the board mid-day for people who are
+      // not even late, which is exactly the false alarm that trains everyone
+      // to stop trusting the number. It rejoins the reckoning once it
+      // resolves to `done` or `absent`. Do not restore this.
+      if (entry.state === 'due') continue;
       totals.expected += 1;
       if (entry.records.length) totals.attended += 1;
     }
