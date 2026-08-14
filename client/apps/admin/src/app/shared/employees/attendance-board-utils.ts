@@ -793,3 +793,29 @@ export function barGeometry(
     clippedEnd: to > window.endMs,
   };
 }
+
+// ── Shared labelling ─────────────────────────────────────────────────────────
+
+/**
+ * A rostered window as local 'HH:MM–HH:MM'.
+ *
+ * Extracted because four panes were each restating it, and the parts that can
+ * silently drift are invisible: the offset has to be applied to BOTH ends, and
+ * the separator is an EN-DASH, not a hyphen. A fifth copy typed from memory
+ * gets one of those wrong and nothing fails — it just renders subtly unlike
+ * the other four.
+ *
+ * Structurally typed rather than taking `BoardShift`, so a populated `Shift`
+ * off a record passes without a conversion. Returns '' for no shift; the
+ * fallback wording ('—', 'No shift') is the caller's to choose.
+ *
+ * This is the SHIFT window only. A punch window is a different rule — its end
+ * may not have happened yet — and it keeps its own 'still in' phrasing.
+ */
+export function shiftWindowLabel(
+  shift: { start: string; end: string } | null | undefined,
+  offsetMinutes = LAGOS_OFFSET_MINUTES
+): string {
+  if (!shift) return '';
+  return `${toLocalTimeLabel(shift.start, offsetMinutes)}–${toLocalTimeLabel(shift.end, offsetMinutes)}`;
+}

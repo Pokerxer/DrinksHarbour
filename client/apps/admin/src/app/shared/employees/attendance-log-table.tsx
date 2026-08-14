@@ -8,11 +8,8 @@
 
 import Link from 'next/link';
 import { PiPencilSimple, PiTrash } from 'react-icons/pi';
-import {
-  LAGOS_OFFSET_MINUTES,
-  formatMinutes,
-  toLocalTimeLabel,
-} from './shift-roster-utils';
+import { LAGOS_OFFSET_MINUTES, formatMinutes } from './shift-roster-utils';
+import { shiftWindowLabel } from './attendance-board-utils';
 import {
   canDeleteRecord,
   editedByName,
@@ -144,9 +141,9 @@ export default function AttendanceLogTable({
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {shift && typeof shift !== 'string'
-                        ? `${toLocalTimeLabel(shift.start, OFFSET)}–${toLocalTimeLabel(shift.end, OFFSET)}`
-                        : '—'}
+                      {(typeof shift === 'string'
+                        ? ''
+                        : shiftWindowLabel(shift, OFFSET)) || '—'}
                     </td>
                     <td className="px-4 py-3">
                       <span

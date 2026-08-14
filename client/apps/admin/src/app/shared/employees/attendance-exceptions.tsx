@@ -16,6 +16,7 @@ import {
 import {
   EXCEPTION_ORDER,
   buildExceptions,
+  shiftWindowLabel,
   type AttendanceBoard,
   type ExceptionKind,
   type ExceptionRow,
@@ -44,9 +45,7 @@ const KIND_TONE: Record<ExceptionKind, string> = {
 /** Why this row is here, in words a manager can act on. */
 function why(row: ExceptionRow): string {
   const shift = row.entry.shift;
-  const window = shift
-    ? `${toLocalTimeLabel(shift.start, OFFSET)}–${toLocalTimeLabel(shift.end, OFFSET)}`
-    : '';
+  const window = shiftWindowLabel(shift, OFFSET);
 
   switch (row.kind) {
     case 'stale_open':

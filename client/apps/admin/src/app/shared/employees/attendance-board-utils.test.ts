@@ -700,3 +700,40 @@ describe('barGeometry', () => {
     expect(bar.visible).toBe(false);
   });
 });
+
+import { shiftWindowLabel } from './attendance-board-utils';
+
+describe('shiftWindowLabel', () => {
+  it('renders both ends in LOCAL time, joined by an en-dash', () => {
+    const label = shiftWindowLabel({ start: D('08:00'), end: D('16:00') }, 60);
+    // +60 offset: 08:00Z reads 09:00 local, 16:00Z reads 17:00.
+    expect(label).toBe('09:00–17:00');
+    // The separator is U+2013, not a hyphen. Four panes render this string.
+    expect(label).toContain('–');
+  });
+
+  it('applies the offset to the END as well as the start', () => {
+    // A regression guard: dropping the offset on one end is invisible by eye.
+    expect(shiftWindowLabel({ start: D('08:00'), end: D('16:00') }, 0)).toBe(
+      '08:00–16:00'
+    );
+  });
+
+  it('accepts a board shift and a populated shift alike', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const fromBoard = board.people[0].entries[0].shift;
+    expect(shiftWindowLabel(fromBoard, 60)).toBe('09:00–17:00');
+    expect(shiftWindowLabel(shift(), 60)).toBe('09:00–17:00');
+  });
+
+  it('returns empty for no shift — the caller owns the fallback wording', () => {
+    expect(shiftWindowLabel(null, 60)).toBe('');
+    expect(shiftWindowLabel(undefined, 60)).toBe('');
+  });
+});

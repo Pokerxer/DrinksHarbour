@@ -18,6 +18,7 @@ import {
 } from './shift-roster-utils';
 import {
   barGeometry,
+  shiftWindowLabel,
   timelineWindow,
   type AttendanceBoard,
   type BoardEntry,
@@ -43,7 +44,7 @@ const PUNCH_TONE: Record<string, string> = {
 
 function entryTitle(entry: BoardEntry): string {
   const shift = entry.shift
-    ? `Rostered ${toLocalTimeLabel(entry.shift.start, OFFSET)}–${toLocalTimeLabel(entry.shift.end, OFFSET)}`
+    ? `Rostered ${shiftWindowLabel(entry.shift, OFFSET)}`
     : 'No shift';
   const punches = entry.records
     .map(

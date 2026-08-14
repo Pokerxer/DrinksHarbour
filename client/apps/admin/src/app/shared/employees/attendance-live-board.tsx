@@ -15,10 +15,11 @@ import {
   formatMinutes,
   toLocalTimeLabel,
 } from './shift-roster-utils';
-import type {
-  AttendanceBoard,
-  BoardPerson,
-  EntryState,
+import {
+  shiftWindowLabel,
+  type AttendanceBoard,
+  type BoardPerson,
+  type EntryState,
 } from './attendance-board-utils';
 import type { AttendanceRecord } from '@/services/attendance.service';
 import { routes } from '@/config/routes';
@@ -96,7 +97,7 @@ function detail(person: BoardPerson, now: number): string {
     return `Due ${toLocalTimeLabel(first.shift.start, OFFSET)}`;
   }
   if (person.state === 'absent' && first?.shift) {
-    return `Rostered ${toLocalTimeLabel(first.shift.start, OFFSET)}–${toLocalTimeLabel(first.shift.end, OFFSET)} · no punch`;
+    return `Rostered ${shiftWindowLabel(first.shift, OFFSET)} · no punch`;
   }
   if (person.state === 'leave') return 'Approved leave';
   if (person.minutesWorked)
