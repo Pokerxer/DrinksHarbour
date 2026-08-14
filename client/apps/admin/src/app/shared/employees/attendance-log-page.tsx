@@ -27,31 +27,20 @@ import {
   PiCaretRight,
   PiClockUserDuotone,
   PiFingerprintDuotone,
-  PiPencilSimple,
   PiPlus,
-  PiTrash,
   PiX,
 } from 'react-icons/pi';
 import { fraunces } from './employees-fonts';
 import { FIELD, Field } from './org-config-page';
+import AttendanceLogTable from './attendance-log-table';
 import {
   LAGOS_OFFSET_MINUTES,
   addDays,
   localToday,
   toLocalDateKey,
-  toLocalTimeLabel,
   formatMinutes,
 } from './shift-roster-utils';
-import {
-  canDeleteRecord,
-  editedByName,
-  groupAttendance,
-  punctualityLabel,
-  punctualityTone,
-  recordDuration,
-  recordTimes,
-  sourceLabel,
-} from './attendance-utils';
+import { recordTimes } from './attendance-utils';
 import {
   attendanceService,
   type AttendanceRecord,
@@ -168,8 +157,6 @@ export default function AttendanceLogPage() {
       cancelled = true;
     };
   }, [token]);
-
-  const groups = useMemo(() => groupAttendance(items), [items]);
 
   // Whether anybody can clock in at all is a property of their PIN, not their
   // POS access — but the PIN is still User.posPinHash, so somebody with none
@@ -375,165 +362,13 @@ export default function AttendanceLogPage() {
         </p>
       )}
 
-      {/* Log */}
-      <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
-        <table className="w-full min-w-[820px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50/60 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              <th className="px-4 py-3">Employee</th>
-              <th className="px-4 py-3">In</th>
-              <th className="px-4 py-3">Out</th>
-              <th className="px-4 py-3">Shift</th>
-              <th className="px-4 py-3">Punctuality</th>
-              <th className="px-4 py-3">Worked</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td
-                  colSpan={8}
-                  className="px-4 py-10 text-center text-gray-400"
-                >
-                  Loading…
-                </td>
-              </tr>
-            )}
-
-            {!loading && !groups.length && (
-              <tr>
-                <td colSpan={8} className="px-4 py-12 text-center">
-                  <p className="text-sm font-medium text-gray-500">
-                    Nobody clocked in on {dayLabel(day)}
-                  </p>
-                  <Link
-                    href={routes.employees.attendanceKiosk}
-                    className="mt-2 inline-block text-sm font-semibold text-[#b20202] hover:underline"
-                  >
-                    Open the kiosk
-                  </Link>
-                </td>
-              </tr>
-            )}
-
-            {!loading &&
-              groups.map((group) =>
-                group.records.map((record, i) => {
-                  const times = recordTimes(record, OFFSET);
-                  const editor = editedByName(record);
-                  const shift = record.shift;
-                  return (
-                    <tr
-                      key={record._id}
-                      className={`border-b border-gray-100 last:border-0 ${
-                        i === 0 ? '' : 'bg-gray-50/40'
-                      }`}
-                    >
-                      <td className="px-4 py-3">
-                        {i === 0 ? (
-                          <div>
-                            {/* Through to their history and rating. Plain text
-                                when the ref did not populate — there is no id
-                                to route to. */}
-                            {group.employeeId ? (
-                              <Link
-                                href={routes.employees.attendanceFor(
-                                  group.employeeId
-                                )}
-                                className="font-semibold text-gray-900 underline-offset-2 hover:text-[#b20202] hover:underline"
-                              >
-                                {group.name}
-                              </Link>
-                            ) : (
-                              <span className="font-semibold text-gray-900">
-                                {group.name}
-                              </span>
-                            )}
-                            <p className="text-xs text-gray-400">
-                              {group.isIn ? (
-                                <span className="font-semibold text-green-600">
-                                  On the clock
-                                </span>
-                              ) : (
-                                `${formatMinutes(group.minutes)} today`
-                              )}
-                            </p>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-300">↳</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 tabular-nums text-gray-900">
-                        {times.in}
-                      </td>
-                      <td className="px-4 py-3 tabular-nums text-gray-600">
-                        {record.clockOut ? (
-                          times.out
-                        ) : (
-                          <span className="text-green-600">still in</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">
-                        {shift && typeof shift !== 'string'
-                          ? `${toLocalTimeLabel(shift.start, OFFSET)}–${toLocalTimeLabel(shift.end, OFFSET)}`
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${punctualityTone(
-                            record.punctuality?.code
-                          )}`}
-                        >
-                          {punctualityLabel(record.punctuality)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-semibold tabular-nums text-gray-900">
-                        {recordDuration(record)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs text-gray-500">
-                          {sourceLabel(record.source)}
-                        </span>
-                        {editor && (
-                          <p className="text-[11px] text-amber-700">
-                            Corrected by {editor}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openCorrection(record)}
-                            aria-label="Correct this record"
-                            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
-                          >
-                            <PiPencilSimple className="h-4 w-4" />
-                          </button>
-                          {/* Offered only for admin rows: the API refuses a
-                              kiosk punch with a 409, and a button that always
-                              fails is worse than no button. */}
-                          {canDeleteRecord(record) && (
-                            <button
-                              type="button"
-                              onClick={() => void remove(record)}
-                              aria-label="Delete this record"
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                            >
-                              <PiTrash className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-          </tbody>
-        </table>
-      </div>
+      <AttendanceLogTable
+        records={items}
+        loading={loading}
+        dayLabel={dayLabel(day)}
+        onCorrect={openCorrection}
+        onDelete={(record) => void remove(record)}
+      />
 
       {/* Entry / correction drawer */}
       <AnimatePresence>
