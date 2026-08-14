@@ -116,22 +116,28 @@ function avatarUrl(person: unknown): string {
 }
 
 /**
- * Does an approved request cover any part of this window?
+ * Does an approved request, belonging to the SAME employee as the shift,
+ * cover any part of this window?
  *
  * Mirrors server/services/shift.helpers.js#overlapsTimeOff: a PENDING request
  * is still a question and excuses nothing, and the window is HALF-OPEN, so
- * leave ending at 08:00 does not cover a shift starting at 08:00.
+ * leave ending at 08:00 does not cover a shift starting at 08:00. It also has
+ * to be THIS employee's leave — one person's approved day off must not excuse
+ * a colleague's shift just because both fall on the same calendar day.
  */
 function isExcused(
-  shift: Pick<Shift, 'start' | 'end'>,
+  shift: Pick<Shift, 'start' | 'end' | 'employee'>,
   timeOff: TimeOffRequest[]
 ): boolean {
   const start = ms(shift.start);
   const end = ms(shift.end);
   if (Number.isNaN(start) || Number.isNaN(end)) return false;
 
+  const employeeId = refId(shift.employee);
+
   return timeOff.some((t) => {
     if (t.status !== 'approved') return false;
+    if (refId(t.employee) !== employeeId) return false;
     const tStart = ms(t.startDate);
     const tEnd = ms(t.endDate);
     if (Number.isNaN(tStart) || Number.isNaN(tEnd)) return false;
@@ -381,4 +387,143 @@ function totalsFor(people: BoardPerson[]): BoardTotals {
 export function attendanceRate(totals: BoardTotals): number | null {
   if (!totals.expected) return null;
   return Math.round((totals.attended / totals.expected) * 100);
+}
+
+// ── The exceptions worklist ──────────────────────────────────────────────────
+
+/**
+ * How long past the rostered end a clock-out is still "on time".
+ *
+ * Mirrors the server's DEFAULT_DEPARTURE_GRACE_MINUTES. Without it every
+ * shift produces an exception, because nobody clocks out on the exact minute,
+ * and a worklist that always has a hundred rows is a worklist nobody reads.
+ */
+export const DEPARTURE_GRACE_MINUTES = 5;
+
+export type ExceptionKind =
+  | 'stale_open'
+  | 'absent'
+  | 'late'
+  | 'left_early'
+  | 'unrostered';
+
+/** Ordered by how much it needs a human, not alphabetically. */
+export const EXCEPTION_ORDER: ExceptionKind[] = [
+  'stale_open',
+  'absent',
+  'late',
+  'left_early',
+  'unrostered',
+];
+
+export interface ExceptionRow {
+  key: string;
+  kind: ExceptionKind;
+  employeeId: string;
+  name: string;
+  entry: BoardEntry;
+  /** The punch to correct, when there is one. */
+  record: AttendanceRecord | null;
+  /** Non-negative; the kind carries the meaning. 0 where it does not apply. */
+  minutes: number;
+}
+
+export interface ExceptionOptions {
+  /** Start of the day in view. An open record from BEFORE this is stale. */
+  dayStart: number;
+}
+
+/**
+ * Everything on this board that wants a manager, worst first.
+ *
+ * A `stale_open` record leads because it is the only one actively lying: it
+ * scores 0 minutes and will keep doing so until somebody closes it. An
+ * absence is a fact about yesterday; an unclosed record is a number that is
+ * wrong right now.
+ *
+ * Excused and `due` entries never appear. One was forgiven, the other has not
+ * happened yet — putting either in a worklist trains people to ignore it.
+ */
+export function buildExceptions(
+  people: BoardPerson[],
+  opts: ExceptionOptions
+): ExceptionRow[] {
+  const rows: ExceptionRow[] = [];
+
+  for (const person of people) {
+    for (const entry of person.entries) {
+      if (entry.excused || entry.state === 'due') continue;
+
+      const base = {
+        employeeId: person.employeeId,
+        name: person.name,
+        entry,
+      };
+
+      if (entry.state === 'absent') {
+        rows.push({ ...base, key: `absent:${entry.key}`, kind: 'absent', record: null, minutes: 0 });
+        continue;
+      }
+
+      for (const record of entry.records) {
+        if (record.status === 'open') {
+          // Open is only a problem once the day it belongs to is over.
+          const started = new Date(record.clockIn).getTime();
+          if (!Number.isNaN(started) && started < opts.dayStart) {
+            rows.push({
+              ...base,
+              key: `stale:${record._id}`,
+              kind: 'stale_open',
+              record,
+              minutes: 0,
+            });
+          }
+          continue;
+        }
+
+        if (entry.state === 'unrostered') {
+          rows.push({
+            ...base,
+            key: `unrostered:${record._id}`,
+            kind: 'unrostered',
+            record,
+            minutes: Number(record.minutesWorked) || 0,
+          });
+          continue;
+        }
+
+        if (record.punctuality?.code === 'late') {
+          rows.push({
+            ...base,
+            key: `late:${record._id}`,
+            kind: 'late',
+            record,
+            minutes: record.punctuality.minutes,
+          });
+        }
+
+        const shiftEnd = entry.shift ? new Date(entry.shift.end).getTime() : NaN;
+        const out = record.clockOut ? new Date(record.clockOut).getTime() : NaN;
+        if (!Number.isNaN(shiftEnd) && !Number.isNaN(out)) {
+          const short = Math.round((shiftEnd - out) / 60_000);
+          if (short > DEPARTURE_GRACE_MINUTES) {
+            rows.push({
+              ...base,
+              key: `early:${record._id}`,
+              kind: 'left_early',
+              record,
+              minutes: short,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return rows.sort((a, b) => {
+    const kind =
+      EXCEPTION_ORDER.indexOf(a.kind) - EXCEPTION_ORDER.indexOf(b.kind);
+    if (kind !== 0) return kind;
+    return a.name.localeCompare(b.name);
+  });
 }

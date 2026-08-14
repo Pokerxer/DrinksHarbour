@@ -327,3 +327,106 @@ describe('attendanceRate', () => {
     expect(attendanceRate(board.totals)).toBe(0);
   });
 });
+
+import { buildExceptions } from './attendance-board-utils';
+
+describe('buildExceptions', () => {
+  const dayStart = Date.parse('2026-08-13T00:00:00.000Z');
+
+  it('ranks a stale open record above every other exception', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        // Yesterday's punch, never closed.
+        record({
+          _id: 'stale',
+          clockIn: '2026-08-12T08:00:00.000Z',
+          clockOut: null,
+          status: 'open',
+          minutesWorked: 0,
+        }),
+        record({
+          _id: 'late',
+          shift: 's2',
+          punctuality: { code: 'late', minutes: 30 },
+        }),
+      ],
+      shifts: [
+        shift({ _id: 's1', start: '2026-08-12T08:00:00.000Z', end: '2026-08-12T16:00:00.000Z' }),
+        shift({ _id: 's2' }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+
+    expect(rows[0].kind).toBe('stale_open');
+    expect(rows.map((r) => r.kind)).toEqual(['stale_open', 'late']);
+  });
+
+  it('does not call today’s open record stale — they are still working', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ clockOut: null, status: 'open', minutesWorked: 0 })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('reports an absence, and never reports a leave day', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [
+        shift({ _id: 's1' }),
+        shift({ _id: 's2', employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' } }),
+      ],
+      timeOff: [leave({ employee: { _id: 'e2' } })],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('absent');
+    expect(rows[0].name).toBe('Ada N');
+  });
+
+  it('reports an early leave off the shift end', () => {
+    const board = buildAttendanceBoard({
+      // Rostered to 16:00, gone at 15:00.
+      records: [record({ clockOut: D('15:00'), minutesWorked: 420 })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+    expect(rows[0].kind).toBe('left_early');
+    expect(rows[0].minutes).toBe(60);
+  });
+
+  it('tolerates a few minutes at the end of a shift', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ clockOut: D('15:56'), minutesWorked: 476 })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(buildExceptions(board.people, { dayStart })).toHaveLength(0);
+  });
+
+  it('reports an unrostered punch last', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ _id: 'a9', shift: null })],
+      shifts: [],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+    expect(rows[0].kind).toBe('unrostered');
+  });
+});
