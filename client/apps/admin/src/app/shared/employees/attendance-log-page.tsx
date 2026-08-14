@@ -35,6 +35,7 @@ import { fraunces } from './employees-fonts';
 import { FIELD, Field } from './org-config-page';
 import AttendanceLogTable from './attendance-log-table';
 import AttendanceLiveBoard from './attendance-live-board';
+import AttendanceDayTimeline from './attendance-day-timeline';
 import {
   LAGOS_OFFSET_MINUTES,
   addDays,
@@ -552,7 +553,16 @@ export default function AttendanceLogPage() {
         />
       )}
 
-      {(view === 'timeline' || view === 'week' || view === 'exceptions') && (
+      {view === 'timeline' && (
+        <AttendanceDayTimeline
+          board={board}
+          now={now}
+          loading={loading}
+          onCorrect={openCorrection}
+        />
+      )}
+
+      {(view === 'week' || view === 'exceptions') && (
         <div className="rounded-2xl border border-gray-200 bg-white px-4 py-12 text-center text-sm text-gray-400">
           Loading…
         </div>
