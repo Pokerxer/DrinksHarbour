@@ -371,7 +371,7 @@ describe('attendanceRate', () => {
 import { buildExceptions } from './attendance-board-utils';
 
 describe('buildExceptions', () => {
-  const dayStart = Date.parse('2026-08-13T00:00:00.000Z');
+  const staleBefore = Date.parse('2026-08-13T00:00:00.000Z');
 
   it('ranks a stale open record above every other exception', () => {
     const board = buildAttendanceBoard({
@@ -402,7 +402,7 @@ describe('buildExceptions', () => {
       now: AFTER,
     });
 
-    const rows = buildExceptions(board.people, { dayStart });
+    const rows = buildExceptions(board.people, { staleBefore });
 
     expect(rows[0].kind).toBe('stale_open');
     expect(rows.map((r) => r.kind)).toEqual(['stale_open', 'late']);
@@ -416,7 +416,7 @@ describe('buildExceptions', () => {
       now: AFTER,
     });
 
-    const rows = buildExceptions(board.people, { dayStart });
+    const rows = buildExceptions(board.people, { staleBefore });
     expect(rows).toHaveLength(0);
   });
 
@@ -434,7 +434,7 @@ describe('buildExceptions', () => {
       now: AFTER,
     });
 
-    const rows = buildExceptions(board.people, { dayStart });
+    const rows = buildExceptions(board.people, { staleBefore });
     expect(rows).toHaveLength(1);
     expect(rows[0].kind).toBe('absent');
     expect(rows[0].name).toBe('Ada N');
@@ -449,7 +449,7 @@ describe('buildExceptions', () => {
       now: AFTER,
     });
 
-    const rows = buildExceptions(board.people, { dayStart });
+    const rows = buildExceptions(board.people, { staleBefore });
     expect(rows[0].kind).toBe('left_early');
     expect(rows[0].minutes).toBe(60);
   });
@@ -462,7 +462,40 @@ describe('buildExceptions', () => {
       now: AFTER,
     });
 
-    expect(buildExceptions(board.people, { dayStart })).toHaveLength(0);
+    expect(buildExceptions(board.people, { staleBefore })).toHaveLength(0);
+  });
+
+  it('measures staleness against TODAY, not against the day in view', () => {
+    // The log query bounds every record at the start of the day in view
+    // (parseRosterRange uses the same local midnight), so a `staleBefore` set
+    // to that day can never be greater than any record's clock-in and the
+    // bucket this worklist LEADS with matches nothing, ever. Passing the day
+    // in view is the bug; passing today is the contract.
+    const openYesterday = record({
+      _id: 'stale',
+      clockIn: '2026-08-12T08:00:00.000Z',
+      clockOut: null,
+      status: 'open',
+      minutesWorked: 0,
+    });
+    const board = buildAttendanceBoard({
+      records: [openYesterday],
+      shifts: [
+        shift({
+          _id: 's1',
+          start: '2026-08-12T08:00:00.000Z',
+          end: '2026-08-12T16:00:00.000Z',
+        }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const dayInView = Date.parse('2026-08-12T00:00:00.000Z');
+    expect(
+      buildExceptions(board.people, { staleBefore: dayInView })
+    ).toHaveLength(0);
+    expect(buildExceptions(board.people, { staleBefore })).toHaveLength(1);
   });
 
   it('reports an unrostered punch last', () => {
@@ -473,7 +506,7 @@ describe('buildExceptions', () => {
       now: AFTER,
     });
 
-    const rows = buildExceptions(board.people, { dayStart });
+    const rows = buildExceptions(board.people, { staleBefore });
     expect(rows[0].kind).toBe('unrostered');
   });
 });
@@ -641,6 +674,40 @@ describe('timelineWindow', () => {
     const win = timelineWindow([], Date.parse(D('12:00')), 60);
     expect(win.endMs).toBeGreaterThan(win.startMs);
     expect(win.ticks.length).toBeGreaterThan(0);
+  });
+
+  it('does not stretch to today when the day in view is in the past', () => {
+    // The date is navigable, so this is a click on "previous day", not a
+    // contrivance. `now` used to widen the window unconditionally, which drew
+    // a fortnight-wide lane: every bar a sliver, every tick label on top of
+    // the next. A day view spans a day.
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift({ start: D('08:00'), end: D('16:00') })],
+      timeOff: [],
+      now: Date.parse('2026-08-27T12:00:00.000Z'),
+    });
+
+    const win = timelineWindow(
+      board.people,
+      Date.parse('2026-08-27T12:00:00.000Z'),
+      60
+    );
+    expect((win.endMs - win.startMs) / 3_600_000).toBeLessThanOrEqual(24);
+  });
+
+  it('still reaches `now` on the day that is actually today', () => {
+    // The guard must not cost the live case its now-line: a shift that ended
+    // at 16:00 with the clock at 20:00 still draws out to 20:00.
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift({ start: D('08:00'), end: D('16:00') })],
+      timeOff: [],
+      now: Date.parse(D('20:00')),
+    });
+
+    const win = timelineWindow(board.people, Date.parse(D('20:00')), 60);
+    expect(win.endMs).toBeGreaterThanOrEqual(Date.parse(D('20:00')));
   });
 });
 

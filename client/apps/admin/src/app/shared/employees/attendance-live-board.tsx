@@ -92,7 +92,13 @@ function detail(person: BoardPerson, now: number): string {
     return `In at ${toLocalTimeLabel(open.clockIn, OFFSET)} · ${formatMinutes(elapsed)} so far`;
   }
 
-  const first = person.entries[0];
+  // The entry that EARNED the headline state, not simply the earliest one.
+  // Entries are sorted by start, so somebody who worked a morning shift and
+  // then missed an evening one is 'absent' off the second while `entries[0]`
+  // is the first — and the card would name the shift they did turn up for as
+  // the one nobody punched.
+  const first =
+    person.entries.find((e) => e.state === person.state) ?? person.entries[0];
   if (person.state === 'due' && first?.shift) {
     return `Due ${toLocalTimeLabel(first.shift.start, OFFSET)}`;
   }

@@ -571,7 +571,12 @@ export default function AttendanceLogPage() {
       {view === 'exceptions' && (
         <AttendanceExceptions
           board={board}
-          dayStart={Date.parse(`${day}T00:00:00.000Z`) - OFFSET * 60_000}
+          // Today's start, not the day in view: the log query already bounds
+          // every record at the start of the day in view, so measuring against
+          // it can never find a record that began earlier.
+          staleBefore={
+            Date.parse(`${localToday(OFFSET)}T00:00:00.000Z`) - OFFSET * 60_000
+          }
           loading={loading}
           onCorrect={openCorrection}
         />

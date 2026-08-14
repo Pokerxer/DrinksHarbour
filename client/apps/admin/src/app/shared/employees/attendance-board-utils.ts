@@ -436,8 +436,17 @@ export interface ExceptionRow {
 }
 
 export interface ExceptionOptions {
-  /** Start of the day in view. An open record from BEFORE this is stale. */
-  dayStart: number;
+  /**
+   * Start of TODAY, not of the day in view. An open record that began before
+   * it can no longer be closed by the person who opened it.
+   *
+   * It must not be the day in view: the log query is scoped to exactly that
+   * day (`parseRosterRange` bounds `clockIn` at the same local midnight this
+   * would be), so every record on hand starts at or after it and the
+   * `stale_open` bucket — the one this worklist leads with — could never
+   * match a single row.
+   */
+  staleBefore: number;
 }
 
 /**
@@ -482,7 +491,7 @@ export function buildExceptions(
         if (record.status === 'open') {
           // Open is only a problem once the day it belongs to is over.
           const started = new Date(record.clockIn).getTime();
-          if (!Number.isNaN(started) && started < opts.dayStart) {
+          if (!Number.isNaN(started) && started < opts.staleBefore) {
             rows.push({
               ...base,
               key: `stale:${record._id}`,
@@ -675,6 +684,14 @@ export interface Bar {
 /** A hair of width, so a zero-length bar is still something you can see. */
 const MIN_BAR_WIDTH_PCT = 0.4;
 
+/** Same local calendar day, in the tenant's zone rather than the browser's. */
+function sameLocalDay(a: number, b: number, offsetMinutes: number): boolean {
+  return (
+    toLocalDateKey(new Date(a).toISOString(), offsetMinutes) ===
+    toLocalDateKey(new Date(b).toISOString(), offsetMinutes)
+  );
+}
+
 /**
  * The span the lanes are drawn across.
  *
@@ -709,7 +726,17 @@ export function timelineWindow(
   // With nothing at all, centre a default span on `now` rather than returning
   // a zero-width window that divides by zero downstream.
   const lo = usable.length ? Math.min(...usable) : now - 4 * MS_PER_HOUR;
-  const hi = usable.length ? Math.max(...usable, now) : now + 4 * MS_PER_HOUR;
+  const dataHi = usable.length ? Math.max(...usable) : now + 4 * MS_PER_HOUR;
+  // `now` pulls the right edge out so the now-line has canvas to sit on — but
+  // ONLY while the day being drawn is the day it currently is. The date is
+  // navigable, so without this guard paging back a fortnight built a 316-hour
+  // window: every bar a 2%-wide sliver under a hundred collided tick labels.
+  // Nothing live is lost by it, because an open record already pushed `now`
+  // into `points` above.
+  const hi =
+    usable.length && sameLocalDay(now, dataHi, offsetMinutes)
+      ? Math.max(dataHi, now)
+      : dataHi;
 
   let startMs = Math.floor(lo / MS_PER_HOUR) * MS_PER_HOUR;
   let endMs = Math.ceil(hi / MS_PER_HOUR) * MS_PER_HOUR;

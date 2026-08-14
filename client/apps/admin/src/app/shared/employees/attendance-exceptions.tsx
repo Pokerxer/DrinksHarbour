@@ -67,15 +67,15 @@ function why(row: ExceptionRow): string {
 
 interface Props {
   board: AttendanceBoard;
-  /** Start of the day in view, ms. An open record from before it is stale. */
-  dayStart: number;
+  /** Start of TODAY, ms. An open record that began before it is stale. */
+  staleBefore: number;
   loading: boolean;
   onCorrect: (record: AttendanceRecord) => void;
 }
 
 export default function AttendanceExceptions({
   board,
-  dayStart,
+  staleBefore,
   loading,
   onCorrect,
 }: Props) {
@@ -87,7 +87,7 @@ export default function AttendanceExceptions({
     );
   }
 
-  const rows = buildExceptions(board.people, { dayStart });
+  const rows = buildExceptions(board.people, { staleBefore });
 
   if (!rows.length) {
     return (
