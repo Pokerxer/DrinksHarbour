@@ -1,0 +1,739 @@
+import { describe, expect, it } from 'vitest';
+import { attendanceRate, buildAttendanceBoard } from './attendance-board-utils';
+import type { AttendanceRecord } from '@/services/attendance.service';
+import type { Shift } from '@/services/shift.service';
+import type { TimeOffRequest } from '@/services/timeOff.service';
+
+/** 2026-08-13T09:00 Lagos === 08:00Z, since the tenant offset is +60. */
+const D = (hhmm: string) => `2026-08-13T${hhmm}:00.000Z`;
+/** Well after every shift below has ended. */
+const AFTER = Date.parse(D('23:00'));
+/** Before any of them start. */
+const BEFORE = Date.parse(D('05:00'));
+
+function shift(over: Partial<Shift> = {}): Shift {
+  return {
+    _id: 's1',
+    employee: { _id: 'e1', firstName: 'Ada', lastName: 'N' },
+    role: { _id: 'r1', name: 'Bar', color: '#b20202' },
+    start: D('08:00'),
+    end: D('16:00'),
+    breakMinutes: 0,
+    status: 'published',
+    createdAt: D('00:00'),
+    updatedAt: D('00:00'),
+    ...over,
+  } as Shift;
+}
+
+function record(over: Partial<AttendanceRecord> = {}): AttendanceRecord {
+  return {
+    _id: 'a1',
+    employee: { _id: 'e1', firstName: 'Ada', lastName: 'N' },
+    shift: 's1',
+    clockIn: D('08:00'),
+    clockOut: D('16:00'),
+    source: 'kiosk',
+    minutesWorked: 480,
+    status: 'closed',
+    createdAt: D('00:00'),
+    updatedAt: D('00:00'),
+    ...over,
+  } as AttendanceRecord;
+}
+
+function leave(over: Partial<TimeOffRequest> = {}): TimeOffRequest {
+  return {
+    _id: 't1',
+    employee: { _id: 'e1' },
+    type: 'annual',
+    startDate: D('00:00'),
+    endDate: `2026-08-14T00:00:00.000Z`,
+    halfDay: 'none',
+    days: 1,
+    status: 'approved',
+    createdAt: D('00:00'),
+    updatedAt: D('00:00'),
+    ...over,
+  } as TimeOffRequest;
+}
+
+describe('buildAttendanceBoard', () => {
+  it('is shift-led: a published, ended shift with no punch is absent', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.people).toHaveLength(1);
+    expect(board.people[0].entries).toHaveLength(1);
+    expect(board.people[0].entries[0].state).toBe('absent');
+    expect(board.people[0].state).toBe('absent');
+  });
+
+  it('does not mark a DRAFT shift absent — staff were never told about it', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift({ status: 'draft' })],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.people).toHaveLength(0);
+  });
+
+  it('a published shift that has not ended yet is due, never absent', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift()],
+      timeOff: [],
+      now: BEFORE,
+    });
+
+    expect(board.people[0].entries[0].state).toBe('due');
+  });
+
+  it('approved leave excuses the shift and outranks absent', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift()],
+      timeOff: [leave()],
+      now: AFTER,
+    });
+
+    expect(board.people[0].entries[0].state).toBe('leave');
+    expect(board.people[0].entries[0].excused).toBe(true);
+  });
+
+  it('a PENDING request excuses nothing — it is still a question', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift()],
+      timeOff: [leave({ status: 'pending' })],
+      now: AFTER,
+    });
+
+    expect(board.people[0].entries[0].state).toBe('absent');
+  });
+
+  it('treats the time-off end as EXCLUSIVE', () => {
+    // Leave ends at 08:00, the instant the shift starts. No overlap.
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift()],
+      timeOff: [leave({ startDate: D('00:00'), endDate: D('08:00') })],
+      now: AFTER,
+    });
+
+    expect(board.people[0].entries[0].state).toBe('absent');
+  });
+
+  it('joins a punch to its shift whether the ref is an id or a doc', () => {
+    const asId = buildAttendanceBoard({
+      records: [record({ shift: 's1' })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+    const asDoc = buildAttendanceBoard({
+      records: [
+        record({
+          shift: {
+            _id: 's1',
+            start: D('08:00'),
+            end: D('16:00'),
+            status: 'published',
+          },
+        }),
+      ],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(asId.people[0].entries[0].state).toBe('done');
+    expect(asDoc.people[0].entries[0].state).toBe('done');
+  });
+
+  it('buckets a punch with a null shift as unrostered, not as an absence', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ _id: 'a9', shift: null })],
+      shifts: [],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.people[0].entries[0].state).toBe('unrostered');
+    expect(board.people[0].entries[0].shift).toBeNull();
+  });
+
+  it('an open record reads in, and counts no minutes yet', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ clockOut: null, status: 'open', minutesWorked: 0 })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.people[0].entries[0].state).toBe('in');
+    expect(board.people[0].isIn).toBe(true);
+    expect(board.people[0].minutesWorked).toBe(0);
+  });
+
+  it('sums CLOSED minutes only', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        record({
+          _id: 'a1',
+          shift: 's1',
+          minutesWorked: 480,
+          status: 'closed',
+        }),
+        record({
+          _id: 'a2',
+          shift: null,
+          minutesWorked: 0,
+          status: 'open',
+          clockOut: null,
+        }),
+      ],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.people[0].minutesWorked).toBe(480);
+  });
+
+  it('headline state is in when they are here now, despite an earlier miss', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        record({
+          _id: 'a2',
+          shift: 's2',
+          clockOut: null,
+          status: 'open',
+          minutesWorked: 0,
+        }),
+      ],
+      shifts: [
+        shift({ _id: 's1', start: D('06:00'), end: D('09:00') }),
+        shift({ _id: 's2', start: D('12:00'), end: D('20:00') }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const person = board.people[0];
+    expect(person.state).toBe('in');
+    expect(person.entries.map((e) => e.state)).toEqual(['absent', 'in']);
+  });
+
+  it('counts late arrivals off the punctuality the server attached', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ punctuality: { code: 'late', minutes: 22 } })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.people[0].lateCount).toBe(1);
+    expect(board.people[0].entries[0].lateMinutes).toBe(22);
+  });
+
+  it('sorts people by headline state, then by name', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        record({
+          _id: 'a2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+          shift: 's2',
+          clockOut: null,
+          status: 'open',
+          minutesWorked: 0,
+        }),
+      ],
+      shifts: [
+        shift(),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    // Zoe is IN, Ada is ABSENT. `in` ranks first even though Z sorts after A.
+    expect(board.people.map((p) => p.name)).toEqual(['Zoe B', 'Ada N']);
+  });
+
+  it('reports totals across everyone', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ punctuality: { code: 'late', minutes: 10 } })],
+      shifts: [
+        shift(),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.totals.onTheClock).toBe(0);
+    expect(board.totals.absent).toBe(1);
+    expect(board.totals.late).toBe(1);
+    expect(board.totals.minutes).toBe(480);
+    expect(board.totals.expected).toBe(2);
+    expect(board.totals.attended).toBe(1);
+  });
+});
+
+describe('attendanceRate', () => {
+  it('is null, never 0, when nothing was expected — no rostered shifts', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(attendanceRate(board.totals)).toBeNull();
+  });
+
+  it('is a normal percentage when some but not all attended', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ shift: 's1' })],
+      shifts: [
+        shift(),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(attendanceRate(board.totals)).toBe(50);
+  });
+
+  it('a due shift does not drag the rate down — 100%, not 50%', () => {
+    // Ada rostered 08:00-16:00 and clocked in; Musa rostered 18:00-22:00,
+    // still due at 10:00. Nothing has gone wrong, so the KPI must not blame
+    // Musa's not-yet-started shift.
+    const now = Date.parse(D('10:00'));
+    const board = buildAttendanceBoard({
+      records: [
+        record({
+          shift: 's1',
+          clockOut: null,
+          status: 'open',
+          minutesWorked: 0,
+        }),
+      ],
+      shifts: [
+        shift(),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Musa', lastName: 'B' },
+          start: D('18:00'),
+          end: D('22:00'),
+        }),
+      ],
+      timeOff: [],
+      now,
+    });
+
+    expect(
+      board.people.find((p) => p.name === 'Musa B')?.entries[0].state
+    ).toBe('due');
+    expect(attendanceRate(board.totals)).toBe(100);
+  });
+
+  it('an absent entry lowers the rate', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.people[0].entries[0].state).toBe('absent');
+    expect(attendanceRate(board.totals)).toBe(0);
+  });
+});
+
+import { buildExceptions } from './attendance-board-utils';
+
+describe('buildExceptions', () => {
+  const dayStart = Date.parse('2026-08-13T00:00:00.000Z');
+
+  it('ranks a stale open record above every other exception', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        // Yesterday's punch, never closed.
+        record({
+          _id: 'stale',
+          clockIn: '2026-08-12T08:00:00.000Z',
+          clockOut: null,
+          status: 'open',
+          minutesWorked: 0,
+        }),
+        record({
+          _id: 'late',
+          shift: 's2',
+          punctuality: { code: 'late', minutes: 30 },
+        }),
+      ],
+      shifts: [
+        shift({
+          _id: 's1',
+          start: '2026-08-12T08:00:00.000Z',
+          end: '2026-08-12T16:00:00.000Z',
+        }),
+        shift({ _id: 's2' }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+
+    expect(rows[0].kind).toBe('stale_open');
+    expect(rows.map((r) => r.kind)).toEqual(['stale_open', 'late']);
+  });
+
+  it('does not call today’s open record stale — they are still working', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ clockOut: null, status: 'open', minutesWorked: 0 })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('reports an absence, and never reports a leave day', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [
+        shift({ _id: 's1' }),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
+      ],
+      timeOff: [leave({ employee: { _id: 'e2' } })],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('absent');
+    expect(rows[0].name).toBe('Ada N');
+  });
+
+  it('reports an early leave off the shift end', () => {
+    const board = buildAttendanceBoard({
+      // Rostered to 16:00, gone at 15:00.
+      records: [record({ clockOut: D('15:00'), minutesWorked: 420 })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+    expect(rows[0].kind).toBe('left_early');
+    expect(rows[0].minutes).toBe(60);
+  });
+
+  it('tolerates a few minutes at the end of a shift', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ clockOut: D('15:56'), minutesWorked: 476 })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(buildExceptions(board.people, { dayStart })).toHaveLength(0);
+  });
+
+  it('reports an unrostered punch last', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ _id: 'a9', shift: null })],
+      shifts: [],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const rows = buildExceptions(board.people, { dayStart });
+    expect(rows[0].kind).toBe('unrostered');
+  });
+});
+
+import { buildTimesheet } from './attendance-board-utils';
+import { buildWeek } from './shift-roster-utils';
+
+describe('buildTimesheet', () => {
+  // 2026-08-13 is a Thursday; the trading week starts Monday 2026-08-10.
+  const week = buildWeek('2026-08-13');
+
+  it('buckets minutes by the day the punch STARTED, not the day it ended', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        // 22:00 Thu → 06:00 Fri. It belongs to Thursday.
+        record({
+          clockIn: '2026-08-13T21:00:00.000Z',
+          clockOut: '2026-08-14T05:00:00.000Z',
+          minutesWorked: 480,
+        }),
+      ],
+      shifts: [
+        shift({
+          start: '2026-08-13T21:00:00.000Z',
+          end: '2026-08-14T05:00:00.000Z',
+        }),
+      ],
+      timeOff: [],
+      now: Date.parse('2026-08-15T00:00:00.000Z'),
+    });
+
+    const sheet = buildTimesheet(board.people, week, 60);
+    const row = sheet.rows[0];
+
+    expect(row.cells['2026-08-13'].minutes).toBe(480);
+    expect(row.cells['2026-08-14'].minutes).toBe(0);
+    expect(row.total).toBe(480);
+  });
+
+  it('counts CLOSED minutes only — an open record is not time so far', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ clockOut: null, status: 'open', minutesWorked: 0 })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const sheet = buildTimesheet(board.people, week, 60);
+    expect(sheet.rows[0].total).toBe(0);
+    expect(sheet.rows[0].cells['2026-08-13'].open).toBe(true);
+  });
+
+  it('marks the cell late and absent so payroll still sees the exceptions', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        record({ shift: 's1', punctuality: { code: 'late', minutes: 15 } }),
+      ],
+      shifts: [
+        shift({ _id: 's1' }),
+        shift({ _id: 's2', start: D('18:00'), end: D('22:00') }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const cell = buildTimesheet(board.people, week, 60).rows[0].cells[
+      '2026-08-13'
+    ];
+    expect(cell.late).toBe(true);
+    expect(cell.absent).toBe(true);
+  });
+
+  it('totals each day and the whole week', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        record({ _id: 'a1', shift: 's1', minutesWorked: 480 }),
+        record({
+          _id: 'a2',
+          shift: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+          minutesWorked: 240,
+        }),
+      ],
+      shifts: [
+        shift({ _id: 's1' }),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const sheet = buildTimesheet(board.people, week, 60);
+    expect(sheet.dayTotals['2026-08-13']).toBe(720);
+    expect(sheet.total).toBe(720);
+  });
+
+  it('gives every row a cell for every day, so the grid is never ragged', () => {
+    const board = buildAttendanceBoard({
+      records: [record()],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const cells = sheetKeys(buildTimesheet(board.people, week, 60));
+    expect(cells).toEqual(week.map((d) => d.date));
+  });
+});
+
+function sheetKeys(sheet: ReturnType<typeof buildTimesheet>): string[] {
+  return Object.keys(sheet.rows[0].cells);
+}
+
+import { barGeometry, timelineWindow } from './attendance-board-utils';
+
+describe('timelineWindow', () => {
+  it('fits the day’s real extent, snapped out to whole hours', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ clockIn: D('07:40'), clockOut: D('16:20') })],
+      shifts: [shift({ start: D('08:00'), end: D('16:00') })],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const win = timelineWindow(board.people, Date.parse(D('17:00')), 60);
+    // The earliest point is the 07:40Z punch, which snaps back to 07:00Z;
+    // `now` at 17:00Z is the right edge. Both labels are LOCAL, so the +60
+    // tenant offset puts them an hour on: 08:00 and 18:00.
+    expect(win.startLabel).toBe('08:00');
+    expect(win.endLabel).toBe('18:00');
+  });
+
+  it('honours an 8-hour minimum so one short shift is not drawn edge to edge', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift({ start: D('09:00'), end: D('11:00') })],
+      timeOff: [],
+      now: Date.parse(D('11:00')),
+    });
+
+    const win = timelineWindow(board.people, Date.parse(D('11:00')), 60);
+    expect((win.endMs - win.startMs) / 3_600_000).toBeGreaterThanOrEqual(8);
+  });
+
+  it('emits an hourly tick per hour of the window', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift({ start: D('08:00'), end: D('16:00') })],
+      timeOff: [],
+      now: Date.parse(D('16:00')),
+    });
+
+    const win = timelineWindow(board.people, Date.parse(D('16:00')), 60);
+    expect(win.ticks[0].label).toBe(win.startLabel);
+    expect(win.ticks[0].leftPct).toBe(0);
+    expect(win.ticks.every((t) => t.leftPct >= 0 && t.leftPct <= 100)).toBe(
+      true
+    );
+  });
+
+  it('falls back to a sane window when there is nothing at all', () => {
+    const win = timelineWindow([], Date.parse(D('12:00')), 60);
+    expect(win.endMs).toBeGreaterThan(win.startMs);
+    expect(win.ticks.length).toBeGreaterThan(0);
+  });
+});
+
+describe('barGeometry', () => {
+  const win = {
+    startMs: Date.parse(D('08:00')),
+    endMs: Date.parse(D('16:00')),
+  };
+
+  it('places a bar as a percentage of the window', () => {
+    const bar = barGeometry(
+      Date.parse(D('10:00')),
+      Date.parse(D('12:00')),
+      win
+    );
+    expect(bar.leftPct).toBe(25);
+    expect(bar.widthPct).toBe(25);
+  });
+
+  it('clamps a bar that crosses the window edge — an overnight must not overflow', () => {
+    const bar = barGeometry(
+      Date.parse(D('14:00')),
+      Date.parse('2026-08-14T02:00:00.000Z'),
+      win
+    );
+    expect(bar.leftPct).toBe(75);
+    expect(bar.widthPct).toBe(25);
+    expect(bar.leftPct + bar.widthPct).toBeLessThanOrEqual(100);
+    expect(bar.clippedEnd).toBe(true);
+  });
+
+  it('clamps a bar starting before the window', () => {
+    const bar = barGeometry(
+      Date.parse(D('04:00')),
+      Date.parse(D('10:00')),
+      win
+    );
+    expect(bar.leftPct).toBe(0);
+    expect(bar.clippedStart).toBe(true);
+  });
+
+  it('gives a zero-length bar a visible minimum width', () => {
+    const bar = barGeometry(
+      Date.parse(D('10:00')),
+      Date.parse(D('10:00')),
+      win
+    );
+    expect(bar.widthPct).toBeGreaterThan(0);
+  });
+
+  it('reports nothing for a bar entirely outside the window', () => {
+    const bar = barGeometry(
+      Date.parse(D('02:00')),
+      Date.parse(D('04:00')),
+      win
+    );
+    expect(bar.visible).toBe(false);
+  });
+});
+
+import { shiftWindowLabel } from './attendance-board-utils';
+
+describe('shiftWindowLabel', () => {
+  it('renders both ends in LOCAL time, joined by an en-dash', () => {
+    const label = shiftWindowLabel({ start: D('08:00'), end: D('16:00') }, 60);
+    // +60 offset: 08:00Z reads 09:00 local, 16:00Z reads 17:00.
+    expect(label).toBe('09:00–17:00');
+    // The separator is U+2013, not a hyphen. Four panes render this string.
+    expect(label).toContain('–');
+  });
+
+  it('applies the offset to the END as well as the start', () => {
+    // A regression guard: dropping the offset on one end is invisible by eye.
+    expect(shiftWindowLabel({ start: D('08:00'), end: D('16:00') }, 0)).toBe(
+      '08:00–16:00'
+    );
+  });
+
+  it('accepts a board shift and a populated shift alike', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const fromBoard = board.people[0].entries[0].shift;
+    expect(shiftWindowLabel(fromBoard, 60)).toBe('09:00–17:00');
+    expect(shiftWindowLabel(shift(), 60)).toBe('09:00–17:00');
+  });
+
+  it('returns empty for no shift — the caller owns the fallback wording', () => {
+    expect(shiftWindowLabel(null, 60)).toBe('');
+    expect(shiftWindowLabel(undefined, 60)).toBe('');
+  });
+});
