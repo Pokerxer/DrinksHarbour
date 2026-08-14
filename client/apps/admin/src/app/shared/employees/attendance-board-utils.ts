@@ -13,7 +13,13 @@ import type { AttendanceRecord } from '@/services/attendance.service';
 import type { Shift } from '@/services/shift.service';
 import type { TimeOffRequest } from '@/services/timeOff.service';
 import { refId } from '@/services/orgStructure.service';
-import { employeeName } from './shift-roster-utils';
+import type { DayColumn } from './shift-roster-utils';
+import {
+  LAGOS_OFFSET_MINUTES,
+  employeeName,
+  toLocalDateKey,
+} from './shift-roster-utils';
+import { recordDateKey } from './attendance-utils';
 
 /** What one rostered slot (or one unrostered punch) came to. */
 export type EntryState =
@@ -461,7 +467,13 @@ export function buildExceptions(
       };
 
       if (entry.state === 'absent') {
-        rows.push({ ...base, key: `absent:${entry.key}`, kind: 'absent', record: null, minutes: 0 });
+        rows.push({
+          ...base,
+          key: `absent:${entry.key}`,
+          kind: 'absent',
+          record: null,
+          minutes: 0,
+        });
         continue;
       }
 
@@ -502,7 +514,9 @@ export function buildExceptions(
           });
         }
 
-        const shiftEnd = entry.shift ? new Date(entry.shift.end).getTime() : NaN;
+        const shiftEnd = entry.shift
+          ? new Date(entry.shift.end).getTime()
+          : NaN;
         const out = record.clockOut ? new Date(record.clockOut).getTime() : NaN;
         if (!Number.isNaN(shiftEnd) && !Number.isNaN(out)) {
           const short = Math.round((shiftEnd - out) / 60_000);
@@ -526,4 +540,100 @@ export function buildExceptions(
     if (kind !== 0) return kind;
     return a.name.localeCompare(b.name);
   });
+}
+
+// ── The week timesheet ───────────────────────────────────────────────────────
+
+export interface TimesheetCell {
+  date: string;
+  /** Closed minutes only. */
+  minutes: number;
+  /** Somebody is still on the clock on this day. */
+  open: boolean;
+  late: boolean;
+  absent: boolean;
+}
+
+export interface TimesheetRow {
+  employeeId: string;
+  name: string;
+  avatar: string;
+  /** One entry per column, always — a ragged grid cannot be rendered. */
+  cells: Record<string, TimesheetCell>;
+  total: number;
+}
+
+export interface Timesheet {
+  rows: TimesheetRow[];
+  dayTotals: Record<string, number>;
+  total: number;
+}
+
+function emptyCell(date: string): TimesheetCell {
+  return { date, minutes: 0, open: false, late: false, absent: false };
+}
+
+/**
+ * Employees × days, in minutes.
+ *
+ * Bucketed by the day the punch STARTED (recordDateKey — the existing rule),
+ * so an overnight shift belongs to the day it began on this screen and on the
+ * roster both. Splitting it across midnight would make one person's Thursday
+ * disagree with their Thursday shift.
+ *
+ * An absence has no punch, so it cannot be bucketed from a record — it is
+ * taken from the entry's SHIFT start instead. That is the whole reason this
+ * takes board people rather than raw records.
+ */
+export function buildTimesheet(
+  people: BoardPerson[],
+  days: DayColumn[],
+  offsetMinutes = LAGOS_OFFSET_MINUTES
+): Timesheet {
+  const dayTotals: Record<string, number> = {};
+  for (const day of days) dayTotals[day.date] = 0;
+
+  const rows: TimesheetRow[] = people.map((person) => {
+    const cells: Record<string, TimesheetCell> = {};
+    for (const day of days) cells[day.date] = emptyCell(day.date);
+
+    let total = 0;
+
+    for (const entry of person.entries) {
+      if (entry.state === 'absent' && entry.shift) {
+        const key = toLocalDateKey(entry.shift.start, offsetMinutes);
+        if (cells[key]) cells[key].absent = true;
+      }
+
+      for (const record of entry.records) {
+        const key = recordDateKey(record, offsetMinutes);
+        const cell = cells[key];
+        if (!cell) continue;
+
+        if (record.status === 'closed') {
+          const minutes = Number(record.minutesWorked) || 0;
+          cell.minutes += minutes;
+          total += minutes;
+          dayTotals[key] += minutes;
+        } else {
+          cell.open = true;
+        }
+        if (record.punctuality?.code === 'late') cell.late = true;
+      }
+    }
+
+    return {
+      employeeId: person.employeeId,
+      name: person.name,
+      avatar: person.avatar,
+      cells,
+      total,
+    };
+  });
+
+  return {
+    rows,
+    dayTotals,
+    total: Object.values(dayTotals).reduce((sum, n) => sum + n, 0),
+  };
 }

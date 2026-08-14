@@ -140,7 +140,12 @@ describe('buildAttendanceBoard', () => {
     const asDoc = buildAttendanceBoard({
       records: [
         record({
-          shift: { _id: 's1', start: D('08:00'), end: D('16:00'), status: 'published' },
+          shift: {
+            _id: 's1',
+            start: D('08:00'),
+            end: D('16:00'),
+            status: 'published',
+          },
         }),
       ],
       shifts: [shift()],
@@ -180,8 +185,19 @@ describe('buildAttendanceBoard', () => {
   it('sums CLOSED minutes only', () => {
     const board = buildAttendanceBoard({
       records: [
-        record({ _id: 'a1', shift: 's1', minutesWorked: 480, status: 'closed' }),
-        record({ _id: 'a2', shift: null, minutesWorked: 0, status: 'open', clockOut: null }),
+        record({
+          _id: 'a1',
+          shift: 's1',
+          minutesWorked: 480,
+          status: 'closed',
+        }),
+        record({
+          _id: 'a2',
+          shift: null,
+          minutesWorked: 0,
+          status: 'open',
+          clockOut: null,
+        }),
       ],
       shifts: [shift()],
       timeOff: [],
@@ -194,7 +210,13 @@ describe('buildAttendanceBoard', () => {
   it('headline state is in when they are here now, despite an earlier miss', () => {
     const board = buildAttendanceBoard({
       records: [
-        record({ _id: 'a2', shift: 's2', clockOut: null, status: 'open', minutesWorked: 0 }),
+        record({
+          _id: 'a2',
+          shift: 's2',
+          clockOut: null,
+          status: 'open',
+          minutesWorked: 0,
+        }),
       ],
       shifts: [
         shift({ _id: 's1', start: D('06:00'), end: D('09:00') }),
@@ -235,7 +257,10 @@ describe('buildAttendanceBoard', () => {
       ],
       shifts: [
         shift(),
-        shift({ _id: 's2', employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' } }),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
       ],
       timeOff: [],
       now: AFTER,
@@ -250,7 +275,10 @@ describe('buildAttendanceBoard', () => {
       records: [record({ punctuality: { code: 'late', minutes: 10 } })],
       shifts: [
         shift(),
-        shift({ _id: 's2', employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' } }),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
       ],
       timeOff: [],
       now: AFTER,
@@ -282,7 +310,10 @@ describe('attendanceRate', () => {
       records: [record({ shift: 's1' })],
       shifts: [
         shift(),
-        shift({ _id: 's2', employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' } }),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
       ],
       timeOff: [],
       now: AFTER,
@@ -297,7 +328,14 @@ describe('attendanceRate', () => {
     // Musa's not-yet-started shift.
     const now = Date.parse(D('10:00'));
     const board = buildAttendanceBoard({
-      records: [record({ shift: 's1', clockOut: null, status: 'open', minutesWorked: 0 })],
+      records: [
+        record({
+          shift: 's1',
+          clockOut: null,
+          status: 'open',
+          minutesWorked: 0,
+        }),
+      ],
       shifts: [
         shift(),
         shift({
@@ -311,7 +349,9 @@ describe('attendanceRate', () => {
       now,
     });
 
-    expect(board.people.find((p) => p.name === 'Musa B')?.entries[0].state).toBe('due');
+    expect(
+      board.people.find((p) => p.name === 'Musa B')?.entries[0].state
+    ).toBe('due');
     expect(attendanceRate(board.totals)).toBe(100);
   });
 
@@ -351,7 +391,11 @@ describe('buildExceptions', () => {
         }),
       ],
       shifts: [
-        shift({ _id: 's1', start: '2026-08-12T08:00:00.000Z', end: '2026-08-12T16:00:00.000Z' }),
+        shift({
+          _id: 's1',
+          start: '2026-08-12T08:00:00.000Z',
+          end: '2026-08-12T16:00:00.000Z',
+        }),
         shift({ _id: 's2' }),
       ],
       timeOff: [],
@@ -381,7 +425,10 @@ describe('buildExceptions', () => {
       records: [],
       shifts: [
         shift({ _id: 's1' }),
-        shift({ _id: 's2', employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' } }),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
       ],
       timeOff: [leave({ employee: { _id: 'e2' } })],
       now: AFTER,
@@ -430,3 +477,115 @@ describe('buildExceptions', () => {
     expect(rows[0].kind).toBe('unrostered');
   });
 });
+
+import { buildTimesheet } from './attendance-board-utils';
+import { buildWeek } from './shift-roster-utils';
+
+describe('buildTimesheet', () => {
+  // 2026-08-13 is a Thursday; the trading week starts Monday 2026-08-10.
+  const week = buildWeek('2026-08-13');
+
+  it('buckets minutes by the day the punch STARTED, not the day it ended', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        // 22:00 Thu → 06:00 Fri. It belongs to Thursday.
+        record({
+          clockIn: '2026-08-13T21:00:00.000Z',
+          clockOut: '2026-08-14T05:00:00.000Z',
+          minutesWorked: 480,
+        }),
+      ],
+      shifts: [
+        shift({
+          start: '2026-08-13T21:00:00.000Z',
+          end: '2026-08-14T05:00:00.000Z',
+        }),
+      ],
+      timeOff: [],
+      now: Date.parse('2026-08-15T00:00:00.000Z'),
+    });
+
+    const sheet = buildTimesheet(board.people, week, 60);
+    const row = sheet.rows[0];
+
+    expect(row.cells['2026-08-13'].minutes).toBe(480);
+    expect(row.cells['2026-08-14'].minutes).toBe(0);
+    expect(row.total).toBe(480);
+  });
+
+  it('counts CLOSED minutes only — an open record is not time so far', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ clockOut: null, status: 'open', minutesWorked: 0 })],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const sheet = buildTimesheet(board.people, week, 60);
+    expect(sheet.rows[0].total).toBe(0);
+    expect(sheet.rows[0].cells['2026-08-13'].open).toBe(true);
+  });
+
+  it('marks the cell late and absent so payroll still sees the exceptions', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        record({ shift: 's1', punctuality: { code: 'late', minutes: 15 } }),
+      ],
+      shifts: [
+        shift({ _id: 's1' }),
+        shift({ _id: 's2', start: D('18:00'), end: D('22:00') }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const cell = buildTimesheet(board.people, week, 60).rows[0].cells[
+      '2026-08-13'
+    ];
+    expect(cell.late).toBe(true);
+    expect(cell.absent).toBe(true);
+  });
+
+  it('totals each day and the whole week', () => {
+    const board = buildAttendanceBoard({
+      records: [
+        record({ _id: 'a1', shift: 's1', minutesWorked: 480 }),
+        record({
+          _id: 'a2',
+          shift: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+          minutesWorked: 240,
+        }),
+      ],
+      shifts: [
+        shift({ _id: 's1' }),
+        shift({
+          _id: 's2',
+          employee: { _id: 'e2', firstName: 'Zoe', lastName: 'B' },
+        }),
+      ],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const sheet = buildTimesheet(board.people, week, 60);
+    expect(sheet.dayTotals['2026-08-13']).toBe(720);
+    expect(sheet.total).toBe(720);
+  });
+
+  it('gives every row a cell for every day, so the grid is never ragged', () => {
+    const board = buildAttendanceBoard({
+      records: [record()],
+      shifts: [shift()],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const cells = sheetKeys(buildTimesheet(board.people, week, 60));
+    expect(cells).toEqual(week.map((d) => d.date));
+  });
+});
+
+function sheetKeys(sheet: ReturnType<typeof buildTimesheet>): string[] {
+  return Object.keys(sheet.rows[0].cells);
+}
