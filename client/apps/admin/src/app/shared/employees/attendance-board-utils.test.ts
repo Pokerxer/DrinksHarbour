@@ -589,3 +589,114 @@ describe('buildTimesheet', () => {
 function sheetKeys(sheet: ReturnType<typeof buildTimesheet>): string[] {
   return Object.keys(sheet.rows[0].cells);
 }
+
+import { barGeometry, timelineWindow } from './attendance-board-utils';
+
+describe('timelineWindow', () => {
+  it('fits the day’s real extent, snapped out to whole hours', () => {
+    const board = buildAttendanceBoard({
+      records: [record({ clockIn: D('07:40'), clockOut: D('16:20') })],
+      shifts: [shift({ start: D('08:00'), end: D('16:00') })],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    const win = timelineWindow(board.people, Date.parse(D('17:00')), 60);
+    // The earliest point is the 07:40Z punch, which snaps back to 07:00Z;
+    // `now` at 17:00Z is the right edge. Both labels are LOCAL, so the +60
+    // tenant offset puts them an hour on: 08:00 and 18:00.
+    expect(win.startLabel).toBe('08:00');
+    expect(win.endLabel).toBe('18:00');
+  });
+
+  it('honours an 8-hour minimum so one short shift is not drawn edge to edge', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift({ start: D('09:00'), end: D('11:00') })],
+      timeOff: [],
+      now: Date.parse(D('11:00')),
+    });
+
+    const win = timelineWindow(board.people, Date.parse(D('11:00')), 60);
+    expect((win.endMs - win.startMs) / 3_600_000).toBeGreaterThanOrEqual(8);
+  });
+
+  it('emits an hourly tick per hour of the window', () => {
+    const board = buildAttendanceBoard({
+      records: [],
+      shifts: [shift({ start: D('08:00'), end: D('16:00') })],
+      timeOff: [],
+      now: Date.parse(D('16:00')),
+    });
+
+    const win = timelineWindow(board.people, Date.parse(D('16:00')), 60);
+    expect(win.ticks[0].label).toBe(win.startLabel);
+    expect(win.ticks[0].leftPct).toBe(0);
+    expect(win.ticks.every((t) => t.leftPct >= 0 && t.leftPct <= 100)).toBe(
+      true
+    );
+  });
+
+  it('falls back to a sane window when there is nothing at all', () => {
+    const win = timelineWindow([], Date.parse(D('12:00')), 60);
+    expect(win.endMs).toBeGreaterThan(win.startMs);
+    expect(win.ticks.length).toBeGreaterThan(0);
+  });
+});
+
+describe('barGeometry', () => {
+  const win = {
+    startMs: Date.parse(D('08:00')),
+    endMs: Date.parse(D('16:00')),
+  };
+
+  it('places a bar as a percentage of the window', () => {
+    const bar = barGeometry(
+      Date.parse(D('10:00')),
+      Date.parse(D('12:00')),
+      win
+    );
+    expect(bar.leftPct).toBe(25);
+    expect(bar.widthPct).toBe(25);
+  });
+
+  it('clamps a bar that crosses the window edge — an overnight must not overflow', () => {
+    const bar = barGeometry(
+      Date.parse(D('14:00')),
+      Date.parse('2026-08-14T02:00:00.000Z'),
+      win
+    );
+    expect(bar.leftPct).toBe(75);
+    expect(bar.widthPct).toBe(25);
+    expect(bar.leftPct + bar.widthPct).toBeLessThanOrEqual(100);
+    expect(bar.clippedEnd).toBe(true);
+  });
+
+  it('clamps a bar starting before the window', () => {
+    const bar = barGeometry(
+      Date.parse(D('04:00')),
+      Date.parse(D('10:00')),
+      win
+    );
+    expect(bar.leftPct).toBe(0);
+    expect(bar.clippedStart).toBe(true);
+  });
+
+  it('gives a zero-length bar a visible minimum width', () => {
+    const bar = barGeometry(
+      Date.parse(D('10:00')),
+      Date.parse(D('10:00')),
+      win
+    );
+    expect(bar.widthPct).toBeGreaterThan(0);
+  });
+
+  it('reports nothing for a bar entirely outside the window', () => {
+    const bar = barGeometry(
+      Date.parse(D('02:00')),
+      Date.parse(D('04:00')),
+      win
+    );
+    expect(bar.visible).toBe(false);
+  });
+});

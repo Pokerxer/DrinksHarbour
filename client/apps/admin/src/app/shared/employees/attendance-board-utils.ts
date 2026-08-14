@@ -18,6 +18,7 @@ import {
   LAGOS_OFFSET_MINUTES,
   employeeName,
   toLocalDateKey,
+  toLocalTimeLabel,
 } from './shift-roster-utils';
 import { recordDateKey } from './attendance-utils';
 
@@ -635,5 +636,157 @@ export function buildTimesheet(
     rows,
     dayTotals,
     total: Object.values(dayTotals).reduce((sum, n) => sum + n, 0),
+  };
+}
+
+// ── The day timeline ─────────────────────────────────────────────────────────
+
+const MS_PER_HOUR = 3_600_000;
+
+/**
+ * The narrowest window the timeline will draw.
+ *
+ * A day with one two-hour shift would otherwise stretch it edge to edge, which
+ * reads as "everybody worked all day" — the exact opposite of the truth.
+ */
+export const MIN_TIMELINE_SPAN_MINUTES = 8 * 60;
+
+export interface TimelineTick {
+  label: string;
+  leftPct: number;
+}
+
+export interface TimelineWindow {
+  startMs: number;
+  endMs: number;
+  startLabel: string;
+  endLabel: string;
+  ticks: TimelineTick[];
+}
+
+export interface Bar {
+  leftPct: number;
+  widthPct: number;
+  visible: boolean;
+  clippedStart: boolean;
+  clippedEnd: boolean;
+}
+
+/** A hair of width, so a zero-length bar is still something you can see. */
+const MIN_BAR_WIDTH_PCT = 0.4;
+
+/**
+ * The span the lanes are drawn across.
+ *
+ * Auto-fitted rather than a hardcoded 06:00–22:00, because a night shift under
+ * a fixed window is drawn off-canvas — the lane looks empty and the person
+ * looks absent. Snapped OUT to whole hours so the tick labels are round
+ * numbers rather than 07:43.
+ */
+export function timelineWindow(
+  people: BoardPerson[],
+  now: number,
+  offsetMinutes = LAGOS_OFFSET_MINUTES
+): TimelineWindow {
+  const points: number[] = [];
+  for (const person of people) {
+    for (const entry of person.entries) {
+      if (entry.shift) {
+        points.push(new Date(entry.shift.start).getTime());
+        points.push(new Date(entry.shift.end).getTime());
+      }
+      for (const record of entry.records) {
+        points.push(new Date(record.clockIn).getTime());
+        if (record.clockOut) points.push(new Date(record.clockOut).getTime());
+        // An open record runs to now — the lane has to reach far enough to
+        // draw it, or somebody still working is drawn as though they left.
+        else points.push(now);
+      }
+    }
+  }
+
+  const usable = points.filter((n) => !Number.isNaN(n));
+  // With nothing at all, centre a default span on `now` rather than returning
+  // a zero-width window that divides by zero downstream.
+  const lo = usable.length ? Math.min(...usable) : now - 4 * MS_PER_HOUR;
+  const hi = usable.length ? Math.max(...usable, now) : now + 4 * MS_PER_HOUR;
+
+  let startMs = Math.floor(lo / MS_PER_HOUR) * MS_PER_HOUR;
+  let endMs = Math.ceil(hi / MS_PER_HOUR) * MS_PER_HOUR;
+
+  const minSpan = MIN_TIMELINE_SPAN_MINUTES * 60_000;
+  if (endMs - startMs < minSpan) {
+    const pad =
+      Math.ceil((minSpan - (endMs - startMs)) / 2 / MS_PER_HOUR) * MS_PER_HOUR;
+    startMs -= pad;
+    endMs += pad;
+  }
+
+  const span = endMs - startMs;
+  const ticks: TimelineTick[] = [];
+  const hours = Math.round(span / MS_PER_HOUR);
+  // Thin the labels out on a long window so they do not collide.
+  const every = hours > 16 ? 3 : hours > 10 ? 2 : 1;
+  for (let i = 0; i <= hours; i += every) {
+    const at = startMs + i * MS_PER_HOUR;
+    ticks.push({
+      label: toLocalTimeLabel(new Date(at).toISOString(), offsetMinutes),
+      leftPct: (i * MS_PER_HOUR * 100) / span,
+    });
+  }
+
+  return {
+    startMs,
+    endMs,
+    startLabel: toLocalTimeLabel(new Date(startMs).toISOString(), offsetMinutes),
+    endLabel: toLocalTimeLabel(new Date(endMs).toISOString(), offsetMinutes),
+    ticks,
+  };
+}
+
+/**
+ * One bar's placement, as percentages of the window.
+ *
+ * CLAMPED to [0, 100] on both ends. A shift crossing midnight otherwise
+ * produces a width past the lane and overflows into the layout — and the
+ * honest reading of a clipped bar is "it continues", which `clippedEnd` lets
+ * the caller draw.
+ */
+export function barGeometry(
+  startMs: number,
+  endMs: number,
+  window: { startMs: number; endMs: number }
+): Bar {
+  const span = window.endMs - window.startMs;
+  const hidden: Bar = {
+    leftPct: 0,
+    widthPct: 0,
+    visible: false,
+    clippedStart: false,
+    clippedEnd: false,
+  };
+  if (!(span > 0) || Number.isNaN(startMs) || Number.isNaN(endMs))
+    return hidden;
+
+  const from = Math.min(startMs, endMs);
+  const to = Math.max(startMs, endMs);
+  if (to < window.startMs || from > window.endMs) return hidden;
+
+  const clampedFrom = Math.max(from, window.startMs);
+  const clampedTo = Math.min(to, window.endMs);
+
+  const leftPct = ((clampedFrom - window.startMs) * 100) / span;
+  const widthPct = Math.max(
+    MIN_BAR_WIDTH_PCT,
+    ((clampedTo - clampedFrom) * 100) / span
+  );
+
+  return {
+    leftPct,
+    // Never let the rounding-up minimum push the bar past the right edge.
+    widthPct: Math.min(widthPct, 100 - leftPct),
+    visible: true,
+    clippedStart: from < window.startMs,
+    clippedEnd: to > window.endMs,
   };
 }
