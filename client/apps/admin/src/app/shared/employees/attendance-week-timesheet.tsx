@@ -74,7 +74,9 @@ export default function AttendanceWeekTimesheet({
                     {row.name}
                   </Link>
                 ) : (
-                  <span className="font-semibold text-gray-900">{row.name}</span>
+                  <span className="font-semibold text-gray-900">
+                    {row.name}
+                  </span>
                 )}
               </td>
 

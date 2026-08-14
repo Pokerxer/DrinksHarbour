@@ -37,6 +37,7 @@ import AttendanceLogTable from './attendance-log-table';
 import AttendanceLiveBoard from './attendance-live-board';
 import AttendanceDayTimeline from './attendance-day-timeline';
 import AttendanceWeekTimesheet from './attendance-week-timesheet';
+import AttendanceExceptions from './attendance-exceptions';
 import {
   LAGOS_OFFSET_MINUTES,
   addDays,
@@ -48,10 +49,7 @@ import {
   formatMinutes,
 } from './shift-roster-utils';
 import { recordTimes } from './attendance-utils';
-import {
-  attendanceRate,
-  buildAttendanceBoard,
-} from './attendance-board-utils';
+import { attendanceRate, buildAttendanceBoard } from './attendance-board-utils';
 import {
   attendanceService,
   type AttendanceRecord,
@@ -517,7 +515,6 @@ export default function AttendanceLogPage() {
             className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
           />
         </button>
-
       </div>
 
       {withoutPin > 0 && (
@@ -572,9 +569,12 @@ export default function AttendanceLogPage() {
       )}
 
       {view === 'exceptions' && (
-        <div className="rounded-2xl border border-gray-200 bg-white px-4 py-12 text-center text-sm text-gray-400">
-          Loading…
-        </div>
+        <AttendanceExceptions
+          board={board}
+          dayStart={Date.parse(`${day}T00:00:00.000Z`) - OFFSET * 60_000}
+          loading={loading}
+          onCorrect={openCorrection}
+        />
       )}
 
       {/* Entry / correction drawer */}

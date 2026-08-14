@@ -738,7 +738,10 @@ export function timelineWindow(
   return {
     startMs,
     endMs,
-    startLabel: toLocalTimeLabel(new Date(startMs).toISOString(), offsetMinutes),
+    startLabel: toLocalTimeLabel(
+      new Date(startMs).toISOString(),
+      offsetMinutes
+    ),
     endLabel: toLocalTimeLabel(new Date(endMs).toISOString(), offsetMinutes),
     ticks,
   };
