@@ -13,9 +13,11 @@ import { configureCommerceCore } from "commerce-core";
 // "commerce-core used before configuration" (confirmed via a live browser
 // check, not assumed).
 //
-// This runs the same call again, but from a module that Next.js ships to the
-// browser. Called at module-evaluation time (not inside a hook), so it
-// completes before any client component's effects can fire.
+// This component calls configureCommerceCore() at module-evaluation time (not
+// inside a hook), which runs before any component in this chunk renders. This
+// is implicit bundler behavior, not a documented guarantee — related but weaker
+// than ExtensionNoiseGuard's inline <script>, which has a synchronous execution
+// guarantee during HTML parsing.
 configureCommerceCore({
   apiBaseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001",
 });
