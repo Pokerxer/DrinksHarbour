@@ -19,7 +19,7 @@ import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { useCompare } from '@/context/CompareContext';
 import { useModalCompareContext } from '@/context/ModalCompareContext';
 import { getInitials, VENDOR_PALETTE, vendorPaletteIndex } from '@/data/vendor-helpers';
-import { resolveCartLine } from '@/lib/cart-line';
+import { resolveCartLine } from 'commerce-core';
 
 interface ProductSize {
   _id: string;

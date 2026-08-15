@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { capSeoTitle } from "@/lib/seoTitle";
-import { pickDefaultVariant, isDefaultVariantInStock } from "@/lib/default-variant";
+import { pickDefaultVariant, isDefaultVariantInStock, SHIPPING_DETAILS, MERCHANT_RETURN_POLICY } from "commerce-core";
 import ProductClient from "./ProductClient";
-import { SHIPPING_DETAILS, MERCHANT_RETURN_POLICY } from "@/lib/commerce-policy";
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL  || "https://www.drinksharbour.com";

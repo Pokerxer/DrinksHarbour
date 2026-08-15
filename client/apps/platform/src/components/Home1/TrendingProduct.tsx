@@ -14,7 +14,7 @@ import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import * as Icon from 'react-icons/pi';
-import { resolveCartLine } from '@/lib/cart-line';
+import { resolveCartLine } from 'commerce-core';
 
 interface ApiProduct {
   _id: string;

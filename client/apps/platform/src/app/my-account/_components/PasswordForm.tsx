@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import * as Icon from 'react-icons/pi';
 import { AnimatePresence, motion } from 'framer-motion';
 import { inputCls } from '../_constants';
-import { validateStrongPassword, getPasswordStrength } from '@/lib/validation';
+import { validateStrongPassword, getPasswordStrength } from 'commerce-core';
 
 function PasswordField({ label, value, onChange, placeholder }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string;

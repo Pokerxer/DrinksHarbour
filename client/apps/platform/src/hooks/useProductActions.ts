@@ -8,7 +8,7 @@ import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import { useCompare } from '@/context/CompareContext';
 import { useModalCompareContext } from '@/context/ModalCompareContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
-import { resolveCartLine } from '@/lib/cart-line';
+import { resolveCartLine } from 'commerce-core';
 
 export const useProductActions = (data: ProductType) => {
   const router = useRouter();

@@ -12,7 +12,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { useFirstOrderPerk } from '@/context/FirstOrderPerkContext';
-import { describeFirstOrderPerk } from '@/lib/first-order-perk';
+import { describeFirstOrderPerk } from 'commerce-core';
 
 const DISMISS_KEY = 'dh_first_order_perk_dismissed';
 

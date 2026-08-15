@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import * as Icon from 'react-icons/pi';
 import { useAuth } from '@/context/AuthContext';
-import { validateEmail } from '@/lib/validation';
+import { validateEmail } from 'commerce-core';
 import { gtagEvent } from '@/lib/gtag';
 
 // ─── Password strength ────────────────────────────────────────────────────────

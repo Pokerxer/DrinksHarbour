@@ -16,7 +16,7 @@
 
 import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import { useAuth } from './AuthContext';
-import type { FirstOrderPerkProbe } from '@/lib/first-order-perk';
+import type { FirstOrderPerkProbe } from 'commerce-core';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 

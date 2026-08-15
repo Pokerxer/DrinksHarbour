@@ -14,7 +14,7 @@ import { useModalCompareContext } from "@/context/ModalCompareContext";
 import Rate from "../Other/Rate";
 import Link from "next/link";
 import PackPricingCard from "@/components/Product/PackPricingCard";
-import { resolvePackPricing } from "@/lib/pack-pricing";
+import { resolvePackPricing } from "commerce-core";
 import {
   getInitials,
   VENDOR_PALETTE,

@@ -16,7 +16,7 @@ import { useModalCompareContext } from '@/context/ModalCompareContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { ProductType } from '@/types/product.types';
 import { getInitials, VENDOR_PALETTE, vendorPaletteIndex } from '@/data/vendor-helpers';
-import { resolveCartLine } from '@/lib/cart-line';
+import { resolveCartLine } from 'commerce-core';
 
 interface BeverageProduct {
   _id: string;

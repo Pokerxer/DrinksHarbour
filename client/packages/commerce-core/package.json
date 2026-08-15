@@ -1,0 +1,17 @@
+{
+  "name": "commerce-core",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test src/*.test.mjs",
+    "type:check": "tsc --noEmit",
+    "clean": "rm -rf node_modules .cache .turbo"
+  },
+  "devDependencies": {
+    "typescript": "5.8.2",
+    "typescript-config": "file:../config-typescript"
+  }
+}

@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
-import { validateEmail } from '@/lib/validation';
+import { validateEmail } from 'commerce-core';
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();

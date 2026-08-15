@@ -1,0 +1,9 @@
+{
+  "extends": "typescript-config/base.json",
+  "compilerOptions": {
+    "lib": ["esnext", "dom"],
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
+}

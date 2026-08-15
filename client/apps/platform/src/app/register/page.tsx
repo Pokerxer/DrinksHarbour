@@ -13,7 +13,7 @@ import {
   validateNigerianPhone,
   normalizePhone,
   getPasswordStrength,
-} from '@/lib/validation';
+} from 'commerce-core';
 
 interface FormData {
   firstName: string;

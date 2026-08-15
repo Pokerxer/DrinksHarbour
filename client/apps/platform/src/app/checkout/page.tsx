@@ -18,7 +18,7 @@ import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAu
 import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap';
 import PlacementBanner from '@/components/Banner/PlacementBanner';
 import FirstOrderPerkBanner from '@/components/Banner/FirstOrderPerkBanner';
-import { describeDeliveryLine, type FirstOrderPerk } from '@/lib/first-order-perk';
+import { describeDeliveryLine, type FirstOrderPerk } from 'commerce-core';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

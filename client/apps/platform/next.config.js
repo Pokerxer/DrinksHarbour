@@ -2,6 +2,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  transpilePackages: ['commerce-core'],
   reactStrictMode: true,
   sassOptions: {
     silenceDeprecations: ['import'],

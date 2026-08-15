@@ -26,8 +26,7 @@ import ProductReviews from '@/components/Product/ProductReviews';
 import RelatedProducts from './RelatedProducts';
 import PackPricingCard from '@/components/Product/PackPricingCard';
 import { ProductType } from '@/types/product.types';
-import { pickDefaultSizeFrom } from '@/lib/default-variant';
-import { resolvePackPricing } from '@/lib/pack-pricing';
+import { pickDefaultSizeFrom, resolvePackPricing } from 'commerce-core';
 import * as Icon from 'react-icons/pi';
 
 const VENDOR_PALETTE = [
@@ -231,7 +230,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
   // ── Pack pricing (quantity-triggered) ──────────────────────────────────────
   // Rules (sale precedence, and hiding packs the stock can't fulfil) live in
-  // lib/pack-pricing so the quickview modal and the cart agree with this page.
+  // commerce-core's pack-pricing module so the quickview modal and the cart agree with this page.
   const packPricing = resolvePackPricing({
     packUnitPrice: selectedSizeData?.packUnitPrice,
     packThreshold: selectedSizeData?.packThreshold,

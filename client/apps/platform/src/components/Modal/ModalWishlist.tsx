@@ -10,7 +10,7 @@ import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
-import { resolveCartLine } from '@/lib/cart-line';
+import { resolveCartLine } from 'commerce-core';
 
 const ModalWishlist = () => {
   const { isModalOpen, closeModalWishlist } = useModalWishlistContext();
