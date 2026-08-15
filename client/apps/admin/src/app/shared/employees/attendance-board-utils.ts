@@ -272,6 +272,9 @@ export function buildAttendanceBoard(input: BoardInput): AttendanceBoard {
 
     const board = toBoardShift(shift);
     const records = byShift.get(board._id) ?? [];
+    // Claimed: whatever is still parked in `byShift` after this loop cites a
+    // shift that never made it onto the board, and must not be left there.
+    byShift.delete(board._id);
     const excused = isExcused(shift, input.timeOff);
     const state = resolveEntryState(records, board, excused, now);
 
@@ -291,13 +294,34 @@ export function buildAttendanceBoard(input: BoardInput): AttendanceBoard {
     });
   }
 
+  // A punch citing a shift that no entry claimed — the roster is still a DRAFT,
+  // or the shift was deleted, or it falls outside the window the roster was
+  // read for. Whatever the reason, the punch happened, and dropping it made an
+  // entire board render empty while two people stood there clocked in. It is
+  // shown the same way as a punch with no shift at all: unrostered is the
+  // honest word for a shift nobody was ever shown.
+  //
+  // Note this deliberately does NOT resurrect the shift. A draft still owes
+  // nobody an appearance, so it stays out of `expected` and can never become
+  // an absence — the rule mirrored from attendanceRating.helpers.js is intact.
+  // Array.from, not spread: ES5 iteration target, see below.
+  for (const stranded of Array.from(byShift.values())) {
+    for (const record of stranded) unrostered.push(record);
+  }
+
   for (const record of unrostered) {
     draftFor(record.employee, record._id).entries.push({
       key: record._id,
       shift: null,
       records: [record],
       excused: false,
-      state: 'unrostered',
+      // Somebody standing in the shop is IN, roster or no roster — the same
+      // reasoning that ranks `in` above `absent`. Filing a live punch under
+      // 'unrostered' put the person in a section that reads like a filing
+      // error while the KPI above it said one person was on the clock.
+      // Closed and unrostered stays 'unrostered': then it IS just a filing
+      // question, and the exceptions worklist is where it belongs.
+      state: record.status === 'open' ? 'in' : 'unrostered',
       lateMinutes: 0,
     });
   }

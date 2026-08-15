@@ -231,6 +231,43 @@ describe('buildAttendanceBoard', () => {
     expect(person.entries.map((e) => e.state)).toEqual(['absent', 'in']);
   });
 
+  it('never loses a punch whose shift was never published', () => {
+    // Two people clocked in against a roster still in DRAFT and the whole
+    // board came up empty: the punch cites a shift, so it is parked under that
+    // id; the draft shift is skipped, so nothing ever collects it; and the
+    // unrostered bucket only takes punches with NO shift at all. A punch is a
+    // thing that happened — it cannot be dropped because of the roster's state.
+    const board = buildAttendanceBoard({
+      records: [record({ clockOut: null, status: 'open', minutesWorked: 0 })],
+      shifts: [shift({ status: 'draft' })],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.people).toHaveLength(1);
+    expect(board.people[0].isIn).toBe(true);
+    expect(board.totals.onTheClock).toBe(1);
+    // And they read as present, not as a filing error: the Live board sections
+    // off person.state, so 'unrostered' here would list somebody standing in
+    // the shop under "Unrostered" while the KPI above said one on the clock.
+    expect(board.people[0].state).toBe('in');
+  });
+
+  it('does not invent an absence from a draft shift that was punched', () => {
+    // The other half of the same rule: the punch must survive, but the draft
+    // must still not put anybody in the absence reckoning.
+    const board = buildAttendanceBoard({
+      records: [record()],
+      shifts: [shift({ status: 'draft' })],
+      timeOff: [],
+      now: AFTER,
+    });
+
+    expect(board.totals.absent).toBe(0);
+    expect(board.totals.expected).toBe(0);
+    expect(board.people[0].minutesWorked).toBe(480);
+  });
+
   it('counts late arrivals off the punctuality the server attached', () => {
     const board = buildAttendanceBoard({
       records: [record({ punctuality: { code: 'late', minutes: 22 } })],
