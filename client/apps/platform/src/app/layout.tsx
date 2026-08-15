@@ -15,6 +15,11 @@ import { Analytics } from "@vercel/analytics/next";
 import GoogleAdSense, { ADSENSE_CLIENT_ID } from "@/components/Analytics/GoogleAdSense";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
+import { configureCommerceCore } from "commerce-core";
+
+configureCommerceCore({
+  apiBaseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001",
+});
 
 // Deferred — non-critical UI, code-split into separate chunks
 const ModalCart       = dynamic(() => import("@/components/Modal/ModalCart"));
@@ -33,6 +38,7 @@ const FooterPlacementBanner = dynamic(() => import("@/components/Banner/Placemen
 // so they live in ClientOverlays rather than being imported here directly.
 import ClientOverlays from "@/components/Layout/ClientOverlays";
 import ExtensionNoiseGuard from "@/components/Layout/ExtensionNoiseGuard";
+import CommerceCoreInit from "@/components/Layout/CommerceCoreInit";
 
 const elmsSans = Elms_Sans({
   subsets: ["latin"],
@@ -265,6 +271,7 @@ export default async function RootLayout({
                 (MetaMask etc.) are stopped at the window before the overlay
                 can capture them. Renders nothing; never touches app errors. */}
             <ExtensionNoiseGuard />
+            <CommerceCoreInit />
             {/* Speculation Rules — prerender likely navigations on hover */}
             <script type="speculationrules">
               {JSON.stringify({

@@ -15,7 +15,7 @@ import {
   getSubcategories,
   type Category,
   type SubCategory,
-} from "@/lib/categories";
+} from "commerce-core";
 import { resolveCategoryIcon } from "@/lib/category-icons";
 
 const navItems = [

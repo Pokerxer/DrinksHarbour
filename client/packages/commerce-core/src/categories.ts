@@ -11,6 +11,8 @@
  * with the two exported fetch functions + two filter helpers.
  */
 
+import { getApiBaseUrl } from './config.ts';
+
 export interface CategoryImage {
   url?: string;
   alt?: string;
@@ -50,7 +52,6 @@ export interface SubCategory {
   parent: string | { _id: string; name: string; slug: string } | null;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 const CACHE_TTL = 5 * 60_000; // 5 minutes
 
 // ─── Category cache ────────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ export async function fetchAllCategories(): Promise<Category[]> {
   if (_catCache && Date.now() - _catCacheTs < CACHE_TTL) return _catCache;
   if (_catInflight) return _catInflight;
 
-  _catInflight = fetch(`${API_BASE}/api/categories`)
+  _catInflight = fetch(`${getApiBaseUrl()}/api/categories`)
     .then(r => r.json())
     .then(data => {
       const cats: Category[] = data?.data?.categories ?? [];
@@ -85,7 +86,7 @@ export async function fetchAllSubCategories(): Promise<SubCategory[]> {
   if (_subCache && Date.now() - _subCacheTs < CACHE_TTL) return _subCache;
   if (_subInflight) return _subInflight;
 
-  _subInflight = fetch(`${API_BASE}/api/subcategories`)
+  _subInflight = fetch(`${getApiBaseUrl()}/api/subcategories`)
     .then(r => r.json())
     .then(data => {
       // /api/subcategories returns { success, data: [...], total }

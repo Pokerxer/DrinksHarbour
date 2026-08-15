@@ -12,7 +12,7 @@ import {
   getSubcategories,
   type Category,
   type SubCategory,
-} from '@/lib/categories';
+} from 'commerce-core';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 

@@ -10,7 +10,7 @@ import {
   getSubcategories,
   type Category,
   type SubCategory,
-} from "@/lib/categories";
+} from "commerce-core";
 
 interface CategorySidebarProps {
   onClose?: () => void;
