@@ -37,6 +37,7 @@ import {
 } from './components';
 import { fieldStaggerVariants, containerVariants } from './animations';
 import { productService } from '@/services/product.service';
+import { inheritedProductImages } from '../image-utils';
 
 interface SubProductBasicInfoProps {
   onProductSelect?: (productId: string, productName?: string) => void;
@@ -475,6 +476,14 @@ export default function SubProductBasicInfo({
 
   // Image upload functionality — writes to subProductData.imagesOverride
   const subProductImages = watch?.('subProductData.imagesOverride') || [];
+
+  // With no override of its own a sub-product shows the parent product's
+  // images everywhere else (list, grid, POS), so the form shows them too —
+  // otherwise this section reads as "no images" for a sub-product that
+  // visibly has one.
+  const parentImages = inheritedProductImages(selectedProduct);
+  const showingInherited =
+    subProductImages.length === 0 && parentImages.length > 0;
   const [isUploading, setIsUploading] = useState(false);
 
   const handleImageUpload = useCallback(
@@ -931,6 +940,11 @@ export default function SubProductBasicInfo({
                 {subProductImages.length}
               </Badge>
             )}
+            {showingInherited && (
+              <Badge color="secondary" size="sm" variant="flat">
+                Inherited
+              </Badge>
+            )}
           </label>
           {subProductImages.length > 0 && (
             <button
@@ -1007,6 +1021,46 @@ export default function SubProductBasicInfo({
               )}
             </label>
           </motion.div>
+
+          {/* Inherited from the parent product — read-only. Shown only while
+              this sub-product has no override of its own; the first upload
+              above replaces these everywhere. */}
+          {showingInherited && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <div className="mb-2 flex items-center gap-1.5">
+                <PiPackage className="h-3.5 w-3.5 text-gray-400" />
+                <Text className="text-xs text-gray-500">
+                  Using {parentImages.length} image
+                  {parentImages.length > 1 ? 's' : ''} from{' '}
+                  <span className="font-medium text-gray-700">
+                    {selectedProduct?.name || 'the parent product'}
+                  </span>
+                  . Upload above to override.
+                </Text>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {parentImages.map((image, index) => (
+                  <div
+                    key={image.url}
+                    className="relative aspect-square overflow-hidden rounded-xl border-2 border-dashed border-gray-200 bg-gray-50"
+                  >
+                    <Image
+                      src={image.url}
+                      alt={image.alt || `Inherited image ${index + 1}`}
+                      fill
+                      sizes="(max-width: 640px) 50vw, 160px"
+                      className="object-cover opacity-90"
+                    />
+                    {index === 0 && (
+                      <div className="absolute left-2 top-2 rounded-full bg-gray-900/70 px-2 py-1 text-[10px] font-bold text-white">
+                        Primary
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
 
           {/* Image Preview Grid - Enhanced */}
           {subProductImages.length > 0 && (

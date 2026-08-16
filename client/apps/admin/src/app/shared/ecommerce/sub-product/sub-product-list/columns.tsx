@@ -3,7 +3,7 @@
 
 import { routes } from '@/config/routes';
 import { SubProductListItem, SizeVariant } from './table';
-import { resolveSubProductImages } from './image-utils';
+import { resolveSubProductImages } from '../image-utils';
 import { createColumnHelper } from '@tanstack/react-table';
 import Link from 'next/link';
 import { ActionIcon, Checkbox, Flex, Text, Badge, Tooltip } from 'rizzui';

@@ -2,7 +2,7 @@
 'use client';
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { resolveSubProductImages } from '../image-utils';
+import { resolveSubProductImages } from '../../image-utils';
 
 interface SubProductImageProps {
   /** The sub-product list item (carries imagesOverride + populated product). */
