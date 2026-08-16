@@ -13,6 +13,7 @@
   "dependencies": {
     "@babel/runtime": "^7.29.7",
     "@expo/metro-runtime": "~4.0.1",
+    "@expo/vector-icons": "~14.0.4",
     "commerce-core": "workspace:*",
     "expo": "~52.0.0",
     "expo-constants": "~17.0.0",
