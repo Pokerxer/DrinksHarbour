@@ -1,4 +1,5 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const { withNativeWind } = require('nativewind/metro');
 const path = require('path');
 
 const projectRoot = __dirname;
@@ -29,4 +30,4 @@ config.resolver.unstable_enableSymlinks = true;
 // `whatwg-fetch`, and so on. Leaving hierarchical lookup ENABLED is what makes
 // this work under pnpm.
 
-module.exports = config;
+module.exports = withNativeWind(config, { input: './global.css' });
