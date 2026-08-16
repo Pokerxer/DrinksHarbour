@@ -1473,9 +1473,33 @@ const posWarehouseIdAtom = atomWithStorage<string>('dh-pos-warehouse-id', '');
 const posWarehousesAtom = atom<POSWarehouse[]>([]);
 const posWarehousesLoadedAtom = atom<boolean>(false);
 
+/**
+ * A warehouse ref reaches the POS both unpopulated (an id string) and
+ * populated (`{ _id, name }` — a linked sales order arrives that way). Only the
+ * id may be stored: this atom is persisted, so writing the object once leaves
+ * every later request sending the string "[object Object]", which the server
+ * then fails to cast to an ObjectId.
+ */
+const warehouseIdOf = (v: unknown): string => {
+  if (typeof v === 'string') return v;
+  if (v && typeof v === 'object')
+    return String((v as { _id?: string })._id ?? '');
+  return '';
+};
+
 export const usePOSWarehouse = () => {
-  const [warehouseId, setWarehouseId] = useAtom(posWarehouseIdAtom);
+  const [stored, setStored] = useAtom(posWarehouseIdAtom);
   const [warehouses] = useAtom(posWarehousesAtom);
+
+  // Coerce on read as well as write, so a session already holding a poisoned
+  // value in localStorage recovers without the cashier clearing site data.
+  const warehouseId = warehouseIdOf(stored);
+
+  const setWarehouseId = useCallback(
+    (v: unknown) => setStored(warehouseIdOf(v)),
+    [setStored]
+  );
+
   return { warehouseId, setWarehouseId, warehouses };
 };
 
