@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { POSProduct, POSSize } from '@/app/shared/point-of-sale/types';
 import {
   getImageUrl,
+  resolveSubProductGallery,
   getProductDisplayName,
   formatCurrency,
   findMatchingPricelistRules,
@@ -390,16 +391,20 @@ function PricelistBreakdown({
                         {isManualOverride ? 'Manual' : 'Auto'}
                       </span>
                     )}
-                    {!isStd && !row.ruleSteps.length && !row.bundleHints.length && (
-                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-400">
-                        No rule for this product
-                      </span>
-                    )}
-                    {!isStd && !row.ruleSteps.length && row.bundleHints.length > 0 && (
-                      <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-semibold text-purple-500">
-                        Bundle deals only
-                      </span>
-                    )}
+                    {!isStd &&
+                      !row.ruleSteps.length &&
+                      !row.bundleHints.length && (
+                        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-400">
+                          No rule for this product
+                        </span>
+                      )}
+                    {!isStd &&
+                      !row.ruleSteps.length &&
+                      row.bundleHints.length > 0 && (
+                        <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-semibold text-purple-500">
+                          Bundle deals only
+                        </span>
+                      )}
                     {/* Rule type badges */}
                     {row.ruleSteps.map((step, i) => (
                       <span
@@ -556,7 +561,9 @@ function ProductInfoModal({
     if (hasSizes && discountSizeId) {
       const sz = validSizes.find((s) => s._id === discountSizeId);
       const szPlBase = (sz as any)?._priceBeforePricelist || 0;
-      return szPlBase > 0 ? szPlBase : (sz?.sellingPrice ?? product.baseSellingPrice);
+      return szPlBase > 0
+        ? szPlBase
+        : (sz?.sellingPrice ?? product.baseSellingPrice);
     }
     return plBase > 0 ? plBase : product.baseSellingPrice;
   }, [hasSizes, discountSizeId, validSizes, product]);
@@ -638,7 +645,7 @@ function ProductInfoModal({
         };
       })();
 
-  const images = product.product?.images || [];
+  const images = resolveSubProductGallery(product);
 
   return (
     <div
@@ -1516,13 +1523,10 @@ function SizePickerModal({
                   {!(size as any).originalPrice &&
                     (size as any)._priceBeforePricelist &&
                     Math.abs(
-                      (size as any)._priceBeforePricelist -
-                        size.sellingPrice
+                      (size as any)._priceBeforePricelist - size.sellingPrice
                     ) > 0.001 && (
                       <span className="text-[10px] tabular-nums leading-tight text-gray-400 line-through">
-                        {formatCurrency(
-                          (size as any)._priceBeforePricelist
-                        )}
+                        {formatCurrency((size as any)._priceBeforePricelist)}
                       </span>
                     )}
                   <span
@@ -1988,7 +1992,7 @@ export default function POSProductCard({
               )}
             </div>
             {/* Bundle deal hint */}
-            {bestBundle && (
+            {bestBundle &&
               (() => {
                 const dt = bestBundle.discountType || 'percentage';
                 const hint =
@@ -2006,8 +2010,7 @@ export default function POSProductCard({
                     {hint}
                   </span>
                 ) : null;
-              })()
-            )}
+              })()}
           </div>
         </div>
       </button>
@@ -2043,9 +2046,7 @@ export default function POSProductCard({
                 name: product.product?.name || 'Product',
                 variant: size?.displayName || '',
                 sku: size?.sku || product.sku,
-                image:
-                  product.product?.images?.[0]?.thumbnail ||
-                  product.product?.images?.[0]?.url,
+                image: getImageUrl(product),
                 price,
                 quantity: 1,
                 discount: Math.round(discountPct * 10) / 10,

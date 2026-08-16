@@ -1802,7 +1802,9 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
 
   const subProducts = await SubProduct.find(query)
     .select([
-      'sku', 'product', 'tenant', 'vendor',
+      // imagesOverride: without it the POS can only ever show the platform
+      // product's photo, even for a sub-product with its own uploaded shot.
+      'sku', 'product', 'tenant', 'vendor', 'imagesOverride',
       'baseSellingPrice', 'basePriceBeforePricelist', 'costPrice',
       'isOnSale', 'saleType', 'saleStartDate', 'saleEndDate', 'saleDiscountValue',
       'flashSale', 'bundleDeals',

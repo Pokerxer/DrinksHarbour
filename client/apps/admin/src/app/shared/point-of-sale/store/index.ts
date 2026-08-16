@@ -1,6 +1,7 @@
 'use client';
 
 import { atom, useAtom, useAtomValue } from 'jotai';
+import { resolveSubProductThumb } from '@/app/shared/ecommerce/sub-product/image-utils';
 import { atomWithStorage } from 'jotai/utils';
 import {
   POSCartItem,
@@ -1116,9 +1117,7 @@ export const usePOSCart = () => {
               name: cat.product?.name || 'Product',
               variant: size?.displayName || '',
               sku: size?.sku || cat.sku,
-              image:
-                cat.product?.images?.[0]?.thumbnail ||
-                cat.product?.images?.[0]?.url,
+              image: resolveSubProductThumb(cat),
               price: effPrice,
               quantity: gi.qty,
               discount: 0,

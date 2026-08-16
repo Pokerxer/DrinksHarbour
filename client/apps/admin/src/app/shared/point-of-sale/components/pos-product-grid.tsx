@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { resolveSubProductThumb } from '@/app/shared/ecommerce/sub-product/image-utils';
 import { Empty, SearchNotFoundIcon, Button } from 'rizzui';
 import {
   PiMagnifyingGlassBold,
@@ -114,14 +115,9 @@ function ComboCard({ combo, onOpen }: { combo: POSCombo; onOpen: () => void }) {
   // Collect up to 4 product thumbnails from all choice lines
   const images = combo.choiceLines
     .flatMap((l) =>
-      (l.items || []).map((it: any) => {
-        const sp = it.subProduct;
-        return (
-          sp?.product?.images?.[0]?.thumbnail ||
-          sp?.product?.images?.[0]?.url ||
-          ''
-        );
-      })
+      (l.items || []).map(
+        (it: any) => resolveSubProductThumb(it.subProduct) || ''
+      )
     )
     .filter(Boolean)
     .slice(0, 4) as string[];

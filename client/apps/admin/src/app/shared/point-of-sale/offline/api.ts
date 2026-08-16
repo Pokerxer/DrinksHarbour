@@ -1,4 +1,8 @@
 import { posApi } from '../api';
+import {
+  resolveSubProductGallery,
+  resolveSubProductThumb,
+} from '@/app/shared/ecommerce/sub-product/image-utils';
 import { posDb } from './db';
 import type {
   ProductRecord,
@@ -63,7 +67,10 @@ export async function getProducts(
         availableStock: s.availableStock ?? 0,
         sku: s.sku,
       })),
-      images: p.product?.images ?? p.images ?? [],
+      // Store the already-resolved gallery: the record is flattened onto a
+      // synthetic `product` on the way back out, so an unresolved override
+      // would be lost and the offline tile would show the parent's photo.
+      images: resolveSubProductGallery(p),
       categoryId: p.product?.category?._id ?? p.categoryId,
       brandId: p.product?.brand?._id ?? p.brandId,
       costPrice: p.costPrice,
@@ -75,8 +82,7 @@ export async function getProducts(
     if (typeof caches !== 'undefined') {
       caches.open('pos-product-images').then(async (cache) => {
         for (const p of products) {
-          const raw =
-            p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
+          const raw = resolveSubProductThumb(p);
           if (!raw) continue;
           try {
             if (await cache.match(raw)) continue;

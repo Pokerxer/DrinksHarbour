@@ -1,3 +1,10 @@
+import {
+  resolveSubProductGallery,
+  resolveSubProductThumb,
+} from '@/app/shared/ecommerce/sub-product/image-utils';
+
+export { resolveSubProductGallery };
+
 export function formatCurrency(amount: number, currency = 'NGN'): string {
   // `narrowSymbol` forces the ₦ glyph; the default en-US display for NGN is the
   // ISO code ("NGN 1,234.50"), which is not receipt-friendly.
@@ -25,13 +32,14 @@ export function formatTime(date: string | Date): string {
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * The picture for a POS tile/line. Delegates to the one sub-product image rule
+ * the rest of the admin uses (own `imagesOverride` → parent product's images,
+ * primary-flag aware) instead of blindly taking `product.images[0]`.
+ * `product.image` is the flat field carried by offline cart lines.
+ */
 export function getImageUrl(product: any): string | undefined {
-  if (product?.product?.images?.length) {
-    const img = product.product.images[0];
-    return img.thumbnail || img.url;
-  }
-  if (product?.image) return product.image;
-  return undefined;
+  return resolveSubProductThumb(product) ?? (product?.image || undefined);
 }
 
 export function getProductDisplayName(product: any): string {

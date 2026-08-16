@@ -13,7 +13,8 @@ export interface ProductRecord {
     availableStock: number;
     sku?: string;
   }[];
-  images?: { url: string; thumbnail?: string }[];
+  /** Already resolved (override → parent product) before it is stored. */
+  images?: { url: string; thumbnail?: string; isPrimary?: boolean }[];
   categoryId?: string;
   brandId?: string;
   costPrice?: number;

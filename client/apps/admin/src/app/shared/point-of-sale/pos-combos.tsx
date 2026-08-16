@@ -2,14 +2,28 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { resolveSubProductThumb } from '@/app/shared/ecommerce/sub-product/image-utils';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import {
-  PiPlus, PiPencilSimple, PiTrash, PiX, PiPackage,
-  PiArrowsClockwise, PiCheckCircle, PiWarningCircle,
-  PiToggleLeft, PiToggleRight, PiCurrencyNgn, PiListPlus,
-  PiMinus, PiMagnifyingGlass, PiArrowRight, PiStar,
-  PiCaretDown, PiCaretUp,
+  PiPlus,
+  PiPencilSimple,
+  PiTrash,
+  PiX,
+  PiPackage,
+  PiArrowsClockwise,
+  PiCheckCircle,
+  PiWarningCircle,
+  PiToggleLeft,
+  PiToggleRight,
+  PiCurrencyNgn,
+  PiListPlus,
+  PiMinus,
+  PiMagnifyingGlass,
+  PiArrowRight,
+  PiStar,
+  PiCaretDown,
+  PiCaretUp,
 } from 'react-icons/pi';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
@@ -21,7 +35,10 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 async function apiReq(method: string, path: string, token: string, body?: any) {
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = await res.json();
@@ -29,10 +46,13 @@ async function apiReq(method: string, path: string, token: string, body?: any) {
   return json.data;
 }
 
-const fetchCombos   = (t: string) => apiReq('GET', '/api/pos-combos', t);
-const createCombo   = (t: string, b: any) => apiReq('POST', '/api/pos-combos', t, b);
-const updateCombo   = (t: string, id: string, b: any) => apiReq('PATCH', `/api/pos-combos/${id}`, t, b);
-const deleteCombo   = (t: string, id: string) => apiReq('DELETE', `/api/pos-combos/${id}`, t);
+const fetchCombos = (t: string) => apiReq('GET', '/api/pos-combos', t);
+const createCombo = (t: string, b: any) =>
+  apiReq('POST', '/api/pos-combos', t, b);
+const updateCombo = (t: string, id: string, b: any) =>
+  apiReq('PATCH', `/api/pos-combos/${id}`, t, b);
+const deleteCombo = (t: string, id: string) =>
+  apiReq('DELETE', `/api/pos-combos/${id}`, t);
 const fetchProducts = async (t: string) => {
   // Dedicated endpoint: admin JWT, returns products with platform-computed prices
   const r = await fetch(`${API}/api/pos-combos/products`, {
@@ -63,9 +83,20 @@ type ChoiceLine = {
   items: ChoiceItem[];
 };
 
-type PricingMode = 'dynamic' | 'fixed' | 'markup_on_cost' | 'discount_off_selling';
+type PricingMode =
+  | 'dynamic'
+  | 'fixed'
+  | 'markup_on_cost'
+  | 'discount_off_selling';
 
-type PosSize = { _id: string; displayName: string; sellingPrice: number; costPrice?: number; availableStock: number; sku?: string };
+type PosSize = {
+  _id: string;
+  displayName: string;
+  sellingPrice: number;
+  costPrice?: number;
+  availableStock: number;
+  sku?: string;
+};
 
 type Product = {
   _id: string;
@@ -92,13 +123,19 @@ type Combo = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const blankLine = (): ChoiceLine => ({ label: '', minSelect: 1, maxSelect: 1, required: true, items: [] });
+const blankLine = (): ChoiceLine => ({
+  label: '',
+  minSelect: 1,
+  maxSelect: 1,
+  required: true,
+  items: [],
+});
 
 /** Normalise server choiceLines to the ChoiceLine type used by the builder.
  *  Each item in the DB has its own Mongoose _id (from the embedded array).
  *  We must read item.subProduct (the referenced SubProduct), NOT item._id. */
 function normaliseLines(raw: any[]): ChoiceLine[] {
-  return (raw || []).map(l => {
+  return (raw || []).map((l) => {
     const items: ChoiceItem[] = (l.items || []).map((it: any) => {
       if (typeof it === 'string') {
         return { subProduct: it, allowedSizes: [] };
@@ -106,20 +143,34 @@ function normaliseLines(raw: any[]): ChoiceLine[] {
       // it is an embedded doc with its own _id + a subProduct reference
       if (it.subProduct !== undefined) {
         return {
-          subProduct:   it.subProduct?._id ? String(it.subProduct._id) : String(it.subProduct),
-          allowedSizes: (it.allowedSizes || []).map((s: any) => s?._id ? String(s._id) : String(s)),
+          subProduct: it.subProduct?._id
+            ? String(it.subProduct._id)
+            : String(it.subProduct),
+          allowedSizes: (it.allowedSizes || []).map((s: any) =>
+            s?._id ? String(s._id) : String(s)
+          ),
           minQty: Number(it.minQty) || 1,
           maxQty: Math.max(Number(it.maxQty) || 1, Number(it.minQty) || 1),
         };
       }
       // Fallback: plain ObjectId or minimal object
-      return { subProduct: String(it._id || it), allowedSizes: [], minQty: 1, maxQty: 1 };
+      return {
+        subProduct: String(it._id || it),
+        allowedSizes: [],
+        minQty: 1,
+        maxQty: 1,
+      };
     });
 
     // Backward-compat: old combos stored products:[ObjectId]
     if (!items.length && l.products?.length) {
       for (const p of l.products) {
-        items.push({ subProduct: String(p?._id || p), allowedSizes: [], minQty: 1, maxQty: 1 });
+        items.push({
+          subProduct: String(p?._id || p),
+          allowedSizes: [],
+          minQty: 1,
+          maxQty: 1,
+        });
       }
     }
     return { ...l, required: l.required !== false, items };
@@ -127,27 +178,73 @@ function normaliseLines(raw: any[]): ChoiceLine[] {
 }
 
 const GROUP_COLORS = [
-  { dot: 'bg-blue-500',   text: 'text-blue-700',   bg: 'bg-blue-50',    border: 'border-blue-200'   },
-  { dot: 'bg-violet-500', text: 'text-violet-700',  bg: 'bg-violet-50',  border: 'border-violet-200' },
-  { dot: 'bg-amber-500',  text: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200'  },
-  { dot: 'bg-emerald-500',text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200'},
-  { dot: 'bg-rose-500',   text: 'text-rose-700',    bg: 'bg-rose-50',    border: 'border-rose-200'   },
+  {
+    dot: 'bg-blue-500',
+    text: 'text-blue-700',
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+  },
+  {
+    dot: 'bg-violet-500',
+    text: 'text-violet-700',
+    bg: 'bg-violet-50',
+    border: 'border-violet-200',
+  },
+  {
+    dot: 'bg-amber-500',
+    text: 'text-amber-700',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+  },
+  {
+    dot: 'bg-emerald-500',
+    text: 'text-emerald-700',
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+  },
+  {
+    dot: 'bg-rose-500',
+    text: 'text-rose-700',
+    bg: 'bg-rose-50',
+    border: 'border-rose-200',
+  },
 ];
 const gc = (i: number) => GROUP_COLORS[i % GROUP_COLORS.length];
 
 // ── Stepper ───────────────────────────────────────────────────────────────────
 
-function Stepper({ value, min, max, onChange }: { value: number; min: number; max?: number; onChange: (n: number) => void }) {
+function Stepper({
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max?: number;
+  onChange: (n: number) => void;
+}) {
   return (
     <div className="flex items-center gap-0.5">
-      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min}
-        className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-gray-100 disabled:opacity-30">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(min, value - 1))}
+        disabled={value <= min}
+        className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-gray-100 disabled:opacity-30"
+      >
         <PiMinus className="h-2.5 w-2.5" />
       </button>
-      <span className="w-7 text-center text-sm font-bold text-gray-800">{value}</span>
-      <button type="button" onClick={() => onChange(max !== undefined ? Math.min(max, value + 1) : value + 1)}
+      <span className="w-7 text-center text-sm font-bold text-gray-800">
+        {value}
+      </span>
+      <button
+        type="button"
+        onClick={() =>
+          onChange(max !== undefined ? Math.min(max, value + 1) : value + 1)
+        }
         disabled={max !== undefined && value >= max}
-        className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-gray-100 disabled:opacity-30">
+        className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-gray-100 disabled:opacity-30"
+      >
         <PiPlus className="h-2.5 w-2.5" />
       </button>
     </div>
@@ -156,7 +253,13 @@ function Stepper({ value, min, max, onChange }: { value: number; min: number; ma
 
 // ── Product chip with size config ─────────────────────────────────────────────
 
-function ProductChip({ item, product, onRemove, onSizesChange, onQtyChange }: {
+function ProductChip({
+  item,
+  product,
+  onRemove,
+  onSizesChange,
+  onQtyChange,
+}: {
   item: ChoiceItem;
   product: Product;
   onRemove: () => void;
@@ -164,33 +267,43 @@ function ProductChip({ item, product, onRemove, onSizesChange, onQtyChange }: {
   onQtyChange: (minQty: number, maxQty: number) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const img = product.product?.images?.[0]?.thumbnail || product.product?.images?.[0]?.url;
-  const hasSizes = (product.sizes?.length ?? 0) > 0 && !product.sellWithoutSizeVariants;
+  const img = resolveSubProductThumb(product);
+  const hasSizes =
+    (product.sizes?.length ?? 0) > 0 && !product.sellWithoutSizeVariants;
   const selectedSizes = item.allowedSizes;
 
   // Price display: use computed sellingPrice from the API (platform-enriched)
   const relevantSizes = hasSizes
-    ? (selectedSizes.length > 0
-        ? product.sizes.filter(s => selectedSizes.includes(String(s._id)))
-        : product.sizes)
+    ? selectedSizes.length > 0
+      ? product.sizes.filter((s) => selectedSizes.includes(String(s._id)))
+      : product.sizes
     : [];
-  const price = hasSizes && relevantSizes.length > 0
-    ? (() => {
-        const prices = relevantSizes.map(s => s.sellingPrice).filter(v => v > 0).sort((a, b) => a - b);
-        if (!prices.length) return formatCurrency(product.baseSellingPrice);
-        const lo = prices[0], hi = prices[prices.length - 1];
-        return lo === hi ? formatCurrency(lo) : `${formatCurrency(lo)} – ${formatCurrency(hi)}`;
-      })()
-    : formatCurrency(product.baseSellingPrice);
+  const price =
+    hasSizes && relevantSizes.length > 0
+      ? (() => {
+          const prices = relevantSizes
+            .map((s) => s.sellingPrice)
+            .filter((v) => v > 0)
+            .sort((a, b) => a - b);
+          if (!prices.length) return formatCurrency(product.baseSellingPrice);
+          const lo = prices[0],
+            hi = prices[prices.length - 1];
+          return lo === hi
+            ? formatCurrency(lo)
+            : `${formatCurrency(lo)} – ${formatCurrency(hi)}`;
+        })()
+      : formatCurrency(product.baseSellingPrice);
 
   function toggleSize(sid: string) {
     if (selectedSizes.length === 0) {
       // "All sizes" mode — unchecking one size means we restrict to all EXCEPT this one
-      const remaining = product.sizes.map(s => String(s._id)).filter(id => id !== sid);
+      const remaining = product.sizes
+        .map((s) => String(s._id))
+        .filter((id) => id !== sid);
       onSizesChange(remaining);
     } else if (selectedSizes.includes(sid)) {
       // Remove this size from the allowed list
-      const next = selectedSizes.filter(x => x !== sid);
+      const next = selectedSizes.filter((x) => x !== sid);
       // If none left, treat as "nothing allowed" (keep as empty — user should reset)
       onSizesChange(next);
     } else {
@@ -205,61 +318,85 @@ function ProductChip({ item, product, onRemove, onSizesChange, onQtyChange }: {
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
       {/* Chip row */}
       <div className="flex items-center gap-2 px-2.5 py-2">
-        {img
-          ? <img src={img} className="h-7 w-7 shrink-0 rounded-lg object-cover" alt="" />
-          : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm">🍾</span>
-        }
+        {img ? (
+          <img
+            src={img}
+            className="h-7 w-7 shrink-0 rounded-lg object-cover"
+            alt=""
+          />
+        ) : (
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm">
+            🍾
+          </span>
+        )}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold text-gray-800">{product.product?.name || product.sku}</p>
+          <p className="truncate text-xs font-semibold text-gray-800">
+            {product.product?.name || product.sku}
+          </p>
           <p className="text-[10px] text-gray-400">{price}</p>
         </div>
 
         {/* Qty badge — shown when min/max differ from default */}
         {(item.minQty > 1 || item.maxQty > 1) && (
           <span className="rounded-lg border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
-            ×{item.minQty === item.maxQty ? item.minQty : `${item.minQty}–${item.maxQty}`}
+            ×
+            {item.minQty === item.maxQty
+              ? item.minQty
+              : `${item.minQty}–${item.maxQty}`}
           </span>
         )}
 
         {/* Settings toggle (sizes + qty) */}
         <button
           type="button"
-          onClick={() => setOpen(o => !o)}
+          onClick={() => setOpen((o) => !o)}
           className={`flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold transition-colors ${
             open
               ? 'border-[#b20202] bg-red-50 text-[#b20202]'
               : selectedSizes.length > 0 || item.minQty > 1 || item.maxQty > 1
-              ? 'border-blue-200 bg-blue-50 text-blue-700'
-              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                : 'border-gray-200 text-gray-500 hover:border-gray-300'
           }`}
         >
           {selectedSizes.length > 0
             ? `${selectedSizes.length} size${selectedSizes.length !== 1 ? 's' : ''}`
-            : hasSizes ? 'All sizes' : 'Settings'}
-          {open ? <PiCaretUp className="h-2.5 w-2.5" /> : <PiCaretDown className="h-2.5 w-2.5" />}
+            : hasSizes
+              ? 'All sizes'
+              : 'Settings'}
+          {open ? (
+            <PiCaretUp className="h-2.5 w-2.5" />
+          ) : (
+            <PiCaretDown className="h-2.5 w-2.5" />
+          )}
         </button>
 
-        <button type="button" onClick={onRemove} className="text-gray-300 hover:text-red-400">
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-gray-300 hover:text-red-400"
+        >
           <PiX className="h-3.5 w-3.5" />
         </button>
       </div>
 
       {/* Expansion panel: sizes + qty */}
       {open && (
-        <div className="border-t border-gray-100 bg-gray-50 px-3 py-2.5 space-y-3">
-
+        <div className="space-y-3 border-t border-gray-100 bg-gray-50 px-3 py-2.5">
           {/* Size restriction (only for sized products) */}
           {hasSizes && (
             <div>
               <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
                 Available sizes
-                <span className="ml-1 font-normal normal-case text-gray-300">(uncheck to restrict)</span>
+                <span className="ml-1 font-normal normal-case text-gray-300">
+                  (uncheck to restrict)
+                </span>
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {product.sizes.map(size => {
-                  const sid    = String(size._id);
-                  const active = selectedSizes.length === 0 || selectedSizes.includes(sid);
-                  const oos    = size.availableStock <= 0;
+                {product.sizes.map((size) => {
+                  const sid = String(size._id);
+                  const active =
+                    selectedSizes.length === 0 || selectedSizes.includes(sid);
+                  const oos = size.availableStock <= 0;
                   return (
                     <button
                       key={sid}
@@ -271,17 +408,28 @@ function ProductChip({ item, product, onRemove, onSizesChange, onQtyChange }: {
                           : 'border-gray-200 bg-white text-gray-400 line-through opacity-60'
                       }`}
                     >
-                      {active && <PiCheckCircle className="h-3 w-3 text-blue-500" />}
+                      {active && (
+                        <PiCheckCircle className="h-3 w-3 text-blue-500" />
+                      )}
                       {size.displayName}
-                      <span className="text-[10px] font-normal opacity-70">{formatCurrency(size.sellingPrice)}</span>
-                      {oos && <span className="rounded bg-amber-100 px-1 text-[9px] text-amber-600">low stock</span>}
+                      <span className="text-[10px] font-normal opacity-70">
+                        {formatCurrency(size.sellingPrice)}
+                      </span>
+                      {oos && (
+                        <span className="rounded bg-amber-100 px-1 text-[9px] text-amber-600">
+                          low stock
+                        </span>
+                      )}
                     </button>
                   );
                 })}
               </div>
               {selectedSizes.length > 0 && (
-                <button type="button" onClick={() => onSizesChange([])}
-                  className="mt-1.5 text-[10px] text-gray-400 underline hover:text-gray-600">
+                <button
+                  type="button"
+                  onClick={() => onSizesChange([])}
+                  className="mt-1.5 text-[10px] text-gray-400 underline hover:text-gray-600"
+                >
                   Reset to all sizes
                 </button>
               )}
@@ -292,24 +440,30 @@ function ProductChip({ item, product, onRemove, onSizesChange, onQtyChange }: {
           <div>
             <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
               Required quantity per pick
-              <span className="ml-1 font-normal normal-case text-gray-300">(how many units when selected)</span>
+              <span className="ml-1 font-normal normal-case text-gray-300">
+                (how many units when selected)
+              </span>
             </p>
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-gray-500">Min</span>
+                <span className="text-[11px] font-semibold text-gray-500">
+                  Min
+                </span>
                 <Stepper
                   value={item.minQty}
                   min={1}
                   max={item.maxQty}
-                  onChange={v => onQtyChange(v, Math.max(item.maxQty, v))}
+                  onChange={(v) => onQtyChange(v, Math.max(item.maxQty, v))}
                 />
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-gray-500">Max</span>
+                <span className="text-[11px] font-semibold text-gray-500">
+                  Max
+                </span>
                 <Stepper
                   value={item.maxQty}
                   min={item.minQty}
-                  onChange={v => onQtyChange(item.minQty, v)}
+                  onChange={(v) => onQtyChange(item.minQty, v)}
                 />
               </div>
               {(item.minQty > 1 || item.maxQty > 1) && (
@@ -336,15 +490,19 @@ function ProductChip({ item, product, onRemove, onSizesChange, onQtyChange }: {
 
 // ── Product search dropdown (fixed-position to avoid overflow clipping) ────────
 
-function ProductAddDropdown({ all, existingIds, onAdd }: {
+function ProductAddDropdown({
+  all,
+  existingIds,
+  onAdd,
+}: {
   all: Product[];
   existingIds: string[];
   onAdd: (id: string) => void;
 }) {
-  const [q, setQ]           = useState('');
-  const [open, setOpen]     = useState(false);
-  const [style, setStyle]   = useState<React.CSSProperties>({});
-  const btnRef  = useRef<HTMLButtonElement>(null);
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const [style, setStyle] = useState<React.CSSProperties>({});
+  const btnRef = useRef<HTMLButtonElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
   // Position the dropdown in fixed coords so it escapes any overflow:hidden parent
@@ -354,7 +512,13 @@ function ProductAddDropdown({ all, existingIds, onAdd }: {
       const dropH = 340; // approx height
       const spaceBelow = window.innerHeight - r.bottom;
       const top = spaceBelow >= dropH ? r.bottom + 6 : r.top - dropH - 6;
-      setStyle({ position: 'fixed', top, left: r.left, width: Math.max(320, r.width), zIndex: 9999 });
+      setStyle({
+        position: 'fixed',
+        top,
+        left: r.left,
+        width: Math.max(320, r.width),
+        zIndex: 9999,
+      });
     }
     setOpen(true);
     setQ('');
@@ -373,16 +537,18 @@ function ProductAddDropdown({ all, existingIds, onAdd }: {
 
   // Use String() for IDs so ObjectId vs string mismatches don't hide products
   const existingSet = new Set(existingIds.map(String));
-  const filtered = all.filter(p =>
-    !existingSet.has(String(p._id)) &&
-    (!q ||
-      p.product?.name?.toLowerCase().includes(q.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(q.toLowerCase()))
+  const filtered = all.filter(
+    (p) =>
+      !existingSet.has(String(p._id)) &&
+      (!q ||
+        p.product?.name?.toLowerCase().includes(q.toLowerCase()) ||
+        p.sku?.toLowerCase().includes(q.toLowerCase()))
   );
 
   function emptyMsg() {
     if (all.length === 0) return 'Loading products…';
-    if (!q && filtered.length === 0) return 'All products in your catalog are already in this group';
+    if (!q && filtered.length === 0)
+      return 'All products in your catalog are already in this group';
     return `No products match "${q}"`;
   }
 
@@ -391,7 +557,7 @@ function ProductAddDropdown({ all, existingIds, onAdd }: {
       <button
         ref={btnRef}
         type="button"
-        onClick={() => open ? setOpen(false) : openDrop()}
+        onClick={() => (open ? setOpen(false) : openDrop())}
         className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${
           open
             ? 'border-[#b20202] bg-red-50 text-[#b20202]'
@@ -408,8 +574,11 @@ function ProductAddDropdown({ all, existingIds, onAdd }: {
       </button>
 
       {open && (
-        <div ref={dropRef} style={style}
-          className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5">
+        <div
+          ref={dropRef}
+          style={style}
+          className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5"
+        >
           {/* Search */}
           <div className="border-b border-gray-100 p-2.5">
             <div className="relative">
@@ -417,13 +586,16 @@ function ProductAddDropdown({ all, existingIds, onAdd }: {
               <input
                 autoFocus
                 value={q}
-                onChange={e => setQ(e.target.value)}
+                onChange={(e) => setQ(e.target.value)}
                 placeholder="Search products by name or SKU…"
                 className="w-full rounded-xl border border-gray-200 py-2 pl-8 pr-3 text-xs outline-none focus:border-[#b20202]"
               />
               {q && (
-                <button type="button" onClick={() => setQ('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+                <button
+                  type="button"
+                  onClick={() => setQ('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
+                >
                   <PiX className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -438,38 +610,65 @@ function ProductAddDropdown({ all, existingIds, onAdd }: {
                 <p className="text-xs text-gray-400">{emptyMsg()}</p>
               </div>
             ) : (
-              filtered.map(p => {
-                const img      = p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
-                const hasSizes = (p.sizes?.length ?? 0) > 0 && !p.sellWithoutSizeVariants;
-                const priceStr = hasSizes && p.sizes.length > 0
-                  ? (() => {
-                      const prices = p.sizes.map(s => s.sellingPrice).filter(v => v > 0).sort((a, b) => a - b);
-                      if (!prices.length) return formatCurrency(p.baseSellingPrice);
-                      return prices[0] === prices[prices.length - 1]
-                        ? formatCurrency(prices[0])
-                        : `${formatCurrency(prices[0])} – ${formatCurrency(prices[prices.length - 1])}`;
-                    })()
-                  : formatCurrency(p.baseSellingPrice);
+              filtered.map((p) => {
+                const img = resolveSubProductThumb(p);
+                const hasSizes =
+                  (p.sizes?.length ?? 0) > 0 && !p.sellWithoutSizeVariants;
+                const priceStr =
+                  hasSizes && p.sizes.length > 0
+                    ? (() => {
+                        const prices = p.sizes
+                          .map((s) => s.sellingPrice)
+                          .filter((v) => v > 0)
+                          .sort((a, b) => a - b);
+                        if (!prices.length)
+                          return formatCurrency(p.baseSellingPrice);
+                        return prices[0] === prices[prices.length - 1]
+                          ? formatCurrency(prices[0])
+                          : `${formatCurrency(prices[0])} – ${formatCurrency(prices[prices.length - 1])}`;
+                      })()
+                    : formatCurrency(p.baseSellingPrice);
 
                 return (
-                  <button key={p._id} type="button"
-                    onClick={() => { onAdd(String(p._id)); setOpen(false); setQ(''); }}
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 active:bg-gray-100">
-                    {img
-                      ? <img src={img} className="h-10 w-10 shrink-0 rounded-xl object-cover" alt="" />
-                      : <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-lg">🍾</div>
-                    }
+                  <button
+                    key={p._id}
+                    type="button"
+                    onClick={() => {
+                      onAdd(String(p._id));
+                      setOpen(false);
+                      setQ('');
+                    }}
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 active:bg-gray-100"
+                  >
+                    {img ? (
+                      <img
+                        src={img}
+                        className="h-10 w-10 shrink-0 rounded-xl object-cover"
+                        alt=""
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-lg">
+                        🍾
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-bold text-gray-800">{p.product?.name || p.sku}</p>
+                      <p className="truncate text-xs font-bold text-gray-800">
+                        {p.product?.name || p.sku}
+                      </p>
                       <div className="mt-0.5 flex items-center gap-2">
-                        <span className="text-[10px] font-semibold text-gray-600">{priceStr}</span>
+                        <span className="text-[10px] font-semibold text-gray-600">
+                          {priceStr}
+                        </span>
                         {hasSizes && (
                           <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600">
-                            {p.sizes.length} size{p.sizes.length !== 1 ? 's' : ''}
+                            {p.sizes.length} size
+                            {p.sizes.length !== 1 ? 's' : ''}
                           </span>
                         )}
                         {p.sku && (
-                          <span className="font-mono text-[9px] text-gray-300">{p.sku}</span>
+                          <span className="font-mono text-[9px] text-gray-300">
+                            {p.sku}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -485,7 +684,8 @@ function ProductAddDropdown({ all, existingIds, onAdd }: {
           {/* Footer count */}
           {filtered.length > 0 && (
             <div className="border-t border-gray-100 px-3 py-2 text-[10px] text-gray-400">
-              {filtered.length} product{filtered.length !== 1 ? 's' : ''} available
+              {filtered.length} product{filtered.length !== 1 ? 's' : ''}{' '}
+              available
             </div>
           )}
         </div>
@@ -498,7 +698,15 @@ function ProductAddDropdown({ all, existingIds, onAdd }: {
 
 type Selection = { subProduct: string; size?: string };
 
-function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines, allProducts }: {
+function POSPreview({
+  name,
+  priceMode,
+  fixedPrice,
+  markupPct,
+  discountPct,
+  lines,
+  allProducts,
+}: {
   name: string;
   priceMode: PricingMode;
   fixedPrice: number;
@@ -509,15 +717,21 @@ function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines
 }) {
   const [selections, setSelections] = useState<Record<number, Selection[]>>({});
 
-  const getProduct = (id: string) => allProducts.find(p => String(p._id) === String(id));
+  const getProduct = (id: string) =>
+    allProducts.find((p) => String(p._id) === String(id));
 
-  useEffect(() => { setSelections({}); }, [lines]);
+  useEffect(() => {
+    setSelections({});
+  }, [lines]);
 
   function selectProduct(lineIdx: number, spId: string, maxSelect: number) {
-    setSelections(prev => {
+    setSelections((prev) => {
       const current = prev[lineIdx] || [];
-      if (current.some(s => s.subProduct === spId)) {
-        return { ...prev, [lineIdx]: current.filter(s => s.subProduct !== spId) };
+      if (current.some((s) => s.subProduct === spId)) {
+        return {
+          ...prev,
+          [lineIdx]: current.filter((s) => s.subProduct !== spId),
+        };
       }
       const newSel: Selection = { subProduct: spId };
       if (current.length >= maxSelect) {
@@ -528,10 +742,13 @@ function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines
   }
 
   function selectSize(lineIdx: number, spId: string, sizeId: string) {
-    setSelections(prev => {
-      const current = (prev[lineIdx] || []).map(s =>
+    setSelections((prev) => {
+      const current = (prev[lineIdx] || []).map((s) =>
         s.subProduct === spId
-          ? { ...s, size: String(s.size) === String(sizeId) ? undefined : sizeId }
+          ? {
+              ...s,
+              size: String(s.size) === String(sizeId) ? undefined : sizeId,
+            }
           : s
       );
       return { ...prev, [lineIdx]: current };
@@ -542,21 +759,23 @@ function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines
   const { sellingTotal, costTotal } = lines.reduce(
     (acc, line, i) => {
       const sel = selections[i] || [];
-      sel.forEach(entry => {
+      sel.forEach((entry) => {
         const p = getProduct(entry.subProduct);
         if (!p) return;
         if (entry.size) {
-          const sz = p.sizes?.find(sz => String(sz._id) === String(entry.size));
+          const sz = p.sizes?.find(
+            (sz) => String(sz._id) === String(entry.size)
+          );
           acc.sellingTotal += sz?.sellingPrice || p.baseSellingPrice;
-          acc.costTotal    += sz?.costPrice    || p.costPrice || 0;
+          acc.costTotal += sz?.costPrice || p.costPrice || 0;
         } else {
           acc.sellingTotal += p.baseSellingPrice;
-          acc.costTotal    += p.costPrice || 0;
+          acc.costTotal += p.costPrice || 0;
         }
       });
       return acc;
     },
-    { sellingTotal: 0, costTotal: 0 },
+    { sellingTotal: 0, costTotal: 0 }
   );
 
   // Compute final price based on mode
@@ -564,138 +783,208 @@ function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines
   let formulaCaption = '';
   switch (priceMode) {
     case 'fixed':
-      finalPrice     = fixedPrice;
+      finalPrice = fixedPrice;
       break;
     case 'markup_on_cost':
-      finalPrice     = Math.round(costTotal * (1 + markupPct / 100) * 100) / 100;
-      formulaCaption = costTotal > 0 ? `${formatCurrency(costTotal)} cost + ${markupPct}%` : '';
+      finalPrice = Math.round(costTotal * (1 + markupPct / 100) * 100) / 100;
+      formulaCaption =
+        costTotal > 0
+          ? `${formatCurrency(costTotal)} cost + ${markupPct}%`
+          : '';
       break;
     case 'discount_off_selling':
-      finalPrice     = Math.round(sellingTotal * (1 - discountPct / 100) * 100) / 100;
-      formulaCaption = sellingTotal > 0 ? `${formatCurrency(sellingTotal)} − ${discountPct}%` : '';
+      finalPrice =
+        Math.round(sellingTotal * (1 - discountPct / 100) * 100) / 100;
+      formulaCaption =
+        sellingTotal > 0
+          ? `${formatCurrency(sellingTotal)} − ${discountPct}%`
+          : '';
       break;
     default: // dynamic
-      finalPrice     = sellingTotal;
+      finalPrice = sellingTotal;
       break;
   }
 
   // Minimum possible price (cheapest options per line)
   const minPrice = lines.reduce((sum, line) => {
-    const prices = line.items.flatMap(it => {
-      const p = getProduct(it.subProduct);
-      if (!p) return [0];
-      const sizes = it.allowedSizes.length > 0 ? p.sizes?.filter(s => it.allowedSizes.includes(String(s._id))) : p.sizes;
-      if (sizes?.length) return sizes.map(s => s.sellingPrice);
-      return [p.baseSellingPrice];
-    }).sort((a, b) => a - b);
+    const prices = line.items
+      .flatMap((it) => {
+        const p = getProduct(it.subProduct);
+        if (!p) return [0];
+        const sizes =
+          it.allowedSizes.length > 0
+            ? p.sizes?.filter((s) => it.allowedSizes.includes(String(s._id)))
+            : p.sizes;
+        if (sizes?.length) return sizes.map((s) => s.sellingPrice);
+        return [p.baseSellingPrice];
+      })
+      .sort((a, b) => a - b);
     return sum + prices.slice(0, line.minSelect).reduce((s, v) => s + v, 0);
   }, 0);
 
   return (
     <div className="flex h-full flex-col">
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">POS Preview</p>
+      <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+        POS Preview
+      </p>
       <div className="flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-gray-50">
-
         {/* Header */}
         <div className="border-b border-gray-200 bg-white px-4 py-3">
           <p className="font-bold text-gray-900">{name || 'Combo name…'}</p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {priceMode === 'fixed'
-              ? <span className="font-semibold text-[#b20202]">{formatCurrency(fixedPrice)}</span>
-              : priceMode === 'markup_on_cost'
-              ? <span className="text-gray-500">Cost + {markupPct}% markup</span>
-              : priceMode === 'discount_off_selling'
-              ? <span className="text-gray-500">{discountPct}% off selling price</span>
-              : <span>{formatCurrency(minPrice)} and up</span>}
+          <p className="mt-0.5 text-xs text-gray-400">
+            {priceMode === 'fixed' ? (
+              <span className="font-semibold text-[#b20202]">
+                {formatCurrency(fixedPrice)}
+              </span>
+            ) : priceMode === 'markup_on_cost' ? (
+              <span className="text-gray-500">Cost + {markupPct}% markup</span>
+            ) : priceMode === 'discount_off_selling' ? (
+              <span className="text-gray-500">
+                {discountPct}% off selling price
+              </span>
+            ) : (
+              <span>{formatCurrency(minPrice)} and up</span>
+            )}
           </p>
         </div>
 
         {lines.length === 0 && (
-          <p className="px-4 py-8 text-center text-xs text-gray-400">Add choice groups to preview</p>
+          <p className="px-4 py-8 text-center text-xs text-gray-400">
+            Add choice groups to preview
+          </p>
         )}
 
         <div className="divide-y divide-gray-100">
           {lines.map((line, li) => {
-            const color  = gc(li);
-            const sel    = selections[li] || [];
-            const done   = sel.length >= line.minSelect;
+            const color = gc(li);
+            const sel = selections[li] || [];
+            const done = sel.length >= line.minSelect;
 
             return (
               <div key={li} className="px-4 py-3">
                 {/* Group header */}
                 <div className="mb-2 flex items-center gap-2">
-                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ${color.dot}`}>
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ${color.dot}`}
+                  >
                     {li + 1}
                   </span>
-                  <span className="flex-1 text-xs font-bold text-gray-800">{line.label || `Group ${li + 1}`}</span>
-                  <span className="text-[10px] text-gray-400">
-                    {line.minSelect === line.maxSelect ? `×${line.minSelect}` : `${line.minSelect}–${line.maxSelect}`}
-                    {!line.required && <span className="ml-1 text-gray-300">opt</span>}
+                  <span className="flex-1 text-xs font-bold text-gray-800">
+                    {line.label || `Group ${li + 1}`}
                   </span>
-                  {done && <PiCheckCircle className="h-3.5 w-3.5 text-emerald-500" />}
+                  <span className="text-[10px] text-gray-400">
+                    {line.minSelect === line.maxSelect
+                      ? `×${line.minSelect}`
+                      : `${line.minSelect}–${line.maxSelect}`}
+                    {!line.required && (
+                      <span className="ml-1 text-gray-300">opt</span>
+                    )}
+                  </span>
+                  {done && (
+                    <PiCheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+                  )}
                 </div>
 
                 {/* Product choices */}
                 <div className="space-y-1.5">
                   {line.items.length === 0 && (
-                    <p className="text-[11px] italic text-gray-300">No products</p>
+                    <p className="text-[11px] italic text-gray-300">
+                      No products
+                    </p>
                   )}
-                  {line.items.map(item => {
+                  {line.items.map((item) => {
                     const p = getProduct(item.subProduct);
                     if (!p) return null;
-                    const chosen   = sel.some(s => s.subProduct === item.subProduct);
-                    const selEntry = sel.find(s => s.subProduct === item.subProduct);
-                    const isMulti  = line.maxSelect > 1;
-                    const img      = p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
+                    const chosen = sel.some(
+                      (s) => s.subProduct === item.subProduct
+                    );
+                    const selEntry = sel.find(
+                      (s) => s.subProduct === item.subProduct
+                    );
+                    const isMulti = line.maxSelect > 1;
+                    const img = resolveSubProductThumb(p);
 
                     // Which sizes are available for this item in this group
-                    const hasSizes = (p.sizes?.length ?? 0) > 0 && !p.sellWithoutSizeVariants;
+                    const hasSizes =
+                      (p.sizes?.length ?? 0) > 0 && !p.sellWithoutSizeVariants;
                     const availSizes = hasSizes
-                      ? (item.allowedSizes.length > 0
-                          ? p.sizes.filter(s => item.allowedSizes.includes(String(s._id)))
-                          : p.sizes)
+                      ? item.allowedSizes.length > 0
+                        ? p.sizes.filter((s) =>
+                            item.allowedSizes.includes(String(s._id))
+                          )
+                        : p.sizes
                       : [];
 
                     // Price to show: use selected size price, or price range if sizes available
                     const selectedSz = selEntry?.size
-                      ? p.sizes?.find(s => String(s._id) === String(selEntry.size))
+                      ? p.sizes?.find(
+                          (s) => String(s._id) === String(selEntry.size)
+                        )
                       : null;
                     const rowPrice = selectedSz
                       ? selectedSz.sellingPrice
                       : hasSizes && availSizes.length > 0
-                      ? (() => {
-                          const prices = availSizes.map(s => s.sellingPrice).sort((a, b) => a - b);
-                          const lo = prices[0], hi = prices[prices.length - 1];
-                          return lo; // use lowest for display; full range shown below
-                        })()
-                      : p.baseSellingPrice;
-                    const priceRange = hasSizes && availSizes.length > 1 && !selectedSz
-                      ? (() => {
-                          const prices = availSizes.map(s => s.sellingPrice).sort((a, b) => a - b);
-                          return prices[0] === prices[prices.length - 1]
-                            ? formatCurrency(prices[0])
-                            : `${formatCurrency(prices[0])} – ${formatCurrency(prices[prices.length - 1])}`;
-                        })()
-                      : null;
+                        ? (() => {
+                            const prices = availSizes
+                              .map((s) => s.sellingPrice)
+                              .sort((a, b) => a - b);
+                            const lo = prices[0],
+                              hi = prices[prices.length - 1];
+                            return lo; // use lowest for display; full range shown below
+                          })()
+                        : p.baseSellingPrice;
+                    const priceRange =
+                      hasSizes && availSizes.length > 1 && !selectedSz
+                        ? (() => {
+                            const prices = availSizes
+                              .map((s) => s.sellingPrice)
+                              .sort((a, b) => a - b);
+                            return prices[0] === prices[prices.length - 1]
+                              ? formatCurrency(prices[0])
+                              : `${formatCurrency(prices[0])} – ${formatCurrency(prices[prices.length - 1])}`;
+                          })()
+                        : null;
 
                     return (
                       <div key={item.subProduct}>
                         {/* Product row */}
-                        <button type="button" onClick={() => selectProduct(li, item.subProduct, line.maxSelect)}
-                          className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-all ${
-                            chosen ? `${color.border} ${color.bg} shadow-sm` : 'border-gray-100 bg-white hover:border-gray-200'
-                          }`}>
-                          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-${isMulti ? 'md' : 'full'} border-2 transition-colors ${
-                            chosen ? `${color.dot} border-current` : 'border-gray-300'
-                          }`}>
-                            {chosen && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                          </span>
-                          {img
-                            ? <img src={img} className="h-8 w-8 shrink-0 rounded-lg object-cover" alt="" />
-                            : <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm">🍾</div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            selectProduct(li, item.subProduct, line.maxSelect)
                           }
-                          <div className="flex-1 min-w-0">
-                            <p className={`truncate text-xs font-semibold ${chosen ? color.text : 'text-gray-700'}`}>
+                          className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-all ${
+                            chosen
+                              ? `${color.border} ${color.bg} shadow-sm`
+                              : 'border-gray-100 bg-white hover:border-gray-200'
+                          }`}
+                        >
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-${isMulti ? 'md' : 'full'} border-2 transition-colors ${
+                              chosen
+                                ? `${color.dot} border-current`
+                                : 'border-gray-300'
+                            }`}
+                          >
+                            {chosen && (
+                              <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                            )}
+                          </span>
+                          {img ? (
+                            <img
+                              src={img}
+                              className="h-8 w-8 shrink-0 rounded-lg object-cover"
+                              alt=""
+                            />
+                          ) : (
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm">
+                              🍾
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className={`truncate text-xs font-semibold ${chosen ? color.text : 'text-gray-700'}`}
+                            >
                               {p.product?.name || p.sku}
                             </p>
                             <p className="text-[10px] text-gray-400">
@@ -711,26 +1000,46 @@ function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines
 
                         {/* Size picker — shown inline when product is selected and has sizes */}
                         {chosen && hasSizes && availSizes.length > 0 && (
-                          <div className={`ml-4 mt-1 rounded-xl border p-2.5 ${color.bg} ${color.border}`}>
-                            <p className={`mb-1.5 text-[10px] font-bold ${color.text}`}>Choose size</p>
+                          <div
+                            className={`ml-4 mt-1 rounded-xl border p-2.5 ${color.bg} ${color.border}`}
+                          >
+                            <p
+                              className={`mb-1.5 text-[10px] font-bold ${color.text}`}
+                            >
+                              Choose size
+                            </p>
                             <div className="flex flex-wrap gap-1.5">
-                              {availSizes.map(size => {
-                                const selected = String(selEntry?.size) === String(size._id);
-                                const oos      = size.availableStock <= 0;
+                              {availSizes.map((size) => {
+                                const selected =
+                                  String(selEntry?.size) === String(size._id);
+                                const oos = size.availableStock <= 0;
                                 return (
-                                  <button key={size._id} type="button"
-                                    onClick={() => selectSize(li, item.subProduct, String(size._id))}
+                                  <button
+                                    key={size._id}
+                                    type="button"
+                                    onClick={() =>
+                                      selectSize(
+                                        li,
+                                        item.subProduct,
+                                        String(size._id)
+                                      )
+                                    }
                                     className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
                                       selected
                                         ? `${color.dot} border-current text-white`
                                         : `border-gray-200 bg-white ${color.text} hover:${color.bg}`
-                                    } ${oos && !selected ? 'opacity-50' : ''}`}>
+                                    } ${oos && !selected ? 'opacity-50' : ''}`}
+                                  >
                                     <span>{size.displayName}</span>
-                                    <span className={`text-[10px] font-normal ${selected ? 'opacity-80' : 'opacity-60'}`}>
+                                    <span
+                                      className={`text-[10px] font-normal ${selected ? 'opacity-80' : 'opacity-60'}`}
+                                    >
                                       {formatCurrency(size.sellingPrice)}
                                     </span>
                                     {oos && (
-                                      <span className="rounded bg-red-100 px-1 text-[9px] text-red-500">low</span>
+                                      <span className="rounded bg-red-100 px-1 text-[9px] text-red-500">
+                                        low
+                                      </span>
                                     )}
                                   </button>
                                 );
@@ -751,13 +1060,20 @@ function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines
         {lines.length > 0 && (
           <div className="sticky bottom-0 border-t border-gray-200 bg-white px-4 py-3">
             {formulaCaption && (
-              <p className="mb-0.5 text-[10px] text-gray-400">{formulaCaption}</p>
-            )}
-            {priceMode === 'discount_off_selling' && sellingTotal > 0 && finalPrice !== sellingTotal && (
-              <p className="text-[10px] text-gray-400">
-                Was: <span className="line-through">{formatCurrency(sellingTotal)}</span>
+              <p className="mb-0.5 text-[10px] text-gray-400">
+                {formulaCaption}
               </p>
             )}
+            {priceMode === 'discount_off_selling' &&
+              sellingTotal > 0 &&
+              finalPrice !== sellingTotal && (
+                <p className="text-[10px] text-gray-400">
+                  Was:{' '}
+                  <span className="line-through">
+                    {formatCurrency(sellingTotal)}
+                  </span>
+                </p>
+              )}
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-500">Total</span>
               <span className="text-base font-black text-gray-900">
@@ -765,7 +1081,9 @@ function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines
               </span>
             </div>
             {priceMode === 'dynamic' && (
-              <p className="mt-0.5 text-[10px] text-gray-400">Updates as you pick options</p>
+              <p className="mt-0.5 text-[10px] text-gray-400">
+                Updates as you pick options
+              </p>
             )}
           </div>
         )}
@@ -779,107 +1097,151 @@ function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines
 
 // ── Combo modal ───────────────────────────────────────────────────────────────
 
-function ComboModal({ initial, products, onSave, onClose }: {
+function ComboModal({
+  initial,
+  products,
+  onSave,
+  onClose,
+}: {
   initial?: Combo;
   products: Product[];
   onSave: (d: any) => Promise<void>;
   onClose: () => void;
 }) {
-  const [name, setName]       = useState(initial?.name || '');
-  const [desc, setDesc]       = useState(initial?.description || '');
-  const [priceMode, setPM]    = useState<PricingMode>(
-    initial?.priceMode || (initial?.price && initial.price > 0 ? 'fixed' : 'dynamic')
+  const [name, setName] = useState(initial?.name || '');
+  const [desc, setDesc] = useState(initial?.description || '');
+  const [priceMode, setPM] = useState<PricingMode>(
+    initial?.priceMode ||
+      (initial?.price && initial.price > 0 ? 'fixed' : 'dynamic')
   );
-  const [fixedPrice, setFP]   = useState(String(initial?.price || ''));
-  const [markupPct, setMPct]  = useState(String(initial?.markupPercentage ?? ''));
-  const [discPct, setDPct]    = useState(String(initial?.discountPercentage ?? ''));
-  const [active, setActive]   = useState(initial?.active !== false);
-  const [lines, setLines]     = useState<ChoiceLine[]>(
-    initial?.choiceLines?.length ? normaliseLines(initial.choiceLines) : [blankLine()]
+  const [fixedPrice, setFP] = useState(String(initial?.price || ''));
+  const [markupPct, setMPct] = useState(
+    String(initial?.markupPercentage ?? '')
   );
-  const [errors, setErrors]   = useState<Record<string, string>>({});
-  const [saving, setSaving]   = useState(false);
+  const [discPct, setDPct] = useState(
+    String(initial?.discountPercentage ?? '')
+  );
+  const [active, setActive] = useState(initial?.active !== false);
+  const [lines, setLines] = useState<ChoiceLine[]>(
+    initial?.choiceLines?.length
+      ? normaliseLines(initial.choiceLines)
+      : [blankLine()]
+  );
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   function validate() {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = 'Name is required';
-    if (priceMode === 'fixed' && !(parseFloat(fixedPrice) > 0))      e.price    = 'Enter a price > 0';
-    if (priceMode === 'markup_on_cost' && !(parseFloat(markupPct) >= 0))  e.markup   = 'Enter a markup %';
-    if (priceMode === 'discount_off_selling' && !(parseFloat(discPct) >= 0)) e.discount = 'Enter a discount %';
+    if (priceMode === 'fixed' && !(parseFloat(fixedPrice) > 0))
+      e.price = 'Enter a price > 0';
+    if (priceMode === 'markup_on_cost' && !(parseFloat(markupPct) >= 0))
+      e.markup = 'Enter a markup %';
+    if (priceMode === 'discount_off_selling' && !(parseFloat(discPct) >= 0))
+      e.discount = 'Enter a discount %';
     lines.forEach((l, i) => {
-      if (!l.label.trim())             e[`l${i}label`] = 'Label required';
-      if (l.items.length === 0)        e[`l${i}items`] = 'Add at least one product';
-      if (l.maxSelect > l.items.length) e[`l${i}max`]  = `Max can't exceed ${l.items.length}`;
+      if (!l.label.trim()) e[`l${i}label`] = 'Label required';
+      if (l.items.length === 0) e[`l${i}items`] = 'Add at least one product';
+      if (l.maxSelect > l.items.length)
+        e[`l${i}max`] = `Max can't exceed ${l.items.length}`;
     });
     setErrors(e);
     return !Object.keys(e).length;
   }
 
   async function handleSave() {
-    if (!validate()) { toast.error('Fix the errors before saving'); return; }
+    if (!validate()) {
+      toast.error('Fix the errors before saving');
+      return;
+    }
     setSaving(true);
     try {
       await onSave({
-        name:               name.trim(),
-        description:        desc,
+        name: name.trim(),
+        description: desc,
         priceMode,
-        price:              priceMode === 'fixed' ? (parseFloat(fixedPrice) || 0) : 0,
-        markupPercentage:   priceMode === 'markup_on_cost' ? (parseFloat(markupPct) || 0) : 0,
-        discountPercentage: priceMode === 'discount_off_selling' ? (parseFloat(discPct) || 0) : 0,
+        price: priceMode === 'fixed' ? parseFloat(fixedPrice) || 0 : 0,
+        markupPercentage:
+          priceMode === 'markup_on_cost' ? parseFloat(markupPct) || 0 : 0,
+        discountPercentage:
+          priceMode === 'discount_off_selling' ? parseFloat(discPct) || 0 : 0,
         active,
         choiceLines: lines,
       });
       onClose();
-    } catch (e: any) { toast.error(e.message || 'Save failed'); }
-    finally { setSaving(false); }
+    } catch (e: any) {
+      toast.error(e.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function addLine() { setLines(l => [...l, blankLine()]); }
-  function removeLine(i: number) { setLines(l => l.filter((_, idx) => idx !== i)); }
+  function addLine() {
+    setLines((l) => [...l, blankLine()]);
+  }
+  function removeLine(i: number) {
+    setLines((l) => l.filter((_, idx) => idx !== i));
+  }
 
   function patchLine(i: number, patch: Partial<ChoiceLine>) {
-    setLines(l => l.map((line, idx) => {
-      if (idx !== i) return line;
-      const u = { ...line, ...patch };
-      if (patch.items) {
-        u.maxSelect = Math.min(u.maxSelect, Math.max(1, patch.items.length));
-        u.minSelect = Math.min(u.minSelect, u.maxSelect);
-      }
-      return u;
-    }));
+    setLines((l) =>
+      l.map((line, idx) => {
+        if (idx !== i) return line;
+        const u = { ...line, ...patch };
+        if (patch.items) {
+          u.maxSelect = Math.min(u.maxSelect, Math.max(1, patch.items.length));
+          u.minSelect = Math.min(u.minSelect, u.maxSelect);
+        }
+        return u;
+      })
+    );
   }
 
   function addProduct(lineIdx: number, spId: string) {
     const line = lines[lineIdx];
-    const newItems = [...line.items, { subProduct: spId, allowedSizes: [], minQty: 1, maxQty: 1 }];
+    const newItems = [
+      ...line.items,
+      { subProduct: spId, allowedSizes: [], minQty: 1, maxQty: 1 },
+    ];
     patchLine(lineIdx, { items: newItems });
-    setErrors(p => ({ ...p, [`l${lineIdx}items`]: '' }));
+    setErrors((p) => ({ ...p, [`l${lineIdx}items`]: '' }));
   }
 
   function removeProduct(lineIdx: number, spId: string) {
-    patchLine(lineIdx, { items: lines[lineIdx].items.filter(it => it.subProduct !== spId) });
+    patchLine(lineIdx, {
+      items: lines[lineIdx].items.filter((it) => it.subProduct !== spId),
+    });
   }
 
   function updateItemSizes(lineIdx: number, spId: string, sizeIds: string[]) {
     patchLine(lineIdx, {
-      items: lines[lineIdx].items.map(it =>
+      items: lines[lineIdx].items.map((it) =>
         it.subProduct === spId ? { ...it, allowedSizes: sizeIds } : it
       ),
     });
   }
 
-  function updateItemQty(lineIdx: number, spId: string, minQty: number, maxQty: number) {
+  function updateItemQty(
+    lineIdx: number,
+    spId: string,
+    minQty: number,
+    maxQty: number
+  ) {
     patchLine(lineIdx, {
-      items: lines[lineIdx].items.map(it =>
-        it.subProduct === spId ? { ...it, minQty, maxQty: Math.max(maxQty, minQty) } : it
+      items: lines[lineIdx].items.map((it) =>
+        it.subProduct === spId
+          ? { ...it, minQty, maxQty: Math.max(maxQty, minQty) }
+          : it
       ),
     });
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" style={{ padding: '10vh 10vw' }}>
-      <div className="flex w-full h-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      style={{ padding: '10vh 10vw' }}
+    >
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-gray-100 bg-white px-5 py-4">
           <div className="flex items-center gap-3">
@@ -887,53 +1249,102 @@ function ComboModal({ initial, products, onSave, onClose }: {
               <PiPackage className="h-5 w-5 text-[#b20202]" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-gray-900">{initial ? 'Edit Combo' : 'New Combo'}</h2>
-              <p className="text-[11px] text-gray-400">Build groups · restrict sizes per product · preview on the right</p>
+              <h2 className="text-sm font-bold text-gray-900">
+                {initial ? 'Edit Combo' : 'New Combo'}
+              </h2>
+              <p className="text-[11px] text-gray-400">
+                Build groups · restrict sizes per product · preview on the right
+              </p>
             </div>
           </div>
-          <button type="button" onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"
+          >
             <PiX className="h-5 w-5" />
           </button>
         </div>
 
         {/* Body */}
         <div className="flex flex-1 overflow-hidden">
-
           {/* LEFT: builder */}
           <div className="flex w-full flex-col overflow-y-auto border-r border-gray-100 lg:w-[58%]">
             <div className="space-y-6 px-5 py-5">
-
               {/* Basic info */}
               <section className="space-y-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Basic Info</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                  Basic Info
+                </p>
                 <div>
-                  <input value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }}
+                  <input
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      setErrors((p) => ({ ...p, name: '' }));
+                    }}
                     placeholder="Combo name…"
-                    className={`w-full rounded-xl border px-3.5 py-2.5 text-base font-semibold placeholder-gray-300 outline-none ${errors.name ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
-                  {errors.name && <p className="mt-1 text-[11px] text-red-500">{errors.name}</p>}
+                    className={`w-full rounded-xl border px-3.5 py-2.5 text-base font-semibold placeholder-gray-300 outline-none ${errors.name ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`}
+                  />
+                  {errors.name && (
+                    <p className="mt-1 text-[11px] text-red-500">
+                      {errors.name}
+                    </p>
+                  )}
                 </div>
-                <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2}
+                <textarea
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  rows={2}
                   placeholder="Description (optional)…"
-                  className="w-full resize-none rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none focus:border-[#b20202]" />
+                  className="w-full resize-none rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none focus:border-[#b20202]"
+                />
 
                 <div className="space-y-3">
                   {/* Pricing mode — 4 options */}
                   <div>
-                    <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Pricing mode</label>
+                    <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">
+                      Pricing mode
+                    </label>
                     <div className="grid grid-cols-2 gap-1.5">
-                      {([
-                        { mode: 'dynamic',              label: 'Sum of choices',          desc: 'No change — add individual prices' },
-                        { mode: 'fixed',                label: 'Fixed price',             desc: 'Flat amount set by admin' },
-                        { mode: 'markup_on_cost',       label: 'Markup on total cost',    desc: 'Cost of all items + markup %' },
-                        { mode: 'discount_off_selling', label: 'Discount off selling',    desc: 'Selling total minus discount %' },
-                      ] as { mode: PricingMode; label: string; desc: string }[]).map(({ mode, label, desc }) => (
-                        <button key={mode} type="button" onClick={() => setPM(mode)}
+                      {(
+                        [
+                          {
+                            mode: 'dynamic',
+                            label: 'Sum of choices',
+                            desc: 'No change — add individual prices',
+                          },
+                          {
+                            mode: 'fixed',
+                            label: 'Fixed price',
+                            desc: 'Flat amount set by admin',
+                          },
+                          {
+                            mode: 'markup_on_cost',
+                            label: 'Markup on total cost',
+                            desc: 'Cost of all items + markup %',
+                          },
+                          {
+                            mode: 'discount_off_selling',
+                            label: 'Discount off selling',
+                            desc: 'Selling total minus discount %',
+                          },
+                        ] as {
+                          mode: PricingMode;
+                          label: string;
+                          desc: string;
+                        }[]
+                      ).map(({ mode, label, desc }) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setPM(mode)}
                           className={`flex flex-col rounded-xl border px-3 py-2 text-left transition-colors ${
                             priceMode === mode
                               ? 'border-[#b20202] bg-red-50/60 text-[#b20202]'
                               : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                          }`}>
+                          }`}
+                        >
                           <span className="text-[11px] font-bold">{label}</span>
                           <span className="text-[10px] opacity-70">{desc}</span>
                         </button>
@@ -944,52 +1355,109 @@ function ComboModal({ initial, products, onSave, onClose }: {
                   {/* Conditional value input */}
                   <div className="flex flex-wrap items-end gap-3">
                     {priceMode === 'fixed' && (
-                      <div className="flex-1 min-w-[130px]">
-                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Price (₦)</label>
+                      <div className="min-w-[130px] flex-1">
+                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">
+                          Price (₦)
+                        </label>
                         <div className="relative">
                           <PiCurrencyNgn className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                          <input type="number" min={0} value={fixedPrice}
-                            onChange={e => { setFP(e.target.value); setErrors(p => ({ ...p, price: '' })); }}
+                          <input
+                            type="number"
+                            min={0}
+                            value={fixedPrice}
+                            onChange={(e) => {
+                              setFP(e.target.value);
+                              setErrors((p) => ({ ...p, price: '' }));
+                            }}
                             placeholder="45000"
-                            className={`w-full rounded-xl border py-2 pl-8 pr-3 text-sm outline-none ${errors.price ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
+                            className={`w-full rounded-xl border py-2 pl-8 pr-3 text-sm outline-none ${errors.price ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`}
+                          />
                         </div>
-                        {errors.price && <p className="mt-1 text-[11px] text-red-500">{errors.price}</p>}
+                        {errors.price && (
+                          <p className="mt-1 text-[11px] text-red-500">
+                            {errors.price}
+                          </p>
+                        )}
                       </div>
                     )}
                     {priceMode === 'markup_on_cost' && (
-                      <div className="flex-1 min-w-[130px]">
-                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Markup %</label>
+                      <div className="min-w-[130px] flex-1">
+                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">
+                          Markup %
+                        </label>
                         <div className="relative">
-                          <input type="number" min={0} value={markupPct}
-                            onChange={e => { setMPct(e.target.value); setErrors(p => ({ ...p, markup: '' })); }}
+                          <input
+                            type="number"
+                            min={0}
+                            value={markupPct}
+                            onChange={(e) => {
+                              setMPct(e.target.value);
+                              setErrors((p) => ({ ...p, markup: '' }));
+                            }}
                             placeholder="25"
-                            className={`w-full rounded-xl border py-2 pl-3 pr-7 text-sm outline-none ${errors.markup ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                            className={`w-full rounded-xl border py-2 pl-3 pr-7 text-sm outline-none ${errors.markup ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`}
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                            %
+                          </span>
                         </div>
-                        {errors.markup && <p className="mt-1 text-[11px] text-red-500">{errors.markup}</p>}
-                        <p className="mt-1 text-[10px] text-gray-400">Price = Σ cost × (1 + {markupPct || 0}%)</p>
+                        {errors.markup && (
+                          <p className="mt-1 text-[11px] text-red-500">
+                            {errors.markup}
+                          </p>
+                        )}
+                        <p className="mt-1 text-[10px] text-gray-400">
+                          Price = Σ cost × (1 + {markupPct || 0}%)
+                        </p>
                       </div>
                     )}
                     {priceMode === 'discount_off_selling' && (
-                      <div className="flex-1 min-w-[130px]">
-                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Discount %</label>
+                      <div className="min-w-[130px] flex-1">
+                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">
+                          Discount %
+                        </label>
                         <div className="relative">
-                          <input type="number" min={0} max={100} value={discPct}
-                            onChange={e => { setDPct(e.target.value); setErrors(p => ({ ...p, discount: '' })); }}
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={discPct}
+                            onChange={(e) => {
+                              setDPct(e.target.value);
+                              setErrors((p) => ({ ...p, discount: '' }));
+                            }}
                             placeholder="10"
-                            className={`w-full rounded-xl border py-2 pl-3 pr-7 text-sm outline-none ${errors.discount ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                            className={`w-full rounded-xl border py-2 pl-3 pr-7 text-sm outline-none ${errors.discount ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`}
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                            %
+                          </span>
                         </div>
-                        {errors.discount && <p className="mt-1 text-[11px] text-red-500">{errors.discount}</p>}
-                        <p className="mt-1 text-[10px] text-gray-400">Price = Σ selling × (1 − {discPct || 0}%)</p>
+                        {errors.discount && (
+                          <p className="mt-1 text-[11px] text-red-500">
+                            {errors.discount}
+                          </p>
+                        )}
+                        <p className="mt-1 text-[10px] text-gray-400">
+                          Price = Σ selling × (1 − {discPct || 0}%)
+                        </p>
                       </div>
                     )}
 
                     <div className="shrink-0">
-                      <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Status</label>
-                      <button type="button" onClick={() => setActive(v => !v)}
-                        className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500'}`}>
-                        {active ? <PiToggleRight className="h-4 w-4" /> : <PiToggleLeft className="h-4 w-4" />}
+                      <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">
+                        Status
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActive((v) => !v)}
+                        className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500'}`}
+                      >
+                        {active ? (
+                          <PiToggleRight className="h-4 w-4" />
+                        ) : (
+                          <PiToggleLeft className="h-4 w-4" />
+                        )}
                         {active ? 'Active' : 'Inactive'}
                       </button>
                     </div>
@@ -1002,10 +1470,15 @@ function ComboModal({ initial, products, onSave, onClose }: {
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
                     Choice Groups
-                    <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">{lines.length}</span>
+                    <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">
+                      {lines.length}
+                    </span>
                   </p>
-                  <button type="button" onClick={addLine}
-                    className="flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-500 hover:border-[#b20202] hover:text-[#b20202] transition-colors">
+                  <button
+                    type="button"
+                    onClick={addLine}
+                    className="flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-500 transition-colors hover:border-[#b20202] hover:text-[#b20202]"
+                  >
                     <PiListPlus className="h-3.5 w-3.5" /> Add group
                   </button>
                 </div>
@@ -1013,27 +1486,49 @@ function ComboModal({ initial, products, onSave, onClose }: {
                 {lines.length === 0 && (
                   <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-200 py-8 text-center">
                     <PiListPlus className="mb-2 h-8 w-8 text-gray-200" />
-                    <p className="text-xs text-gray-400">No groups yet — click "Add group"</p>
+                    <p className="text-xs text-gray-400">
+                      No groups yet — click "Add group"
+                    </p>
                   </div>
                 )}
 
                 <div className="space-y-3">
                   {lines.map((line, i) => {
                     const color = gc(i);
-                    const le = { label: errors[`l${i}label`], items: errors[`l${i}items`], max: errors[`l${i}max`] };
+                    const le = {
+                      label: errors[`l${i}label`],
+                      items: errors[`l${i}items`],
+                      max: errors[`l${i}max`],
+                    };
 
                     return (
-                      <div key={i} className={`overflow-hidden rounded-2xl border ${Object.values(le).some(Boolean) ? 'border-red-200' : 'border-gray-200'} bg-white`}>
-
+                      <div
+                        key={i}
+                        className={`overflow-hidden rounded-2xl border ${Object.values(le).some(Boolean) ? 'border-red-200' : 'border-gray-200'} bg-white`}
+                      >
                         {/* Group header */}
-                        <div className={`flex items-center gap-3 border-b px-3.5 py-3 ${Object.values(le).some(Boolean) ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-gray-50/40'}`}>
-                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${color.dot}`}>{i + 1}</span>
-                          <input value={line.label}
-                            onChange={e => { patchLine(i, { label: e.target.value }); setErrors(p => ({ ...p, [`l${i}label`]: '' })); }}
+                        <div
+                          className={`flex items-center gap-3 border-b px-3.5 py-3 ${Object.values(le).some(Boolean) ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-gray-50/40'}`}
+                        >
+                          <span
+                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${color.dot}`}
+                          >
+                            {i + 1}
+                          </span>
+                          <input
+                            value={line.label}
+                            onChange={(e) => {
+                              patchLine(i, { label: e.target.value });
+                              setErrors((p) => ({ ...p, [`l${i}label`]: '' }));
+                            }}
                             placeholder={`Group ${i + 1} label…`}
-                            className={`flex-1 bg-transparent text-sm font-semibold outline-none placeholder-gray-300 ${le.label ? 'text-red-500' : 'text-gray-800'}`} />
-                          <button type="button" onClick={() => removeLine(i)}
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-300 hover:bg-red-50 hover:text-red-400">
+                            className={`flex-1 bg-transparent text-sm font-semibold placeholder-gray-300 outline-none ${le.label ? 'text-red-500' : 'text-gray-800'}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeLine(i)}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-300 hover:bg-red-50 hover:text-red-400"
+                          >
                             <PiTrash className="h-3.5 w-3.5" />
                           </button>
                         </div>
@@ -1043,22 +1538,45 @@ function ComboModal({ initial, products, onSave, onClose }: {
                           {/* Min / Max / Required */}
                           <div className="flex flex-wrap items-center gap-4">
                             <div className="flex items-center gap-2">
-                              <span className="text-[11px] font-semibold text-gray-500">Min</span>
-                              <Stepper value={line.minSelect} min={line.required ? 1 : 0} max={line.maxSelect}
-                                onChange={v => patchLine(i, { minSelect: v })} />
+                              <span className="text-[11px] font-semibold text-gray-500">
+                                Min
+                              </span>
+                              <Stepper
+                                value={line.minSelect}
+                                min={line.required ? 1 : 0}
+                                max={line.maxSelect}
+                                onChange={(v) => patchLine(i, { minSelect: v })}
+                              />
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-[11px] font-semibold text-gray-500">Max</span>
-                              <Stepper value={line.maxSelect} min={line.minSelect} max={line.items.length || undefined}
-                                onChange={v => patchLine(i, { maxSelect: v })} />
-                              {le.max && <p className="text-[11px] text-red-500">{le.max}</p>}
+                              <span className="text-[11px] font-semibold text-gray-500">
+                                Max
+                              </span>
+                              <Stepper
+                                value={line.maxSelect}
+                                min={line.minSelect}
+                                max={line.items.length || undefined}
+                                onChange={(v) => patchLine(i, { maxSelect: v })}
+                              />
+                              {le.max && (
+                                <p className="text-[11px] text-red-500">
+                                  {le.max}
+                                </p>
+                              )}
                             </div>
-                            <button type="button"
+                            <button
+                              type="button"
                               onClick={() => {
                                 const req = !line.required;
-                                patchLine(i, { required: req, minSelect: req ? Math.max(1, line.minSelect) : 0 });
+                                patchLine(i, {
+                                  required: req,
+                                  minSelect: req
+                                    ? Math.max(1, line.minSelect)
+                                    : 0,
+                                });
                               }}
-                              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${line.required ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-400'}`}>
+                              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${line.required ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-400'}`}
+                            >
                               <PiStar className="h-3 w-3" />
                               {line.required ? 'Required' : 'Optional'}
                             </button>
@@ -1066,24 +1584,40 @@ function ComboModal({ initial, products, onSave, onClose }: {
 
                           {/* Product chips */}
                           <div className="space-y-2">
-                            {le.items && <p className="text-[11px] text-red-500">{le.items}</p>}
-                            {line.items.map(item => {
-                              const p = products.find(pr => String(pr._id) === String(item.subProduct));
+                            {le.items && (
+                              <p className="text-[11px] text-red-500">
+                                {le.items}
+                              </p>
+                            )}
+                            {line.items.map((item) => {
+                              const p = products.find(
+                                (pr) =>
+                                  String(pr._id) === String(item.subProduct)
+                              );
                               if (!p) return null;
                               return (
-                                <ProductChip key={item.subProduct}
+                                <ProductChip
+                                  key={item.subProduct}
                                   item={item}
                                   product={p}
-                                  onRemove={() => removeProduct(i, item.subProduct)}
-                                  onSizesChange={sizes => updateItemSizes(i, item.subProduct, sizes)}
-                                  onQtyChange={(mn, mx) => updateItemQty(i, item.subProduct, mn, mx)}
+                                  onRemove={() =>
+                                    removeProduct(i, item.subProduct)
+                                  }
+                                  onSizesChange={(sizes) =>
+                                    updateItemSizes(i, item.subProduct, sizes)
+                                  }
+                                  onQtyChange={(mn, mx) =>
+                                    updateItemQty(i, item.subProduct, mn, mx)
+                                  }
                                 />
                               );
                             })}
                             <ProductAddDropdown
                               all={products}
-                              existingIds={line.items.map(it => it.subProduct)}
-                              onAdd={spId => addProduct(i, spId)}
+                              existingIds={line.items.map(
+                                (it) => it.subProduct
+                              )}
+                              onAdd={(spId) => addProduct(i, spId)}
                             />
                           </div>
                         </div>
@@ -1110,21 +1644,32 @@ function ComboModal({ initial, products, onSave, onClose }: {
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 flex items-center justify-between border-t border-gray-100 bg-white px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-t border-gray-100 bg-white px-5 py-4">
           <div className="text-[11px] text-red-500">
-            {Object.keys(errors).some(k => errors[k]) && (
-              <span className="flex items-center gap-1"><PiWarningCircle className="h-3.5 w-3.5" /> Fix errors above</span>
+            {Object.keys(errors).some((k) => errors[k]) && (
+              <span className="flex items-center gap-1">
+                <PiWarningCircle className="h-3.5 w-3.5" /> Fix errors above
+              </span>
             )}
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={onClose}
-              className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+            >
               Cancel
             </button>
-            <button type="button" onClick={handleSave} disabled={saving}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
               className="flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-bold text-white disabled:opacity-60"
-              style={{ backgroundColor: '#b20202' }}>
-              {saving && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />}
+              style={{ backgroundColor: '#b20202' }}
+            >
+              {saving && (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              )}
               {initial ? 'Save changes' : 'Create combo'}
               {!saving && <PiArrowRight className="h-4 w-4" />}
             </button>
@@ -1137,37 +1682,66 @@ function ComboModal({ initial, products, onSave, onClose }: {
 
 // ── Combo card ────────────────────────────────────────────────────────────────
 
-function ComboCard({ combo, onEdit, onDelete, onToggle }: {
-  combo: Combo; onEdit: () => void; onDelete: () => void; onToggle: () => void;
+function ComboCard({
+  combo,
+  onEdit,
+  onDelete,
+  onToggle,
+}: {
+  combo: Combo;
+  onEdit: () => void;
+  onDelete: () => void;
+  onToggle: () => void;
 }) {
   const lines = normaliseLines(combo.choiceLines || []);
   const totalItems = lines.reduce((s, l) => s + l.items.length, 0);
 
   return (
-    <div className={`group flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${combo.active ? 'border-gray-200' : 'border-gray-100 opacity-60'}`}>
+    <div
+      className={`group flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${combo.active ? 'border-gray-200' : 'border-gray-100 opacity-60'}`}
+    >
       <div className="h-1 w-full bg-[#b20202]" />
       <div className="flex flex-1 flex-col p-4">
         <div className="mb-3 flex items-start justify-between gap-2">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#b20202]/10">
               <PiPackage className="h-5 w-5 text-[#b20202]" />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-gray-900">{combo.name}</p>
-              {combo.description && <p className="mt-0.5 line-clamp-1 text-[11px] text-gray-400">{combo.description}</p>}
+              <p className="truncate text-sm font-bold text-gray-900">
+                {combo.name}
+              </p>
+              {combo.description && (
+                <p className="mt-0.5 line-clamp-1 text-[11px] text-gray-400">
+                  {combo.description}
+                </p>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
-            <button type="button" onClick={onToggle}
-              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${combo.active ? 'text-emerald-500 hover:bg-emerald-50' : 'text-gray-400 hover:bg-gray-100'}`}>
-              {combo.active ? <PiToggleRight className="h-5 w-5" /> : <PiToggleLeft className="h-5 w-5" />}
+            <button
+              type="button"
+              onClick={onToggle}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${combo.active ? 'text-emerald-500 hover:bg-emerald-50' : 'text-gray-400 hover:bg-gray-100'}`}
+            >
+              {combo.active ? (
+                <PiToggleRight className="h-5 w-5" />
+              ) : (
+                <PiToggleLeft className="h-5 w-5" />
+              )}
             </button>
-            <button type="button" onClick={onEdit}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+            <button
+              type="button"
+              onClick={onEdit}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            >
               <PiPencilSimple className="h-4 w-4" />
             </button>
-            <button type="button" onClick={onDelete}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500">
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500"
+            >
               <PiTrash className="h-4 w-4" />
             </button>
           </div>
@@ -1178,19 +1752,22 @@ function ComboCard({ combo, onEdit, onDelete, onToggle }: {
           {[
             {
               l: 'Pricing',
-              v: combo.priceMode === 'fixed'
+              v:
+                combo.priceMode === 'fixed'
                   ? formatCurrency(combo.price)
                   : combo.priceMode === 'markup_on_cost'
-                  ? `+${combo.markupPercentage ?? 0}% cost`
-                  : combo.priceMode === 'discount_off_selling'
-                  ? `−${combo.discountPercentage ?? 0}%`
-                  : 'Dynamic',
+                    ? `+${combo.markupPercentage ?? 0}% cost`
+                    : combo.priceMode === 'discount_off_selling'
+                      ? `−${combo.discountPercentage ?? 0}%`
+                      : 'Dynamic',
             },
             { l: 'Groups', v: String(lines.length) },
-            { l: 'Items',  v: String(totalItems) },
-          ].map(s => (
+            { l: 'Items', v: String(totalItems) },
+          ].map((s) => (
             <div key={s.l} className="py-2.5">
-              <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{s.l}</p>
+              <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
+                {s.l}
+              </p>
               <p className="mt-0.5 text-sm font-bold text-gray-800">{s.v}</p>
             </div>
           ))}
@@ -1199,25 +1776,52 @@ function ComboCard({ combo, onEdit, onDelete, onToggle }: {
         {/* Group chips */}
         <div className="space-y-1.5">
           {lines.slice(0, 3).map((line, i) => (
-            <div key={i} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 ${gc(i).bg}`}>
-              <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ${gc(i).dot}`}>{i + 1}</span>
-              <span className={`flex-1 truncate text-xs font-semibold ${gc(i).text}`}>{line.label}</span>
+            <div
+              key={i}
+              className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 ${gc(i).bg}`}
+            >
+              <span
+                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ${gc(i).dot}`}
+              >
+                {i + 1}
+              </span>
+              <span
+                className={`flex-1 truncate text-xs font-semibold ${gc(i).text}`}
+              >
+                {line.label}
+              </span>
               <span className="shrink-0 text-[10px] text-gray-400">
-                {line.minSelect === line.maxSelect ? `×${line.minSelect}` : `${line.minSelect}–${line.maxSelect}`}
-                {' · '}{line.items.length} option{line.items.length !== 1 ? 's' : ''}
+                {line.minSelect === line.maxSelect
+                  ? `×${line.minSelect}`
+                  : `${line.minSelect}–${line.maxSelect}`}
+                {' · '}
+                {line.items.length} option{line.items.length !== 1 ? 's' : ''}
               </span>
             </div>
           ))}
-          {lines.length > 3 && <p className="pl-1 text-[11px] text-gray-400">+{lines.length - 3} more…</p>}
+          {lines.length > 3 && (
+            <p className="pl-1 text-[11px] text-gray-400">
+              +{lines.length - 3} more…
+            </p>
+          )}
         </div>
 
         <div className="mt-3 flex items-center justify-between">
-          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${combo.active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>
-            {combo.active ? <PiCheckCircle className="h-3 w-3" /> : <PiWarningCircle className="h-3 w-3" />}
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${combo.active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}
+          >
+            {combo.active ? (
+              <PiCheckCircle className="h-3 w-3" />
+            ) : (
+              <PiWarningCircle className="h-3 w-3" />
+            )}
             {combo.active ? 'Active' : 'Inactive'}
           </span>
-          <button type="button" onClick={onEdit}
-            className="flex items-center gap-1 text-[11px] font-semibold text-[#b20202] opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex items-center gap-1 text-[11px] font-semibold text-[#b20202] opacity-0 transition-opacity group-hover:opacity-100"
+          >
             Edit <PiArrowRight className="h-3 w-3" />
           </button>
         </div>
@@ -1232,65 +1836,101 @@ export default function POSCombos() {
   const { data: session } = useSession();
   const token = session?.user?.token as string | undefined;
 
-  const [combos,   setCombos]   = useState<Combo[]>([]);
+  const [combos, setCombos] = useState<Combo[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading,  setLoading]  = useState(false);
-  const [editing,  setEditing]  = useState<Combo | null | 'new'>(null);
+  const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState<Combo | null | 'new'>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     try {
       // Fetch independently so a products failure doesn't block showing combos
-      const [cd, pd] = await Promise.allSettled([fetchCombos(token), fetchProducts(token)]);
+      const [cd, pd] = await Promise.allSettled([
+        fetchCombos(token),
+        fetchProducts(token),
+      ]);
       if (cd.status === 'fulfilled') setCombos(cd.value?.combos || []);
       else toast.error('Could not load combos: ' + cd.reason?.message);
       if (pd.status === 'fulfilled') setProducts(pd.value || []);
       else toast.error('Could not load products: ' + pd.reason?.message);
-    } catch (e: any) { toast.error(e.message || 'Failed to load'); }
-    finally { setLoading(false); }
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
   }, [token]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function handleSave(data: any) {
-    if (editing === 'new') { await createCombo(token!, data); toast.success('Combo created'); }
-    else if (editing)      { await updateCombo(token!, (editing as Combo)._id, data); toast.success('Combo updated'); }
+    if (editing === 'new') {
+      await createCombo(token!, data);
+      toast.success('Combo created');
+    } else if (editing) {
+      await updateCombo(token!, (editing as Combo)._id, data);
+      toast.success('Combo updated');
+    }
     await load();
   }
 
   async function handleDelete(c: Combo) {
     if (!confirm(`Delete "${c.name}"?`)) return;
-    try { await deleteCombo(token!, c._id); toast.success('Deleted'); await load(); }
-    catch (e: any) { toast.error(e.message); }
+    try {
+      await deleteCombo(token!, c._id);
+      toast.success('Deleted');
+      await load();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
   }
 
   async function handleToggle(c: Combo) {
-    try { await updateCombo(token!, c._id, { active: !c.active }); await load(); }
-    catch (e: any) { toast.error(e.message); }
+    try {
+      await updateCombo(token!, c._id, { active: !c.active });
+      await load();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
   }
 
-  const active   = combos.filter(c => c.active);
-  const inactive = combos.filter(c => !c.active);
+  const active = combos.filter((c) => c.active);
+  const inactive = combos.filter((c) => !c.active);
 
   return (
     <div className="-mx-4 -mt-2 flex flex-col md:-mx-5 lg:-mx-6 3xl:-mx-8">
-      <div className="px-4 md:px-5 lg:px-6 3xl:px-8"><POSNavHeader /></div>
+      <div className="px-4 md:px-5 lg:px-6 3xl:px-8">
+        <POSNavHeader />
+      </div>
 
       <div className="flex-1 px-6 pb-12 pt-6 md:px-10 lg:px-12">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-gray-900">Combo Choices</h1>
-            <p className="mt-0.5 text-sm text-gray-500">Configurable combos with choice groups — cashiers pick products and sizes at the POS</p>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Configurable combos with choice groups — cashiers pick products
+              and sizes at the POS
+            </p>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={load} disabled={loading}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-400 hover:bg-gray-50 disabled:opacity-40">
-              <PiArrowsClockwise className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-400 hover:bg-gray-50 disabled:opacity-40"
+            >
+              <PiArrowsClockwise
+                className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+              />
             </button>
-            <button type="button" onClick={() => setEditing('new')}
+            <button
+              type="button"
+              onClick={() => setEditing('new')}
               className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-sm"
-              style={{ backgroundColor: '#b20202' }}>
+              style={{ backgroundColor: '#b20202' }}
+            >
               <PiPlus className="h-4 w-4" /> New Combo
             </button>
           </div>
@@ -1298,7 +1938,12 @@ export default function POSCombos() {
 
         {loading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {[...Array(3)].map((_, i) => <div key={i} className="h-56 animate-pulse rounded-2xl bg-gray-100" />)}
+            {[...Array(3)].map((_, i) => (
+              <div
+                key={i}
+                className="h-56 animate-pulse rounded-2xl bg-gray-100"
+              />
+            ))}
           </div>
         ) : combos.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-white py-24 text-center">
@@ -1306,10 +1951,16 @@ export default function POSCombos() {
               <PiPackage className="h-8 w-8 text-[#b20202]" />
             </div>
             <p className="text-base font-bold text-gray-700">No combos yet</p>
-            <p className="mt-1 max-w-sm text-sm text-gray-400">Create combos with choice groups — cashiers pick products and sizes when adding to the cart</p>
-            <button type="button" onClick={() => setEditing('new')}
+            <p className="mt-1 max-w-sm text-sm text-gray-400">
+              Create combos with choice groups — cashiers pick products and
+              sizes when adding to the cart
+            </p>
+            <button
+              type="button"
+              onClick={() => setEditing('new')}
               className="mt-5 flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white"
-              style={{ backgroundColor: '#b20202' }}>
+              style={{ backgroundColor: '#b20202' }}
+            >
               <PiPlus className="h-4 w-4" /> Create first combo
             </button>
           </div>
@@ -1317,17 +1968,37 @@ export default function POSCombos() {
           <div className="space-y-8">
             {active.length > 0 && (
               <section>
-                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">Active ({active.length})</p>
+                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
+                  Active ({active.length})
+                </p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {active.map(c => <ComboCard key={c._id} combo={c} onEdit={() => setEditing(c)} onDelete={() => handleDelete(c)} onToggle={() => handleToggle(c)} />)}
+                  {active.map((c) => (
+                    <ComboCard
+                      key={c._id}
+                      combo={c}
+                      onEdit={() => setEditing(c)}
+                      onDelete={() => handleDelete(c)}
+                      onToggle={() => handleToggle(c)}
+                    />
+                  ))}
                 </div>
               </section>
             )}
             {inactive.length > 0 && (
               <section>
-                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">Inactive ({inactive.length})</p>
+                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
+                  Inactive ({inactive.length})
+                </p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {inactive.map(c => <ComboCard key={c._id} combo={c} onEdit={() => setEditing(c)} onDelete={() => handleDelete(c)} onToggle={() => handleToggle(c)} />)}
+                  {inactive.map((c) => (
+                    <ComboCard
+                      key={c._id}
+                      combo={c}
+                      onEdit={() => setEditing(c)}
+                      onDelete={() => handleDelete(c)}
+                      onToggle={() => handleToggle(c)}
+                    />
+                  ))}
                 </div>
               </section>
             )}
@@ -1337,7 +2008,7 @@ export default function POSCombos() {
 
       {editing !== null && (
         <ComboModal
-          initial={editing === 'new' ? undefined : editing as Combo}
+          initial={editing === 'new' ? undefined : (editing as Combo)}
           products={products}
           onSave={handleSave}
           onClose={() => setEditing(null)}

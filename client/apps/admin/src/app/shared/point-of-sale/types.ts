@@ -351,13 +351,23 @@ export interface POSBundleDeal {
   fromPricelist?: boolean; // true = injected by a pricelist rule, not a permanent DB deal
 }
 
+export interface POSMediaItem {
+  url: string;
+  thumbnail?: string;
+  alt?: string;
+  isPrimary?: boolean;
+  order?: number;
+}
+
 export interface POSProduct {
   _id: string;
   sku: string;
+  /** Tenant's own photos. When present these replace the product's entirely. */
+  imagesOverride?: POSMediaItem[];
   product: {
     _id: string;
     name: string;
-    images?: { url: string; thumbnail?: string }[];
+    images?: POSMediaItem[];
     type?: string;
     brand?: { _id: string; name: string };
     category?: { _id: string; name: string };

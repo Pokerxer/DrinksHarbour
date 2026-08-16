@@ -16,6 +16,7 @@ import {
   usePOSCustomerPricelistSync,
 } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import { getImageUrl } from '@/app/shared/point-of-sale/utils';
 import { POSProduct, POSSession } from '@/app/shared/point-of-sale/types';
 import { routes } from '@/config/routes';
 import { getProducts as getProductsOffline } from './offline/api';
@@ -132,9 +133,7 @@ export default function POSSell() {
         name: product.product?.name || 'Product',
         variant: size?.displayName || '',
         sku: size?.sku || product.sku,
-        image:
-          product.product?.images?.[0]?.thumbnail ||
-          product.product?.images?.[0]?.url,
+        image: getImageUrl(product),
         price,
         quantity,
         discount: 0,
