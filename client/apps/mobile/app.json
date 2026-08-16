@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "DrinksHarbour",
+    "slug": "drinksharbour",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "scheme": "drinksharbour",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.drinksharbour.app"
+    },
+    "android": {
+      "package": "com.drinksharbour.app"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

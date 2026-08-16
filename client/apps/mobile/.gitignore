@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+web-build/
+
+# Local env — .env.example is committed, .env is not
+.env
+.env.local
+
+# Native build output (this app is managed/prebuild-less for now)
+ios/
+android/
+
+*.log
+.DS_Store

@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "main": "./src/index.ts",
   "scripts": {
     "test": "node --experimental-strip-types --test src/*.test.mjs",
     "type:check": "tsc --noEmit",
