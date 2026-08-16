@@ -54,7 +54,7 @@ export interface OrderRecord {
   customer?: object;
 }
 
-export type QueueEntryType = 'order' | 'refund' | 'void';
+export type QueueEntryType = 'order' | 'refund' | 'void' | 'reconcile';
 export type QueueEntryStatus = 'pending' | 'syncing' | 'failed';
 
 export interface QueueEntry {

@@ -142,6 +142,12 @@ export default function SalesOrderDetail({
             </p>
             {so.paymentStatus === 'paid' ? (
               <p className="mt-2 text-xs font-medium text-emerald-400">✓ Paid · {so.paymentMethod ?? '—'}</p>
+            ) : so.paymentStatus === 'partial' ? (
+              // Part-fulfilled through the POS. Showing "Awaiting payment" here
+              // would hide money the till has already taken.
+              <p className="mt-2 text-xs font-medium text-amber-400">
+                {fmtCur(so.amountPaid ?? 0, so.currency)} paid · {fmtCur(Math.max(0, so.total - (so.amountPaid ?? 0)), so.currency)} outstanding
+              </p>
             ) : (
               <p className="mt-2 text-xs text-amber-400/80">Awaiting payment</p>
             )}

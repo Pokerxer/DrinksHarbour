@@ -19,6 +19,9 @@ import {
 
 export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
   const paid = so.paymentStatus === 'paid';
+  // Part-settled through the POS. An invoice that says "Unpaid" over money the
+  // till has already taken is the same silent wrong number as the rest of this.
+  const partial = so.paymentStatus === 'partial';
   const subtotals = sectionSubtotals(so.items);
   const ship = so.deliveryAddress;
   const showShipTo =
@@ -45,7 +48,7 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
             rounded="md"
             className="mb-2"
           >
-            {paid ? 'Paid' : 'Unpaid'}
+            {paid ? 'Paid' : partial ? 'Partially paid' : 'Unpaid'}
           </Badge>
           <Title as="h6">{so.soNumber}</Title>
           <Text className="mt-0.5 text-gray-500">Order Number</Text>

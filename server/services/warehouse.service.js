@@ -472,7 +472,11 @@ async function resolveShopWarehouse(tenant, tenantId, shopId) {
     }
   }
   if (shop) {
-    return shop.warehouse || null;
+    // `posSettings.shops.warehouse` is populated by several callers, so this is
+    // a document as often as it is an id. Always hand back the id — callers put
+    // it straight into WarehouseStock queries and stock deductions.
+    const w = shop.warehouse;
+    return w && typeof w === 'object' ? (w._id ?? null) : (w || null);
   }
   const def = await Warehouse.findOne({ tenant: tenantId, isDefault: true }).select('_id').lean();
   return def?._id || null;

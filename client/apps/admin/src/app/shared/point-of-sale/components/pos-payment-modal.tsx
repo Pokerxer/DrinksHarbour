@@ -37,7 +37,10 @@ import {
   usePOSLinkedSalesOrder,
 } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { createOrder as createOrderOffline } from '@/app/shared/point-of-sale/offline/api';
+import {
+  createOrder as createOrderOffline,
+  reconcileSalesOrder as reconcileSalesOrderOffline,
+} from '@/app/shared/point-of-sale/offline/api';
 import { useOnlineStatus } from '@/app/shared/point-of-sale/offline/use-online-status';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { POSOrderResponse } from '@/app/shared/point-of-sale/types';
@@ -1075,7 +1078,7 @@ export default function POSPaymentModal() {
     usePOSLinkedSalesOrder();
 
   const [fulfillStatus, setFulfillStatus] = useState<
-    'idle' | 'running' | 'done' | 'error'
+    'idle' | 'running' | 'done' | 'queued' | 'error'
   >('idle');
   const [fulfillError, setFulfillError] = useState<string | null>(null);
 
@@ -1423,6 +1426,12 @@ export default function POSPaymentModal() {
         note: note || undefined,
         terminalType: terminal ?? 'retail',
         pricelistId: selectedPricelist?._id ?? undefined,
+        // The quotation this cart was loaded from — an ID, never a price. The
+        // server re-reads the order and prices the matching lines from it, so
+        // the negotiated price is authoritative without ever being trusted from
+        // here. Without this the 1% band silently replaced every quoted price
+        // with today's, and the customer was charged something they never agreed.
+        linkedSalesOrderId: linkedSalesOrderId ?? undefined,
         // Send the resolved shop key (custom shop _id OR built-in 'retail'/
         // 'wholesale'), matching how the allowed pricelists were fetched — so the
         // server honors the selected pricelist instead of silently dropping it.
@@ -1435,20 +1444,29 @@ export default function POSPaymentModal() {
 
       // Reconcile the linked sales order (non-blocking — cashier can print/new-sale
       // regardless). The POS sale above already deducted stock and recorded
-      // revenue, so this only marks the SO fulfilled + paid; no second stock move.
+      // revenue, so this only marks the SO fulfilled and settles what the till
+      // actually took; no second stock move.
+      //
+      // Routed through the offline queue, not straight at posApi: an offline
+      // sale against a quotation used to leave the order open forever, with
+      // nothing recording that it should not have. `ref` is the receipt number
+      // (the temporary one when offline), which is what lets the server treat a
+      // replay of a lost response as a no-op rather than as a second sale.
       if (linkedSalesOrderId && token) {
         setFulfillStatus('running');
-        posApi
-          .reconcileSalesOrder(token, linkedSalesOrderId, {
-            paymentMethod,
-            items: orderItems.map((i: any) => ({
-              subProductId: i.subProductId,
-              sizeId: i.sizeId,
-              quantity: i.quantity,
-            })),
-          })
-          .then(() => {
-            setFulfillStatus('done');
+        reconcileSalesOrderOffline(token, linkedSalesOrderId, {
+          paymentMethod,
+          ref: result.order?.receiptNumber,
+          items: orderItems.map((i: any) => ({
+            subProductId: i.subProductId,
+            sizeId: i.sizeId,
+            quantity: i.quantity,
+          })),
+        })
+          .then((r: { isOffline?: boolean }) => {
+            // Offline the reconcile is only queued. Saying "fulfilled" would be
+            // the same silent lie the whole feature was full of.
+            setFulfillStatus(r?.isOffline ? 'queued' : 'done');
             setLinkedSalesOrderId(null);
           })
           .catch((err: unknown) => {
@@ -1603,6 +1621,11 @@ export default function POSPaymentModal() {
             {fulfillStatus === 'done' && (
               <div className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
                 ✓ Sales order fulfilled
+              </div>
+            )}
+            {fulfillStatus === 'queued' && (
+              <div className="flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
+                Offline — sales order will be fulfilled when the network returns
               </div>
             )}
             {fulfillStatus === 'error' && (

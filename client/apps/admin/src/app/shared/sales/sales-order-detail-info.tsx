@@ -51,7 +51,9 @@ export default function SalesOrderDetailInfo({ so }: Props) {
             <span className={`text-sm font-semibold ${so.paymentStatus === 'paid' ? 'text-emerald-600' : 'text-amber-600'}`}>
               {so.paymentStatus === 'paid'
                 ? `Paid · ${so.paymentMethod ?? '—'}`
-                : 'Unpaid'}
+                : so.paymentStatus === 'partial'
+                  ? `${fmtCur(so.amountPaid ?? 0, so.currency)} of ${fmtCur(so.total, so.currency)} paid`
+                  : 'Unpaid'}
             </span>
           </div>
           {(so.loyaltyRedeemed ?? 0) > 0 && (

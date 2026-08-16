@@ -1766,16 +1766,61 @@ exports.listPOSStaff = asyncHandler(async (req, res) => {
 
 // ─── Get POS Products (with cache headers) ───────────────────────────────────
 /**
+ * The most rows this endpoint will ever return. Not a page size: the grid
+ * fetches the catalogue ONCE and then searches, filters and paginates it in
+ * memory, because an installed POS has to keep selling with no network. So
+ * this number is the entire universe of products a terminal can reach.
+ *
+ * It replaces a `limit = 200` DEFAULT that no caller ever overrode, which made
+ * the default the cap: a tenant with 955 POS-visible sub-products could sell
+ * 200 of them, and — because search runs over the fetched array — the other
+ * 755 answered "no such product" when a cashier typed their names. The sort is
+ * best-sellers first, so what vanished was exactly the slow-moving stock
+ * nobody can recall and therefore has to look up.
+ *
+ * 5000 is the same ceiling `/sub-products` already loads happily. It exists so
+ * a runaway tenant cannot pull an unbounded collection into memory, not to
+ * shape what a normal one sees — and when it does bite, it says so, in the log
+ * and on the response. A silent cap is what caused this.
+ */
+const POS_CATALOGUE_CAP = 5000;
+
+/**
  * GET /api/pos/products
- * Returns products optimised for POS display with ETag caching
+ * Returns products optimised for POS display.
+ *
+ * There is no hand-rolled ETag here despite what this comment used to claim —
+ * Express derives a weak one from the body, so it changes whenever the row
+ * count does and no 304 can hand a terminal back a stale, shorter catalogue.
+ * The `private, max-age=60` below does mean a terminal can hold the previous
+ * catalogue for up to a minute after a deploy.
  */
 exports.getPOSProducts = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   const tenant   = req.tenant;
-  const { search, category, limit = 200, shopId, warehouseId: warehouseOverride } = req.query;
+  const { search, category, limit, shopId, warehouseId: warehouseOverride } = req.query;
+
+  // No limit, a non-number, or a nonsensical one all mean "the whole
+  // catalogue" — never "nothing" and never `.limit(NaN)`.
+  const requestedLimit = Number(limit);
+  const effectiveLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
+    ? Math.min(Math.floor(requestedLimit), POS_CATALOGUE_CAP)
+    : POS_CATALOGUE_CAP;
 
   // warehouseOverride (explicit param) wins; otherwise resolve from shopId.
-  const warehouseId = warehouseOverride || await resolveShopWarehouse(tenant, tenantId, shopId);
+  //
+  // The override is untrusted input and is only honoured when it is actually an
+  // id. A client that stringifies a populated `{ _id, name }` ref sends the
+  // literal "[object Object]", which used to reach WarehouseStock.warehouse and
+  // fail to cast — taking the whole product grid down with it. The POS is an
+  // installed PWA, so a terminal can keep sending a bad value from a cached
+  // bundle long after the client is fixed; ignoring it here degrades to the
+  // shop's own warehouse instead of erroring.
+  const validOverride =
+    warehouseOverride && mongoose.isValidObjectId(warehouseOverride)
+      ? warehouseOverride
+      : null;
+  const warehouseId = validOverride || await resolveShopWarehouse(tenant, tenantId, shopId);
 
   // Resolve the auto pricelist id for the active shop so the grid knows the
   // default selection without a separate round-trip / race.
@@ -1800,7 +1845,10 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
   // NOTE: product.type is on the populated Product ref, not on SubProduct itself.
   // Category and search filters are applied post-populate in JS below.
 
-  const subProducts = await SubProduct.find(query)
+  // One row past the limit, so truncation is a fact rather than a guess: a
+  // result that is exactly `effectiveLimit` long is otherwise indistinguishable
+  // from a catalogue that happens to be that size.
+  const fetched = await SubProduct.find(query)
     .select([
       // imagesOverride: without it the POS can only ever show the platform
       // product's photo, even for a sub-product with its own uploaded shot.
@@ -1826,8 +1874,19 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     .populate('sizes', 'displayName sellingPrice costPrice availableStock stock _id sku barcode')
     .populate({ path: 'vendor', select: 'firstName lastName email posName', strictPopulate: false })
     .sort({ isFeaturedByTenant: -1, totalSold: -1, availableStock: -1 })
-    .limit(Number(limit))
+    .limit(effectiveLimit + 1)
     .lean();
+
+  const truncated  = fetched.length > effectiveLimit;
+  const subProducts = truncated ? fetched.slice(0, effectiveLimit) : fetched;
+
+  if (truncated) {
+    console.warn(
+      `[POS] catalogue truncated at ${effectiveLimit} rows for tenant ${tenantId}` +
+      ' — the terminal searches only what it is sent, so every product beyond' +
+      ' this point is unsellable and unfindable from the till.'
+    );
+  }
 
   // When the shop is bound to a warehouse, look up per-(subProduct,size) stock
   // so warehouse numbers can override the aggregate below.
@@ -1947,7 +2006,19 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
   });
 
   res.set('Cache-Control', 'private, max-age=60');
-  res.json({ success: true, data: { products: filtered, total: filtered.length, resolvedPricelistId } });
+  // `limit`/`truncated` describe the catalogue the client was handed, so a
+  // caller can tell a complete one from a clipped one. `total` is the filtered
+  // row count and has always been that; it is not the tenant's product count.
+  res.json({
+    success: true,
+    data: {
+      products: filtered,
+      total: filtered.length,
+      limit: effectiveLimit,
+      truncated,
+      resolvedPricelistId,
+    },
+  });
 });
 
 // ─── Sub-Product metadata (category / subcategory / brand) ───────────────────
@@ -1992,6 +2063,69 @@ exports.getPOSProductMeta = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { meta, total: meta.length } });
 });
 
+/**
+ * The agreed unit price of every line on a Sales Order loaded into the cart.
+ *
+ * A quotation is a negotiated, ISSUED offer, so its line prices have to beat
+ * today's POS price, the pricelist and the bundle rules — a 10% deal price, a
+ * manually overridden line, a price from a pricelist that has since changed, all
+ * sit far outside the 1% band `createPOSOrder` allows a cart price. Widening
+ * that band was never the answer: it is the tamper guard on a number that
+ * arrived from the client. Instead the client sends an ID and the server looks
+ * the prices up here, so an agreed price never crosses the wire and never has to
+ * be trusted.
+ *
+ * The price is NET of the line's agreed discount and promotion, per unit:
+ *   (unitPrice·qty − lineDiscount − promoDiscount) / qty
+ * The till's own per-line discount is a percentage from the dialpad and cannot
+ * express a flat ₦ off a line, and per-unit is the only split of a flat discount
+ * that stays right when the cashier sells 3 of a quoted 10. Line tax is NOT
+ * folded in — POS lines carry their own taxRate and tax on top of this.
+ *
+ * @returns {Promise<Map<string, number>>} keyed `subProductId_sizeId`, or
+ *   `subProductId` when the line is unsized OR when the order names that
+ *   sub-product exactly once (so a cart line whose size is unknown still
+ *   matches). Two sizes of one product leave the bare key unset: ambiguity
+ *   falls through to ordinary pricing rather than picking the cheaper line.
+ */
+async function resolveLinkedSalesOrderPrices(salesOrderId, tenantId) {
+  const prices = new Map();
+  if (!salesOrderId || !tenantId) return prices;
+
+  let so = null;
+  try {
+    so = await SalesOrder.findOne({ _id: salesOrderId, tenant: tenantId })
+      .select('items')
+      .lean();
+  } catch (_) {
+    return prices; // a malformed id is not a reason to fail the sale
+  }
+  if (!so) return prices;
+
+  const { lineTotalOf } = require('../services/salesOrder.service');
+  const bySubProduct = new Map();
+
+  for (const line of so.items || []) {
+    if (line.lineType && line.lineType !== 'product') continue;
+    if (!line.subproduct) continue;
+    const qty = Number(line.quantity) || 0;
+    if (qty <= 0) continue;
+
+    const net  = lineTotalOf(line) - (Number(line.promoDiscount) || 0);
+    const unit = Math.max(0, net / qty);
+    const sub  = String(line.subproduct);
+
+    prices.set(line.size ? `${sub}_${String(line.size)}` : sub, unit);
+    bySubProduct.set(sub, [...(bySubProduct.get(sub) || []), unit]);
+  }
+
+  for (const [sub, units] of bySubProduct) {
+    if (units.length === 1 && !prices.has(sub)) prices.set(sub, units[0]);
+  }
+
+  return prices;
+}
+
 // ─── Create POS Order (with atomic stock deduction) ──────────────────────────
 /**
  * POST /api/pos/orders
@@ -2016,6 +2150,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     pricelistId,         // selected pricelist _id — applied to prices at order time
     shopId,              // posSettings.shops._id — resolves a bound warehouse, if any
     cartOriginalSubtotal,// client-computed pre-pricelist subtotal for receipt savings display
+    linkedSalesOrderId,  // a quotation/order loaded into the cart — an ID, never a price
   } = req.body;
 
   if (!items?.length) return res.status(400).json({ success: false, message: 'No items in order' });
@@ -2063,6 +2198,9 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       selectedPricelist = resolved || null;
     }
   } catch (_) { /* non-fatal — fall back to DB pricing */ }
+
+  // The agreed price on a loaded quotation, re-read from the database.
+  const soLinePrices = await resolveLinkedSalesOrderPrices(linkedSalesOrderId, tenantId);
 
   // Resolve receipt number early so audit records can reference it
   const orderNumber   = await generateOrderNumber();
@@ -2188,13 +2326,29 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       let effectivePrice      = bundleOverride.price;
       let bundleOverridePrice = bundleOverride.overridden;
 
-      // If the client sent the effectivePrice its cart displayed (computed after
-      // pricelist + bundle rules), reconcile toward it — but only within a small
-      // tolerance of the server's own computation. Client and server share the
-      // same rule engine, so a matching cart differs at most by rounding; a
-      // larger gap means a stale client cache or a tampered payload, and the
-      // server-computed pricelist price wins.
-      if (item.clientPrice != null && Number(item.clientPrice) > 0) {
+      // ── The agreed price on a loaded quotation ────────────────────────────
+      // Beats the pricelist, the bundle rules and the cart — but NOT an explicit
+      // cashier override, which is a permissioned, deliberate act. It is safe to
+      // apply without a tolerance band because it was read from the database
+      // (resolveLinkedSalesOrderPrices), not sent by the till.
+      const soUnitPrice = (hasOverrides && priceOverrides[overrideKey] != null)
+        ? null
+        : soLinePrices.get(overrideKey)
+          ?? (sizeId ? soLinePrices.get(String(subProductId)) : undefined)
+          ?? null;
+
+      if (soUnitPrice != null) {
+        effectivePrice      = soUnitPrice;
+        // The agreed price already IS the negotiated discount — a bundle
+        // discount on top of it would give the deal away twice.
+        bundleOverridePrice = true;
+      } else if (item.clientPrice != null && Number(item.clientPrice) > 0) {
+        // If the client sent the effectivePrice its cart displayed (computed after
+        // pricelist + bundle rules), reconcile toward it — but only within a small
+        // tolerance of the server's own computation. Client and server share the
+        // same rule engine, so a matching cart differs at most by rounding; a
+        // larger gap means a stale client cache or a tampered payload, and the
+        // server-computed pricelist price wins.
         const cp = Number(item.clientPrice);
         const tolerance = Math.max(1, effectivePrice * 0.01);
         if (Math.abs(cp - effectivePrice) <= tolerance) {
@@ -2246,6 +2400,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         _name:    sp?.product?.name || 'Product',
         _variant: item.variant || '',
         _sku:     item.sku || sp?.sku || '',
+        _soPriced: soUnitPrice != null,
       });
     }
   } catch (stockErr) {
@@ -2292,6 +2447,9 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   for (const adj of crossBundleAdjs) {
     const it = orderItems[adj.lineIndex];
     if (!it) continue;
+    // A line priced from a loaded quotation is already the negotiated price;
+    // a cart-wide bundle rule must not discount it a second time.
+    if (it._soPriced) continue;
     if (adj.overridePrice != null && adj.overridePrice > 0) {
       it.priceAtPurchase = adj.overridePrice;
     } else if (!(adj.discountAmount > 0)) {
@@ -3629,7 +3787,7 @@ exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
     return res.status(409).json({ success: false, message: 'Order already fulfilled' });
   }
 
-  const { paymentMethod, items: soldItems } = req.body;
+  const { paymentMethod, items: soldItems, ref } = req.body;
 
   // Map POS sold items → SO line ids (match on subproduct + size, clamp to
   // outstanding). Each SO line is consumed at most once.
@@ -3652,14 +3810,20 @@ exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
     if (qty > 0) fulfillLines.push({ lineId: String(line._id), qty });
   }
 
-  const { order, reconciled } = await salesFulfillSvc.reconcileFulfillment({
-    salesOrder: so, fulfillLines, userId: req.posUser?._id || req.user?._id,
+  // reconcileFulfillment owns the money now: it settles amountPaid/paymentStatus
+  // from the order's own lines, prorated by what was actually sold. This used to
+  // read `paymentStatus = 'paid'; amountPaid = order.total` right here, which
+  // called an order 3/10 sold paid in full and erased the rest of the receivable.
+  const { order, reconciled, duplicate } = await salesFulfillSvc.reconcileFulfillment({
+    salesOrder: so, fulfillLines, userId: req.posUser?._id || req.user?._id, ref,
   });
 
+  if (duplicate) {
+    return res.json({ success: true, data: order, reconciled: 0, duplicate: true });
+  }
+
   if (order.orderStatus === 'draft') order.orderStatus = 'confirmed';
-  order.paymentStatus = 'paid';
   if (paymentMethod) order.paymentMethod = paymentMethod;
-  order.amountPaid = order.total;
   await order.save();
 
   res.json({ success: true, data: order, reconciled });

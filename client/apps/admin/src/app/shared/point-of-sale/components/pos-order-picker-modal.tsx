@@ -24,23 +24,16 @@ import {
 } from 'react-icons/pi';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
+import type { SalesOrderLine } from '@/app/shared/point-of-sale/components/pos-sales-order-lines';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface SOLine {
-  _id: string;
-  subproduct?: string;
-  product?: string;
-  name: string;
-  sku?: string;
-  sizeId?: string;
-  sizeName?: string;
-  quantity: number;
-  unitPrice: number;
-  lineType?: string;
-}
-
-interface SalesOrderRow {
+// A line is declared in exactly one place — pos-sales-order-lines.ts, against
+// the field names models/SalesOrder.js actually uses. The local declaration this
+// replaces had `sizeId` and `sizeName`, which the schema does not have: it
+// asserted the wrong names into existence, which is why nothing ever flagged
+// `handleLoadOrder` reading them and getting `undefined` on every sized line.
+export interface SalesOrderRow {
   _id: string;
   soNumber: string;
   docType: 'quotation' | 'order';
@@ -49,7 +42,7 @@ interface SalesOrderRow {
   customerSnapshot?: { name?: string; phone?: string; email?: string };
   total: number;
   createdAt: string;
-  items: SOLine[];
+  items: SalesOrderLine[];
   warehouseId?: { _id: string; name: string; code?: string } | null;
   salesperson?: string;
   paymentMethod?: string;

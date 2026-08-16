@@ -49,6 +49,17 @@ export async function runSyncEngine(token?: string): Promise<SyncResult> {
           await posApi.voidOrder(t, orderId, reason);
           await posDb.offlineQueue.delete(entry.id!);
           synced++;
+        } else if (entry.type === 'reconcile') {
+          // Queued beside the sale it belongs to, so the createdAt ordering
+          // above replays it AFTER that sale — a reconcile that overtook its
+          // own order would mark the sales order fulfilled for stock that had
+          // not moved yet. `ref` (the receipt number) makes the server treat a
+          // replay of an entry whose response was lost as a no-op rather than
+          // as a second sale.
+          const { _token, salesOrderId, paymentMethod, items, ref } = entry.payload as any;
+          await posApi.reconcileSalesOrder(t, salesOrderId, { paymentMethod, items, ref });
+          await posDb.offlineQueue.delete(entry.id!);
+          synced++;
         }
       } catch (err: any) {
         const status = err?.response?.status ?? err?.status ?? 0;

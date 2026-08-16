@@ -53,6 +53,15 @@ export async function getProducts(
       ...(warehouseId ? { warehouseId } : {}),
     });
     const products: any[] = data?.products ?? [];
+    // The grid searches this array and nothing else, so a clipped catalogue
+    // reads as "that product does not exist" at the till. The server caps at
+    // 5000; say so rather than letting the tail disappear quietly.
+    if (data?.truncated) {
+      console.warn(
+        `[POS] the catalogue was capped at ${data.limit ?? products.length} products. ` +
+          'Anything past the cap cannot be found or sold from this terminal.'
+      );
+    }
     // Flatten to Dexie records for offline use, mapping nested POSProduct fields
     const records: ProductRecord[] = products.map((p: any) => ({
       _id: p._id,
@@ -341,6 +350,35 @@ export async function refundOrder(
     type: 'refund',
     payload: { items, reason, refundPaymentMethod, _token: token },
     orderId,
+    createdAt: new Date().toISOString(),
+    status: 'pending',
+    retries: 0,
+  });
+  return { success: true, isOffline: true };
+}
+
+// ── Reconcile a linked Sales Order ────────────────────────────────────────────
+//
+// Queued beside the sale rather than refused while offline: refusing to load a
+// quotation with the network down breaks the one case the offline POS exists
+// for. The queue drains in createdAt order, so this replays after the sale it
+// belongs to; `ref` (the receipt number, or the temporary one assigned offline)
+// lets the server recognise a replay of an entry whose response was lost
+// instead of fulfilling and charging a second time.
+export async function reconcileSalesOrder(
+  token: string,
+  salesOrderId: string,
+  body: {
+    paymentMethod?: string;
+    ref?: string;
+    items?: { subProductId: string; sizeId?: string; quantity: number }[];
+  }
+): Promise<any> {
+  if (isOnline()) return posApi.reconcileSalesOrder(token, salesOrderId, body);
+
+  await posDb.offlineQueue.add({
+    type: 'reconcile',
+    payload: { salesOrderId, ...body, _token: token },
     createdAt: new Date().toISOString(),
     status: 'pending',
     retries: 0,

@@ -51,6 +51,11 @@ const fulfillmentSchema = new Schema({
     batchNumber: { type: String },
     expiryDate:  { type: Date },
   }],
+  // Idempotency key for POS reconciliation: the receipt number of the sale that
+  // produced this entry. The offline queue replays an entry whose response was
+  // lost, and without this the server cannot tell a replay from a genuine
+  // second sale of the same product.
+  ref:    { type: String, trim: true },
   status: { type: String, default: 'posted' },
   at:     { type: Date, default: Date.now },
   by:     { type: ObjectId },
@@ -106,9 +111,10 @@ const SalesOrderSchema = new Schema(
       default: undefined,
     },
 
-    // Payment — captured once at confirm, full total
+    // Payment — captured once at confirm for the full total, or accrued across
+    // POS sales when an order is fulfilled a few units at a time ('partial').
     paymentMethod: { type: String },
-    paymentStatus: { type: String, enum: ['unpaid', 'paid'], default: 'unpaid' },
+    paymentStatus: { type: String, enum: ['unpaid', 'partial', 'paid'], default: 'unpaid' },
     amountPaid:    { type: Number, default: 0 },
     walletTxRef:   { type: ObjectId, ref: 'WalletTransaction', sparse: true },
     loyaltyEarned: { type: Number, default: 0 },

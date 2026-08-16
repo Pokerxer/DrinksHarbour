@@ -65,6 +65,11 @@ import { posApi } from '@/app/shared/point-of-sale/api';
 import toast from 'react-hot-toast';
 import POSComboPicker from '@/app/shared/point-of-sale/components/pos-combo-picker';
 import POSOrderPickerModal from '@/app/shared/point-of-sale/components/pos-order-picker-modal';
+import type { SalesOrderRow } from '@/app/shared/point-of-sale/components/pos-order-picker-modal';
+import {
+  salesOrderToCartItems,
+  salesOrderWarehouseId,
+} from '@/app/shared/point-of-sale/components/pos-sales-order-lines';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 function itemKey(item: POSCartItem) {
@@ -1340,6 +1345,9 @@ export default function POSCart() {
   const settings = usePOSSettings();
   const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
   const { combos, setCombos } = usePOSCombos();
+  // The POS catalogue — a loaded Sales Order line takes its cost, stock, image
+  // and size name from here, because the line itself carries none of them.
+  const { products: posProducts } = usePOSProducts();
   const staffPerms: string[] = staff?.posPermissions ?? [];
   const canDiscount = staffPerms.includes('pos:discount');
   const canRefund = staffPerms.includes('pos:refund');
@@ -1377,8 +1385,12 @@ export default function POSCart() {
     if (token) loadWarehouses(token);
   }, [token, loadWarehouses]);
 
-  // Load a sales order into the cart
-  function handleLoadOrder(so: any) {
+  // Load a sales order into the cart.
+  //
+  // The line→cart mapping lives in pos-sales-order-lines.ts and is tested there:
+  // it used to be inline here, against a `so: any`, reading three field names
+  // the SalesOrder schema does not declare.
+  function handleLoadOrder(so: SalesOrderRow & { customer?: string }) {
     if (
       items.length > 0 &&
       !window.confirm(
@@ -1396,28 +1408,19 @@ export default function POSCart() {
         customerId: so.customer ?? undefined,
       });
     }
-    for (const line of (so.items ?? []).filter(
-      (l: any) => l.lineType !== 'section' && l.lineType !== 'note'
-    )) {
-      if (!line.subproduct) continue;
-      addItem({
-        subProductId: line.subproduct,
-        productId: line.product ?? '',
-        name: line.name,
-        sku: line.sku ?? '',
-        sizeId: line.sizeId ?? undefined,
-        sizeName: line.sizeName ?? undefined,
-        price: line.unitPrice ?? 0,
-        costPrice: line.costPrice ?? 0,
-        taxRate: line.taxRate ?? 0,
-        quantity: line.quantity ?? 1,
-        bundleDeals: [],
-        imageUrl: undefined,
-      });
-    }
-    if (so.warehouseId) setWarehouseId(so.warehouseId);
-    setLinkedSalesOrderId(so._id);
+
+    const cartLines = salesOrderToCartItems(so, posProducts);
+    for (const line of cartLines) addItem(line);
+
+    const warehouseId = salesOrderWarehouseId(so);
+    if (warehouseId) setWarehouseId(warehouseId);
+    setLinkedSalesOrderId(so._id ?? null);
     setShowOrderPicker(false);
+
+    if (cartLines.length === 0) {
+      toast.error(`${so.soNumber} has nothing left to fulfil`);
+      return;
+    }
     toast.success(`Loaded ${so.soNumber} into cart`);
   }
 

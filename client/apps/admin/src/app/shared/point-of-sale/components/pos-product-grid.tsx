@@ -38,6 +38,11 @@ import {
   usePOSWarehouse,
 } from '@/app/shared/point-of-sale/store';
 import { applyPricelistToProduct } from '@/app/shared/point-of-sale/utils';
+import {
+  filterPOSProducts,
+  productRenderWindow,
+  PRODUCT_RENDER_STEP,
+} from '@/app/shared/point-of-sale/components/pos-product-window';
 import { useBarcodeScanner } from '@/app/shared/point-of-sale/hooks/useBarcodeScanner';
 import toast from 'react-hot-toast';
 
@@ -425,25 +430,14 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
   );
 
   const products = useMemo(() => {
-    let list = allProducts;
-    if (selectedCategory)
-      list = list.filter((p) => p.product?.type === selectedCategory);
-
-    const q = searchQuery.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (p) =>
-          p.product?.name?.toLowerCase().includes(q) ||
-          p.sku?.toLowerCase().includes(q) ||
-          p.product?.brand?.name?.toLowerCase().includes(q) ||
-          p.sizes?.some(
-            (s) =>
-              s.displayName?.toLowerCase().includes(q) ||
-              s.sku?.toLowerCase().includes(q) ||
-              s.barcode?.toLowerCase().includes(q)
-          )
-      );
-    }
+    // Search FIRST, over the whole catalogue. The endpoint sends every
+    // POS-visible product precisely so this can happen with no network, and
+    // anything trimmed before this point is a product the cashier can never
+    // find. See pos-product-window.test.ts.
+    let list = filterPOSProducts(allProducts, {
+      category: selectedCategory,
+      query: searchQuery,
+    });
 
     // Apply pricelist pricing in-memory (display only — doesn't modify DB)
     if (selectedPricelist) {
@@ -452,6 +446,19 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
 
     return list;
   }, [allProducts, selectedCategory, searchQuery, selectedPricelist]);
+
+  // …and only then decide how many to MOUNT. A card is neither memoised nor
+  // virtualised and re-renders on every cart change, so mounting a 955-product
+  // catalogue in one go is what would make the till feel broken instead.
+  const [shownCount, setShownCount] = useState(PRODUCT_RENDER_STEP);
+  useEffect(() => {
+    setShownCount(PRODUCT_RENDER_STEP);
+  }, [selectedCategory, searchQuery, selectedPricelist]);
+
+  const { visible: visibleProducts, remaining: hiddenCount } = useMemo(
+    () => productRenderWindow(products, shownCount),
+    [products, shownCount]
+  );
 
   const isFiltered =
     !showCombos && (!!selectedCategory || !!searchQuery.trim());
@@ -730,16 +737,39 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {products.map((product) => (
-                <POSProductCard
-                  key={product._id}
-                  product={product}
-                  onAddToCart={onAddToCart}
-                  flash={flashId === product._id}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                {visibleProducts.map((product) => (
+                  <POSProductCard
+                    key={product._id}
+                    product={product}
+                    onAddToCart={onAddToCart}
+                    flash={flashId === product._id}
+                  />
+                ))}
+              </div>
+
+              {/* The rest of the catalogue is loaded, searchable and one tap
+                  away — only unmounted. Saying how many is what keeps this
+                  from reading as "that's all there is". */}
+              {hiddenCount > 0 && (
+                <div className="mt-4 flex flex-col items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShownCount((n) => n + PRODUCT_RENDER_STEP)
+                    }
+                    className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Show {Math.min(hiddenCount, PRODUCT_RENDER_STEP)} more
+                  </button>
+                  <span className="text-xs text-gray-400">
+                    {hiddenCount} more product{hiddenCount === 1 ? '' : 's'} —
+                    search finds all of them
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

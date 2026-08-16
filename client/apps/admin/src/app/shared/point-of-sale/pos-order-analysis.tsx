@@ -2957,7 +2957,11 @@ export default function POSOrderAnalysis() {
   // Fetch products to build name→category/brand map
   useEffect(() => {
     if (!token) return;
-    posApi.getProducts(token, { limit: 500 })
+    // No limit: this builds a name→category/brand map used to attribute every
+    // line in the period, and an explicit 500 silently left the tail of the
+    // catalogue unattributed — the same silent cap that hid 755 products from
+    // the sell screen.
+    posApi.getProducts(token)
       .then(d => {
         const meta: Record<string, ProdMeta> = {};
         (d.products || []).forEach(p => {

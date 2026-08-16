@@ -97,7 +97,9 @@ export interface SalesOrder {
   invoiceAddress?: SalesOrderAddress;
   deliveryAddress?: SalesOrderAddress;
   paymentMethod?: string;
-  paymentStatus?: 'unpaid' | 'paid';
+  // 'partial' = fulfilled a few units at a time through the POS; amountPaid is
+  // what the till has actually taken so far, not the order total.
+  paymentStatus?: 'unpaid' | 'partial' | 'paid';
   amountPaid?: number;
   loyaltyEarned?: number;
   loyaltyRedeemed?: number;

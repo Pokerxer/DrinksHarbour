@@ -79,6 +79,9 @@ export const posApi = {
     });
   },
 
+  // Sends no `limit` on purpose: the server returns the whole POS catalogue,
+  // because the grid searches and filters what it was sent, in memory, offline.
+  // Pass one only to ask for LESS — and read `truncated` when you do.
   async getProducts(
     token: string,
     params?: {
@@ -95,10 +98,12 @@ export const posApi = {
     if (params?.limit) qs.set('limit', String(params.limit));
     if (params?.shopId) qs.set('shopId', params.shopId);
     if (params?.warehouseId) qs.set('warehouseId', params.warehouseId);
-    return request<{ products: POSProduct[]; total: number }>(
-      `${API_URL}/api/pos/products?${qs}`,
-      { headers: authHeaders(token) }
-    );
+    return request<{
+      products: POSProduct[];
+      total: number;
+      limit?: number;
+      truncated?: boolean;
+    }>(`${API_URL}/api/pos/products?${qs}`, { headers: authHeaders(token) });
   },
 
   // Lightweight category/subcategory/brand map for every sub-product (not
@@ -748,6 +753,8 @@ export const posApi = {
     id: string,
     body: {
       paymentMethod?: string;
+      /** Receipt number of the POS sale — makes a replayed reconcile a no-op. */
+      ref?: string;
       items?: { subProductId: string; sizeId?: string; quantity: number }[];
     }
   ) {

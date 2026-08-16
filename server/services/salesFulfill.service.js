@@ -14,13 +14,29 @@ const { applyFulfillment, buildPostingLines, fulfillStatus, postShippedStock, bu
  * yields a zero delta afterward — a later manual /fulfill on the same order
  * cannot double-deduct these units.
  *
+ * Payment is settled here too, from the order's OWN lines — see settleLines().
+ * It used to be set by the caller as `paid` / `amountPaid = total`
+ * unconditionally, which said "paid in full" about an order only 3/10 sold.
+ *
+ * `ref` (the POS receipt number) makes the whole call idempotent: the offline
+ * queue replays an entry whose response was lost, and without a per-sale
+ * reference the server cannot tell that from a genuine second sale of the same
+ * product — it would fulfil the units again and take the money again.
+ *
  * @param {Object}   args
  * @param {Object}   args.salesOrder   loaded SalesOrder doc (docType 'order')
  * @param {Array}    args.fulfillLines [{ lineId, qty }] keyed by SO line _id
  * @param {ObjectId} args.userId
- * @returns {Promise<{ order, reconciled: number }>}
+ * @param {string}   [args.ref]        POS receipt number — dedupes a replay
+ * @returns {Promise<{ order, reconciled: number, duplicate: boolean }>}
  */
-async function reconcileFulfillment({ salesOrder, fulfillLines, userId }) {
+async function reconcileFulfillment({ salesOrder, fulfillLines, userId, ref }) {
+  // Already applied under this receipt — return the order untouched rather than
+  // fulfilling and charging a second time.
+  if (ref && (salesOrder.fulfillments || []).some((f) => f.ref && String(f.ref) === String(ref))) {
+    return { order: salesOrder, reconciled: 0, duplicate: true };
+  }
+
   const { lines } = applyFulfillment(salesOrder.items, fulfillLines);
   const byId = new Map(salesOrder.items.map((it) => [String(it._id), it]));
 
@@ -37,14 +53,58 @@ async function reconcileFulfillment({ salesOrder, fulfillLines, userId }) {
     salesOrder.fulfillments.push({
       items: lines.map((l) => ({ lineId: String(l.lineId), qty: l.delta })),
       status: 'reconciled', at: new Date(), by: userId,
+      ...(ref ? { ref: String(ref) } : {}),
     });
   }
 
   const status = fulfillStatus(salesOrder.items);
   if (status) salesOrder.orderStatus = status;
 
+  settlePayment(salesOrder, lines, byId);
+
   await salesOrder.save();
-  return { order: salesOrder, reconciled: lines.length };
+  return { order: salesOrder, reconciled: lines.length, duplicate: false };
+}
+
+/**
+ * What this reconciliation actually took, in ₦.
+ *
+ * Per-line money only — the line's untaxed total less its promotion, plus its
+ * tax — prorated by the quantity ACTUALLY reconciled (applyFulfillment's clamped
+ * delta, not the quantity the till asked for). The formulas come from
+ * salesOrder.service so the till and the quotation agree on the agreed price in
+ * exactly one place; the require is lazy only to keep this module's load-time
+ * dependencies as light as they have always been.
+ *
+ * Order-level money — a cart coupon, a pricelist cart discount, a shipping fee —
+ * has no honest per-line share, so it is never prorated across a partial sale.
+ * That is why a fully-fulfilled order settles at `total` instead: at that point
+ * the till has taken the lot, adjustments included.
+ */
+function settleLines(lines, byId) {
+  const { lineTotalOf, lineTaxOf } = require('./salesOrder.service');
+  let settled = 0;
+  for (const l of lines) {
+    const item = byId.get(String(l.lineId));
+    const qty = Number(item?.quantity) || 0;
+    const delta = Number(l.delta) || 0;
+    if (!item || qty <= 0 || delta <= 0) continue;
+    const lineValue = lineTotalOf(item) - (Number(item.promoDiscount) || 0) + lineTaxOf(item);
+    settled += Math.round((lineValue * delta) / qty);
+  }
+  return settled;
+}
+
+function settlePayment(salesOrder, lines, byId) {
+  const total = Number(salesOrder.total) || 0;
+
+  const paid = salesOrder.orderStatus === 'fulfilled'
+    ? total
+    : Math.min(total, (Number(salesOrder.amountPaid) || 0) + settleLines(lines, byId));
+
+  salesOrder.amountPaid = paid;
+  if (paid >= total && total > 0) salesOrder.paymentStatus = 'paid';
+  else if (paid > 0) salesOrder.paymentStatus = 'partial';
 }
 
 /** Default unit-cost lookup: SubProduct.costPrice (0 if missing/not found). */
