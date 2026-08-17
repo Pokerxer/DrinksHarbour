@@ -23,6 +23,7 @@ import { getProducts as getProductsOffline } from './offline/api';
 import { runSyncEngine, registerBackgroundSync } from './offline/sync';
 import { useOnlineStatus } from './offline/use-online-status';
 import { useRegisterSW } from './offline/register-sw';
+import { ProductImageProvider } from './offline/use-product-images';
 
 export default function POSSell() {
   const router = useRouter();
@@ -158,6 +159,7 @@ export default function POSSell() {
   }
 
   return (
+    <ProductImageProvider>
     <div className="flex h-dvh flex-col bg-white">
       <POSSessionBar />
 
@@ -183,5 +185,6 @@ export default function POSSell() {
         <POSOpenSessionModal onSessionOpened={handleSessionOpened} />
       )}
     </div>
+    </ProductImageProvider>
   );
 }

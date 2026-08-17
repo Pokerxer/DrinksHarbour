@@ -22,6 +22,19 @@ export interface ProductRecord {
   updatedAt: string;
 }
 
+/**
+ * The bytes behind one product image, keyed by the exact URL the tile asks for
+ * (a Cloudinary w_300 derivative — see `image-cache.ts`). Storing the blob, not
+ * the URL, is what makes the grid survive a network drop: a cached URL is still
+ * just a URL.
+ */
+export interface ImageRecord {
+  key: string;
+  blob: Blob;
+  bytes: number;
+  fetchedAt: string;
+}
+
 export interface ComboRecord {
   _id: string;
   name: string;
@@ -84,6 +97,7 @@ export class POSDatabase extends Dexie {
   orders!: Table<OrderRecord, string>;
   offlineQueue!: Table<QueueEntry, number>;
   stockAdjust!: Table<StockAdjust, number>;
+  images!: Table<ImageRecord, string>;
 
   constructor() {
     super('pos-offline-v1');
@@ -94,6 +108,11 @@ export class POSDatabase extends Dexie {
       orders: '_id, createdAt',
       offlineQueue: '++id, status, createdAt, type',
       stockAdjust: '++id, productId, sizeId, queueId',
+    });
+    // v2 adds product image blobs. Dexie carries the v1 stores forward, so an
+    // existing terminal keeps its queued sales and catalogue across the upgrade.
+    this.version(2).stores({
+      images: 'key, fetchedAt',
     });
   }
 }

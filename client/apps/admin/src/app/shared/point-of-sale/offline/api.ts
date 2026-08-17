@@ -1,8 +1,7 @@
 import { posApi } from '../api';
-import {
-  resolveSubProductGallery,
-  resolveSubProductThumb,
-} from '@/app/shared/ecommerce/sub-product/image-utils';
+import { resolveSubProductGallery } from '@/app/shared/ecommerce/sub-product/image-utils';
+import { catalogueImageKeys, POS_IMAGES_UPDATED } from './image-cache';
+import { precacheImages, pruneImages } from './image-store';
 import { posDb } from './db';
 import type {
   ProductRecord,
@@ -87,24 +86,53 @@ export async function getProducts(
       updatedAt: p.updatedAt ?? new Date().toISOString(),
     }));
     await posDb.products.bulkPut(records);
-    // Cache raw image URLs in Cache API so they survive offline
-    if (typeof caches !== 'undefined') {
-      caches.open('pos-product-images').then(async (cache) => {
-        for (const p of products) {
-          const raw = resolveSubProductThumb(p);
-          if (!raw) continue;
-          try {
-            if (await cache.match(raw)) continue;
-            const resp = await fetch(raw, { mode: 'no-cors' });
-            await cache.put(raw, resp);
-          } catch {}
-        }
-      });
-    }
+
+    // Pull the image bytes into Dexie so the grid survives a network drop. The
+    // catalogue record only ever held URLs, and a cached URL is still just a
+    // URL — offline it resolves to nothing and the tile paints blank, which is
+    // indistinguishable from one of the sub-products that genuinely has no
+    // photo. Not awaited: the till must open now, images fill in behind it.
+    void cacheCatalogueImages(products);
+
     return products; // Return original POSProduct[] for the grid
   }
   const records = await posDb.products.toArray();
   return records.map(recordToPOSProduct);
+}
+
+/**
+ * Fetch and store the bytes behind this catalogue's images, then drop the bytes
+ * it no longer references.
+ *
+ * Eager rather than cache-on-first-view: what a cashier scrolls past is the
+ * fast-moving head of the catalogue, and what they have to look up is the tail
+ * — so caching only what was viewed leaves precisely the products that need an
+ * image without one. Measured at ~10.6 KB per w_300 derivative, the whole of
+ * Wyn City's 530 images is ~5.6 MB.
+ *
+ * A shortfall is announced, never swallowed: a half-filled cache renders
+ * exactly like a full one until the network goes and the cashier is standing in
+ * front of a customer.
+ */
+async function cacheCatalogueImages(products: any[]): Promise<void> {
+  try {
+    const keys = catalogueImageKeys(products);
+    const report = await precacheImages(keys);
+    if (report.failed > 0) {
+      console.warn(
+        `[POS] ${report.failed} of ${report.requested} product images could not be cached. ` +
+          'Those tiles will be blank if this terminal goes offline.'
+      );
+    }
+    await pruneImages(keys);
+    // Only when something actually arrived — otherwise every reload churns
+    // hundreds of object URLs to land on the map it already had.
+    if (report.fetched > 0 && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(POS_IMAGES_UPDATED));
+    }
+  } catch (err) {
+    console.warn('[POS] product image caching failed outright:', err);
+  }
 }
 
 export async function getProductsWithLocalStock(): Promise<any[]> {

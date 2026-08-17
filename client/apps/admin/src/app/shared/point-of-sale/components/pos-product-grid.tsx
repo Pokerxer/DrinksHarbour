@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { resolveSubProductThumb } from '@/app/shared/ecommerce/sub-product/image-utils';
+import { resolveImageSource } from '@/app/shared/point-of-sale/offline/image-cache';
+import { useProductImageUrls } from '@/app/shared/point-of-sale/offline/use-product-images';
 import { Empty, SearchNotFoundIcon, Button } from 'rizzui';
 import {
   PiMagnifyingGlassBold,
@@ -117,11 +118,14 @@ function ScanBanner({
 
 // ── Combo card ────────────────────────────────────────────────────────────────
 function ComboCard({ combo, onOpen }: { combo: POSCombo; onOpen: () => void }) {
-  // Collect up to 4 product thumbnails from all choice lines
+  // Collect up to 4 product thumbnails from all choice lines. Resolved through
+  // the offline cache like any other tile, so a combo's collage does not go
+  // blank the moment the network does.
+  const imageUrls = useProductImageUrls();
   const images = combo.choiceLines
     .flatMap((l) =>
       (l.items || []).map(
-        (it: any) => resolveSubProductThumb(it.subProduct) || ''
+        (it: any) => resolveImageSource(it.subProduct, imageUrls).src || ''
       )
     )
     .filter(Boolean)

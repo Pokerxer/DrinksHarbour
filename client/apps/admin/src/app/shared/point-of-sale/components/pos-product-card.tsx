@@ -18,7 +18,7 @@ import {
   usePOSSettings,
 } from '@/app/shared/point-of-sale/store';
 import { RULE_TYPE_META } from '@/app/shared/point-of-sale/pricelist-constants';
-import Image from 'next/image';
+import { useProductImage } from '@/app/shared/point-of-sale/offline/use-product-images';
 import toast from 'react-hot-toast';
 import {
   PiPlus,
@@ -1412,7 +1412,9 @@ function SizePickerModal({
   const [qty, setQty] = useState(1);
 
   const selectedSize = validSizes.find((s) => s._id === selectedSizeId);
-  const imageUrl = getImageUrl(product);
+  // Picking a size is part of the sell flow, so this thumbnail has to survive an
+  // outage too — the grid alone is not enough to complete a sale.
+  const imageUrl = useProductImage(product).src;
   const name = getProductDisplayName(product);
 
   useEffect(() => {
@@ -1694,7 +1696,11 @@ export default function POSProductCard({
     }
   }
 
-  const imageUrl = getImageUrl(product);
+  // The tile renders from the offline blob cache when we hold the bytes, and
+  // from a Cloudinary w_300 derivative when we do not. `kind` distinguishes a
+  // cache miss from a product that genuinely has no photo — both paint the same
+  // blank square, so nothing downstream could tell them apart otherwise.
+  const tileImage = useProductImage(product);
   const name = getProductDisplayName(product);
   const vendorName = product.vendor
     ? product.vendor.posName ||
@@ -1780,11 +1786,13 @@ export default function POSProductCard({
         {/* ── Image ── */}
         {showImage && (
           <div className="relative aspect-square w-full overflow-hidden bg-gray-50">
-            {imageUrl ? (
+            {tileImage.src ? (
               <img
-                src={imageUrl}
+                src={tileImage.src}
                 alt={name}
-                loading="lazy"
+                // Cached bytes decode instantly and there is no request to
+                // defer, so only a remote URL is worth deferring.
+                loading={tileImage.kind === 'cached' ? 'eager' : 'lazy'}
                 className={`absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04] ${isOutOfStock ? 'grayscale' : ''}`}
               />
             ) : (
