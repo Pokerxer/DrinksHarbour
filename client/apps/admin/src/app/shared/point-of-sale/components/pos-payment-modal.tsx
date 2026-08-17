@@ -34,6 +34,7 @@ import {
   getEffectiveBundlePriceForItem,
   usePOSSettings,
   usePOSActiveShop,
+  usePOSWarehouse,
   usePOSLinkedSalesOrder,
 } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -1071,6 +1072,7 @@ export default function POSPaymentModal() {
   const { notifySale } = usePOSSaleSignal();
   const { selectedPricelist, shopKey } = usePOSPricelist();
   const { activeShop } = usePOSActiveShop();
+  const { warehouseId } = usePOSWarehouse();
   const posSettings = tenant?.posSettings;
   const settings = usePOSSettings();
   const isOnline = useOnlineStatus();
@@ -1457,6 +1459,7 @@ export default function POSPaymentModal() {
         reconcileSalesOrderOffline(token, linkedSalesOrderId, {
           paymentMethod,
           ref: result.order?.receiptNumber,
+          warehouseId,
           items: orderItems.map((i: any) => ({
             subProductId: i.subProductId,
             sizeId: i.sizeId,

@@ -74,3 +74,95 @@ test('fulfilling a quotation from the POS keeps its number', async (t) => {
   assert.strictEqual(order.orderStatus, 'fulfilled');
   assert.strictEqual(order.items[0].fulfilledQty, 10);
 });
+
+test('the POS reconcile records the terminal warehouse and the tender on the fulfilment', async (t) => {
+  stubActivityLog(t);
+  const tenantId = oid();
+  const soId = oid();
+  const subproductId = oid();
+  const sizeId = oid();
+  const warehouseId = oid();
+
+  const order = {
+    _id: soId, tenant: tenantId, soNumber: 'SO00006',
+    docType: 'order', orderStatus: 'confirmed',
+    total: 5000, amountPaid: 0,
+    warehouseId: null,
+    items: [{
+      _id: oid(), lineType: 'product',
+      subproduct: subproductId, size: sizeId,
+      quantity: 10, unitPrice: 500, lineTotal: 5000,
+      fulfilledQty: 0, postedQty: 0, returnedQty: 0,
+      discount: 0, promoDiscount: 0, taxRate: 0, taxAmount: 0,
+    }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+
+  t.mock.method(SalesOrder, 'findOne', async () => order);
+
+  const cashierId = oid();
+  const req = {
+    params: { id: String(soId) },
+    tenant: { _id: tenantId },
+    posUser: { _id: cashierId },
+    body: {
+      paymentMethod: 'cash',
+      ref: 'RCP-20260817-0005',
+      warehouseId: String(warehouseId),
+      items: [{ subProductId: String(subproductId), sizeId: String(sizeId), quantity: 4 }],
+    },
+  };
+  const res = { json() { return this; }, status() { return this; } };
+
+  await posCtrl.reconcileSalesOrderFromPOS(req, res, (err) => { throw err; });
+
+  const entry = order.fulfillments[0];
+  assert.strictEqual(String(entry.warehouseId), String(warehouseId));
+  assert.strictEqual(entry.paymentMethod, 'cash');
+  assert.strictEqual(String(entry.by), String(cashierId));
+  assert.strictEqual(entry.ref, 'RCP-20260817-0005');
+});
+
+test('with no warehouse from the till, the order\'s own warehouse is recorded', async (t) => {
+  stubActivityLog(t);
+  const tenantId = oid();
+  const soId = oid();
+  const subproductId = oid();
+  const orderWarehouse = oid();
+
+  const order = {
+    _id: soId, tenant: tenantId, soNumber: 'SO00007',
+    docType: 'order', orderStatus: 'confirmed',
+    total: 5000, amountPaid: 0,
+    warehouseId: orderWarehouse,
+    items: [{
+      _id: oid(), lineType: 'product', subproduct: subproductId,
+      quantity: 10, unitPrice: 500, lineTotal: 5000,
+      fulfilledQty: 0, postedQty: 0, returnedQty: 0,
+      discount: 0, promoDiscount: 0, taxRate: 0, taxAmount: 0,
+    }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+
+  t.mock.method(SalesOrder, 'findOne', async () => order);
+
+  const req = {
+    params: { id: String(soId) },
+    tenant: { _id: tenantId },
+    posUser: { _id: oid() },
+    body: {
+      paymentMethod: 'card', ref: 'RCP-6',
+      items: [{ subProductId: String(subproductId), quantity: 1 }],
+    },
+  };
+  const res = { json() { return this; }, status() { return this; } };
+
+  await posCtrl.reconcileSalesOrderFromPOS(req, res, (err) => { throw err; });
+
+  assert.strictEqual(
+    String(order.fulfillments[0].warehouseId),
+    String(orderWarehouse)
+  );
+});

@@ -3834,7 +3834,7 @@ exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
     return res.status(409).json({ success: false, message: 'Order already fulfilled' });
   }
 
-  const { paymentMethod, items: soldItems, ref } = req.body;
+  const { paymentMethod, items: soldItems, ref, warehouseId } = req.body;
 
   // Map POS sold items → SO line ids (match on subproduct + size, clamp to
   // outstanding). Each SO line is consumed at most once.
@@ -3863,6 +3863,11 @@ exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
   // called an order 3/10 sold paid in full and erased the rest of the receivable.
   const { order, reconciled, duplicate } = await salesFulfillSvc.reconcileFulfillment({
     salesOrder: so, fulfillLines, userId: req.posUser?._id || req.user?._id, ref,
+    // The terminal's warehouse is the one the sale deducted stock from. Falling
+    // back to the order's own warehouse keeps a fulfilment attributable even
+    // when an older till build sends nothing.
+    warehouseId: warehouseId || so.warehouseId || undefined,
+    paymentMethod,
   });
 
   if (duplicate) {

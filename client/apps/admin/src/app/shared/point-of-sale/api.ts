@@ -755,6 +755,8 @@ export const posApi = {
       paymentMethod?: string;
       /** Receipt number of the POS sale — makes a replayed reconcile a no-op. */
       ref?: string;
+      /** The terminal's warehouse — the one the sale deducted stock from. */
+      warehouseId?: string;
       items?: { subProductId: string; sizeId?: string; quantity: number }[];
     }
   ) {

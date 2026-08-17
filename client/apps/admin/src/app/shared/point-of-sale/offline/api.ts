@@ -399,6 +399,7 @@ export async function reconcileSalesOrder(
   body: {
     paymentMethod?: string;
     ref?: string;
+    warehouseId?: string;
     items?: { subProductId: string; sizeId?: string; quantity: number }[];
   }
 ): Promise<any> {
