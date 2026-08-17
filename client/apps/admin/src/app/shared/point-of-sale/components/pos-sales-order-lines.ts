@@ -80,7 +80,9 @@ export function agreedUnitPrice(line: SalesOrderLine): number {
  * sold another warehouse's stock without being told. A ref is an id even when
  * the server populates it.
  */
-export function salesOrderWarehouseId(so: LoadedSalesOrder): string | undefined {
+export function salesOrderWarehouseId(
+  so: LoadedSalesOrder
+): string | undefined {
   const w = so?.warehouseId;
   if (!w) return undefined;
   if (typeof w === 'string') return w || undefined;
@@ -105,7 +107,9 @@ export function salesOrderToCartItems(
   so: LoadedSalesOrder,
   catalogue: POSProduct[]
 ): POSCartItem[] {
-  const bySubProduct = new Map((catalogue ?? []).map((p) => [String(p._id), p]));
+  const bySubProduct = new Map(
+    (catalogue ?? []).map((p) => [String(p._id), p])
+  );
   const out: POSCartItem[] = [];
 
   for (const line of so?.items ?? []) {

@@ -16,10 +16,7 @@ import {
   salesOrderToCartItems,
   salesOrderWarehouseId,
 } from './pos-sales-order-lines';
-import type {
-  LoadedSalesOrder,
-  SalesOrderLine,
-} from './pos-sales-order-lines';
+import type { LoadedSalesOrder, SalesOrderLine } from './pos-sales-order-lines';
 import type { POSProduct } from '../types';
 
 const SP = '651111111111111111111111';
@@ -31,7 +28,11 @@ const catalogue: POSProduct[] = [
   {
     _id: SP,
     sku: 'SKU-PARENT',
-    product: { _id: PROD, name: 'Hennessy VS', images: [{ url: 'https://cdn/x.jpg' }] },
+    product: {
+      _id: PROD,
+      name: 'Hennessy VS',
+      images: [{ url: 'https://cdn/x.jpg' }],
+    },
     baseSellingPrice: 6250,
     costPrice: 3000,
     availableStock: 40,
@@ -82,7 +83,7 @@ const so = (over: Partial<LoadedSalesOrder> = {}): LoadedSalesOrder => ({
 });
 
 describe('salesOrderToCartItems', () => {
-  test('carries the line\'s size — the schema field is `size`, not `sizeId`', () => {
+  test("carries the line's size — the schema field is `size`, not `sizeId`", () => {
     const [item] = salesOrderToCartItems(so(), catalogue);
 
     expect(item.sizeId).toBe(SIZE);
@@ -100,7 +101,11 @@ describe('salesOrderToCartItems', () => {
     // percentage from the dialpad and cannot carry a flat ₦ off a line, so the
     // agreed money is carried as the price — matching what the server charges.
     const [item] = salesOrderToCartItems(
-      so({ items: [line({ discount: 2000, discountType: 'fixed', promoDiscount: 500 })] }),
+      so({
+        items: [
+          line({ discount: 2000, discountType: 'fixed', promoDiscount: 500 }),
+        ],
+      }),
       catalogue
     );
 
@@ -160,7 +165,10 @@ describe('salesOrderToCartItems', () => {
 
   test('skips a line that is already fully fulfilled', () => {
     expect(
-      salesOrderToCartItems(so({ items: [line({ quantity: 10, fulfilledQty: 10 })] }), catalogue)
+      salesOrderToCartItems(
+        so({ items: [line({ quantity: 10, fulfilledQty: 10 })] }),
+        catalogue
+      )
     ).toEqual([]);
   });
 
@@ -204,7 +212,9 @@ describe('salesOrderWarehouseId', () => {
     // to "[object Object]" and the quote's warehouse was silently ignored —
     // the cashier sold another warehouse's stock without being told.
     expect(
-      salesOrderWarehouseId({ warehouseId: { _id: WH, name: 'Main', code: 'MN' } })
+      salesOrderWarehouseId({
+        warehouseId: { _id: WH, name: 'Main', code: 'MN' },
+      })
     ).toBe(WH);
   });
 

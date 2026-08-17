@@ -56,8 +56,13 @@ export async function runSyncEngine(token?: string): Promise<SyncResult> {
           // not moved yet. `ref` (the receipt number) makes the server treat a
           // replay of an entry whose response was lost as a no-op rather than
           // as a second sale.
-          const { _token, salesOrderId, paymentMethod, items, ref } = entry.payload as any;
-          await posApi.reconcileSalesOrder(t, salesOrderId, { paymentMethod, items, ref });
+          const { _token, salesOrderId, paymentMethod, items, ref } =
+            entry.payload as any;
+          await posApi.reconcileSalesOrder(t, salesOrderId, {
+            paymentMethod,
+            items,
+            ref,
+          });
           await posDb.offlineQueue.delete(entry.id!);
           synced++;
         }

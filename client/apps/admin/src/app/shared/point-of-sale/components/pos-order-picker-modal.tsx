@@ -66,8 +66,21 @@ interface Props {
 
 type DocTypeFilter = 'all' | 'quotation' | 'order';
 
-const QUOTATION_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'converted'] as const;
-const ORDER_STATUSES = ['draft', 'confirmed', 'partially_fulfilled', 'fulfilled', 'cancelled'] as const;
+const QUOTATION_STATUSES = [
+  'draft',
+  'sent',
+  'accepted',
+  'rejected',
+  'expired',
+  'converted',
+] as const;
+const ORDER_STATUSES = [
+  'draft',
+  'confirmed',
+  'partially_fulfilled',
+  'fulfilled',
+  'cancelled',
+] as const;
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft',
@@ -82,46 +95,77 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-function statusConfig(status: string): { dot: string; bg: string; text: string } {
+function statusConfig(status: string): {
+  dot: string;
+  bg: string;
+  text: string;
+} {
   switch (status) {
     case 'draft':
-      return { dot: 'bg-yellow-400', bg: 'bg-yellow-100', text: 'text-yellow-700' };
+      return {
+        dot: 'bg-yellow-400',
+        bg: 'bg-yellow-100',
+        text: 'text-yellow-700',
+      };
     case 'sent':
       return { dot: 'bg-blue-400', bg: 'bg-blue-100', text: 'text-blue-700' };
     case 'accepted':
     case 'confirmed':
-      return { dot: 'bg-indigo-400', bg: 'bg-indigo-100', text: 'text-indigo-700' };
+      return {
+        dot: 'bg-indigo-400',
+        bg: 'bg-indigo-100',
+        text: 'text-indigo-700',
+      };
     case 'partially_fulfilled':
       return { dot: 'bg-cyan-400', bg: 'bg-cyan-100', text: 'text-cyan-700' };
     case 'fulfilled':
     case 'converted':
-      return { dot: 'bg-emerald-400', bg: 'bg-emerald-100', text: 'text-emerald-700' };
+      return {
+        dot: 'bg-emerald-400',
+        bg: 'bg-emerald-100',
+        text: 'text-emerald-700',
+      };
     case 'rejected':
     case 'cancelled':
       return { dot: 'bg-red-400', bg: 'bg-red-100', text: 'text-red-600' };
     case 'expired':
-      return { dot: 'bg-orange-400', bg: 'bg-orange-100', text: 'text-orange-700' };
+      return {
+        dot: 'bg-orange-400',
+        bg: 'bg-orange-100',
+        text: 'text-orange-700',
+      };
     default:
       return { dot: 'bg-gray-400', bg: 'bg-gray-100', text: 'text-gray-600' };
   }
 }
 
 function statusLabel(so: SalesOrderRow): string {
-  const s = so.docType === 'quotation' ? (so.quoteStatus ?? 'draft') : (so.orderStatus ?? 'draft');
+  const s =
+    so.docType === 'quotation'
+      ? (so.quoteStatus ?? 'draft')
+      : (so.orderStatus ?? 'draft');
   return STATUS_LABELS[s] ?? s;
 }
 
 function rawStatus(so: SalesOrderRow): string {
-  return so.docType === 'quotation' ? (so.quoteStatus ?? 'draft') : (so.orderStatus ?? 'draft');
+  return so.docType === 'quotation'
+    ? (so.quoteStatus ?? 'draft')
+    : (so.orderStatus ?? 'draft');
 }
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return d.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 function itemCount(so: SalesOrderRow): number {
-  return (so.items ?? []).filter((i) => i.lineType !== 'section' && i.lineType !== 'note').length;
+  return (so.items ?? []).filter(
+    (i) => i.lineType !== 'section' && i.lineType !== 'note'
+  ).length;
 }
 
 type SortCol = 'soNumber' | 'date' | 'customer' | 'total' | 'status' | 'items';
@@ -158,7 +202,10 @@ function StatusFilterDropdown({
     >
       <button
         type="button"
-        onClick={() => { onChange(''); onClose(); }}
+        onClick={() => {
+          onChange('');
+          onClose();
+        }}
         className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-gray-50 ${!value ? 'bg-red-50 font-semibold text-[#b20202]' : 'text-gray-700'}`}
       >
         <span className="h-2 w-2 rounded-full bg-gray-400" />
@@ -172,7 +219,10 @@ function StatusFilterDropdown({
           <button
             key={s}
             type="button"
-            onClick={() => { onChange(s); onClose(); }}
+            onClick={() => {
+              onChange(s);
+              onClose();
+            }}
             className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${active ? 'bg-red-50 font-semibold text-[#b20202]' : 'text-gray-700 hover:bg-gray-50'}`}
           >
             <span className={`h-2 w-2 rounded-full ${cfg.dot}`} />
@@ -230,21 +280,24 @@ function StatusBadge({ so }: { so: SalesOrderRow }) {
   const s = rawStatus(so);
   const cfg = statusConfig(s);
   const label = statusLabel(so);
-  const icon = {
-    draft: <PiFileText className="h-3 w-3" />,
-    sent: <PiClockCountdown className="h-3 w-3" />,
-    accepted: <PiSealCheck className="h-3 w-3" />,
-    confirmed: <PiSealCheck className="h-3 w-3" />,
-    partially_fulfilled: <PiCube className="h-3 w-3" />,
-    fulfilled: <PiShoppingCart className="h-3 w-3" />,
-    converted: <PiShoppingCart className="h-3 w-3" />,
-    rejected: <PiXCircle className="h-3 w-3" />,
-    cancelled: <PiXCircle className="h-3 w-3" />,
-    expired: <PiWarningCircle className="h-3 w-3" />,
-  }[s] ?? null;
+  const icon =
+    {
+      draft: <PiFileText className="h-3 w-3" />,
+      sent: <PiClockCountdown className="h-3 w-3" />,
+      accepted: <PiSealCheck className="h-3 w-3" />,
+      confirmed: <PiSealCheck className="h-3 w-3" />,
+      partially_fulfilled: <PiCube className="h-3 w-3" />,
+      fulfilled: <PiShoppingCart className="h-3 w-3" />,
+      converted: <PiShoppingCart className="h-3 w-3" />,
+      rejected: <PiXCircle className="h-3 w-3" />,
+      cancelled: <PiXCircle className="h-3 w-3" />,
+      expired: <PiWarningCircle className="h-3 w-3" />,
+    }[s] ?? null;
 
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase leading-tight ${cfg.bg} ${cfg.text}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase leading-tight ${cfg.bg} ${cfg.text}`}
+    >
       {icon}
       {label}
     </span>
@@ -308,7 +361,9 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
   const statusOptions = useMemo(() => {
     if (docTypeFilter === 'quotation') return QUOTATION_STATUSES;
     if (docTypeFilter === 'order') return ORDER_STATUSES;
-    return [...new Set([...QUOTATION_STATUSES, ...ORDER_STATUSES])] as readonly string[];
+    return [
+      ...new Set([...QUOTATION_STATUSES, ...ORDER_STATUSES]),
+    ] as readonly string[];
   }, [docTypeFilter]);
 
   // Client-side sort
@@ -322,10 +377,13 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
           cmp = (a.soNumber ?? '').localeCompare(b.soNumber ?? '');
           break;
         case 'date':
-          cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          cmp =
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
           break;
         case 'customer':
-          cmp = (a.customerSnapshot?.name ?? '').localeCompare(b.customerSnapshot?.name ?? '');
+          cmp = (a.customerSnapshot?.name ?? '').localeCompare(
+            b.customerSnapshot?.name ?? ''
+          );
           break;
         case 'total':
           cmp = (a.total ?? 0) - (b.total ?? 0);
@@ -351,10 +409,22 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
     }
   }
 
-  const docTypeTabs: { key: DocTypeFilter; label: string; icon: React.ReactNode }[] = [
+  const docTypeTabs: {
+    key: DocTypeFilter;
+    label: string;
+    icon: React.ReactNode;
+  }[] = [
     { key: 'all', label: 'All', icon: null },
-    { key: 'quotation', label: 'Quotations', icon: <PiFileText className="h-3.5 w-3.5" /> },
-    { key: 'order', label: 'Orders', icon: <PiShoppingCart className="h-3.5 w-3.5" /> },
+    {
+      key: 'quotation',
+      label: 'Quotations',
+      icon: <PiFileText className="h-3.5 w-3.5" />,
+    },
+    {
+      key: 'order',
+      label: 'Orders',
+      icon: <PiShoppingCart className="h-3.5 w-3.5" />,
+    },
   ];
 
   return (
@@ -390,7 +460,10 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => { setDocTypeFilter(tab.key); setStatusFilter(''); }}
+                onClick={() => {
+                  setDocTypeFilter(tab.key);
+                  setStatusFilter('');
+                }}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
                   docTypeFilter === tab.key
                     ? 'bg-white text-[#b20202] shadow-sm'
@@ -410,14 +483,19 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
               onClick={() => setShowStatusMenu((v) => !v)}
               className="flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
-              {statusFilter ? STATUS_LABELS[statusFilter] ?? statusFilter : 'All Statuses'}
+              {statusFilter
+                ? (STATUS_LABELS[statusFilter] ?? statusFilter)
+                : 'All Statuses'}
               <PiCaretDown className="h-3 w-3 text-gray-400" />
             </button>
             {showStatusMenu && (
               <StatusFilterDropdown
                 options={statusOptions}
                 value={statusFilter}
-                onChange={(s) => { setStatusFilter(s); setShowStatusMenu(false); }}
+                onChange={(s) => {
+                  setStatusFilter(s);
+                  setShowStatusMenu(false);
+                }}
                 onClose={() => setShowStatusMenu(false)}
               />
             )}
@@ -461,7 +539,9 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
               </button>
               <button
                 type="button"
-                onClick={() => setPage((p) => Math.min(pagination.pages, p + 1))}
+                onClick={() =>
+                  setPage((p) => Math.min(pagination.pages, p + 1))
+                }
                 disabled={page >= pagination.pages}
                 className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
               >
@@ -477,7 +557,10 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
             // Skeleton loader
             <div className="divide-y divide-gray-50">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="flex animate-pulse items-center gap-4 px-6 py-4">
+                <div
+                  key={i}
+                  className="flex animate-pulse items-center gap-4 px-6 py-4"
+                >
                   <div className="h-3 w-24 rounded bg-gray-100" />
                   <div className="h-3 w-16 rounded bg-gray-100" />
                   <div className="h-3 w-28 flex-1 rounded bg-gray-100" />
@@ -499,7 +582,9 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
                     : `No ${docTypeFilter}s found`}
               </p>
               {(search || statusFilter) && (
-                <p className="mt-1 text-xs">Try adjusting your search or filters</p>
+                <p className="mt-1 text-xs">
+                  Try adjusting your search or filters
+                </p>
               )}
             </div>
           ) : (
@@ -556,7 +641,10 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {sorted.map((so) => (
-                  <tr key={so._id} className="transition-colors hover:bg-gray-50/60">
+                  <tr
+                    key={so._id}
+                    className="transition-colors hover:bg-gray-50/60"
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span
@@ -581,7 +669,7 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
                         <span className="text-gray-300">Walk-in</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-xs font-semibold text-gray-900">
+                    <td className="px-4 py-3 text-right text-xs font-semibold tabular-nums text-gray-900">
                       {formatCurrency(so.total ?? 0)}
                     </td>
                     <td className="px-4 py-3 text-center text-xs tabular-nums text-gray-500">
@@ -595,13 +683,17 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
                         {so.warehouseId && (
                           <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
                             <PiWarehouse className="h-3 w-3 shrink-0" />
-                            <span className="truncate max-w-[80px]">{so.warehouseId.name}</span>
+                            <span className="max-w-[80px] truncate">
+                              {so.warehouseId.name}
+                            </span>
                           </span>
                         )}
                         {so.salesperson && (
                           <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
                             <PiUser className="h-3 w-3 shrink-0" />
-                            <span className="truncate max-w-[80px]">{so.salesperson}</span>
+                            <span className="max-w-[80px] truncate">
+                              {so.salesperson}
+                            </span>
                           </span>
                         )}
                       </div>

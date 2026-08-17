@@ -35,13 +35,12 @@ function row(i: number) {
       type: i % 2 === 0 ? 'spirits' : 'wine',
       brand: { _id: 'b1', name: `Brand ${i % 7}` },
     },
-    sizes: [
-      { displayName: `75cl`, sku: `SZ-${i}`, barcode: `500000000${i}` },
-    ],
+    sizes: [{ displayName: `75cl`, sku: `SZ-${i}`, barcode: `500000000${i}` }],
   };
 }
 
-const catalogue = (n: number): Row[] => Array.from({ length: n }, (_, i) => row(i));
+const catalogue = (n: number): Row[] =>
+  Array.from({ length: n }, (_, i) => row(i));
 
 describe('filterPOSProducts', () => {
   it('finds a product that sits far past the old 200-row cap', () => {
@@ -56,9 +55,13 @@ describe('filterPOSProducts', () => {
     const list = catalogue(955);
 
     expect(filterPOSProducts(list, { query: 'sku-0900' })).toHaveLength(1);
-    expect(filterPOSProducts(list, { query: '5000000009' })[0].sku).toBe('SKU-0009');
+    expect(filterPOSProducts(list, { query: '5000000009' })[0].sku).toBe(
+      'SKU-0009'
+    );
     expect(filterPOSProducts(list, { query: '75cl' })).toHaveLength(955);
-    expect(filterPOSProducts(list, { query: 'Brand 3' }).length).toBeGreaterThan(100);
+    expect(
+      filterPOSProducts(list, { query: 'Brand 3' }).length
+    ).toBeGreaterThan(100);
   });
 
   it('narrows by category and search together', () => {
@@ -68,8 +71,12 @@ describe('filterPOSProducts', () => {
     expect(wines).toHaveLength(50);
     // 41 is odd, so it is wine — the same query under the other category is a
     // real "no results", not a truncated one.
-    expect(filterPOSProducts(list, { category: 'wine', query: 'Product 41' })).toHaveLength(1);
-    expect(filterPOSProducts(list, { category: 'spirits', query: 'Product 41' })).toHaveLength(0);
+    expect(
+      filterPOSProducts(list, { category: 'wine', query: 'Product 41' })
+    ).toHaveLength(1);
+    expect(
+      filterPOSProducts(list, { category: 'spirits', query: 'Product 41' })
+    ).toHaveLength(0);
   });
 
   it('leaves the list alone when nothing is being searched for', () => {
@@ -82,7 +89,10 @@ describe('filterPOSProducts', () => {
 
 describe('productRenderWindow', () => {
   it('mounts a slice of a big catalogue and reports what is still hidden', () => {
-    const { visible, remaining } = productRenderWindow(catalogue(955), PRODUCT_RENDER_STEP);
+    const { visible, remaining } = productRenderWindow(
+      catalogue(955),
+      PRODUCT_RENDER_STEP
+    );
 
     expect(visible).toHaveLength(PRODUCT_RENDER_STEP);
     expect(remaining).toBe(955 - PRODUCT_RENDER_STEP);
@@ -94,7 +104,10 @@ describe('productRenderWindow', () => {
     // window is applied to what the search returned.
     const hit = filterPOSProducts(catalogue(955), { query: 'Product 903' });
 
-    const { visible, remaining } = productRenderWindow(hit, PRODUCT_RENDER_STEP);
+    const { visible, remaining } = productRenderWindow(
+      hit,
+      PRODUCT_RENDER_STEP
+    );
 
     expect(visible.map((p) => p.sku)).toEqual(['SKU-0903']);
     expect(remaining).toBe(0);
@@ -102,7 +115,10 @@ describe('productRenderWindow', () => {
 
   it('reports nothing remaining once the window covers the list', () => {
     const list = catalogue(40);
-    const { visible, remaining } = productRenderWindow(list, PRODUCT_RENDER_STEP);
+    const { visible, remaining } = productRenderWindow(
+      list,
+      PRODUCT_RENDER_STEP
+    );
 
     expect(visible).toBe(list); // no needless copy, so React sees a stable array
     expect(remaining).toBe(0);

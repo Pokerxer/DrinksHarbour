@@ -68,5 +68,8 @@ export function productRenderWindow<T>(
   shown: number
 ): { visible: T[]; remaining: number } {
   if (filtered.length <= shown) return { visible: filtered, remaining: 0 };
-  return { visible: filtered.slice(0, shown), remaining: filtered.length - shown };
+  return {
+    visible: filtered.slice(0, shown),
+    remaining: filtered.length - shown,
+  };
 }

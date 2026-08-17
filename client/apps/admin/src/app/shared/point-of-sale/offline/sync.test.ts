@@ -24,9 +24,12 @@ vi.mock('./db', () => {
         sortBy: async (key: string) =>
           queue
             .filter((e) => (e as any)[field] === value)
-            .sort((a, b) => String((a as any)[key]).localeCompare(String((b as any)[key]))),
+            .sort((a, b) =>
+              String((a as any)[key]).localeCompare(String((b as any)[key]))
+            ),
         delete: async () => {},
-        count: async () => queue.filter((e) => (e as any)[field] === value).length,
+        count: async () =>
+          queue.filter((e) => (e as any)[field] === value).length,
         toArray: async () => queue.filter((e) => (e as any)[field] === value),
       }),
     }),
@@ -110,8 +113,17 @@ describe('runSyncEngine — reconcile', () => {
     // its order arrives at the server after it. A reconcile that overtook its
     // own sale would mark the order fulfilled for stock that had not moved yet.
     queue = [
-      entry({ id: 2, type: 'reconcile', createdAt: '2026-08-16T10:00:01.000Z',
-        payload: { _token: 't', salesOrderId: 'so1', ref: 'OFFLINE-1', items: [] } }),
+      entry({
+        id: 2,
+        type: 'reconcile',
+        createdAt: '2026-08-16T10:00:01.000Z',
+        payload: {
+          _token: 't',
+          salesOrderId: 'so1',
+          ref: 'OFFLINE-1',
+          items: [],
+        },
+      }),
       entry({ id: 1, type: 'order', createdAt: '2026-08-16T10:00:00.000Z' }),
     ];
 
@@ -126,8 +138,16 @@ describe('runSyncEngine — reconcile', () => {
     );
 
     queue = [
-      entry({ id: 1, type: 'reconcile',
-        payload: { _token: 't', salesOrderId: 'so1', ref: 'OFFLINE-1', items: [] } }),
+      entry({
+        id: 1,
+        type: 'reconcile',
+        payload: {
+          _token: 't',
+          salesOrderId: 'so1',
+          ref: 'OFFLINE-1',
+          items: [],
+        },
+      }),
     ];
 
     await runSyncEngine('t');
