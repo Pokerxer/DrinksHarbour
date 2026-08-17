@@ -16,7 +16,7 @@
     "@babel/runtime": "^7.29.7",
     "@expo/metro-runtime": "~4.0.1",
     "@expo/vector-icons": "~14.0.4",
-    "commerce-core": "workspace:*",
+    "commerce-core": "file:../../packages/commerce-core",
     "expo": "~52.0.0",
     "expo-constants": "~17.0.0",
     "expo-linking": "~7.0.0",
@@ -34,7 +34,7 @@
   "devDependencies": {
     "@types/node": "^22.13.13",
     "@types/react": "~18.3.12",
-    "tailwind-config": "workspace:*",
+    "tailwind-config": "file:../../packages/config-tailwind",
     "tailwindcss": "^3.4.17",
     "typescript": "5.8.2",
     "typescript-config": "file:../../packages/config-typescript",

@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
-    "commerce-core": "workspace:*",
+    "commerce-core": "file:../../packages/commerce-core",
     "framer-motion": "^12.36.0",
     "next": "16.1.6",
     "next-auth": "^4.24.11",
