@@ -134,7 +134,7 @@ export default function SalesQuotationDetail({
               )}
               {status === 'accepted' && (
                 <button type="button" disabled={busy}
-                  onClick={() => run(() => salesOrderService.convert(so._id, token), 'Converted to order', true)}
+                  onClick={() => run(() => salesOrderService.convert(so._id, token), 'Converted to order')}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-bold text-white transition-all hover:bg-brand-dark active:scale-[0.98] disabled:opacity-50">
                   <PiArrowsClockwise className="h-4 w-4" /> Convert to Order
                 </button>

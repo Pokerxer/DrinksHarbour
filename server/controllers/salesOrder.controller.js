@@ -330,17 +330,16 @@ exports.convertQuotation = asyncHandler(async (req, res) => {
   if (['converted', 'rejected', 'expired'].includes(so.quoteStatus)) {
     return res.status(409).json({ success: false, message: 'Quotation cannot be converted' });
   }
+  // In place: this IS the order now, same id and same number. Nothing was
+  // created, so this is 200, and there is one document to log against — the
+  // old second entry ("Created via conversion from quotation …") described an
+  // event that no longer happens.
   const order = await svc.convertQuotationToOrder(so);
   auditPrivilegedSalesAction(req, 'QUOTATION_CONVERT', 'update', order);
-  await salesLog.logActivity(req.tenant?._id, so._id, {
-    subject: salesLog.statusSubject(so.docType, 'converted'), userId: req.user?._id,
-    meta: { orderId: order._id },
-  });
-  res.status(201).json({ success: true, data: order });
   await salesLog.logActivity(req.tenant?._id, order._id, {
-    subject: `Created via conversion from quotation ${so.soNumber}`,
-    userId: req.user?._id,
+    subject: salesLog.statusSubject('quotation', 'converted'), userId: req.user?._id,
   });
+  res.json({ success: true, data: order });
 });
 
 exports.confirmSalesOrder = asyncHandler(async (req, res) => {
