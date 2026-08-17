@@ -630,48 +630,41 @@ async function applyEdit(so, body) {
 }
 
 /**
- * Convert an accepted/draft/sent quotation into a new draft order.
- * Copies the pricing snapshot verbatim (no re-pricing); resets fulfillment
- * counters on each line. Links both docs and marks the quotation converted.
+ * Turn an accepted/draft/sent quotation INTO a draft order.
+ *
+ * The document is converted, not copied: same _id, same soNumber. A customer
+ * holding quote SO00002 is holding the number of the live document for the rest
+ * of its life, through the till and through fulfilment.
+ *
+ * This used to create a second document and hand-copy 17 line fields into it —
+ * which silently dropped lineType, description and discountType (a section
+ * header became a product line, a percentage discount became a flat one), plus
+ * warehouseId, shippingFee and the coupon fields at order level. None of that
+ * needs fixing field by field; it disappears when nothing is copied.
+ *
+ * docType 'order' carrying quoteStatus 'converted' IS the history: this document
+ * began life as a quotation. convertedFrom/convertedTo stay in the schema for
+ * the real two-document pairs created before this change.
  */
 async function convertQuotationToOrder(quotation) {
-  const soNumber = await generateSalesOrderNumber(quotation.tenant);
-  const order = await SalesOrder.create({
-    tenant: quotation.tenant,
-    soNumber,
-    docType: 'order',
-    customer: quotation.customer,
-    customerSnapshot: quotation.customerSnapshot,
-    pricelist: quotation.pricelist,
-    appliedPricelist: quotation.appliedPricelist,
-    currency: quotation.currency,
-    items: quotation.items.map((it) => ({
-      product: it.product, subproduct: it.subproduct, size: it.size,
-      sku: it.sku, name: it.name,
-      quantity: it.quantity, unitPrice: it.unitPrice, discount: it.discount,
-      taxRate: it.taxRate, taxAmount: it.taxAmount,
-      promoDiscount: it.promoDiscount, promoName: it.promoName,
-      lineTotal: it.lineTotal,
-      priceOverridden: it.priceOverridden,
-      fulfilledQty: 0, postedQty: 0, returnedQty: 0,
-    })),
-    subtotal: quotation.subtotal, discountTotal: quotation.discountTotal,
-    promotionTotal: quotation.promotionTotal,
-    pricelistCartDiscount: quotation.pricelistCartDiscount || 0,
-    taxTotal: quotation.taxTotal, total: quotation.total,
-    paymentTerms: quotation.paymentTerms || 'immediate',
-    dueDate: computeDueDate(quotation.paymentTerms || 'immediate'),
-    salesperson: quotation.salesperson || '',
-    invoiceAddress: normalizeAddress(quotation.invoiceAddress),
-    deliveryAddress: normalizeAddress(quotation.deliveryAddress),
-    notes: quotation.notes, terms: quotation.terms,
-    orderStatus: 'draft',
-    convertedFrom: quotation._id,
-  });
+  quotation.docType = 'order';
   quotation.quoteStatus = 'converted';
-  quotation.convertedTo = order._id;
+  quotation.orderStatus = 'draft';
+  quotation.paymentTerms = quotation.paymentTerms || 'immediate';
+  // The payment clock starts at conversion, not at the quote's creation.
+  quotation.dueDate = computeDueDate(quotation.paymentTerms);
+
+  // A quotation has no legitimate way to accrue these, but "nothing has been
+  // fulfilled yet" is the invariant a draft order must hold, and an invariant
+  // that is only true by luck is not an invariant.
+  for (const item of quotation.items || []) {
+    item.fulfilledQty = 0;
+    item.postedQty = 0;
+    item.returnedQty = 0;
+  }
+
   await quotation.save();
-  return order;
+  return quotation;
 }
 
 /**

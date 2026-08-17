@@ -68,11 +68,13 @@ test('quotation -> convert -> confirm -> fulfill 60 -> fulfill 40 -> return 20: 
   assert.strictEqual(quote.quoteStatus, 'draft');
 
   // ---- 2. Convert quotation -> order ------------------------------------
+  // In place: the quotation IS the order now, same _id and same soNumber.
   const order = await svc.convertQuotationToOrder(quote);
+  assert.strictEqual(order, quote);
+  assert.strictEqual(order.soNumber, quote.soNumber);
   assert.strictEqual(order.docType, 'order');
   assert.strictEqual(order.orderStatus, 'draft');
   assert.strictEqual(quote.quoteStatus, 'converted');
-  assert.strictEqual(String(quote.convertedTo), String(order._id));
 
   // ---- 3. Confirm (capture payment in cash; no wallet/loyalty customer) --
   const pay = await capturePayment({

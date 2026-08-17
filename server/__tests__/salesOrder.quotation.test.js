@@ -10,23 +10,19 @@ const svc = require('../services/salesOrder.service');
 // model methods with node:test's t.mock rather than booting a real DB via
 // mongodb-memory-server (that package is not a dependency anywhere in this
 // repo). We follow the same convention here: convertQuotationToOrder is
-// tested as orchestration over an injected plain-object "quotation" and a
-// mocked SalesOrder.create.
+// tested as mutation of an injected plain-object "quotation", since the
+// conversion is now in place and no second document is created.
 
 const oid = () => new mongoose.Types.ObjectId();
 
-test('convertQuotationToOrder copies lines, links both ways, marks quote converted', async (t) => {
+test('convertQuotationToOrder converts the document in place, keeping its number', async (t) => {
   const tenantId = oid();
   const quoteId = oid();
 
-  t.mock.method(SalesOrder, 'findOne', () => ({
-    sort: () => ({ select: () => ({ lean: async () => null }) }),
-  }));
-
-  let createPayload;
-  t.mock.method(SalesOrder, 'create', async (payload) => {
-    createPayload = payload;
-    return { _id: oid(), ...payload };
+  // If conversion creates a second document, this blows up with a clear message
+  // rather than silently passing on a copy.
+  t.mock.method(SalesOrder, 'create', async () => {
+    throw new Error('SalesOrder.create must not be called — conversion is in place');
   });
 
   const saveFn = t.mock.fn(async function save() { return this; });
@@ -34,11 +30,16 @@ test('convertQuotationToOrder copies lines, links both ways, marks quote convert
   const quotation = {
     _id: quoteId,
     tenant: tenantId,
+    soNumber: 'SO00002',
+    docType: 'quotation',
     currency: 'NGN',
     customer: oid(),
     items: [
       {
         product: oid(), subproduct: oid(), size: oid(),
+        lineType: 'product',
+        description: 'chilled, deliver Friday',
+        discountType: 'percentage',
         quantity: 10, unitPrice: 500, discount: 0, lineTotal: 5000,
         fulfilledQty: 3, postedQty: 2, returnedQty: 1,
       },
@@ -46,6 +47,7 @@ test('convertQuotationToOrder copies lines, links both ways, marks quote convert
     subtotal: 5000,
     discountTotal: 0,
     total: 5000,
+    paymentTerms: 'net_7',
     notes: 'some notes',
     terms: 'some terms',
     quoteStatus: 'sent',
@@ -54,25 +56,37 @@ test('convertQuotationToOrder copies lines, links both ways, marks quote convert
 
   const order = await svc.convertQuotationToOrder(quotation);
 
-  // Created order assertions
+  // It is the same document.
+  assert.strictEqual(order, quotation);
+  assert.strictEqual(String(order._id), String(quoteId));
+  assert.strictEqual(order.soNumber, 'SO00002');
+
+  // It is now an order, and it remembers it was a quotation.
   assert.strictEqual(order.docType, 'order');
   assert.strictEqual(order.orderStatus, 'draft');
-  assert.strictEqual(order.items[0].quantity, 10);
-  assert.strictEqual(order.items[0].unitPrice, 500);
-  assert.strictEqual(order.items[0].lineTotal, 5000);
+  assert.strictEqual(order.quoteStatus, 'converted');
+
+  // Fulfilment counters start clean.
   assert.strictEqual(order.items[0].fulfilledQty, 0);
   assert.strictEqual(order.items[0].postedQty, 0);
   assert.strictEqual(order.items[0].returnedQty, 0);
+
+  // The three fields the old hand-written copy silently dropped.
+  assert.strictEqual(order.items[0].lineType, 'product');
+  assert.strictEqual(order.items[0].description, 'chilled, deliver Friday');
+  assert.strictEqual(order.items[0].discountType, 'percentage');
+
+  // Pricing is untouched — nothing is re-priced at conversion.
+  assert.strictEqual(order.items[0].unitPrice, 500);
+  assert.strictEqual(order.items[0].lineTotal, 5000);
   assert.strictEqual(order.total, 5000);
-  assert.strictEqual(String(order.convertedFrom), String(quotation._id));
 
-  // SalesOrder.create was invoked with the expected payload shape
-  assert.strictEqual(createPayload.docType, 'order');
-  assert.strictEqual(createPayload.orderStatus, 'draft');
-  assert.strictEqual(String(createPayload.convertedFrom), String(quoteId));
+  // The payment clock starts now.
+  assert.ok(order.dueDate instanceof Date);
 
-  // Quotation mutation assertions
-  assert.strictEqual(quotation.quoteStatus, 'converted');
-  assert.strictEqual(String(quotation.convertedTo), String(order._id));
+  // No second document, so nothing to link.
+  assert.strictEqual(order.convertedTo, undefined);
+  assert.strictEqual(order.convertedFrom, undefined);
+
   assert.strictEqual(saveFn.mock.calls.length, 1);
 });
