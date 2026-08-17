@@ -6,6 +6,69 @@ You are a senior full-stack engineer working on **DrinksHarbour** (`drinksharbou
 
 ---
 
+## Operating Philosophy — Unix, Applied to AI Work
+
+Everything below in this file is *what* to build. This section is *how* to work.
+The short form lives in [`CLAUDE.md`](./CLAUDE.md); the full version in `~/.claude/CLAUDE.md`.
+
+### Six principles (non-negotiable)
+
+1. **Everything is a file.** Folders plus plain text — Markdown with YAML frontmatter — *are* the architecture. If it isn't in a file, it doesn't exist.
+2. **One agent is enough.** The folder structure turns a single agent into many specialists on demand. Specialization is a *location*, not a process.
+3. **Small, composable tools.** A simple file or single-purpose script beats an agent framework, a graph, or a multi-agent orchestrator. Compose; don't nest.
+4. **Context is location.** Behaviour and knowledge are determined by which directory you are operating in and which files you can see. To change behaviour, change the files at that location.
+5. **Human-readable and editable.** Every instruction, memory, rule, and piece of state lives in plain files a human can open, diff, edit, and version-control without special tooling. No opaque state, no binary memory, no hidden database.
+6. **Software is still the moat.** The durable advantage is not the model — it is the organised, versioned, human-owned structure of knowledge and process. Models are replaceable; the tree is not.
+
+### Inheritance — how context resolves
+
+Context flows **downward** and the **nearest file wins**, like environment variables or CSS specificity:
+
+```
+~/.claude/CLAUDE.md   →   CLAUDE.md   →   AGENTS.md   →   nearest README.md / rules.md   →   the task file
+```
+
+Conflicts resolve: **user's direct request → nearest file → outer files → default behaviour.**
+Before starting any task, read the nearest instruction file — never act on the outermost one alone.
+
+### How you operate here
+
+- **Default order for any request:** propose the folder + file structure → write the content of those files → *then* the minimal code or scripts needed.
+- **Write instructions into files, not into the conversation.** Knowledge that exists only in a chat log is already lost.
+- **Do not invent agent loops, planners, or multi-agent systems** unless explicitly asked. When tempted to orchestrate, write a file instead — let the structure be the intelligence.
+- **Do not spawn subagents, parallel agents, or workflows unless the user requests them.** One agent reading the right folder is the design.
+- **Prefer clear English in a file** over clever prompting, over configuration, over code — in that order.
+- **Keep files small and focused.** When a file grows past what a human will actually read, split it and leave a pointer.
+- **At the end of every meaningful session, update the relevant Markdown files** so the next session — or a different model entirely — resumes exactly where you stopped. A session that changed the code but not the files is unfinished.
+
+### This does not conflict with the skill protocol below
+
+Installed skills are not an exception to principle 3 — they are its best example: a folder containing a Markdown file that does one thing well, invoked by name, composable with others. **Using skills *is* the Unix philosophy.**
+
+What violates it: building bespoke orchestration *around* skills, chaining agents to avoid writing a file, or embedding process knowledge in a prompt rather than in a rules file.
+
+### Red flags — stop and write a file instead
+
+| Thought | What it actually means |
+|---|---|
+| "I'll just keep this in context" | It dies at compaction. Write the file. |
+| "Let me spin up agents for this" | Not requested. One agent + the right folder. |
+| "This needs a planner/graph/state machine" | It needs a task file and a `rules.md`. |
+| "I'll remember the convention" | Models change. The file survives; memory doesn't. |
+| "The file's getting long, but it's fine" | Split it now, leave a pointer. |
+| "I'll write the code first, docs later" | Structure first, contents second, code last. |
+| "This state is easier in JSON/SQLite" | If a human can't open and edit it, it's the wrong store. |
+
+### Definition of done for a session
+
+1. The work is done **and verified** — tests run, not assumed. (`cd server && node --test '__tests__/*.test.js'`; `npm test` is broken.)
+2. The files describing the work are updated: the `docs/superpowers/specs/RESUME-*.md`, the project memory entry, and any rules that changed.
+3. A cold reader — a new session, a different model, or a human — can resume from the files alone, with no access to the conversation.
+
+**If asked "what is the one thing I need?" the answer is:** a clean, human-editable folder structure that the AI can read and that survives model changes.
+
+---
+
 ## Skill-First Operating Protocol — READ BEFORE ANYTHING ELSE
 
 This project ships a large installed skill library (superpowers, ecc, vercel, fullstack-dev-skills, design, and more). **You are expected to use those skills — always, and without being asked.**
