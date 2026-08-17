@@ -9,6 +9,12 @@ import {
   NonProductLineRow,
   sectionSubtotals,
 } from './sales-line-read-rows';
+import {
+  fulfillmentLabel,
+  fulfillmentUnits,
+  warehouseName,
+  personName,
+} from './sales-fulfillment-view';
 
 const FULFILLMENT_STATUS: Record<string, { label: string; color: string }> = {
   pending: { label: 'Pending', color: '#d97706' },
@@ -50,17 +56,33 @@ export default function SalesOrderDetailLines({ so }: Props) {
                     </div>
                     <div>
                       <p className="font-mono text-sm font-bold text-brand">
-                        WH/OUT/{String(i + 1).padStart(5, '0')}
+                        {fulfillmentLabel(f, i)}
                       </p>
-                      <p className="text-xs text-gray-400">{fmtDate(f.at)}</p>
+                      <p className="text-xs text-gray-400">
+                        {[
+                          fmtDate(f.at),
+                          `${fulfillmentUnits(f)} units`,
+                          f.paymentMethod,
+                          personName(f.by),
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
                     </div>
                   </div>
-                  <span
-                    className="rounded-full px-2.5 py-1 text-xs font-semibold"
-                    style={{ background: `${fs.color}18`, color: fs.color }}
-                  >
-                    {fs.label}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {warehouseName(f.warehouseId) && (
+                      <span className="text-xs text-gray-500">
+                        {warehouseName(f.warehouseId)}
+                      </span>
+                    )}
+                    <span
+                      className="rounded-full px-2.5 py-1 text-xs font-semibold"
+                      style={{ background: `${fs.color}18`, color: fs.color }}
+                    >
+                      {fs.label}
+                    </span>
+                  </div>
                 </div>
               );
             })}
