@@ -79,3 +79,66 @@ test('a tenantId is required — a missing one would silently number across all 
     /requires a tenantId/
   );
 });
+
+// ── withSoNumber: the race the highest-number rule cannot close ──────────────
+// Two creates reading the same highest number both claim it; the loser gets an
+// E11000 from the unique {tenant, soNumber} index. That used to surface as a
+// 500. It should cost one extra round-trip instead.
+
+const svc = require('../services/salesOrder.service');
+
+function dupKeyError() {
+  const err = new Error('E11000 duplicate key error collection: test.salesorders');
+  err.code = 11000;
+  err.keyPattern = { tenant: 1, soNumber: 1 };
+  return err;
+}
+
+test('a duplicate soNumber retries with a fresh number', async (t) => {
+  let highest = 'SO00007';
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => ({ soNumber: highest }) }) }),
+  }));
+
+  const attempts = [];
+  const persist = async (soNumber) => {
+    attempts.push(soNumber);
+    if (attempts.length === 1) {
+      highest = 'SO00008'; // the winner's document now exists
+      throw dupKeyError();
+    }
+    return { soNumber };
+  };
+
+  const doc = await svc.withSoNumber(oid(), persist);
+
+  assert.deepStrictEqual(attempts, ['SO00008', 'SO00009']);
+  assert.strictEqual(doc.soNumber, 'SO00009');
+});
+
+test('a non-duplicate error is not retried', async (t) => {
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => null }) }),
+  }));
+
+  let calls = 0;
+  const persist = async () => {
+    calls += 1;
+    throw new Error('validation failed');
+  };
+
+  await assert.rejects(() => svc.withSoNumber(oid(), persist), /validation failed/);
+  assert.strictEqual(calls, 1);
+});
+
+test('a persistent duplicate gives up rather than looping forever', async (t) => {
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => null }) }),
+  }));
+
+  let calls = 0;
+  const persist = async () => { calls += 1; throw dupKeyError(); };
+
+  await assert.rejects(() => svc.withSoNumber(oid(), persist), /E11000/);
+  assert.strictEqual(calls, 5);
+});

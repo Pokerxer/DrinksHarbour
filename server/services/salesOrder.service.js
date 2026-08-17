@@ -396,6 +396,35 @@ function mapLine(input) {
   };
 }
 
+const SO_NUMBER_ATTEMPTS = 5;
+
+/**
+ * Claim a sales order number and persist with it, retrying if someone else
+ * claimed the same one first.
+ *
+ * generateSalesOrderNumber derives from the tenant's highest number, so two
+ * concurrent creates can read the same value and the loser gets an E11000 from
+ * the unique {tenant, soNumber} index. Re-deriving is enough: by then the
+ * winner's document exists, so the next read returns a higher number. Bounded,
+ * because a duplicate that survives five fresh derivations is not a race — it
+ * is a broken index or a corrupt number, and looping would hide it.
+ */
+async function withSoNumber(tenantId, persist) {
+  let lastErr;
+  for (let attempt = 0; attempt < SO_NUMBER_ATTEMPTS; attempt += 1) {
+    const soNumber = await generateSalesOrderNumber(tenantId);
+    try {
+      return await persist(soNumber);
+    } catch (err) {
+      const isDuplicateSoNumber =
+        err && err.code === 11000 && 'soNumber' in (err.keyPattern || {});
+      if (!isDuplicateSoNumber) throw err;
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Build + persist a SalesOrder. Snapshots line totals and order totals.
  * docType 'quotation' starts quoteStatus='draft'; 'order' starts orderStatus='draft'.
@@ -426,7 +455,6 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
   const withPromos = await resolveLinePromotions(priced, { tenantId });
   const items = withPromos.map(mapLine);
   const totals = computeTotals(items);
-  const soNumber = await generateSalesOrderNumber(tenantId);
   const paymentTerms = normalizePaymentTerms(body.paymentTerms);
 
   const shippingFee = Math.max(0, Number(body.shippingFee) || 0);
@@ -435,7 +463,7 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
     body.pricelist
   );
   totals.total = Math.max(0, totals.total - pricelistCartDiscount) + shippingFee;
-  return SalesOrder.create({
+  return withSoNumber(tenantId, (soNumber) => SalesOrder.create({
     tenant: tenantId,
     soNumber,
     docType,
@@ -458,7 +486,7 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
     notes: body.notes, terms: body.terms,
     warehouseId: body.warehouseId || null,
     ...(docType === 'quotation' ? { quoteStatus: 'draft' } : { orderStatus: 'draft' }),
-  });
+  }));
 }
 
 function canEdit(so) {
@@ -651,7 +679,6 @@ async function convertQuotationToOrder(quotation) {
  * counters, payment fields, and linked document references.
  */
 async function duplicateSalesOrderDoc(so) {
-  const soNumber = await generateSalesOrderNumber(so.tenant);
   const items = (so.items || []).map((it) => {
     const raw = typeof it.toObject === 'function' ? it.toObject() : { ...it };
     return {
@@ -666,32 +693,34 @@ async function duplicateSalesOrderDoc(so) {
       fulfilledQty: 0, postedQty: 0, returnedQty: 0,
     };
   });
-  const newDoc = new SalesOrder({
-    tenant: so.tenant,
-    soNumber,
-    docType: so.docType,
-    customer: so.customer,
-    customerSnapshot: so.customerSnapshot,
-    pricelist: so.pricelist,
-    appliedPricelist: so.appliedPricelist,
-    currency: so.currency,
-    items,
-    subtotal: so.subtotal, discountTotal: so.discountTotal,
-    promotionTotal: so.promotionTotal, pricelistCartDiscount: so.pricelistCartDiscount || 0,
-    taxTotal: so.taxTotal, total: so.total,
-    paymentTerms: so.paymentTerms || 'immediate',
-    dueDate: so.dueDate,
-    invoiceAddress: so.invoiceAddress, deliveryAddress: so.deliveryAddress,
-    notes: so.notes, terms: so.terms,
-    validUntil: so.validUntil, warehouseId: so.warehouseId,
-    fulfillments: [],
-    convertedFrom: undefined, convertedTo: undefined, relatedInvoice: undefined,
-    paymentStatus: 'unpaid', amountPaid: 0, walletTxRef: undefined,
-    loyaltyEarned: 0, loyaltyRedeemed: 0, pointsRedeemed: 0,
-    quoteStatus: so.docType === 'quotation' ? 'draft' : undefined,
-    orderStatus: so.docType === 'order' ? 'draft' : undefined,
+  return withSoNumber(so.tenant, (soNumber) => {
+    const newDoc = new SalesOrder({
+      tenant: so.tenant,
+      soNumber,
+      docType: so.docType,
+      customer: so.customer,
+      customerSnapshot: so.customerSnapshot,
+      pricelist: so.pricelist,
+      appliedPricelist: so.appliedPricelist,
+      currency: so.currency,
+      items,
+      subtotal: so.subtotal, discountTotal: so.discountTotal,
+      promotionTotal: so.promotionTotal, pricelistCartDiscount: so.pricelistCartDiscount || 0,
+      taxTotal: so.taxTotal, total: so.total,
+      paymentTerms: so.paymentTerms || 'immediate',
+      dueDate: so.dueDate,
+      invoiceAddress: so.invoiceAddress, deliveryAddress: so.deliveryAddress,
+      notes: so.notes, terms: so.terms,
+      validUntil: so.validUntil, warehouseId: so.warehouseId,
+      fulfillments: [],
+      convertedFrom: undefined, convertedTo: undefined, relatedInvoice: undefined,
+      paymentStatus: 'unpaid', amountPaid: 0, walletTxRef: undefined,
+      loyaltyEarned: 0, loyaltyRedeemed: 0, pointsRedeemed: 0,
+      quoteStatus: so.docType === 'quotation' ? 'draft' : undefined,
+      orderStatus: so.docType === 'order' ? 'draft' : undefined,
+    });
+    return newDoc.save();
   });
-  return newDoc.save();
 }
 
 // A caller-supplied filter names a document path, and that path is merged into
@@ -977,7 +1006,7 @@ async function getGroupedOrders({ matchQuery, groupBy, groupBySubOption, sort })
 module.exports = {
   lineTotalOf, lineTaxOf, mapLine, computeTotals, refreshOrderTotal,
   resolveCartThresholdDiscount,
-  applyCouponToOrder, createSalesOrderDoc,
+  applyCouponToOrder, createSalesOrderDoc, withSoNumber,
   canEdit, canCancel, applyEdit, recomputeOrderPricing, updatePricesForOrder,
   convertQuotationToOrder, duplicateSalesOrderDoc,
   PAYMENT_TERMS, computeDueDate, normalizePaymentTerms, normalizeAddress,
