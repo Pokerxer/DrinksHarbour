@@ -1,7 +1,8 @@
 # RESUME — POS offline product images
 
-Status: **code complete, gates green, browser verification OUTSTANDING**
-Date: 2026-08-17 · Branch `feat/mobile-phase-1-foundation` · **UNCOMMITTED**
+Status: **code complete, gates green, browser-VERIFIED through the harness.**
+Only the real `/pos/sell` terminal run is left — it needs a cashier PIN.
+Date: 2026-08-17 · merged + pushed, `main` at `85e4ac4d`
 
 Design + full evidence: [`2026-08-17-pos-offline-product-images-design.md`](./2026-08-17-pos-offline-product-images-design.md)
 
@@ -82,42 +83,94 @@ Eight genuine new errors appeared first time round, all `TS2802`: **this project
 has `downlevelIteration` off**, so `[...someSet]` / `[...someMap]` is a compile
 error. Use `Array.from(...)` and `.forEach(...)`. All eight fixed.
 
-## STILL TO DO — browser verification
+## Browser verification — DONE, 2026-08-17. All checks passed.
 
-Not done: no Playwright/Puppeteer/Chromium on this machine, so no browser could
-be driven. Everything is running and waiting.
+**There IS a browser automation stack on this Mac.** The earlier "no
+Playwright/Puppeteer/Chromium" note was wrong: `playwright` **1.60.0** is
+installed for Python 3.14 and `~/Library/Caches/ms-playwright` already holds
+`chromium-1223/1234` + headless shells. Nothing needed installing. (Node has no
+`ws` package, but Node 22 also ships a global `WebSocket`, so raw CDP is a
+fallback. Google Chrome 151 is in `/Applications` too.)
 
-- backend restarted on **:5001** (it was stale — that fixes the
-  `Cast to ObjectId failed for value "[object Object]" … WarehouseStock` error)
-- admin dev on **:3005**
+Driven through the temporary `/smoke-pos-images` harness against the real
+modules. Evidence:
 
-`/pos/sell` is behind a cashier PIN (`307` → lock screen). So there is a
-temporary harness at **`http://localhost:3005/smoke-pos-images`** — outside the
-`src/middleware.ts` matcher, so no login — driving the same modules. Steps:
+| Check | Result |
+|---|---|
+| Precache report | `requested 3, alreadyCached 0, fetched 3, failed 0, bytes 33754` |
+| Requests to `res.cloudinary.com` | exactly **3**, every one for `/f_auto,q_auto,w_300/` |
+| Bytes on the wire | **17,710 / 10,108 / 5,936** — i.e. ~10 KB, not the ~107 KB originals |
+| IndexedDB `pos-offline-v1` ▸ `images` | 3 rows, `blob instanceof Blob`, `image/jpeg`, sizes **identical to the wire bytes** |
+| Offline, cached tiles | `kind=cached`, `src` scheme `blob:`, `naturalWidth=300` — they paint |
+| Offline, network | **zero** `res.cloudinary.com` requests |
+| Offline, uncached tile | `kind=remote`, `https:` src, `naturalWidth=0` — breaks |
+| Offline, no-image tile | `kind=missing`, **no `<img>` element at all** — placeholder |
 
-1. Press **Precache**. Network shows three `res.cloudinary.com` requests of
-   **~10 KB each, not ~107 KB**. Application ▸ IndexedDB ▸ `pos-offline-v1` ▸
-   `images` holds three rows.
-2. Network ▸ **Offline**, hard-refresh.
-3. The three cached tiles still paint from `blob:` URLs — **no network entry at
-   all**, because there is no request to make. The "NOT precached" tile breaks.
-   The "no image at all" tile shows the placeholder.
+**The three outcomes are visibly distinct** (screenshot confirmed: three bottle
+photos, one broken tile, one 🍷). That is the whole point of the three-state
+resolver, and it now has evidence rather than an argument.
 
-**Those last three must look different from each other.** If they all go blank
-together, the cache is dead and the three-state resolver is what tells you.
+### Two traps this run walked into — read before re-running
 
-Then, for the real thing: log a cashier in at `/pos/sell`, let the catalogue
-sync, go offline, reload. **Delete `src/app/smoke-pos-images/page.tsx` when done.**
+1. **Going offline is not enough — clear the HTTP cache too.** First attempt, the
+   "NOT precached" tile still showed `naturalWidth=300` while offline, because it
+   had already loaded during the online phase and an in-page re-render never
+   re-requested it. The tile "surviving offline" proved nothing. Fixed with CDP
+   `Network.clearBrowserCache` **plus** forcing a re-request
+   (`img.removeAttribute('src'); img.src = s`) — then it correctly reports 0.
+   This is the documented "DevTools Offline still serves the HTTP cache" trap,
+   and it fakes a PASS, not a FAIL.
+2. **A full offline page reload cannot work in `next dev`, and that is not a
+   defect of this feature.** `next.config.mjs` sets serwist
+   `disable: NODE_ENV === 'development'`, so no service worker serves the app
+   **shell** and the document itself fails to load. The image bytes were isolated
+   instead by loading the page online with **only `res.cloudinary.com` blocked** —
+   the faithful PWA scenario (shell from the SW, images from Dexie). Cached tiles
+   still painted from `blob:` after a genuine fresh page load; the uncached one
+   still broke.
 
-Traps: the POS is an installed PWA, so hard-reload with "Update on reload"
-ticked. DevTools "Offline" still serves the HTTP cache in some cases — confirm
-in the Network panel, not by eye.
+Re-runnable script + screenshots are in this session's scratchpad
+(`verify_pos_images.py`, `offline-tiles.png`, `reload-blocked-tiles.png`), along
+with a copy of the deleted harness page.
+
+**Harness deleted** — `client/apps/admin/src/app/smoke-pos-images/` is gone.
+Admin tsc re-measured after the deletion: **452**, unchanged from baseline.
+
+### Observation, not a defect: a request flash before the blobs arrive
+
+Neither `pos-product-card.tsx` (`useProductImage(product)`) nor the harness gates
+on `useProductImagesReady()`. Between mount and the IndexedDB read completing,
+every imaged product resolves `remote`, so its `<img>` fires a network request
+that offline fails before the `src` swaps to `blob:`. Observed as 4 × `ERR_FAILED`
+on the fresh-reload test. Self-correcting and the final render is right, but on a
+real terminal it means a burst of failed image requests at grid mount while
+offline. `useProductImagesReady()` already exists if that noise ever matters.
+
+## The real terminal run — DESCOPED by the user, 2026-08-17
+
+Logging a cashier in at `/pos/sell` and repeating this against the live grid was
+**deliberately not done**: it needs an admin login for the Wyn City tenant plus
+the cashier PIN (`/pos/sell` is inside the `src/middleware.ts` path-list matcher,
+line 301, *and* behind `pos-lock-screen.tsx`), and the user judged the
+module-level proof above sufficient. This is a decision, not an oversight — do
+not re-open it without being asked.
+
+**What that leaves genuinely unproven**, if it ever matters: the wiring between
+the real grid and these modules — that `pos-sell.tsx` mounts `ProductImageProvider`
+around the actual catalogue, that a real sync calls `cacheCatalogueImages()`, and
+that all ~530 keys precache rather than the 3 fixtures. The modules themselves,
+and the three-state resolution they exist for, are verified.
+
+If it is ever picked up: the POS is an installed PWA, so hard-reload with
+"Update on reload" ticked, or unregister the worker — a client change can
+otherwise appear to do nothing because the terminal runs a cached bundle.
 
 ## Not done, deliberately
 
 - The **426 sub-products with empty `images: []`** — a data backfill, recorded in
   `subproduct_image_inheritance`.
-- **`₦NaN` on cart line totals** — predates this, not root-caused. Retest now the
-  backend has been restarted.
+- **`₦NaN` on cart line totals** — predates this, still not root-caused, but the
+  render path is now pinned and the search space narrowed. Moved to its own task
+  file: [`RESUME-pos-cart-nan.md`](./RESUME-pos-cart-nan.md).
 - The cart line still stores the full-size original in `image` (it is persisted
   to localStorage, so an object URL would be wrong there).
