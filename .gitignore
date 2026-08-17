@@ -8,8 +8,26 @@ node_modules/
 !**/.env.local.example
 server/.env
 
-# Local Claude Code settings / worktrees
+# AI assistant instructions, config and scratch — local tooling, not part of the
+# codebase. Matched at any depth, so nested copies are covered too.
+AGENTS.md
+AGENT.md
+CLAUDE.md
+GEMINI.md
+OPENCODE_SKILLS.md
 .claude/
+.opencode/
+.superpowers/
+superpowers/
+
+# Agent handoff / continuation notes
+*-prompt.md
+*-handoff.md
+.cursor/
+.cursorrules
+.windsurfrules
+.aider*
+.github/copilot-instructions.md
 
 # Third-party tool repo cloned into workspace (embedded git repo)
 Clawd-Code/
@@ -17,8 +35,6 @@ Clawd-Code/
 # Scratch debug scripts with live credentials
 server/_insp.js
 
-# subagent-driven-development scratch (progress ledger, review packages)
-.superpowers/
 .npm-cache/
 
 # Runtime TTS audio cache (fishAudio.service.js regenerates on demand)
