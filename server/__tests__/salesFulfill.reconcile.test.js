@@ -201,3 +201,110 @@ test('reconcileFulfillment with no matching lines is a no-op (no status change, 
   assert.strictEqual(so.orderStatus, 'confirmed');
   assert.strictEqual(so.fulfillments.length, 0);
 });
+
+// A POS fulfilment used to record nothing about itself: no warehouse (the
+// schema field existed and was never set), and the tender went to the ORDER,
+// where the next sale overwrote it. Sell 3 for cash today and 7 by transfer
+// tomorrow and the order claimed it was all transfer.
+
+test('reconcileFulfillment records the warehouse and the tender on the entry', async () => {
+  const warehouseId = 'wh-main';
+  const so = {
+    soNumber: 'SO00002', _id: 'so2', tenant: 't1',
+    total: 5000, amountPaid: 0,
+    items: [{
+      _id: 'l1', lineType: 'product', quantity: 10, unitPrice: 500,
+      lineTotal: 5000, fulfilledQty: 0, postedQty: 0,
+      discount: 0, promoDiscount: 0, taxRate: 0, taxAmount: 0,
+    }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+
+  await reconcileFulfillment({
+    salesOrder: so,
+    fulfillLines: [{ lineId: 'l1', qty: 4 }],
+    userId: 'u1', ref: 'RCP-1',
+    warehouseId, paymentMethod: 'cash',
+  });
+
+  assert.strictEqual(so.fulfillments.length, 1);
+  assert.strictEqual(so.fulfillments[0].warehouseId, warehouseId);
+  assert.strictEqual(so.fulfillments[0].paymentMethod, 'cash');
+  assert.strictEqual(so.fulfillments[0].ref, 'RCP-1');
+  assert.strictEqual(so.fulfillments[0].by, 'u1');
+});
+
+test('two tenders leave two entries, each with its own method', async () => {
+  const so = {
+    soNumber: 'SO00003', _id: 'so3', tenant: 't1',
+    total: 5000, amountPaid: 0,
+    items: [{
+      _id: 'l1', lineType: 'product', quantity: 10, unitPrice: 500,
+      lineTotal: 5000, fulfilledQty: 0, postedQty: 0,
+      discount: 0, promoDiscount: 0, taxRate: 0, taxAmount: 0,
+    }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+
+  await reconcileFulfillment({
+    salesOrder: so, fulfillLines: [{ lineId: 'l1', qty: 3 }],
+    ref: 'RCP-1', paymentMethod: 'cash',
+  });
+  await reconcileFulfillment({
+    salesOrder: so, fulfillLines: [{ lineId: 'l1', qty: 7 }],
+    ref: 'RCP-2', paymentMethod: 'transfer',
+  });
+
+  assert.deepStrictEqual(
+    so.fulfillments.map((f) => f.paymentMethod),
+    ['cash', 'transfer']
+  );
+});
+
+test('a fulfilment with no warehouse or tender omits them rather than storing undefined', async () => {
+  const so = {
+    soNumber: 'SO00004', _id: 'so4', tenant: 't1',
+    total: 5000, amountPaid: 0,
+    items: [{
+      _id: 'l1', lineType: 'product', quantity: 10, unitPrice: 500,
+      lineTotal: 5000, fulfilledQty: 0, postedQty: 0,
+      discount: 0, promoDiscount: 0, taxRate: 0, taxAmount: 0,
+    }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+
+  await reconcileFulfillment({ salesOrder: so, fulfillLines: [{ lineId: 'l1', qty: 1 }] });
+
+  assert.ok(!('warehouseId' in so.fulfillments[0]));
+  assert.ok(!('paymentMethod' in so.fulfillments[0]));
+});
+
+test('a replayed ref still short-circuits, and does not append a second entry', async () => {
+  const so = {
+    soNumber: 'SO00005', _id: 'so5', tenant: 't1',
+    total: 5000, amountPaid: 0,
+    items: [{
+      _id: 'l1', lineType: 'product', quantity: 10, unitPrice: 500,
+      lineTotal: 5000, fulfilledQty: 0, postedQty: 0,
+      discount: 0, promoDiscount: 0, taxRate: 0, taxAmount: 0,
+    }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+
+  await reconcileFulfillment({
+    salesOrder: so, fulfillLines: [{ lineId: 'l1', qty: 2 }],
+    ref: 'RCP-9', warehouseId: 'wh-main', paymentMethod: 'cash',
+  });
+  const again = await reconcileFulfillment({
+    salesOrder: so, fulfillLines: [{ lineId: 'l1', qty: 2 }],
+    ref: 'RCP-9', warehouseId: 'wh-other', paymentMethod: 'card',
+  });
+
+  assert.strictEqual(again.duplicate, true);
+  assert.strictEqual(so.fulfillments.length, 1);
+  assert.strictEqual(so.fulfillments[0].warehouseId, 'wh-main');
+});

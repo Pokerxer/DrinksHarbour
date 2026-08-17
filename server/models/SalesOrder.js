@@ -58,7 +58,14 @@ const fulfillmentSchema = new Schema({
   ref:    { type: String, trim: true },
   status: { type: String, default: 'posted' },
   at:     { type: Date, default: Date.now },
-  by:     { type: ObjectId },
+  // Who fulfilled it. `ref` matters: without it this cannot be populated into a
+  // name, which is why nothing ever rendered it. req.posUser and req.user are
+  // both User documents (pos.middleware.js).
+  by:     { type: ObjectId, ref: 'User' },
+  // The tender THIS fulfilment took. The order-level paymentMethod is
+  // overwritten by each sale, so a cash-then-transfer partial order otherwise
+  // claims it was all transfer.
+  paymentMethod: { type: String, trim: true },
 }, { _id: true });
 
 const SalesOrderSchema = new Schema(

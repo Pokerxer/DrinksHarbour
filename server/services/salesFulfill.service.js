@@ -27,10 +27,12 @@ const { applyFulfillment, buildPostingLines, fulfillStatus, postShippedStock, bu
  * @param {Object}   args.salesOrder   loaded SalesOrder doc (docType 'order')
  * @param {Array}    args.fulfillLines [{ lineId, qty }] keyed by SO line _id
  * @param {ObjectId} args.userId
- * @param {string}   [args.ref]        POS receipt number — dedupes a replay
+ * @param {string}   [args.ref]           POS receipt number — dedupes a replay
+ * @param {ObjectId} [args.warehouseId]   where the stock actually left from
+ * @param {string}   [args.paymentMethod] the tender THIS fulfilment took
  * @returns {Promise<{ order, reconciled: number, duplicate: boolean }>}
  */
-async function reconcileFulfillment({ salesOrder, fulfillLines, userId, ref }) {
+async function reconcileFulfillment({ salesOrder, fulfillLines, userId, ref, warehouseId, paymentMethod }) {
   // Already applied under this receipt — return the order untouched rather than
   // fulfilling and charging a second time.
   if (ref && (salesOrder.fulfillments || []).some((f) => f.ref && String(f.ref) === String(ref))) {
@@ -54,6 +56,8 @@ async function reconcileFulfillment({ salesOrder, fulfillLines, userId, ref }) {
       items: lines.map((l) => ({ lineId: String(l.lineId), qty: l.delta })),
       status: 'reconciled', at: new Date(), by: userId,
       ...(ref ? { ref: String(ref) } : {}),
+      ...(warehouseId ? { warehouseId } : {}),
+      ...(paymentMethod ? { paymentMethod: String(paymentMethod) } : {}),
     });
   }
 
