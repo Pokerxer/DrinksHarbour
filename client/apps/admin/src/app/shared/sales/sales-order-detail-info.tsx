@@ -9,6 +9,7 @@ import {
   addressesDiffer,
   fmtDate,
 } from './sales-helpers';
+import { warehouseName } from './sales-fulfillment-view';
 
 interface Props {
   so: SalesOrder;
@@ -32,6 +33,22 @@ export default function SalesOrderDetailInfo({ so }: Props) {
               {fmtDate(so.createdAt)}
             </span>
           </div>
+          {so.salesperson && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Salesperson</span>
+              <span className="text-sm font-medium text-gray-800">
+                {so.salesperson}
+              </span>
+            </div>
+          )}
+          {warehouseName(so.warehouseId) && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Warehouse</span>
+              <span className="text-sm font-medium text-gray-800">
+                {warehouseName(so.warehouseId)}
+              </span>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500">Payment Terms</span>
             <span className="text-sm font-medium text-gray-800">
@@ -62,7 +79,7 @@ export default function SalesOrderDetailInfo({ so }: Props) {
               {so.paymentStatus === 'paid'
                 ? `Paid · ${so.paymentMethod ?? '—'}`
                 : so.paymentStatus === 'partial'
-                  ? `${fmtCur(so.amountPaid ?? 0, so.currency)} of ${fmtCur(so.total, so.currency)} paid`
+                  ? `${fmtCur(so.amountPaid ?? 0, so.currency)} of ${fmtCur(so.total, so.currency)} paid${so.paymentMethod ? ` · ${so.paymentMethod}` : ''}`
                   : 'Unpaid'}
             </span>
           </div>
