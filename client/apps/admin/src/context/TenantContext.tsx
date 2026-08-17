@@ -27,7 +27,16 @@ export interface AdminTenantData {
 
 interface TenantContextValue {
   tenant: AdminTenantData | null;
-  isMainSite: boolean; // true when no subdomain (platform admin view)
+  /**
+   * True when there is no tenant in context at all — the platform admin view.
+   *
+   * NOT "no subdomain", which is what it used to mean. A tenant user signing in
+   * at admin.drinksharbour.com is on no subdomain but is emphatically not the
+   * platform: the root layout now resolves their tenant from the session, so
+   * everything branded shows their shop rather than DrinksHarbour. See
+   * `resolveTenantSlug` in ./tenant-slug.ts.
+   */
+  isMainSite: boolean;
   tenantSlug: string | null;
 }
 

@@ -9,10 +9,8 @@ import { JotaiProvider, ThemeProvider } from '@/app/shared/theme-provider';
 import { siteConfig } from '@/config/site.config';
 import { inter, lexendDeca } from '@/app/fonts';
 import cn from '@core/utils/class-names';
-import {
-  TenantProvider,
-  type AdminTenantData,
-} from '@/context/TenantContext';
+import { TenantProvider, type AdminTenantData } from '@/context/TenantContext';
+import { resolveTenantSlug } from '@/context/tenant-slug';
 import ExtensionErrorFilter from '@/components/extension-error-filter';
 // import NextProgress from '@core/components/next-progress';
 // import ChatbotWidget from '@/components/Chatbot/ChatbotWidget';
@@ -103,7 +101,17 @@ export default async function RootLayout({
   const session = await getServerSession(authOptions);
 
   const headersList = await headers();
-  const tenantSlug = headersList.get('x-tenant-slug');
+  // The subdomain names the tenant when there is one; otherwise the signed-in
+  // user's own tenant does. Without the second half, every tenant user working
+  // at admin.drinksharbour.com (or localhost) had no tenant in context at all,
+  // and everything branded — the sidebar, the dashboard hero, the printed
+  // employee badge — fell back to the platform's name and colour instead of
+  // the shop's. See `resolveTenantSlug` for why the subdomain wins.
+  const tenantSlug = resolveTenantSlug({
+    hostSlug: headersList.get('x-tenant-slug'),
+    sessionTenantSlug: (session?.user as { tenantSlug?: string | null })
+      ?.tenantSlug,
+  });
   const initialTenant: AdminTenantData | null = tenantSlug
     ? await fetchTenantBySlug(tenantSlug)
     : null;
