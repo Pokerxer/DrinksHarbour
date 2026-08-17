@@ -426,7 +426,7 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
   const withPromos = await resolveLinePromotions(priced, { tenantId });
   const items = withPromos.map(mapLine);
   const totals = computeTotals(items);
-  const soNumber = await generateSalesOrderNumber();
+  const soNumber = await generateSalesOrderNumber(tenantId);
   const paymentTerms = normalizePaymentTerms(body.paymentTerms);
 
   const shippingFee = Math.max(0, Number(body.shippingFee) || 0);
@@ -607,7 +607,7 @@ async function applyEdit(so, body) {
  * counters on each line. Links both docs and marks the quotation converted.
  */
 async function convertQuotationToOrder(quotation) {
-  const soNumber = await generateSalesOrderNumber();
+  const soNumber = await generateSalesOrderNumber(quotation.tenant);
   const order = await SalesOrder.create({
     tenant: quotation.tenant,
     soNumber,
@@ -651,7 +651,7 @@ async function convertQuotationToOrder(quotation) {
  * counters, payment fields, and linked document references.
  */
 async function duplicateSalesOrderDoc(so) {
-  const soNumber = await generateSalesOrderNumber();
+  const soNumber = await generateSalesOrderNumber(so.tenant);
   const items = (so.items || []).map((it) => {
     const raw = typeof it.toObject === 'function' ? it.toObject() : { ...it };
     return {

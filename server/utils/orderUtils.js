@@ -96,10 +96,30 @@ async function generateReturnNumber() {
   return `RTN-${y}${m}${d}-${(count + 1).toString().padStart(4, '0')}`;
 }
 
-async function generateSalesOrderNumber() {
-  const count = await SalesOrder.countDocuments({});
-  const sequence = (count + 1).toString().padStart(5, '0');
-  return `SO${sequence}`;
+/**
+ * The next sales order number for one tenant.
+ *
+ * Derived from the tenant's HIGHEST existing number, never from a count — the
+ * same rule, and the same reason, as purchase orders
+ * (purchaseOrder.controller.js). A count goes backwards when a document is
+ * deleted and re-issues a number that is still in use, which the unique
+ * {tenant, soNumber} index then rejects as a hard 500. Fixed-width zero
+ * padding is what makes the lexicographic sort the numeric sort.
+ *
+ * Two callers racing can still read the same highest number; the retry in
+ * salesOrder.service.js (withSoNumber) closes that.
+ */
+async function generateSalesOrderNumber(tenantId) {
+  if (!tenantId) throw new Error('generateSalesOrderNumber requires a tenantId');
+  const last = await SalesOrder.findOne({
+    tenant: tenantId,
+    soNumber: { $regex: /^SO\d+$/ },
+  })
+    .sort({ soNumber: -1 })
+    .select('soNumber')
+    .lean();
+  const lastSeq = last ? parseInt(last.soNumber.slice(2), 10) : 0;
+  return `SO${String(lastSeq + 1).padStart(5, '0')}`;
 }
 
 module.exports = {

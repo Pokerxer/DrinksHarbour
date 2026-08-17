@@ -12,28 +12,35 @@ const oid = () => new mongoose.Types.ObjectId();
 // mongodb-memory-server (that package is not a dependency anywhere in this
 // repo). We follow the same convention here.
 
-test('generateSalesOrderNumber produces an SO-prefixed daily-sequenced string, and advances after a doc is created', async (t) => {
+test('generateSalesOrderNumber produces an SO-prefixed per-tenant sequence', async (t) => {
   const { generateSalesOrderNumber } = require('../utils/orderUtils');
+  const tenantId = oid();
 
-  t.mock.method(SalesOrder, 'countDocuments', async () => 0);
-  const a = await generateSalesOrderNumber();
-  assert.match(a, /^SO\d{6}\d{4}$/);
-  assert.strictEqual(a, `SO${a.slice(2, 8)}0001`);
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => null }) }),
+  }));
+  const a = await generateSalesOrderNumber(tenantId);
+  assert.match(a, /^SO\d{5}$/);
+  assert.strictEqual(a, 'SO00001');
 
-  // Simulate a doc having been created today: count advances to 1.
-  SalesOrder.countDocuments.mock.restore();
-  t.mock.method(SalesOrder, 'countDocuments', async () => 1);
-  const b = await generateSalesOrderNumber();
-  assert.match(b, /^SO\d{6}\d{4}$/);
+  // Simulate that document now existing: the highest is SO00001.
+  SalesOrder.findOne.mock.restore();
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => ({ soNumber: 'SO00001' }) }) }),
+  }));
+  const b = await generateSalesOrderNumber(tenantId);
+  assert.match(b, /^SO\d{5}$/);
   assert.notStrictEqual(a, b);
-  assert.strictEqual(b, `SO${b.slice(2, 8)}0002`);
+  assert.strictEqual(b, 'SO00002');
 });
 
 test('createSalesOrderDoc persists a tenant-scoped order with snapshot totals', async (t) => {
   const svc = require('../services/salesOrder.service');
   const tenantId = oid();
 
-  t.mock.method(SalesOrder, 'countDocuments', async () => 0);
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => null }) }),
+  }));
   t.mock.method(SalesOrder, 'create', async (doc) => doc);
 
   const so = await svc.createSalesOrderDoc({
@@ -48,5 +55,5 @@ test('createSalesOrderDoc persists a tenant-scoped order with snapshot totals', 
   assert.strictEqual(so.items[0].lineTotal, 10000);
   assert.strictEqual(so.total, 10000);
   assert.strictEqual(so.orderStatus, 'draft');
-  assert.match(so.soNumber, /^SO\d{6}\d{4}$/);
+  assert.match(so.soNumber, /^SO\d{5}$/);
 });

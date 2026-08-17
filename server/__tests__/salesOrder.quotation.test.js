@@ -19,7 +19,9 @@ test('convertQuotationToOrder copies lines, links both ways, marks quote convert
   const tenantId = oid();
   const quoteId = oid();
 
-  t.mock.method(SalesOrder, 'countDocuments', async () => 0);
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => null }) }),
+  }));
 
   let createPayload;
   t.mock.method(SalesOrder, 'create', async (payload) => {

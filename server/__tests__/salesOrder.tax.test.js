@@ -49,7 +49,9 @@ test('computeTotals on an all-zero-rate basket leaves total == untaxed (back-com
 test('createSalesOrderDoc snapshots per-line taxRate/lineTax and order taxTotal', async (t) => {
   const svc = require('../services/salesOrder.service');
   const tenantId = oid();
-  t.mock.method(SalesOrder, 'countDocuments', async () => 0);
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => null }) }),
+  }));
   t.mock.method(SalesOrder, 'create', async (doc) => doc);
 
   const so = await svc.createSalesOrderDoc({
@@ -71,7 +73,9 @@ test('createSalesOrderDoc snapshots per-line taxRate/lineTax and order taxTotal'
 
 test('convertQuotationToOrder carries the tax snapshot across verbatim', async (t) => {
   const svc = require('../services/salesOrder.service');
-  t.mock.method(SalesOrder, 'countDocuments', async () => 0);
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => null }) }),
+  }));
   t.mock.method(SalesOrder, 'create', async (doc) => ({ ...doc, _id: oid() }));
 
   const quotation = {

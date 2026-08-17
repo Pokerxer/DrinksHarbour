@@ -50,9 +50,11 @@ test('quotation -> convert -> confirm -> fulfill 60 -> fulfill 40 -> return 20: 
     };
     return doc;
   });
-  // generateSalesOrderNumber (utils/orderUtils.js) counts via
-  // SalesOrder.countDocuments — stub that too so doc creation needs no DB.
-  t.mock.method(SalesOrder, 'countDocuments', async () => 0);
+  // generateSalesOrderNumber (utils/orderUtils.js) reads the tenant's highest
+  // number via SalesOrder.findOne — stub that too so doc creation needs no DB.
+  t.mock.method(SalesOrder, 'findOne', () => ({
+    sort: () => ({ select: () => ({ lean: async () => null }) }),
+  }));
 
   // ---- 1. Quotation ----------------------------------------------------
   const quote = await svc.createSalesOrderDoc({
