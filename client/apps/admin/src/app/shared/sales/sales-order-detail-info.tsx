@@ -28,27 +28,37 @@ export default function SalesOrderDetailInfo({ so }: Props) {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500">Order Date</span>
-            <span className="text-sm font-medium text-gray-800">{fmtDate(so.createdAt)}</span>
+            <span className="text-sm font-medium text-gray-800">
+              {fmtDate(so.createdAt)}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500">Payment Terms</span>
-            <span className="text-sm font-medium text-gray-800">{paymentTermsLabel(so.paymentTerms)}</span>
+            <span className="text-sm font-medium text-gray-800">
+              {paymentTermsLabel(so.paymentTerms)}
+            </span>
           </div>
           {so.dueDate && (
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Due Date</span>
-              <span className="text-sm font-medium text-gray-800">{fmtDate(so.dueDate)}</span>
+              <span className="text-sm font-medium text-gray-800">
+                {fmtDate(so.dueDate)}
+              </span>
             </div>
           )}
           {so.appliedPricelist?.pricelistName && (
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Pricelist</span>
-              <span className="text-sm font-medium text-gray-800">{so.appliedPricelist.pricelistName}</span>
+              <span className="text-sm font-medium text-gray-800">
+                {so.appliedPricelist.pricelistName}
+              </span>
             </div>
           )}
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500">Payment</span>
-            <span className={`text-sm font-semibold ${so.paymentStatus === 'paid' ? 'text-emerald-600' : 'text-amber-600'}`}>
+            <span
+              className={`text-sm font-semibold ${so.paymentStatus === 'paid' ? 'text-emerald-600' : 'text-amber-600'}`}
+            >
               {so.paymentStatus === 'paid'
                 ? `Paid · ${so.paymentMethod ?? '—'}`
                 : so.paymentStatus === 'partial'
@@ -60,7 +70,8 @@ export default function SalesOrderDetailInfo({ so }: Props) {
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Loyalty</span>
               <span className="text-sm font-medium text-emerald-600">
-                {so.pointsRedeemed} pts · −{fmtCur(so.loyaltyRedeemed ?? 0, so.currency)}
+                {so.pointsRedeemed} pts · −
+                {fmtCur(so.loyaltyRedeemed ?? 0, so.currency)}
               </span>
             </div>
           )}
@@ -71,20 +82,40 @@ export default function SalesOrderDetailInfo({ so }: Props) {
         <h2 className="mb-4 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
           {hasShipTo ? 'Invoicing & Shipping' : 'Invoicing Address'}
         </h2>
-        <div className={`grid gap-4 ${hasShipTo ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div
+          className={`grid gap-4 ${hasShipTo ? 'grid-cols-2' : 'grid-cols-1'}`}
+        >
           <div>
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-brand">Bill To</p>
-            <p className="text-sm font-semibold text-gray-900">{so.customerSnapshot?.name ?? 'Walk-in Customer'}</p>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-brand">
+              Bill To
+            </p>
+            <p className="text-sm font-semibold text-gray-900">
+              {so.customerSnapshot?.name ?? 'Walk-in Customer'}
+            </p>
             {addressLines(so.invoiceAddress).map((l) => (
-              <p key={l} className="mt-0.5 text-xs leading-relaxed text-gray-500">{l}</p>
+              <p
+                key={l}
+                className="mt-0.5 text-xs leading-relaxed text-gray-500"
+              >
+                {l}
+              </p>
             ))}
           </div>
           {hasShipTo && (
             <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-brand">Ship To</p>
-              <p className="text-sm font-semibold text-gray-900">{ship?.name ?? so.customerSnapshot?.name ?? '—'}</p>
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-brand">
+                Ship To
+              </p>
+              <p className="text-sm font-semibold text-gray-900">
+                {ship?.name ?? so.customerSnapshot?.name ?? '—'}
+              </p>
               {addressLines(ship).map((l) => (
-                <p key={l} className="mt-0.5 text-xs leading-relaxed text-gray-500">{l}</p>
+                <p
+                  key={l}
+                  className="mt-0.5 text-xs leading-relaxed text-gray-500"
+                >
+                  {l}
+                </p>
               ))}
             </div>
           )}

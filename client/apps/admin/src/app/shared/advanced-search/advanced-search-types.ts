@@ -1,4 +1,12 @@
-export type FilterFieldType = 'text' | 'select' | 'multi-select' | 'date' | 'date-range' | 'number' | 'number-range' | 'boolean';
+export type FilterFieldType =
+  | 'text'
+  | 'select'
+  | 'multi-select'
+  | 'date'
+  | 'date-range'
+  | 'number'
+  | 'number-range'
+  | 'boolean';
 
 export interface FilterOption {
   label: string;
@@ -16,8 +24,25 @@ export interface FilterConfig {
 }
 
 export interface FilterValue {
+  /** The UI's identity for this filter — FilterConfig.id, e.g. 'payment_status'. */
   fieldId: string;
-  operator: 'equals' | 'not_equals' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'in' | 'is_set';
+  /**
+   * The document path the server filters on — FilterConfig.field, e.g.
+   * 'paymentStatus'. Optional only so favourites saved before this key existed
+   * still parse; they are resolved from `fieldId` when sent.
+   */
+  field?: string;
+  operator:
+    | 'equals'
+    | 'not_equals'
+    | 'contains'
+    | 'gt'
+    | 'gte'
+    | 'lt'
+    | 'lte'
+    | 'between'
+    | 'in'
+    | 'is_set';
   value: string | number | boolean | [string, string] | string[];
   label: string;
 }

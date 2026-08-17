@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { PiCheck, PiX } from 'react-icons/pi';
 import { salesOrderService } from '@/services/salesOrder.service';
 import toast from 'react-hot-toast';
-import type { OptionalCol } from './sales-list-helpers';
+import type { OptionalCol } from './sales-list-columns';
 
 interface Props {
   open: boolean;
@@ -13,24 +13,18 @@ interface Props {
   token: string;
 }
 
-export const OPTIONAL_COLS: OptionalCol[] = [
-  { key: 'creationDate', label: 'Creation Date', visible: true },
-  { key: 'deliveryDate', label: 'Delivery Date', visible: false },
-  { key: 'expectedDate', label: 'Expected Date', visible: false },
-  { key: 'website', label: 'Website', visible: false },
-  { key: 'activities', label: 'Activities', visible: true },
-  { key: 'salesTeam', label: 'Sales Team', visible: false },
-  { key: 'untaxedAmount', label: 'Untaxed Amount', visible: false },
-  { key: 'tasks', label: 'Tasks', visible: false },
-  { key: 'total', label: 'Total', visible: true },
-  { key: 'tags', label: 'Tags', visible: false },
-  { key: 'warehouse', label: 'Warehouse', visible: true },
-  { key: 'invoiceStatus', label: 'Invoice Status', visible: false },
-  { key: 'customerRef', label: 'Customer Reference', visible: false },
-  { key: 'expiration', label: 'Expiration', visible: false },
-];
+// The chooser no longer keeps its own list. It used to declare fourteen
+// toggles while the table rendered six of them, so eight ticked a box and did
+// nothing. `sales-list-columns.ts` is the one declaration; a column that can be
+// offered here is a column the table renders.
+export { OPTIONAL_COLS } from './sales-list-columns';
 
-export default function SalesListColumnChooser({ open, cols, onToggle, token }: Props) {
+export default function SalesListColumnChooser({
+  open,
+  cols,
+  onToggle,
+  token,
+}: Props) {
   const [customFormOpen, setCustomFormOpen] = useState(false);
   const [fieldName, setFieldName] = useState('');
   const [fieldType, setFieldType] = useState('text');
@@ -43,10 +37,11 @@ export default function SalesListColumnChooser({ open, cols, onToggle, token }: 
     if (!fieldName.trim()) return;
     setSubmitting(true);
     try {
-      const body: { fieldName: string; fieldType: string; options?: string[] } = {
-        fieldName: fieldName.trim(),
-        fieldType,
-      };
+      const body: { fieldName: string; fieldType: string; options?: string[] } =
+        {
+          fieldName: fieldName.trim(),
+          fieldType,
+        };
       if (fieldType === 'select' && options.trim()) {
         body.options = options.split(',').map((s) => s.trim());
       }
@@ -57,7 +52,9 @@ export default function SalesListColumnChooser({ open, cols, onToggle, token }: 
       setFieldType('text');
       setOptions('');
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create field');
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to create field'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -82,9 +79,7 @@ export default function SalesListColumnChooser({ open, cols, onToggle, token }: 
         >
           <span
             className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-              col.visible
-                ? 'border-brand bg-brand'
-                : 'border-gray-300 bg-white'
+              col.visible ? 'border-brand bg-brand' : 'border-gray-300 bg-white'
             }`}
           >
             {col.visible && <PiCheck className="h-3 w-3 text-white" />}
@@ -96,8 +91,14 @@ export default function SalesListColumnChooser({ open, cols, onToggle, token }: 
         {customFormOpen ? (
           <div className="space-y-2 px-3 py-1">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-500">New Custom Field</span>
-              <button type="button" onClick={() => setCustomFormOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <span className="text-xs font-semibold text-gray-500">
+                New Custom Field
+              </span>
+              <button
+                type="button"
+                onClick={() => setCustomFormOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <PiX className="h-3.5 w-3.5" />
               </button>
             </div>

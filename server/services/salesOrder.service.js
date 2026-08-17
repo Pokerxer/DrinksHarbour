@@ -694,10 +694,30 @@ async function duplicateSalesOrderDoc(so) {
   return newDoc.save();
 }
 
+// A caller-supplied filter names a document path, and that path is merged into
+// the same query object that carries the tenant scope. So the set of paths a
+// filter may name is an allowlist, and the schema itself is the only version of
+// that list that cannot drift: a field added to SalesOrder becomes filterable,
+// a field removed stops being filterable, with no second list to update.
+//
+// NEVER_FILTERABLE is what a client must not be able to name even though the
+// schema declares it. `tenant` is the isolation boundary — naming it let one
+// tenant read another's orders (the filter query is merged over the scope).
+// `_id`/`__v` are plumbing and are reachable through the detail route.
+const NEVER_FILTERABLE = new Set(['tenant', '_id', '__v']);
+
+function isFilterablePath(field) {
+  if (typeof field !== 'string' || NEVER_FILTERABLE.has(field)) return false;
+  return Object.prototype.hasOwnProperty.call(SalesOrder.schema.paths, field);
+}
+
 /**
  * Build a MongoDB query object from an array of structured filter objects.
  * Accepts a JSON string or a parsed array. Returns an empty object on invalid
  * input so callers can safely Object.assign it into their query.
+ *
+ * `field` is the SalesOrder document path. A filter naming anything else — a
+ * UI-only id, a field that does not exist, the tenant scope — is dropped.
  */
 function buildFilterQuery(filtersRaw) {
   if (!filtersRaw) return {};
@@ -711,7 +731,7 @@ function buildFilterQuery(filtersRaw) {
 
   const q = {};
   for (const f of filters) {
-    if (!f.field || !f.operator) continue;
+    if (!f.operator || !isFilterablePath(f.field)) continue;
     const val = f.value;
     switch (f.operator) {
       case 'equals': q[f.field] = val; break;
@@ -827,6 +847,22 @@ async function bulkSendEmail(doc, to, subject, body) {
  * Map a groupBy ID + subOption to the value extractor function used in
  * getGroupedOrders. Returns (doc) => string | number | Date.
  */
+// Group labels for the two lifecycle enums. Kept beside the extractor so a new
+// enum member cannot quietly fall into a neighbouring bucket.
+const PAYMENT_STATUS_LABEL = {
+  unpaid: 'Unpaid',
+  partial: 'Partial',
+  paid: 'Paid',
+};
+
+const ORDER_STATUS_LABEL = {
+  draft: 'Draft',
+  confirmed: 'Confirmed',
+  partially_fulfilled: 'Partially Fulfilled',
+  fulfilled: 'Fulfilled',
+  cancelled: 'Cancelled',
+};
+
 function groupByExtractor(groupBy, groupBySubOption) {
   switch (groupBy) {
     case 'salesperson':
@@ -863,8 +899,12 @@ function groupByExtractor(groupBy, groupBySubOption) {
     }
     case 'paymentMethod':
       return (d) => d.paymentMethod || 'None';
-    case 'defaultSalesPriceInclude':
-      return () => 'N/A';
+    // Absent means nothing was collected. Defaulting either of these to a
+    // settled/complete bucket would overstate what has happened to the order.
+    case 'paymentStatus':
+      return (d) => PAYMENT_STATUS_LABEL[d.paymentStatus] || PAYMENT_STATUS_LABEL.unpaid;
+    case 'orderStatus':
+      return (d) => ORDER_STATUS_LABEL[d.orderStatus] || ORDER_STATUS_LABEL.draft;
     case 'general': case 'dates': case 'customer':
     case 'pricing': case 'delivery': case 'status':
     case 'sales': case 'other':
@@ -895,12 +935,31 @@ function groupByExtractor(groupBy, groupBySubOption) {
  * Fetch sales orders grouped by a field/value extractor.
  * When groupBy is falsy, returns null (caller uses paginated fallback).
  */
+// The grouped path has no pagination — the client sends no page/limit when
+// groupBy is set, because a group must be counted over the whole result set.
+// So this fetch is bounded two ways: it asks for only the fields the list
+// renders, and it stops at a cap. When it does stop short it says so, with the
+// true total, rather than handing back a partial answer that looks complete.
+const GROUP_FETCH_CAP = 2000;
+
+// Everything the list, the group headers and the CSV export read. The heavy
+// fields — items[], fulfillments[], the address subdocs, the free-text blocks —
+// are excluded; none of them reach a rendered cell.
+const GROUP_LIST_PROJECTION =
+  '-items -fulfillments -invoiceAddress -deliveryAddress -notes -terms';
+
 async function getGroupedOrders({ matchQuery, groupBy, groupBySubOption, sort }) {
   if (!groupBy || groupBy === 'none') return null;
   const docs = await SalesOrder.find(matchQuery)
+    .select(GROUP_LIST_PROJECTION)
     .sort(sort || { createdAt: -1 })
     .populate('warehouseId', 'name')
+    .limit(GROUP_FETCH_CAP)
     .lean();
+
+  const truncated = docs.length >= GROUP_FETCH_CAP;
+  const total = truncated ? await SalesOrder.countDocuments(matchQuery) : docs.length;
+
   const extract = groupByExtractor(groupBy, groupBySubOption);
   const map = new Map();
   for (const d of docs) {
@@ -911,7 +970,8 @@ async function getGroupedOrders({ matchQuery, groupBy, groupBySubOption, sort })
     g.docs.push(d);
     map.set(key, g);
   }
-  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  const groups = Array.from(map.values()).sort((a, b) => b.count - a.count);
+  return { groups, truncated, fetched: docs.length, total };
 }
 
 module.exports = {
@@ -922,7 +982,8 @@ module.exports = {
   convertQuotationToOrder, duplicateSalesOrderDoc,
   PAYMENT_TERMS, computeDueDate, normalizePaymentTerms, normalizeAddress,
   resolveLinePromotions, resolveLinePricing,
-  buildFilterQuery, groupByExtractor, getGroupedOrders,
+  buildFilterQuery, isFilterablePath, groupByExtractor, getGroupedOrders,
+  GROUP_FETCH_CAP,
   bulkMarkSent, bulkDuplicate, bulkDeleteDoc, bulkCancelDoc,
   bulkCreateInvoice, bulkAccruedRevenue, bulkFollowers, bulkSendEmail,
 };

@@ -70,7 +70,11 @@ export interface SalesOrder {
   soNumber: string;
   docType: 'quotation' | 'order';
   warehouseId?: { _id: string; name: string } | string | null;
-  salesperson?: { _id: string; name: string } | null;
+  // A NAME, not a ref. The schema declares `salesperson: { type: String }` and
+  // it is written from req.user.name at create time; nothing ever populates it
+  // into an object. Declaring it as `{ _id, name }` here made every consumer's
+  // `typeof === 'object'` check fail silently and render '—'.
+  salesperson?: string;
   customer?: string;
   customerSnapshot?: SalesOrderCustomerSnapshot;
   pricelist?: string | null;
@@ -105,6 +109,8 @@ export interface SalesOrder {
   loyaltyRedeemed?: number;
   pointsRedeemed?: number;
   fulfillments: SalesOrderFulfillment[];
+  /** Set once an invoice has been created from this order. */
+  relatedInvoice?: string | null;
   convertedFrom?: string;
   convertedTo?: string;
   relatedSales?: string[];
@@ -193,6 +199,14 @@ export interface SalesOrderListResponse {
   total?: number;
   page?: number;
   totalPages?: number;
+  /**
+   * Grouped responses only. The grouped path is unpaginated and capped
+   * server-side; `truncated` says the cap was hit, `fetched` how many rows the
+   * groups were actually built from. Without these a capped grouping reads as
+   * a complete one.
+   */
+  truncated?: boolean;
+  fetched?: number;
 }
 
 export interface FulfillResponse {
@@ -258,25 +272,18 @@ export const salesOrderService = {
       groupBy?: string;
       groupBySubOption?: string;
       filters?: string;
+      [key: string]: string | number | undefined;
     } = {}
   ): Promise<SalesOrderListResponse> {
+    // Serialised generically. The previous hand-written `if (params.x) qs.set`
+    // list meant a param the caller set but this list had not learned about was
+    // dropped on the floor without a word.
     const qs = new URLSearchParams();
-    if (params.docType) qs.set('docType', params.docType);
-    if (params.status) qs.set('status', params.status);
-    if (params.customer) qs.set('customer', params.customer);
-    if (params.salesperson) qs.set('salesperson', params.salesperson);
-    if (params.search) qs.set('search', params.search);
-    if (params.dateFrom) qs.set('dateFrom', params.dateFrom);
-    if (params.dateTo) qs.set('dateTo', params.dateTo);
-    if (params.page) qs.set('page', String(params.page));
-    if (params.limit) qs.set('limit', String(params.limit));
-    if (params.warehouse) qs.set('warehouse', params.warehouse);
-    if (params.paymentMethod) qs.set('paymentMethod', params.paymentMethod);
-    if (params.paymentStatus) qs.set('paymentStatus', params.paymentStatus);
-    if (params.groupBy) qs.set('groupBy', params.groupBy);
-    if (params.groupBySubOption)
-      qs.set('groupBySubOption', params.groupBySubOption);
-    if (params.filters) qs.set('filters', params.filters);
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        qs.set(key, String(value));
+      }
+    }
     const url = `${API_URL}/api/sales-orders${qs.toString() ? `?${qs}` : ''}`;
     const response = await fetch(url, { headers: authHeaders(token) });
     await parseErrorOrThrow(response, 'Failed to load sales orders');

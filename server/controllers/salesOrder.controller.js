@@ -85,11 +85,19 @@ exports.getSalesOrders = asyncHandler(async (req, res) => {
   if (status && docType === 'order') q.orderStatus = status;
   const filterQuery = svc.buildFilterQuery(filters);
   Object.assign(q, filterQuery);
+  // Belt and braces: buildFilterQuery already refuses to name `tenant`, but the
+  // filter query is merged OVER this one, so re-assert the scope afterwards.
+  // Nothing a caller sends may decide which tenant's orders come back.
+  q.tenant = tenantId;
 
   // Group-by path: server-side grouping, no pagination
   if (groupBy && groupBy !== 'none' && groupBy !== '') {
-    const groups = await svc.getGroupedOrders({ matchQuery: q, groupBy, groupBySubOption });
-    return res.json({ success: true, groups });
+    const { groups, truncated, fetched, total } = await svc.getGroupedOrders({
+      matchQuery: q, groupBy, groupBySubOption,
+    });
+    // `truncated` is not decoration — the grouped path is unpaginated, so
+    // without it a capped result is indistinguishable from a complete one.
+    return res.json({ success: true, groups, truncated, fetched, total });
   }
 
   const { skip, limit: pageLimit, page: pageNum } = parsePagination(page, limit);
