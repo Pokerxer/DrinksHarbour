@@ -111,7 +111,14 @@ exports.getSalesOrders = asyncHandler(async (req, res) => {
 exports.getSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   if (!requireResolvedTenant(tenantId, res)) return;
-  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId });
+  // Populate what the detail page has to render as words: the source warehouse,
+  // and per fulfilment the warehouse the stock left from and the person who
+  // fulfilled it. Selecting only the display field keeps this from widening into
+  // a second document's worth of payload.
+  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId })
+    .populate('warehouseId', 'name')
+    .populate('fulfillments.warehouseId', 'name')
+    .populate('fulfillments.by', 'firstName lastName');
   if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
   res.json({ success: true, data: so });
 });

@@ -40,13 +40,33 @@ export interface SalesOrderAddress {
   country?: string;
 }
 
+/**
+ * A Mongoose ref reaches the client as a bare id string OR as the populated
+ * document, depending on the endpoint. The detail endpoint populates these;
+ * the list endpoint does not.
+ */
+export interface PopulatedWarehouse {
+  _id: string;
+  name?: string;
+}
+
+export interface PopulatedUser {
+  _id: string;
+  firstName?: string;
+  lastName?: string;
+}
+
 export interface SalesOrderFulfillment {
   _id: string;
-  warehouseId: string;
+  warehouseId?: string | PopulatedWarehouse;
   items: { lineId: string; qty: number }[];
   status: string;
   at: string;
-  by?: string;
+  by?: string | PopulatedUser;
+  /** Receipt number of the POS sale that produced this entry. */
+  ref?: string;
+  /** The tender THIS fulfilment took — the order-level field holds only the last. */
+  paymentMethod?: string;
 }
 
 export type QuoteStatus =
@@ -69,7 +89,7 @@ export interface SalesOrder {
   tenant?: string;
   soNumber: string;
   docType: 'quotation' | 'order';
-  warehouseId?: { _id: string; name: string } | string | null;
+  warehouseId?: string | PopulatedWarehouse | null;
   // A NAME, not a ref. The schema declares `salesperson: { type: String }` and
   // it is written from req.user.name at create time; nothing ever populates it
   // into an object. Declaring it as `{ _id, name }` here made every consumer's
