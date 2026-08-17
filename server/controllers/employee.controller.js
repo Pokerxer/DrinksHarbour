@@ -56,6 +56,28 @@ async function loadManagerGraph(tenantId) {
 const PUBLIC_FIELDS =
   'firstName lastName email phone avatar role status posAccess posName posPermissions createdAt';
 
+// The employeeProfile subtrees the LIST ships. An allowlist, not the whole
+// profile: its siblings hold bank accounts, passport and SSN numbers, home
+// addresses, ID-card URLs and hourly pay, and none of that belongs in a
+// response every employees screen fetches for every member of staff. The
+// detail endpoint returns the full document, which is where HR reads them.
+//
+// Both entries are here because a screen needs them, and a subtree missing
+// from this list is INVISIBLE rather than loud: `present()` passes the
+// truncated profile straight through, so the client sees an absent field and
+// falls back. That is exactly how the badge number came to look unissued —
+// `.attendance` was not here, so `badgePayload()` fell through to the
+// employee's _id and the list offered "Issue badge number" for somebody who
+// had held one for weeks. Adding a subtree is a deliberate act; so is
+// adding a field UNDER one — anything sensitive landing under
+// `attendance` or `work` starts shipping here the moment it is declared.
+const LIST_PROFILE_FIELDS =
+  // manager + titles, for the org chart and the manager picker
+  'employeeProfile.work ' +
+  // rfidBadge: the number printed on the staff card, which the list needs to
+  // know is already issued
+  'employeeProfile.attendance';
+
 // Shape a user document into the API's Employee object. `hasPin` is derived so
 // the UI can show "PIN set" without ever exposing the hash.
 function present(user) {
@@ -88,10 +110,8 @@ exports.listEmployees = asyncHandler(async (req, res) => {
     search: req.query.search,
   });
 
-  // Include only employeeProfile.work (manager + titles) — enough for the org
-  // chart and manager picker, without bulk-exposing sensitive HR fields.
   const employees = await User.find(filter)
-    .select(`${PUBLIC_FIELDS} posPinHash employeeProfile.work`)
+    .select(`${PUBLIC_FIELDS} posPinHash ${LIST_PROFILE_FIELDS}`)
     .sort({ createdAt: -1 })
     .lean();
 

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { kioskDeviceStatus, KIOSK_ONLINE_WINDOW_MS } from './kiosk-device-utils';
+import {
+  kioskDeviceStatus,
+  KIOSK_ONLINE_WINDOW_MS,
+} from './kiosk-device-utils';
 import type { KioskDevice } from '@/services/attendance.service';
 
 // The pairing list exists so a manager can answer one question: which of these

@@ -133,10 +133,15 @@ export function badgeIssueState(
 // somebody who works in that shop. It used to say DRINKSHARBOUR, which is the
 // platform the shop rents — not the employer whose door the card opens.
 //
-// The name comes from `useTenant()`, which is populated from the tenant
-// subdomain. On the platform domain there is no tenant in context at all, which
-// is why the fallback below is not decoration: without it that header band
-// prints empty.
+// The name comes from `useTenant()`, which the root layout populates from the
+// tenant subdomain when the URL names one and otherwise from the signed-in
+// user's own tenant — see `resolveTenantSlug` in src/context/tenant-slug.ts.
+// That second half is what makes the shop's name reach a card printed at
+// admin.drinksharbour.com, where there is no subdomain to read it from.
+//
+// The fallback below is still not decoration. A platform admin owns no tenant,
+// so nothing resolves for them at all, and without it that header band prints
+// empty.
 
 /** What a card says when nothing better is known. */
 export const BADGE_BRAND_FALLBACK = 'DrinksHarbour';

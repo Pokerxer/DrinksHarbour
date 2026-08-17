@@ -88,7 +88,9 @@ export default function KioskDevicesPage() {
       setName('');
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not pair this screen');
+      toast.error(
+        e instanceof Error ? e.message : 'Could not pair this screen'
+      );
     } finally {
       setPairing(false);
     }
@@ -209,7 +211,9 @@ export default function KioskDevicesPage() {
       {/* Paired screens. */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
         {loading ? (
-          <p className="px-5 py-8 text-center text-sm text-gray-400">Loading…</p>
+          <p className="px-5 py-8 text-center text-sm text-gray-400">
+            Loading…
+          </p>
         ) : devices.length === 0 ? (
           <div className="px-5 py-10 text-center">
             <p className="text-sm font-semibold text-gray-700">
