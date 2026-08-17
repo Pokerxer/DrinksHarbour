@@ -520,16 +520,31 @@ export interface POSHoldOrder {
 }
 
 export interface POSRecallCart {
+  /**
+   * The cart lines as they were when the sale was parked. Optional throughout
+   * because a hold written before the server kept a cart snapshot
+   * (`holdMetadata.cartItems`) is rebuilt from `Order.items` and carries only
+   * the ids and the quantity — see `recallCartToItems`, which is what makes
+   * that safe.
+   */
   items: {
     subProductId: string;
     productId: string;
     sizeId?: string;
-    name: string;
-    variant: string;
-    sku: string;
-    quantity: number;
-    price: number;
-    discount: number;
+    name?: string;
+    variant?: string;
+    sku?: string;
+    image?: string;
+    categoryId?: string;
+    brandId?: string;
+    quantity?: number;
+    price?: number;
+    discount?: number;
+    costPrice?: number;
+    originalPrice?: number;
+    activeBundles?: POSBundleDeal[];
+    comboRef?: POSCartItem['comboRef'];
+    bxgyRef?: POSCartItem['bxgyRef'];
   }[];
   customer: {
     firstName: string;

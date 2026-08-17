@@ -70,6 +70,7 @@ import {
   salesOrderToCartItems,
   salesOrderWarehouseId,
 } from '@/app/shared/point-of-sale/components/pos-sales-order-lines';
+import { recallCartToItems } from '@/app/shared/point-of-sale/components/pos-recall-cart-lines';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 function itemKey(item: POSCartItem) {
@@ -2678,21 +2679,8 @@ export default function POSCart() {
             if (cart.discountValue > 0) {
               setDiscount(cart.discountType, cart.discountValue);
             }
-            // Add items — skip price 0 placeholders; the grid re-prices them
-            for (const ci of cart.items) {
-              addItem({
-                subProductId: ci.subProductId,
-                productId: ci.productId,
-                sizeId: ci.sizeId,
-                name: ci.name,
-                variant: ci.variant,
-                sku: ci.sku,
-                quantity: ci.quantity,
-                price: ci.price,
-                discount: ci.discount,
-                stock: 999, // client re-fetches from grid on mount
-              });
-            }
+            // Add items — the held price and discount come back with them.
+            for (const line of recallCartToItems(cart)) addItem(line);
             setShowHeldOrders(false);
             toast.success('Order recalled', { icon: '↩️' });
           }}

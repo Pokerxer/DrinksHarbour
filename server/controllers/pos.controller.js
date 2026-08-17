@@ -3075,13 +3075,47 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
     subproduct:            item.subProductId,
     size:                  item.sizeId || undefined,
     quantity:              item.quantity,
+    // A hold is not a sale. These stay 0 so a parked cart never books revenue —
+    // `getAllPOSOrders` has no status filter, so a hold that carried a total
+    // would show up in POS history and the session report as money taken.
     priceAtPurchase:       0,
     itemSubtotal:          0,
     discountAmount:        0,
     tenant:                tenantId,
-    _name:    item.name || 'Product',
-    _variant: item.variant || '',
-    _sku:     item.sku || '',
+  }));
+
+  /**
+   * The cart lines themselves, kept whole.
+   *
+   * `Order.items` cannot carry a cart line: `orderItemSchema` is strict, so the
+   * display fields this used to write as `_name`/`_variant`/`_sku` were dropped
+   * before they reached Mongo and every recalled line came back called
+   * "Product" — and its money had to be zeroed for the reason above, which left
+   * the price and the cashier's negotiated discount with nowhere to live.
+   *
+   * `holdMetadata` is Mixed and exists for exactly this: cart state that is not
+   * an order. Mapped field by field rather than storing `req.body.items` raw,
+   * so a client cannot smuggle arbitrary keys into a persisted document.
+   */
+  const cartItems = items.map((item) => ({
+    subProductId:  item.subProductId,
+    productId:     item.productId,
+    sizeId:        item.sizeId || undefined,
+    name:          item.name || 'Product',
+    variant:       item.variant || '',
+    sku:           item.sku || '',
+    image:         item.image,
+    categoryId:    item.categoryId,
+    brandId:       item.brandId,
+    price:         Number(item.price)    || 0,
+    quantity:      Number(item.quantity) || 0,
+    discount:      Number(item.discount) || 0,
+    stock:         Number(item.stock)    || 0,
+    costPrice:     Number(item.costPrice) || 0,
+    originalPrice: item.originalPrice,
+    activeBundles: item.activeBundles,
+    comboRef:      item.comboRef,
+    bxgyRef:       item.bxgyRef,
   }));
 
   // Session lookup — optional, for scoping holds to a session
@@ -3119,6 +3153,7 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
       discountValue,
       terminalType,
       appliedRewards,
+      cartItems,
     },
   });
 
@@ -3182,17 +3217,29 @@ exports.recallPOSOrder = asyncHandler(async (req, res) => {
 
   const meta = order.holdMetadata || {};
 
-  const cartItems = order.items.map((item) => ({
-    subProductId: String(item.subproduct || item.product),
-    productId:    String(item.product),
-    sizeId:       item.size ? String(item.size) : undefined,
-    name:         item._name || 'Product',
-    variant:      item._variant || '',
-    sku:          item._sku || '',
-    quantity:     item.quantity,
-    price:        0, // client recomputes from grid — server returns 0 as placeholder
-    discount:     0,
-  }));
+  // The cart snapshot is the source of truth — it is the only place the line's
+  // price, discount and combo grouping survive (see holdPOSOrder). Holds parked
+  // before that snapshot existed have no `cartItems`, and are rebuilt from
+  // `Order.items` as far as it goes: refusing to open a parked sale is worse
+  // than opening it with the prices missing.
+  const cartItems = Array.isArray(meta.cartItems) && meta.cartItems.length
+    ? meta.cartItems.map((item) => ({
+        ...item,
+        subProductId: String(item.subProductId),
+        productId:    String(item.productId),
+        sizeId:       item.sizeId ? String(item.sizeId) : undefined,
+      }))
+    : order.items.map((item) => ({
+        subProductId: String(item.subproduct || item.product),
+        productId:    String(item.product),
+        sizeId:       item.size ? String(item.size) : undefined,
+        name:         'Product',
+        variant:      '',
+        sku:          '',
+        quantity:     item.quantity,
+        price:        0,
+        discount:     0,
+      }));
 
   // Delete the hold order so it can't be recalled twice
   await Order.deleteOne({ _id: order._id });
