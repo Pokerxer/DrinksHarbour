@@ -7,7 +7,7 @@
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
-    "test": "node --test __tests__/",
+    "test": "node --test '__tests__/*.test.js'",
     "start": "node server.js",
     "dev": "nodemon -x 'node -r dotenv/config server.js'",
     "seed": "node scripts/seed.js",
