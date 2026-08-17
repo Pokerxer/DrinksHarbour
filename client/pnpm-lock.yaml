@@ -372,7 +372,7 @@ importers:
         specifier: ~14.0.4
         version: 14.0.4
       commerce-core:
-        specifier: workspace:*
+        specifier: file:../../packages/commerce-core
         version: link:../../packages/commerce-core
       expo:
         specifier: ~52.0.0
@@ -421,7 +421,7 @@ importers:
         specifier: ~18.3.12
         version: 18.3.31
       tailwind-config:
-        specifier: workspace:*
+        specifier: file:../../packages/config-tailwind
         version: link:../../packages/config-tailwind
       tailwindcss:
         specifier: ^3.4.17
@@ -442,7 +442,7 @@ importers:
         specifier: ^2.0.1
         version: 2.0.1(next@16.1.6(@babel/core@7.24.5)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(sass@1.97.3))(react@19.2.4)
       commerce-core:
-        specifier: workspace:*
+        specifier: file:../../packages/commerce-core
         version: link:../../packages/commerce-core
       framer-motion:
         specifier: ^12.36.0
