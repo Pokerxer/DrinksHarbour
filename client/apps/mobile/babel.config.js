@@ -2,22 +2,24 @@ module.exports = function (api) {
   api.cache(true);
   return {
     presets: [
-      // `reanimated: false` is load-bearing. babel-preset-expo auto-injects
-      // react-native-reanimated/plugin whenever reanimated is installed — and
-      // it is, as a NativeWind peer. That plugin resolves
-      // `react-native-worklets/plugin`, a Reanimated 4 package absent from this
-      // tree, which fails the Babel transform on every file. Nothing here uses
-      // worklets, so the plugin is switched off at the source.
-      ['babel-preset-expo', { jsxImportSource: 'nativewind', reanimated: false }],
+      // babel-preset-expo auto-injects the Reanimated worklets Babel plugin
+      // whenever react-native-reanimated is installed — and it is, as a
+      // NativeWind peer. Under SDK 52 that injection had to be switched off
+      // (`reanimated: false`): Reanimated 3 shipped a plugin that resolved
+      // `react-native-worklets/plugin`, a Reanimated 4 package that was not in
+      // the tree, and the Babel transform failed on every file.
+      //
+      // SDK 54 ships Reanimated 4, and react-native-worklets@0.5.1 is now a
+      // declared dependency (the version SDK 54 pins in bundledNativeModules).
+      // The injection therefore resolves correctly and is left ENABLED — the
+      // suppression is not merely unnecessary now, it would disable worklets
+      // for any later phase that animates.
+      ['babel-preset-expo', { jsxImportSource: 'nativewind' }],
       'nativewind/babel',
     ],
-    // NOTE: react-native-reanimated/plugin is deliberately NOT enabled.
-    // Nothing in this phase uses worklets, and the installed plugin resolves
-    // `react-native-worklets/plugin`, which is a Reanimated 4 package not
-    // present in this tree — enabling it fails the Babel transform outright.
-    // When a later phase needs Reanimated animations, add the plugin back
-    // together with its matching worklets package, and keep it LAST in this
-    // array (a hard requirement of the worklet transform).
+    // The worklets plugin is injected by babel-preset-expo above, so it is not
+    // listed here. If it ever needs to be declared explicitly it must be LAST
+    // in this array — a hard requirement of the worklet transform.
     plugins: [],
   };
 };
