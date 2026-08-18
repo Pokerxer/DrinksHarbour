@@ -18,6 +18,16 @@ const nextConfig = {
       },
     ];
   },
+  async headers() {
+    return [
+      {
+        // The file has no extension, so Next serves it as octet-stream and iOS
+        // ignores it without saying anything. Apple requires application/json.
+        source: '/.well-known/apple-app-site-association',
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
+      },
+    ];
+  },
   images: {
     formats: ['image/avif', 'image/webp'],
     dangerouslyAllowSVG: true,

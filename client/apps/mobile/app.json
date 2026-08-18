@@ -9,14 +9,35 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.drinksharbour.app"
+      "bundleIdentifier": "com.drinksharbour.app",
+      "associatedDomains": ["applinks:www.drinksharbour.com"]
     },
     "android": {
-      "package": "com.drinksharbour.app"
+      "package": "com.drinksharbour.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "www.drinksharbour.com",
+              "pathPrefix": "/reset-password"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Unlock DrinksHarbour with Face ID."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
