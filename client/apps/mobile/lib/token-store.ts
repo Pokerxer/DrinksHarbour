@@ -6,6 +6,11 @@ export interface StoredSession {
   accessToken: string;
   refreshToken: string | null;
   user: unknown;
+  /**
+   * Whether the user asked for a biometric lock. It lives in the blob rather
+   * than its own keychain entry so it stays atomic with the tokens it guards.
+   */
+  biometricEnabled?: boolean;
 }
 
 /**
