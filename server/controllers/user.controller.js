@@ -39,7 +39,10 @@ exports.createUser = asyncHandler(async (req, res) => {
  * @access  Public
  */
 exports.registerUser = asyncHandler(async (req, res) => {
-  const result = await userService.registerUser(req.body);
+  const result = await userService.registerUser(req.body, {
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+  });
 
   // Set auth cookies if a token was issued (registration may return a session)
   if (result.token) {

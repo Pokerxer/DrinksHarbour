@@ -26,7 +26,8 @@ const verificationService = require('./verification.service');
  */
 const PUBLIC_REGISTRATION_ROLE = 'customer';
 
-const registerUser = async (userData) => {
+const registerUser = async (userData, options = {}) => {
+  const { ipAddress, userAgent } = options;
   const {
     email,
     password,
@@ -115,12 +116,28 @@ const registerUser = async (userData) => {
   // Generate auth token
   const token = generateAuthToken(user);
 
+  // Registration issues a refresh token for the same reason login does: without
+  // one the session is a single 7-day access token with no renewal path. The
+  // mobile client's apiFetch short-circuits on a null refreshToken, so it would
+  // return the eventual 401 raw and never signal expiry.
+  const refreshTokenObj = generateRefreshToken(user);
+  await RefreshToken.store({
+    jti: refreshTokenObj.jti,
+    tokenHash: hashToken(refreshTokenObj.token),
+    userId: user._id,
+    tenantId: user.tenant || undefined,
+    expiresAt: refreshTokenObj.expiresAt,
+    userAgent: userAgent || undefined,
+    ipAddress: ipAddress || undefined,
+  });
+
   // Remove sensitive data
   const userResponse = sanitizeUser(user.toObject());
 
   return {
     user: userResponse,
     token,
+    refreshToken: refreshTokenObj.token,
     requiresEmailVerification: true,
     message: 'User registered successfully. A 6-digit verification code has been sent to your email.',
   };

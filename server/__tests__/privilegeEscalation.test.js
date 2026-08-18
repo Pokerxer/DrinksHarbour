@@ -17,6 +17,7 @@ const assert = require('node:assert');
 const mongoose = require('mongoose');
 
 const User = require('../models/User');
+const RefreshToken = require('../models/RefreshToken');
 const userService = require('../services/user.service');
 const emailService = require('../services/email.service');
 const verificationService = require('../services/verification.service');
@@ -40,6 +41,10 @@ function stubRegistration(t) {
       toObject: () => ({ ...data, _id: new mongoose.Types.ObjectId() }),
     };
   });
+  // Registration now issues a refresh token as well as an access token. Without
+  // this stub the write reaches a real, disconnected Mongoose model and buffers
+  // for 10s before failing — nothing to do with the role logic under test.
+  t.mock.method(RefreshToken, 'store', async (doc) => doc);
   t.mock.method(verificationService, 'generateVerificationCode', () => '123456');
   t.mock.method(verificationService, 'storeVerificationCode', () => {});
   t.mock.method(emailService, 'sendEmailVerificationEmail', async () => ({
