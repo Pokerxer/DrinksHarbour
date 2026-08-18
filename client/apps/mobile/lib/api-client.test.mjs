@@ -157,6 +157,37 @@ describe('apiFetch', () => {
     expect(session).toBeNull();
   });
 
+  // A session with no refresh token is unrecoverable: there is nothing to
+  // refresh with. Returning the 401 raw leaves a signed-in UI making failing
+  // requests forever, which is worse than signing out.
+  test('a 401 on a session with no refresh token clears it and signals expiry', async () => {
+    session = { accessToken: 'a1', refreshToken: null, user: {} };
+    const expired = vi.fn();
+    setOnSessionExpired(expired);
+    const fetchMock = vi.fn(async () => res(401));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await apiFetch('/api/users/me');
+
+    expect(response.status).toBe(401);
+    expect(session).toBeNull();
+    expect(expired).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Signed out is not the same as expired. A 401 on a public endpoint must not
+  // fire the handler that routes to /login.
+  test('a 401 while signed out neither clears nor signals', async () => {
+    session = null;
+    const expired = vi.fn();
+    setOnSessionExpired(expired);
+    vi.stubGlobal('fetch', vi.fn(async () => res(401)));
+
+    await apiFetch('/api/products');
+
+    expect(expired).not.toHaveBeenCalled();
+  });
+
   test('a non-401 error response is returned untouched, with no refresh', async () => {
     session = { accessToken: 'a1', refreshToken: 'r1', user: {} };
     const fetchMock = vi.fn(async () => res(500));

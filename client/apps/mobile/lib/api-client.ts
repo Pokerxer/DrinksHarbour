@@ -83,7 +83,16 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
     headers: buildHeaders(init, session?.accessToken ?? null),
   });
 
-  if (response.status !== 401 || !session?.refreshToken) {
+  if (response.status !== 401 || !session) {
+    return response;
+  }
+
+  // No refresh token means the session cannot be recovered. Ending it is the
+  // honest outcome — returning the 401 raw leaves a signed-in UI making
+  // requests that will never succeed.
+  if (!session.refreshToken) {
+    await clearSession();
+    onSessionExpired?.();
     return response;
   }
 
