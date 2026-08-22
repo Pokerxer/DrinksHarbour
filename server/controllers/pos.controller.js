@@ -1871,7 +1871,10 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
         { path: 'subCategory', select: '_id name' },
       ],
     })
-    .populate('sizes', 'displayName sellingPrice costPrice availableStock stock _id sku barcode')
+    // wholesalePrice: the stock-transfer create form defaults each line to the
+    // size's wholesale rate (falling back to cost). Omitting it from this
+    // projection is silent — every line would just read as cost.
+    .populate('sizes', 'displayName sellingPrice costPrice wholesalePrice availableStock stock _id sku barcode')
     .populate({ path: 'vendor', select: 'firstName lastName email posName', strictPopulate: false })
     .sort({ isFeaturedByTenant: -1, totalSold: -1, availableStock: -1 })
     .limit(effectiveLimit + 1)

@@ -36,6 +36,8 @@ interface SizeOption {
   sku?: string;
   availableStock?: number;
   unitsPerPack?: number;
+  wholesalePrice?: number;
+  costPrice?: number;
 }
 
 interface ProductOption {
@@ -43,9 +45,13 @@ interface ProductOption {
   name: string;
   sku: string;
   costPrice?: number;
+  defaultSize?: string;
   sellWithoutSizeVariants?: boolean;
   sizes: SizeOption[];
 }
+
+/** Where a line's default unit price came from — shown under the price input. */
+type PriceSource = 'wholesale' | 'cost' | null;
 
 interface LineItem {
   subProductId: string;
@@ -56,6 +62,19 @@ interface LineItem {
   quantity: number;
   sourceStock?: number;
   costPrice?: number;
+  priceSource?: PriceSource;
+}
+
+/** What ProductSearch hands back when a product (or one of its sizes) is picked. */
+interface Picked {
+  subProductId: string;
+  subProductName: string;
+  sku: string;
+  sizeId?: string;
+  sizeName?: string;
+  sourceStock?: number;
+  costPrice: number;
+  priceSource: PriceSource;
 }
 
 interface LineError {
@@ -63,8 +82,48 @@ interface LineError {
   exceedsStock?: string;
 }
 
+const positive = (n: unknown): number | null =>
+  typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
+
+/**
+ * Mirror of resolveTransferUnitCost() in server/services/stockTransfer.helpers.js:
+ * a transfer line defaults to the size's wholesale price, else its cost price,
+ * else the sub-product's cost price. `wholesalePrice` lives on Size, not on
+ * SubProduct — a sub-product sold without size variants carries it on its
+ * `defaultSize`. The server applies the same rule on save, so an operator who
+ * clears the field still gets the right number.
+ */
+function defaultUnitPrice(
+  product: ProductOption,
+  size?: SizeOption | null
+): { costPrice: number; priceSource: PriceSource } {
+  const wholesale = positive(size?.wholesalePrice);
+  if (wholesale !== null)
+    return { costPrice: wholesale, priceSource: 'wholesale' };
+  const cost = positive(size?.costPrice) ?? positive(product.costPrice);
+  if (cost !== null) return { costPrice: cost, priceSource: 'cost' };
+  return { costPrice: 0, priceSource: null };
+}
+
+/** The size that prices a sub-product sold without size variants. */
+function pricingSizeFor(product: ProductOption): SizeOption | null {
+  if (!product.sizes.length) return null;
+  return (
+    product.sizes.find((s) => s.size === product.defaultSize) ??
+    product.sizes[0]
+  );
+}
+
 function blankItem(): LineItem {
-  return { subProductId: '', subProductName: '', sku: '', quantity: 1, sourceStock: 0, costPrice: 0 };
+  return {
+    subProductId: '',
+    subProductName: '',
+    sku: '',
+    quantity: 1,
+    sourceStock: 0,
+    costPrice: 0,
+    priceSource: null,
+  };
 }
 
 function WarehouseSelector({
@@ -181,15 +240,7 @@ function ProductSearch({
 }: {
   value: string;
   token: string;
-  onSelect: (
-    name: string,
-    sku: string,
-    subProductId: string,
-    sizeId?: string,
-    sizeName?: string,
-    sourceStock?: number,
-    costPrice?: number
-  ) => void;
+  onSelect: (picked: Picked) => void;
 }) {
   const [query, setQuery] = useState(value);
   const [initial, setInitial] = useState<ProductOption[]>([]);
@@ -212,6 +263,7 @@ function ProductSearch({
       name: sp.product?.name ?? sp.name ?? sp.productName ?? '',
       sku: sp.sku ?? '',
       costPrice: sp.costPrice ?? 0,
+      defaultSize: sp.defaultSize ? String(sp.defaultSize) : undefined,
       sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
       sizes: (sp.sizes ?? []).map((s: any) => ({
         size: String(s._id ?? s.size ?? ''),
@@ -219,6 +271,8 @@ function ProductSearch({
         sku: s.sku ?? sp.sku ?? '',
         availableStock: s.availableStock ?? s.stock ?? 0,
         unitsPerPack: s.unitsPerPack ?? 1,
+        wholesalePrice: s.wholesalePrice ?? undefined,
+        costPrice: s.costPrice ?? undefined,
       })),
     }));
   }
@@ -317,7 +371,8 @@ function ProductSearch({
           ) : (
             <div className="max-h-72 overflow-y-auto">
               {products.map((p) => {
-                const hasSizes = !p.sellWithoutSizeVariants && p.sizes.length > 0;
+                const hasSizes =
+                  !p.sellWithoutSizeVariants && p.sizes.length > 0;
                 const isExpanded = expandedId === p._id;
 
                 return (
@@ -331,7 +386,13 @@ function ProductSearch({
                           setExpandedId(next);
                           if (next) fetchFullSubproduct(next);
                         } else {
-                          onSelect(p.name, p.sku, p._id, undefined, undefined, 0, p.costPrice);
+                          onSelect({
+                            subProductId: p._id,
+                            subProductName: p.name,
+                            sku: p.sku,
+                            sourceStock: 0,
+                            ...defaultUnitPrice(p, pricingSizeFor(p)),
+                          });
                           setQuery(p.name);
                           setOpen(false);
                         }
@@ -350,7 +411,8 @@ function ProductSearch({
                           )}
                           {hasSizes && (
                             <span className="text-[11px] text-gray-400">
-                              {p.sizes.length} size{p.sizes.length !== 1 ? 's' : ''}
+                              {p.sizes.length} size
+                              {p.sizes.length !== 1 ? 's' : ''}
                             </span>
                           )}
                         </div>
@@ -365,12 +427,23 @@ function ProductSearch({
                     {hasSizes && isExpanded && (
                       <div className="border-t border-gray-100 bg-gray-50/60 pb-2 pl-5 pt-1">
                         {p.sizes.map((s) => {
-                          const fullSizes: any[] = expandedData[p._id]?.sizes ?? [];
+                          const fullSizes: any[] =
+                            expandedData[p._id]?.sizes ?? [];
                           const match = fullSizes.find(
                             (fs: any) => fs._id === s.size || fs.size === s.size
                           );
-                          const displaySize = match?.displayName ?? s.displayName ?? s.size;
-                          const stock = match?.availableStock ?? s.availableStock ?? 0;
+                          const displaySize =
+                            match?.displayName ?? s.displayName ?? s.size;
+                          const stock =
+                            match?.availableStock ?? s.availableStock ?? 0;
+                          // The full sub-product fetch carries the richer price
+                          // fields; the search hit is the fallback.
+                          const priced: SizeOption = {
+                            ...s,
+                            wholesalePrice:
+                              match?.wholesalePrice ?? s.wholesalePrice,
+                            costPrice: match?.costPrice ?? s.costPrice,
+                          };
                           return (
                             <button
                               key={s.size}
@@ -378,7 +451,15 @@ function ProductSearch({
                               onMouseDown={(e) => {
                                 e.preventDefault();
                                 const label = `${p.name} – ${displaySize}`;
-                                onSelect(label, s.sku ?? p.sku, p._id, s.size, displaySize, stock, p.costPrice);
+                                onSelect({
+                                  subProductId: p._id,
+                                  subProductName: label,
+                                  sku: s.sku ?? p.sku,
+                                  sizeId: s.size,
+                                  sizeName: displaySize,
+                                  sourceStock: stock,
+                                  ...defaultUnitPrice(p, priced),
+                                });
                                 setQuery(label);
                                 setOpen(false);
                               }}
@@ -394,8 +475,12 @@ function ProductSearch({
                                       {s.sku}
                                     </span>
                                   )}
-                                  <span className={`text-[11px] ${stock > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
-                                    {stock > 0 ? `${stock} in stock` : 'Out of stock'}
+                                  <span
+                                    className={`text-[11px] ${stock > 0 ? 'text-emerald-600' : 'text-gray-400'}`}
+                                  >
+                                    {stock > 0
+                                      ? `${stock} in stock`
+                                      : 'Out of stock'}
                                   </span>
                                 </div>
                               </div>
@@ -422,7 +507,9 @@ export default function StockTransferCreate() {
 
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehousesLoading, setWarehousesLoading] = useState(true);
-  const [sourceWarehouse, setSourceWarehouse] = useState<Warehouse | null>(null);
+  const [sourceWarehouse, setSourceWarehouse] = useState<Warehouse | null>(
+    null
+  );
   const [destWarehouse, setDestWarehouse] = useState<Warehouse | null>(null);
   const [items, setItems] = useState<LineItem[]>([blankItem()]);
   const [notes, setNotes] = useState('');
@@ -452,37 +539,48 @@ export default function StockTransferCreate() {
   const stockKey = (subProductId: string, sizeId?: string) =>
     `${subProductId}::${sizeId || ''}`;
 
-  const fetchStock = useCallback(async (warehouseId: string) => {
-    if (!token) return;
-    setLoadingStock(true);
-    try {
-      const res = await fetch(`${API_URL}/api/warehouses/${warehouseId}/stock`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json();
-      const list: any[] = json?.data ?? [];
-      const map: Record<string, number> = {};
-      for (const row of list) {
-        const spId = typeof row.subProduct === 'string' ? row.subProduct : row.subProduct?._id;
-        const szId = typeof row.size === 'string' ? row.size : row.size?._id;
-        if (spId) {
-          const k = stockKey(spId, szId);
-          map[k] = (map[k] || 0) + (row.currentQuantity || 0);
+  const fetchStock = useCallback(
+    async (warehouseId: string) => {
+      if (!token) return;
+      setLoadingStock(true);
+      try {
+        const res = await fetch(
+          `${API_URL}/api/warehouses/${warehouseId}/stock`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const json = await res.json();
+        const list: any[] = json?.data ?? [];
+        const map: Record<string, number> = {};
+        for (const row of list) {
+          const spId =
+            typeof row.subProduct === 'string'
+              ? row.subProduct
+              : row.subProduct?._id;
+          const szId = typeof row.size === 'string' ? row.size : row.size?._id;
+          if (spId) {
+            const k = stockKey(spId, szId);
+            map[k] = (map[k] || 0) + (row.currentQuantity || 0);
+          }
         }
+        setStockMap(map);
+        setItems((prev) =>
+          prev.map((it) => ({
+            ...it,
+            sourceStock: it.subProductId
+              ? (map[stockKey(it.subProductId, it.sizeId)] ?? 0)
+              : 0,
+          }))
+        );
+      } catch {
+        toast.error('Failed to load source stock');
+      } finally {
+        setLoadingStock(false);
       }
-      setStockMap(map);
-      setItems((prev) =>
-        prev.map((it) => ({
-          ...it,
-          sourceStock: it.subProductId ? map[stockKey(it.subProductId, it.sizeId)] ?? 0 : 0,
-        }))
-      );
-    } catch {
-      toast.error('Failed to load source stock');
-    } finally {
-      setLoadingStock(false);
-    }
-  }, [token]);
+    },
+    [token]
+  );
 
   useEffect(() => {
     if (sourceWarehouse) {
@@ -495,9 +593,7 @@ export default function StockTransferCreate() {
   function handleSourceChange(w: Warehouse | null) {
     setSourceWarehouse(w);
     if (w?._id !== sourceWarehouse?._id) {
-      setItems((prev) =>
-        prev.map((it) => ({ ...it, sourceStock: 0 }))
-      );
+      setItems((prev) => prev.map((it) => ({ ...it, sourceStock: 0 })));
     }
   }
 
@@ -528,7 +624,10 @@ export default function StockTransferCreate() {
           other.subProductId.trim()
       );
       if (dupIndex >= 0) {
-        errors[i] = { ...errors[i], duplicate: `Duplicate of line #${dupIndex + 1}` };
+        errors[i] = {
+          ...errors[i],
+          duplicate: `Duplicate of line #${dupIndex + 1}`,
+        };
       }
 
       if (
@@ -549,7 +648,10 @@ export default function StockTransferCreate() {
   const lineErrors = getLineErrors();
   const hasErrors = Object.keys(lineErrors).length > 0;
   const totalUnits = filledItems.reduce((s, it) => s + it.quantity, 0);
-  const totalCost = filledItems.reduce((s, it) => s + (it.costPrice ?? 0) * it.quantity, 0);
+  const totalCost = filledItems.reduce(
+    (s, it) => s + (it.costPrice ?? 0) * it.quantity,
+    0
+  );
   const totalSourceStock = filledItems.reduce(
     (s, it) => s + (it.sourceStock ?? 0),
     0
@@ -569,7 +671,8 @@ export default function StockTransferCreate() {
       );
     if (hasErrors) {
       const dups = Object.values(lineErrors).filter((e) => e.duplicate).length;
-      if (dups > 0) return toast.error('Fix duplicate product lines before saving');
+      if (dups > 0)
+        return toast.error('Fix duplicate product lines before saving');
     }
 
     setSaving(true);
@@ -684,12 +787,12 @@ export default function StockTransferCreate() {
               />
             </div>
             <div className="relative">
-              <div className="hidden md:absolute -left-3 top-1/2 z-10 -translate-y-1/2">
+              <div className="-left-3 top-1/2 z-10 hidden -translate-y-1/2 md:absolute">
                 <div className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm">
                   <PiArrowElbowRightDown className="h-3 w-3 text-gray-400" />
                 </div>
               </div>
-              <div className="flex items-center gap-2 md:hidden mb-1.5">
+              <div className="mb-1.5 flex items-center gap-2 md:hidden">
                 <PiArrowElbowRightDown className="h-3.5 w-3.5 text-gray-400" />
                 <span className="text-xs font-medium text-gray-500">to</span>
               </div>
@@ -781,17 +884,20 @@ export default function StockTransferCreate() {
                       <ProductSearch
                         value={item.subProductName}
                         token={token}
-                        onSelect={(name, sku, subProductId, sizeId, sizeName, sourceStock, costPrice) =>
+                        onSelect={(picked) =>
                           updateItem(i, {
-                            subProductId,
-                            subProductName: name,
-                            sku,
-                            sizeId,
-                            sizeName,
-                            costPrice: costPrice ?? 0,
+                            subProductId: picked.subProductId,
+                            subProductName: picked.subProductName,
+                            sku: picked.sku,
+                            sizeId: picked.sizeId,
+                            sizeName: picked.sizeName,
+                            costPrice: picked.costPrice,
+                            priceSource: picked.priceSource,
                             sourceStock: sourceWarehouse
-                              ? stockMap[stockKey(subProductId, sizeId)] ?? 0
-                              : (sourceStock ?? 0),
+                              ? (stockMap[
+                                  stockKey(picked.subProductId, picked.sizeId)
+                                ] ?? 0)
+                              : (picked.sourceStock ?? 0),
                           })
                         }
                       />
@@ -811,7 +917,8 @@ export default function StockTransferCreate() {
                               ) : (
                                 <span
                                   className={
-                                    item.sourceStock && item.sourceStock >= item.quantity
+                                    item.sourceStock &&
+                                    item.sourceStock >= item.quantity
                                       ? 'font-semibold text-emerald-600'
                                       : 'font-semibold text-amber-600'
                                   }
@@ -832,9 +939,11 @@ export default function StockTransferCreate() {
                           min="1"
                           value={item.quantity}
                           onChange={(e) =>
-                            updateItem(i, { quantity: Math.max(1, Number(e.target.value)) })
+                            updateItem(i, {
+                              quantity: Math.max(1, Number(e.target.value)),
+                            })
                           }
-                          className={`w-full rounded-lg border px-2 py-1.5 text-sm text-center focus:outline-none ${
+                          className={`w-full rounded-lg border px-2 py-1.5 text-center text-sm focus:outline-none ${
                             errors?.exceedsStock
                               ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-1 focus:ring-red-500'
                               : 'border-gray-200 focus:border-[#b20202] focus:ring-1 focus:ring-[#b20202]/20'
@@ -870,11 +979,22 @@ export default function StockTransferCreate() {
                           step="0.01"
                           value={item.costPrice ?? 0}
                           onChange={(e) =>
-                            updateItem(i, { costPrice: Math.max(0, Number(e.target.value)) })
+                            updateItem(i, {
+                              costPrice: Math.max(0, Number(e.target.value)),
+                              // Typed over — it is no longer the catalogue default.
+                              priceSource: null,
+                            })
                           }
                           className="w-full rounded-lg border border-gray-200 py-1.5 pl-7 pr-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
                         />
                       </div>
+                      {item.priceSource && (
+                        <p className="mt-0.5 text-center text-[10px] text-gray-400">
+                          {item.priceSource === 'wholesale'
+                            ? 'Wholesale'
+                            : 'Cost'}
+                        </p>
+                      )}
                     </div>
 
                     <div className="mt-1.5 w-24 shrink-0 text-right">
@@ -939,7 +1059,9 @@ export default function StockTransferCreate() {
               </p>
             </div>
             <div className="rounded-lg bg-gray-50 p-3">
-              <p className="text-[11px] text-gray-500">Source Stock Available</p>
+              <p className="text-[11px] text-gray-500">
+                Source Stock Available
+              </p>
               <p className="mt-0.5 text-lg font-bold text-gray-900">
                 {sourceWarehouse ? totalSourceStock : '—'}
               </p>

@@ -4,6 +4,10 @@ const StockTransfer = require("../models/StockTransfer");
 const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 const warehouseService = require("../services/warehouse.service");
+const {
+  resolveTransferUnitCost,
+  hasExplicitUnitCost,
+} = require("../services/stockTransfer.helpers");
 const { getTenantWarehouseSettings } = require("./warehouse.controller");
 const { NotFoundError, ValidationError, ForbiddenError } = require("../utils/errors");
 
@@ -48,9 +52,23 @@ async function enrichItems(items, tenantId) {
           if (!enriched.subProductName)
             enriched.subProductName = sp.product?.name ?? sp.sku;
           if (!enriched.sku) enriched.sku = sp.sku;
-          if (item.sizeId && !enriched.sizeName) {
-            const sz = await Size.findOne({ _id: item.sizeId }).lean();
-            if (sz) enriched.sizeName = sz.size;
+
+          // The Size that prices this line: the one chosen, or — for a
+          // sub-product sold without size variants — its default size, which
+          // is where its wholesale/cost price actually lives.
+          const pricingSizeId = item.sizeId || sp.defaultSize;
+          const sz = pricingSizeId
+            ? await Size.findOne({ _id: pricingSizeId }).lean()
+            : null;
+          if (item.sizeId && sz && !enriched.sizeName) enriched.sizeName = sz.size;
+
+          // The server owns the default so `totalValue` — and with it the
+          // approval threshold — can't be dodged by a client that omits price.
+          if (!hasExplicitUnitCost(enriched.costPrice)) {
+            enriched.costPrice = resolveTransferUnitCost({
+              size: sz,
+              subProduct: sp,
+            });
           }
         }
       }
