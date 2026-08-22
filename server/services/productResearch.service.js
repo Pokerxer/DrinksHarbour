@@ -17,9 +17,11 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 
-// Research runs on a strong model: it has to read search results critically and
-// resist filling gaps from memory. Copywriting stays on Haiku elsewhere.
-const RESEARCH_MODEL = process.env.ANTHROPIC_RESEARCH_MODEL || 'claude-opus-4-8';
+// Haiku, same as every other product/sub-product generation path. It does not
+// have to resist filling gaps from memory on its own: the no-inference rule is
+// enforced twice in code below — unsourced facts are dropped, and only URLs the
+// search backend actually returned ever become sources.
+const RESEARCH_MODEL = process.env.ANTHROPIC_RESEARCH_MODEL || 'claude-haiku-4-5';
 // Deliberately the pre-dynamic-filtering search tool. `web_search_20260209`
 // runs a code-execution container per search to pre-filter results, which
 // measured ~3x slower here (22.6s vs 8.0s on the same query) for a token saving
@@ -32,7 +34,14 @@ const MAX_SEARCHES = Number(process.env.ANTHROPIC_RESEARCH_MAX_SEARCHES || 4);
 // kept re-searching for minutes on well-documented products, which no proxy will
 // hold open. Lower effort consolidates the tool calls; it does not loosen the
 // no-inference rule, which is enforced in the prompt and again in code.
+// Only sent for models that accept it — Haiku 4.5 rejects `output_config.effort`
+// and adaptive thinking outright, so both are omitted there (see reasoningParams).
 const RESEARCH_EFFORT = process.env.ANTHROPIC_RESEARCH_EFFORT || 'low';
+// Extended thinking on Haiku is the budgeted form, not adaptive. Must stay below
+// max_tokens (8000 below) and at/above the 1024 minimum.
+const RESEARCH_THINKING_BUDGET = Number(
+  process.env.ANTHROPIC_RESEARCH_THINKING_BUDGET || 2000
+);
 // Hard ceiling. Overrunning it degrades to "nothing verified", which is a safe
 // answer here — every factual field simply comes back blank and flagged.
 const RESEARCH_TIMEOUT_MS = Number(process.env.ANTHROPIC_RESEARCH_TIMEOUT_MS || 90000);
@@ -86,6 +95,25 @@ const ARRAY_FIELDS = new Set([
   'allergens',
   'awards',
 ]);
+
+/**
+ * Reasoning knobs for the research call, which differ by model family:
+ *   - Haiku 4.5 has no adaptive thinking and 400s on `output_config.effort`.
+ *     It gets budgeted extended thinking and no effort at all.
+ *   - Opus/Sonnet 4.6+ (only reachable via ANTHROPIC_RESEARCH_MODEL) 400 on
+ *     `budget_tokens`, so they get adaptive thinking plus effort.
+ */
+function reasoningParams(model = RESEARCH_MODEL) {
+  if (String(model).startsWith('claude-haiku')) {
+    return {
+      thinking: { type: 'enabled', budget_tokens: RESEARCH_THINKING_BUDGET },
+    };
+  }
+  return {
+    thinking: { type: 'adaptive' },
+    output_config: { effort: RESEARCH_EFFORT },
+  };
+}
 
 let defaultClient = null;
 function getDefaultClient() {
@@ -472,8 +500,7 @@ async function researchProduct(query, opts = {}) {
       {
         model: RESEARCH_MODEL,
         max_tokens: 8000,
-        thinking: { type: 'adaptive' },
-        output_config: { effort: RESEARCH_EFFORT },
+        ...reasoningParams(RESEARCH_MODEL),
         system: RESEARCH_SYSTEM,
         tools: [
           {
@@ -663,4 +690,6 @@ module.exports = {
   PRODUCT_FIELD_MAP,
   extractSources,
   sanitizeFacts,
+  reasoningParams,
+  RESEARCH_MODEL,
 };

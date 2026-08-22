@@ -14,9 +14,8 @@ const {
 } = require('../services/productResearch.service');
 
 // AI provider: Claude (Anthropic). Requires ANTHROPIC_API_KEY in server/.env.
-const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8';
-// Fast/cheap model for bulk structured generation (same as import enrichment,
-// chatbot and scan-match services).
+// Every product and sub-product generation handler in this controller runs on
+// Haiku — there is no second, larger model and no non-Claude fallback here.
 const HAIKU_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -27,12 +26,13 @@ const anthropic = process.env.ANTHROPIC_API_KEY
 // unchanged — only this shim selects the underlying AI provider.
 const genAI = {
   getGenerativeModel: ({ model: modelOverride, generationConfig = {} } = {}) => {
-    // Honor an explicit Claude model per call (e.g. Haiku for bulk generation);
-    // anything else falls back to the default CLAUDE_MODEL.
+    // Only a Claude model may be named per call, and in practice every caller
+    // names Haiku. Anything else (including a stray non-Claude id) falls back to
+    // Haiku rather than silently escalating to a larger, pricier model.
     const activeModel =
       typeof modelOverride === 'string' && modelOverride.startsWith('claude')
         ? modelOverride
-        : CLAUDE_MODEL;
+        : HAIKU_MODEL;
     const maxTokens = generationConfig.maxOutputTokens ?? 2048;
     // Honor responseMimeType by enabling each provider's native JSON mode, which
     // guarantees syntactically valid JSON and avoids prose/markdown wrappers.
@@ -49,9 +49,9 @@ const genAI = {
       return String(promptOrObj);
     };
 
-    // Claude (Anthropic). Opus 4.8 rejects temperature/top_p/top_k, so they are
-    // intentionally omitted; JSON shape is enforced via the prompt + a JSON-only
-    // system instruction and parsed downstream.
+    // Claude (Anthropic). The caller's generationConfig temperature/top_p/top_k
+    // are intentionally dropped; JSON shape is enforced via the prompt + a
+    // JSON-only system instruction and parsed downstream.
     const callClaude = async (content) => {
       const system = wantsJson
         ? 'You are an expert beverage industry data assistant. Respond with ONLY valid JSON — no markdown code fences, no explanation, no preamble.'
@@ -2138,62 +2138,8 @@ Return ONLY JSON: {"recommendations": [{"name": "...", "type": "...", "reason": 
 });
 
 /**
- * Call Ollama and return the parsed JSON response.
- * Uses the chat API with format:"json" for guaranteed JSON output.
- */
-const callOllama = async (prompt) => {
-  const ollamaBase = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-  const ollamaModel = process.env.OLLAMA_MODEL || 'deepseek-v3.1:671b-cloud';
-  const timeoutMs = Number(process.env.OLLAMA_TIMEOUT_MS) || 25000;
-
-  // Abort if Ollama is unreachable or slow so the caller can fall back to Claude
-  // instead of hanging the whole request.
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  let response;
-  try {
-    response = await fetch(`${ollamaBase}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: ollamaModel,
-        format: 'json',
-        stream: false,
-        options: { temperature: 0.3, num_predict: 4096 },
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert sommelier, master distiller, and beverage industry specialist. Always respond with valid JSON only — no markdown, no explanation.',
-          },
-          { role: 'user', content: prompt },
-        ],
-      }),
-    });
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      throw new Error(`Ollama request timed out after ${timeoutMs}ms`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Ollama API error ${response.status}: ${errText}`);
-  }
-
-  const json = await response.json();
-  // chat API returns { message: { content: "..." } }
-  const text = json?.message?.content || json?.response || '';
-  return parseJSONResponse(text, null);
-};
-
-/**
  * Generate complete product details using the product's own data + linked sub-products as context.
- * Uses Ollama (cloud model) instead of Gemini.
+ * Runs on Claude Haiku, like every other generation handler here.
  * POST /api/gemini/generate-from-subproduct
  */
 const generateProductFromSubProducts = asyncHandler(async (req, res) => {
@@ -2272,7 +2218,7 @@ FIELD GUIDANCE:
 Return this JSON (fill all fields accurately):
 {"name":"${product.name}","slug":"","type":"","subType":"","style":"","categoryName":"","subCategoryName":"","isAlcoholic":true,"abv":0,"proof":0,"volumeMl":750,"standardSizes":[],"servingSize":"","servingsPerContainer":0,"originCountry":"","region":"","appellation":null,"producer":"","brand":"","vintage":null,"age":null,"ageStatement":null,"distilleryName":null,"breweryName":null,"wineryName":null,"productionMethod":null,"caskType":null,"finish":null,"shortDescription":"","description":"","tastingNotes":{"nose":[],"aroma":[],"palate":[],"taste":[],"finish":[],"mouthfeel":[],"appearance":"","color":""},"flavorProfile":[],"foodPairings":[],"servingSuggestions":{"temperature":"","glassware":"","garnish":[],"mixers":[]},"isDietary":{"vegan":false,"vegetarian":false,"glutenFree":false,"dairyFree":false,"organic":false,"kosher":false,"halal":false,"sugarFree":false,"lowCalorie":false,"lowCarb":false},"allergens":[],"ingredients":[],"nutritionalInfo":{"calories":null,"carbohydrates":null,"sugar":null,"protein":null,"fat":null,"sodium":null,"caffeine":null},"metaTitle":"","metaDescription":"","keywords":[]}`;
 
-  // ── Call Claude Haiku (primary), Ollama (fallback) ────────────────────────
+  // ── Call Claude Haiku ─────────────────────────────────────────────────────
   let productData;
   try {
     const model = genAI.getGenerativeModel({
@@ -2283,14 +2229,9 @@ Return this JSON (fill all fields accurately):
     productData = parseJSONResponse(result?.response?.text() || '', null);
     if (!productData) throw new Error('Claude returned unparseable JSON');
   } catch (claudeErr) {
-    console.warn('Claude Haiku unavailable, falling back to Ollama:', claudeErr.message);
-    try {
-      productData = await callOllama(prompt);
-    } catch (error) {
-      console.error('Ollama call failed:', error.message);
-      res.status(500);
-      throw new Error(`Failed to generate product details: ${error.message}`);
-    }
+    console.error('Claude Haiku call failed:', claudeErr.message);
+    res.status(500);
+    throw new Error(`Failed to generate product details: ${claudeErr.message}`);
   }
 
   if (!productData || typeof productData !== 'object') {
@@ -2492,13 +2433,16 @@ Return ONLY valid JSON in exactly this shape, with no markdown or commentary:
 
   let generated;
   try {
-    generated = await callOllama(prompt);
-  } catch (ollamaErr) {
-    console.warn('Ollama unavailable, falling back to Claude:', ollamaErr.message);
-    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const model = genAI.getGenerativeModel({
+      model: MODEL_NAME,
+      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048 },
+    });
     const result = await model.generateContent(prompt);
-    const text = result?.response?.text() || '';
-    generated = parseJSONResponse(text, null);
+    generated = parseJSONResponse(result?.response?.text() || '', null);
+  } catch (claudeErr) {
+    console.error('Claude Haiku call failed:', claudeErr.message);
+    res.status(500);
+    throw new Error(`Failed to generate sub-product content: ${claudeErr.message}`);
   }
 
   if (!generated || typeof generated !== 'object') {
