@@ -7,7 +7,9 @@ import {
 } from './sales-fulfillment-view';
 import type { SalesOrderFulfillment } from '@/services/salesOrder.service';
 
-const entry = (over: Partial<SalesOrderFulfillment> = {}): SalesOrderFulfillment => ({
+const entry = (
+  over: Partial<SalesOrderFulfillment> = {}
+): SalesOrderFulfillment => ({
   _id: 'f1',
   items: [{ lineId: 'l1', qty: 3 }],
   status: 'reconciled',
@@ -34,7 +36,9 @@ describe('warehouseName', () => {
 
 describe('personName', () => {
   it('joins the two name parts', () => {
-    expect(personName({ _id: 'u1', firstName: 'Ada', lastName: 'Nwosu' })).toBe('Ada Nwosu');
+    expect(personName({ _id: 'u1', firstName: 'Ada', lastName: 'Nwosu' })).toBe(
+      'Ada Nwosu'
+    );
   });
 
   it('tolerates a missing half', () => {
@@ -54,7 +58,9 @@ describe('fulfillmentLabel', () => {
   // WH/OUT string is a fallback built from the array index — it is not a
   // reference to anything, and it is only shown when there is no receipt.
   it('prefers the POS receipt number', () => {
-    expect(fulfillmentLabel(entry({ ref: 'RCP-20260817-0004' }), 0)).toBe('RCP-20260817-0004');
+    expect(fulfillmentLabel(entry({ ref: 'RCP-20260817-0004' }), 0)).toBe(
+      'RCP-20260817-0004'
+    );
   });
 
   it('falls back to a positional WH/OUT for a manual fulfilment', () => {
@@ -65,7 +71,16 @@ describe('fulfillmentLabel', () => {
 
 describe('fulfillmentUnits', () => {
   it('sums the quantities across the entry lines', () => {
-    expect(fulfillmentUnits(entry({ items: [{ lineId: 'a', qty: 3 }, { lineId: 'b', qty: 7 }] }))).toBe(10);
+    expect(
+      fulfillmentUnits(
+        entry({
+          items: [
+            { lineId: 'a', qty: 3 },
+            { lineId: 'b', qty: 7 },
+          ],
+        })
+      )
+    ).toBe(10);
   });
 
   it('is 0 for an entry with no items', () => {

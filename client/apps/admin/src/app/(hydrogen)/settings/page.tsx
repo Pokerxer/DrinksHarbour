@@ -870,6 +870,7 @@ const D_PURCH: PurchaseSettings = {
   defaultLeadTimeDays: 7,
   defaultPaymentTerms: 'Net 30',
   defaultReceivingLocation: '',
+  defaultReceivingWarehouse: '',
 };
 
 const WAREHOUSE_ANCHORS = [
@@ -1613,7 +1614,9 @@ export default function SettingsPage() {
                 </SectionCard>
               )}
 
-              {vis('currency naira dollar default') && (
+              {vis(
+                'currency naira dollar default receiving warehouse destination'
+              ) && (
                 <SectionCard
                   id="purch_defaults"
                   icon={<PiCurrencyDollar size={16} />}
@@ -1648,14 +1651,37 @@ export default function SettingsPage() {
                     placeholder="Net 30"
                     maxLength={100}
                   />
+                  <Row
+                    label="Default receiving warehouse"
+                    sub="Pre-selects the destination on new purchase orders. Each order and each delivery can still override it."
+                  >
+                    <select
+                      value={purch.defaultReceivingWarehouse ?? ''}
+                      onChange={(e) =>
+                        setPurchField(
+                          'defaultReceivingWarehouse',
+                          e.target.value
+                        )
+                      }
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                    >
+                      <option value="">No default — decide per order</option>
+                      {warehouses.map((w) => (
+                        <option key={w._id} value={w._id}>
+                          {w.name}
+                          {w.code ? ` (${w.code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </Row>
                   <TextInput
-                    label="Default receiving location"
-                    sub="Warehouse or location pre-selected when receiving goods."
+                    label="Receiving notes"
+                    sub="Free text shown to receivers. Not a warehouse — use the picker above for that."
                     value={purch.defaultReceivingLocation}
                     onChange={(v) =>
                       setPurchField('defaultReceivingLocation', v)
                     }
-                    placeholder="e.g. Main Warehouse"
+                    placeholder="e.g. use the Gana St loading bay"
                     maxLength={200}
                   />
                 </SectionCard>

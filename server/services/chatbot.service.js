@@ -14,6 +14,17 @@ const Category = mongoose.models.Category || mongoose.model('Category');
 const Tenant = mongoose.models.Tenant || mongoose.model('Tenant');
 
 // Claude AI Configuration
+//
+// The `|| ''` keeps boot working without a key, but it makes the failure
+// invisible: intent classification, product retrieval and quick replies all
+// still work, so the only symptom is that every answer is the "having trouble
+// answering right now" fallback. Warn at startup — the same courtesy
+// sms.service.js and whatsapp.service.js already extend — so a missing key is
+// read as configuration rather than as a broken chatbot.
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.log('⚠️  Chatbot AI not configured — set ANTHROPIC_API_KEY in .env');
+}
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
 const CLAUDE_MODEL = 'claude-haiku-4-5';
 
