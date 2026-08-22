@@ -24,7 +24,7 @@ import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import { vendorService } from '@/services/vendor.service';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { subproductService } from '@/services/subproduct.service';
-import { CURRENCIES } from './types';
+import { CURRENCIES, fmtAmount } from './types';
 import type { Vendor, PurchaseOrder } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 import PackSizeInput from './pack-size-input';
@@ -531,7 +531,7 @@ function ProductSearch({
                       ) : (
                         (p.platformCostPrice ?? 0) > 0 && (
                           <span className="shrink-0 text-xs font-medium text-gray-600">
-                            {(p.platformCostPrice ?? 0).toFixed(2)}
+                            {fmtAmount(p.platformCostPrice ?? 0)}
                           </span>
                         )
                       )}
@@ -585,7 +585,7 @@ function ProductSearch({
                               </div>
                               {(s.costPrice ?? 0) > 0 && (
                                 <span className="shrink-0 text-xs font-semibold text-gray-700">
-                                  {(s.costPrice ?? 0).toFixed(2)}
+                                  {fmtAmount(s.costPrice ?? 0)}
                                 </span>
                               )}
                               {enriched.unitsPerPack &&
@@ -1190,7 +1190,7 @@ export default function PurchasesEdit({ id }: { id: string }) {
                       </label>
                       <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
                         <span className="text-xs font-semibold text-gray-800">
-                          {currency} {total.toFixed(2)}
+                          {currency} {fmtAmount(total)}
                         </span>
                       </div>
                     </div>
@@ -1198,8 +1198,8 @@ export default function PurchasesEdit({ id }: { id: string }) {
 
                   {item.taxRate > 0 && (
                     <p className="ml-8 mt-1.5 text-[10px] text-gray-400">
-                      Subtotal {currency} {sub.toFixed(2)} + Tax {currency}{' '}
-                      {tax.toFixed(2)}
+                      Subtotal {currency} {fmtAmount(sub)} + Tax {currency}{' '}
+                      {fmtAmount(tax)}
                     </p>
                   )}
 
@@ -1241,14 +1241,14 @@ export default function PurchasesEdit({ id }: { id: string }) {
             <div className="flex items-center justify-between text-gray-600">
               <span>Subtotal</span>
               <span className="font-medium text-gray-900">
-                {currency} {subtotal.toFixed(2)}
+                {currency} {fmtAmount(subtotal)}
               </span>
             </div>
             {taxTotal > 0 && (
               <div className="flex items-center justify-between text-gray-600">
                 <span>Tax</span>
                 <span className="font-medium text-gray-900">
-                  {currency} {taxTotal.toFixed(2)}
+                  {currency} {fmtAmount(taxTotal)}
                 </span>
               </div>
             )}
@@ -1256,7 +1256,7 @@ export default function PurchasesEdit({ id }: { id: string }) {
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-gray-900">Total</span>
                 <span className="text-base font-bold text-gray-900">
-                  {currency} {grandTotal.toFixed(2)}
+                  {currency} {fmtAmount(grandTotal)}
                 </span>
               </div>
               <div className="flex justify-end">

@@ -17,7 +17,7 @@ import { purchaseAgreementService } from '@/services/purchaseAgreement.service';
 import { vendorService } from '@/services/vendor.service';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import type { Vendor } from './types';
-import { CURRENCIES, CURRENCY_SYMBOLS } from './types';
+import { CURRENCIES, CURRENCY_SYMBOLS, fmtAmount } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 
 const INPUT_CLS =
@@ -292,7 +292,7 @@ function ProductPicker({
                   </div>
                   {p.unitPrice > 0 && (
                     <span className="shrink-0 text-xs font-medium text-gray-600">
-                      {p.unitPrice.toFixed(2)}
+                      {fmtAmount(p.unitPrice)}
                     </span>
                   )}
                 </button>

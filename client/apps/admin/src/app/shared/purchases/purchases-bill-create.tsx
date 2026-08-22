@@ -10,6 +10,7 @@ import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import type { POItem } from '@/services/purchaseOrder.service';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
+import { fmtAmount } from './types';
 
 type BillableLine = {
   subProductName: string;
@@ -287,16 +288,16 @@ export default function PurchasesBillCreate() {
                           {line.quantity}
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700">
-                          {po.currency} {line.unitPrice.toFixed(2)}
+                          {po.currency} {fmtAmount(line.unitPrice)}
                         </td>
                         <td className="px-4 py-3 text-right text-gray-500">
                           {line.taxRate}%
                         </td>
                         <td className="px-4 py-3 text-right text-gray-500">
-                          {po.currency} {line.tax.toFixed(2)}
+                          {po.currency} {fmtAmount(line.tax)}
                         </td>
                         <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                          {po.currency} {line.total.toFixed(2)}
+                          {po.currency} {fmtAmount(line.total)}
                         </td>
                       </tr>
                     ))}
@@ -309,19 +310,19 @@ export default function PurchasesBillCreate() {
                     <div className="flex justify-between text-gray-600">
                       <span>Subtotal</span>
                       <span>
-                        {po.currency} {subtotal.toFixed(2)}
+                        {po.currency} {fmtAmount(subtotal)}
                       </span>
                     </div>
                     <div className="flex justify-between text-gray-600">
                       <span>Tax</span>
                       <span>
-                        {po.currency} {taxTotal.toFixed(2)}
+                        {po.currency} {fmtAmount(taxTotal)}
                       </span>
                     </div>
                     <div className="flex justify-between border-t border-gray-200 pt-2 text-base font-bold text-gray-900">
                       <span>Total</span>
                       <span>
-                        {po.currency} {grandTotal.toFixed(2)}
+                        {po.currency} {fmtAmount(grandTotal)}
                       </span>
                     </div>
                     <div className="flex justify-end">
@@ -397,7 +398,7 @@ export default function PurchasesBillCreate() {
               <PiCheck className="h-4 w-4" />
               {saving
                 ? 'Creating…'
-                : `Create Bill · ${po.currency} ${grandTotal.toFixed(2)}`}
+                : `Create Bill · ${po.currency} ${fmtAmount(grandTotal)}`}
             </button>
           </div>
         </div>

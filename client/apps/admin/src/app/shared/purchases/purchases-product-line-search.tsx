@@ -7,6 +7,7 @@ import { subproductService } from '@/services/subproduct.service';
 import { scanService } from '@/services/scan.service';
 import { routes } from '@/config/routes';
 import type { PurchaseLineOverride } from './purchases-scan-selection';
+import { fmtAmount } from './types';
 
 // Purchases-side twin of sales/product-line-search.tsx. Same catalogue search
 // and same AI `smart-search` fallback, but every number shown and returned is
@@ -257,7 +258,7 @@ export default function PurchasesProductLineSearch({
                       ) : (
                         p.costPrice > 0 && (
                           <span className="shrink-0 text-xs font-medium text-gray-600">
-                            {p.costPrice.toFixed(2)}
+                            {fmtAmount(p.costPrice)}
                           </span>
                         )
                       )}
@@ -294,7 +295,7 @@ export default function PurchasesProductLineSearch({
                             </div>
                             {s.costPrice > 0 && (
                               <span className="shrink-0 text-xs font-semibold text-gray-700">
-                                {s.costPrice.toFixed(2)}
+                                {fmtAmount(s.costPrice)}
                               </span>
                             )}
                           </button>

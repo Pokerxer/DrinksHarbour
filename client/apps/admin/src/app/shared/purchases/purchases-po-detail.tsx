@@ -27,8 +27,8 @@ import {
 import { vendorReturnService } from '@/services/vendorReturn.service';
 import type { VendorReturn } from '@/services/vendorReturn.service';
 import type { PurchaseOrder } from './types';
-import { STATUS_BADGE, statusLabel } from './types';
-import { printPOInvoice } from '@/utils/purchaseInvoice';
+import { STATUS_BADGE, statusLabel, fmtAmount } from './types';
+import { printPOInvoice, printRFQInvoice } from '@/utils/purchaseInvoice';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 
 export default function PurchasesPODetail({ id }: { id: string }) {
@@ -211,10 +211,15 @@ export default function PurchasesPODetail({ id }: { id: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => printPOInvoice(po, tenant?.name || 'DrinksHarbour')}
+            onClick={() =>
+              po.type === 'rfq'
+                ? printRFQInvoice(po, tenant?.name || 'DrinksHarbour')
+                : printPOInvoice(po, tenant?.name || 'DrinksHarbour')
+            }
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            <PiPrinter className="h-4 w-4" /> Print / Download
+            <PiPrinter className="h-4 w-4" />{' '}
+            {po.type === 'rfq' ? 'Print RFQ' : 'Print / Download'}
           </button>
           {canEdit && (
             <Link
@@ -491,19 +496,21 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 </td>
                 <td className="px-4 py-3 text-right text-gray-700">
                   {po.currency}{' '}
-                  {(
+                  {fmtAmount(
                     (item as any).unitCost ??
-                    item.unitPrice ??
-                    (item.quantity ? (item.totalCost ?? 0) / item.quantity : 0)
-                  ).toFixed(2)}
+                      item.unitPrice ??
+                      (item.quantity
+                        ? (item.totalCost ?? 0) / item.quantity
+                        : 0)
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right font-medium text-gray-900">
                   {po.currency}{' '}
-                  {(
+                  {fmtAmount(
                     item.totalCost ??
-                    ((item as any).unitCost ?? item.unitPrice ?? 0) *
-                      item.quantity
-                  ).toFixed(2)}
+                      ((item as any).unitCost ?? item.unitPrice ?? 0) *
+                        item.quantity
+                  )}
                 </td>
               </tr>
             ))}
@@ -517,7 +524,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 Total
               </td>
               <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
-                {po.currency} {totalCost.toFixed(2)}
+                {po.currency} {fmtAmount(totalCost)}
                 <div>
                   <BaseCurrencyEquivalent
                     amount={totalCost}
@@ -597,7 +604,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                       {r.items.reduce((s, i) => s + i.quantity, 0)}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900">
-                      {r.currency} {r.totalAmount.toFixed(2)}
+                      {r.currency} {fmtAmount(r.totalAmount)}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span
@@ -647,7 +654,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 </td>
                 <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
                   {po.currency}{' '}
-                  {returns.reduce((s, r) => s + r.totalAmount, 0).toFixed(2)}
+                  {fmtAmount(returns.reduce((s, r) => s + r.totalAmount, 0))}
                 </td>
                 <td colSpan={3} />
               </tr>

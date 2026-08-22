@@ -79,6 +79,16 @@ export interface PurchaseOrder {
   notes?: string;
   status: POStatus;
   type?: 'rfq' | 'po';
+  /** RFQ lifecycle state; only set when type === 'rfq'. */
+  rfqStatus?:
+    | 'draft'
+    | 'sent'
+    | 'quoted'
+    | 'approved'
+    | 'rejected'
+    | 'converted'
+    | 'expired'
+    | 'cancelled';
   tenant?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -354,6 +364,18 @@ export function fmtPrice(
   const safe = typeof n === 'number' && !Number.isNaN(n) ? n : 0;
   const symbol = CURRENCY_SYMBOLS[currency] ?? currency;
   return `${symbol}${safe.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// Grouped, two-decimal amount with no currency prefix — for call sites that
+// render their own `${currency} …` prefix or a symbol separately. The single
+// formatter every purchase money display goes through so commas and decimals
+// stay consistent across the module.
+export function fmtAmount(n: number | undefined | null): string {
+  const safe = typeof n === 'number' && !Number.isNaN(n) ? n : 0;
+  return safe.toLocaleString('en-NG', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 export interface PurchaseAnalyticsSummary {
