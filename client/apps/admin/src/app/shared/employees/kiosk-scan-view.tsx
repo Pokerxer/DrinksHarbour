@@ -8,10 +8,10 @@
 // own <video> element.  The viewfinder overlay (animated corners and sweep
 // line) is positioned on top of it with CSS.
 //
-// HID scanners act like keyboards: they type the payload + Enter into the
-// focused element.  The keyboard mode gives them an <input> to land in.
-// A global keydown buffer in the parent page catches scanner input even
-// when the camera is active, so this component never has to race focus.
+// HID scanners act like keyboards: they type the payload + Enter. The parent
+// page catches every burst with a global keydown buffer on BOTH surfaces —
+// camera and keyboard entry — so a scan never depends on this <input>
+// holding focus. The field exists for whoever has to type by hand.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -144,8 +144,9 @@ function KeyboardEntry({
   const [value, setValue] = useState('');
 
   // Re-focus on mount and whenever we clear — not on every keystroke, which
-  // is what an unconditional focus() in this effect did. A scanner types the
-  // whole payload into whatever holds focus, so the field has to hold it.
+  // is what an unconditional focus() in this effect did. Scanner bursts are
+  // caught by the parent's global buffer with or without focus; this field
+  // only has to be ready for somebody typing by hand.
   useEffect(() => {
     if (value === '') inputRef.current?.focus();
   }, [value]);

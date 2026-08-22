@@ -6,13 +6,13 @@
 // testing has to live outside them — the same split as shift-roster-utils.ts,
 // whose time-zone helpers this file reuses rather than restating.
 
-import type { LaneEmployee } from './shift-roster-utils';
 import {
   LAGOS_OFFSET_MINUTES,
   employeeName,
   formatMinutes,
   toLocalDateKey,
   toLocalTimeLabel,
+  type LaneEmployee,
 } from './shift-roster-utils';
 import type {
   AttendanceRecord,
@@ -308,6 +308,43 @@ export function shouldAcceptScan(
 
 /** A USB reader is a keyboard: the whole burst lands within this window. */
 export const SCAN_BURST_MS = 150;
+
+/**
+ * Whether a keystroke landed inside something a person types into.
+ *
+ * The kiosk catches scanner bursts with a window-level listener, but the
+ * keyboard-entry fallback renders a real <input> for manual typing. While that
+ * field holds focus, IT owns the keystrokes — feeding them into the scan
+ * buffer as well would submit one badge twice. Anything else (nothing
+ * focused, a button, the page itself) belongs to the buffer, which is what
+ * makes a scan work without anybody touching the screen.
+ *
+ * Duck-typed rather than `instanceof HTMLElement` so it stays testable in the
+ * node-only Vitest environment, and so a synthetic event target from a future
+ * input method still matches.
+ */
+export function isEditableTarget(target: unknown): boolean {
+  if (target == null || typeof target !== 'object') return false;
+  const el = target as {
+    tagName?: unknown;
+    type?: unknown;
+    isContentEditable?: unknown;
+  };
+  if (el.isContentEditable === true) return true;
+  const tag = typeof el.tagName === 'string' ? el.tagName.toUpperCase() : '';
+  if (tag !== 'INPUT' && tag !== 'TEXTAREA') return false;
+  // Checkbox/radio/etc. take no text, so their keys still belong to the buffer.
+  const textless = new Set([
+    'button',
+    'checkbox',
+    'radio',
+    'submit',
+    'reset',
+    'file',
+    'image',
+  ]);
+  return typeof el.type !== 'string' || !textless.has(el.type);
+}
 
 /** Characters typed so far, and when the last one arrived. */
 export interface ScanBuffer {

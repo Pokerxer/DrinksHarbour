@@ -24,6 +24,7 @@ import {
   SCAN_COOLDOWN_MS,
   pushScanKey,
   SCAN_BURST_MS,
+  isEditableTarget,
 } from './attendance-utils';
 import type { AttendanceRecord } from '@/services/attendance.service';
 
@@ -174,6 +175,34 @@ describe('the HID scanner buffer', () => {
 
   it('submits nothing when Enter arrives on an empty buffer', () => {
     expect(pushScanKey(empty, 'Enter', 100).submit).toBeNull();
+  });
+});
+
+describe('the editable-target guard', () => {
+  it('claims keystrokes typed into a text field', () => {
+    // The keyboard-entry fallback owns its own keys while focused; the global
+    // buffer must stand down or one scan is submitted twice.
+    expect(isEditableTarget({ tagName: 'INPUT' })).toBe(true);
+    expect(isEditableTarget({ tagName: 'input' })).toBe(true);
+    expect(isEditableTarget({ tagName: 'TEXTAREA' })).toBe(true);
+  });
+
+  it('does not claim keystrokes that landed nowhere editable', () => {
+    // A scanner burst with nothing focused — the case that used to be lost.
+    expect(isEditableTarget({ tagName: 'DIV' })).toBe(false);
+    expect(isEditableTarget({ tagName: 'BUTTON' })).toBe(false);
+    expect(isEditableTarget(null)).toBe(false);
+    expect(isEditableTarget(undefined)).toBe(false);
+  });
+
+  it('ignores non-text inputs, which a badge never needs', () => {
+    expect(
+      isEditableTarget({ tagName: 'INPUT', type: 'checkbox' })
+    ).toBe(false);
+  });
+
+  it('treats a contenteditable surface as editable', () => {
+    expect(isEditableTarget({ isContentEditable: true })).toBe(true);
   });
 });
 

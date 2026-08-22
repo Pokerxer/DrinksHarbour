@@ -17,8 +17,9 @@
 // (the same QR `employee-badge.tsx` prints), the server decides whether the
 // press is an in or an out, and the pad answers with the employee's name.
 // Camera scanning is the default; a USB HID scanner is a keyboard and gets
-// caught by a global key buffer while the camera is on; the PIN pad remains
-// as the fallback for whoever left their card at home.
+// caught by a global key buffer on BOTH badge surfaces — camera and keyboard
+// entry alike — so a scan never depends on an input field holding focus; the
+// PIN pad remains as the fallback for whoever left their card at home.
 //
 // TWO THINGS IT DELIBERATELY DOES NOT DO
 // --------------------------------------
@@ -46,6 +47,7 @@ import {
   resolveKioskAuth,
   isValidBadgeScan,
   normaliseBadgeScan,
+  isEditableTarget,
   pressBackspace,
   pressDigit,
   pushScanKey,
@@ -335,15 +337,21 @@ export default function AttendanceKioskPage({
     return () => window.removeEventListener('keydown', onKey);
   }, [mode, submitPin]);
 
-  // HID scanner catch-all: while the camera is scanning, a USB reader's
-  // keystrokes accumulate in a burst buffer and submit on Enter (or on a
-  // pause, for readers configured to skip the Enter). The folding rule lives
-  // in pushScanKey so it can be tested — notably that Shift, which a reader
-  // sends before every capital, does not end the burst.
+  // HID scanner catch-all: a USB reader is a keyboard, and its keystrokes
+  // accumulate in a burst buffer and submit on Enter (or on a pause, for
+  // readers configured to skip the Enter). Active on BOTH badge surfaces —
+  // camera AND keyboard entry — because a scan must land whether or not the
+  // manual-entry field holds focus; losing focus used to swallow every burst
+  // and push staff into typing codes by hand. While that field IS focused it
+  // keeps its own keys (isEditableTarget), so one badge is never fed twice.
+  // The folding rule lives in pushScanKey so it can be tested — notably that
+  // Shift, which a reader sends before every capital, does not end the burst.
   useEffect(() => {
-    if (mode !== 'camera') return;
+    if (mode === 'pin') return;
     function onKey(e: KeyboardEvent) {
       if (busy || earlyLeave) return;
+      // The focused manual-entry field owns its own keystrokes.
+      if (isEditableTarget(e.target)) return;
       if (e.key === 'Enter') e.preventDefault();
 
       const { buffer, submit } = pushScanKey(
