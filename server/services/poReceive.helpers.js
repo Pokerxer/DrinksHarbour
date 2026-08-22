@@ -2,14 +2,27 @@
 const { ValidationError } = require('../utils/errors');
 
 /**
- * Decide which warehouse received stock should land in.
- * @param {string|undefined|null} warehouseId  explicit choice from the request body
- * @param {string|undefined|null} defaultWarehouseId  the tenant's default warehouse id (may be null)
- * @returns {string} the resolved warehouse id
- * @throws {ValidationError} when neither resolves
+ * Decide which warehouse received stock should land in, by walking an ordered list of
+ * candidates and taking the first one that is actually set.
+ *
+ * Callers pass candidates most-specific-first. The controller's order is:
+ *   1. the explicit warehouseId on the request body (the user just picked it)
+ *   2. the warehouse recorded on the pending partial receipt (where it physically landed)
+ *   3. the PO's standing destination warehouse
+ *   4. the tenant's default warehouse
+ *
+ * Blank candidates ('', null, undefined) are skipped, not chosen — an empty <select>
+ * must fall through to the next candidate. Candidates pass through by identity, so a
+ * Mongoose ObjectId is handed back as an ObjectId.
+ *
+ * The two-argument form resolveTargetWarehouse(explicit, tenantDefault) is still valid.
+ *
+ * @param {...(string|object|undefined|null)} candidates  ordered, most specific first
+ * @returns {string|object} the first candidate that is set
+ * @throws {ValidationError} when none of them are
  */
-function resolveTargetWarehouse(warehouseId, defaultWarehouseId) {
-  const target = warehouseId || defaultWarehouseId;
+function resolveTargetWarehouse(...candidates) {
+  const target = candidates.find((c) => c !== undefined && c !== null && c !== '');
   if (!target) {
     throw new ValidationError(
       'Select a destination warehouse (or set a default) before validating.'

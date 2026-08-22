@@ -16,6 +16,7 @@ import {
   PiCaretRight,
   PiStorefront,
   PiLockKey,
+  PiSparkle,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -27,6 +28,13 @@ import { CURRENCIES } from './types';
 import type { Vendor, PurchaseOrder } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 import PackSizeInput from './pack-size-input';
+import WarehouseSelect, { useActiveWarehouses } from './warehouse-select';
+import PurchasesScanDrawer from './purchases-scan-drawer';
+import {
+  appendScannedLines,
+  type PurchaseLineDraft,
+} from './purchases-scan-selection';
+import { warehouseIdOf } from '@/services/purchaseOrder.service';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -635,8 +643,14 @@ export default function PurchasesEdit({ id }: { id: string }) {
   const [notes, setNotes] = useState('');
   const [termsConditions, setTermsConditions] = useState('');
 
+  // Destination warehouse — hydrated from the PO below, so no seeding hook here:
+  // an existing order's stored destination (including "none") is the truth.
+  const [warehouseId, setWarehouseId] = useState('');
+  const { warehouses, loading: warehousesLoading } = useActiveWarehouses(token);
+
   // order lines
   const [items, setItems] = useState<LineItem[]>([blankItem()]);
+  const [scanOpen, setScanOpen] = useState(false);
 
   // ── Load PO on mount ──────────────────────────────────────────────────────
 
@@ -653,6 +667,9 @@ export default function PurchasesEdit({ id }: { id: string }) {
       setVendorReference(data.vendorReference ?? '');
       setExpectedArrival(toDateInput(data.expectedArrival));
       setValidUntil(toDateInput(data.validUntil));
+      // getPurchaseOrder populates warehouse to {_id, name, code}; create/update
+      // hand back a bare id. warehouseIdOf reads either.
+      setWarehouseId(warehouseIdOf(data.warehouse));
       setNotes(data.notes ?? '');
       setTermsConditions(data.termsConditions ?? '');
 
@@ -700,6 +717,12 @@ export default function PurchasesEdit({ id }: { id: string }) {
   // ── Line item mutations ───────────────────────────────────────────────────
 
   const addItem = useCallback(() => setItems((p) => [...p, blankItem()]), []);
+
+  /** One accepted row from the Scan & Match drawer. Called once per row, so the
+   *  first call consumes a trailing blank line and the rest append. */
+  const addScannedLine = useCallback((line: PurchaseLineDraft) => {
+    setItems((p) => appendScannedLines(p, [line], blankItem));
+  }, []);
 
   const removeItem = useCallback(
     (i: number) => setItems((p) => p.filter((_, idx) => idx !== i)),
@@ -765,6 +788,9 @@ export default function PurchasesEdit({ id }: { id: string }) {
         vendorReference: vendorReference || undefined,
         currency,
         expectedArrival: expectedArrival || undefined,
+        // Always sent, '' included — the server reads '' as "clear the destination".
+        // Sending undefined instead would make the field impossible to unset.
+        warehouse: warehouseId,
         validUntil: validUntil || undefined,
         notes: notes || undefined,
         termsConditions: termsConditions || undefined,
@@ -966,6 +992,22 @@ export default function PurchasesEdit({ id }: { id: string }) {
               />
             </div>
 
+            <div className="sm:col-span-2">
+              <label
+                htmlFor="destination-warehouse"
+                className="mb-1 block text-xs font-medium text-gray-600"
+              >
+                Destination Warehouse
+              </label>
+              <WarehouseSelect
+                warehouses={warehouses}
+                loading={warehousesLoading}
+                value={warehouseId}
+                onChange={setWarehouseId}
+                noneLabel="Decide at receiving"
+              />
+            </div>
+
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">
                 Valid Until{' '}
@@ -1014,13 +1056,23 @@ export default function PurchasesEdit({ id }: { id: string }) {
         <div className="rounded-xl border border-gray-200 bg-white">
           <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
             <h2 className="text-sm font-semibold text-gray-800">Order Lines</h2>
-            <button
-              type="button"
-              onClick={addItem}
-              className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
-            >
-              <PiPlus className="h-3.5 w-3.5" /> Add Line
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setScanOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-[#b20202]/10 px-3 py-1.5 text-xs font-medium text-[#b20202] hover:bg-[#b20202]/15"
+                title="Photograph, upload or paste a vendor quotation"
+              >
+                <PiSparkle className="h-3.5 w-3.5" /> Scan &amp; Match
+              </button>
+              <button
+                type="button"
+                onClick={addItem}
+                className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
+              >
+                <PiPlus className="h-3.5 w-3.5" /> Add Line
+              </button>
+            </div>
           </div>
 
           <div className="divide-y divide-gray-100">
@@ -1257,6 +1309,13 @@ export default function PurchasesEdit({ id }: { id: string }) {
           </button>
         </div>
       </div>
+
+      <PurchasesScanDrawer
+        open={scanOpen}
+        token={token}
+        onClose={() => setScanOpen(false)}
+        onAdd={addScannedLine}
+      />
     </div>
   );
 }

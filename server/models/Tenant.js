@@ -344,7 +344,12 @@ const tenantSchema = new Schema(
       },
       defaultLeadTimeDays: { type: Number, min: 0, max: 365, default: 7 },
       defaultPaymentTerms: { type: String, default: 'Net 30' },
+      // Free-text note; predates the warehouse picker and is kept so no tenant
+      // loses what they typed. Not a Warehouse reference.
       defaultReceivingLocation: { type: String, default: '' },
+      // Warehouse id that seeds a new PO's destination; '' = none. Stored as a
+      // string so clearing it is just '' — ownership is re-checked on every PO write.
+      defaultReceivingWarehouse: { type: String, default: '' },
     },
 
     // ────────────────────────────────────────────────

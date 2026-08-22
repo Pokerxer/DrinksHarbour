@@ -9,6 +9,7 @@ import {
   type PurchaseSettings,
 } from '@/services/purchaseOrder.service';
 import { fraunces } from './purchases-fonts';
+import WarehouseSelect, { useActiveWarehouses } from './warehouse-select';
 
 const CURRENCIES: PurchaseSettings['defaultCurrency'][] = [
   'NGN',
@@ -25,6 +26,7 @@ export default function PurchasesSettings() {
   const [baseline, setBaseline] = useState<PurchaseSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const { warehouses, loading: warehousesLoading } = useActiveWarehouses(token);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -285,15 +287,37 @@ export default function PurchasesSettings() {
               desc="Block edits once a PO is confirmed."
             />
             <div>
-              <label className={label}>Default Receiving Location</label>
+              <label className={label} htmlFor="default-receiving-warehouse">
+                Default Receiving Warehouse
+              </label>
+              <WarehouseSelect
+                id="default-receiving-warehouse"
+                warehouses={warehouses}
+                loading={warehousesLoading}
+                value={settings.defaultReceivingWarehouse ?? ''}
+                onChange={(id) => patch({ defaultReceivingWarehouse: id })}
+                noneLabel="No default — decide per order"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Pre-selects the destination on new purchase orders. Each order and
+                each delivery can still override it.
+              </p>
+            </div>
+
+            <div>
+              <label className={label}>Receiving Notes</label>
               <input
                 className={input}
                 value={settings.defaultReceivingLocation}
                 onChange={(e) =>
                   patch({ defaultReceivingLocation: e.target.value })
                 }
-                placeholder="e.g. Main Warehouse"
+                placeholder="e.g. use the Gana St loading bay"
               />
+              <p className="mt-1 text-xs text-gray-400">
+                Free text shown to receivers. Not a warehouse — use the picker
+                above for that.
+              </p>
             </div>
           </div>
         </div>

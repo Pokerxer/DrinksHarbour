@@ -16,6 +16,7 @@ import {
   PiWarning,
   PiCaretRight,
   PiStorefront,
+  PiSparkle,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -26,6 +27,15 @@ import { CURRENCIES } from './types';
 import type { Vendor } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 import PackSizeInput from './pack-size-input';
+import WarehouseSelect, {
+  useActiveWarehouses,
+  useSeededWarehouse,
+} from './warehouse-select';
+import PurchasesScanDrawer from './purchases-scan-drawer';
+import {
+  appendScannedLines,
+  type PurchaseLineDraft,
+} from './purchases-scan-selection';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -623,8 +633,52 @@ export default function PurchasesCreate() {
   const [termsConditions, setTermsConditions] = useState('');
   const [items, setItems] = useState<LineItem[]>([blankItem()]);
   const [saving, setSaving] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+
+  // Destination warehouse: where this order's goods are expected to land. Seeded
+  // from the tenant's default receiving warehouse, then the isDefault flag.
+  const [warehouseId, setWarehouseId] = useState('');
+  const [settingWarehouse, setSettingWarehouse] = useState<
+    string | undefined
+  >();
+  const {
+    warehouses,
+    loading: warehousesLoading,
+    loaded,
+  } = useActiveWarehouses(token);
+  useSeededWarehouse(
+    warehouses,
+    loaded,
+    warehouseId,
+    setWarehouseId,
+    settingWarehouse
+  );
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    purchaseOrderService
+      .getPurchaseSettings(token)
+      .then((res) => {
+        if (cancelled) return;
+        setSettingWarehouse(
+          res.data?.purchaseSettings?.defaultReceivingWarehouse || ''
+        );
+      })
+      // A missing setting is not an error — seeding just falls through to isDefault.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const addItem = useCallback(() => setItems((p) => [...p, blankItem()]), []);
+
+  /** One accepted row from the Scan & Match drawer. Called once per row, so the
+   *  first call consumes the form's seeded blank line and the rest append. */
+  const addScannedLine = useCallback((line: PurchaseLineDraft) => {
+    setItems((p) => appendScannedLines(p, [line], blankItem));
+  }, []);
   const removeItem = useCallback(
     (i: number) => setItems((p) => p.filter((_, idx) => idx !== i)),
     []
@@ -703,6 +757,7 @@ export default function PurchasesCreate() {
         vendorReference: vendorReference || undefined,
         currency,
         expectedArrival: expectedArrival || undefined,
+        warehouse: warehouseId || undefined,
         validUntil: validUntil || undefined,
         notes: notes || undefined,
         termsConditions: termsConditions || undefined,
@@ -849,6 +904,26 @@ export default function PurchasesCreate() {
                 />
               </div>
 
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="destination-warehouse"
+                  className="mb-1 block text-xs font-medium text-gray-600"
+                >
+                  Destination Warehouse
+                </label>
+                <WarehouseSelect
+                  warehouses={warehouses}
+                  loading={warehousesLoading}
+                  value={warehouseId}
+                  onChange={setWarehouseId}
+                  noneLabel="Decide at receiving"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Where these goods are expected to land. The receiver can still
+                  change it per delivery.
+                </p>
+              </div>
+
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">
                   Valid Until{' '}
@@ -899,13 +974,23 @@ export default function PurchasesCreate() {
               <h2 className="text-sm font-semibold text-gray-800">
                 Order Lines
               </h2>
-              <button
-                type="button"
-                onClick={addItem}
-                className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
-              >
-                <PiPlus className="h-3.5 w-3.5" /> Add Line
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setScanOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg bg-[#b20202]/10 px-3 py-1.5 text-xs font-medium text-[#b20202] hover:bg-[#b20202]/15"
+                  title="Photograph, upload or paste a vendor quotation"
+                >
+                  <PiSparkle className="h-3.5 w-3.5" /> Scan &amp; Match
+                </button>
+                <button
+                  type="button"
+                  onClick={addItem}
+                  className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                >
+                  <PiPlus className="h-3.5 w-3.5" /> Add Line
+                </button>
+              </div>
             </div>
 
             <div className="divide-y divide-gray-100">
@@ -1128,6 +1213,13 @@ export default function PurchasesCreate() {
           </div>
         </div>
       </div>
+
+      <PurchasesScanDrawer
+        open={scanOpen}
+        token={token}
+        onClose={() => setScanOpen(false)}
+        onAdd={addScannedLine}
+      />
     </div>
   );
 }

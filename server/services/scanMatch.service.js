@@ -768,6 +768,11 @@ function buildResult(extracted, matchedProduct, subProducts, confidence, note) {
         // mirrors the same fallback in product-line-search pickSize.
         sellingPrice: s.sellingPrice || sp.baseSellingPrice || 0,
         costPrice: s.costPrice ?? sp.costPrice ?? 0,
+        // Read internally by resolvePackQty above; returned so purchases can
+        // use it as a PO line's packSize. Sales ignores it. `|| 1` rather than
+        // `??` because Size rows that predate the field arrive as 0 or
+        // undefined, and either would divide-by-zero the pack totals.
+        unitsPerPack: s.unitsPerPack || 1,
         availableStock: s.availableStock ?? s.stock ?? 0,
         isDefault: s.isDefault ?? false,
       })),
@@ -1097,6 +1102,7 @@ module.exports = {
   smartSearch,
   sizeTextToMl,
   // Exposed for testing / external use
+  buildResult,
   normalizeStr,
   expandAliases,
   scoreNameMatch,

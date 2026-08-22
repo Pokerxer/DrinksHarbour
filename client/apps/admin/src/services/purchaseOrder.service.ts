@@ -1,6 +1,34 @@
 // services/purchaseOrder.service.ts
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
+/** A warehouse as populated onto a PO by getPurchaseOrder (`name code` only). */
+export interface POWarehouseRef {
+  _id: string;
+  name?: string;
+  code?: string;
+}
+
+/**
+ * Read a PO's destination warehouse id whether it came back populated or raw.
+ * Exported so the create/edit/receipt screens all seed their picker the same way.
+ */
+export function warehouseIdOf(
+  warehouse: string | POWarehouseRef | null | undefined
+): string {
+  if (!warehouse) return '';
+  return typeof warehouse === 'string' ? warehouse : (warehouse._id ?? '');
+}
+
+/** The display label for a PO's destination, or '' when there is none. */
+export function warehouseLabelOf(
+  warehouse: string | POWarehouseRef | null | undefined
+): string {
+  if (!warehouse || typeof warehouse === 'string') return '';
+  return warehouse.code
+    ? `${warehouse.name} (${warehouse.code})`
+    : (warehouse.name ?? '');
+}
+
 export interface PurchaseOrder {
   _id: string;
   poNumber: string;
@@ -11,6 +39,13 @@ export interface PurchaseOrder {
   confirmationDate?: string;
   expectedArrival?: string;
   arrivalDate?: string;
+  /**
+   * Standing destination for this order's goods. A string id when written, a
+   * populated `{_id, name, code}` when read back from getPurchaseOrder. It seeds the
+   * receipt screen's picker but does not lock it — each partial receipt records its
+   * own warehouse, and that is what stock posts against.
+   */
+  warehouse?: string | POWarehouseRef | null;
   items: POItem[];
   notes?: string;
   status: string;
@@ -99,7 +134,10 @@ export interface PurchaseSettings {
   defaultCurrency: 'NGN' | 'USD' | 'EUR' | 'GBP';
   defaultLeadTimeDays: number;
   defaultPaymentTerms: string;
+  /** Free-text note, kept from before there was a picker. Not a Warehouse ref. */
   defaultReceivingLocation: string;
+  /** Warehouse id seeding a new PO's destination; '' = none. */
+  defaultReceivingWarehouse: string;
 }
 
 export interface CreatePOResponse {

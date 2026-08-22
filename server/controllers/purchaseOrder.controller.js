@@ -144,7 +144,10 @@ const PURCHASE_SETTINGS_DEFAULTS = {
   defaultCurrency: "NGN",
   defaultLeadTimeDays: 7,
   defaultPaymentTerms: "Net 30",
+  // Free-text note, kept so no tenant loses what they typed before there was a picker.
   defaultReceivingLocation: "",
+  // The real thing: a Warehouse id (or '' for none) that seeds a new PO's destination.
+  defaultReceivingWarehouse: "",
 };
 
 const getTenantPurchaseSettings = async (tenantId) => {
@@ -187,8 +190,44 @@ const getDefaultWarehouse = async (tenantId) => {
   if (!warehouse) {
     return null;
   }
-  
+
   return warehouse._id;
+};
+
+/**
+ * Resolve the destination warehouse to store on a PO.
+ *
+ * An explicitly chosen warehouse must belong to this tenant — a foreign id would
+ * otherwise post another tenant's stock at validate time. Falls back to the tenant's
+ * configured default receiving warehouse. Returns undefined when nothing is set, which
+ * is fine: the validate-time chain still resolves down to the tenant default.
+ */
+const resolvePOWarehouse = async (warehouseId, tenantId) => {
+  const explicit = !!warehouseId;
+  let candidate = warehouseId;
+  if (!candidate) {
+    const settings = await getTenantPurchaseSettings(tenantId);
+    candidate = settings.defaultReceivingWarehouse || null;
+  }
+  if (!candidate) return undefined;
+  if (!mongoose.Types.ObjectId.isValid(candidate)) {
+    if (explicit) throw new ValidationError("Invalid warehouse selected");
+    return undefined;
+  }
+
+  const owned = await Warehouse.findOne({ _id: candidate, tenant: tenantId })
+    .select("_id")
+    .lean();
+  if (!owned) {
+    // An explicit pick that isn't ours is a hard error. A stale tenant *setting*
+    // is not worth blocking the order over — it degrades to no destination, and
+    // the validate-time chain still resolves down to the tenant default.
+    if (explicit) {
+      throw new ValidationError("Selected warehouse not found for this tenant");
+    }
+    return undefined;
+  }
+  return owned._id;
 };
 
 // @desc    Create new purchase order or RFQ
@@ -211,6 +250,7 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
     confirmationDate,
     expectedArrival,
     arrivalDate,
+    warehouse,
     items,
     notes,
     project,
@@ -286,12 +326,15 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
     resolvedValidUntil = d;
   }
 
+  const resolvedWarehouse = await resolvePOWarehouse(warehouse, tenantId);
+
   const purchaseOrder = await PurchaseOrder.create({
     tenant: tenantId,
     poNumber,
     vendor,
     vendorName,
     vendorReference,
+    warehouse: resolvedWarehouse,
     currency: currency || purchSettings.defaultCurrency || "NGN",
     billControlPolicy:
       req.body.billControlPolicy || purchSettings.defaultBillControlPolicy || "received",
@@ -350,6 +393,8 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
       populate: { path: "product", select: "tracksBatch isAlcoholic" },
     })
     .populate("items.sizeId", "size ml volume")
+    .populate("warehouse", "name code")
+    .populate("partialReceipts.warehouseId", "name code")
     .populate("purchaseAgreement", "agreementNumber name status");
 
   if (!purchaseOrder) {
@@ -443,6 +488,7 @@ const updatePurchaseOrder = asyncHandler(async (req, res) => {
     vendorReference,
     currency,
     expectedArrival,
+    warehouse,
     items,
     notes,
     termsConditions,
@@ -455,6 +501,13 @@ const updatePurchaseOrder = asyncHandler(async (req, res) => {
   if (vendorReference !== undefined) po.vendorReference = vendorReference;
   if (currency !== undefined) po.currency = currency;
   if (expectedArrival !== undefined) po.expectedArrival = expectedArrival;
+  // Clearing the destination ('' / null) is allowed — the validate-time chain still
+  // resolves down to the tenant default. A non-empty id is tenant-checked first.
+  if (warehouse !== undefined) {
+    po.warehouse = warehouse
+      ? await resolvePOWarehouse(warehouse, tenantId)
+      : undefined;
+  }
   if (notes !== undefined) po.notes = notes;
   if (termsConditions !== undefined) po.termsConditions = termsConditions;
   if (validUntil !== undefined) po.validUntil = validUntil;
@@ -591,7 +644,19 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     } catch (e) {
       defaultWarehouseId = null;
     }
-    const targetWarehouseId = resolveTargetWarehouse(warehouseId, defaultWarehouseId);
+    // The newest not-yet-validated receipt is the one this validate is posting, so
+    // its recorded warehouse is where the goods physically landed. Without this the
+    // id captured at receive time was write-only: validating from any surface that
+    // did not re-send it posted to the tenant default instead — silently.
+    const pendingReceipt = [...(purchaseOrder.partialReceipts || [])]
+      .reverse()
+      .find((r) => !r.isValidated && r.status !== "cancelled");
+    const targetWarehouseId = resolveTargetWarehouse(
+      warehouseId,
+      pendingReceipt?.warehouseId,
+      purchaseOrder.warehouse,
+      defaultWarehouseId
+    );
 
     // Resolve each line's parent-product batch-tracking flag (transient, not
     // persisted) so postReceivedStock knows which lines need a WarehouseBatch,
@@ -1912,6 +1977,10 @@ const PURCHASE_SETTING_VALIDATORS = {
   defaultLeadTimeDays: (v) => typeof v === "number" && v >= 0 && v <= 365,
   defaultPaymentTerms: (v) => typeof v === "string" && v.length <= 100,
   defaultReceivingLocation: (v) => typeof v === "string" && v.length <= 200,
+  // '' clears it; anything else must look like an ObjectId. Ownership is checked at
+  // PO-write time by resolvePOWarehouse, so a stale id can never post foreign stock.
+  defaultReceivingWarehouse: (v) =>
+    typeof v === "string" && (v === "" || mongoose.Types.ObjectId.isValid(v)),
 };
 
 // @desc    Update tenant purchase settings
@@ -2007,7 +2076,17 @@ const returnPurchaseOrder = asyncHandler(async (req, res) => {
 
   const errors   = [];
   const movementIds = [];
-  const returnWarehouse = await inventoryService.resolveMovementWarehouse(tenantId, undefined);
+  // Goods must leave the warehouse they were received into, not whichever one happens
+  // to be the tenant default. Prefer an explicit choice, then the most recent validated
+  // receipt's warehouse, then the PO's standing destination; resolveMovementWarehouse
+  // still falls back to the tenant default when none of those are set.
+  const validatedReceipt = [...(po.partialReceipts || [])]
+    .reverse()
+    .find((r) => r.warehouseId && r.status !== 'cancelled');
+  const returnWarehouse = await inventoryService.resolveMovementWarehouse(
+    tenantId,
+    req.body.warehouseId || validatedReceipt?.warehouseId || po.warehouse || undefined
+  );
 
   // Resolve batch-tracking + parent product per returned sub-product so the
   // warehouse decrement can deplete batches FEFO and the movement carries product.

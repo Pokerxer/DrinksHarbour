@@ -11,6 +11,9 @@ export interface ScanMatchedSize {
   sku?: string;
   sellingPrice: number;
   costPrice: number;
+  /** Units in a pack/carton. Purchases maps this onto a PO line's packSize;
+   *  sales ignores it. Absent on Size rows that predate the field. */
+  unitsPerPack?: number;
   availableStock?: number;
   isDefault?: boolean;
 }

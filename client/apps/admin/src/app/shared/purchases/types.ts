@@ -1,3 +1,7 @@
+import type { POWarehouseRef } from '@/services/purchaseOrder.service';
+
+export type { POWarehouseRef };
+
 export type POStatus =
   | 'draft'
   | 'confirmed'
@@ -65,6 +69,12 @@ export interface PurchaseOrder {
   confirmationDate?: string;
   expectedArrival?: string;
   arrivalDate?: string;
+  /**
+   * Standing destination for this order's goods — populated to {_id, name, code} by
+   * getPurchaseOrder, a bare id elsewhere. Read it with warehouseIdOf /
+   * warehouseLabelOf from purchaseOrder.service rather than by hand.
+   */
+  warehouse?: string | POWarehouseRef | null;
   items: POItem[];
   notes?: string;
   status: POStatus;

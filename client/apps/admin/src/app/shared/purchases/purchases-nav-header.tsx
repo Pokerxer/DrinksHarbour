@@ -22,6 +22,7 @@ import {
   PiHandshakeDuotone,
   PiListChecksDuotone,
   PiArrowsLeftRightDuotone,
+  PiWarehouseDuotone,
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
@@ -129,6 +130,12 @@ const navItems: NavItem[] = [
         href: routes.eCommerce.purchaseVendors,
         icon: <PiUsersThreeDuotone />,
         desc: 'Supplier directory',
+      },
+      {
+        label: 'Warehouses',
+        href: routes.warehouses.list,
+        icon: <PiWarehouseDuotone />,
+        desc: 'Where goods land',
       },
       {
         label: 'Purchase Agreements',

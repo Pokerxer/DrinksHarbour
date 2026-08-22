@@ -45,6 +45,14 @@ const PurchaseOrderSchema = new Schema(
     expectedArrival: {
       type: Date,
     },
+    // Standing destination for this order's goods, chosen when the PO is written.
+    // A default that carries through, not a lock: it pre-fills the receipt screen,
+    // but each partial receipt records its own warehouseId and that is what stock
+    // actually posts against — which is what lets one PO be split across warehouses.
+    warehouse: {
+      type: ObjectId,
+      ref: "Warehouse",
+    },
     paymentTerms: {
       type: String,
       trim: true,

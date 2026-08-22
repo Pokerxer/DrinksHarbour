@@ -20,8 +20,12 @@ import {
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import {
+  purchaseOrderService,
+  warehouseIdOf,
+} from '@/services/purchaseOrder.service';
 import { warehouseService, type Warehouse } from '@/services/warehouse.service';
+import { pickSeedWarehouse } from './warehouse-select-helpers';
 import type { PurchaseOrder } from './types';
 
 type RowStatus = 'done' | 'receiving-all' | 'partial' | 'pending';
@@ -82,12 +86,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
           isActive: true,
         });
         if (cancelled) return;
-        const list: Warehouse[] = res.data ?? [];
-        setWarehouses(list);
-        const preferred = list.find((w) => w.isDefault) ?? list[0];
-        // Only seed the default when the user hasn't already chosen one,
-        // so a token refresh re-running this effect won't clobber their pick.
-        if (preferred) setWarehouseId((cur) => cur || preferred._id);
+        setWarehouses(res.data ?? []);
       } catch {
         if (!cancelled) {
           setWarehouses([]);
@@ -99,6 +98,18 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
       cancelled = true;
     };
   }, [token]);
+
+  // Seeding is its own effect because the PO and the warehouse list arrive from two
+  // independent fetches — whichever lands second must still be able to seed. The
+  // PO's own destination wins over the isDefault flag (that is the point of choosing
+  // one at order time) but stays overridable here, since a delivery can be diverted.
+  const poWarehouseId = warehouseIdOf(po?.warehouse);
+  useEffect(() => {
+    if (warehouses.length === 0) return;
+    setWarehouseId((cur) =>
+      pickSeedWarehouse(warehouses, { current: cur, setting: poWarehouseId })
+    );
+  }, [warehouses, poWarehouseId]);
 
   const totals = useMemo(() => {
     if (!po)

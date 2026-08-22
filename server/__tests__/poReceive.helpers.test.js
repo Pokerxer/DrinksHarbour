@@ -29,6 +29,53 @@ test('resolveTargetWarehouse throws ValidationError when neither resolves', () =
   );
 });
 
+// The ordered chain: an explicit choice beats the receipt it is being validated from,
+// which beats the PO's standing destination, which beats the tenant default. Without
+// this order a receipt taken into warehouse B and validated from a screen that does not
+// re-send the id posts to the tenant default instead — silently, with a success toast.
+test('resolveTargetWarehouse walks the whole candidate chain in order', () => {
+  assert.strictEqual(
+    resolveTargetWarehouse('wh-explicit', 'wh-receipt', 'wh-po', 'wh-default'),
+    'wh-explicit'
+  );
+  assert.strictEqual(
+    resolveTargetWarehouse(undefined, 'wh-receipt', 'wh-po', 'wh-default'),
+    'wh-receipt'
+  );
+  assert.strictEqual(
+    resolveTargetWarehouse(undefined, undefined, 'wh-po', 'wh-default'),
+    'wh-po'
+  );
+  assert.strictEqual(
+    resolveTargetWarehouse(undefined, undefined, undefined, 'wh-default'),
+    'wh-default'
+  );
+});
+
+test('resolveTargetWarehouse skips blank candidates rather than choosing them', () => {
+  // '' / null / undefined are "not chosen", not "chosen as nothing" — an empty select
+  // must fall through to the next candidate, never short-circuit the chain.
+  assert.strictEqual(
+    resolveTargetWarehouse('', null, undefined, 'wh-default'),
+    'wh-default'
+  );
+  assert.strictEqual(resolveTargetWarehouse(null, '', 'wh-po', null), 'wh-po');
+});
+
+test('resolveTargetWarehouse still throws when every candidate is blank', () => {
+  assert.throws(
+    () => resolveTargetWarehouse('', null, undefined, ''),
+    (err) => err instanceof ValidationError && /destination warehouse/i.test(err.message)
+  );
+});
+
+test('resolveTargetWarehouse accepts ObjectId-like candidates unchanged', () => {
+  // Mongoose ids arrive as objects, not strings — they must pass through by identity
+  // so the caller can hand them straight to adjustStock.
+  const id = { toString: () => '507f1f77bcf86cd799439011' };
+  assert.strictEqual(resolveTargetWarehouse(undefined, undefined, id, null), id);
+});
+
 test('postReceivedStock posts each qualifying line to the chosen warehouse', async () => {
   const calls = [];
   const adjustStock = async (payload, userId, tenantId) => {

@@ -20,7 +20,10 @@ import {
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import {
+  purchaseOrderService,
+  warehouseLabelOf,
+} from '@/services/purchaseOrder.service';
 import { vendorReturnService } from '@/services/vendorReturn.service';
 import type { VendorReturn } from '@/services/vendorReturn.service';
 import type { PurchaseOrder } from './types';
@@ -386,6 +389,12 @@ export default function PurchasesPODetail({ id }: { id: string }) {
             value: po.expectedArrival
               ? new Date(po.expectedArrival).toLocaleDateString()
               : '—',
+          },
+          {
+            label: 'Destination',
+            // '' when the PO has none, or when the ref came back unpopulated — an
+            // id must never be rendered as if it were a warehouse name.
+            value: warehouseLabelOf(po.warehouse) || '—',
           },
           {
             label: 'Created',
