@@ -33,11 +33,27 @@ export interface CategorySummary {
   image: string | null;
 }
 
-export interface BannerSummary {
+/** Every field `Banner/HeroBanner.tsx` and `Banner/PlacementBanner.tsx` read. */
+export interface RawBanner {
   _id: string;
   title: string;
-  image: string | null;
-  linkUrl: string | null;
+  subtitle?: string;
+  description?: string;
+  type?: string;
+  placement?: string;
+  ctaText?: string;
+  ctaLink?: string;
+  ctaStyle?: string;
+  linkType?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  overlayOpacity?: number;
+  textAlignment?: string;
+  contentPosition?: string;
+  image?: { url?: string; alt?: string } | string;
+  mobileImage?: { url?: string } | string;
+  priority?: string;
+  autoplay?: { enabled?: boolean; interval?: number };
 }
 
 const GENERIC_ERROR = 'Could not load right now.';
@@ -100,16 +116,46 @@ async function getProducts(path: string): Promise<CatalogResult<RawProduct[]>> {
   return { ok: true, data: readList(result.payload, 'products') as RawProduct[] };
 }
 
-export async function fetchFeaturedProducts(): Promise<CatalogResult<RawProduct[]>> {
-  return getProducts('/api/products/featured?limit=12');
+/**
+ * Admin-curated featured products.
+ *
+ * `?isFeatured=true` on the SEARCH endpoint, not `/api/products/featured` —
+ * that is the query `apps/platform/src/app/page.tsx:87` runs, and it is the one
+ * that returns the `isFeatured` flag the card layer re-checks before rendering.
+ */
+export async function fetchFeaturedProducts(limit = 8): Promise<CatalogResult<RawProduct[]>> {
+  return getProducts(`/api/products?isFeatured=true&limit=${limit}`);
 }
 
-export async function fetchBestsellers(): Promise<CatalogResult<RawProduct[]>> {
-  return getProducts('/api/products/bestsellers?limit=12');
+/**
+ * "Hot Deals". `sortBy=discount` surfaces products with an active promotion
+ * first, then backfills with the rest of the catalog so the grid is never empty
+ * (page.tsx:59).
+ */
+export async function fetchHotDeals(limit = 12): Promise<CatalogResult<RawProduct[]>> {
+  return getProducts(`/api/products?sortBy=discount&limit=${limit}`);
 }
 
-export async function fetchTrendingProducts(): Promise<CatalogResult<RawProduct[]>> {
-  return getProducts('/api/products/trending?limit=12');
+export async function fetchBestsellers(limit = 12): Promise<CatalogResult<RawProduct[]>> {
+  return getProducts(`/api/products/bestsellers?limit=${limit}`);
+}
+
+export async function fetchTrendingProducts(limit = 12): Promise<CatalogResult<RawProduct[]>> {
+  return getProducts(`/api/products/trending?limit=${limit}`);
+}
+
+export async function fetchNewArrivals(limit = 12): Promise<CatalogResult<RawProduct[]>> {
+  return getProducts(`/api/products/new-arrivals?limit=${limit}`);
+}
+
+/**
+ * Personalised picks — signed-in only. The web falls back to `trending` when
+ * this returns nothing, and so does the block that calls it.
+ */
+export async function fetchPersonalRecommendations(
+  limit = 12
+): Promise<CatalogResult<RawProduct[]>> {
+  return getProducts(`/api/user/recommendations?limit=${limit}`);
 }
 
 /**
@@ -119,6 +165,92 @@ export async function fetchTrendingProducts(): Promise<CatalogResult<RawProduct[
  */
 export async function fetchOnSaleProducts(): Promise<CatalogResult<RawProduct[]>> {
   return getProducts('/api/products?onSale=true&limit=20&inStock=false');
+}
+
+/** One page of search results — `ModalSearchContext.tsx`'s `SearchResult`. */
+export interface SearchPage {
+  products: RawProduct[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+const EMPTY_PAGE: SearchPage = { products: [], total: 0, page: 1, totalPages: 0 };
+
+/**
+ * Free-text product search — the endpoint the web's search modal calls
+ * (`ModalSearchContext.tsx:291`), backed by `productController.searchProductsPublic`.
+ *
+ * NOT `/api/products?search=`. That parameter is silently IGNORED by the plain
+ * list endpoint: measured 2026-08-19 against the live backend, "medoc",
+ * "zzzzznonsense" and an empty string all returned the identical default page.
+ * This endpoint's free-text $match runs across country, region, appellation,
+ * producer, vintage, cask, style and tasting notes — which is why it can return
+ * a bottle for "médoc" or "smoky" when the name says neither.
+ *
+ * A blank term short-circuits rather than asking the server for everything: the
+ * web shows its default panel until something is typed, and a search-as-you-type
+ * field would otherwise fire a full catalogue read on every cleared input.
+ */
+export async function searchProducts(
+  term: string,
+  opts: { page?: number; limit?: number } = {}
+): Promise<CatalogResult<SearchPage>> {
+  const query = term.trim();
+  if (!query) return { ok: true, data: EMPTY_PAGE };
+
+  const page = opts.page ?? 1;
+  const limit = opts.limit ?? 8; // the web's page size
+  const result = await get(
+    `/api/products/search?q=${encodeURIComponent(query)}&page=${page}&limit=${limit}`
+  );
+  if (failed(result)) return { ok: false, error: messageOf(result.payload) };
+
+  const products = readList(result.payload, 'products') as RawProduct[];
+  const pagination =
+    ((result.payload as Record<string, any> | null)?.data?.pagination as
+      | Record<string, unknown>
+      | undefined) ?? {};
+
+  // Same fallbacks as ModalSearchContext.tsx:302-307 — `total` degrades to the
+  // number of rows actually returned, never to 0, so the count strip cannot
+  // claim "0 products found" above a list of products.
+  const num = (value: unknown, fallback: number): number =>
+    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+  return {
+    ok: true,
+    data: {
+      products,
+      total: num(pagination.totalResults, products.length),
+      page: num(pagination.currentPage, page),
+      totalPages: num(pagination.totalPages, 1),
+    },
+  };
+}
+
+/**
+ * Type-ahead suggestions — `product.routes.js:133`, which answers with a bare
+ * array of product names under `data`.
+ *
+ * Below two characters the web does not ask at all (`ModalSearchContext.tsx:420`);
+ * every one-letter keystroke would otherwise be a catalogue-wide prefix scan.
+ */
+export async function fetchSearchSuggestions(
+  term: string,
+  limit = 8
+): Promise<CatalogResult<string[]>> {
+  const query = term.trim();
+  if (query.length < 2) return { ok: true, data: [] };
+
+  const result = await get(
+    `/api/products/suggestions?q=${encodeURIComponent(query)}&limit=${limit}`
+  );
+  if (failed(result)) return { ok: false, error: messageOf(result.payload) };
+
+  const raw = (result.payload as Record<string, any> | null)?.data;
+  const list = Array.isArray(raw) ? raw : [];
+  return { ok: true, data: list.filter((s): s is string => typeof s === 'string' && s !== '') };
 }
 
 function toCategory(raw: unknown): CategorySummary | null {
@@ -158,29 +290,57 @@ export async function fetchFeaturedCategories(): Promise<CatalogResult<CategoryS
   };
 }
 
-/** `placement` is the models/Banner.js:62 enum; only these two exist on Home. */
+/**
+ * `placement` is the models/Banner.js:62 enum; only these two exist on Home.
+ *
+ * Unlike the Phase-3 version this does NOT drop banners without artwork: both
+ * web components fall back to `backgroundColor` and still render their copy and
+ * CTA, so dropping them would lose a working promotion.
+ */
 export async function fetchBanners(
-  placement: 'home_hero' | 'home_secondary'
-): Promise<CatalogResult<BannerSummary[]>> {
-  const result = await get(`/api/banners/placement/${placement}`);
+  placement: 'home_hero' | 'home_secondary',
+  limit = 5
+): Promise<CatalogResult<RawBanner[]>> {
+  const result = await get(`/api/banners/placement/${placement}?limit=${limit}`);
   if (failed(result)) return { ok: false, error: messageOf(result.payload) };
 
   const banners = readList(result.payload, 'banners')
-    .map((raw): BannerSummary | null => {
+    .map((raw): RawBanner | null => {
       const b = raw as Record<string, any> | null;
-      const image = imageUrlOf(b?.image) ?? imageUrlOf(b?.imageUrl);
-      // A slide with no artwork is a grey rectangle. Drop it.
-      if (!b?._id || !image) return null;
-      return {
-        _id: String(b._id),
-        title: typeof b.title === 'string' ? b.title : '',
-        image,
-        linkUrl: typeof b.linkUrl === 'string' && b.linkUrl ? b.linkUrl : null,
-      };
+      if (!b?._id) return null;
+      return { ...b, _id: String(b._id), title: typeof b.title === 'string' ? b.title : '' };
     })
-    .filter((b): b is BannerSummary => b !== null);
+    .filter((b): b is RawBanner => b !== null);
 
   return { ok: true, data: banners };
+}
+
+/** The one image a banner shows, honouring `mobileImage` when the API set one. */
+export function bannerImageUrl(banner: RawBanner): string | null {
+  return (
+    imageUrlOf(banner.mobileImage) ??
+    imageUrlOf(banner.image) ??
+    imageUrlOf((banner as unknown as Record<string, unknown>).imageUrl)
+  );
+}
+
+/**
+ * Impression / click beacons. Fire-and-forget by design — CTR telemetry must
+ * never be able to block or fail a render, which is exactly how the web treats
+ * them (`.catch(() => {})` at both call sites).
+ */
+function beacon(path: string): void {
+  void apiFetch(path, { method: 'POST' }).catch(() => {});
+}
+
+export function trackBannerImpression(bannerId: string): void {
+  if (!bannerId || bannerId.startsWith('fallback')) return;
+  beacon(`/api/banners/${bannerId}/impression`);
+}
+
+export function trackBannerClick(bannerId: string): void {
+  if (!bannerId || bannerId.startsWith('fallback')) return;
+  beacon(`/api/banners/${bannerId}/click`);
 }
 
 /**

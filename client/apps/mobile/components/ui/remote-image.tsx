@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { View } from 'react-native';
+import type { ImageStyle, StyleProp } from 'react-native';
 
 /**
  * Every remote image in the app.
@@ -16,19 +17,22 @@ export function RemoteImage({
   uri,
   className = '',
   contentFit = 'cover',
+  style,
 }: {
   uri: string | null;
   className?: string;
   contentFit?: 'cover' | 'contain';
+  style?: StyleProp<ImageStyle>;
 }) {
   if (!uri) {
-    return <View className={`bg-gray-100 ${className}`} />;
+    return <View className={`bg-gray-100 ${className}`} style={style} />;
   }
 
   return (
     <Image
       source={{ uri }}
       className={className}
+      style={style}
       contentFit={contentFit}
       cachePolicy="disk"
       transition={150}

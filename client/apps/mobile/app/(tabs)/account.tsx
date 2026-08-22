@@ -10,7 +10,7 @@ export default function AccountScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView className="flex-1 bg-gray-0">
+      <SafeAreaView className="flex-1 bg-gray-0" edges={['bottom']}>
         <View className="flex-1 items-center justify-center">
           <Text className="text-base text-gray-600">Loading…</Text>
         </View>
@@ -20,7 +20,7 @@ export default function AccountScreen() {
 
   if (!isAuthenticated) {
     return (
-      <SafeAreaView className="flex-1 bg-gray-0">
+      <SafeAreaView className="flex-1 bg-gray-0" edges={['bottom']}>
         <View className="flex-1 items-center justify-center gap-4 p-6">
           <Text className="text-xl font-semibold text-gray-900">You are signed out</Text>
           <Link href="/login" className="text-base text-gray-900 underline">
@@ -35,7 +35,7 @@ export default function AccountScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-0">
+    <SafeAreaView className="flex-1 bg-gray-0" edges={['bottom']}>
       <View className="flex-1 gap-6 p-6">
         <View>
           <Text className="text-xl font-semibold text-gray-900">
