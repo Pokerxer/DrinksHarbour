@@ -9,6 +9,7 @@ import {
   PiTrash,
   PiMagnifyingGlass,
   PiFloppyDisk,
+  PiCheckCircle,
   PiArrowLeft,
   PiX,
   PiCaretDown,
@@ -17,6 +18,8 @@ import {
   PiStorefront,
   PiLockKey,
   PiSparkle,
+  PiPrinter,
+  PiDotsSixVertical,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -24,14 +27,18 @@ import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import { vendorService } from '@/services/vendor.service';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { subproductService } from '@/services/subproduct.service';
+import { useTenant } from '@/context/TenantContext';
+import { printPOInvoice, printRFQInvoice } from '@/utils/purchaseInvoice';
 import {
   CURRENCIES,
   fmtAmount,
   packsLabel,
+  refIdOf,
 } from './types';
 import type { Vendor, PurchaseOrder } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 import PackSizeInput from './pack-size-input';
+import { moveItem } from './line-dnd';
 import WarehouseSelect, { useActiveWarehouses } from './warehouse-select';
 import PurchasesScanDrawer from './purchases-scan-drawer';
 import {
@@ -631,6 +638,7 @@ function ProductSearch({
 export default function PurchasesEdit({ id }: { id: string }) {
   const router = useRouter();
   const { data: session } = useSession();
+  const { tenant } = useTenant();
   const token = (session?.user as { token?: string })?.token ?? '';
 
   // loading / PO state
@@ -689,10 +697,12 @@ export default function PurchasesEdit({ id }: { id: string }) {
           const packSize = (item as any).packagingQty ?? item.packSize ?? 1;
           const quantity = item.quantity ?? 1;
           return {
-            subProductId: item.subProductId ?? '',
+            // getPurchaseOrder populates subProductId/sizeId into objects —
+            // round-tripping them verbatim sends "[object Object]" as the id.
+            subProductId: refIdOf(item.subProductId),
             productName: (item as any).subProductName ?? item.productName ?? '',
             sku: item.sku ?? '',
-            sizeId: item.sizeId,
+            sizeId: item.sizeId ? refIdOf(item.sizeId) : undefined,
             sizeName: (item as any).sizeName,
             quantity,
             packSize,
@@ -730,6 +740,16 @@ export default function PurchasesEdit({ id }: { id: string }) {
 
   const removeItem = useCallback(
     (i: number) => setItems((p) => p.filter((_, idx) => idx !== i)),
+    []
+  );
+
+  // Line drag-to-reorder: HTML5 DnD, no library. dragIndex = card being
+  // dragged; overIndex = card currently hovered for the drop.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const reorderLines = useCallback(
+    (from: number, to: number) =>
+      setItems((p) => moveItem(p, from, to)),
     []
   );
 
@@ -778,7 +798,7 @@ export default function PurchasesEdit({ id }: { id: string }) {
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
-  async function handleSave() {
+  async function handleSave(confirmToo = false) {
     const filled = items.filter((it) => it.productName.trim());
     if (filled.length === 0) {
       toast.error('Add at least one product line');
@@ -820,7 +840,16 @@ export default function PurchasesEdit({ id }: { id: string }) {
         })),
       };
       await purchaseOrderService.updatePurchaseOrder(id, payload, token);
-      toast.success('Purchase order updated');
+      if (confirmToo) {
+        await purchaseOrderService.updatePurchaseOrderStatus(
+          id,
+          'confirmed',
+          token
+        );
+        toast.success('Purchase order confirmed');
+      } else {
+        toast.success('Purchase order updated');
+      }
       router.push(routes.eCommerce.purchaseDetails(id));
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to save');
@@ -917,13 +946,36 @@ export default function PurchasesEdit({ id }: { id: string }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleSave}
+            // Draft-only page — the printed document is always an RFQ.
+            onClick={() => printRFQInvoice(po, tenant?.name || 'DrinksHarbour')}
+            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <PiPrinter className="h-4 w-4" />
+            Print RFQ
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSave(false)}
             disabled={saving || !hasItems}
-            className="flex items-center gap-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             <PiFloppyDisk className="h-4 w-4" />
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
+          {/* Next step from a draft: save and confirm in one go. Only offered
+              where confirmation is allowed — rfq drafts skip approval; po-type
+              drafts must be approved first. */}
+          {(po.type === 'rfq' || po.approvalStatus === 'approved') && (
+            <button
+              type="button"
+              onClick={() => handleSave(true)}
+              disabled={saving || !hasItems}
+              className="flex items-center gap-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
+            >
+              <PiCheckCircle className="h-4 w-4" />
+              {saving ? 'Working…' : 'Save & Confirm Order'}
+            </button>
+          )}
           <Link
             href={routes.eCommerce.purchaseDetails(id)}
             className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
@@ -1085,9 +1137,40 @@ export default function PurchasesEdit({ id }: { id: string }) {
               const tax = lineTax(item);
               const total = lineTotal(item);
               return (
-                <div key={i} className="px-5 py-4">
+                <div
+                      key={i}
+                      draggable
+                      onDragStart={(e) => {
+                        setDragIndex(i);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (dragIndex !== null && dragIndex !== i)
+                          setOverIndex(i);
+                      }}
+                      onDragLeave={() => setOverIndex((v) => (v === i ? null : v))}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (dragIndex !== null && dragIndex !== i)
+                          reorderLines(dragIndex, i);
+                        setDragIndex(null);
+                        setOverIndex(null);
+                      }}
+                      onDragEnd={() => {
+                        setDragIndex(null);
+                        setOverIndex(null);
+                      }}
+                      className={`px-5 py-4 ${dragIndex === i ? 'opacity-40' : ''} ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'ring-2 ring-[#b20202]/40 rounded-lg' : ''}`}
+                    >
                   {/* Product search row */}
                   <div className="mb-3 flex items-start gap-3">
+                    <span
+                      title="Drag to reorder"
+                      className="mt-1 shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"
+                    >
+                      <PiDotsSixVertical className="h-5 w-5" />
+                    </span>
                     <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
                       {i + 1}
                     </span>
@@ -1314,7 +1397,7 @@ export default function PurchasesEdit({ id }: { id: string }) {
           {/* Bottom save button for convenience */}
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => handleSave(false)}
             disabled={saving || !hasItems}
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#b20202] py-2.5 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
           >

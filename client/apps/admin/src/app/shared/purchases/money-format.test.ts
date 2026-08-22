@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtAmount, packsLabel, linePackSize, packNounOf, CURRENCY_SYMBOLS } from './types';
+import { fmtAmount, packsLabel, linePackSize, packNounOf, refIdOf, CURRENCY_SYMBOLS } from './types';
 
 describe('fmtAmount', () => {
   it('groups thousands with commas and keeps two decimals', () => {
@@ -34,6 +34,19 @@ describe('CURRENCY_SYMBOLS', () => {
   it('covers every currency the purchase module renders', () => {
     expect(CURRENCY_SYMBOLS.NGN).toBe('₦');
     expect(CURRENCY_SYMBOLS.USD).toBe('$');
+  });
+});
+
+describe('refIdOf', () => {
+  it('extracts _id from populated refs (getPurchaseOrder populates subProductId)', () => {
+    expect(refIdOf({ _id: 'abc123', name: 'Hennessy VS' })).toBe('abc123');
+    expect(refIdOf({ _id: 'size-9', size: '70cl' })).toBe('size-9');
+  });
+
+  it('passes plain ids and empties through', () => {
+    expect(refIdOf('plain-id')).toBe('plain-id');
+    expect(refIdOf(undefined)).toBe('');
+    expect(refIdOf(null)).toBe('');
   });
 });
 

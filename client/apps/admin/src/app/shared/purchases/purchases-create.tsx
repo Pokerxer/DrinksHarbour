@@ -17,6 +17,7 @@ import {
   PiCaretRight,
   PiStorefront,
   PiSparkle,
+  PiDotsSixVertical,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -31,6 +32,7 @@ import {
 import type { Vendor } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 import PackSizeInput from './pack-size-input';
+import { moveItem } from './line-dnd';
 import WarehouseSelect, {
   useActiveWarehouses,
   useSeededWarehouse,
@@ -688,6 +690,16 @@ export default function PurchasesCreate() {
     []
   );
 
+  // Line drag-to-reorder: HTML5 DnD, no library. dragIndex = card being
+  // dragged; overIndex = card currently hovered for the drop.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const reorderLines = useCallback(
+    (from: number, to: number) =>
+      setItems((p) => moveItem(p, from, to)),
+    []
+  );
+
   const updateItem = useCallback((index: number, patch: Partial<LineItem>) => {
     setItems((prev) =>
       prev.map((item, i) => {
@@ -774,6 +786,9 @@ export default function PurchasesCreate() {
           totalCost: lineSubtotal(it),
         })),
         status: confirm ? 'confirmed' : 'draft',
+        // Wizard drafts are quotations: typed rfq so the detail page offers a
+        // direct Confirm Order instead of the PO approval gate.
+        ...(confirm ? {} : { type: 'rfq' }),
       };
       const res = await purchaseOrderService.createPurchaseOrder(
         payload,
@@ -1003,9 +1018,40 @@ export default function PurchasesCreate() {
                 const tax = lineTax(item);
                 const total = lineTotal(item);
                 return (
-                  <div key={i} className="px-5 py-4">
+                  <div
+                      key={i}
+                      draggable
+                      onDragStart={(e) => {
+                        setDragIndex(i);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (dragIndex !== null && dragIndex !== i)
+                          setOverIndex(i);
+                      }}
+                      onDragLeave={() => setOverIndex((v) => (v === i ? null : v))}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (dragIndex !== null && dragIndex !== i)
+                          reorderLines(dragIndex, i);
+                        setDragIndex(null);
+                        setOverIndex(null);
+                      }}
+                      onDragEnd={() => {
+                        setDragIndex(null);
+                        setOverIndex(null);
+                      }}
+                      className={`px-5 py-4 ${dragIndex === i ? 'opacity-40' : ''} ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'ring-2 ring-[#b20202]/40 rounded-lg' : ''}`}
+                    >
                     {/* Product search row */}
                     <div className="mb-3 flex items-start gap-3">
+                      <span
+                        title="Drag to reorder"
+                        className="mt-1 shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"
+                      >
+                        <PiDotsSixVertical className="h-5 w-5" />
+                      </span>
                       <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
                         {i + 1}
                       </span>

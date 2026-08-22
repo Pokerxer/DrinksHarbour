@@ -407,6 +407,20 @@ export function linePackSize(item: {
 }
 
 /**
+ * Id of a possibly-populated reference. getPurchaseOrder populates
+ * items.subProductId (and sizeId) into objects — sending those back to the
+ * server stringifies as "[object Object]", which is exactly the bug this
+ * guards against when an edit round-trips a loaded order.
+ */
+export function refIdOf(
+  ref: string | { _id?: string } | null | undefined
+): string {
+  if (ref === null || ref === undefined) return '';
+  if (typeof ref === 'object') return String(ref._id ?? '');
+  return String(ref);
+}
+
+/**
  * Human pack breakdown of a quantity: "40 packs", "5 packs & 1 bottle",
  * "5 bottles" below a full pack, or plain units when there is no real pack size.
  */
