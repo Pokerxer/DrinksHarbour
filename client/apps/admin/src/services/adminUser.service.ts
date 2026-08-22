@@ -1,9 +1,9 @@
-// services/adminUser.service.ts — administrative user creation
+// services/adminUser.service.ts — administrative user management (platform)
 //
-// Backs POST /api/users (`protect` + `authorize('super_admin')`), the endpoint
-// added in Part 0 of the auth overhaul. It is the only way to create an admin
-// now that public /signup is gone: public registration always yields a
-// `customer`, whatever role the caller asks for.
+// Backs the admin section of /api/users (`protect` + `authorize('admin',
+// 'super_admin')` + requireMfa): creating a user, listing them, and
+// suspend/activate. Tenant staff are NOT managed here — that is
+// employee.service.ts against /api/employees.
 import type { UserRole } from '@/types/authorization';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -121,5 +121,154 @@ export async function createAdminUser(
       success: false,
       message: 'Unable to reach the server. Please check your connection.',
     };
+  }
+}
+
+// ─── Listing & status management (roles-permissions users table) ─────────────
+
+/** One row of GET /api/users. The server returns sanitized docs minus hashes. */
+export interface AdminUserRow {
+  _id: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
+  avatar?: { url?: string } | null;
+  role: UserRole;
+  status: 'active' | 'inactive' | 'suspended' | 'deleted';
+  tenant?:
+    | string
+    | { _id: string; name?: string; slug?: string }
+    | null;
+  customRole?: string | null;
+  createdAt?: string;
+}
+
+export interface ListUsersParams {
+  role?: UserRole;
+  status?: AdminUserRow['status'];
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+interface ListUsersResponse {
+  success?: boolean;
+  data?: {
+    users?: AdminUserRow[];
+    pagination?: {
+      currentPage: number;
+      totalPages: number;
+      totalResults: number;
+    };
+  };
+  message?: string;
+}
+
+export interface AdminPagination {
+  currentPage: number;
+  totalPages: number;
+  totalResults: number;
+}
+
+/**
+ * GET /api/users with the service's supported filters. Returns the raw rows
+ * plus pagination so callers can paginate client-side or follow the envelope.
+ * Throws on failure — the caller is a table, not a modal.
+ */
+export async function listAdminUsers(
+  params: ListUsersParams,
+  accessToken: string
+): Promise<{ users: AdminUserRow[]; pagination?: AdminPagination }> {
+  const qs = new URLSearchParams();
+  if (params.role) qs.set('role', params.role);
+  if (params.status) qs.set('status', params.status);
+  if (params.search) qs.set('search', params.search);
+  if (params.page) qs.set('page', String(params.page));
+  if (params.limit) qs.set('limit', String(params.limit));
+
+  const response = await fetch(
+    `${API_URL}/api/users${qs.toString() ? `?${qs}` : ''}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const data = (await response.json()) as ListUsersResponse;
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || 'Failed to load users');
+  }
+  return {
+    users: data.data?.users ?? [],
+    pagination: data.data?.pagination,
+  };
+}
+
+async function setUserStatus(
+  id: string,
+  action: 'suspend' | 'activate',
+  accessToken: string
+): Promise<{ success: boolean; message?: string }> {
+  const response = await fetch(`${API_URL}/api/users/${id}/${action}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    success?: boolean;
+    message?: string;
+  };
+  if (!response.ok || data.success === false) {
+    throw new Error(data.message || `Failed to ${action} the user`);
+  }
+  return { success: true };
+}
+
+export async function suspendAdminUser(id: string, accessToken: string) {
+  return setUserStatus(id, 'suspend', accessToken);
+}
+
+export async function activateAdminUser(id: string, accessToken: string) {
+  return setUserStatus(id, 'activate', accessToken);
+}
+
+/**
+ * PUT /api/users/:id — generic field updates. Used here for assigning/clearing
+ * a platform customRole (server validates scope and target eligibility).
+ */
+export async function updateAdminUser(
+  id: string,
+  patch: Record<string, unknown>,
+  accessToken: string
+): Promise<{ success?: boolean; message?: string }> {
+  const response = await fetch(`${API_URL}/api/users/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(patch),
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    success?: boolean;
+    message?: string;
+  };
+  if (!response.ok || data.success === false) {
+    throw new Error(data.message || 'Failed to update the user');
+  }
+  return data;
+}
+
+/** DELETE /api/users/:id — soft-delete (status → 'deleted'). */
+export async function deleteAdminUser(
+  id: string,
+  accessToken: string
+): Promise<void> {
+  const response = await fetch(`${API_URL}/api/users/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    success?: boolean;
+    message?: string;
+  };
+  if (!response.ok || data.success === false) {
+    throw new Error(data.message || 'Failed to delete the user');
   }
 }

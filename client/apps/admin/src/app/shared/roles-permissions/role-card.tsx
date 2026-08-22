@@ -1,137 +1,220 @@
-// @ts-nocheck
 'use client';
 
-import Image from 'next/image';
-import { PiDotsThreeBold } from 'react-icons/pi';
-import { Title, ActionIcon, Dropdown } from 'rizzui';
-import cn from '@core/utils/class-names';
-import UserCog from '@core/components/icons/user-cog';
-import { ROLES } from '@/config/constants';
-import { useModal } from '@/app/shared/modal-views/use-modal';
-import ModalButton from '@/app/shared/modal-button';
-import EditRole from '@/app/shared/roles-permissions/edit-role';
-import CreateUser from '@/app/shared/roles-permissions/create-user';
+/**
+ * A single role card — the "access badge" unit of the roles grid.
+ *
+ * SystemRoleCard and CustomRoleCard share one shell: a tinted icon medallion,
+ * name + provenance badge, two-line description, and a hairline-divided meta
+ * footer. The whole card is a selection target that filters the People table;
+ * custom cards additionally carry edit/delete in their footer.
+ */
 
-type User = {
-  id: number;
-  role: keyof typeof ROLES;
-  avatar: string;
+import type { ReactNode } from 'react';
+import { Badge, Text } from 'rizzui';
+import {
+  PiBuildingsBold,
+  PiCheckBold,
+  PiCrownSimpleBold,
+  PiHardHatBold,
+  PiShieldCheckBold,
+  PiShieldStarBold,
+  PiUserBold,
+} from 'react-icons/pi';
+
+import cn from '@core/utils/class-names';
+import { SYSTEM_ROLE_META, type UserRole } from '@/types/authorization';
+
+/** Medallion icons for the fixed roles — presentation only, kept out of types/authorization.ts. */
+const ROLE_ICONS: Record<UserRole, ReactNode> = {
+  super_admin: <PiCrownSimpleBold className="h-5 w-5" />,
+  admin: <PiShieldStarBold className="h-5 w-5" />,
+  tenant_owner: <PiBuildingsBold className="h-5 w-5" />,
+  tenant_admin: <PiShieldCheckBold className="h-5 w-5" />,
+  tenant_staff: <PiHardHatBold className="h-5 w-5" />,
+  customer: <PiUserBold className="h-5 w-5" />,
 };
 
-interface RoleCardProps {
+const MEDALLION_BASE =
+  'flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl';
+
+interface ShellProps {
   name: string;
-  color?: string;
-  className?: string;
-  icon?: React.ReactNode;
-  users: User[];
+  description: string;
+  color: string;
+  icon?: ReactNode;
+  badgeLabel: 'System' | 'Custom';
+  selected: boolean;
+  onSelect: () => void;
+  /** Footer content rendered after the divider — counts, actions. */
+  children: ReactNode;
 }
 
-export default function RoleCard({
+function CardShell({
   name,
+  description,
   color,
-  users,
-  className,
-}: RoleCardProps) {
-  const { openModal } = useModal();
+  icon,
+  badgeLabel,
+  selected,
+  onSelect,
+  children,
+}: ShellProps) {
   return (
-    <div className={cn('rounded-lg border border-muted p-6', className)}>
-      <header className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={cn(
+        'group flex h-full cursor-pointer flex-col rounded-2xl border bg-white p-4 shadow-sm outline-none transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary dark:bg-gray-900',
+        selected
+          ? 'border-primary ring-2 ring-primary/20 dark:border-primary'
+          : 'border-gray-200 dark:border-gray-700'
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-3">
           <span
-            className="grid h-10 w-10 place-content-center rounded-lg text-white"
+            className={MEDALLION_BASE}
             style={{
-              backgroundColor: color,
+              backgroundColor: `${color}1A`,
+              color,
             }}
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <path
-                d="M7 6.5H16.75C18.8567 6.5 19.91 6.5 20.6667 7.00559C20.9943 7.22447 21.2755 7.50572 21.4944 7.83329C21.935 8.49268 21.9916 8.96506 21.9989 10.5M12 6.5L11.3666 5.23313C10.8418 4.18358 10.3622 3.12712 9.19926 2.69101C8.6899 2.5 8.10802 2.5 6.94427 2.5C5.1278 2.5 4.21956 2.5 3.53806 2.88032C3.05227 3.15142 2.65142 3.55227 2.38032 4.03806C2 4.71956 2 5.6278 2 7.44427V10.5C2 15.214 2 17.5711 3.46447 19.0355C4.8215 20.3926 6.44493 20.4927 10.5 20.5H11"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-              />
-              <path
-                d="M15.59 18.9736C14.9612 19.3001 13.3126 19.9668 14.3167 20.801C14.8072 21.2085 15.3536 21.4999 16.0404 21.4999H19.9596C20.6464 21.4999 21.1928 21.2085 21.6833 20.801C22.6874 19.9668 21.0388 19.3001 20.41 18.9736C18.9355 18.208 17.0645 18.208 15.59 18.9736Z"
-                stroke="currentColor"
-                strokeWidth="1.3"
-              />
-              <path
-                d="M20 14.4378C20 15.508 19.1046 16.3756 18 16.3756C16.8954 16.3756 16 15.508 16 14.4378C16 13.3676 16.8954 12.5 18 12.5C19.1046 12.5 20 13.3676 20 14.4378Z"
-                stroke="currentColor"
-                strokeWidth="1.3"
-              />
-            </svg>
+            {icon ?? <PiShieldCheckBold className="h-5 w-5" />}
           </span>
-          <Title as="h4" className="font-medium">
-            {name}
-          </Title>
+          <span className="min-w-0">
+            <Text className="block truncate font-semibold text-gray-900 dark:text-white">
+              {name}
+            </Text>
+            <Badge
+              variant="flat"
+              color={badgeLabel === 'System' ? 'secondary' : 'primary'}
+              className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide"
+            >
+              {badgeLabel}
+            </Badge>
+          </span>
         </div>
 
-        <Dropdown className={className} placement="bottom-end">
-          <Dropdown.Trigger>
-            <ActionIcon
-              as="span"
-              variant="text"
-              className="ml-auto h-auto w-auto p-1"
-            >
-              <PiDotsThreeBold className="h-auto w-6" />
-            </ActionIcon>
-          </Dropdown.Trigger>
-          <Dropdown.Menu className="!z-0">
-            <Dropdown.Item className="gap-2 text-xs sm:text-sm">
-              <span
-                onClick={() =>
-                  openModal({
-                    view: <CreateUser />,
-                  })
-                }
-              >
-                Add User
-              </span>
-            </Dropdown.Item>
-            <Dropdown.Item className="gap-2 text-xs sm:text-sm">
-              Rename
-            </Dropdown.Item>
-            <Dropdown.Item className="gap-2 text-xs sm:text-sm">
-              Remove Role
-            </Dropdown.Item>
-          </Dropdown.Menu>
-        </Dropdown>
-      </header>
-
-      <div className="mt-4 flex items-center gap-2">
-        <div className="flex items-center">
-          {users?.slice(0, 4).map((user) => (
-            <figure
-              key={user.id}
-              className="relative z-10 -ml-1.5 h-8 w-8 rounded-full border-2 border-white"
-            >
-              <Image
-                src={user.avatar}
-                alt="user avatar"
-                fill
-                className="rounded-full"
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-              />
-            </figure>
-          ))}
-        </div>
-        <span>Total {users.length} users</span>
+        {selected && (
+          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-white">
+            <PiCheckBold className="h-3.5 w-3.5" aria-hidden />
+            <span className="sr-only">Selected</span>
+          </span>
+        )}
       </div>
-      <ModalButton
-        customSize={700}
-        variant="outline"
-        label="Edit Role"
-        icon={<UserCog className="h-5 w-5" />}
-        view={<EditRole />}
-        className="items-center gap-1 text-gray-800 @lg:w-full lg:mt-6"
-      />
+
+      <Text className="mt-3 line-clamp-2 min-h-[2rem] text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+        {description}
+      </Text>
+
+      <div className="mt-auto pt-3">
+        <div className="flex items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
+          {children}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function Meta({ children }: { children: ReactNode }) {
+  return (
+    <Text className="truncate text-xs font-medium text-gray-400 dark:text-gray-500">
+      {children}
+    </Text>
+  );
+}
+
+function peopleLabel(n: number): string {
+  return `${n} ${n === 1 ? 'person' : 'people'}`;
+}
+
+// ─── System ───────────────────────────────────────────────────────────────────
+
+interface SystemRoleCardProps {
+  baseRole: UserRole;
+  permissionCount: number;
+  peopleCount: number;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+export function SystemRoleCard({
+  baseRole,
+  permissionCount,
+  peopleCount,
+  selected,
+  onSelect,
+}: SystemRoleCardProps) {
+  const meta = SYSTEM_ROLE_META[baseRole];
+  return (
+    <CardShell
+      name={meta.label}
+      description={meta.description}
+      color={meta.color}
+      icon={ROLE_ICONS[baseRole]}
+      badgeLabel="System"
+      selected={selected}
+      onSelect={onSelect}
+    >
+      <Meta>
+        {permissionCount} permissions · {peopleLabel(peopleCount)}
+      </Meta>
+    </CardShell>
+  );
+}
+
+// ─── Custom ───────────────────────────────────────────────────────────────────
+
+interface CustomRoleCardProps {
+  name: string;
+  description?: string;
+  color?: string;
+  permissionCount: number;
+  assignedCount: number;
+  selected: boolean;
+  onSelect: () => void;
+  actions: ReactNode;
+}
+
+export function CustomRoleCard({
+  name,
+  description,
+  color,
+  permissionCount,
+  assignedCount,
+  selected,
+  onSelect,
+  actions,
+}: CustomRoleCardProps) {
+  return (
+    <CardShell
+      name={name}
+      description={description || `${permissionCount} permissions granted`}
+      color={color || '#6b7280'}
+      badgeLabel="Custom"
+      selected={selected}
+      onSelect={onSelect}
+    >
+      <Meta>
+        {permissionCount} permissions ·{' '}
+        {assignedCount > 0 ? `${assignedCount} assigned` : 'unassigned'}
+      </Meta>
+      <span
+        className="flex flex-shrink-0 items-center gap-1"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        role="presentation"
+      >
+        {actions}
+      </span>
+    </CardShell>
   );
 }

@@ -174,7 +174,7 @@ function buildCreatePayload(body = {}, tenantId) {
  * @returns {{ ok: true, changes: object } | { ok: false, message: string }}
  */
 function buildUpdateChanges(target, body = {}) {
-  const { firstName, lastName, phone, role, status, posAccess, posName, posPermissions } = body;
+  const { firstName, lastName, phone, role, status, posAccess, posName, posPermissions, customRole } = body;
   const changes = {};
 
   if (firstName !== undefined) {
@@ -192,6 +192,26 @@ function buildUpdateChanges(target, body = {}) {
       return { ok: false, message: `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}` };
     }
     changes.role = role;
+  }
+
+  // Custom access-control role refinement. Shape + owner protection here
+  // (pure, testable); existence/scope/tenant against the Role collection is
+  // the controller's job before these changes are applied. The tenant owner's
+  // capabilities are fixed by policy — same rule as their immutable base role.
+  if (customRole !== undefined) {
+    if (target.role === 'tenant_owner') {
+      return { ok: false, message: 'The tenant owner cannot be assigned a custom role' };
+    }
+    if (customRole === null || customRole === '') {
+      changes.customRole = null;
+    } else if (typeof customRole === 'string' && /^[a-fA-F0-9]{24}$/.test(customRole)) {
+      changes.customRole = customRole;
+    } else if (typeof customRole === 'object' && /^[a-fA-F0-9]{24}$/.test(String(customRole._id ?? ''))) {
+      // A stale client may echo back the populated {_id, name} shape.
+      changes.customRole = String(customRole._id);
+    } else {
+      return { ok: false, message: 'customRole must be a role id or null' };
+    }
   }
 
   if (status !== undefined && status !== target.status) {

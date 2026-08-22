@@ -272,3 +272,107 @@ export const canReadStandingFeedback = (
 ): boolean =>
   Boolean(role) &&
   (PLATFORM_ROLES.includes(role as UserRole) || role === 'tenant_owner');
+
+/**
+ * A custom access-control role (server/models/Role.js). REFINES the fixed
+ * User.role enum additively — it never replaces it and never weakens JWT
+ * tenant scoping. Permissions are declarative/UI-gating today; no server
+ * middleware consults them yet.
+ */
+export interface CustomRole {
+  _id: string;
+  name: string;
+  scope: RoleScope;
+  /** Tenant id for tenant-scoped roles; null on the platform shelf. */
+  tenant: string | null;
+  description?: string;
+  color?: string;
+  isActive?: boolean;
+  permissions: Permission[];
+  assignedCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** One entry of the canonical catalog served by GET /api/roles/permissions/catalog. */
+export interface PermissionCatalogEntry {
+  key: Permission;
+  label: string;
+  group: string;
+  description: string;
+}
+
+/**
+ * The fixed enum roles, with their presentation metadata. System capabilities
+ * come from ROLE_PERMISSIONS above and are NOT editable here — that is policy,
+ * pinned by server/__tests__/rolePermissionMap.test.js against the live route
+ * guards. Only CUSTOM roles carry an editable permission set.
+ */
+export const SYSTEM_ROLE_META: Record<
+  UserRole,
+  { label: string; description: string; color: string; scope: RoleScope }
+> = {
+  super_admin: {
+    label: 'Super Admin',
+    description:
+      'Platform-wide control, including the five super-admin-only powers (review moderation, permanent deletes, tenant delete, product approval, cross-tenant visibility).',
+    color: '#7c3aed',
+    scope: 'platform',
+  },
+  admin: {
+    label: 'Admin',
+    description:
+      'Platform admin minus the five super-admin-only powers. The natural tier for a platform hire.',
+    color: '#2563eb',
+    scope: 'platform',
+  },
+  tenant_owner: {
+    label: 'Tenant Owner',
+    description:
+      "Full control of one business — billing included. Fixed by policy: cannot be assigned a custom role.",
+    color: '#04873c',
+    scope: 'tenant',
+  },
+  tenant_admin: {
+    label: 'Tenant Admin',
+    description:
+      'Runs one business day-to-day: products, listings, orders, stock, staff.',
+    color: '#79b829',
+    scope: 'tenant',
+  },
+  tenant_staff: {
+    label: 'Staff',
+    description: 'POS and order fulfilment on the shop floor.',
+    color: '#eeaa44',
+    scope: 'tenant',
+  },
+  customer: {
+    label: 'Customer',
+    description: 'End buyer on the marketplace or a tenant store.',
+    color: '#a6a6a6',
+    scope: 'platform',
+  },
+};
+
+/** Base roles that MAY hold a customRole refinement (owner/super_admin excluded by policy). */
+export const CUSTOMIZABLE_SYSTEM_ROLES: UserRole[] = [
+  'admin',
+  'tenant_admin',
+  'tenant_staff',
+];
+
+/**
+ * Union of a system role's declared permissions with a custom role's extras.
+ * Additive only: a customRole can grant more, never less. Read-only helper —
+ * hasPermission keeps its existing signature and behaviour.
+ */
+export function effectivePermissions(
+  role: UserRole,
+  customPerms?: Permission[] | null
+): Permission[] {
+  const base = ROLE_PERMISSIONS[role] ?? [];
+  if (!customPerms?.length) return base;
+  // De-duplicate without spreading a Set (downlevelIteration is off here).
+  const merged = [...base, ...customPerms];
+  return merged.filter((perm, i) => merged.indexOf(perm) === i);
+}

@@ -84,6 +84,20 @@ const userSchema = new Schema(
       index: true,
     },
 
+    // Optional refinement on top of the fixed `role` enum — NEVER a replacement
+    // for it. A custom access-control Role (models/Role.js) adds permissions
+    // additively (declarative/UI-gating until requirePermission() exists) and
+    // can never weaken JWT tenant scoping. `tenant_owner` and `super_admin`
+    // must not be assigned one; enforced in the assignment paths
+    // (employee.controller / user.service.updateUser), not here.
+    customRole: {
+      type: ObjectId,
+      ref: 'Role',
+      default: null,
+      sparse: true,
+      index: true,
+    },
+
     tenant: {
       type: ObjectId,
       ref: 'Tenant',

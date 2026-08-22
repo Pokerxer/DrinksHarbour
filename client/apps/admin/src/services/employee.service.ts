@@ -116,6 +116,11 @@ export interface Employee {
   posPermissions: PosPermission[];
   /** True when a POS PIN is set (the hash itself is never returned). */
   hasPin: boolean;
+  /**
+   * Custom access-control refinement (models/Role.js), projected to
+   * {_id, name, color} by the API. Null unless assigned.
+   */
+  customRole?: { _id: string; name: string; color?: string } | null;
   employeeProfile?: EmployeeProfile;
   createdAt: string;
 }
@@ -140,6 +145,11 @@ export interface EmployeeInput {
   posPermissions?: PosPermission[];
   /** 4–6 digit PIN. Omit to leave unchanged; '' or null clears it on update. */
   pin?: string | null;
+  /**
+   * Custom access-control role id. Send `null` to clear. Only tenant_admin /
+   * tenant_staff targets may hold one — the owner is refused by the server.
+   */
+  customRole?: string | null;
   employeeProfile?: EmployeeProfile;
 }
 

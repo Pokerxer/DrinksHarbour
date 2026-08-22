@@ -9,6 +9,7 @@
 
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
+const Role = require('../models/Role');
 const asyncHandler = require('../utils/asyncHandler');
 const {
   EMPLOYEE_ROLES,
@@ -53,8 +54,11 @@ async function loadManagerGraph(tenantId) {
 }
 
 // Fields safe to return to the client — never the password or PIN hash.
+// `customRole` ships only through present(), which projects it to
+// {_id, name, color}; the ref id alone is in PUBLIC_FIELDS so populate() has
+// something to work with.
 const PUBLIC_FIELDS =
-  'firstName lastName email phone avatar role status posAccess posName posPermissions createdAt';
+  'firstName lastName email phone avatar role status posAccess posName posPermissions customRole createdAt';
 
 // The employeeProfile subtrees the LIST ships. An allowlist, not the whole
 // profile: its siblings hold bank accounts, passport and SSN numbers, home
@@ -79,8 +83,11 @@ const LIST_PROFILE_FIELDS =
   'employeeProfile.attendance';
 
 // Shape a user document into the API's Employee object. `hasPin` is derived so
-// the UI can show "PIN set" without ever exposing the hash.
+// the UI can show "PIN set" without ever exposing the hash. `customRole` is
+// projected to a tiny {_id, name, color} — the full permission list is the
+// roles screen's business, not every employee row's.
 function present(user) {
+  const populated = user.customRole;
   return {
     _id: user._id,
     firstName: user.firstName,
@@ -95,6 +102,10 @@ function present(user) {
     posName: user.posName || '',
     posPermissions: user.posPermissions || [],
     hasPin: Boolean(user.posPinHash),
+    customRole:
+      populated && populated.name
+        ? { _id: populated._id, name: populated.name, color: populated.color || '' }
+        : null,
     employeeProfile: user.employeeProfile || {},
     createdAt: user.createdAt,
   };
@@ -112,6 +123,7 @@ exports.listEmployees = asyncHandler(async (req, res) => {
 
   const employees = await User.find(filter)
     .select(`${PUBLIC_FIELDS} posPinHash ${LIST_PROFILE_FIELDS}`)
+    .populate('customRole', 'name color')
     .sort({ createdAt: -1 })
     .lean();
 
@@ -127,7 +139,9 @@ exports.getEmployee = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   // +posPinHash so the response's hasPin flag is accurate (the field is
   // select:false by default).
-  const user = await User.findOne({ _id: req.params.id, tenant: tenantId }).select('+posPinHash');
+  const user = await User.findOne({ _id: req.params.id, tenant: tenantId })
+    .select('+posPinHash')
+    .populate('customRole', 'name color');
   if (!user || user.status === 'deleted') {
     return res.status(404).json({ success: false, message: 'Employee not found' });
   }
@@ -223,16 +237,42 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   // +posPinHash so the response's hasPin flag is accurate even when the PIN
   // itself isn't being changed (the field is select:false by default).
-  const user = await User.findOne({ _id: req.params.id, tenant: tenantId }).select('+posPinHash');
+  const user = await User.findOne({ _id: req.params.id, tenant: tenantId }).select(
+    '+posPinHash'
+  );
   if (!user || user.status === 'deleted') {
     return res.status(404).json({ success: false, message: 'Employee not found' });
   }
 
+  // Custom-role assignment. Shape + owner guards run FIRST (pure, no DB), so
+  // e.g. a tenant_owner rejection never touches the Role collection. Then the
+  // DB-level checks: existence and TENANT scope of THIS tenant — a platform-
+  // shelf or another business's role is refused with the same message so
+  // callers learn nothing about foreign ids. Clearing (null/'') skips all lookups.
   const built = buildUpdateChanges(user, req.body);
   if (!built.ok) {
     return res.status(400).json({ success: false, message: built.message });
   }
+
+  if (built.changes.customRole) {
+    const customRole = await Role.findById(built.changes.customRole);
+    if (
+      !customRole ||
+      customRole.scope !== 'tenant' ||
+      String(customRole.tenant) !== String(tenantId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'That custom role is not available for your organisation',
+      });
+    }
+  }
+
   Object.assign(user, built.changes);
+
+  if (built.changes.customRole !== undefined) {
+    user.markModified('customRole');
+  }
 
   // Avatar set/clear: a URL/object sets it, '' or null removes it.
   if ('avatar' in req.body) {
@@ -288,6 +328,8 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
     }
     throw err;
   }
+  // Refresh the projection so present() returns the {_id, name, color} shape.
+  await user.populate({ path: 'customRole', select: 'name color' });
   res.json({ success: true, data: { employee: present(user) } });
 });
 

@@ -1,12 +1,10 @@
-// @ts-nocheck
 import PageHeader from '@/app/shared/page-header';
-import ModalButton from '@/app/shared/modal-button';
-import RolesGrid from '@/app/shared/roles-permissions/roles-grid';
-import UsersTable from '@/app/shared/roles-permissions/users-table';
-import CreateRole from '@/app/shared/roles-permissions/create-role';
+import RolesPermissionsView, {
+  RoleHeaderAction,
+} from '@/app/shared/roles-permissions/roles-permissions-view';
 
 const pageHeader = {
-  title: 'Roles and Permissions ',
+  title: 'Roles and Permissions',
   breadcrumb: [
     {
       href: '/',
@@ -18,14 +16,13 @@ const pageHeader = {
   ],
 };
 
-export default function BlankPage() {
+export default function RolesPermissionsPage() {
   return (
     <>
       <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb}>
-        <ModalButton label="Add New Role" view={<CreateRole />} />
+        <RoleHeaderAction />
       </PageHeader>
-      <RolesGrid />
-      <UsersTable />
+      <RolesPermissionsView />
     </>
   );
 }

@@ -1,6 +1,7 @@
 // services/user.service.js
 
 const User = require('../models/User');
+const Role = require('../models/Role');
 const Tenant = require('../models/Tenant'); // Changed from '../models/tenant' to '../models/Tenant' for consistency
 const RefreshToken = require('../models/RefreshToken');
 const bcrypt = require('bcryptjs');
@@ -678,8 +679,9 @@ const updateUser = async (userId, updateData, requestingUserId, requestingUserRo
     }
   }
 
-  // Fields that only admins can update
-  const adminOnlyFields = ['role', 'status', 'isEmailVerified', 'isAgeVerified', 'tenant'];
+  // Fields that only admins can update (customRole refines an admin's
+  // permissions; see the block below for its validation)
+  const adminOnlyFields = ['role', 'status', 'isEmailVerified', 'isAgeVerified', 'tenant', 'customRole'];
   
   if (!isAdmin) {
     adminOnlyFields.forEach(field => {
@@ -697,6 +699,27 @@ const updateUser = async (userId, updateData, requestingUserId, requestingUserRo
   // Super admin cannot be changed by anyone
   if (user.role === 'super_admin' && updateData.role && updateData.role !== 'super_admin') {
     throw new AuthorizationError('Cannot modify super admin role');
+  }
+
+  // Custom access-control role (models/Role.js) — platform-shelf refinement
+  // for platform admins. Only `admin` targets may hold one; super_admin's
+  // capabilities are fixed by policy, same as tenant_owner's on the tenant
+  // surface. Non-admin callers never reach this block: 'customRole' was
+  // stripped from their payload with the other admin-only fields above.
+  if (updateData.customRole !== undefined) {
+    if (user.role !== 'admin') {
+      throw new ValidationError(
+        'Custom roles can only be assigned to platform admins (never super_admin)'
+      );
+    }
+    const requested = updateData.customRole;
+    if (requested !== null) {
+      const role = await Role.findById(requested);
+      if (!role || role.scope !== 'platform') {
+        throw new ValidationError('Unknown platform custom role');
+      }
+      updateData.customRole = role._id;
+    }
   }
 
   // Don't allow updating sensitive fields directly
