@@ -27,7 +27,14 @@ import {
 import { vendorReturnService } from '@/services/vendorReturn.service';
 import type { VendorReturn } from '@/services/vendorReturn.service';
 import type { PurchaseOrder } from './types';
-import { STATUS_BADGE, statusLabel, fmtAmount } from './types';
+import {
+  STATUS_BADGE,
+  statusLabel,
+  fmtAmount,
+  linePackSize,
+  packNounOf,
+  packsLabel,
+} from './types';
 import { printPOInvoice, printRFQInvoice } from '@/utils/purchaseInvoice';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 
@@ -224,9 +231,9 @@ export default function PurchasesPODetail({ id }: { id: string }) {
           {canEdit && (
             <Link
               href={routes.eCommerce.editPurchase(po._id)}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9a0101]"
             >
-              <PiPencilSimple className="h-4 w-4" /> Edit
+              <PiPencilSimple className="h-4 w-4" /> Proceed to Fulfil Order
             </Link>
           )}
           {needsApproval && (
@@ -434,6 +441,9 @@ export default function PurchasesPODetail({ id }: { id: string }) {
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
                 Qty
               </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
+                Packs
+              </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
                 Received
               </th>
@@ -466,6 +476,13 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 </td>
                 <td className="px-4 py-3 text-right text-gray-700">
                   {item.quantity}
+                </td>
+                <td className="px-4 py-3 text-center text-xs text-gray-600">
+                  {packsLabel(
+                    item.quantity,
+                    linePackSize(item as any),
+                    packNounOf((item as any).packaging)
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <span
@@ -518,7 +535,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
           <tfoot>
             <tr className="border-t border-gray-200 bg-gray-50">
               <td
-                colSpan={6}
+                colSpan={7}
                 className="px-4 py-3 text-right text-sm font-semibold text-gray-700"
               >
                 Total

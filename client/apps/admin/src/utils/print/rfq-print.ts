@@ -1,5 +1,10 @@
 import type { PurchaseOrder } from '@/app/shared/purchases/types';
 import {
+  linePackSize,
+  packNounOf,
+  packsLabel,
+} from '@/app/shared/purchases/types';
+import {
   BASE_STYLE,
   COMPANY,
   docHeader,
@@ -28,9 +33,14 @@ export function buildRFQInvoice(
       const displayName =
         size && !name.includes(size) ? `${name} – ${size}` : name;
       const uom = (item as any).uom ? ` ${(item as any).uom}` : '';
+      const packs = packsLabel(
+        item.quantity,
+        linePackSize(item as any),
+        packNounOf((item as any).packaging)
+      );
       return `<tr>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6">${esc(displayName)}<div style="font-size:10px;color:#9ca3af">${esc(item.sku ?? '')}</div></td>
-        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:center">${item.quantity}<span style="font-size:10px;color:#9ca3af">${esc(uom)}</span></td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:center">${item.quantity}<span style="font-size:10px;color:#9ca3af">${esc(uom)}</span><div style="font-size:10px;color:#9ca3af">${esc(packs)}</div></td>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6">&nbsp;</td>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6">&nbsp;</td>
       </tr>`;
@@ -67,12 +77,17 @@ export function buildRFQInvoice(
   ])}
 
   ${itemsTable(
-    ['Product', 'Requested Qty', 'Quoted Unit Price', 'Quoted Total'].map(
-      (label, i) =>
-        [label, i === 0 ? 'left' : i === 1 ? 'center' : 'right'] as [
-          string,
-          'left' | 'center' | 'right',
-        ]
+    [
+      ['Product', 'left'],
+      ['Requested Qty / Packs', 'center'],
+      ['Quoted Unit Price', 'right'],
+      ['Quoted Total', 'right'],
+    ].map(
+      ([label, align], i) =>
+        [
+          label,
+          i === 0 ? 'left' : i === 1 ? 'center' : 'right',
+        ] as [string, 'left' | 'center' | 'right']
     ),
     itemRows
   )}

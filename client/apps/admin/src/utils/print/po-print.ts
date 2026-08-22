@@ -1,6 +1,11 @@
 import { warehouseLabelOf } from '@/services/purchaseOrder.service';
 import type { PurchaseOrder } from '@/app/shared/purchases/types';
 import {
+  linePackSize,
+  packNounOf,
+  packsLabel,
+} from '@/app/shared/purchases/types';
+import {
   BASE_STYLE,
   docHeader,
   docShell,
@@ -35,9 +40,15 @@ export function buildPOInvoice(po: PurchaseOrder, companyName: string): string {
       const received = item.receivedQty ?? 0;
       const returned = (item as any).returnedQty ?? 0;
       const outstanding = Math.max(0, item.quantity - received - returned);
+      const packs = packsLabel(
+        item.quantity,
+        linePackSize(item as any),
+        packNounOf((item as any).packaging)
+      );
       return `<tr>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6">${esc(displayName)}<div style="font-size:10px;color:#9ca3af">${esc(item.sku ?? '')}</div></td>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:center">${item.quantity}<span style="font-size:10px;color:#9ca3af">${esc(uom)}</span></td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:center;font-size:11px;color:#374151">${esc(packs)}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right;color:${received >= item.quantity ? '#16a34a' : '#6b7280'}">${received}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right;color:${outstanding > 0 ? '#b45309' : '#9ca3af'}">${outstanding}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right">${fmtAmt(unitCost, po.currency)}</td>
@@ -106,6 +117,7 @@ export function buildPOInvoice(po: PurchaseOrder, companyName: string): string {
     [
       ['Product', 'left'],
       ['Ordered', 'center'],
+      ['Packs', 'center'],
       ['Received', 'right'],
       ['Outstanding', 'right'],
       ['Unit Price', 'right'],

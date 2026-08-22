@@ -51,6 +51,10 @@ export interface POItem {
   outstandingQty?: number;
   type: string;
   uom?: string;
+  /** Units per pack, persisted by the server from the create form's packSize. */
+  packagingQty?: number;
+  /** Packaging noun from Size.packaging.type ('bottle', 'can', 'keg'…). */
+  packaging?: string;
   taxRate?: number;
   totalCost?: number;
   // Parent-product batch-tracking flags, surfaced by the single-PO endpoint so
@@ -376,6 +380,47 @@ export function fmtAmount(n: number | undefined | null): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+// ─── Pack breakdown ──────────────────────────────────────────────────────────
+// Size.unitsPerPack (server/models/Size.js) is how many sellable units one
+// pack holds; the purchase line persists it as `packagingQty`. Buyers order
+// loose units, then read the order back as "5 packs & 1 bottle".
+
+const PACK_NOUNS = [
+  'bottle', 'can', 'keg', 'box', 'carton', 'pouch', 'jar', 'tin', 'bag',
+] as const;
+
+/** Countable noun for a line's packaging ('glass_bottle' → 'bottle'). */
+export function packNounOf(packaging?: string): string {
+  const p = (packaging ?? '').toLowerCase();
+  return PACK_NOUNS.find((n) => p.includes(n)) ?? 'bottle';
+}
+
+/** Units per pack for a purchase line — packagingQty on the wire, else packSize. */
+export function linePackSize(item: {
+  packagingQty?: number;
+  packSize?: number;
+}): number {
+  const ps = item.packagingQty ?? item.packSize ?? 1;
+  return Number.isFinite(ps) && ps >= 1 ? Math.floor(ps as number) : 1;
+}
+
+/**
+ * Human pack breakdown of a quantity: "40 packs", "5 packs & 1 bottle",
+ * "5 bottles" below a full pack, or plain units when there is no real pack size.
+ */
+export function packsLabel(quantity: number, packSize?: number, unit = 'bottle'): string {
+  const qty = Math.max(0, Math.floor(quantity || 0));
+  const unitWord = (n: number) => `${unit}${n === 1 ? '' : 's'}`;
+  const size = !packSize || packSize < 2 ? 1 : Math.floor(packSize);
+  if (size === 1) return `${qty.toLocaleString('en-NG')} ${unitWord(qty)}`;
+  const packs = Math.floor(qty / size);
+  const rem = qty % size;
+  if (packs === 0) return `${qty.toLocaleString('en-NG')} ${unitWord(qty)}`;
+  if (rem === 0)
+    return `${packs.toLocaleString('en-NG')} pack${packs === 1 ? '' : 's'}`;
+  return `${packs.toLocaleString('en-NG')} pack${packs === 1 ? '' : 's'} & ${rem.toLocaleString('en-NG')} ${unitWord(rem)}`;
 }
 
 export interface PurchaseAnalyticsSummary {

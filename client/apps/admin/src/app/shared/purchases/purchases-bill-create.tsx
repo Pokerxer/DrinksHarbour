@@ -10,12 +10,18 @@ import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import type { POItem } from '@/services/purchaseOrder.service';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
-import { fmtAmount } from './types';
+import {
+  fmtAmount,
+  linePackSize,
+  packNounOf,
+  packsLabel,
+} from './types';
 
 type BillableLine = {
   subProductName: string;
   sku?: string;
   quantity: number;
+  packagingQty?: number;
   unitPrice: number;
   taxRate: number;
   amount: number;
@@ -82,6 +88,7 @@ export default function PurchasesBillCreate() {
         subProductName: item.subProductName ?? item.productName ?? item.sku,
         sku: item.sku,
         quantity: qty,
+        packagingQty: item.packagingQty,
         unitPrice,
         taxRate,
         amount,
@@ -259,6 +266,9 @@ export default function PurchasesBillCreate() {
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
                         Qty
                       </th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
+                        Packs
+                      </th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
                         Unit Cost
                       </th>
@@ -286,6 +296,13 @@ export default function PurchasesBillCreate() {
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700">
                           {line.quantity}
+                        </td>
+                        <td className="px-4 py-3 text-center text-xs text-gray-600">
+                          {packsLabel(
+                            line.quantity,
+                            linePackSize(line),
+                            packNounOf((line as any).packaging)
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700">
                           {po.currency} {fmtAmount(line.unitPrice)}

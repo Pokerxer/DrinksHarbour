@@ -23,7 +23,11 @@ import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import { vendorService } from '@/services/vendor.service';
 import { subproductService } from '@/services/subproduct.service';
-import { CURRENCIES, fmtAmount } from './types';
+import {
+  CURRENCIES,
+  fmtAmount,
+  packsLabel,
+} from './types';
 import type { Vendor } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 import PackSizeInput from './pack-size-input';
@@ -1042,7 +1046,7 @@ export default function PurchasesCreate() {
                     </div>
 
                     {/* Line fields */}
-                    <div className="ml-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                    <div className="ml-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
                       <div>
                         <label className="mb-1 block text-[10px] font-medium text-gray-500">
                           SKU
@@ -1074,6 +1078,16 @@ export default function PurchasesCreate() {
                         value={item.packSize}
                         onApply={(patch) => updateItem(i, patch)}
                       />
+                      <div>
+                        <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                          Packs
+                        </label>
+                        <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
+                          <span className="text-xs font-semibold text-gray-800">
+                            {packsLabel(item.quantity, item.packSize)}
+                          </span>
+                        </div>
+                      </div>
                       <div>
                         <label className="mb-1 block text-[10px] font-medium text-gray-500">
                           Unit Price

@@ -77,6 +77,16 @@ describe('buildRFQInvoice', () => {
     expect(html).not.toContain('totalCost');
   });
 
+  it('breaks requested quantities into packs', () => {
+    const packed = {
+      ...rfq,
+      items: [{ ...rfq.items[0], quantity: 31, packagingQty: 6 }], // 5 packs & 1 bottle
+    } as unknown as PurchaseOrder;
+    const html = buildRFQInvoice(packed, 'DrinksHarbour');
+    expect(html).toContain('Packs');
+    expect(html).toContain('5 packs &amp; 1 bottle');
+  });
+
   it('includes terms and conditions when present', () => {
     const html = buildRFQInvoice(rfq, 'DrinksHarbour');
     expect(html).toContain('Quotes valid for 14 days');
@@ -146,6 +156,18 @@ describe('buildPOInvoice — detail', () => {
     expect(html).toContain('10,000.00');
     expect(html).toContain('Outstanding');
     expect(html).toMatch(/>280</); // 480 − 200 still to arrive
+  });
+
+  it('shows the pack breakdown for each line', () => {
+    const mixed = {
+      ...po,
+      items: [
+        { ...po.items[0], quantity: 37, packagingQty: 6 }, // 6 packs & 1 bottle
+      ],
+    } as unknown as PurchaseOrder;
+    const html = buildPOInvoice(mixed, 'DrinksHarbour');
+    expect(html).toContain('Packs');
+    expect(html).toContain('6 packs &amp; 1 bottle');
   });
 
   it('shows payment terms, destination warehouse and agreement reference', () => {

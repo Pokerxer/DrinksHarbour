@@ -25,6 +25,7 @@ import {
   PiX,
   PiCheck,
   PiWarning,
+  PiPrinter,
 } from 'react-icons/pi';
 import {
   ResponsiveContainer,
@@ -40,8 +41,21 @@ import {
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import { useTenant } from '@/context/TenantContext';
+import {
+  printPOInvoice,
+  printRFQInvoice,
+} from '@/utils/purchaseInvoice';
 import type { PurchaseOrder } from './types';
 import { STATUS_BADGE, statusLabel } from './types';
+
+// Drafts print as RFQs, everything else as the purchase order — the same
+// branch the detail page uses.
+function printOrderDoc(order: PurchaseOrder, companyName: string) {
+  if (order.type === 'rfq' || order.status === 'draft')
+    printRFQInvoice(order, companyName);
+  else printPOInvoice(order, companyName);
+}
 
 // ─── types ────────────────────────────────────────────────────────
 type TabKey = 'all' | 'rfq' | 'po' | 'to_receive' | 'to_bill';
@@ -244,6 +258,7 @@ function OrderCard({
   showBillNow?: boolean;
 }) {
   const router = useRouter();
+  const { tenant } = useTenant();
   const total = orderTotal(order);
   const canEdit = order.status === 'draft' && !order.isLocked;
   const canDelete = order.status === 'draft';
@@ -325,6 +340,19 @@ function OrderCard({
               <PiReceipt className="h-3.5 w-3.5" />
               Bill
             </Link>
+          )}
+          {order.status !== 'cancelled' && order.status !== 'cancel' && (
+            <button
+              type="button"
+              title="Print"
+              onClick={(e) => {
+                e.stopPropagation();
+                printOrderDoc(order, tenant?.name || 'DrinksHarbour');
+              }}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            >
+              <PiPrinter className="h-4 w-4" />
+            </button>
           )}
           <Link
             href={routes.eCommerce.purchaseDetails(order._id)}
@@ -926,6 +954,7 @@ export default function PurchasesOrders() {
   const searchParams = useSearchParams();
   const vendorParam = searchParams.get('vendor');
   const { data: session } = useSession();
+  const { tenant } = useTenant();
   const token = (session?.user as { token?: string })?.token ?? '';
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
@@ -1543,11 +1572,29 @@ export default function PurchasesOrders() {
                                   Bill
                                 </Link>
                               )}
+                              {order.status !== 'cancelled' &&
+                                order.status !== 'cancel' && (
+                                  <button
+                                    type="button"
+                                    title="Print"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      printOrderDoc(
+                                        order,
+                                        tenant?.name || 'DrinksHarbour'
+                                      );
+                                    }}
+                                    className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                                  >
+                                    <PiPrinter className="h-4 w-4" />
+                                  </button>
+                                )}
                               <Link
                                 href={routes.eCommerce.purchaseDetails(
                                   order._id
                                 )}
                                 title="View"
+                                onClick={(e) => e.stopPropagation()}
                                 className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
                               >
                                 <PiEye className="h-4 w-4" />

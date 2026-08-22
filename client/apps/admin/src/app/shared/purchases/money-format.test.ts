@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtAmount, CURRENCY_SYMBOLS } from './types';
+import { fmtAmount, packsLabel, linePackSize, packNounOf, CURRENCY_SYMBOLS } from './types';
 
 describe('fmtAmount', () => {
   it('groups thousands with commas and keeps two decimals', () => {
@@ -34,5 +34,56 @@ describe('CURRENCY_SYMBOLS', () => {
   it('covers every currency the purchase module renders', () => {
     expect(CURRENCY_SYMBOLS.NGN).toBe('₦');
     expect(CURRENCY_SYMBOLS.USD).toBe('$');
+  });
+});
+
+describe('linePackSize', () => {
+  it('prefers packagingQty (what the server persists)', () => {
+    expect(linePackSize({ packagingQty: 6, packSize: 12 })).toBe(6);
+    expect(linePackSize({ packagingQty: 6 })).toBe(6);
+  });
+
+  it('falls back to packSize then 1', () => {
+    expect(linePackSize({ packSize: 24 })).toBe(24);
+    expect(linePackSize({})).toBe(1);
+    expect(linePackSize({ packagingQty: 0 })).toBe(1);
+  });
+});
+
+describe('packNounOf', () => {
+  it('maps packaging types onto a countable noun', () => {
+    expect(packNounOf('bottle')).toBe('bottle');
+    expect(packNounOf('glass_bottle')).toBe('bottle');
+    expect(packNounOf('plastic_bottle')).toBe('bottle');
+    expect(packNounOf('keg')).toBe('keg');
+    expect(packNounOf(undefined)).toBe('bottle');
+  });
+});
+
+describe('packsLabel', () => {
+  it('shows whole packs when the quantity divides evenly', () => {
+    expect(packsLabel(480, 12)).toBe('40 packs');
+    expect(packsLabel(12, 12)).toBe('1 pack');
+  });
+
+  it('combines packs and loose units like a buyer speaks', () => {
+    expect(packsLabel(37, 6)).toBe('6 packs & 1 bottle');
+    expect(packsLabel(31, 6)).toBe('5 packs & 1 bottle');
+  });
+
+  it('shows loose units alone below one pack', () => {
+    expect(packsLabel(5, 6)).toBe('5 bottles');
+    expect(packsLabel(1, 6)).toBe('1 bottle');
+  });
+
+  it('degrades to plain units when there is no real pack size', () => {
+    expect(packsLabel(5, 1)).toBe('5 bottles');
+    expect(packsLabel(7)).toBe('7 bottles');
+    expect(packsLabel(0, 6)).toBe('0 bottles');
+  });
+
+  it('uses the line packaging noun when given', () => {
+    expect(packsLabel(10, 4, 'can')).toBe('2 packs & 2 cans');
+    expect(packsLabel(3, 4, 'keg')).toBe('3 kegs');
   });
 });
