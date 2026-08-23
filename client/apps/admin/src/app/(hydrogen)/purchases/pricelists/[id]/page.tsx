@@ -1,7 +1,7 @@
 'use client';
 import { use } from 'react';
 import PurchasesNavHeader from '@/app/shared/purchases/purchases-nav-header';
-import PurchasesPricelistDetail from '@/app/shared/purchases/purchases-pricelist-detail';
+import PurchasesPricelistDetail from '@/app/shared/purchases/pricelists/pricelist-detail';
 export default function VendorPricelistDetailPage({
   params,
 }: {

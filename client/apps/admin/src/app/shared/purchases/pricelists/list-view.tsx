@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { PiListChecks, PiMagnifyingGlass, PiTag } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { vendorPricelistService, type VendorPricelist } from '@/services/vendorPricelist.service';
-import { PriceCompare } from '../purchases-price-compare';
+import { PriceCompare } from './price-compare';
 import BulkBar, { deletePricelists, duplicatePayload, exportOverviewCsv, runBulkAction } from './bulk-bar';
 import ConfirmDialog from './confirm-dialog';
 import type { SortKey } from './constants';

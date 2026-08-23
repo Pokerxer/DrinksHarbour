@@ -15,10 +15,10 @@ import {
   vendorPricelistService,
   type MatrixGroup,
 } from '@/services/vendorPricelist.service';
-import { fmtNaira } from './purchases-analytics-helpers';
+import { fmtNaira } from '../purchases-analytics-helpers';
 import { useExchangeRates } from '@/hooks/use-exchange-rates';
-import { fraunces } from './purchases-fonts';
-import { netPrice } from './purchases-pricelist-shared';
+import { fraunces } from '../purchases-fonts';
+import { netPrice } from './helpers';
 
 export function PriceCompare() {
   const { data: session } = useSession();
@@ -56,7 +56,7 @@ export function PriceCompare() {
           const net = netPrice({
             unitPrice: v.unitPrice,
             discountPercent: v.discountPercent,
-          } as never);
+          });
           const naira =
             v.currency === 'NGN' ? net : convert(net, v.currency, 'NGN');
           return { ...v, net, naira };
