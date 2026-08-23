@@ -3,6 +3,17 @@ const WarehouseBatch = require('../models/WarehouseBatch');
 const { buildBatchNumber, nextBatchSeq, formatBatchDate, allocateFefo } = require('./batch.helpers');
 const { ValidationError } = require('../utils/errors');
 
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+/** Weighted-average unit cost when incoming stock merges into an existing lot. */
+function mergedUnitCost(oldQty, oldCost, incQty, incCost) {
+  const oq = Number(oldQty) || 0;
+  const iq = Number(incQty) || 0;
+  if (iq <= 0) return round2(Number(oldCost) || 0);
+  if (oq <= 0) return round2(Number(incCost) || 0);
+  return round2((oq * (Number(oldCost) || 0) + iq * (Number(incCost) || 0)) / (oq + iq));
+}
+
 /**
  * Build the next auto batch number for a (warehouse, subProduct, size) on a date:
  * `${SKU}-${YYYYMMDD}-${seq}`.
@@ -132,9 +143,14 @@ async function restoreBatches(allocations, session = null) {
  * Move `quantity` of a (sub, size) between warehouses FEFO: decrement source
  * batches and upsert matching (number + expiry) batches at the destination,
  * preserving expiry. Caller wraps this in a transaction and updates WarehouseStock.
+ *
+ * Destination valuation: an explicit `destUnitCost` prices NEW lots at the
+ * transfer's effective landed cost and re-weights EXISTING twins via
+ * `mergedUnitCost`; omitted keeps the historical behaviour of carrying the
+ * source lot's cost over (no extra destination lookup).
  */
 async function transferBatchesFefo(
-  { tenantId, subProduct, size, fromWarehouse, toWarehouse, quantity, order = 'fefo' }, session = null
+  { tenantId, subProduct, size, fromWarehouse, toWarehouse, quantity, order = 'fefo', destUnitCost }, session = null
 ) {
   let query = WarehouseBatch.find({
     tenant: tenantId, warehouse: fromWarehouse, subProduct, size, quantity: { $gt: 0 }, quarantined: { $ne: true },
@@ -144,24 +160,39 @@ async function transferBatchesFefo(
 
   const { allocations } = allocateFefo(srcBatches, quantity, { order });
   const byId = new Map(srcBatches.map((b) => [String(b._id), b]));
+  const revalue = typeof destUnitCost === 'number';
 
   for (const a of allocations) {
+    const src = byId.get(String(a.batch));
+    const destFilter = {
+      tenant: tenantId, warehouse: toWarehouse, subProduct, size, batchNumber: a.batchNumber,
+    };
+
+    let existing = null;
+    if (revalue) {
+      const destQuery = WarehouseBatch.findOne(destFilter);
+      if (session) destQuery.session(session);
+      existing = await destQuery;
+    }
+    const incomingCost =
+      revalue ? destUnitCost : ((src && src.unitCost) || 0);
+    const nextCost = existing
+      ? mergedUnitCost(existing.quantity, existing.unitCost, a.quantity, incomingCost)
+      : incomingCost;
+
     const dec = WarehouseBatch.updateOne({ _id: a.batch }, { $inc: { quantity: -a.quantity } });
     if (session) dec.session(session);
     await dec;
 
-    const src = byId.get(String(a.batch));
-    const filter = {
-      tenant: tenantId, warehouse: toWarehouse, subProduct, size, batchNumber: a.batchNumber,
-    };
     const update = {
       $inc: { quantity: a.quantity, initialQuantity: a.quantity },
       $setOnInsert: {
-        ...filter, product: src && src.product, expiryDate: a.expiryDate || null,
-        unitCost: (src && src.unitCost) || 0, receivedDate: new Date(),
+        ...destFilter, product: src && src.product, expiryDate: a.expiryDate || null,
+        unitCost: nextCost, receivedDate: new Date(),
       },
     };
-    const up = WarehouseBatch.findOneAndUpdate(filter, update, {
+    if (existing) update.$set = { unitCost: nextCost };
+    const up = WarehouseBatch.findOneAndUpdate(destFilter, update, {
       new: true, upsert: true, setDefaultsOnInsert: true,
     });
     if (session) up.session(session);
@@ -201,5 +232,5 @@ async function quarantineExpiredBatches({ tenantId, now = new Date() }) {
 
 module.exports = {
   generateBatchNumber, receiveBatch, depleteBatchesFefo, restoreBatches, transferBatchesFefo,
-  expiredQuantity, quarantineExpiredBatches,
+  expiredQuantity, quarantineExpiredBatches, mergedUnitCost,
 };
