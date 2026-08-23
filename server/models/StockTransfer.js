@@ -18,6 +18,9 @@ const StockTransferItemSchema = new Schema(
     discountRate: { type: Number, default: 0, min: 0 },
     taxRate: { type: Number, default: 0, min: 0 },
     receivedQty: { type: Number, default: 0, min: 0 },
+    // Units never received when a transfer is closed with shortage
+    // (quantity − receivedQty at close time).
+    shortfallQty: { type: Number, default: 0, min: 0 },
   },
   { _id: true }
 );

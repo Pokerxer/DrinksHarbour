@@ -10,6 +10,9 @@ const {
   updateStockTransferStatus,
   approveStockTransfer,
   rejectStockTransfer,
+  sendStockTransfer,
+  receiveStockTransfer,
+  closeStockTransfer,
 } = require("../controllers/stockTransfer.controller");
 const {
   protect,
@@ -40,5 +43,12 @@ router
 router.patch("/:id/status", tenantAdminOrSuperAdmin, updateStockTransferStatus);
 router.patch("/:id/approve", tenantAdminOrSuperAdmin, approveStockTransfer);
 router.patch("/:id/reject", tenantAdminOrSuperAdmin, rejectStockTransfer);
+
+// Two-sided transfer workflow: the source side dispatches, the destination
+// side books receipts / closes with shortage. Per-warehouse manager gating
+// happens inside the handlers (tenant admins bypass there too).
+router.post("/:id/send", tenantAdminOrSuperAdmin, sendStockTransfer);
+router.post("/:id/receive", tenantAdminOrSuperAdmin, receiveStockTransfer);
+router.post("/:id/close", tenantAdminOrSuperAdmin, closeStockTransfer);
 
 module.exports = router;

@@ -3,11 +3,16 @@ const asyncHandler = require("express-async-handler");
 const StockTransfer = require("../models/StockTransfer");
 const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
+const Warehouse = require("../models/Warehouse");
 const warehouseService = require("../services/warehouse.service");
 const {
   resolveTransferUnitCost,
   hasExplicitUnitCost,
 } = require("../services/stockTransfer.helpers");
+const { computeTransferMoney } = require("../services/stockTransfer.money");
+const {
+  receiveStockTransferLines,
+} = require("../services/stockTransferReceive");
 const { getTenantWarehouseSettings } = require("./warehouse.controller");
 const { NotFoundError, ValidationError, ForbiddenError } = require("../utils/errors");
 
@@ -19,6 +24,30 @@ const resolveTenantId = (req) => {
   }
   throw new ForbiddenError("Tenant context required");
 };
+
+// Two-sided workflow: source managers dispatch, destination managers receive.
+// These roles always bypass the per-warehouse manager check.
+const TENANT_BYPASS_ROLES = ["super_admin", "tenant_owner", "tenant_admin"];
+
+function isWarehouseSideUser(warehouse, req) {
+  if (req.user && TENANT_BYPASS_ROLES.includes(req.user.role)) return true;
+  const ids = (warehouse?.managers || []).map((m) =>
+    typeof m === "object" ? String(m._id ?? m) : String(m)
+  );
+  return ids.includes(String(req.user._id));
+}
+
+async function assertWarehouseSide(warehouseId, tenantId, req, label) {
+  if (TENANT_BYPASS_ROLES.includes(req.user.role)) return;
+  const wh = await Warehouse.findOne({ _id: warehouseId, tenant: tenantId })
+    .select("managers")
+    .lean();
+  if (!isWarehouseSideUser(wh, req)) {
+    throw new ForbiddenError(
+      `Only a manager of the ${label} warehouse (or a tenant admin) can do this`
+    );
+  }
+}
 
 async function generateTransferNumber(tenantId) {
   const year = new Date().getFullYear();
@@ -89,6 +118,7 @@ const createStockTransfer = asyncHandler(async (req, res) => {
     scheduledDate,
     status,
     currency,
+    deliveryCharge,
   } = req.body;
 
   if (!sourceWarehouse || !destinationWarehouse)
@@ -109,8 +139,13 @@ const createStockTransfer = asyncHandler(async (req, res) => {
     ...it,
     subProductName: it.subProductName ?? it.productName ?? "",
     transferredQty: 0,
+    receivedQty: 0,
+    discountRate: Number(it.discountRate) || 0,
+    taxRate: Number(it.taxRate) || 0,
   }));
-  const totalValue = transferValue({ items: transferItems });
+  const draft = { items: transferItems, deliveryCharge: Number(deliveryCharge) || 0 };
+  applyTransferMoney(draft);
+  const totalValue = draft.total;
 
   // A create-and-confirm that meets the approval threshold lands in
   // pending_approval rather than confirmed.
@@ -118,7 +153,7 @@ const createStockTransfer = asyncHandler(async (req, res) => {
   if (
     resolvedStatus === "confirmed" &&
     settings.requireTransferApproval &&
-    totalValue >= (settings.transferApprovalThreshold || 0)
+    draft.total >= (settings.transferApprovalThreshold || 0)
   ) {
     resolvedStatus = "pending_approval";
   }
@@ -133,6 +168,11 @@ const createStockTransfer = asyncHandler(async (req, res) => {
     scheduledDate,
     status: resolvedStatus,
     totalValue,
+    deliveryCharge: draft.deliveryCharge,
+    subtotal: draft.subtotal,
+    discountAmount: draft.discountAmount,
+    taxAmount: draft.taxAmount,
+    total: draft.total,
     currency: currency || "NGN",
     createdBy: userId,
     ...(resolvedStatus === "confirmed"
@@ -155,8 +195,8 @@ const getStockTransfers = asyncHandler(async (req, res) => {
   const skip = (Number(page) - 1) * Number(limit);
   const [transfers, total, stats] = await Promise.all([
     StockTransfer.find(query)
-      .populate("sourceWarehouse", "name code type")
-      .populate("destinationWarehouse", "name code type")
+      .populate("sourceWarehouse", "name code type address contact managers")
+      .populate("destinationWarehouse", "name code type address contact managers")
       .populate("createdBy", "name")
       .populate("confirmedBy", "name")
       .populate("completedBy", "name")
@@ -174,7 +214,7 @@ const getStockTransfers = asyncHandler(async (req, res) => {
     ]),
   ]);
 
-  const statsMap = { draft: 0, pending_approval: 0, confirmed: 0, completed: 0, cancelled: 0, rejected: 0 };
+  const statsMap = { draft: 0, pending_approval: 0, confirmed: 0, in_transit: 0, partially_received: 0, completed: 0, cancelled: 0, rejected: 0 };
   for (const s of stats) statsMap[s._id] = s.count;
 
   res.json({
@@ -197,8 +237,8 @@ const getStockTransfer = asyncHandler(async (req, res) => {
     _id: req.params.id,
     tenant: tenantId,
   })
-    .populate("sourceWarehouse", "name code type")
-    .populate("destinationWarehouse", "name code type")
+    .populate("sourceWarehouse", "name code type address contact managers")
+    .populate("destinationWarehouse", "name code type address contact managers")
     .populate("createdBy", "name")
     .populate("confirmedBy", "name")
     .populate("completedBy", "name")
@@ -221,20 +261,32 @@ const updateStockTransfer = asyncHandler(async (req, res) => {
   if (transfer.status !== "draft")
     throw new ValidationError("Only draft transfers can be edited");
 
-  const { sourceWarehouse, destinationWarehouse, items, notes, scheduledDate, currency } =
-    req.body;
+  const {
+    sourceWarehouse,
+    destinationWarehouse,
+    items,
+    notes,
+    scheduledDate,
+    currency,
+    deliveryCharge,
+  } = req.body;
 
   if (sourceWarehouse) transfer.sourceWarehouse = sourceWarehouse;
   if (destinationWarehouse) transfer.destinationWarehouse = destinationWarehouse;
   if (notes !== undefined) transfer.notes = notes;
   if (scheduledDate !== undefined) transfer.scheduledDate = scheduledDate;
   if (currency) transfer.currency = currency;
+  if (deliveryCharge !== undefined)
+    transfer.deliveryCharge = Number(deliveryCharge) || 0;
   if (items) {
     const enriched = await enrichItems(items, tenantId);
     transfer.items = enriched.map((it) => ({
       ...it,
       subProductName: it.subProductName ?? it.productName ?? "",
       transferredQty: 0,
+      receivedQty: 0,
+      discountRate: Number(it.discountRate) || 0,
+      taxRate: Number(it.taxRate) || 0,
     }));
   }
 
@@ -243,6 +295,7 @@ const updateStockTransfer = asyncHandler(async (req, res) => {
   )
     throw new ValidationError("Source and destination must be different warehouses");
 
+  applyTransferMoney(transfer);
   await transfer.save();
   res.json({ success: true, data: transfer });
 });
@@ -261,13 +314,33 @@ const deleteStockTransfer = asyncHandler(async (req, res) => {
   res.json({ success: true, message: "Transfer deleted" });
 });
 
-// Snapshot value of a transfer = Σ quantity × unit cost. Drives the approval gate.
-function transferValue(transfer) {
-  return (transfer.items || []).reduce(
-    (sum, it) => sum + (it.quantity || 0) * (it.costPrice || 0),
-    0
-  );
+// Money snapshot recomputed on every write. `total` is authoritative;
+// `totalValue` mirrors it so the approval gate and any legacy reader agree.
+function applyTransferMoney(t) {
+  const m = computeTransferMoney(t.items || [], t.deliveryCharge || 0);
+  t.subtotal = m.subtotal;
+  t.discountAmount = m.discountAmount;
+  t.taxAmount = m.taxAmount;
+  t.total = m.total;
+  t.totalValue = m.total;
+  return m;
 }
+
+// Allowed status transitions for PATCH /:id/status. Send / Receive / Close run
+// on dedicated endpoints (:id/send |receive|close), so in_transit is reached
+// only by dispatching and partially_received only by receiving — neither is a
+// generic status transition here. The legacy direct confirmed→completed move
+// (which moved all stock at once) was removed in favour of that flow.
+const TRANSITIONS = {
+  draft: ["confirmed", "cancelled"],
+  pending_approval: ["cancelled"], // approve/reject use dedicated endpoints
+  confirmed: ["in_transit", "cancelled"],
+  in_transit: ["cancelled"],       // receiving/closing have dedicated endpoints
+  partially_received: [],
+  completed: [],
+  cancelled: [],
+  rejected: [],
+};
 
 // Verify the source warehouse holds enough of every line before committing.
 async function assertSourceStock(transfer, tenantId, WarehouseStock) {
@@ -347,15 +420,6 @@ const updateStockTransferStatus = asyncHandler(async (req, res) => {
   });
   if (!transfer) throw new NotFoundError("Stock transfer not found");
 
-  const TRANSITIONS = {
-    draft: ["confirmed", "cancelled"],
-    pending_approval: ["cancelled"], // approve/reject use dedicated endpoints
-    confirmed: ["completed", "cancelled"],
-    completed: [],
-    cancelled: [],
-    rejected: [],
-  };
-
   if (!TRANSITIONS[transfer.status]?.includes(status)) {
     throw new ValidationError(
       `Cannot transition from '${transfer.status}' to '${status}'`
@@ -363,22 +427,19 @@ const updateStockTransferStatus = asyncHandler(async (req, res) => {
   }
 
   const WarehouseStock = require("../models/WarehouseStock");
-  const WarehouseMovement = require("../models/WarehouseMovement");
-  const { recalcSubProductStock } = require("../services/warehouseStock.helpers");
 
   if (status === "confirmed") {
     // Approval gate: when the tenant requires approval and this transfer's value
     // meets the threshold, route it to pending_approval instead of confirming.
     // An already-approved transfer (approvedAt set) skips the gate.
     const settings = await getTenantWarehouseSettings(tenantId);
-    const value = transferValue(transfer);
+    applyTransferMoney(transfer);
     if (
       settings.requireTransferApproval &&
-      value >= (settings.transferApprovalThreshold || 0) &&
+      transfer.total >= (settings.transferApprovalThreshold || 0) &&
       !transfer.approvedAt
     ) {
       transfer.status = "pending_approval";
-      transfer.totalValue = value;
       await transfer.save();
       return res.json({
         success: true,
@@ -388,59 +449,19 @@ const updateStockTransferStatus = asyncHandler(async (req, res) => {
     }
 
     await assertSourceStock(transfer, tenantId, WarehouseStock);
-    transfer.totalValue = value;
     transfer.confirmedBy = userId;
     transfer.confirmedAt = new Date();
   }
 
-  if (status === "completed") {
-    for (const item of transfer.items) {
-      const srcId = transfer.sourceWarehouse;
-      const dstId = transfer.destinationWarehouse;
-      const qty = item.quantity;
-      const subId = item.subProductId;
-      const szId = item.sizeId;
-
-      const srcQ = { tenant: tenantId, warehouse: srcId, subProduct: subId };
-      if (szId) srcQ.size = szId;
-      const src = await WarehouseStock.findOne(srcQ);
-      if (!src || src.currentQuantity < qty) {
-        throw new ValidationError(
-          `Insufficient stock for "${item.subProductName}"${item.sizeName ? ` (${item.sizeName})` : ""}`
-        );
-      }
-      src.currentQuantity -= qty;
-      await src.save();
-
-      const dstQ = { tenant: tenantId, warehouse: dstId, subProduct: subId };
-      if (szId) dstQ.size = szId;
-      let dst = await WarehouseStock.findOne(dstQ);
-      if (!dst) {
-        dst = new WarehouseStock({
-          tenant: tenantId,
-          warehouse: dstId,
-          subProduct: subId,
-          size: szId || src.size,
-        });
-      }
-      dst.currentQuantity += qty;
-      await dst.save();
-
-      await WarehouseMovement.create([
-        { tenant: tenantId, warehouse: srcId, subProduct: subId, size: src.size, type: 'transfer_out',
-          quantity: qty, balanceAfter: src.currentQuantity, reference: `Transfer ${transfer.transferNumber}`, performedBy: userId },
-        { tenant: tenantId, warehouse: dstId, subProduct: subId, size: dst.size, type: 'transfer_in',
-          quantity: qty, balanceAfter: dst.currentQuantity, reference: `Transfer ${transfer.transferNumber}`, performedBy: userId },
-      ]);
-
-      await recalcSubProductStock(subId);
-      item.transferredQty = qty;
-    }
-    transfer.completedDate = new Date();
-    transfer.completedBy = userId;
-  }
-
   if (status === "cancelled") {
+    if (
+      ["in_transit", "partially_received"].includes(transfer.status) &&
+      (transfer.receipts || []).length > 0
+    ) {
+      throw new ValidationError(
+        "Stock has already been received against this transfer — it cannot be cancelled"
+      );
+    }
     transfer.cancelledBy = userId;
     transfer.cancelledAt = new Date();
   }
@@ -449,6 +470,106 @@ const updateStockTransferStatus = asyncHandler(async (req, res) => {
   await transfer.save();
 
   res.json({ success: true, data: transfer });
+});
+
+// POST /api/stock-transfers/:id/send — source side dispatches the goods.
+const sendStockTransfer = asyncHandler(async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const transfer = await StockTransfer.findOne({
+    _id: req.params.id, tenant: tenantId,
+  });
+  if (!transfer) throw new NotFoundError("Stock transfer not found");
+  if (transfer.status !== "confirmed")
+    throw new ValidationError("Only confirmed transfers can be sent");
+  await assertWarehouseSide(transfer.sourceWarehouse, tenantId, req, "source");
+
+  const WarehouseStock = require("../models/WarehouseStock");
+  await assertSourceStock(transfer, tenantId, WarehouseStock);
+
+  applyTransferMoney(transfer);
+  transfer.dispatchedBy = req.user._id;
+  transfer.dispatchedAt = new Date();
+  transfer.status = "in_transit";
+  await transfer.save();
+  res.json({ success: true, data: transfer, message: "Transfer dispatched" });
+});
+
+// POST /api/stock-transfers/:id/receive — destination side books a receipt.
+const receiveStockTransfer = asyncHandler(async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const transfer = await StockTransfer.findOne({
+    _id: req.params.id, tenant: tenantId,
+  });
+  if (!transfer) throw new NotFoundError("Stock transfer not found");
+  if (!["in_transit", "partially_received"].includes(transfer.status))
+    throw new ValidationError("Only dispatched transfers can be received");
+  await assertWarehouseSide(transfer.destinationWarehouse, tenantId, req, "destination");
+
+  const lines = Array.isArray(req.body.lines) ? req.body.lines : [];
+  if (!lines.length) throw new ValidationError("At least one received quantity is required");
+
+  await receiveStockTransferLines({ transfer, tenantId, userId: req.user._id, lines });
+
+  for (const l of lines) {
+    const item = transfer.items[Number(l.itemIndex)];
+    item.receivedQty = (item.receivedQty || 0) + Number(l.quantity);
+    item.transferredQty = item.receivedQty; // legacy alias
+  }
+  transfer.receipts.push({
+    receivedBy: req.user._id,
+    receivedAt: new Date(),
+    lines: lines.map((l) => ({
+      itemIndex: Number(l.itemIndex),
+      quantity: Number(l.quantity),
+      ...(l.note ? { note: String(l.note).slice(0, 300) } : {}),
+    })),
+  });
+
+  const allIn = transfer.items.every(
+    (it) => (it.receivedQty || 0) >= (it.quantity || 0)
+  );
+  transfer.status = allIn ? "completed" : "partially_received";
+  if (allIn) {
+    transfer.completedDate = new Date();
+    transfer.completedBy = req.user._id;
+  }
+  await transfer.save();
+  res.json({
+    success: true, data: transfer,
+    message: allIn ? "Transfer fully received" : "Receipt recorded",
+  });
+});
+
+// POST /api/stock-transfers/:id/close — close with documented shortage.
+const closeStockTransfer = asyncHandler(async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const transfer = await StockTransfer.findOne({
+    _id: req.params.id, tenant: tenantId,
+  });
+  if (!transfer) throw new NotFoundError("Stock transfer not found");
+  if (!["in_transit", "partially_received"].includes(transfer.status))
+    throw new ValidationError("Only in-flight transfers can be closed");
+  if (!(transfer.receipts || []).length)
+    throw new ValidationError("Record at least one receipt before closing");
+  await assertWarehouseSide(transfer.sourceWarehouse, tenantId, req, "source")
+    .catch(() => {});
+  await assertWarehouseSide(transfer.destinationWarehouse, tenantId, req, "destination");
+
+  for (const it of transfer.items) {
+    it.shortfallQty = Math.max(0, (it.quantity || 0) - (it.receivedQty || 0));
+  }
+  transfer.closedWithShortage = true;
+  transfer.receipts.push({
+    receivedBy: req.user._id,
+    receivedAt: new Date(),
+    lines: [],
+    shortagesClosed: true,
+  });
+  transfer.completedDate = new Date();
+  transfer.completedBy = req.user._id;
+  transfer.status = "completed";
+  await transfer.save();
+  res.json({ success: true, data: transfer, message: "Transfer closed" });
 });
 
 module.exports = {
@@ -460,4 +581,9 @@ module.exports = {
   updateStockTransferStatus,
   approveStockTransfer,
   rejectStockTransfer,
+  sendStockTransfer,
+  receiveStockTransfer,
+  closeStockTransfer,
+  TRANSITIONS,
+  isWarehouseSideUser,
 };
