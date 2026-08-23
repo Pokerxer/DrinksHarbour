@@ -15,7 +15,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@core': path.resolve(__dirname, './src/@core'),
+      // Matches tsconfig: @core is the shared isomorphic-core package, not a
+      // local folder. The old ./src/@core target does not exist.
+      '@core': path.resolve(
+        __dirname,
+        '../../packages/isomorphic-core/src'
+      ),
     },
   },
 });

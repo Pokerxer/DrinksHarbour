@@ -8,10 +8,12 @@ import {
 import { fmtAmt, fmtDate, moneyWords } from './print-shared';
 import type { DocumentModel, DocCell } from './doc-model';
 
-export function buildPOInvoice(po: PurchaseOrder, companyName: string): DocumentModel {
+export function buildPOInvoice(
+  po: PurchaseOrder,
+  companyName: string
+): DocumentModel {
   const lineOf = (it: (typeof po.items)[number]) =>
-    it.totalCost ??
-    ((it as any).unitCost ?? it.unitPrice ?? 0) * it.quantity;
+    it.totalCost ?? ((it as any).unitCost ?? it.unitPrice ?? 0) * it.quantity;
   const totalCost = po.items.reduce((s, it) => s + lineOf(it), 0);
 
   const rows: DocCell[][] = po.items.map((item) => {
@@ -69,7 +71,10 @@ export function buildPOInvoice(po: PurchaseOrder, companyName: string): Document
         `(${String(po.agreementType ?? '').replace(/_/g, ' ') || 'blanket'})`,
     });
   if ((po as any).termsConditions)
-    sections.push({ title: 'Conditions of Purchase', body: (po as any).termsConditions });
+    sections.push({
+      title: 'Conditions of Purchase',
+      body: (po as any).termsConditions,
+    });
   if (po.notes) sections.push({ title: 'Notes', body: po.notes });
 
   return {
@@ -89,7 +94,11 @@ export function buildPOInvoice(po: PurchaseOrder, companyName: string): Document
         }
       : undefined,
     parties: [
-      { heading: 'Buyer', name: companyName, lines: ['Deliver to the destination stated above'] },
+      {
+        heading: 'Buyer',
+        name: companyName,
+        lines: ['Deliver to the destination stated above'],
+      },
       {
         heading: 'Vendor / Supplier',
         name: po.vendorName ?? '—',
@@ -123,7 +132,10 @@ export function buildPOInvoice(po: PurchaseOrder, companyName: string): Document
     words: moneyWords(totalCost, po.currency),
     sections,
     signatures: [
-      { role: 'Authorised by (Buyer)', name: (po as any).approvedByName || undefined },
+      {
+        role: 'Authorised by (Buyer)',
+        name: (po as any).approvedByName || undefined,
+      },
       { role: 'Acknowledged by (Vendor)' },
     ],
     fileName: `Purchase Order ${po.poNumber}.pdf`,

@@ -2,7 +2,9 @@ import type { StockTransfer } from '@/services/stockTransfer.service';
 import { fmtAmt, fmtDate } from './print-shared';
 import type { DocumentModel, DocCell } from './doc-model';
 
-function whName(w: string | { _id: string; name: string; code: string }): string {
+function whName(
+  w: string | { _id: string; name: string; code: string }
+): string {
   if (typeof w === 'string') return w;
   return w.code ? `${w.name} (${w.code})` : (w.name ?? '');
 }
@@ -19,10 +21,7 @@ export function buildTransferInvoice(
   );
   const totalValue =
     transfer.totalValue ??
-    transfer.items.reduce(
-      (s, it) => s + (it.costPrice ?? 0) * it.quantity,
-      0
-    );
+    transfer.items.reduce((s, it) => s + (it.costPrice ?? 0) * it.quantity, 0);
 
   const rows: DocCell[][] = transfer.items.map((item) => {
     const name =
@@ -35,7 +34,11 @@ export function buildTransferInvoice(
       { text: name },
       { text: String(item.quantity) },
       done
-        ? { text: String(item.transferredQty ?? 0), color: '#16a34a', strong: true }
+        ? {
+            text: String(item.transferredQty ?? 0),
+            color: '#16a34a',
+            strong: true,
+          }
         : {
             text: String(item.transferredQty ?? 0),
             sub: pending > 0 ? `${pending} pending` : undefined,

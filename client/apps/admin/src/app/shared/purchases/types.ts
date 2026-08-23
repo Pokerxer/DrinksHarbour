@@ -337,17 +337,10 @@ export const UOMS = [
   'Gallons',
 ] as const;
 
-export interface ExchangeRate {
-  _id: string;
-  fromCurrency: string;
-  toCurrency: string;
-  rate: number;
-  effectiveDate: string;
-  isActive: boolean;
-  source?: 'manual' | 'live';
-  notes?: string;
-  createdAt?: string;
-}
+// Canonical ExchangeRate shape lives on the service; re-exported here so the
+// purchases module keeps a single import site. Keep in sync with the server
+// model (models/ExchangeRate.js).
+export type { ExchangeRate } from '@/services/exchangeRate.service';
 
 // Must stay in sync with the currency enums on the server
 // (models/ExchangeRate.js, models/PurchaseOrder.js, models/VendorBill.js).

@@ -1,6 +1,10 @@
 // controllers/exchangeRate.controller.js
 const ExchangeRate = require('../models/ExchangeRate');
 const liveRates = require('../services/liveRates.service');
+const {
+  normalizeEffectiveDate,
+  sanitizeRateUpdate,
+} = require('../services/exchangeRates.helpers');
 const asyncHandler = require('../utils/asyncHandler');
 
 const createExchangeRate = asyncHandler(async (req, res) => {
@@ -9,18 +13,31 @@ const createExchangeRate = asyncHandler(async (req, res) => {
   const { fromCurrency, toCurrency, rate, effectiveDate, isActive, notes } = req.body;
 
   if (!fromCurrency || !toCurrency || !rate || !effectiveDate) {
-    return res.status(400).json({ success: false, message: 'Missing required fields' });
+    return res.status(400).json({ success: false, message: "Missing required fields" });
   }
 
   if (fromCurrency === toCurrency) {
-    return res.status(400).json({ success: false, message: 'Currencies must be different' });
+    return res.status(400).json({ success: false, message: "Currencies must be different" });
+  }
+
+  // Schema min would reject it later as a generic ValidationError; fail fast
+  // with a message the form can show.
+  if (!(typeof rate === 'number' && Number.isFinite(rate) && rate > 0)) {
+    return res.status(400).json({ success: false, message: "Rate must be greater than zero" });
+  }
+
+  // Normalise to UTC midnight of the calendar day so the upsert below matches
+  // what the daily live sync writes regardless of time-of-day or server zone.
+  const normalizedDate = normalizeEffectiveDate(effectiveDate);
+  if (!normalizedDate) {
+    return res.status(400).json({ success: false, message: "Invalid effective date" });
   }
 
   const existing = await ExchangeRate.findOne({
     tenant: tenantId,
     fromCurrency: fromCurrency.toUpperCase(),
     toCurrency: toCurrency.toUpperCase(),
-    effectiveDate,
+    effectiveDate: normalizedDate,
   });
 
   if (existing) {
@@ -29,6 +46,7 @@ const createExchangeRate = asyncHandler(async (req, res) => {
     existing.notes = notes;
     existing.source = 'manual';
     existing.updatedBy = userId;
+    existing.effectiveDate = normalizedDate;
     await existing.save();
     return res.json({ success: true, data: existing });
   }
@@ -38,7 +56,7 @@ const createExchangeRate = asyncHandler(async (req, res) => {
     fromCurrency: fromCurrency.toUpperCase(),
     toCurrency: toCurrency.toUpperCase(),
     rate,
-    effectiveDate,
+    effectiveDate: normalizedDate,
     isActive: isActive !== false,
     source: 'manual',
     notes,
@@ -50,7 +68,9 @@ const createExchangeRate = asyncHandler(async (req, res) => {
 
 const getExchangeRates = asyncHandler(async (req, res) => {
   const tenantId = req.tenant._id;
-  const { fromCurrency, toCurrency, isActive, page = 1, limit = 50 } = req.query;
+  const { fromCurrency, toCurrency, isActive, page = 1 } = req.query;
+  // Cap page size — an unbounded `limit` let one request pull the whole ledger.
+  const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
 
   const filter = { tenant: tenantId };
   if (fromCurrency) filter.fromCurrency = fromCurrency.toUpperCase();
@@ -61,7 +81,7 @@ const getExchangeRates = asyncHandler(async (req, res) => {
     .populate('createdBy', 'name')
     .sort({ effectiveDate: -1 })
     .skip((page - 1) * limit)
-    .limit(parseInt(limit));
+    .limit(limit);
 
   const total = await ExchangeRate.countDocuments(filter);
 
@@ -70,7 +90,7 @@ const getExchangeRates = asyncHandler(async (req, res) => {
     data: rates,
     pagination: {
       page: parseInt(page),
-      limit: parseInt(limit),
+      limit,
       total,
       pages: Math.ceil(total / limit),
     },
@@ -85,7 +105,16 @@ const getLatestRates = asyncHandler(async (req, res) => {
   await liveRates.autoSyncIfStale(tenantId, req.user._id);
 
   const rates = await ExchangeRate.aggregate([
-    { $match: { tenant: tenantId, isActive: true } },
+    {
+      $match: {
+        tenant: tenantId,
+        isActive: true,
+        // Only rates already in effect — matches what convertCurrency will
+        // actually apply, so the converter/analysis screens never display a
+        // future-dated rate as if it were current.
+        effectiveDate: { $lte: new Date() },
+      },
+    },
     { $sort: { effectiveDate: -1 } },
     {
       $group: {
@@ -147,25 +176,29 @@ const convertCurrency = asyncHandler(async (req, res) => {
 const updateExchangeRate = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const tenantId = req.tenant._id;
-  const userId = req.user._id;
-  const updates = req.body;
 
   const rate = await ExchangeRate.findOne({ _id: id, tenant: tenantId });
   if (!rate) {
-    return res.status(404).json({ success: false, message: 'Exchange rate not found' });
+    return res.status(404).json({ success: false, message: "Exchange rate not found" });
   }
 
-  Object.keys(updates).forEach(key => {
-    if (key !== 'tenant' && key !== 'createdBy') {
-      if (key === 'fromCurrency' || key === 'toCurrency') {
-        rate[key] = updates[key].toUpperCase();
-      } else {
-        rate[key] = updates[key];
-      }
-    }
-  });
-  rate.updatedBy = userId;
+  // Whitelist + validate. The previous implementation copied every body key
+  // onto the document, letting a caller overwrite tenant-owned invariants.
+  const { updates, error } = sanitizeRateUpdate(req.body);
+  if (error) {
+    return res.status(400).json({ success: false, message: error });
+  }
 
+  // Cross-field rule a per-field check can't see: patching one side of the
+  // pair must not collapse it into NGN → NGN.
+  const from = updates.fromCurrency ?? rate.fromCurrency;
+  const to = updates.toCurrency ?? rate.toCurrency;
+  if (from === to) {
+    return res.status(400).json({ success: false, message: "Currencies must be different" });
+  }
+
+  Object.assign(rate, updates);
+  rate.updatedBy = req.user._id;
   await rate.save();
 
   res.json({ success: true, data: rate });

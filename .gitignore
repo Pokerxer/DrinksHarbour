@@ -39,3 +39,7 @@ server/_insp.js
 
 # Runtime TTS audio cache (fishAudio.service.js regenerates on demand)
 server/uploads/tts/
+
+# Local data artifacts — backups and business spreadsheets stay out of the repo
+.backups/
+*.xlsx

@@ -73,32 +73,29 @@ exchangeRateSchema.methods.convert = function(amount) {
 
 exchangeRateSchema.statics.convertCurrency = async function(tenantId, amount, fromCurrency, toCurrency) {
   if (fromCurrency === toCurrency) return amount;
-  
-  const rate = await this.findOne({
-    tenant: tenantId,
-    fromCurrency,
-    toCurrency,
-    isActive: true,
-    effectiveDate: { $lte: new Date() },
-  }).sort({ effectiveDate: -1 });
 
-  if (rate) {
-    return amount * rate.rate;
-  }
+  // Load every rate already in effect once and resolve in memory — direct,
+  // inverse, then triangulated through the base currency. Mirrors the client
+  // resolver (client/apps/admin/.../exchange-rates-helpers.ts) so a PO
+  // converted server-side never disagrees with what analysis screens showed.
+  const { resolveConversion } = require('../services/exchangeRates.helpers');
 
-  const reverseRate = await this.findOne({
-    tenant: tenantId,
-    fromCurrency: toCurrency,
-    toCurrency: fromCurrency,
-    isActive: true,
-    effectiveDate: { $lte: new Date() },
-  }).sort({ effectiveDate: -1 });
+  const rows = await this.find(
+    {
+      tenant: tenantId,
+      isActive: true,
+      effectiveDate: { $lte: new Date() },
+      $or: [
+        { fromCurrency },
+        { toCurrency: fromCurrency },
+        { fromCurrency: toCurrency },
+        { toCurrency: toCurrency },
+      ],
+    },
+    'fromCurrency toCurrency rate -_id'
+  ).sort({ effectiveDate: -1 });
 
-  if (reverseRate) {
-    return amount / reverseRate.rate;
-  }
-
-  return null;
+  return resolveConversion(rows, fromCurrency, toCurrency);
 };
 
 const ExchangeRate = mongoose.models.ExchangeRate || mongoose.model('ExchangeRate', exchangeRateSchema);

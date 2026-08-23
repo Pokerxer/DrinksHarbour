@@ -2,7 +2,10 @@ import type { VendorReturn } from '@/services/vendorReturn.service';
 import { fmtAmt, fmtDate } from './print-shared';
 import type { DocumentModel, DocCell } from './doc-model';
 
-export function buildReturnInvoice(ret: VendorReturn, companyName: string): DocumentModel {
+export function buildReturnInvoice(
+  ret: VendorReturn,
+  companyName: string
+): DocumentModel {
   const rows: DocCell[][] = ret.items.map((item) => {
     const name = item.subProductName ?? '—';
     const size = item.sizeName;
@@ -38,7 +41,10 @@ export function buildReturnInvoice(ret: VendorReturn, companyName: string): Docu
 
   const sections: DocumentModel['sections'] = [];
   if (ret.reason)
-    sections.push({ title: 'Return Reason', body: ret.reason.replace(/_/g, ' ') });
+    sections.push({
+      title: 'Return Reason',
+      body: ret.reason.replace(/_/g, ' '),
+    });
   if (ret.notes) sections.push({ title: 'Notes', body: ret.notes });
 
   return {
@@ -75,7 +81,11 @@ export function buildReturnInvoice(ret: VendorReturn, companyName: string): Docu
     totals: [
       { label: 'Subtotal', value: fmtAmt(ret.subtotal, ret.currency) },
       { label: 'Tax', value: fmtAmt(ret.taxAmount, ret.currency) },
-      { label: 'Return Total', value: fmtAmt(ret.totalAmount, ret.currency), variant: 'grand' },
+      {
+        label: 'Return Total',
+        value: fmtAmt(ret.totalAmount, ret.currency),
+        variant: 'grand',
+      },
     ],
     kvGroups,
     sections,

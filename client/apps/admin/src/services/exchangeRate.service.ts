@@ -32,12 +32,39 @@ interface ListResponse {
   };
 }
 
+/**
+ * Every method throws on a non-OK response or a `{success:false}` envelope so
+ * callers can toast the server's message. Returning the parsed body blindly
+ * made auth errors and outages look like "no rates yet" — an empty table with
+ * no explanation.
+ */
 class ExchangeRateService {
   private getHeaders(token: string) {
     return {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     };
+  }
+
+  private async unwrap<T extends { success?: boolean; message?: string }>(
+    response: Response,
+    fallbackMessage: string
+  ): Promise<T> {
+    let body: T;
+    try {
+      // ts-reset types response.json() as unknown — narrow explicitly.
+      body = (await response.json()) as T;
+    } catch {
+      throw new Error(
+        response.ok
+          ? fallbackMessage
+          : `${fallbackMessage} (HTTP ${response.status})`
+      );
+    }
+    if (!response.ok || body.success === false) {
+      throw new Error(body.message || fallbackMessage);
+    }
+    return body;
   }
 
   async getRates(
@@ -63,7 +90,7 @@ class ExchangeRateService {
       `${API_URL}/api/exchange-rates?${queryParams}`,
       { headers: this.getHeaders(token) }
     );
-    return response.json();
+    return this.unwrap<ListResponse>(response, 'Failed to load exchange rates');
   }
 
   async getLatestRates(
@@ -72,7 +99,7 @@ class ExchangeRateService {
     const response = await fetch(`${API_URL}/api/exchange-rates/latest`, {
       headers: this.getHeaders(token),
     });
-    return response.json();
+    return this.unwrap(response, 'Failed to load latest exchange rates');
   }
 
   async createRate(
@@ -84,7 +111,7 @@ class ExchangeRateService {
       headers: this.getHeaders(token),
       body: JSON.stringify(data),
     });
-    return response.json();
+    return this.unwrap<CreateResponse>(response, 'Failed to create rate');
   }
 
   async updateRate(
@@ -97,7 +124,7 @@ class ExchangeRateService {
       headers: this.getHeaders(token),
       body: JSON.stringify(data),
     });
-    return response.json();
+    return this.unwrap<CreateResponse>(response, 'Failed to update rate');
   }
 
   async syncLiveRates(token: string): Promise<{
@@ -109,7 +136,7 @@ class ExchangeRateService {
       method: 'POST',
       headers: this.getHeaders(token),
     });
-    return response.json();
+    return this.unwrap(response, 'Could not fetch live rates');
   }
 
   async deleteRate(
@@ -120,36 +147,7 @@ class ExchangeRateService {
       method: 'DELETE',
       headers: this.getHeaders(token),
     });
-    return response.json();
-  }
-
-  async convertCurrency(
-    amount: number,
-    fromCurrency: string,
-    toCurrency: string,
-    token: string
-  ): Promise<{
-    success: boolean;
-    data: {
-      originalAmount: number;
-      fromCurrency: string;
-      toCurrency: string;
-      convertedAmount: number;
-      rate: number;
-    } | null;
-    message?: string;
-  }> {
-    const queryParams = new URLSearchParams({
-      amount: String(amount),
-      fromCurrency,
-      toCurrency,
-    });
-
-    const response = await fetch(
-      `${API_URL}/api/exchange-rates/convert?${queryParams}`,
-      { headers: this.getHeaders(token) }
-    );
-    return response.json();
+    return this.unwrap(response, 'Failed to delete rate');
   }
 }
 

@@ -46,6 +46,12 @@ export interface SavedSearch {
   groupBy: GroupByKey | null;
   groupBy2: GroupByKey | null;
   measure: Measure;
+  /** v2: sort stack captured with the search (older saves omit it). */
+  sortStack?: SortCriterion[];
+  /** v2: chart type at save time (graph mode only). */
+  chartType?: ChartType;
+  /** v2: graph vs pivot. */
+  viewMode?: ViewMode;
 }
 
 export interface CatItem {
@@ -653,4 +659,100 @@ export function computeHierarchicalPivot(
     grandTotal,
     maxCellVal,
   };
+}
+
+
+// ── KPI rollup (extracted from the page for unit-testability) ──────────────────
+
+export interface AnalysisKpis {
+  value: number;
+  onHand: number;
+  available: number;
+  skuCount: number;
+  lowLines: number;
+  outLines: number;
+  riskValue: number;
+  lowOutPct: number;
+}
+
+/**
+ * Headline metrics over the filtered set. Costs are NGN-base; `toBase` is kept
+ * for parity with purchases analytics and future multi-currency support.
+ */
+export function computeKpis(
+  rows: StockRow[],
+  toBase: (amount: number, currency: string) => number
+): AnalysisKpis {
+  let value = 0;
+  let onHand = 0;
+  let available = 0;
+  let lowLines = 0;
+  let outLines = 0;
+  let riskValue = 0;
+  const skus = new Set<string>();
+  rows.forEach((r) => {
+    value += toBase((r.currentQuantity || 0) * (r.costPrice || 0), 'NGN');
+    onHand += r.currentQuantity || 0;
+    available += availableQty(r);
+    if ((r.currentQuantity || 0) > 0) skus.add(String(r.subProductId));
+    const st = stockStatus(r);
+    if (st === 'low') lowLines += 1;
+    if (st === 'out') outLines += 1;
+    const eb = expiryBucket(r);
+    if (eb === 'expired' || eb === 'd30' || eb === 'd90')
+      riskValue += toBase((r.currentQuantity || 0) * (r.costPrice || 0), 'NGN');
+  });
+  const lineTotal = rows.length || 1;
+  return {
+    value,
+    onHand,
+    available,
+    skuCount: skus.size,
+    lowLines,
+    outLines,
+    riskValue,
+    lowOutPct: ((lowLines + outLines) / lineTotal) * 100,
+  };
+}
+
+// ── CSV export for the grouped table view ─────────────────────────────────────
+
+/** RFC-4180 field escaping (same rules as the detail-page export pipeline). */
+export function csvEscapeField(v: string | number): string {
+  const s = String(v ?? '');
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * CSV for the grouped table's on-screen columns: rank, label, line count,
+ * measure value, share % and cumulative %. Values reuse fmtMeasureVal so the
+ * export matches what the user sees (₦ formatting included).
+ */
+export function buildGroupedTableCSV(
+  data: GroupRow[],
+  groupLabel: string,
+  measureLabel: string,
+  measure: Measure
+): string {
+  let cumulative = 0;
+  const total = data.reduce((s, r) => s + r.value, 0) || 1;
+  const header = ['#', groupLabel, 'Lines', measureLabel, 'Share %', 'Cumulative %']
+    .map(csvEscapeField)
+    .join(',');
+  const body = data.map((r, i) => {
+    cumulative += r.value;
+    const share = ((r.value / total) * 100).toFixed(1);
+    const cumPct = ((cumulative / total) * 100).toFixed(1);
+    return [
+      i + 1,
+      r.label,
+      r.orders,
+      fmtMeasureVal(r.value, measure),
+      share,
+      cumPct,
+    ]
+      .map(csvEscapeField)
+      .join(',');
+  });
+  return [header, ...body].join('\r\n');
 }

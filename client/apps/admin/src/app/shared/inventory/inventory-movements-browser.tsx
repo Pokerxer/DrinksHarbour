@@ -1,30 +1,27 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
   PiArrowsClockwise,
   PiArrowsLeftRight,
-  PiBuildings,
   PiCaretDown,
   PiCaretLeft,
   PiCaretRight,
   PiCaretUp,
   PiCheckSquare,
-  PiCurrencyNgn,
   PiDownloadSimple,
-  PiInfo,
   PiMagnifyingGlass,
-  PiPackage,
   PiPrinter,
-  PiReceipt,
+  PiSignInDuotone,
   PiSquare,
   PiStack,
   PiTrayArrowDown,
-  PiTruck,
   PiWarningCircle,
   PiX,
 } from 'react-icons/pi';
+import { routes } from '@/config/routes';
 import { SortIcon } from '@/components/list-controls';
 import {
   inventoryService,
@@ -41,7 +38,6 @@ import {
   byLabel,
   exportCsv,
   fmtDate,
-  fmtDateTime,
   fmtNgn,
   fmtTime,
   loadSaved,
@@ -55,417 +51,25 @@ import {
   referenceLabel,
   sizeLabel,
   toTs,
-  warehouseLabel,
   weekLabel,
+  whCell,
   type GroupKey,
   type SavedSearch,
   type SortCol,
   type SortDir,
 } from './inventory-receipts-support';
+import {
+  PRESETS,
+  lineCost,
+  type MovesPresetKey,
+} from './inventory-movements-presets';
+import MoveDetail from './inventory-movements-detail';
+import SummaryCards, { computeMoveStats } from './inventory-movements-summary';
 
-const STATUS_CLS: Record<string, string> = {
-  confirmed: 'bg-emerald-50 text-emerald-600',
-  pending: 'bg-amber-50 text-amber-600',
-  cancelled: 'bg-gray-100 text-gray-500',
-  rejected: 'bg-red-50 text-red-600',
-};
+const FETCH_LIMIT = 500;
+const ALL_LIMIT = 2000;
 
-function lineCost(m: InventoryMovement) {
-  return m.totalCost ?? (m.unitCost ?? 0) * Math.abs(m.quantity);
-}
-
-/** Warehouse cell label; transfers render "source → destination". */
-function whCell(m: InventoryMovement): string {
-  if (
-    m.category === 'transfer' &&
-    (m.sourceWarehouse || m.destinationWarehouse)
-  ) {
-    return `${warehouseLabel(m.sourceWarehouse)} → ${warehouseLabel(m.destinationWarehouse)}`;
-  }
-  return warehouseLabel(m.warehouse);
-}
-
-// ── Presets ───────────────────────────────────────────────────────────────────
-
-export type MovesPresetKey =
-  | 'receipts'
-  | 'deliveries'
-  | 'internal'
-  | 'adjustments'
-  | 'scrap'
-  | 'moves';
-
-interface Tab {
-  key: string;
-  label: string;
-  /** undefined = "all" tab */
-  match?: (m: InventoryMovement) => boolean;
-}
-
-interface Preset {
-  title: string;
-  sub: string;
-  docTitle: string;
-  csvPrefix: string;
-  savedKey: string;
-  /** Server-side movement filters */
-  category?: string;
-  types?: string[];
-  tabs: Tab[];
-  showSupplier: boolean;
-  unitsLabel: string;
-  emptyNoun: string;
-}
-
-const typeTab = (key: string, label: string): Tab => ({
-  key,
-  label,
-  match: (m) => m.type === key,
-});
-const catTab = (key: string, label: string): Tab => ({
-  key,
-  label,
-  match: (m) => m.category === key,
-});
-
-const PRESETS: Record<MovesPresetKey, Preset> = {
-  receipts: {
-    title: 'Receipts',
-    sub: 'Incoming stock into your warehouses',
-    docTitle: 'Goods Receipt Note',
-    csvPrefix: 'inventory-receipts',
-    savedKey: 'dh-inventory-receipt-searches',
-    category: 'in',
-    tabs: [
-      { key: 'all', label: 'All' },
-      typeTab('received', 'Received'),
-      typeTab('purchase', 'Purchases'),
-      typeTab('return', 'Returns'),
-      {
-        key: 'other',
-        label: 'Other',
-        match: (m) => !['received', 'purchase', 'return'].includes(m.type),
-      },
-    ],
-    showSupplier: true,
-    unitsLabel: 'Units Received',
-    emptyNoun: 'receipts',
-  },
-  deliveries: {
-    title: 'Deliveries',
-    sub: 'Outgoing stock — sales and shipments',
-    docTitle: 'Delivery Note',
-    csvPrefix: 'inventory-deliveries',
-    savedKey: 'dh-inventory-delivery-searches',
-    category: 'out',
-    types: ['sold', 'shipped'],
-    tabs: [
-      { key: 'all', label: 'All' },
-      typeTab('sold', 'Sold'),
-      typeTab('shipped', 'Shipped'),
-    ],
-    showSupplier: false,
-    unitsLabel: 'Units Issued',
-    emptyNoun: 'deliveries',
-  },
-  internal: {
-    title: 'Internal',
-    sub: 'Moves between your warehouses and locations',
-    docTitle: 'Internal Transfer Note',
-    csvPrefix: 'inventory-internal',
-    savedKey: 'dh-inventory-internal-searches',
-    category: 'transfer',
-    tabs: [
-      { key: 'all', label: 'All' },
-      typeTab('transfer_in', 'Transfers In'),
-      typeTab('transfer_out', 'Transfers Out'),
-    ],
-    showSupplier: false,
-    unitsLabel: 'Units Moved',
-    emptyNoun: 'internal moves',
-  },
-  adjustments: {
-    title: 'Adjustments',
-    sub: 'Stock corrections outside normal operations',
-    docTitle: 'Stock Adjustment Report',
-    csvPrefix: 'inventory-adjustments',
-    savedKey: 'dh-inventory-adjustment-searches',
-    category: 'adjustment',
-    tabs: [
-      { key: 'all', label: 'All' },
-      typeTab('adjustment_in', 'Increases'),
-      typeTab('adjustment_out', 'Decreases'),
-    ],
-    showSupplier: false,
-    unitsLabel: 'Units Adjusted',
-    emptyNoun: 'adjustments',
-  },
-  scrap: {
-    title: 'Scrap',
-    sub: 'Stock removed as damaged, expired, stolen or written off',
-    docTitle: 'Scrap Report',
-    csvPrefix: 'inventory-scrap',
-    savedKey: 'dh-inventory-scrap-searches',
-    types: ['damaged', 'expired', 'theft', 'written_off'],
-    tabs: [
-      { key: 'all', label: 'All' },
-      typeTab('damaged', 'Damaged'),
-      typeTab('expired', 'Expired'),
-      typeTab('theft', 'Theft'),
-      typeTab('written_off', 'Written off'),
-    ],
-    showSupplier: false,
-    unitsLabel: 'Units Scrapped',
-    emptyNoun: 'scrapped stock',
-  },
-  moves: {
-    title: 'Moves History',
-    sub: 'Every stock move across your warehouses',
-    docTitle: 'Stock Moves Report',
-    csvPrefix: 'inventory-moves',
-    savedKey: 'dh-inventory-moves-searches',
-    tabs: [
-      { key: 'all', label: 'All' },
-      catTab('in', 'In'),
-      catTab('out', 'Out'),
-      catTab('transfer', 'Transfer'),
-      catTab('adjustment', 'Adjustment'),
-    ],
-    showSupplier: false,
-    unitsLabel: 'Units Moved',
-    emptyNoun: 'stock moves',
-  },
-};
-
-// ── Detail panel ──────────────────────────────────────────────────────────────
-
-function MoveDetail({
-  move,
-  docTitle,
-  onClose,
-}: {
-  move: InventoryMovement;
-  docTitle: string;
-  onClose: () => void;
-}) {
-  const [tab, setTab] = useState<'details' | 'document'>('details');
-  const size = sizeLabel(move);
-  const po = move.relatedPurchaseOrder as { poNumber?: string } | undefined;
-  const isTransfer = move.category === 'transfer';
-
-  const infoRows: { label: string; value: string }[] = [
-    { label: 'Type', value: TYPE_LABEL[move.type] ?? move.type },
-    ...(isTransfer
-      ? [
-          { label: 'From', value: warehouseLabel(move.sourceWarehouse) },
-          { label: 'To', value: warehouseLabel(move.destinationWarehouse) },
-        ]
-      : [{ label: 'Warehouse', value: warehouseLabel(move.warehouse) }]),
-    { label: 'Reference', value: move.reference ?? '—' },
-    ...(po?.poNumber ? [{ label: 'Purchase Order', value: po.poNumber }] : []),
-    ...(move.supplierName
-      ? [{ label: 'Supplier', value: move.supplierName }]
-      : []),
-    ...(move.batchNumber ? [{ label: 'Batch', value: move.batchNumber }] : []),
-    ...(move.lotNumber ? [{ label: 'Lot', value: move.lotNumber }] : []),
-    ...(move.expirationDate
-      ? [{ label: 'Expiry', value: fmtDate(move.expirationDate) }]
-      : []),
-    { label: 'Source', value: move.source ?? '—' },
-    { label: 'By', value: byLabel(move) },
-    ...(move.quantityBefore != null && move.quantityAfter != null
-      ? [
-          {
-            label: 'Stock level',
-            value: `${move.quantityBefore} → ${move.quantityAfter}`,
-          },
-        ]
-      : []),
-  ];
-
-  return (
-    <div className="flex h-full flex-col bg-white">
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-gray-900">
-              {referenceLabel(move)}
-            </span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-bold capitalize ${STATUS_CLS[move.status] ?? STATUS_CLS.cancelled}`}
-            >
-              {move.status}
-            </span>
-          </div>
-          <p className="mt-0.5 text-[11px] text-gray-400">
-            {fmtDateTime(moveDate(move))}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => printMoves([move], docTitle)}
-            title={`Print ${docTitle.toLowerCase()}`}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:bg-gray-50 hover:text-[#b20202]"
-          >
-            <PiPrinter className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-          >
-            <PiX className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex shrink-0 border-b border-gray-100 text-xs font-semibold">
-        {(
-          [
-            {
-              id: 'details',
-              label: 'Details',
-              icon: <PiInfo className="h-3.5 w-3.5" />,
-            },
-            {
-              id: 'document',
-              label: 'Document',
-              icon: <PiReceipt className="h-3.5 w-3.5" />,
-            },
-          ] as const
-        ).map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 transition-colors ${
-              tab === t.id
-                ? 'border-b-2 border-[#b20202] text-[#b20202]'
-                : 'border-b-2 border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'details' ? (
-        <div className="flex-1 overflow-y-auto">
-          <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
-            {[
-              {
-                label: 'Quantity',
-                value: `${qtySign(move)}${Math.abs(move.quantity)}`,
-                cls: qtyCls(move),
-              },
-              {
-                label: 'Unit cost',
-                value: move.unitCost != null ? fmtNgn(move.unitCost) : '—',
-                cls: 'text-gray-900',
-              },
-              {
-                label: 'Total cost',
-                value: fmtNgn(lineCost(move)),
-                cls: 'text-[#b20202]',
-              },
-            ].map(({ label, value, cls }) => (
-              <div key={label} className="px-4 py-3 text-center">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  {label}
-                </p>
-                <p className={`mt-0.5 text-sm font-bold tabular-nums ${cls}`}>
-                  {value}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <div className="border-b border-gray-100 px-5 py-3">
-            <p className="text-sm font-bold text-gray-900">
-              {productLabel(move)}
-            </p>
-            {size && <p className="text-xs text-gray-400">{size}</p>}
-          </div>
-
-          <div className="space-y-1.5 border-b border-gray-100 px-5 py-3 text-xs">
-            {infoRows.map(({ label, value }) => (
-              <div key={label} className="flex justify-between gap-3">
-                <span className="shrink-0 font-semibold text-gray-500">
-                  {label}
-                </span>
-                <span className="truncate text-right font-medium capitalize text-gray-800">
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {(move.reason || move.notes) && (
-            <div className="px-5 py-3 text-xs">
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                Notes
-              </p>
-              <p className="text-gray-600">{move.reason ?? move.notes}</p>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto bg-gray-50 p-4">
-          <div className="mx-auto max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between border-b-2 border-[#b20202] pb-3">
-              <div>
-                <p className="text-sm font-bold text-gray-900">{docTitle}</p>
-                <p className="text-[10px] text-gray-400">
-                  {fmtDateTime(moveDate(move))}
-                </p>
-              </div>
-              <span className="text-[10px] font-extrabold text-[#b20202]">
-                DRINKSHARBOUR
-              </span>
-            </div>
-            <table className="mt-3 w-full text-[11px]">
-              <tbody>
-                {[
-                  [
-                    'Product',
-                    `${productLabel(move)}${size ? ` · ${size}` : ''}`,
-                  ],
-                  ['Type', TYPE_LABEL[move.type] ?? move.type],
-                  ['Warehouse', whCell(move)],
-                  ['Reference', referenceLabel(move)],
-                  ['Quantity', `${qtySign(move)}${Math.abs(move.quantity)}`],
-                  [
-                    'Unit cost',
-                    move.unitCost != null ? fmtNgn(move.unitCost) : '—',
-                  ],
-                  ['Total', fmtNgn(lineCost(move))],
-                ].map(([k, v]) => (
-                  <tr key={k} className="border-b border-gray-50 last:border-0">
-                    <td className="py-1.5 pr-3 font-semibold text-gray-500">
-                      {k}
-                    </td>
-                    <td className="py-1.5 text-right font-medium text-gray-800">
-                      {v}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <button
-              type="button"
-              onClick={() => printMoves([move], docTitle)}
-              className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#b20202] py-2 text-xs font-bold text-white hover:bg-[#9a0101]"
-            >
-              <PiPrinter className="h-3.5 w-3.5" /> Print {docTitle}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+const STATUS_OPTIONS = ['confirmed', 'pending', 'cancelled', 'rejected'] as const;
 
 // ── Main browser ──────────────────────────────────────────────────────────────
 
@@ -482,16 +86,19 @@ export default function InventoryMovementsBrowser({
 }) {
   const preset = PRESETS[presetKey];
   const { data: session, status: sessionStatus } = useSession();
-  const token = (session?.user as { token?: string })?.token ?? null;
+  const token = (session?.user as { token?: string })?.token ?? '';
 
   const [moves, setMoves] = useState<InventoryMovement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [search, setSearch] = useState('');
   const [showPanel, setShowPanel] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupKey | null>(null);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [tabFilter, setTabFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('');
   const [sortCol, setSortCol] = useState<SortCol>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [page, setPage] = useState(1);
@@ -508,35 +115,65 @@ export default function InventoryMovementsBrowser({
   const [warehouseFilter, setWarehouseFilter] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('');
 
+  // Monotonic request id — only the latest fetch may commit state.
+  const requestIdRef = useRef(0);
+  // Whether any data has landed yet; drives skeleton vs background refresh.
+  const hasDataRef = useRef(false);
+  // Whether a "Load all" fetch already ran (hides the repeat call-to-action).
+  const hasLoadedAllRef = useRef(false);
+
   useEffect(() => {
     setSavedSearches(loadSaved(preset.savedKey));
   }, [preset.savedKey]);
 
   const fetchMoves = useCallback(
-    (all = false) => {
+    async (all = false) => {
       if (sessionStatus === 'loading') return;
       if (!token) {
         setLoading(false);
         return;
       }
-      setLoading(true);
-      inventoryService
-        .getMovements(token, {
+      const requestId = ++requestIdRef.current;
+      setErrorMsg(null);
+      if (!hasDataRef.current || all) {
+        hasLoadedAllRef.current = hasLoadedAllRef.current || all;
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
+
+      try {
+        const raw = await inventoryService.getMovements(token, {
           category: preset.category,
-          limit: all ? 2000 : 500,
+          limit: all ? ALL_LIMIT : FETCH_LIMIT,
           sortBy: 'createdAt',
           sortOrder: 'desc',
-        })
-        .then((raw) => {
-          const res = raw as { data?: { movements?: InventoryMovement[] } };
-          let rows = res.data?.movements ?? [];
-          if (preset.types)
-            rows = rows.filter((m) => preset.types!.includes(m.type));
-          setMoves(rows);
-          setTruncated(!all && (res.data?.movements?.length ?? 0) === 500);
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
+        });
+        if (requestId !== requestIdRef.current) return;
+
+        const res = raw as { data?: { movements?: InventoryMovement[] } };
+        const fetched = res.data?.movements ?? [];
+        let rows = fetched;
+        if (preset.types)
+          rows = rows.filter((m) => preset.types!.includes(m.type));
+
+        hasDataRef.current = true;
+        setMoves(rows);
+        setTruncated(fetched.length >= (all ? ALL_LIMIT : FETCH_LIMIT));
+      } catch (err) {
+        if (requestId === requestIdRef.current) {
+          setErrorMsg(
+            err instanceof Error
+              ? err.message
+              : `Failed to load ${preset.emptyNoun}`
+          );
+        }
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
     },
     [token, sessionStatus, preset]
   );
@@ -544,6 +181,7 @@ export default function InventoryMovementsBrowser({
   useEffect(() => {
     fetchMoves();
   }, [fetchMoves]);
+
   useEffect(() => {
     setExpandedGroups(new Set());
   }, [groupBy]);
@@ -552,6 +190,7 @@ export default function InventoryMovementsBrowser({
   }, [
     search,
     tabFilter,
+    statusFilter,
     dateFrom,
     dateTo,
     timeFrom,
@@ -562,11 +201,19 @@ export default function InventoryMovementsBrowser({
     sortDir,
   ]);
 
+  // Escape closes the detail panel.
+  useEffect(() => {
+    if (!selected) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setSelected(null);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selected]);
+
   const warehouses = useMemo(
     () =>
-      Array.from(
-        new Set(moves.map((m) => whCell(m)).filter((w) => w !== '—'))
-      ).sort(),
+      Array.from(new Set(moves.map(whCell).filter((w) => w !== '\u2014'))).sort(),
     [moves]
   );
   const suppliers = useMemo(
@@ -617,6 +264,7 @@ export default function InventoryMovementsBrowser({
     setSearch('');
     setGroupBy(null);
     setTabFilter('all');
+    setStatusFilter('');
     clearDateRange();
     setWarehouseFilter('');
     setSupplierFilter('');
@@ -629,6 +277,8 @@ export default function InventoryMovementsBrowser({
     const tab = preset.tabs.find((t) => t.key === tabFilter);
     if (tab?.match) list = list.filter(tab.match);
 
+    if (statusFilter) list = list.filter((m) => m.status === statusFilter);
+
     if (dateFrom) {
       const fromTs = toTs(dateFrom, timeFrom);
       list = list.filter((m) => new Date(moveDate(m)).getTime() >= fromTs);
@@ -638,8 +288,7 @@ export default function InventoryMovementsBrowser({
       list = list.filter((m) => new Date(moveDate(m)).getTime() <= toTs_);
     }
 
-    if (warehouseFilter)
-      list = list.filter((m) => whCell(m) === warehouseFilter);
+    if (warehouseFilter) list = list.filter((m) => whCell(m) === warehouseFilter);
     if (supplierFilter)
       list = list.filter((m) => m.supplierName === supplierFilter);
 
@@ -652,6 +301,7 @@ export default function InventoryMovementsBrowser({
           referenceLabel(m).toLowerCase().includes(q) ||
           (m.batchNumber ?? '').toLowerCase().includes(q) ||
           (m.supplierName ?? '').toLowerCase().includes(q) ||
+          (m.reason ?? '').toLowerCase().includes(q) ||
           whCell(m).toLowerCase().includes(q) ||
           (TYPE_LABEL[m.type] ?? m.type).toLowerCase().includes(q) ||
           byLabel(m).toLowerCase().includes(q) ||
@@ -697,6 +347,7 @@ export default function InventoryMovementsBrowser({
     moves,
     preset.tabs,
     tabFilter,
+    statusFilter,
     search,
     dateFrom,
     dateTo,
@@ -708,34 +359,10 @@ export default function InventoryMovementsBrowser({
     sortDir,
   ]);
 
-  // Summary stats (filtered)
-  const stats = useMemo(() => {
-    const units = filtered.reduce((s, m) => s + Math.abs(m.quantity), 0);
-    const cost = filtered.reduce((s, m) => s + lineCost(m), 0);
-    const whSet = new Set(
-      filtered.map((m) => whCell(m)).filter((w) => w !== '—')
-    );
-    const productSet = new Set(filtered.map((m) => productLabel(m)));
-    const supplierSet = new Set(
-      filtered.map((m) => m.supplierName).filter(Boolean)
-    );
-    const poSet = new Set(
-      filtered
-        .map(
-          (m) => (m.relatedPurchaseOrder as { _id?: string } | undefined)?._id
-        )
-        .filter(Boolean)
-    );
-    return {
-      count: filtered.length,
-      units,
-      cost,
-      warehouses: whSet.size,
-      products: productSet.size,
-      suppliers: supplierSet.size,
-      pos: poSet.size,
-    };
-  }, [filtered]);
+  const stats = useMemo(
+    () => computeMoveStats(filtered, whCell, productLabel),
+    [filtered]
+  );
 
   // Group by
   const grouped = useMemo((): [string, InventoryMovement[]][] | null => {
@@ -760,6 +387,9 @@ export default function InventoryMovementsBrowser({
         case 'source':
           key = (m.source || 'manual').replace(/\b\w/g, (c) => c.toUpperCase());
           break;
+        case 'reason':
+          key = m.reason?.trim() || m.notes?.trim() || 'No reason recorded';
+          break;
         case 'day':
           key = fmtDate(moveDate(m));
           break;
@@ -779,7 +409,7 @@ export default function InventoryMovementsBrowser({
           key = String(d.getFullYear());
           break;
         default:
-          key = '—';
+          key = '\u2014';
       }
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(m);
@@ -792,7 +422,7 @@ export default function InventoryMovementsBrowser({
     ? []
     : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const displayList = grouped ? filtered : paginated;
-  const filteredTotalCost = filtered.reduce((s, m) => s + lineCost(m), 0);
+  const filteredTotalCost = stats.cost;
 
   const allChecked =
     displayList.length > 0 && displayList.every((m) => checked.has(m._id));
@@ -836,6 +466,7 @@ export default function InventoryMovementsBrowser({
     !!dateTo ||
     !!warehouseFilter ||
     !!supplierFilter ||
+    !!statusFilter ||
     tabFilter !== 'all' ||
     !!groupBy;
 
@@ -849,6 +480,24 @@ export default function InventoryMovementsBrowser({
     { col: 'cost', label: 'Cost', right: true },
     { col: 'by', label: 'By' },
   ];
+
+  if (sessionStatus !== 'loading' && !token) {
+    return (
+      <div className="flex h-[calc(100dvh-47px)] flex-col items-center justify-center gap-3 bg-gray-50 text-center">
+        <PiSignInDuotone className="h-10 w-10 text-gray-300" />
+        <h1 className="text-lg font-bold text-gray-900">Sign in required</h1>
+        <p className="max-w-sm text-sm text-gray-500">
+          Sign in to your tenant account to view {preset.emptyNoun}.
+        </p>
+        <Link
+          href={routes.signIn}
+          className="mt-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#8f0202]"
+        >
+          Go to sign in
+        </Link>
+      </div>
+    );
+  }
 
   function renderRow(m: InventoryMovement, isSel: boolean) {
     const isChk = checked.has(m._id);
@@ -870,6 +519,7 @@ export default function InventoryMovementsBrowser({
         >
           <button
             type="button"
+            aria-label={isChk ? 'Deselect line' : 'Select line'}
             onClick={() => toggleOne(m._id)}
             className="text-gray-300 transition-colors hover:text-[#b20202]"
           >
@@ -965,6 +615,7 @@ export default function InventoryMovementsBrowser({
         >
           <button
             type="button"
+            aria-label={`Print ${preset.docTitle.toLowerCase()} for this line`}
             onClick={() => printMoves([m], preset.docTitle)}
             className={`transition-colors ${isSel ? 'text-white/50 hover:text-white' : 'text-gray-300 hover:text-[#b20202]'}`}
           >
@@ -986,6 +637,8 @@ export default function InventoryMovementsBrowser({
               {preset.title}
             </h1>
             <p className="mt-0.5 text-[11px] text-gray-400">
+              {preset.sub}
+              {' \u00b7 '}
               <span className="font-medium text-gray-600">
                 {filtered.length.toLocaleString()}
               </span>{' '}
@@ -993,7 +646,13 @@ export default function InventoryMovementsBrowser({
               {filtered.length !== moves.length && (
                 <span> of {moves.length.toLocaleString()} loaded</span>
               )}
-              {truncated && (
+              {refreshing && (
+                <span className="ml-1.5 inline-flex items-center gap-1 text-[#b20202]">
+                  <PiArrowsClockwise className="h-3 w-3 animate-spin" />
+                  updating…
+                </span>
+              )}
+              {truncated && !refreshing && (
                 <button
                   type="button"
                   onClick={() => fetchMoves(true)}
@@ -1011,6 +670,7 @@ export default function InventoryMovementsBrowser({
               <button
                 key={t.key}
                 type="button"
+                aria-pressed={tabFilter === t.key}
                 onClick={() => {
                   setTabFilter(t.key);
                   setSelected(null);
@@ -1032,6 +692,7 @@ export default function InventoryMovementsBrowser({
               <button
                 type="button"
                 onClick={() => setShowPanel((v) => !v)}
+                aria-expanded={showPanel}
                 className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
                   showPanel || groupBy
                     ? 'border-[#b20202] bg-[#b20202]/5 text-[#b20202]'
@@ -1061,11 +722,13 @@ export default function InventoryMovementsBrowser({
             <button
               type="button"
               onClick={() => fetchMoves()}
-              disabled={loading}
+              disabled={loading || refreshing}
+              aria-label="Refresh list"
+              title="Refresh list"
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-colors hover:bg-gray-50 disabled:opacity-40"
             >
               <PiArrowsClockwise
-                className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+                className={`h-4 w-4 ${loading || refreshing ? 'animate-spin' : ''}`}
               />
             </button>
             <button
@@ -1089,6 +752,7 @@ export default function InventoryMovementsBrowser({
               <button
                 key={p.label}
                 type="button"
+                aria-pressed={activePreset === p.label}
                 onClick={() => applyPreset(p)}
                 className={`rounded-full px-3 py-1 text-[11px] font-medium transition-all ${
                   activePreset === p.label
@@ -1135,12 +799,32 @@ export default function InventoryMovementsBrowser({
               <select
                 value={warehouseFilter}
                 onChange={(e) => setWarehouseFilter(e.target.value)}
+                aria-label="Filter by warehouse"
                 className="h-[34px] rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
               >
                 <option value="">All warehouses</option>
                 {warehouses.map((w) => (
                   <option key={w} value={w}>
                     {w}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Status
+              </span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                aria-label="Filter by status"
+                className="h-[34px] rounded-lg border border-gray-200 bg-white px-2.5 text-xs capitalize text-gray-700 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+              >
+                <option value="">All statuses</option>
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s.replace(/_/g, ' ')}
                   </option>
                 ))}
               </select>
@@ -1154,6 +838,7 @@ export default function InventoryMovementsBrowser({
                 <select
                   value={supplierFilter}
                   onChange={(e) => setSupplierFilter(e.target.value)}
+                  aria-label="Filter by supplier"
                   className="h-[34px] rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
                 >
                   <option value="">All suppliers</option>
@@ -1181,12 +866,14 @@ export default function InventoryMovementsBrowser({
                     setSearch(e.target.value);
                     setSelected(null);
                   }}
-                  placeholder="Product, reference, batch, warehouse…"
+                  placeholder="Product, reference, batch, reason…"
+                  aria-label="Search adjustments"
                   className="h-[34px] w-full rounded-lg border border-gray-200 bg-white pl-8 pr-7 text-xs text-gray-800 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
                 />
                 {search && (
                   <button
                     type="button"
+                    aria-label="Clear search"
                     onClick={() => setSearch('')}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   >
@@ -1216,6 +903,7 @@ export default function InventoryMovementsBrowser({
                   </span>
                   <button
                     type="button"
+                    aria-label="Previous page"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1}
                     className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
@@ -1224,6 +912,7 @@ export default function InventoryMovementsBrowser({
                   </button>
                   <button
                     type="button"
+                    aria-label="Next page"
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page >= totalPages}
                     className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
@@ -1237,67 +926,31 @@ export default function InventoryMovementsBrowser({
         </div>
       </div>
 
+      {/* ── Error banner ── */}
+      {errorMsg && (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-red-200 bg-red-50 px-4 py-2">
+          <span className="flex items-center gap-2 text-xs text-red-700">
+            <PiWarningCircle className="h-3.5 w-3.5 shrink-0" />
+            {errorMsg}
+            {!hasDataRef.current && ' — showing no data.'}
+          </span>
+          <button
+            type="button"
+            onClick={() => fetchMoves()}
+            className="rounded-lg bg-[#b20202] px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-[#8f0202]"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* ── Summary cards ── */}
-      <div className="grid shrink-0 grid-cols-5 divide-x divide-gray-200 border-b border-gray-200 bg-white">
-        {[
-          {
-            label: preset.title,
-            value: stats.count.toLocaleString(),
-            icon: <PiTrayArrowDown className="h-4 w-4" />,
-            color: 'text-blue-600',
-            sub: 'stock-move lines',
-          },
-          {
-            label: preset.unitsLabel,
-            value: stats.units.toLocaleString(),
-            icon: <PiStack className="h-4 w-4" />,
-            color: 'text-emerald-600',
-            sub: 'in this view',
-          },
-          {
-            label: 'Cost Value',
-            value: fmtNgn(stats.cost),
-            icon: <PiCurrencyNgn className="h-4 w-4" />,
-            color: 'text-[#b20202]',
-            sub: 'at unit cost',
-          },
-          {
-            label: 'Warehouses',
-            value: stats.warehouses.toLocaleString(),
-            icon: <PiBuildings className="h-4 w-4" />,
-            color: 'text-purple-600',
-            sub: 'involved',
-          },
-          preset.showSupplier
-            ? {
-                label: 'Suppliers',
-                value: stats.suppliers.toLocaleString(),
-                icon: <PiTruck className="h-4 w-4" />,
-                color: 'text-amber-500',
-                sub: `${stats.pos} linked POs`,
-              }
-            : {
-                label: 'Products',
-                value: stats.products.toLocaleString(),
-                icon: <PiPackage className="h-4 w-4" />,
-                color: 'text-amber-500',
-                sub: 'distinct products',
-              },
-        ].map(({ label, value, icon, color, sub }) => (
-          <div key={label} className="flex items-start gap-3 px-4 py-3">
-            <span className={`mt-0.5 ${color}`}>{icon}</span>
-            <div className="min-w-0">
-              <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                {label}
-              </p>
-              <p className="mt-0.5 text-sm font-bold tabular-nums text-gray-900">
-                {value}
-              </p>
-              <p className="mt-0.5 truncate text-[10px] text-gray-400">{sub}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+      <SummaryCards
+        presetTitle={preset.title}
+        unitsLabel={preset.unitsLabel}
+        showSupplier={preset.showSupplier}
+        stats={stats}
+      />
 
       {/* ── Body (table + detail) ── */}
       <div className="flex flex-1 overflow-hidden">
@@ -1358,9 +1011,11 @@ export default function InventoryMovementsBrowser({
               </div>
               <div>
                 <p className="text-sm font-semibold text-gray-600">
-                  {search
-                    ? `No ${preset.emptyNoun} matching "${search}"`
-                    : `No ${preset.emptyNoun} match the filters`}
+                  {errorMsg && moves.length === 0
+                    ? `Could not load ${preset.emptyNoun}`
+                    : search
+                      ? `No ${preset.emptyNoun} matching "${search}"`
+                      : `No ${preset.emptyNoun} match the filters`}
                 </p>
                 <p className="mt-1 text-xs text-gray-400">
                   Try adjusting the date range or clearing filters
@@ -1384,6 +1039,7 @@ export default function InventoryMovementsBrowser({
                     <th className="w-8 px-2 py-3 text-center">
                       <button
                         type="button"
+                        aria-label={allChecked ? 'Deselect all' : 'Select all'}
                         onClick={toggleAll}
                         className="text-gray-300 transition-colors hover:text-[#b20202]"
                       >
@@ -1400,6 +1056,13 @@ export default function InventoryMovementsBrowser({
                       <th
                         key={col}
                         onClick={() => handleSort(col)}
+                        aria-sort={
+                          sortCol === col
+                            ? sortDir === 'asc'
+                              ? 'ascending'
+                              : 'descending'
+                            : undefined
+                        }
                         className={`cursor-pointer select-none px-3 py-3 transition-colors hover:text-gray-600 ${right ? 'text-right' : ''}`}
                       >
                         <span className="inline-flex items-center gap-1">
@@ -1442,7 +1105,7 @@ export default function InventoryMovementsBrowser({
                                   <PiCaretRight
                                     className={`h-3 w-3 shrink-0 text-gray-400 transition-transform duration-150 ${isCollapsed ? '' : 'rotate-90'}`}
                                   />
-                                  <span className="text-xs font-semibold text-gray-700">
+                                  <span className="max-w-[280px] truncate text-xs font-semibold text-gray-700">
                                     {groupName}
                                   </span>
                                   <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[9px] font-bold tabular-nums text-gray-500">
@@ -1504,6 +1167,7 @@ export default function InventoryMovementsBrowser({
                     <button
                       key={p}
                       type="button"
+                      aria-label={`Go to page ${p}`}
                       onClick={() => setPage(p)}
                       className={`flex h-7 w-7 items-center justify-center rounded-lg border text-[11px] font-semibold transition-colors ${
                         p === page
@@ -1524,15 +1188,18 @@ export default function InventoryMovementsBrowser({
             <div className="flex shrink-0 items-center justify-between border-t border-amber-200 bg-amber-50 px-4 py-2.5">
               <span className="flex items-center gap-2 text-xs text-amber-700">
                 <PiWarningCircle className="h-3.5 w-3.5 shrink-0" />
-                Showing latest 500 lines — older records may be missing.
+                Showing latest {moves.length.toLocaleString()} lines — older
+                records may be missing.
               </span>
-              <button
-                type="button"
-                onClick={() => fetchMoves(true)}
-                className="text-xs font-semibold text-amber-700 underline-offset-2 hover:underline"
-              >
-                Load all
-              </button>
+              {!hasLoadedAllRef.current && (
+                <button
+                  type="button"
+                  onClick={() => fetchMoves(true)}
+                  className="text-xs font-semibold text-amber-700 underline-offset-2 hover:underline"
+                >
+                  Load all
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1559,7 +1226,7 @@ export default function InventoryMovementsBrowser({
                 <p className="mt-1 text-xs text-gray-400">
                   Click any row to view details
                   <br />
-                  and print its document
+                  and print its document · Esc closes
                 </p>
               </div>
             </div>

@@ -5,7 +5,7 @@ import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
 import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 
 export const metadata = {
-  ...metaObject('Products'),
+  ...metaObject('Sub-Products'),
 };
 
 export default async function SubProductsPage({

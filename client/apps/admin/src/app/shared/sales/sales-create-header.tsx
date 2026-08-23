@@ -27,8 +27,7 @@ import {
 import { routes } from '@/config/routes';
 import { StagePill } from './sales-stage-pill';
 import { quoteStatusLabel, orderStatusLabel } from './sales-helpers';
-import { salesOrderService } from '@/services/salesOrder.service';
-import type { SalesOrder } from '@/services/salesOrder.service';
+import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
 
 export interface SalesCreateHeaderProps {
   mode: 'create' | 'edit';

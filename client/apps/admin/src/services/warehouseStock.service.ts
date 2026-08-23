@@ -20,6 +20,28 @@ export interface StockFlags {
   expiryDays: number | null;
 }
 
+/**
+ * One WarehouseMovement audit row — a stock change on a (warehouse, subProduct,
+ * size) line. quantity is signed by convention of `type`; balanceAfter is the
+ * line's on-hand count immediately after the movement.
+ */
+export interface WarehouseMovement {
+  _id: string;
+  type:
+    | 'received'
+    | 'adjusted'
+    | 'shipped'
+    | 'transfer_in'
+    | 'transfer_out'
+    | 'returned';
+  quantity: number;
+  balanceAfter: number;
+  reference?: string | null;
+  transferGroupId?: string | null;
+  performedBy?: { _id: string; name?: string; email?: string } | null;
+  createdAt: string;
+}
+
 export interface WarehouseStockRow {
   _id: string;
   warehouse:
@@ -31,6 +53,9 @@ export interface WarehouseStockRow {
         _id: string;
         sku?: string;
         imagesOverride?: { url?: string }[];
+        costPrice?: number;
+        baseSellingPrice?: number;
+        currency?: string;
         product?: {
           _id: string;
           name?: string;
@@ -38,7 +63,14 @@ export interface WarehouseStockRow {
           images?: { url?: string }[];
         };
       };
-  size: string | { _id: string; size?: string };
+  size:
+    | string
+    | {
+        _id: string;
+        size?: string;
+        sellingPrice?: number;
+        costPrice?: number;
+      };
   currentQuantity: number;
   reservedQuantity: number;
   zone?: string;
@@ -114,6 +146,24 @@ export const warehouseStockService = {
       }),
       'Failed to load warehouse stock'
     );
+  },
+  async getWarehouseMovements(
+    warehouseId: string,
+    token: string,
+    params: { subProduct?: string; size?: string; limit?: number } = {}
+  ): Promise<{ success: boolean; data: WarehouseMovement[] }> {
+    const qs = new URLSearchParams();
+    if (params.subProduct) qs.set('subProduct', params.subProduct);
+    if (params.size) qs.set('size', params.size);
+    if (params.limit) qs.set('limit', String(params.limit));
+    // handle() is untyped upstream; assert the envelope here.
+    return handle(
+      await fetch(
+        `${API_URL}/api/warehouses/${warehouseId}/movements${qs.toString() ? `?${qs}` : ''}`,
+        { headers: auth(token) }
+      ),
+      'Failed to load movement history'
+    ) as { success: boolean; data: WarehouseMovement[] };
   },
   async adjustStock(
     warehouseId: string,

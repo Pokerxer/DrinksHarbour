@@ -3,187 +3,36 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import {
   PiArrowClockwise,
-  PiArrowsLeftRight,
   PiCaretDown,
   PiCaretLeft,
   PiCaretRight,
   PiCheck,
   PiCloudArrowDown,
-  PiCurrencyCircleDollar,
   PiPencilSimple,
   PiPlus,
   PiTrash,
-  PiTrendUp,
   PiX,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { exchangeRateService } from '@/services/exchangeRate.service';
+import { invalidateExchangeRates, useExchangeRates } from '@/hooks/use-exchange-rates';
+import { BASE_CURRENCY, type ExchangeRate } from './types';
 import {
-  invalidateExchangeRates,
-  useExchangeRates,
-} from '@/hooks/use-exchange-rates';
-import { BASE_CURRENCY, CURRENCIES, CURRENCY_SYMBOLS } from './types';
-import type { ExchangeRate } from './types';
-
-const INPUT_CLS =
-  'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none';
-const SELECT_CLS = `appearance-none pr-8 ${INPUT_CLS}`;
-
-function fmtRate(n: number) {
-  return n.toLocaleString('en-NG', { maximumFractionDigits: 4 });
-}
-
-function fmtMoney(n: number) {
-  return n.toLocaleString('en-NG', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function CurrencySelect({
-  value,
-  onChange,
-  allowAll = false,
-  allLabel = 'All',
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  allowAll?: boolean;
-  allLabel?: string;
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={SELECT_CLS}
-      >
-        {allowAll && <option value="">{allLabel}</option>}
-        {CURRENCIES.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-      </select>
-      <PiCaretDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-    </div>
-  );
-}
-
-// ─── Latest rates summary ─────────────────────────────────────────────────────
-
-function LatestRatesCards() {
-  const { latestRates, loading } = useExchangeRates();
-
-  if (loading || latestRates.length === 0) return null;
-
-  return (
-    <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-      {latestRates.map((r) => (
-        <div
-          key={`${r.fromCurrency}-${r.toCurrency}`}
-          className="rounded-xl border border-gray-200 bg-white p-4"
-        >
-          <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
-            <PiTrendUp className="h-3.5 w-3.5 text-[#b20202]" />
-            {r.fromCurrency} → {r.toCurrency}
-          </div>
-          <p className="mt-1.5 font-mono text-lg font-bold text-gray-900">
-            {fmtRate(r.rate)}
-          </p>
-          <p className="mt-0.5 text-[11px] text-gray-400">
-            1 {r.fromCurrency} = {fmtRate(r.rate)} {r.toCurrency} ·{' '}
-            {new Date(r.effectiveDate).toLocaleDateString()}
-          </p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Converter widget ─────────────────────────────────────────────────────────
-
-function ConverterCard() {
-  const { getRate, loading } = useExchangeRates();
-  const [amount, setAmount] = useState('100');
-  const [from, setFrom] = useState('USD');
-  const [to, setTo] = useState<string>(BASE_CURRENCY);
-
-  const parsed = parseFloat(amount);
-  const rate = getRate(from, to);
-  const result = !Number.isNaN(parsed) && rate !== null ? parsed * rate : null;
-
-  return (
-    <div className="mb-5 rounded-xl border border-gray-200 bg-white p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
-        <PiCurrencyCircleDollar className="h-4 w-4 text-[#b20202]" />
-        Quick Converter
-      </div>
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="w-36">
-          <label className="mb-1 block text-xs font-medium text-gray-600">
-            Amount
-          </label>
-          <input
-            type="number"
-            min="0"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className={INPUT_CLS}
-          />
-        </div>
-        <div className="w-28">
-          <label className="mb-1 block text-xs font-medium text-gray-600">
-            From
-          </label>
-          <CurrencySelect value={from} onChange={setFrom} />
-        </div>
-        <button
-          type="button"
-          title="Swap currencies"
-          onClick={() => {
-            setFrom(to);
-            setTo(from);
-          }}
-          className="mb-1 rounded-lg border border-gray-200 p-2 text-gray-500 hover:bg-gray-50"
-        >
-          <PiArrowsLeftRight className="h-4 w-4" />
-        </button>
-        <div className="w-28">
-          <label className="mb-1 block text-xs font-medium text-gray-600">
-            To
-          </label>
-          <CurrencySelect value={to} onChange={setTo} />
-        </div>
-        <div className="min-w-[180px] flex-1">
-          {loading ? (
-            <p className="text-sm text-gray-400">Loading rates…</p>
-          ) : Number.isNaN(parsed) || amount === '' ? (
-            <p className="text-sm text-gray-400">Enter an amount</p>
-          ) : result === null ? (
-            <p className="text-sm font-medium text-amber-600">
-              No active rate for {from} → {to}
-            </p>
-          ) : (
-            <p className="text-base font-bold text-gray-900">
-              {CURRENCY_SYMBOLS[to] ?? to}
-              {fmtMoney(result)}
-              <span className="ml-2 text-xs font-normal text-gray-400">
-                @ {fmtRate(rate!)}
-              </span>
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+  fmtRate,
+  formatRateDate,
+  isBackDated,
+  localDateKey,
+  parsePositiveNumber,
+} from './exchange-rates-helpers';
+import { CurrencySelect, SELECT_CLS, ExchangeRatesWidgets } from './exchange-rates-widgets';
+import { ExchangeRatesCreateForm } from './exchange-rates-create-form';
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function PurchasesExchangeRates() {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
+  const { latestRates } = useExchangeRates();
 
   const [rates, setRates] = useState<ExchangeRate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -201,8 +50,11 @@ export default function PurchasesExchangeRates() {
   const [fromCurrency, setFromCurrency] = useState('USD');
   const [toCurrency, setToCurrency] = useState<string>(BASE_CURRENCY);
   const [rate, setRate] = useState('');
-  const [effectiveDate, setEffectiveDate] = useState(
-    new Date().toISOString().split('T')[0]
+  // Local calendar day — the server upsert-matches exact dates and its live
+  // sync writes server-local midnights; a UTC-derived default misses by a day
+  // for part of every night.
+  const [effectiveDate, setEffectiveDate] = useState(() =>
+    localDateKey(new Date())
   );
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -229,6 +81,7 @@ export default function PurchasesExchangeRates() {
       setPages(res.pagination?.pages ?? 1);
       setTotal(res.pagination?.total ?? res.data?.length ?? 0);
     } catch (err: unknown) {
+      setRates([]);
       toast.error(err instanceof Error ? err.message : 'Failed to load rates');
     } finally {
       setLoading(false);
@@ -244,16 +97,13 @@ export default function PurchasesExchangeRates() {
     await load();
   }, [load]);
 
-  const parsedRate = parseFloat(rate);
-  const inversePreview =
-    !Number.isNaN(parsedRate) && parsedRate > 0 ? 1 / parsedRate : null;
-
   async function handleCreate() {
     if (fromCurrency === toCurrency) {
       toast.error('From and To currencies must be different');
       return;
     }
-    if (Number.isNaN(parsedRate) || parsedRate <= 0) {
+    const parsedRate = parsePositiveNumber(rate);
+    if (parsedRate === null) {
       toast.error('Enter a valid rate greater than zero');
       return;
     }
@@ -263,7 +113,7 @@ export default function PurchasesExchangeRates() {
     }
     setSaving(true);
     try {
-      const res = await exchangeRateService.createRate(
+      await exchangeRateService.createRate(
         {
           fromCurrency,
           toCurrency,
@@ -274,7 +124,6 @@ export default function PurchasesExchangeRates() {
         },
         token
       );
-      if (!res.success) throw new Error(res.message || 'Failed to create');
       toast.success('Exchange rate saved');
       setShowForm(false);
       setRate('');
@@ -289,12 +138,11 @@ export default function PurchasesExchangeRates() {
 
   async function handleToggleActive(r: ExchangeRate) {
     try {
-      const res = await exchangeRateService.updateRate(
+      await exchangeRateService.updateRate(
         r._id,
         { isActive: !r.isActive },
         token
       );
-      if (!res.success) throw new Error(res.message || 'Failed to update');
       setRates((p) =>
         p.map((x) => (x._id === r._id ? { ...x, isActive: !r.isActive } : x))
       );
@@ -311,20 +159,19 @@ export default function PurchasesExchangeRates() {
   }
 
   async function handleEditSave(r: ExchangeRate) {
-    const value = parseFloat(editRate);
-    if (Number.isNaN(value) || value <= 0) {
+    const value = parsePositiveNumber(editRate);
+    if (value === null) {
       toast.error('Enter a valid rate greater than zero');
       return;
     }
     setEditSaving(true);
     try {
       // A hand-edited rate becomes manual so the live sync won't overwrite it.
-      const res = await exchangeRateService.updateRate(
+      await exchangeRateService.updateRate(
         r._id,
         { rate: value, source: 'manual' },
         token
       );
-      if (!res.success) throw new Error(res.message || 'Failed to update');
       setRates((p) =>
         p.map((x) =>
           x._id === r._id ? { ...x, rate: value, source: 'manual' } : x
@@ -348,8 +195,7 @@ export default function PurchasesExchangeRates() {
     )
       return;
     try {
-      const res = await exchangeRateService.deleteRate(r._id, token);
-      if (!res.success) throw new Error(res.message || 'Failed to delete');
+      await exchangeRateService.deleteRate(r._id, token);
       toast.success('Exchange rate deleted');
       invalidateExchangeRates();
       await load();
@@ -362,7 +208,6 @@ export default function PurchasesExchangeRates() {
     setSyncing(true);
     try {
       const res = await exchangeRateService.syncLiveRates(token);
-      if (!res.success) throw new Error(res.message || 'Sync failed');
       toast.success(res.message || 'Live rates updated');
       await refreshAll();
     } catch (err: unknown) {
@@ -376,6 +221,11 @@ export default function PurchasesExchangeRates() {
 
   const hasFilters =
     filterFrom !== '' || filterTo !== '' || filterStatus !== '';
+
+  const backDated = useMemo(
+    () => showForm && isBackDated(latestRates, fromCurrency, toCurrency, effectiveDate),
+    [showForm, latestRates, fromCurrency, toCurrency, effectiveDate]
+  );
 
   const filterControls = useMemo(
     () => (
@@ -492,99 +342,29 @@ export default function PurchasesExchangeRates() {
         </div>
       </div>
 
-      <LatestRatesCards />
-      <ConverterCard />
+      <ExchangeRatesWidgets />
 
       {/* Create form */}
       {showForm && (
-        <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
-                From
-              </label>
-              <CurrencySelect value={fromCurrency} onChange={setFromCurrency} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
-                To
-              </label>
-              <CurrencySelect value={toCurrency} onChange={setToCurrency} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
-                Rate (1 {fromCurrency} = ? {toCurrency})
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.0001"
-                value={rate}
-                onChange={(e) => setRate(e.target.value)}
-                placeholder="e.g. 1550"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
-                Effective Date
-              </label>
-              <input
-                type="date"
-                value={effectiveDate}
-                onChange={(e) => setEffectiveDate(e.target.value)}
-                className={INPUT_CLS}
-              />
-            </div>
-            <div className="col-span-2 sm:col-span-4">
-              <label className="mb-1 block text-xs font-medium text-gray-600">
-                Notes{' '}
-                <span className="font-normal text-gray-400">(optional)</span>
-              </label>
-              <input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                maxLength={500}
-                placeholder="e.g. CBN official rate"
-                className={INPUT_CLS}
-              />
-            </div>
-          </div>
-          <div className="mt-3 flex items-center justify-between">
-            <p className="text-xs text-gray-400">
-              {fromCurrency === toCurrency ? (
-                <span className="font-medium text-amber-600">
-                  From and To must be different
-                </span>
-              ) : inversePreview !== null ? (
-                <>
-                  Inverse: 1 {toCurrency} = {fmtRate(inversePreview)}{' '}
-                  {fromCurrency} · saving the same pair and date updates the
-                  existing rate
-                </>
-              ) : (
-                'Saving the same pair and date again updates the existing rate'
-              )}
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleCreate}
-                disabled={saving}
-                className="rounded-lg bg-[#b20202] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Save Rate'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ExchangeRatesCreateForm
+          fromCurrency={fromCurrency}
+          toCurrency={toCurrency}
+          rate={rate}
+          effectiveDate={effectiveDate}
+          notes={notes}
+          saving={saving}
+          backDated={backDated}
+          onChange={(patch) => {
+            if (patch.fromCurrency !== undefined) setFromCurrency(patch.fromCurrency);
+            if (patch.toCurrency !== undefined) setToCurrency(patch.toCurrency);
+            if (patch.rate !== undefined) setRate(patch.rate);
+            if (patch.effectiveDate !== undefined)
+              setEffectiveDate(patch.effectiveDate);
+            if (patch.notes !== undefined) setNotes(patch.notes);
+          }}
+          onSave={handleCreate}
+          onClose={() => setShowForm(false)}
+        />
       )}
 
       {filterControls}
@@ -670,7 +450,7 @@ export default function PurchasesExchangeRates() {
                     {r.rate > 0 ? fmtRate(1 / r.rate) : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {new Date(r.effectiveDate).toLocaleDateString()}
+                    {formatRateDate(r.effectiveDate)}
                   </td>
                   <td className="px-4 py-3">
                     <span

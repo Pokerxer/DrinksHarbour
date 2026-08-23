@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { routes } from '@/config/routes';
 import type { InventoryMovement } from '@/services/inventory.service';
+import { TYPE_COLOR, TYPE_LABEL } from './inventory-receipts-support';
 
 function fmtDate(s?: string) {
   if (!s) return '\u2014';
@@ -16,6 +17,25 @@ function productName(m: InventoryMovement): string {
   const p = m.product as { name?: string } | undefined;
   const sp = m.subProduct as { name?: string; sku?: string } | undefined;
   return p?.name ?? sp?.name ?? sp?.sku ?? m.reference ?? '\u2014';
+}
+
+function warehouseLabel(m: InventoryMovement): string {
+  if (m.category === 'transfer') {
+    const src = m.sourceWarehouse as { name?: string } | undefined;
+    const dst = m.destinationWarehouse as { name?: string } | undefined;
+    const pair = [src?.name, dst?.name].filter(Boolean);
+    return pair.length === 2 ? `${pair[0]} → ${pair[1]}` : pair[0] ?? '\u2014';
+  }
+  const w = m.warehouse as { name?: string } | undefined;
+  return w?.name ?? '\u2014';
+}
+
+function qtySign(m: InventoryMovement): '+' | '\u2212' | '' {
+  if (m.category === 'in') return '+';
+  if (m.category === 'out') return '\u2212';
+  if (m.category === 'adjustment')
+    return m.type.endsWith('_in') ? '+' : '\u2212';
+  return '';
 }
 
 function PanelSkeleton() {
@@ -64,38 +84,44 @@ function RecentMovesPanel({
         </p>
       ) : (
         <ul className="divide-y divide-gray-50">
-          {recent.map((m) => (
-            <li
-              key={m._id}
-              className="flex items-center gap-3 px-4 py-2.5 text-sm"
-            >
-              <span className="w-14 shrink-0 text-xs text-gray-400">
-                {fmtDate(m.performedAt ?? m.createdAt)}
-              </span>
-              <span className="min-w-0 flex-1 truncate font-medium text-gray-700">
-                {productName(m)}
-              </span>
-              <span className="hidden shrink-0 text-xs capitalize text-gray-400 sm:inline">
-                {m.type.replace(/_/g, ' ')}
-              </span>
-              <span
-                className={`w-14 shrink-0 text-right font-semibold ${
-                  m.category === 'in'
-                    ? 'text-emerald-600'
-                    : m.category === 'out'
-                      ? 'text-red-600'
-                      : 'text-gray-600'
-                }`}
+          {recent.map((m) => {
+            const sign = qtySign(m);
+            return (
+              <li
+                key={m._id}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm"
               >
-                {m.category === 'in'
-                  ? '+'
-                  : m.category === 'out'
-                    ? '\u2212'
-                    : ''}
-                {Math.abs(m.quantity)}
-              </span>
-            </li>
-          ))}
+                <span className="w-14 shrink-0 text-xs text-gray-400">
+                  {fmtDate(m.performedAt ?? m.createdAt)}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-medium text-gray-700">
+                  {productName(m)}
+                </span>
+                <span className="hidden min-w-0 max-w-[180px] shrink truncate text-xs text-gray-400 lg:inline">
+                  {warehouseLabel(m)}
+                </span>
+                <span
+                  className={`hidden shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium sm:inline ${
+                    TYPE_COLOR[m.type] ?? 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {TYPE_LABEL[m.type] ?? m.type.replace(/_/g, ' ')}
+                </span>
+                <span
+                  className={`w-14 shrink-0 text-right font-semibold ${
+                    sign === '+'
+                      ? 'text-emerald-600'
+                      : sign === '\u2212'
+                        ? 'text-red-600'
+                        : 'text-gray-600'
+                  }`}
+                >
+                  {sign}
+                  {Math.abs(m.quantity)}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -111,6 +137,53 @@ interface LowStockItemDisplay {
   lowStockThreshold: number;
 }
 
+/** 0–100 severity: how far below the reorder point the item sits. */
+function severityPct(item: LowStockItemDisplay): number {
+  const threshold = item.reorderPoint || item.lowStockThreshold || 0;
+  if (threshold <= 0) return item.availableStock <= 0 ? 100 : 40;
+  return Math.min(100, Math.max(8, 100 - (item.availableStock / threshold) * 100));
+}
+
+function LowStockRow({ item }: { item: LowStockItemDisplay }) {
+  const p = item.product as { name?: string } | null;
+  const name = p?.name ?? item.sku;
+  const threshold = item.reorderPoint || item.lowStockThreshold;
+  const out = item.availableStock <= 0;
+
+  return (
+    <li className="px-4 py-2.5 text-sm">
+      <div className="flex items-center gap-3">
+        <span className="min-w-0 flex-1 truncate font-medium text-gray-700">
+          {name}
+        </span>
+        <span className="hidden shrink-0 text-xs text-gray-400 sm:inline">
+          reorder at {threshold}
+        </span>
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
+            out ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
+          }`}
+        >
+          {out ? 'Out of stock' : `${item.availableStock} left`}
+        </span>
+      </div>
+      <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-gray-100">
+        <div
+          role="presentation"
+          className={`h-full rounded-full ${out ? 'bg-red-500' : 'bg-amber-400'}`}
+          style={{ width: `${severityPct(item)}%` }}
+        />
+      </div>
+    </li>
+  );
+}
+
+const bySeverity = (a: LowStockItemDisplay, b: LowStockItemDisplay) => {
+  if ((a.availableStock <= 0) !== (b.availableStock <= 0))
+    return a.availableStock <= 0 ? -1 : 1;
+  return a.availableStock - b.availableStock;
+};
+
 function LowStockPanel({
   items,
   loading,
@@ -118,6 +191,7 @@ function LowStockPanel({
   items: LowStockItemDisplay[];
   loading: boolean;
 }) {
+  const critical = [...items].sort(bySeverity).slice(0, 8);
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white xl:col-span-2">
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -131,39 +205,15 @@ function LowStockPanel({
       </div>
       {loading ? (
         <PanelSkeleton />
-      ) : items.length === 0 ? (
+      ) : critical.length === 0 ? (
         <p className="px-4 py-10 text-center text-sm text-gray-400">
           Nothing running low
         </p>
       ) : (
         <ul className="divide-y divide-gray-50">
-          {items.slice(0, 8).map((item) => {
-            const p = item.product as { name?: string } | null;
-            const name = p?.name ?? item.sku;
-            const threshold = item.reorderPoint || item.lowStockThreshold;
-            return (
-              <li
-                key={item._id}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm"
-              >
-                <span className="min-w-0 flex-1 truncate font-medium text-gray-700">
-                  {name}
-                </span>
-                <span className="hidden shrink-0 text-xs text-gray-400 sm:inline">
-                  reorder at {threshold}
-                </span>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    item.availableStock <= 0
-                      ? 'bg-red-50 text-red-600'
-                      : 'bg-amber-50 text-amber-600'
-                  }`}
-                >
-                  {item.availableStock} left
-                </span>
-              </li>
-            );
-          })}
+          {critical.map((item) => (
+            <LowStockRow key={item._id} item={item} />
+          ))}
         </ul>
       )}
     </div>

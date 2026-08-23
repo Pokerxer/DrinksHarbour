@@ -235,9 +235,7 @@ describe('buildPOInvoice — detail', () => {
   it('states the total in words with a grand total row', () => {
     const grand = doc.totals.find((t) => t.variant === 'grand');
     expect(grand?.value).toBe('NGN 4,800,000.00');
-    expect(doc.words).toBe(
-      'Four Million, Eight Hundred Thousand Naira Only'
-    );
+    expect(doc.words).toBe('Four Million, Eight Hundred Thousand Naira Only');
   });
 });
 
@@ -280,9 +278,7 @@ describe('buildBillInvoice — detail', () => {
   const doc = buildBillInvoice(bill, 'DrinksHarbour');
 
   it('emphasises the balance due alongside subtotal/tax/total/paid', () => {
-    const byLabel = Object.fromEntries(
-      doc.totals.map((t) => [t.label, t])
-    );
+    const byLabel = Object.fromEntries(doc.totals.map((t) => [t.label, t]));
     expect(byLabel['Subtotal'].value).toBe('NGN 4,000,000.00');
     expect(byLabel['Tax'].value).toBe('NGN 300,000.00');
     expect(byLabel['Total'].variant).toBe('grand');

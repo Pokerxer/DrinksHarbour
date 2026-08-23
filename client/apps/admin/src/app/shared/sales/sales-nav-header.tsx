@@ -12,14 +12,80 @@ import {
   PiPlusCircleDuotone,
   PiTrayArrowDownDuotone,
   PiArrowUUpLeftDuotone,
+  PiChartLineUpDuotone,
+  PiGearSixDuotone,
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
 import NavDropdownPanel, {
   type NavSubItem,
+  type NavSection,
 } from '@/app/shared/nav-dropdown-panel';
 
-type NavItem = { label: string; icon: React.ReactNode; items: NavSubItem[] };
+type NavItem = {
+  label: string;
+  icon: React.ReactNode;
+  items?: NavSubItem[];
+  sections?: NavSection[];
+};
+
+const reportingItems: NavSubItem[] = [
+  // Every Reporting entry is the analysis page pre-grouped along one
+  // dimension — Odoo's trick of making each menu item a lens, not a page.
+  {
+    label: 'Sales',
+    href: `${routes.eCommerce.salesAnalytics}?groupBy=order_month`,
+    icon: <PiChartLineUpDuotone />,
+    desc: 'Revenue over time',
+  },
+  {
+    label: 'Salespersons',
+    href: `${routes.eCommerce.salesAnalytics}?groupBy=salesperson`,
+    icon: <PiFileTextDuotone />,
+    desc: 'Who is selling',
+  },
+  {
+    label: 'Products',
+    href: `${routes.eCommerce.salesAnalytics}?groupBy=product`,
+    icon: <PiShoppingCartDuotone />,
+    desc: 'What moves',
+  },
+  {
+    label: 'Customers',
+    href: `${routes.eCommerce.salesAnalytics}?groupBy=customer`,
+    icon: <PiTrayArrowDownDuotone />,
+    desc: 'Who buys',
+  },
+];
+
+// Configuration entries link only to pages that exist; sections mirror the
+// Odoo Sales configuration tree. Missing targets (Headers/Footers, Payment
+// Providers…) are deliberately absent rather than dead links.
+const configSections: NavSection[] = [
+  {
+    heading: undefined,
+    items: [{ label: 'Settings', href: '/settings' }],
+  },
+  {
+    heading: 'Sales Orders',
+    items: [
+      {
+        label: 'Delivery Methods',
+        href: routes.inventory.deliveryMethods,
+      },
+      { label: 'Pricelists', href: '/point-of-sale/pricelists' },
+    ],
+  },
+  {
+    heading: 'Products',
+    items: [
+      { label: 'Attributes', href: routes.inventory.attributes },
+      { label: 'Combo Choices', href: routes.pos.combos },
+      { label: 'Categories', href: routes.eCommerce.subCategories },
+      { label: 'Units & Packagings', href: routes.eCommerce.uomConversions },
+    ],
+  },
+];
 
 const navItems: NavItem[] = [
   {
@@ -76,6 +142,16 @@ const navItems: NavItem[] = [
       },
     ],
   },
+  {
+    label: 'Reporting',
+    icon: <PiChartLineUpDuotone />,
+    items: reportingItems,
+  },
+  {
+    label: 'Configuration',
+    icon: <PiGearSixDuotone />,
+    sections: configSections,
+  },
 ];
 
 export default function SalesNavHeader() {
@@ -120,9 +196,23 @@ export default function SalesNavHeader() {
 
       <div className="flex items-center pl-2">
         {navItems.map((item) => {
-          const isDropdownActive = item.items.some(
-            (s) => s.href !== '#' && pathname.startsWith(s.href.split('?')[0])
-          );
+          const flatHrefs = [
+            ...(item.items ?? []).map((s) => s.href),
+            ...(item.sections ?? []).flatMap((sec) =>
+              sec.items.map((s) => s.href)
+            ),
+          ];
+          // Deep-linked reporting lenses (?groupBy=…) belong to the analysis
+          // page; match on path only so the tab stays lit inside it.
+          const isDropdownActive = flatHrefs.some((href) => {
+            if (href === '#' || !href) return false;
+            const path = href.split('?')[0];
+            return (
+              pathname === path ||
+              (path !== routes.eCommerce.salesAnalytics &&
+                pathname.startsWith(path))
+            );
+          });
           const isOpen = openMenu === item.label;
           const activeCls =
             'font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-brand';
@@ -150,7 +240,8 @@ export default function SalesNavHeader() {
               {isOpen && (
                 <NavDropdownPanel
                   items={item.items}
-                  pathname={pathname}
+                  sections={item.sections}
+                  pathname={pathname.split('?')[0]}
                   onNavigate={close}
                   columns={1}
                 />

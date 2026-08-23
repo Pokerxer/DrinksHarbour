@@ -2,7 +2,10 @@ import type { VendorBill } from '@/services/vendorBill.service';
 import { fmtAmt, fmtDate, moneyWords } from './print-shared';
 import type { DocumentModel, DocCell } from './doc-model';
 
-export function buildBillInvoice(bill: VendorBill, companyName: string): DocumentModel {
+export function buildBillInvoice(
+  bill: VendorBill,
+  companyName: string
+): DocumentModel {
   const amountDue = Math.max(0, bill.totalAmount - bill.paidAmount);
 
   const rows: DocCell[][] = bill.items.map((item) => {
@@ -27,14 +30,12 @@ export function buildBillInvoice(bill: VendorBill, companyName: string): Documen
             ['Reference', 'left'],
             ['Amount', 'right'],
           ] as [string, 'left' | 'center' | 'right'][],
-          rows: bill.payments.map(
-            (p): DocCell[] => [
-              { text: fmtDate(p.date) },
-              { text: (p.method ?? '—').replace(/_/g, ' ') },
-              { text: p.reference ?? '—' },
-              { text: fmtAmt(p.amount, bill.currency), color: '#16a34a' },
-            ]
-          ),
+          rows: bill.payments.map((p): DocCell[] => [
+            { text: fmtDate(p.date) },
+            { text: (p.method ?? '—').replace(/_/g, ' ') },
+            { text: p.reference ?? '—' },
+            { text: fmtAmt(p.amount, bill.currency), color: '#16a34a' },
+          ]),
         },
       ]
     : undefined;
@@ -42,7 +43,11 @@ export function buildBillInvoice(bill: VendorBill, companyName: string): Documen
   const totals: DocumentModel['totals'] = [
     { label: 'Subtotal', value: fmtAmt(bill.subtotal, bill.currency) },
     { label: 'Tax', value: fmtAmt(bill.taxAmount, bill.currency) },
-    { label: 'Total', value: fmtAmt(bill.totalAmount, bill.currency), variant: 'grand' },
+    {
+      label: 'Total',
+      value: fmtAmt(bill.totalAmount, bill.currency),
+      variant: 'grand',
+    },
   ];
   if (bill.paidAmount > 0) {
     totals.push({

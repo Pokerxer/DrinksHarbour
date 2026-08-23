@@ -1,22 +1,17 @@
 'use client';
 
-import {
-  PiChartLineUpDuotone,
-  PiCoinsDuotone,
-  PiCubeDuotone,
-  PiEmptyDuotone,
-  PiTrendUpDuotone,
-  PiWarningCircleDuotone,
-} from 'react-icons/pi';
+import Link from 'next/link';
+import { PiCaretRight } from 'react-icons/pi';
 
 interface KpiCardProps {
   label: string;
   value: string;
   icon: React.ReactNode;
   tone?: 'default' | 'warn' | 'danger';
+  href?: string;
 }
 
-function KpiCard({ label, value, icon, tone = 'default' }: KpiCardProps) {
+function KpiCardBody({ label, value, icon, tone }: Omit<KpiCardProps, 'href'>) {
   const toneCls =
     tone === 'danger'
       ? 'bg-red-50 text-red-600'
@@ -24,7 +19,7 @@ function KpiCard({ label, value, icon, tone = 'default' }: KpiCardProps) {
         ? 'bg-amber-50 text-amber-600'
         : 'bg-[#fef2f2] text-[#b20202]';
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 transition-shadow hover:shadow-sm">
+    <>
       <div className="flex items-center gap-3">
         <span
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg [&>svg]:h-5 [&>svg]:w-5 ${toneCls}`}
@@ -38,7 +33,29 @@ function KpiCard({ label, value, icon, tone = 'default' }: KpiCardProps) {
           <p className="truncate text-lg font-bold text-gray-900">{value}</p>
         </div>
       </div>
-    </div>
+    </>
+  );
+}
+
+function KpiCard(props: KpiCardProps) {
+  const { href } = props;
+  if (!href) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <KpiCardBody {...props} />
+      </div>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      className="group rounded-xl border border-gray-200 bg-white p-4 transition-all hover:border-[#b20202]/30 hover:shadow-md"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <KpiCardBody {...props} />
+        <PiCaretRight className="mt-3 h-4 w-4 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[#b20202]" />
+      </div>
+    </Link>
   );
 }
 
@@ -61,6 +78,7 @@ interface KpiData {
   value: string;
   icon: React.ReactNode;
   tone?: 'default' | 'warn' | 'danger';
+  href?: string;
 }
 
 export function KpiCards({ data }: { data: KpiData[] }) {

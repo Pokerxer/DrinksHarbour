@@ -428,3 +428,54 @@ export function AnalyticsWidgetsGrid({
     </div>
   );
 }
+
+/** Server-computed vendor leaderboard (purchase-analytics summary endpoint). */
+export function TopVendorsTable({
+  topVendors,
+}: {
+  topVendors?: PurchaseAnalyticsSummary['topVendors'];
+}) {
+  if (!topVendors || topVendors.length === 0) return null;
+  return (
+    <div className="mt-5 overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
+      <div className="border-b border-[#ece4d6] px-5 py-3">
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#b20202]/70">
+          Leaderboard
+        </p>
+        <h2
+          className={`${fraunces.className} text-base font-semibold text-[#2a2420]`}
+        >
+          Top Vendors by Spend
+        </h2>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-[#ece4d6] bg-[#FAF8F3] text-xs">
+            <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Vendor
+            </th>
+            <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Orders
+            </th>
+            <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Total Spend
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#f1ece2]">
+          {topVendors.map((v, i) => (
+            <tr key={`${v.name}-${i}`} className="transition-colors hover:bg-[#FAF8F3]">
+              <td className="px-4 py-2.5 font-medium text-[#2a2420]">{v.name}</td>
+              <td className="px-4 py-2.5 text-right text-gray-500">{v.count}</td>
+              <td
+                className={`${fraunces.className} px-4 py-2.5 text-right font-semibold tabular-nums text-[#2a2420]`}
+              >
+                {fmtNaira(v.amount ?? 0)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

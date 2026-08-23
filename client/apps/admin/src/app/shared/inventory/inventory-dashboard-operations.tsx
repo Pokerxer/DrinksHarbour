@@ -57,10 +57,11 @@ function OperationSkeleton() {
 }
 
 interface OperationCounts {
-  in: number;
-  out: number;
-  transfer: number;
-  adjustment: number;
+  receipts: number;
+  deliveries: number;
+  internalLegs: number;
+  transfers: number;
+  adjustments: number;
   scrap: number;
 }
 
@@ -75,7 +76,6 @@ interface OperationsGridProps {
     scrap: string;
     transfers: string;
   };
-  icons?: Partial<Record<string, React.ReactNode>>;
 }
 
 const OP_CONFIG: Array<{
@@ -83,14 +83,14 @@ const OP_CONFIG: Array<{
   label: string;
   desc: string;
   hrefKey: keyof OperationsGridProps['hrefs'];
-  defaultIcon: React.ReactNode;
+  icon: React.ReactNode;
 }> = [
-  { key: 'in', label: 'Receipts', desc: 'Incoming stock', hrefKey: 'receipts', defaultIcon: <PiTrayArrowDownDuotone /> },
-  { key: 'out', label: 'Deliveries', desc: 'Outgoing stock', hrefKey: 'deliveries', defaultIcon: <PiTruckDuotone /> },
-  { key: 'transfer', label: 'Internal', desc: 'Between warehouses', hrefKey: 'internal', defaultIcon: <PiArrowsClockwiseDuotone /> },
-  { key: 'adjustment', label: 'Adjustments', desc: 'Stock corrections', hrefKey: 'adjustments', defaultIcon: <PiSlidersDuotone /> },
-  { key: 'scrap', label: 'Scrap', desc: 'Damaged / expired / written off', hrefKey: 'scrap', defaultIcon: <PiTrashDuotone /> },
-  { key: 'transfer', label: 'Transfers', desc: 'Planned warehouse transfers', hrefKey: 'transfers', defaultIcon: <PiArrowsLeftRightDuotone /> },
+  { key: 'receipts', label: 'Receipts', desc: 'Incoming stock', hrefKey: 'receipts', icon: <PiTrayArrowDownDuotone /> },
+  { key: 'deliveries', label: 'Deliveries', desc: 'Outgoing stock', hrefKey: 'deliveries', icon: <PiTruckDuotone /> },
+  { key: 'internalLegs', label: 'Internal', desc: 'Warehouse-to-warehouse moves', hrefKey: 'internal', icon: <PiArrowsClockwiseDuotone /> },
+  { key: 'adjustments', label: 'Adjustments', desc: 'Stock corrections', hrefKey: 'adjustments', icon: <PiSlidersDuotone /> },
+  { key: 'scrap', label: 'Scrap', desc: 'Damaged / expired / written off', hrefKey: 'scrap', icon: <PiTrashDuotone /> },
+  { key: 'transfers', label: 'Transfers', desc: 'Transfer operations', hrefKey: 'transfers', icon: <PiArrowsLeftRightDuotone /> },
 ];
 
 export default function OperationsGrid({
@@ -108,23 +108,15 @@ export default function OperationsGrid({
     );
   }
 
-  const tiles = OP_CONFIG.map((cfg) => {
-    const count = cfg.key === 'transfer' && cfg.label === 'Transfers'
-      ? counts.transfer
-      : counts[cfg.key];
-    return {
-      label: cfg.label,
-      desc: cfg.desc,
-      count,
-      href: hrefs[cfg.hrefKey],
-      icon: cfg.defaultIcon,
-    };
-  });
-
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {tiles.map((op) => (
-        <OperationTile key={op.label} {...op} />
+      {OP_CONFIG.map(({ key, hrefKey, ...cfg }) => (
+        <OperationTile
+          key={cfg.label}
+          {...cfg}
+          count={counts[key]}
+          href={hrefs[hrefKey]}
+        />
       ))}
     </div>
   );

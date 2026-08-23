@@ -2,14 +2,10 @@
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
-  PiArrowsClockwise,
-  PiCurrencyNgn,
   PiShoppingCart,
-  PiReceipt,
   PiChartBar,
   PiClock,
   PiPackage,
-  PiTrendUp,
   PiFunnel,
   PiStack,
   PiX,
@@ -19,19 +15,20 @@ import {
   PiChartLine,
   PiChartPieSlice,
   PiStar,
-  PiTrash,
   PiArrowUp,
   PiArrowDown,
   PiSlidersHorizontal,
   PiCaretDown,
   PiArrowCounterClockwise,
-  PiCheck,
   PiTag,
+  PiFloppyDisk,
 } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { purchaseOrderService } from '@/services/purchaseOrder.service';
-import type { PurchaseOrder } from '@/services/purchaseOrder.service';
+import {
+  purchaseOrderService,
+  type PurchaseOrder,
+} from '@/services/purchaseOrder.service';
 import {
   purchaseAnalyticsService,
   type PurchaseAnalyticsSummary,
@@ -46,14 +43,13 @@ import {
   GROUP_BY_DATE_ITEMS,
   ALL_GROUP_ITEMS,
   MEASURES,
-  fmtNaira,
-  fmtCompact,
   fmtMeasureVal,
   buildDateFilterItems,
   applyFilters,
   computeGroupData,
   computeMultiSeries,
   computeHierarchicalPivot,
+  buildGroupedViewCSV,
   type GroupByKey,
   type ViewMode,
   type HierPivotResult,
@@ -74,10 +70,12 @@ import {
   MainChart,
   StackedChart,
   PivotView,
+  downloadCSV,
 } from './purchases-analytics-charts';
 import { PODrillDrawer } from './po-drill-drawer';
-import { AnalyticsWidgetsGrid } from './purchases-analytics-widgets';
-import { fraunces } from './purchases-fonts';
+import { AnalyticsWidgetsGrid, TopVendorsTable } from './purchases-analytics-widgets';
+import { AnalyticsHeader } from './purchases-analytics-header';
+import { AnalyticsFilterPanel } from './purchases-analytics-filter-panel';
 
 const SORT_FIELD_LABELS: {
   field: SortField;
@@ -155,11 +153,18 @@ export default function PurchasesAnalytics() {
     if (!token) return;
     setLoading(true);
     try {
+      // Walk every page of the ledger — a single capped request would skew
+      // every total once the tenant outgrows one page size.
       const [poRes, sumRes] = await Promise.all([
-        purchaseOrderService.getPurchaseOrders(token, { limit: 1000 }),
+        purchaseOrderService.getAllPurchaseOrders(token),
         purchaseAnalyticsService.getSummary(token).catch(() => null),
       ]);
-      setOrders((poRes?.data as PurchaseOrder[]) ?? []);
+      setOrders(poRes.orders);
+      if (poRes.truncated)
+        toast(
+          `Showing the most recent ${poRes.orders.length} purchase orders; older history is excluded.`,
+          { icon: '⚠️' }
+        );
       if (sumRes?.data) setSummary(sumRes.data);
     } catch (err: unknown) {
       toast.error(
@@ -174,16 +179,17 @@ export default function PurchasesAnalytics() {
     load();
   }, [load]);
 
-  // Categories & brands (public endpoints)
+  // Categories & brands (public endpoints). posApi.request unwraps the
+  // envelope to body.data, so these resolve to {categories,total}/{brands}.
   useEffect(() => {
     if (!token) return;
     posApi
-      .getCategories(token)
-      .then((d) => setCategories(Array.isArray(d) ? d : []))
+      .getCategories()
+      .then((d) => setCategories(d.categories ?? []))
       .catch(() => {});
     posApi
-      .getBrands(token, { limit: 200 })
-      .then((d) => setBrands(Array.isArray(d) ? d : []))
+      .getBrands({ limit: 200 })
+      .then((d) => setBrands(d.brands ?? []))
       .catch(() => {});
   }, [token]);
 
@@ -196,9 +202,8 @@ export default function PurchasesAnalytics() {
     posApi
       .getProductMeta(token)
       .then((res) => {
-        const rows = (res as any)?.data?.meta || (res as any)?.meta || [];
         const map: Record<string, ProdMeta> = {};
-        for (const r of rows as any[]) {
+        for (const r of res.meta || []) {
           if (!r?._id) continue;
           map[String(r._id)] = {
             catId: r.categoryId || '',
@@ -411,13 +416,14 @@ export default function PurchasesAnalytics() {
       groupBy: groupByStack[0] ?? null,
       groupBy2: groupByStack[1] ?? null,
       measure,
+      sort: [...sortStack],
     };
     const list = [...savedSearches, s];
     setSavedSearches(list);
     localStorage.setItem(SAVED_KEY, JSON.stringify(list));
     setSavingSearch(false);
     setSaveSearchName('');
-  }, [saveSearchName, filters, groupByStack, measure, savedSearches]);
+  }, [saveSearchName, filters, groupByStack, measure, sortStack, savedSearches]);
 
   const applySavedSearch = useCallback((s: SavedSearch) => {
     setFilters(s.filters);
@@ -426,6 +432,7 @@ export default function PurchasesAnalytics() {
     if (s.groupBy2) stack.push(s.groupBy2);
     setGroupByStack(stack);
     setMeasure(s.measure);
+    setSortStack(s.sort ?? []);
     setAppliedSearchName(s.name);
   }, []);
 
@@ -440,15 +447,18 @@ export default function PurchasesAnalytics() {
   const isSearchMatch = useCallback(
     (s: SavedSearch) => {
       const sortArr = (a: string[]) => [...a].sort();
+      const sameSort =
+        JSON.stringify(s.sort ?? []) === JSON.stringify(sortStack);
       return (
         JSON.stringify(sortArr(s.filters)) ===
           JSON.stringify(sortArr(filters)) &&
         (s.groupBy ?? null) === (groupByStack[0] ?? null) &&
         (s.groupBy2 ?? null) === (groupByStack[1] ?? null) &&
-        s.measure === measure
+        s.measure === measure &&
+        sameSort
       );
     },
-    [filters, groupByStack, measure]
+    [filters, groupByStack, measure, sortStack]
   );
 
   function getFilterLabel(key: string): string {
@@ -514,6 +524,64 @@ export default function PurchasesAnalytics() {
     setDrillData({ orders: poList, title });
   }
 
+  /** Exports whatever the main chart/table is currently showing. */
+  const exportCurrentView = useCallback(() => {
+    const dateTag = new Date().toISOString().slice(0, 10);
+    if (multiSeries) {
+      const rowIdx = new Map(
+        multiSeries.rows.map((r, i) => [r.label, i] as const)
+      );
+      const columnTotals = Object.fromEntries(
+        multiSeries.series.map((s) => [
+          s,
+          multiSeries.rows.reduce(
+            (sum, r) => sum + ((r[s] as number) ?? 0),
+            0
+          ),
+        ])
+      );
+      downloadCSV(
+        buildGroupedViewCSV({
+          groupLabel: groupLabel,
+          measureLabel,
+          measure,
+          rows: multiSeries.rows.map((r) => ({
+            label: r.label,
+            orders: r.orders,
+          })),
+          totalValue,
+          totalOrders,
+          series: multiSeries.series,
+          cellValue: (row, s) => {
+            const i = rowIdx.get(row.label);
+            return i == null ? 0 : ((multiSeries.rows[i][s] as number) ?? 0);
+          },
+          rowTotals: Object.fromEntries(
+            multiSeries.rows.map((r) => [r.label, r.__total__])
+          ),
+          columnTotals,
+        }),
+        `purchase-analysis-${dateTag}.csv`
+      );
+      return;
+    }
+    downloadCSV(
+      buildGroupedViewCSV({
+        groupLabel,
+        measureLabel,
+        measure,
+        rows: groupData.map((r) => ({
+          label: r.label,
+          value: r.value,
+          orders: r.orders,
+        })),
+        totalValue,
+        totalOrders,
+      }),
+      `purchase-analysis-${dateTag}.csv`
+    );
+  }, [multiSeries, groupData, groupLabel, measureLabel, measure, totalValue, totalOrders]);
+
   if (loading) {
     return (
       <div>
@@ -539,115 +607,8 @@ export default function PurchasesAnalytics() {
 
   return (
     <div>
-      {/* ── Header ── */}
-      <div className="relative mb-6 overflow-hidden rounded-2xl border border-[#ece4d6] bg-white px-6 py-5 shadow-sm">
-        <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#b20202] via-[#d9a05b] to-[#b20202]" />
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#b20202]/70">
-              Reporting
-            </p>
-            <h1
-              className={`${fraunces.className} mt-1 text-[28px] font-semibold leading-tight text-[#2a2420] sm:text-[32px]`}
-            >
-              Purchase Analysis
-            </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Spend, volumes, and vendor performance across purchase orders
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={load}
-            title="Refresh"
-            className="group flex items-center gap-1.5 rounded-lg border border-[#ece4d6] bg-white px-3.5 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-[#b20202]/30 hover:bg-[#b20202]/5 hover:text-[#b20202]"
-          >
-            <PiArrowsClockwise className="h-3.5 w-3.5 transition-transform duration-500 group-active:-rotate-180" />
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* ── KPI cards ── */}
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-6">
-        {/* Hero: Total Spend */}
-        <div
-          title={fmtNaira(kpis.totalSpend)}
-          className="relative col-span-2 overflow-hidden rounded-2xl bg-gradient-to-br from-[#8a0202] via-[#b20202] to-[#6b0101] p-5 text-white shadow-md lg:col-span-2"
-        >
-          <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full border border-white/10" />
-          <div className="pointer-events-none absolute -bottom-14 -right-6 h-28 w-28 rounded-full border border-white/10" />
-          <div className="relative flex items-center justify-between">
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/65">
-              Total Spend
-            </p>
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15">
-              <PiCurrencyNgn className="h-4 w-4" />
-            </span>
-          </div>
-          <p
-            className={`${fraunces.className} relative mt-3 text-[34px] font-semibold tabular-nums leading-none`}
-          >
-            {fmtCompact(kpis.totalSpend)}
-          </p>
-          <p className="relative mt-1.5 text-[11px] text-white/55">
-            {fmtNaira(kpis.totalSpend)}
-          </p>
-        </div>
-
-        {[
-          {
-            label: 'Purchase Orders',
-            value: String(kpis.orderCount),
-            icon: <PiShoppingCart className="h-4 w-4" />,
-            color: 'text-blue-600 bg-blue-50',
-          },
-          {
-            label: 'Avg Order Value',
-            value: fmtCompact(kpis.avgOrder),
-            full: fmtNaira(kpis.avgOrder),
-            icon: <PiTrendUp className="h-4 w-4" />,
-            color: 'text-emerald-600 bg-emerald-50',
-          },
-          {
-            label: 'Receipt Rate',
-            value: `${kpis.receiptPct.toFixed(0)}%`,
-            icon: <PiPackage className="h-4 w-4" />,
-            color: 'text-violet-600 bg-violet-50',
-          },
-          {
-            label: 'Pending Approvals',
-            value: String(summary?.pendingApprovals ?? 0),
-            icon: <PiReceipt className="h-4 w-4" />,
-            color:
-              (summary?.pendingApprovals ?? 0) > 0
-                ? 'text-amber-600 bg-amber-50'
-                : 'text-gray-500 bg-gray-100',
-          },
-        ].map(({ label, value, full, icon, color }) => (
-          <div
-            key={label}
-            title={full}
-            className="rounded-2xl border border-[#ece4d6] bg-white p-4 transition-shadow hover:shadow-md"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                {label}
-              </p>
-              <span
-                className={`flex h-7 w-7 items-center justify-center rounded-lg ${color}`}
-              >
-                {icon}
-              </span>
-            </div>
-            <p
-              className={`${fraunces.className} mt-2 text-2xl font-semibold tabular-nums text-[#2a2420]`}
-            >
-              {value}
-            </p>
-          </div>
-        ))}
-      </div>
+      {/* ── Header + KPI cards ── */}
+      <AnalyticsHeader kpis={kpis} summary={summary} onRefresh={load} />
 
       {/* ── Control bar ── */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -895,299 +856,27 @@ export default function PurchasesAnalytics() {
 
       {/* ── Filters / Group By / Favorites panel ── */}
       {panelOpen && (
-        <div className="mb-4 grid grid-cols-1 gap-0 overflow-hidden rounded-xl border border-gray-200 bg-white md:grid-cols-3">
-          {/* Filters column */}
-          <div className="flex flex-col border-b border-gray-100 md:border-b-0 md:border-r">
-            <div className="flex items-center gap-1.5 border-b border-gray-100 px-4 py-3">
-              <PiFunnel className="h-3.5 w-3.5 text-[#b20202]" />
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                Filters
-              </span>
-            </div>
-            <div className="max-h-[420px] flex-1 overflow-y-auto p-3">
-              <div className="relative mb-2">
-                <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={panelSearch}
-                  onChange={(e) => setPanelSearch(e.target.value)}
-                  placeholder="Filter categories / brands…"
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-7 pr-2 text-xs outline-none focus:border-[#b20202] focus:bg-white"
-                />
-              </div>
-              <DropSection title="Status" />
-              {FILTER_STATIC.map((f) => (
-                <DropItem
-                  key={f.key}
-                  label={f.label}
-                  selected={filters.includes(f.key)}
-                  onClick={() => toggleFilter(f.key)}
-                />
-              ))}
-              <DropSection title="Date" />
-              <DropItem
-                label="Today"
-                selected={filters.includes('date_today')}
-                onClick={() => toggleFilter('date_today')}
-              />
-              <DropItem
-                label="This Week"
-                selected={filters.includes('date_week')}
-                onClick={() => toggleFilter('date_week')}
-              />
-              <DropSection title="Months" />
-              {dateItems.months.map((m) => (
-                <DropItem
-                  key={m.key}
-                  label={m.label}
-                  selected={filters.includes(m.key)}
-                  onClick={() => toggleFilter(m.key)}
-                />
-              ))}
-              <DropSection title="Quarters" />
-              {dateItems.quarters.map((q) => (
-                <DropItem
-                  key={q.key}
-                  label={q.label}
-                  selected={filters.includes(q.key)}
-                  onClick={() => toggleFilter(q.key)}
-                />
-              ))}
-              <DropSection title="Years" />
-              {dateItems.years.map((y) => (
-                <DropItem
-                  key={y.key}
-                  label={y.label}
-                  selected={filters.includes(y.key)}
-                  onClick={() => toggleFilter(y.key)}
-                />
-              ))}
-              {topCategories.length > 0 && (
-                <>
-                  <DropSection title="Product Category" />
-                  <FilterListSection
-                    label="Product Category"
-                    items={topCategories}
-                    activeFilters={filters}
-                    prefix="category_"
-                    onToggle={toggleFilter}
-                    filter={panelSearch}
-                  />
-                </>
-              )}
-              {subCategories.length > 0 && (
-                <>
-                  <DropSection title="Subcategory" />
-                  <FilterListSection
-                    label="Subcategory"
-                    items={subCategories}
-                    activeFilters={filters}
-                    prefix="subcategory_"
-                    onToggle={toggleFilter}
-                    filter={panelSearch}
-                  />
-                </>
-              )}
-              {brands.length > 0 && (
-                <>
-                  <DropSection title="Brand" />
-                  <FilterListSection
-                    label="Brand"
-                    items={brands}
-                    activeFilters={filters}
-                    prefix="brand_"
-                    onToggle={toggleFilter}
-                    filter={panelSearch}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Group By column */}
-          <div className="flex flex-col border-b border-gray-100 md:border-b-0 md:border-r">
-            <div className="flex items-center gap-1.5 border-b border-gray-100 px-4 py-3">
-              <PiStack className="h-3.5 w-3.5 text-emerald-500" />
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                Group By
-              </span>
-              {groupByStack.length > 0 && (
-                <span className="ml-auto rounded-full bg-emerald-100 px-1.5 py-px text-[10px] font-bold text-emerald-700">
-                  {groupByStack.length}
-                </span>
-              )}
-            </div>
-            <div className="max-h-[420px] flex-1 overflow-y-auto p-3">
-              <p className="mb-2 px-1 text-[11px] text-gray-400">
-                Select up to 2 dimensions. Click a selected dimension again to
-                remove it.
-              </p>
-              <DropSection title="Dimensions" />
-              {GROUP_BY_ITEMS.map((g) => {
-                const idx = groupByStack.indexOf(g.key);
-                return (
-                  <DropItem
-                    key={g.key}
-                    label={g.label}
-                    selected={idx >= 0}
-                    onClick={() => toggleGroupBy(g.key)}
-                    badge={
-                      idx >= 0 ? (
-                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
-                          {idx + 1}
-                        </span>
-                      ) : undefined
-                    }
-                  />
-                );
-              })}
-              <DropSection title="Order Date" />
-              {GROUP_BY_DATE_ITEMS.map((g) => {
-                const idx = groupByStack.indexOf(g.key);
-                return (
-                  <DropItem
-                    key={g.key}
-                    label={g.label}
-                    selected={idx >= 0}
-                    onClick={() => toggleGroupBy(g.key)}
-                    badge={
-                      idx >= 0 ? (
-                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
-                          {idx + 1}
-                        </span>
-                      ) : undefined
-                    }
-                  />
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Favorites column */}
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1.5 border-b border-gray-100 px-4 py-3">
-              <PiStar className="h-3.5 w-3.5 text-amber-400" />
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                Favorites
-              </span>
-              {savedSearches.length > 0 && (
-                <span className="ml-auto rounded-full bg-amber-50 px-1.5 py-px text-[10px] font-bold text-amber-600">
-                  {savedSearches.length}
-                </span>
-              )}
-            </div>
-            <div className="max-h-[420px] flex-1 space-y-1.5 overflow-y-auto p-3">
-              {savedSearches.length === 0 && !savingSearch && (
-                <div className="py-6 text-center">
-                  <PiStar className="mx-auto mb-2 h-8 w-8 text-gray-200" />
-                  <p className="text-xs text-gray-400">No saved searches yet</p>
-                  <p className="mt-0.5 text-[11px] text-gray-300">
-                    Save your current filters for quick access
-                  </p>
-                </div>
-              )}
-              {savedSearches.map((s) => {
-                const active = isSearchMatch(s);
-                return (
-                  <div
-                    key={s.id}
-                    className={`group rounded-xl border p-2.5 transition-colors ${
-                      active
-                        ? 'border-teal-200 bg-teal-50'
-                        : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => applySavedSearch(s)}
-                        className="flex flex-1 items-center gap-2 text-left"
-                      >
-                        {active && (
-                          <PiCheck className="h-3.5 w-3.5 shrink-0 text-teal-600" />
-                        )}
-                        <span
-                          className={`truncate text-sm font-medium ${
-                            active ? 'text-teal-700' : 'text-gray-800'
-                          }`}
-                        >
-                          {s.name}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteSavedSearch(s.id)}
-                        className="shrink-0 rounded p-0.5 text-gray-300 transition-colors hover:text-red-400"
-                      >
-                        <PiTrash className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <p className="mt-1 truncate text-[11px] text-gray-400">
-                      {s.filters.length} filter
-                      {s.filters.length === 1 ? '' : 's'}
-                      {s.groupBy
-                        ? ` · ${[s.groupBy, s.groupBy2]
-                            .filter(Boolean)
-                            .map(
-                              (k) =>
-                                ALL_GROUP_ITEMS.find((g) => g.key === k)
-                                  ?.label ?? k
-                            )
-                            .join(' > ')}`
-                        : ''}
-                    </p>
-                  </div>
-                );
-              })}
-
-              {savingSearch ? (
-                <div className="rounded-xl border border-gray-200 p-2.5">
-                  <input
-                    autoFocus
-                    value={saveSearchName}
-                    onChange={(e) => setSaveSearchName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveSearch();
-                      if (e.key === 'Escape') {
-                        setSavingSearch(false);
-                        setSaveSearchName('');
-                      }
-                    }}
-                    placeholder="Search name…"
-                    className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-[#b20202]"
-                  />
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={saveSearch}
-                      className="flex-1 rounded-lg bg-[#b20202] px-2 py-1.5 text-xs font-semibold text-white hover:bg-[#7a0101]"
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSavingSearch(false);
-                        setSaveSearchName('');
-                      }}
-                      className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setSavingSearch(true)}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-gray-300 px-2.5 py-2 text-xs font-medium text-gray-500 hover:border-gray-400 hover:text-gray-700"
-                >
-                  <PiStar className="h-3.5 w-3.5" />
-                  Save current view
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <AnalyticsFilterPanel
+          filters={filters}
+          toggleFilter={toggleFilter}
+          dateItems={dateItems}
+          topCategories={topCategories}
+          subCategories={subCategories}
+          brands={brands}
+          panelSearch={panelSearch}
+          setPanelSearch={setPanelSearch}
+          groupByStack={groupByStack}
+          toggleGroupBy={toggleGroupBy}
+          savedSearches={savedSearches}
+          applySavedSearch={applySavedSearch}
+          deleteSavedSearch={deleteSavedSearch}
+          isSearchMatch={isSearchMatch}
+          savingSearch={savingSearch}
+          setSavingSearch={setSavingSearch}
+          saveSearchName={saveSearchName}
+          setSaveSearchName={setSaveSearchName}
+          saveSearch={saveSearch}
+        />
       )}
 
       {/* Applied filter chips */}
@@ -1260,16 +949,27 @@ export default function PurchasesAnalytics() {
         />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-[#ece4d6] px-5 py-3">
+          <div className="flex items-center justify-between gap-3 border-b border-[#ece4d6] px-5 py-3">
             <h2 className="text-sm font-semibold text-[#2a2420]">
               {measureLabel} by {groupLabel}
               {groupLabel2 ? ` & ${groupLabel2}` : ''}
             </h2>
-            <span className="bg-[#b20202]/8 rounded-full px-2.5 py-1 text-xs font-semibold text-[#b20202]">
-              {measure === 'avg_order'
-                ? `${totalOrders} orders`
-                : `Total: ${fmtMeasureVal(totalValue, measure)}`}
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={exportCurrentView}
+                title="Export current view as CSV"
+                className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+              >
+                <PiFloppyDisk className="h-3 w-3" />
+                CSV
+              </button>
+              <span className="bg-[#b20202]/8 rounded-full px-2.5 py-1 text-xs font-semibold text-[#b20202]">
+                {measure === 'avg_order'
+                  ? `${totalOrders} orders`
+                  : `Total: ${fmtMeasureVal(totalValue, measure)}`}
+              </span>
+            </div>
           </div>
 
           <div className="p-1">
@@ -1302,53 +1002,8 @@ export default function PurchasesAnalytics() {
         </div>
       )}
 
-      {/* Top vendors quick table (from server summary) */}
-      {summary?.topVendors && summary.topVendors.length > 0 && (
-        <div className="mt-5 overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
-          <div className="border-b border-[#ece4d6] px-5 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#b20202]/70">
-              Leaderboard
-            </p>
-            <h2
-              className={`${fraunces.className} text-base font-semibold text-[#2a2420]`}
-            >
-              Top Vendors by Spend
-            </h2>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[#ece4d6] bg-[#FAF8F3] text-xs">
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  Vendor
-                </th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  Orders
-                </th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  Total Spend
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f1ece2]">
-              {summary.topVendors.map((v, i) => (
-                <tr key={i} className="transition-colors hover:bg-[#FAF8F3]">
-                  <td className="px-4 py-2.5 font-medium text-[#2a2420]">
-                    {v.name}
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-gray-500">
-                    {v.count}
-                  </td>
-                  <td
-                    className={`${fraunces.className} px-4 py-2.5 text-right font-semibold tabular-nums text-[#2a2420]`}
-                  >
-                    {fmtNaira(v.amount ?? 0)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Top vendors quick table (server-computed summary) */}
+      <TopVendorsTable topVendors={summary?.topVendors} />
 
       {/* ── Additional ledger widgets ── */}
       <AnalyticsWidgetsGrid

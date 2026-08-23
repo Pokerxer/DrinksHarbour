@@ -336,6 +336,64 @@ export const purchaseOrderService = {
     }
   },
 
+  /**
+   * Fetches the *entire* purchase-order ledger by walking the server's
+   * paginated list endpoint. Analytics must never silently cap at one page:
+   * a plain `{ limit: N }` request drops everything past row N and skews every
+   * total without any visible error. A hard page cap keeps a runaway
+   * `totalPages` value from hammering the API; hitting it is reported via
+   * `truncated` so callers can warn instead of lying.
+   */
+  async getAllPurchaseOrders(
+    token: string,
+    { pageSize = 500, maxPages = 20 }: { pageSize?: number; maxPages?: number } = {}
+  ): Promise<{
+    orders: PurchaseOrder[];
+    totalCount: number;
+    truncated: boolean;
+  }> {
+    const orders: PurchaseOrder[] = [];
+    let totalPages = 1;
+    let totalCount = 0;
+
+    for (let page = 1; page <= Math.min(totalPages, maxPages); page++) {
+      const response = await fetch(
+        `${API_URL}/api/purchase-orders?page=${page}&limit=${pageSize}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!response.ok) {
+        let message = 'Failed to fetch purchase orders';
+        try {
+          // ts-reset types response.json() as unknown — narrow explicitly.
+          const err = (await response.json()) as { message?: string };
+          if (err?.message) message = err.message;
+        } catch {
+          /* keep default message */
+        }
+        throw new Error(message);
+      }
+      const body = (await response.json()) as {
+        data?: PurchaseOrder[];
+        pagination?: { totalPages?: number; totalCount?: number };
+      };
+      const rows = Array.isArray(body.data) ? body.data : [];
+      orders.push(...rows);
+      totalPages =
+        body.pagination?.totalPages && body.pagination.totalPages > 0
+          ? body.pagination.totalPages
+          : page;
+      totalCount = body.pagination?.totalCount ?? orders.length;
+      // Server signalled no more pages.
+      if (rows.length === 0 || page >= totalPages) break;
+    }
+
+    return {
+      orders,
+      totalCount,
+      truncated: totalPages > maxPages,
+    };
+  },
+
   async deletePurchaseOrder(id: string, token: string) {
     const response = await fetch(`${API_URL}/api/purchase-orders/${id}`, {
       method: 'DELETE',

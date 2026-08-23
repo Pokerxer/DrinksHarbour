@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import MetricCard from '@core/components/cards/metric-card';
@@ -14,17 +13,10 @@ import {
 } from 'react-icons/pi';
 import { BarChart, Bar, ResponsiveContainer } from 'recharts';
 import { useDashboard, useDashboardMeta } from './use-dashboard';
-
-function pct(curr: number, prev: number): number {
-  if (!prev) return curr > 0 ? 100 : 0;
-  return Math.round(((curr - prev) / prev) * 1000) / 10;
-}
-
-function fmt(n: number): string {
-  if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `₦${(n / 1_000).toFixed(1)}K`;
-  return `₦${n.toLocaleString()}`;
-}
+import {
+  formatCompactNaira as fmt,
+  percentChange as pct,
+} from './dashboard-format';
 
 function SkeletonCard() {
   return (

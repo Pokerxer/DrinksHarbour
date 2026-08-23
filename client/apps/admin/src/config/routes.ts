@@ -132,6 +132,7 @@ export const routes = {
     createSale: '/sales/create',
     salesQuotations: '/sales/quotations',
     salesOrders: '/sales/orders',
+    salesAnalytics: '/sales/analytics',
     salesDetails: (id: string) => `/sales/${id}`,
     salesEdit: (id: string) => `/sales/${id}/edit`,
     salesPrint: (id: string, type: 'quotation' | 'proforma') =>
@@ -158,9 +159,7 @@ export const routes = {
     tenantDetails: (id: string) => `/tenants/${id}`,
     editTenant: (id: string) => `/tenants/${id}/edit`,
     orders: '/ecommerce/orders',
-    createOrder: '/ecommerce/orders/create',
     orderDetails: (id: string) => `/ecommerce/orders/${id}`,
-    editOrder: (id: string) => `/ecommerce/orders/${id}/edit`,
     reviews: '/ecommerce/reviews',
     promotions: '/ecommerce/promotions',
     createPromotion: '/ecommerce/promotions/create',

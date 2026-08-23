@@ -166,26 +166,23 @@ export default function SalesCreate({
     if (!validateFilled()) return;
     form.setSaving(true);
     try {
-      const p = form.buildPayload();
-      // Create mode overrides: use undefined (omitted on serialize) instead
-      // of null so the server keeps defaults for new documents.
-      const res = await salesOrderService.create(
-        {
-          ...p,
-          docType: asOrder ? 'order' : 'quotation',
-          customer: form.customer?._id,
-          pricelist: form.pricelistId || undefined,
-          appliedPricelist: form.pricelist
-            ? {
-                pricelistId: form.pricelist._id,
-                pricelistName: form.pricelist.name,
-              }
-            : undefined,
-        } as any,
-        token
-      );
-      toast.success(asOrder ? 'Order created' : 'Quotation saved');
-      router.push(routes.eCommerce.salesDetails(res.data._id));
+      // Any earlier trigger that needed a document (print, coupon, price
+      // recompute, manual save) has ALREADY persisted this cart as a
+      // quotation draft — ensureSaved() returns its id. Creating here again,
+      // as the old code did, minted a second document and left the first as
+      // a stray quotation nobody owned.
+      const draftId = await ensureSaved();
+      if (!draftId) throw new Error('Could not save document');
+      if (asOrder) {
+        // The server converts a quotation in place — same id, lifecycle
+        // advanced, activity logged — rather than duplicating lines into a
+        // fresh document.
+        await salesOrderService.convert(draftId, token);
+        toast.success('Order created');
+      } else {
+        toast.success('Quotation saved');
+      }
+      router.push(routes.eCommerce.salesDetails(draftId));
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to save');
     } finally {

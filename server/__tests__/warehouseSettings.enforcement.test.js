@@ -7,6 +7,10 @@ const assert = require('node:assert');
 
 const { computeStockFlags } = require('../services/warehouseStock.helpers');
 const {
+  pickValidSettingUpdates,
+  WAREHOUSE_SETTING_VALIDATORS,
+} = require('../controllers/warehouse.controller');
+const {
   allocateFefo,
   orderBatchesFifo,
   valuationCost,
@@ -130,4 +134,59 @@ test('valuationCost: standard / no-cost lots fall back', () => {
   assert.strictEqual(valuationCost([{ quantity: 5, unitCost: 0 }], 'average', 77), 77);
   assert.strictEqual(valuationCost([{ quantity: 5, unitCost: 9 }], 'standard', 77), 77);
   assert.strictEqual(valuationCost([], 'fifo', 42), 42);
+});
+
+
+// ── Settings update sanitisation (pickValidSettingUpdates) ──────────────────
+
+test('pickValidSettingUpdates: keeps valid keys and normalises defaultWarehouse', () => {
+  const updates = pickValidSettingUpdates({
+    lowStockThreshold: 12,
+    valuationMethod: 'average',
+    allowNegativeStock: true,
+    defaultWarehouse: '',
+    batchTrackingEnabled: false,
+  });
+  assert.strictEqual(updates['warehouseSettings.lowStockThreshold'], 12);
+  assert.strictEqual(updates['warehouseSettings.valuationMethod'], 'average');
+  assert.strictEqual(updates['warehouseSettings.allowNegativeStock'], true);
+  // '' clears the default → persisted as null
+  assert.strictEqual(updates['warehouseSettings.defaultWarehouse'], null);
+  assert.strictEqual(updates['warehouseSettings.batchTrackingEnabled'], false);
+});
+
+test('pickValidSettingUpdates: drops invalid values instead of throwing', () => {
+  const updates = pickValidSettingUpdates({
+    lowStockThreshold: -5,          // negative
+    nearExpiryDays: 4000,           // > 365
+    valuationMethod: 'magic',       // not in enum
+    reorderPoint: 'ten',            // wrong type
+    outOfStockAlert: 'yes',         // not boolean
+  });
+  assert.deepStrictEqual(updates, {});
+});
+
+test('pickValidSettingUpdates: boundary values pass', () => {
+  const updates = pickValidSettingUpdates({
+    nearExpiryDays: 0,
+    overstockCeiling: 0,
+    transferApprovalThreshold: 0,
+  });
+  assert.strictEqual(updates['warehouseSettings.nearExpiryDays'], 0);
+  assert.strictEqual(updates['warehouseSettings.overstockCeiling'], 0);
+  assert.strictEqual(updates['warehouseSettings.transferApprovalThreshold'], 0);
+});
+
+test('every validator key has a function and covers the documented settings', () => {
+  const expected = [
+    'defaultWarehouse', 'lowStockThreshold', 'valuationMethod',
+    'allowNegativeStock', 'batchTrackingEnabled', 'nearExpiryDays',
+    'reorderPoint', 'reorderQuantity', 'flagBelowReorderPoint',
+    'outOfStockAlert', 'overstockCeiling', 'requireTransferApproval',
+    'allowInterWarehouseTransfers', 'transferApprovalThreshold',
+    'blockExpiredStock', 'fefoPicking', 'autoQuarantineExpired',
+  ];
+  for (const k of expected) {
+    assert.strictEqual(typeof WAREHOUSE_SETTING_VALIDATORS[k], 'function', k);
+  }
 });

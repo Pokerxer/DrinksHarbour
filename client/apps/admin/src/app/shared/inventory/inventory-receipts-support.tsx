@@ -34,6 +34,7 @@ export type GroupKey =
   | 'product'
   | 'supplier'
   | 'source'
+  | 'reason'
   | 'day'
   | 'week'
   | 'month'
@@ -108,12 +109,24 @@ export const GROUP_LABELS: Record<GroupKey, string> = {
   product: 'Product',
   supplier: 'Supplier',
   source: 'Source',
+  reason: 'Reason',
   day: 'Day',
   week: 'Week',
   month: 'Month',
   quarter: 'Quarter',
   year: 'Year',
 };
+
+/** Warehouse cell label; transfers render "source → destination". */
+export function whCell(m: InventoryMovement): string {
+  if (
+    m.category === 'transfer' &&
+    (m.sourceWarehouse || m.destinationWarehouse)
+  ) {
+    return `${warehouseLabel(m.sourceWarehouse)} → ${warehouseLabel(m.destinationWarehouse)}`;
+  }
+  return warehouseLabel(m.warehouse);
+}
 
 // ── Quick date presets ────────────────────────────────────────────────────────
 
@@ -304,7 +317,7 @@ export function printMoves(
         <td>${fmtDateTime(moveDate(m))}</td>
         <td><strong>${productLabel(m)}</strong>${size ? ` <span class="muted">· ${size}</span>` : ''}</td>
         <td>${TYPE_LABEL[m.type] ?? m.type}</td>
-        <td>${warehouseLabel(m.warehouse)}</td>
+        <td>${whCell(m)}</td>
         <td>${referenceLabel(m)}</td>
         <td class="num">${qtySign(m)}${Math.abs(m.quantity)}</td>
         <td class="num">${m.unitCost != null ? fmtNgn(m.unitCost) : '—'}</td>
@@ -357,6 +370,17 @@ export function printMoves(
 
 // ── CSV export ────────────────────────────────────────────────────────────────
 
+/**
+ * Quote a value for CSV and neutralise spreadsheet formula injection: values
+ * beginning with = + - @ get a leading apostrophe so Excel/Sheets treat them as
+ * text.
+ */
+function csvCell(v: string | number | null | undefined): string {
+  const s = String(v ?? '');
+  const guarded = /^[=+\-@]/.test(s) ? `'${s}` : s;
+  return `"${guarded.replace(/"/g, '""')}"`;
+}
+
 export function exportCsv(
   rows: InventoryMovement[],
   prefix = 'inventory-receipts'
@@ -374,6 +398,8 @@ export function exportCsv(
     'Qty',
     'Unit Cost',
     'Total Cost',
+    'Reason',
+    'Notes',
     'By',
     'Status',
   ];
@@ -381,17 +407,19 @@ export function exportCsv(
     [
       fmtDate(moveDate(m)),
       fmtTime(moveDate(m)),
-      `"${productLabel(m)}"`,
-      `"${sizeLabel(m) ?? ''}"`,
-      `"${referenceLabel(m)}"`,
+      csvCell(productLabel(m)),
+      csvCell(sizeLabel(m) ?? ''),
+      csvCell(referenceLabel(m)),
       TYPE_LABEL[m.type] ?? m.type,
-      `"${warehouseLabel(m.warehouse)}"`,
-      `"${m.supplierName ?? ''}"`,
-      `"${m.batchNumber ?? ''}"`,
+      csvCell(whCell(m)),
+      csvCell(m.supplierName ?? ''),
+      csvCell(m.batchNumber ?? ''),
       Math.abs(m.quantity),
       (m.unitCost ?? 0).toFixed(2),
       (m.totalCost ?? (m.unitCost ?? 0) * Math.abs(m.quantity)).toFixed(2),
-      `"${byLabel(m)}"`,
+      csvCell(m.reason ?? ''),
+      csvCell(m.notes ?? ''),
+      csvCell(byLabel(m)),
       m.status,
     ].join(',')
   );
@@ -555,6 +583,12 @@ export function GroupPanel({
               gkey="source"
               label="Source"
               active={groupBy === 'source'}
+              onToggle={onSetGroupBy}
+            />
+            <GroupItem
+              gkey="reason"
+              label="Reason"
+              active={groupBy === 'reason'}
               onToggle={onSetGroupBy}
             />
             <div>

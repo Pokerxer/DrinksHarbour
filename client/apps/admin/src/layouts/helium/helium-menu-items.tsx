@@ -195,16 +195,7 @@ export const menuItems = [
       {
         name: 'Order Details',
         href: routes.eCommerce.orderDetails(DUMMY_ID),
-      },
-      {
-        name: 'Create Order',
-        href: routes.eCommerce.createOrder,
-      },
-      {
-        name: 'Edit Order',
-        href: routes.eCommerce.editOrder(DUMMY_ID),
-      },
-      {
+      },      {
         name: 'Reviews',
         href: routes.eCommerce.reviews,
       },

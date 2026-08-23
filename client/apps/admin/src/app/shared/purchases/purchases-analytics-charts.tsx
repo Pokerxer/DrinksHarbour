@@ -611,11 +611,9 @@ function BarView({
           )}
           <Tooltip
             content={
-              <BarTooltip
-                measure={measure}
-                measureLabel={measureLabel}
-                totalValue={totalValue}
-              />
+              // BarTooltip renders its own label from the row payload; the
+              // axis label would be redundant.
+              <BarTooltip measure={measure} totalValue={totalValue} />
             }
           />
           {avg > 0 &&
@@ -861,6 +859,14 @@ function StackedTableView({
           <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
             <td className="px-4 py-2.5 text-gray-700">Total</td>
             {series.map((s) => {
+              // Summing per-row averages is meaningless — hide totals instead
+              // of displaying a number that looks authoritative but isn't.
+              if (measure === 'avg_order')
+                return (
+                  <td key={s} className="px-4 py-2.5 text-right text-gray-300">
+                    —
+                  </td>
+                );
               const colTotal = rows.reduce(
                 (sum, r) => sum + ((r[s] as number) ?? 0),
                 0
@@ -875,9 +881,13 @@ function StackedTableView({
               );
             })}
             <td className="px-4 py-2.5 text-right tabular-nums text-gray-900">
-              {fmtMeasureVal(
-                rows.reduce((s, r) => s + r.__total__, 0),
-                measure
+              {measure === 'avg_order' ? (
+                <span className="text-gray-300">—</span>
+              ) : (
+                fmtMeasureVal(
+                  rows.reduce((s, r) => s + r.__total__, 0),
+                  measure
+                )
               )}
             </td>
           </tr>
@@ -1061,18 +1071,17 @@ function StackedBarView({
                 const val = (row[s] as number) ?? 0;
                 if (val <= 0) return null;
                 const isLast = si === series.length - 1;
+                // Only the outermost series rounds the stack's tip. Recharts
+                // types Cell props loosely (string | number), so cast the
+                // tuple through unknown.
+                const cellRadius: [number, number, number, number] | 0 =
+                  isLast ? (manyItems ? [0, 4, 4, 0] : [4, 4, 0, 0]) : 0;
                 return (
                   <Cell
                     key={ri}
                     fill={`url(#sbv-grad-${si})`}
                     cursor="pointer"
-                    radius={
-                      isLast
-                        ? manyItems
-                          ? ([0, 4, 4, 0] as [number, number, number, number])
-                          : ([4, 4, 0, 0] as [number, number, number, number])
-                        : 0
-                    }
+                    radius={cellRadius as unknown as string}
                     onMouseEnter={() => setHoveredSeg({ sk: s, ri })}
                     onClick={() =>
                       onCellClick(row.label, s, orderMap[row.isoKey]?.[s] ?? [])
@@ -1269,6 +1278,21 @@ function PivotDimDropdown({
   );
 }
 
+/** Triggers a client-side download of pre-serialised CSV content. */
+export function downloadCSV(content: string, filename: string): void {
+  const blob = new Blob(['﻿' + content], {
+    type: 'text/csv;charset=utf-8;',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function exportPivotCSV(
   p: HierPivotResult,
   rowDims: GroupByKey[],
@@ -1327,15 +1351,7 @@ function exportPivotCSV(
   });
 
   const content = csvRows.map((r) => r.map(esc).join(',')).join('\n');
-  const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `pivot-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadCSV(content, `pivot-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 function exportPivotExcel(

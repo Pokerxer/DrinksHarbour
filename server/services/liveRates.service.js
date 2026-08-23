@@ -3,6 +3,7 @@
 // provider refreshes once a day) and upserts them as ExchangeRate documents.
 const axios = require('axios');
 const ExchangeRate = require('../models/ExchangeRate');
+const { utcMidnightToday } = require('./exchangeRates.helpers');
 
 const PROVIDER_URL =
   process.env.EXCHANGE_RATE_API_URL || 'https://open.er-api.com/v6/latest/USD';
@@ -65,8 +66,10 @@ function buildPairs({ base, rates }) {
 async function syncLiveRates(tenantId, userId) {
   const pairs = buildPairs(await fetchProviderRates());
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // UTC midnight of the local calendar day — must match what a user-entered
+  // 'YYYY-MM-DD' effectiveDate casts to, or the manual-override lookup below
+  // misses the row on servers running outside UTC.
+  const today = utcMidnightToday();
 
   let updated = 0;
   let skippedManual = 0;

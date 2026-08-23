@@ -46,6 +46,8 @@ export interface SavedSearch {
   groupBy: GroupByKey | null;
   groupBy2: GroupByKey | null;
   measure: Measure;
+  /** Optional for backward compatibility with pre-existing localStorage entries. */
+  sort?: SortCriterion[];
 }
 
 export interface CatItem {
@@ -67,33 +69,6 @@ export interface ProdMeta {
   subCatName?: string;
   brandId: string;
   brandName: string;
-}
-
-/**
- * Builds the subProductId → metadata map used for Group By
- * category/subcategory/brand. The POS products endpoint (`/api/pos/products`)
- * returns SubProduct documents whose real metadata is nested under `.product`,
- * so category/subCategory/brand are read from there — not the SubProduct top
- * level. The map is keyed by the SubProduct `_id` because PO line items store a
- * matching `subProductId`; the textual `subProductName` is unreliable as a key
- * (it can carry a size suffix, e.g. "… – 70cl (Standard)") (see resolveItemDimKey).
- */
-export function buildProdMeta(subProducts: any[]): Record<string, ProdMeta> {
-  const meta: Record<string, ProdMeta> = {};
-  for (const sp of subProducts || []) {
-    const id = sp?._id ? String(sp._id) : '';
-    const prod = sp?.product;
-    if (!id || !prod) continue;
-    meta[id] = {
-      catId: prod.category?._id || '',
-      catName: prod.category?.name || '',
-      subCatId: prod.subCategory?._id || undefined,
-      subCatName: prod.subCategory?.name || undefined,
-      brandId: prod.brand?._id || '',
-      brandName: prod.brand?.name || '',
-    };
-  }
-  return meta;
 }
 
 export interface GroupRow {
@@ -203,11 +178,39 @@ export function poDate(po: PurchaseOrder): Date {
   return new Date(po.confirmationDate || po.createdAt || Date.now());
 }
 
-export function getWeekNumber(d: Date): number {
-  const start = new Date(d.getFullYear(), 0, 1);
-  return Math.ceil(
-    ((d.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7
-  );
+/**
+ * ISO-8601 week number: weeks start Monday, week 1 is the week containing the
+ * year's first Thursday. Days near a year boundary can therefore belong to the
+ * neighbouring year — callers must pair the week with the returned `year`.
+ */
+export function getWeekNumber(d: Date): { year: number; week: number } {
+  // Work on a date normalised to local midnight so time-of-day can never shift
+  // the weekday arithmetic across a DST boundary.
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dayNr = (target.getDay() + 6) % 7; // Mon=0 … Sun=6
+  target.setDate(target.getDate() - dayNr + 3); // this week's Thursday
+
+  const firstThursday = new Date(target.getFullYear(), 0, 4);
+  const firstDayNr = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstDayNr + 3);
+
+  const week =
+    1 +
+    Math.round((target.getTime() - firstThursday.getTime()) / (7 * 86400000));
+  return { year: target.getFullYear(), week };
+}
+
+/** Zero-padded, lexicographically sortable ISO week key: `2026-W07`. */
+export function isoWeekKeyOf(d: Date): string {
+  const { year, week } = getWeekNumber(d);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+/** Local-calendar `YYYY-MM-DD` — never `toISOString()`, which buckets by UTC day. */
+export function localDayKeyOf(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
 }
 
 export function getQuarter(d: Date): number {
@@ -363,9 +366,9 @@ export function getPOG1Key(
     case 'currency':
       return po.currency || BASE_CURRENCY;
     case 'order_day':
-      return d.toISOString().split('T')[0];
+      return localDayKeyOf(d);
     case 'order_week':
-      return `${d.getFullYear()}-W${String(getWeekNumber(d)).padStart(2, '0')}`;
+      return isoWeekKeyOf(d);
     case 'order_quarter':
       return `${d.getFullYear()}-Q${getQuarter(d)}`;
     case 'order_year':
@@ -379,11 +382,17 @@ export function getPOG1Key(
 
 /** Formats a bucket key produced by computeGroupData/getPOG1Key into a display label. */
 export function formatG1Label(key: string, dim: GroupByKey): string {
-  if (dim === 'order_day')
-    return new Date(key).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    });
+  if (dim === 'order_day') {
+    // Rebuild from parts — `new Date('YYYY-MM-DD')` parses as UTC midnight and
+    // would render the previous day in UTC-negative timezones.
+    const [y, m, d] = key.split('-').map(Number);
+    if (y && m && d)
+      return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      });
+    return key;
+  }
   if (dim === 'order_week') {
     const [yr, w] = key.split('-W');
     return `W${w} ${yr}`;
@@ -594,6 +603,11 @@ export function applySortStack<
 
 // ── Single-level grouping ────────────────────────────────────────────────────
 
+/** Bucket a PO lands in along an item-level dimension when it has no lines. */
+export function itemDimFallback(dim: GroupByKey): string {
+  return dim === 'product' ? 'Unknown' : dim === 'brand' ? 'No Brand' : 'Uncategorized';
+}
+
 export function computeGroupData(
   orders: PurchaseOrder[],
   groupBy: GroupByKey,
@@ -603,12 +617,12 @@ export function computeGroupData(
   sortStack: SortCriterion[]
 ): GroupRow[] {
   type Bucket = {
-    orderList: PurchaseOrder[];
+    orderSet: Set<PurchaseOrder>;
     items: { item: POItem; currency: string }[];
   };
   const groups: Record<string, Bucket> = {};
   const getBucket = (key: string): Bucket => {
-    if (!groups[key]) groups[key] = { orderList: [], items: [] };
+    if (!groups[key]) groups[key] = { orderSet: new Set(), items: [] };
     return groups[key];
   };
 
@@ -617,10 +631,18 @@ export function computeGroupData(
   orders.forEach((o) => {
     const currency = o.currency || BASE_CURRENCY;
     if (isItemGroup) {
+      // A PO with no lines still counts towards order-level measures (count /
+      // avg_order) — park it in the dimension's fallback bucket, matching the
+      // two-level engine's behaviour.
+      if (!(o.items || []).length) {
+        const b = getBucket(itemDimFallback(groupBy));
+        b.orderSet.add(o);
+        return;
+      }
       (o.items || []).forEach((item) => {
         const key = resolveItemDimKey(item, groupBy, prodMeta);
         const b = getBucket(key);
-        if (!b.orderList.includes(o)) b.orderList.push(o);
+        b.orderSet.add(o);
         b.items.push({ item, currency });
       });
       return;
@@ -628,17 +650,17 @@ export function computeGroupData(
 
     const key = getPOG1Key(o, groupBy, prodMeta);
     const b = getBucket(key);
-    b.orderList.push(o);
+    b.orderSet.add(o);
     (o.items || []).forEach((item) => b.items.push({ item, currency }));
   });
 
   const rows: GroupRow[] = Object.entries(groups).map(
-    ([key, { orderList, items }]) => ({
+    ([key, { orderSet, items }]) => ({
       label: formatG1Label(key, groupBy),
       isoKey: key,
-      value: aggregateMeasure(orderList, items, measure, toBase),
-      orders: orderList.length,
-      orderList,
+      value: aggregateMeasure(Array.from(orderSet), items, measure, toBase),
+      orders: orderSet.size,
+      orderList: Array.from(orderSet),
     })
   );
 
@@ -678,12 +700,6 @@ export function computeMultiSeries(
 
   const g1IsItem = ITEM_DIMS.has(groupBy);
   const g2IsItem = ITEM_DIMS.has(groupBy2);
-  const itemDimFallback = (dim: GroupByKey): string =>
-    dim === 'product'
-      ? 'Unknown'
-      : dim === 'brand'
-        ? 'No Brand'
-        : 'Uncategorized';
 
   const register = (g1: string, g2: string): void => {
     seriesSet.add(g2);
@@ -971,4 +987,85 @@ export function computeHierarchicalPivot(
     grandTotal,
     maxCellVal,
   };
+}
+
+// ── Chart-view CSV export ─────────────────────────────────────────────────────
+
+export interface GroupedViewCSVRow {
+  label: string;
+  /** Present for single-level views. */
+  value?: number;
+  orders?: number;
+}
+
+/**
+ * Serialises the currently displayed graph/table view (single- or two-level
+ * grouping) to RFC-4180 CSV — raw numbers, no currency glyphs, quoted labels.
+ * The pivot view has its own exporter in purchases-analytics-charts.tsx; this
+ * covers the main chart so every view can hand the same data to a spreadsheet.
+ */
+export function buildGroupedViewCSV(opts: {
+  groupLabel: string;
+  measureLabel: string;
+  measure: Measure;
+  rows: GroupedViewCSVRow[];
+  totalValue: number;
+  totalOrders: number;
+  /** Two-level mode: one column per series. */
+  series?: string[];
+  cellValue?: (row: GroupedViewCSVRow, seriesKey: string) => number;
+  rowTotals?: Record<string, number>;
+  columnTotals?: Record<string, number>;
+}): string {
+  const esc = (s: string | number): string =>
+    `"${String(s).replace(/"/g, '""')}"`;
+  const num = (v: number | undefined): string =>
+    v == null || Number.isNaN(v) ? '' : String(Math.round(v * 100) / 100);
+  const shareOf = (v: number): string =>
+    opts.totalValue > 0 && opts.measure !== 'avg_order'
+      ? ((v / opts.totalValue) * 100).toFixed(1)
+      : '';
+
+  const lines: string[][] = [];
+
+  if (opts.series && opts.cellValue) {
+    lines.push([esc(opts.groupLabel), ...opts.series.map(esc), esc('Total')]);
+    opts.rows.forEach((r) => {
+      const cells = opts.series!.map((s) => num(opts.cellValue!(r, s)));
+      const rowTotal =
+        opts.rowTotals?.[r.label] ??
+        cells.reduce((sum, c) => sum + (parseFloat(c) || 0), 0);
+      lines.push([esc(r.label), ...cells, num(rowTotal)]);
+    });
+    lines.push([
+      esc('Total'),
+      ...opts.series.map((s) => num(opts.columnTotals?.[s] ?? 0)),
+      num(opts.totalValue),
+    ]);
+  } else {
+    lines.push([
+      esc(opts.groupLabel),
+      esc('Orders'),
+      esc(opts.measureLabel),
+      esc('Share %'),
+    ]);
+    opts.rows.forEach((r) => {
+      lines.push([
+        esc(r.label),
+        String(r.orders ?? ''),
+        num(r.value ?? 0),
+        shareOf(r.value ?? 0),
+      ]);
+    });
+    if (opts.measure !== 'avg_order') {
+      lines.push([
+        esc('Total'),
+        String(opts.totalOrders),
+        num(opts.totalValue),
+        '',
+      ]);
+    }
+  }
+
+  return lines.map((l) => l.join(',')).join('\n');
 }

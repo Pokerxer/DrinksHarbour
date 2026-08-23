@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { exchangeRateService } from '@/services/exchangeRate.service';
+import { resolveRate } from '@/app/shared/purchases/exchange-rates-helpers';
+import { BASE_CURRENCY } from '@/app/shared/purchases/types';
 
 export interface LatestRate {
   fromCurrency: string;
@@ -60,20 +62,14 @@ export function useExchangeRates() {
     };
   }, [refresh]);
 
-  /** Latest rate for a pair; falls back to the inverse pair like the server does. */
+  /**
+   * Latest rate for a pair: direct, then inverse (matching the server), then
+   * triangulated through the base currency so pairs like EUR→USD still
+   * convert when only their base legs exist.
+   */
   const getRate = useCallback(
-    (from: string, to: string): number | null => {
-      if (from === to) return 1;
-      const direct = latestRates.find(
-        (r) => r.fromCurrency === from && r.toCurrency === to
-      );
-      if (direct) return direct.rate;
-      const reverse = latestRates.find(
-        (r) => r.fromCurrency === to && r.toCurrency === from
-      );
-      if (reverse && reverse.rate > 0) return 1 / reverse.rate;
-      return null;
-    },
+    (from: string, to: string): number | null =>
+      resolveRate(latestRates, from, to, BASE_CURRENCY),
     [latestRates]
   );
 

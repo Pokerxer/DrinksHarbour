@@ -1,7 +1,9 @@
 // controllers/warehouse.controller.js
 const warehouseService = require('../services/warehouse.service');
 const Tenant = require('../models/Tenant');
+const Warehouse = require('../models/Warehouse');
 const SubProduct = require('../models/SubProduct');
+const { logAudit } = require('../utils/auditLog');
 const asyncHandler = require('../utils/asyncHandler');
 const { ValidationError } = require('../utils/errors');
 
@@ -120,6 +122,18 @@ const getWarehouseBatches = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+// Movement audit trail for one warehouse, optionally narrowed to a single
+// (subProduct, size) line via query params. Limit is clamped in the service.
+const getWarehouseMovements = asyncHandler(async (req, res) => {
+  const tenantId = requireTenant(req);
+  const { subProduct, size, limit } = req.query;
+  const data = await warehouseService.getMovements(
+    { warehouseId: req.params.id, subProduct, size, limit },
+    tenantId
+  );
+  res.json({ success: true, data });
+});
+
 const adjustWarehouseStock = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
   const { subProduct, size, quantity, type, notes } = req.body;
@@ -167,7 +181,10 @@ const getWarehouseSettings = asyncHandler(async (req, res) => {
 
 const isObjectId = (v) => typeof v === 'string' && /^[a-f\d]{24}$/i.test(v);
 
-// Declarative validators — a new key only needs one entry here to persist
+// Declarative validators — a new key only needs one entry here to persist.
+// NOTE: these are FORMAT checks only. Cross-field consistency is advised by
+// the client's warnings banner; cross-tenant references are rejected in
+// updateWarehouseSettings (ownership query).
 const WAREHOUSE_SETTING_VALIDATORS = {
   // null/'' clears the default; otherwise must be a valid ObjectId
   defaultWarehouse: (v) => v === null || v === '' || isObjectId(v),
@@ -192,13 +209,12 @@ const WAREHOUSE_SETTING_VALIDATORS = {
   autoQuarantineExpired: (v) => typeof v === 'boolean',
 };
 
-// @desc    Update tenant warehouse settings
-// @route   PATCH /api/warehouses/settings
-// @access  Private (Tenant admin)
-const updateWarehouseSettings = asyncHandler(async (req, res) => {
-  const tenantId = requireTenant(req);
-  const { warehouseSettings = {} } = req.body;
-
+/**
+ * Pure step of the settings update: keep only keys that pass their validator
+ * and normalise defaultWarehouse '' → null. Exported for unit tests; the DB
+ * ownership check for defaultWarehouse stays in the controller.
+ */
+function pickValidSettingUpdates(warehouseSettings) {
   const updates = {};
   Object.entries(WAREHOUSE_SETTING_VALIDATORS).forEach(([key, isValid]) => {
     if (key in warehouseSettings && isValid(warehouseSettings[key])) {
@@ -207,12 +223,65 @@ const updateWarehouseSettings = asyncHandler(async (req, res) => {
         key === 'defaultWarehouse' && val === '' ? null : val;
     }
   });
+  return updates;
+}
+
+// @desc    Update tenant warehouse settings
+// @route   PATCH /api/warehouses/settings
+// @access  Private (Tenant admin)
+const updateWarehouseSettings = asyncHandler(async (req, res) => {
+  const tenantId = requireTenant(req);
+  const { warehouseSettings = {} } = req.body;
+
+  const updates = pickValidSettingUpdates(warehouseSettings);
 
   if (Object.keys(updates).length === 0) {
     throw new ValidationError('No valid warehouse settings provided');
   }
 
+  // Ownership check: a well-formed ObjectId is not enough — the default
+  // warehouse must belong to the caller's tenant, otherwise stock operations
+  // could be pointed at another organisation's location.
+  const dw = updates['warehouseSettings.defaultWarehouse'];
+  if (typeof dw === 'string' && dw !== '') {
+    const owned = await Warehouse.findOne({
+      _id: dw,
+      tenant: tenantId,
+    })
+      .select('_id')
+      .lean();
+    if (!owned) {
+      throw new ValidationError(
+        'Default warehouse must belong to your organisation'
+      );
+    }
+  }
+
+  // Capture before-values for exactly the keys being changed (audit trail).
+  const before = await getTenantWarehouseSettings(tenantId);
+  const changedKeys = Object.keys(updates).map((k) =>
+    k.replace('warehouseSettings.', '')
+  );
+  const beforeChanged = Object.fromEntries(
+    changedKeys.map((k) => [k, before[k]])
+  );
+  const afterChanged = Object.fromEntries(
+    changedKeys.map((k) => [k, updates[`warehouseSettings.${k}`]])
+  );
+
   await Tenant.findByIdAndUpdate(tenantId, { $set: updates });
+
+  // Privileged configuration change → audit trail (fire-and-forget).
+  logAudit({
+    action: 'WAREHOUSE_SETTINGS_UPDATE',
+    actionCategory: 'update',
+    targetType: 'Tenant',
+    targetId: tenantId,
+    targetTenantId: tenantId,
+    req,
+    changes: { before: beforeChanged, after: afterChanged },
+  });
+
   const saved = await getTenantWarehouseSettings(tenantId);
   res.json({ success: true, data: { warehouseSettings: saved } });
 });
@@ -220,5 +289,7 @@ const updateWarehouseSettings = asyncHandler(async (req, res) => {
 module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, getAllWarehouseStock, getWarehouseBatches, adjustWarehouseStock, transferStock,
+  getWarehouseMovements,
   getWarehouseSettings, updateWarehouseSettings, getTenantWarehouseSettings,
+  pickValidSettingUpdates, WAREHOUSE_SETTING_VALIDATORS,
 };

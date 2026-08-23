@@ -99,10 +99,12 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
     WarehouseStock.find({ tenant: tenantId, warehouse: warehouseId })
       .populate({
         path: 'subProduct',
-        select: 'sku product imagesOverride',
+        // Prices included so the warehouse-detail drawer can show cost/price
+        // without a second round-trip (tenant-scoped endpoint, not public).
+        select: 'sku product imagesOverride costPrice baseSellingPrice currency',
         populate: { path: 'product', select: 'name slug images' },
       })
-      .populate('size', 'size')
+      .populate('size', 'size sellingPrice costPrice')
       .sort({ updatedAt: -1 })
       .lean(),
     WarehouseBatch.find({
@@ -271,6 +273,29 @@ async function getBatches({ warehouseId, subProduct, size } = {}, tenantId) {
   return WarehouseBatch.find(q)
     .populate('size', 'size')
     .sort({ expiryDate: 1, createdAt: 1 })
+    .lean();
+}
+
+/**
+ * Audit trail for one warehouse (optionally narrowed to a single stock line).
+ * Tenant + warehouse are mandatory filters — this is the Workstream B pattern:
+ * the caller can never read another tenant's movements by passing loose ids.
+ */
+const MAX_MOVEMENTS_LIMIT = 200;
+async function getMovements(
+  { warehouseId, subProduct, size, limit } = {},
+  tenantId
+) {
+  const q = { tenant: tenantId };
+  if (!warehouseId) throw new ValidationError('Warehouse id is required');
+  q.warehouse = warehouseId;
+  if (subProduct) q.subProduct = subProduct;
+  if (size) q.size = size;
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), MAX_MOVEMENTS_LIMIT);
+  return WarehouseMovement.find(q)
+    .populate('performedBy', 'name email')
+    .sort({ createdAt: -1 })
+    .limit(safeLimit)
     .lean();
 }
 
@@ -486,4 +511,5 @@ module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, adjustStock, transferStock, getStockByWarehouse,
   sellStock, returnStock, resolveShopWarehouse, getBatches, getAllStock,
+  getMovements,
 };

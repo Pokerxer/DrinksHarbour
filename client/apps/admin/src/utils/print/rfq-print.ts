@@ -44,7 +44,10 @@ export function buildRFQInvoice(
       `Quotes may be submitted by email to ${COMPANY.email} quoting ${po.poNumber}.`,
   });
   if (po.termsConditions)
-    sections.push({ title: 'Conditions of Purchase', body: po.termsConditions });
+    sections.push({
+      title: 'Conditions of Purchase',
+      body: po.termsConditions,
+    });
   if (po.notes) sections.push({ title: 'Notes', body: po.notes });
 
   return {
