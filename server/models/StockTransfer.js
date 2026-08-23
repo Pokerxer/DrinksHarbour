@@ -13,6 +13,11 @@ const StockTransferItemSchema = new Schema(
     quantity: { type: Number, required: true, min: 1 },
     transferredQty: { type: Number, default: 0, min: 0 },
     costPrice: { type: Number, default: 0, min: 0 },
+    // Destination purchase terms (see services/stockTransfer.money.js):
+    // what the destination pays the source for this line.
+    discountRate: { type: Number, default: 0, min: 0 },
+    taxRate: { type: Number, default: 0, min: 0 },
+    receivedQty: { type: Number, default: 0, min: 0 },
   },
   { _id: true }
 );
@@ -25,7 +30,11 @@ const StockTransferSchema = new Schema(
     destinationWarehouse: { type: ObjectId, ref: "Warehouse", required: true },
     status: {
       type: String,
-      enum: ["draft", "pending_approval", "confirmed", "completed", "cancelled", "rejected"],
+      enum: [
+        "draft", "pending_approval", "confirmed",
+        "in_transit", "partially_received",
+        "completed", "cancelled", "rejected",
+      ],
       default: "draft",
     },
     items: [StockTransferItemSchema],
@@ -41,6 +50,36 @@ const StockTransferSchema = new Schema(
     // + transferApprovalThreshold). totalValue is the snapshot used to decide
     // whether this transfer needed approval at confirmation time.
     totalValue: { type: Number, default: 0, min: 0 },
+    // ── Transfer-as-purchase money snapshot (authoritative: total) ──────────
+    // Recomputed server-side on every write; totalValue mirrors total so the
+    // approval gate keeps one comparison.
+    deliveryCharge: { type: Number, default: 0, min: 0 },
+    subtotal: { type: Number, default: 0, min: 0 },
+    discountAmount: { type: Number, default: 0, min: 0 },
+    taxAmount: { type: Number, default: 0, min: 0 },
+    total: { type: Number, default: 0, min: 0 },
+
+    // Source-side dispatch freeze.
+    dispatchedBy: { type: ObjectId, ref: "User" },
+    dispatchedAt: { type: Date },
+
+    // Destination-side goods receipts (partial receiving). Each entry posts
+    // stock + revaluation at write time; quantities land on items[].receivedQty.
+    receipts: [
+      {
+        receivedBy: { type: ObjectId, ref: "User" },
+        receivedAt: { type: Date, default: Date.now },
+        lines: [
+          {
+            itemIndex: { type: Number, required: true, min: 0 },
+            quantity: { type: Number, required: true, min: 1 },
+            note: { type: String, maxlength: 300, trim: true },
+          },
+        ],
+        shortagesClosed: { type: Boolean, default: false },
+      },
+    ],
+    closedWithShortage: { type: Boolean, default: false },
     approvedBy: { type: ObjectId, ref: "User" },
     approvedAt: { type: Date },
     rejectedBy: { type: ObjectId, ref: "User" },

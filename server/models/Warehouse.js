@@ -29,6 +29,10 @@ const warehouseSchema = new Schema(
     notes: { type: String, maxlength: 1000 },
     isActive: { type: Boolean, default: true },
     isDefault: { type: Boolean, default: false },
+    // Users responsible for this location. Gates the two-sided transfer flow:
+    // source-side actions need a SOURCE manager, receiving needs a DESTINATION
+    // manager. Tenant admins always bypass.
+    managers: [{ type: ObjectId, ref: 'User', index: true }],
     createdBy: { type: ObjectId, ref: 'User' },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
