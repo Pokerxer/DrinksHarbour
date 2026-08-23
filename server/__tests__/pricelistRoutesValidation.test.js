@@ -158,13 +158,20 @@ test('get-one pricelist is tenant-scoped: cross-tenant _id returns 404 (not the 
   const tenantB = oid();
   const plB = makePricelistDoc({ _id: oid(), tenant: tenantB, name: 'B Secret' });
 
-  // The get-one handler builds a query chain: findOne/findById → .populate().lean()
-  // Mongoose findOne returns a Query (not a Promise) with .populate()/.lean().
-  // For cross-tenant (tenantA), the scoped query resolves to null via lean().
-  const chainable = (result) => ({
-    populate: () => ({ lean: async () => result }),
-    lean: async () => result,
-  });
+  // The get-one handler builds a query chain: findOne/findById → .populate()
+  // (now chained twice since bundleTargetSubProduct population landed) → .lean().
+  // Mongoose queries are thenable, so the mock must survive repeated .populate()
+  // and resolve on await.
+  const chainable = (result) => {
+    const c = {
+      populate: () => c,
+      lean: async () => result,
+    };
+    const p = Promise.resolve(result);
+    c.then = p.then.bind(p);
+    c.catch = p.catch.bind(p);
+    return c;
+  };
   t.mock.method(Pricelist, 'findOne', (filter) => {
     if (filter.tenant && String(filter.tenant) !== String(tenantB)) return chainable(null);
     return chainable(plB);
