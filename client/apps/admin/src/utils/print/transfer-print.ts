@@ -1,20 +1,8 @@
 import type { StockTransfer } from '@/services/stockTransfer.service';
-import {
-  BASE_STYLE,
-  docHeader,
-  docShell,
-  esc,
-  fmtDate,
-  itemsTable,
-  metaGrid,
-  notesSection,
-  pageFooter,
-  partyGrid,
-  signaturesRow,
-  totalsPanel,
-} from './print-shared';
+import { fmtAmt, fmtDate } from './print-shared';
+import type { DocumentModel, DocCell } from './doc-model';
 
-function whName(w: string | { _id: string; name: string; code: string }) {
+function whName(w: string | { _id: string; name: string; code: string }): string {
   if (typeof w === 'string') return w;
   return w.code ? `${w.name} (${w.code})` : (w.name ?? '');
 }
@@ -22,7 +10,7 @@ function whName(w: string | { _id: string; name: string; code: string }) {
 export function buildTransferInvoice(
   transfer: StockTransfer,
   companyName: string
-): string {
+): DocumentModel {
   const currency = transfer.currency || 'NGN';
   const totalQty = transfer.items.reduce((s, it) => s + it.quantity, 0);
   const transferredQty = transfer.items.reduce(
@@ -36,65 +24,62 @@ export function buildTransferInvoice(
       0
     );
 
-  const watermark =
-    transfer.status === 'completed'
-      ? `<div style="position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:80px;font-weight:900;color:rgba(34,197,94,0.12);pointer-events:none;white-space:nowrap">COMPLETED</div>`
-      : transfer.status === 'cancelled'
-        ? `<div style="position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:80px;font-weight:900;color:rgba(239,68,68,0.12);pointer-events:none;white-space:nowrap">CANCELLED</div>`
-        : '';
-
-  const itemRows = transfer.items
-    .map((item) => {
-      const name = item.sizeName && !item.subProductName.includes(item.sizeName)
+  const rows: DocCell[][] = transfer.items.map((item) => {
+    const name =
+      item.sizeName && !item.subProductName.includes(item.sizeName)
         ? `${item.subProductName} – ${item.sizeName}`
         : item.subProductName;
-      const done = (item.transferredQty ?? 0) >= item.quantity;
-      const pending = Math.max(0, item.quantity - (item.transferredQty ?? 0));
-      return `<tr>
-        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6">${esc(name)}<div style="font-size:10px;color:#9ca3af">${esc(item.sku || '')}</div></td>
-        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:center">${item.quantity}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-weight:${done ? '700' : '400'};color:${done ? '#16a34a' : '#6b7280'}">${item.transferredQty ?? 0}${pending > 0 ? `<div style="font-size:10px;color:#b45309;font-weight:400">${pending} pending</div>` : ''}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right">${currency} ${(item.costPrice ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-      </tr>`;
-    })
-    .join('');
+    const done = (item.transferredQty ?? 0) >= item.quantity;
+    const pending = Math.max(0, item.quantity - (item.transferredQty ?? 0));
+    return [
+      { text: name },
+      { text: String(item.quantity) },
+      done
+        ? { text: String(item.transferredQty ?? 0), color: '#16a34a', strong: true }
+        : {
+            text: String(item.transferredQty ?? 0),
+            sub: pending > 0 ? `${pending} pending` : undefined,
+            color: '#6b7280',
+          },
+      { text: fmtAmt(item.costPrice ?? 0, currency) },
+    ];
+  });
 
   const nameOf = (u?: { name?: string } | null) => u?.name ?? undefined;
 
-  const body = `
-  ${watermark}
-  ${docHeader({
+  return {
+    kind: 'transfer',
     companyName,
     department: 'Stock Transfer',
     docTitle: 'Stock Transfer',
     number: transfer.transferNumber,
     status: transfer.status,
-  })}
-
-  ${partyGrid(
-    { heading: 'From Warehouse', name: whName(transfer.sourceWarehouse) },
-    { heading: 'To Warehouse', name: whName(transfer.destinationWarehouse) }
-  )}
-
-  ${metaGrid([
-    ['Created', fmtDate(transfer.createdAt)],
-    ['Scheduled', fmtDate(transfer.scheduledDate)],
-    ['Completed', fmtDate(transfer.completedDate)],
-    ['Reference', esc(transfer.transferNumber)],
-  ])}
-
-  ${itemsTable(
-    [
-      ['Product', 'left'],
-      ['Qty', 'center'],
-      ['Transferred', 'right'],
-      ['Unit Cost', 'right'],
+    watermark:
+      transfer.status === 'completed'
+        ? 'COMPLETED'
+        : transfer.status === 'cancelled'
+          ? 'CANCELLED'
+          : undefined,
+    parties: [
+      { heading: 'From Warehouse', name: whName(transfer.sourceWarehouse) },
+      { heading: 'To Warehouse', name: whName(transfer.destinationWarehouse) },
     ],
-    itemRows
-  )}
-
-  <div style="display:flex;justify-content:flex-end">
-    ${totalsPanel([
+    meta: [
+      ['Created', fmtDate(transfer.createdAt)],
+      ['Scheduled', fmtDate(transfer.scheduledDate)],
+      ['Completed', fmtDate(transfer.completedDate)],
+      ['Reference', transfer.transferNumber],
+    ],
+    table: {
+      columns: [
+        { label: 'Product' },
+        { label: 'Qty', align: 'center' },
+        { label: 'Transferred', align: 'right' },
+        { label: 'Unit Cost', align: 'right' },
+      ],
+      rows,
+    },
+    totals: [
       { label: 'Total Quantity', value: String(totalQty) },
       {
         label: 'Transferred',
@@ -103,29 +88,16 @@ export function buildTransferInvoice(
       },
       {
         label: 'Stock Value at Cost',
-        value: `${currency} ${totalValue.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        value: fmtAmt(totalValue, currency),
         variant: 'grand',
       },
-    ])}
-  </div>
-
-  ${transfer.notes ? notesSection('Notes', transfer.notes) : ''}
-
-  ${signaturesRow([
-    { role: 'Dispatched by', name: nameOf(transfer.createdBy) },
-    {
-      role: 'Approved by',
-      name: nameOf((transfer as any).approvedBy),
-    },
-    { role: 'Received by', name: nameOf(transfer.confirmedBy) },
-  ])}
-
-  ${pageFooter(companyName, transfer.transferNumber)}`;
-
-  return docShell({
-    title: `Transfer ${transfer.transferNumber}`,
-    style: BASE_STYLE,
-    watermark: '',
-    body,
-  });
+    ],
+    sections: transfer.notes ? [{ title: 'Notes', body: transfer.notes }] : [],
+    signatures: [
+      { role: 'Dispatched by', name: nameOf(transfer.createdBy) },
+      { role: 'Approved by', name: nameOf((transfer as any).approvedBy) },
+      { role: 'Received by', name: nameOf(transfer.confirmedBy) },
+    ],
+    fileName: `Stock Transfer ${transfer.transferNumber}.pdf`,
+  };
 }

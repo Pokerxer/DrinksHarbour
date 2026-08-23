@@ -7,6 +7,7 @@ import {
   buildReturnInvoice,
 } from './purchaseInvoice';
 import { moneyWords } from './print/print-shared';
+import type { DocumentModel } from './print/doc-model';
 import type { PurchaseOrder } from '@/app/shared/purchases/types';
 import type { VendorBill } from '@/services/vendorBill.service';
 import type { StockTransfer } from '@/services/stockTransfer.service';
@@ -43,38 +44,66 @@ const rfq: PurchaseOrder = {
   ],
 } as unknown as PurchaseOrder;
 
+function sectionOf(doc: DocumentModel, title: string) {
+  return doc.sections.find((s) => s.title === title);
+}
+
 describe('buildRFQInvoice', () => {
+  const doc = buildRFQInvoice(rfq, 'DrinksHarbour');
+
   it('titles the document Request for Quotation with the RFQ number', () => {
-    const html = buildRFQInvoice(rfq, 'DrinksHarbour');
-    expect(html).toContain('Request for Quotation');
-    expect(html).toContain('RFQ-2026-0001');
-    expect(html).not.toContain('<title>Purchase Order');
+    expect(doc.docTitle).toBe('Request for Quotation');
+    expect(doc.number).toBe('RFQ-2026-0001');
+    expect(doc.department).toBe('Purchase Department');
+    expect(doc.status).toBe('draft');
+  });
+
+  it('names the PDF after title and number', () => {
+    expect(doc.fileName).toBe('Request for Quotation RFQ-2026-0001.pdf');
   });
 
   it('addresses the vendor and shows the buyer', () => {
-    const html = buildRFQInvoice(rfq, 'DrinksHarbour');
-    expect(html).toContain('Meads &amp; Sons Distribution');
-    expect(html).toContain('DrinksHarbour');
+    expect(doc.parties[0]).toMatchObject({
+      heading: 'Quote To (Buyer)',
+      name: 'DrinksHarbour',
+    });
+    expect(doc.parties[1]).toMatchObject({
+      heading: 'Vendor / Supplier',
+      name: 'Meads & Sons Distribution',
+    });
   });
 
   it('shows the quote validity window', () => {
-    const html = buildRFQInvoice(rfq, 'DrinksHarbour');
     // 31 Aug 2026 in en-GB short format
-    expect(html).toContain('31 Aug 2026');
+    expect(doc.meta).toContainEqual(['Respond By', '31 Aug 2026']);
   });
 
   it('lists requested lines without PO-only receiving columns', () => {
-    const html = buildRFQInvoice(rfq, 'DrinksHarbour');
-    expect(html).toContain('Hennessy VS Cognac');
-    expect(html).toContain('HNS-VS-070');
-    expect(html).not.toMatch(/Received/);
+    expect(doc.table.columns.map((c) => c.label)).toEqual([
+      'Product',
+      'Requested Qty / Packs',
+      'Quoted Unit Price',
+      'Quoted Total',
+    ]);
+    expect(doc.table.rows[0][0]).toMatchObject({
+      text: 'Hennessy VS Cognac – 70cl',
+    });
+  });
+
+  it('prints the product name without the internal SKU', () => {
+    for (const row of doc.table.rows) {
+      expect(row[0].sub).toBeUndefined();
+      expect(row[0].text).not.toMatch(/HNS-VS|MOE-IMP/);
+    }
   });
 
   it('leaves blank quote columns for the vendor to fill in', () => {
-    const html = buildRFQInvoice(rfq, 'DrinksHarbour');
-    expect(html).toMatch(/Quoted Unit Price/);
+    for (const row of doc.table.rows) {
+      expect(row[2].text).toBe('');
+      expect(row[3].text).toBe('');
+    }
     // No computed line totals — the RFQ asks for prices, it does not state them
-    expect(html).not.toContain('totalCost');
+    expect(JSON.stringify(doc)).not.toContain('totalCost');
   });
 
   it('breaks requested quantities into packs', () => {
@@ -82,43 +111,45 @@ describe('buildRFQInvoice', () => {
       ...rfq,
       items: [{ ...rfq.items[0], quantity: 31, packagingQty: 6 }], // 5 packs & 1 bottle
     } as unknown as PurchaseOrder;
-    const html = buildRFQInvoice(packed, 'DrinksHarbour');
-    expect(html).toContain('Packs');
-    expect(html).toContain('5 packs &amp; 1 bottle');
+    const packedDoc = buildRFQInvoice(packed, 'DrinksHarbour');
+    expect(packedDoc.table.rows[0][1].sub).toBe('5 packs & 1 bottle');
+  });
+
+  it('includes response instructions quoting the number and email', () => {
+    const respond = sectionOf(doc, 'How to Respond');
+    expect(respond?.body).toContain('31 Aug 2026');
+    expect(respond?.body).toContain('accounts@drinksharbour.com');
+    expect(respond?.body).toContain('RFQ-2026-0001');
   });
 
   it('includes terms and conditions when present', () => {
-    const html = buildRFQInvoice(rfq, 'DrinksHarbour');
-    expect(html).toContain('Quotes valid for 14 days');
+    expect(sectionOf(doc, 'Conditions of Purchase')?.body).toContain(
+      'Quotes valid for 14 days'
+    );
   });
 
   it('includes notes when present', () => {
-    const html = buildRFQInvoice(rfq, 'DrinksHarbour');
-    expect(html).toContain('Urgent restock');
+    expect(sectionOf(doc, 'Notes')?.body).toContain('Urgent restock');
   });
 
   it('omits terms and notes sections when absent', () => {
     const bare = { ...rfq, termsConditions: undefined, notes: undefined };
-    const html = buildRFQInvoice(bare as PurchaseOrder, 'DrinksHarbour');
-    expect(html).not.toContain('Terms');
-    expect(html).not.toContain('NOTES');
+    const bareDoc = buildRFQInvoice(bare as PurchaseOrder, 'DrinksHarbour');
+    expect(sectionOf(bareDoc, 'Conditions of Purchase')).toBeUndefined();
+    expect(sectionOf(bareDoc, 'Notes')).toBeUndefined();
   });
 });
 
 describe('print documents — shared layout', () => {
   it('every document carries the company contact block', () => {
-    const html = buildPOInvoice(
+    const po = buildPOInvoice(
       { ...rfq, type: 'po', status: 'confirmed' } as unknown as PurchaseOrder,
       'DrinksHarbour'
     );
-    expect(html).toContain('39 Gana St, Maitama');
-    expect(html).toContain('accounts@drinksharbour.com');
-  });
-
-  it('tables repeat their header across printed pages and never split a row', () => {
-    const html = buildRFQInvoice(rfq, 'DrinksHarbour');
-    expect(html).toContain('table-header-group');
-    expect(html).toContain('page-break-inside:avoid');
+    // The contact details live on the renderer's header band; builders only
+    // carry the company name — COMPANY data is applied at render time.
+    expect(po.companyName).toBe('DrinksHarbour');
+    expect(po.parties.some((p) => p.name === 'DrinksHarbour')).toBe(true);
   });
 });
 
@@ -126,6 +157,7 @@ describe('buildPOInvoice — detail', () => {
   const po = {
     ...rfq,
     _id: 'po-1',
+    poNumber: 'PO-2026-0100',
     type: 'po',
     status: 'partially_received',
     paymentTerms: 'Net 30',
@@ -150,42 +182,62 @@ describe('buildPOInvoice — detail', () => {
     ],
   } as unknown as PurchaseOrder;
 
+  const doc = buildPOInvoice(po, 'DrinksHarbour');
+
   it('prints amounts with thousand separators and an outstanding column', () => {
-    const html = buildPOInvoice(po, 'DrinksHarbour');
-    expect(html).toContain('4,800,000.00');
-    expect(html).toContain('10,000.00');
-    expect(html).toContain('Outstanding');
-    expect(html).toMatch(/>280</); // 480 − 200 still to arrive
+    expect(doc.table.columns.map((c) => c.label)).toEqual([
+      'Product',
+      'Ordered',
+      'Packs',
+      'Received',
+      'Outstanding',
+      'Unit Price',
+      'Total',
+    ]);
+    expect(doc.table.rows[0][3]).toEqual({ text: '200', color: '#6b7280' }); // muted while partial
+    expect(doc.table.rows[0][4]).toEqual({
+      text: '280',
+      color: '#b45309',
+    });
+    expect(doc.table.rows[0][5].text).toBe('NGN 10,000.00');
+    expect(doc.table.rows[0][6].text).toBe('NGN 4,800,000.00');
   });
 
-  it('shows the pack breakdown for each line', () => {
-    const mixed = {
+  it('marks fully received lines green', () => {
+    const done = {
       ...po,
-      items: [
-        { ...po.items[0], quantity: 37, packagingQty: 6 }, // 6 packs & 1 bottle
-      ],
+      items: [{ ...po.items[0], receivedQty: 480 }],
     } as unknown as PurchaseOrder;
-    const html = buildPOInvoice(mixed, 'DrinksHarbour');
-    expect(html).toContain('Packs');
-    expect(html).toContain('6 packs &amp; 1 bottle');
+    const doneDoc = buildPOInvoice(done, 'DrinksHarbour');
+    expect(doneDoc.table.rows[0][3]).toEqual({
+      text: '480',
+      color: '#16a34a',
+    });
+    expect(doneDoc.table.rows[0][4].text).toBe('0'); // muted once complete
   });
 
   it('shows payment terms, destination warehouse and agreement reference', () => {
-    const html = buildPOInvoice(po, 'DrinksHarbour');
-    expect(html).toContain('Net 30');
-    expect(html).toContain('Maitama Store');
-    expect(html).toContain('AGR-001');
+    expect(doc.meta).toContainEqual(['Payment Terms', 'Net 30']);
+    expect(doc.meta).toContainEqual(['Deliver To', 'Maitama Store (MTM)']);
+    expect(sectionOf(doc, 'Call-off Agreement')?.body).toContain('AGR-001');
   });
 
-  it('shows approval and backorder provenance when present', () => {
-    const html = buildPOInvoice(po, 'DrinksHarbour');
-    expect(html).toContain('Ada Obi');
-    expect(html).toMatch(/Backorder/i);
+  it('flags backorders against the original PO', () => {
+    expect(doc.notice?.title).toBe('Backorder');
+    expect(doc.notice?.body).toContain('po-orig');
   });
 
-  it('states the total in words', () => {
-    const html = buildPOInvoice(po, 'DrinksHarbour');
-    expect(html).toContain('Four Million, Eight Hundred Thousand Naira Only');
+  it('names who authorised the order', () => {
+    const sig = doc.signatures.find((s) => s.role.startsWith('Authorised'));
+    expect(sig?.name).toBe('Ada Obi');
+  });
+
+  it('states the total in words with a grand total row', () => {
+    const grand = doc.totals.find((t) => t.variant === 'grand');
+    expect(grand?.value).toBe('NGN 4,800,000.00');
+    expect(doc.words).toBe(
+      'Four Million, Eight Hundred Thousand Naira Only'
+    );
   });
 });
 
@@ -225,25 +277,47 @@ describe('buildBillInvoice — detail', () => {
     ],
   } as unknown as VendorBill;
 
+  const doc = buildBillInvoice(bill, 'DrinksHarbour');
+
   it('emphasises the balance due alongside subtotal/tax/total/paid', () => {
-    const html = buildBillInvoice(bill, 'DrinksHarbour');
-    expect(html).toContain('Balance Due');
-    expect(html).toContain('2,300,000.00');
-    expect(html).toContain('Subtotal');
+    const byLabel = Object.fromEntries(
+      doc.totals.map((t) => [t.label, t])
+    );
+    expect(byLabel['Subtotal'].value).toBe('NGN 4,000,000.00');
+    expect(byLabel['Tax'].value).toBe('NGN 300,000.00');
+    expect(byLabel['Total'].variant).toBe('grand');
+    expect(byLabel['Paid to date']).toMatchObject({
+      value: '− NGN 2,000,000.00',
+      color: '#16a34a',
+    });
+    expect(byLabel['Balance Due']).toMatchObject({
+      value: 'NGN 2,300,000.00',
+      color: '#dc2626',
+    });
   });
 
   it('lists the payment history', () => {
-    const html = buildBillInvoice(bill, 'DrinksHarbour');
-    expect(html).toContain('Payments');
-    expect(html).toContain('TRF-88991');
-    expect(html).toContain('2,000,000.00');
+    const payments = doc.miniTables?.find((t) =>
+      t.title.startsWith('Payments')
+    );
+    expect(payments?.rows[0][2].text).toBe('TRF-88991');
+    expect(payments?.rows[0][3].text).toBe('NGN 2,000,000.00');
+  });
+
+  it('stamps PAID watermarks only on settled bills', () => {
+    expect(doc.watermark).toBeUndefined();
+    const paidDoc = buildBillInvoice(
+      { ...bill, status: 'paid' } as unknown as VendorBill,
+      'DrinksHarbour'
+    );
+    expect(paidDoc.watermark).toBe('PAID');
   });
 
   it('states the total in words and prints the payment terms', () => {
-    const html = buildBillInvoice(bill, 'DrinksHarbour');
-    expect(html).toContain('in words');
-    expect(html).toContain('Four Million, Three Hundred Thousand Naira Only');
-    expect(html).toContain('Net 30 from invoice date.');
+    expect(doc.words).toBe('Four Million, Three Hundred Thousand Naira Only');
+    expect(sectionOf(doc, 'Payment Terms')?.body).toBe(
+      'Net 30 from invoice date.'
+    );
   });
 });
 
@@ -271,19 +345,51 @@ describe('buildTransferInvoice — detail', () => {
     ],
   } as unknown as StockTransfer;
 
-  it('names who prepared and who approved the movement', () => {
-    const html = buildTransferInvoice(transfer, 'DrinksHarbour');
-    expect(html).toContain('Bola Ade');
-    expect(html).toContain('Ada Obi');
+  const doc = buildTransferInvoice(transfer, 'DrinksHarbour');
+
+  it('routes stock between named warehouses', () => {
+    expect(doc.parties[0]).toMatchObject({
+      heading: 'From Warehouse',
+      name: 'Central Warehouse (CWH)',
+    });
+    expect(doc.parties[1]).toMatchObject({
+      heading: 'To Warehouse',
+      name: 'Maitama Store (MTM)',
+    });
   });
 
-  it('flags lines that are still pending', () => {
+  it('marks completed lines green and flags pending ones', () => {
+    expect(doc.table.rows[0][2]).toEqual({
+      text: '60',
+      color: '#16a34a',
+      strong: true,
+    });
     const partial = {
       ...transfer,
       items: [{ ...transfer.items[0], transferredQty: 40 }],
     } as unknown as StockTransfer;
-    const html = buildTransferInvoice(partial, 'DrinksHarbour');
-    expect(html).toContain('20 pending');
+    const partialDoc = buildTransferInvoice(partial, 'DrinksHarbour');
+    expect(partialDoc.table.rows[0][2].sub).toBe('20 pending');
+  });
+
+  it('totals quantity, transferred count and stock value at cost', () => {
+    expect(doc.totals).toEqual([
+      { label: 'Total Quantity', value: '60' },
+      { label: 'Transferred', value: '60', color: '#16a34a' },
+      {
+        label: 'Stock Value at Cost',
+        value: 'NGN 1,200,000.00',
+        variant: 'grand',
+      },
+    ]);
+  });
+
+  it('names who dispatched, approved and receives', () => {
+    expect(doc.signatures).toEqual([
+      { role: 'Dispatched by', name: 'Bola Ade' },
+      { role: 'Approved by', name: 'Ada Obi' },
+      { role: 'Received by' },
+    ]);
   });
 });
 
@@ -319,17 +425,27 @@ describe('buildReturnInvoice — detail', () => {
     ],
   } as unknown as VendorReturn;
 
+  const doc = buildReturnInvoice(ret, 'DrinksHarbour');
+
   it('shows the shipment details for the physical return', () => {
-    const html = buildReturnInvoice(ret, 'DrinksHarbour');
-    expect(html).toContain('GIG Logistics');
-    expect(html).toContain('GIG-99182733');
-    expect(html).toContain('39 Gana St, Maitama, Abuja');
+    const shipment = doc.kvGroups?.find((g) => g.title === 'Return Shipment');
+    expect(shipment?.items).toContainEqual(['Carrier', 'GIG Logistics']);
+    expect(shipment?.items).toContainEqual(['Tracking', 'GIG-99182733']);
+    expect(shipment?.items).toContainEqual([
+      'Return Address',
+      '39 Gana St, Maitama, Abuja',
+    ]);
   });
 
   it('shows the refund trail', () => {
-    const html = buildReturnInvoice(ret, 'DrinksHarbour');
-    expect(html).toContain('RFD-77120');
-    expect(html).toContain('bank transfer');
+    const refund = doc.kvGroups?.find((g) => g.title === 'Refund');
+    expect(refund?.items).toContainEqual(['Reference', 'RFD-77120']);
+    expect(refund?.items).toContainEqual(['Method', 'bank transfer']);
+    expect(refund?.items).toContainEqual(['Amount', 'NGN 240,000.00']);
+  });
+
+  it('explains why goods went back', () => {
+    expect(sectionOf(doc, 'Return Reason')?.body).toBe('damaged in transit');
   });
 });
 
