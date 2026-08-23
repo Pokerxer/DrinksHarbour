@@ -97,6 +97,29 @@ interface ListResponse {
   };
 }
 
+class ApiError extends Error {}
+
+async function handle<T>(res: Response, fallback: string): Promise<T> {
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    // Non-JSON response (proxy error page, HTML 500, …) — fall through to the
+    // generic error below so callers always get a real Error, never a parse crash.
+  }
+  if (!res.ok) {
+    const msg =
+      !!body &&
+      typeof body === 'object' &&
+      'message' in body &&
+      typeof (body as { message?: unknown }).message === 'string'
+        ? (body as { message: string }).message
+        : fallback;
+    throw new ApiError(msg);
+  }
+  return body as T;
+}
+
 class VendorPricelistService {
   private getHeaders(token: string) {
     return {
@@ -110,6 +133,7 @@ class VendorPricelistService {
     params?: {
       vendor?: string;
       isActive?: boolean;
+      search?: string;
       page?: number;
       limit?: number;
     }
@@ -118,14 +142,15 @@ class VendorPricelistService {
     if (params?.vendor) queryParams.set('vendor', params.vendor);
     if (params?.isActive !== undefined)
       queryParams.set('isActive', String(params.isActive));
-    if (params?.page) queryParams.set('page', String(params.page));
-    if (params?.limit) queryParams.set('limit', String(params.limit));
+    if (params?.search) queryParams.set('search', params.search);
+    queryParams.set('page', String(params?.page ?? 1));
+    queryParams.set('limit', String(params?.limit ?? 100));
 
     const response = await fetch(
       `${API_URL}/api/vendor-pricelists?${queryParams}`,
       { headers: this.getHeaders(token) }
     );
-    return response.json();
+    return handle<ListResponse>(response, 'Failed to load pricelists');
   }
 
   async getPricelist(
@@ -135,7 +160,10 @@ class VendorPricelistService {
     const response = await fetch(`${API_URL}/api/vendor-pricelists/${id}`, {
       headers: this.getHeaders(token),
     });
-    return response.json();
+    return handle<{ success: boolean; data: VendorPricelist }>(
+      response,
+      'Failed to load pricelist'
+    );
   }
 
   async createPricelist(
@@ -147,7 +175,7 @@ class VendorPricelistService {
       headers: this.getHeaders(token),
       body: JSON.stringify(data),
     });
-    return response.json();
+    return handle<CreateResponse>(response, 'Failed to create pricelist');
   }
 
   async updatePricelist(
@@ -160,7 +188,7 @@ class VendorPricelistService {
       headers: this.getHeaders(token),
       body: JSON.stringify(data),
     });
-    return response.json();
+    return handle<CreateResponse>(response, 'Failed to save pricelist');
   }
 
   async deletePricelist(
@@ -171,7 +199,10 @@ class VendorPricelistService {
       method: 'DELETE',
       headers: this.getHeaders(token),
     });
-    return response.json();
+    return handle<{ success: boolean; message: string }>(
+      response,
+      'Failed to delete pricelist'
+    );
   }
 
   async getPriceForProduct(
@@ -198,7 +229,16 @@ class VendorPricelistService {
       `${API_URL}/api/vendor-pricelists/product/price?${queryParams}`,
       { headers: this.getHeaders(token) }
     );
-    return response.json();
+    return handle<{
+      success: boolean;
+      data: {
+        pricelistId: string;
+        pricelistName: string;
+        currency: string;
+        unitPrice: number;
+        discountPercent: number;
+      } | null;
+    }>(response, 'Failed to resolve price');
   }
 
   async getVendorPricesForProduct(
@@ -225,7 +265,19 @@ class VendorPricelistService {
       `${API_URL}/api/vendor-pricelists/product/vendor-prices?${queryParams}`,
       { headers: this.getHeaders(token) }
     );
-    return response.json();
+    return handle<{
+      success: boolean;
+      data: Array<{
+        pricelistId: string;
+        pricelistName: string;
+        vendor: { _id: string; name: string; email?: string; phone?: string };
+        currency: string;
+        unitPrice: number;
+        discountPercent: number;
+        leadTimeDays?: number;
+        vendorProductCode?: string;
+      }>;
+    }>(response, 'Failed to load vendor prices');
   }
 
   async syncNow(
@@ -250,7 +302,18 @@ class VendorPricelistService {
         headers: this.getHeaders(token),
       }
     );
-    return response.json();
+    return handle<{
+      success: boolean;
+      data?: VendorPricelist;
+      result?: {
+        created: boolean;
+        updated: number;
+        added: number;
+        changed: number;
+        poNumber: string;
+      };
+      message?: string;
+    }>(response, 'Sync failed');
   }
 
   async getMatrix(
@@ -263,7 +326,10 @@ class VendorPricelistService {
       `${API_URL}/api/vendor-pricelists/matrix?${params}`,
       { headers: this.getHeaders(token) }
     );
-    return response.json();
+    return handle<{ success: boolean; data: MatrixGroup[] }>(
+      response,
+      'Failed to load price matrix'
+    );
   }
 }
 
