@@ -9,6 +9,7 @@ import {
   PiTrash,
   PiMagnifyingGlass,
   PiFloppyDisk,
+  PiDotsSixVertical,
   PiArrowLeft,
   PiCaretRight,
   PiCaretDown,
@@ -29,6 +30,7 @@ import { CURRENCIES, CURRENCY_SYMBOLS, packsLabel } from './types';
 import { fmtCur } from './purchases-analytics-helpers';
 import { computeTransferTotals } from './transfer-money';
 import TransferTotalsCard from './transfer-totals-card';
+import PackSizeInput from './pack-size-input';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -529,6 +531,8 @@ export default function StockTransferCreate() {
   const [currency, setCurrency] = useState('NGN');
   const [deliveryCharge, setDeliveryCharge] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [loadingStock, setLoadingStock] = useState(false);
 
@@ -615,6 +619,14 @@ export default function StockTransferCreate() {
     (i: number) => setItems((p) => p.filter((_, idx) => idx !== i)),
     []
   );
+  const reorderLines = useCallback((from: number, to: number) => {
+    setItems((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, []);
   const updateItem = useCallback((index: number, patch: Partial<LineItem>) => {
     setItems((prev) =>
       prev.map((item, i) => (i === index ? { ...item, ...patch } : item))
@@ -915,13 +927,43 @@ export default function StockTransferCreate() {
                const errors = lineErrors[i];
                const line = money.lines[i];
               return (
-                <div key={i} className="px-5 py-3">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
+                <div
+                  key={i}
+                  draggable
+                  onDragStart={(e) => {
+                    setDragIndex(i);
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (dragIndex !== null && dragIndex !== i) setOverIndex(i);
+                  }}
+                  onDragLeave={() => setOverIndex((v) => (v === i ? null : v))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragIndex !== null && dragIndex !== i)
+                      reorderLines(dragIndex, i);
+                    setDragIndex(null);
+                    setOverIndex(null);
+                  }}
+                  onDragEnd={() => {
+                    setDragIndex(null);
+                    setOverIndex(null);
+                  }}
+                  className={`px-5 py-4 ${dragIndex === i ? 'opacity-40' : ''} ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'ring-2 ring-[#b20202]/40 rounded-lg' : ''}`}
+                >
+                  {/* Product search row */}
+                  <div className="mb-3 flex items-start gap-3">
+                    <span
+                      title="Drag to reorder"
+                      className="mt-1 shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"
+                    >
+                      <PiDotsSixVertical className="h-5 w-5" />
+                    </span>
+                    <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
                       {i + 1}
-                    </div>
-
-                    <div className="min-w-0 flex-[3]">
+                    </span>
+                    <div className="flex-1">
                       <ProductSearch
                         value={item.subProductName}
                         token={token}
@@ -942,8 +984,8 @@ export default function StockTransferCreate() {
                                   stockKey(picked.subProductId, picked.sizeId)
                                 ] ?? 0)
                               : (picked.sourceStock ?? 0),
-                          })
-                        }
+                           })
+                         }
                       />
                       {item.subProductId && (
                         <div className="ml-1 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
@@ -975,82 +1017,100 @@ export default function StockTransferCreate() {
                         </div>
                       )}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(i)}
+                      disabled={items.length === 1}
+                      className="mt-0.5 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
+                    >
+                      <PiTrash className="h-4 w-4" />
+                    </button>
+                  </div>
 
-                    <div className="w-20 shrink-0">
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) =>
-                            updateItem(i, {
-                              quantity: Math.max(1, Number(e.target.value)),
-                            })
-                          }
-                          className={`w-full rounded-lg border px-2 py-1.5 text-center text-sm focus:outline-none ${
-                            errors?.exceedsStock
-                              ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-1 focus:ring-red-500'
-                              : 'border-gray-200 focus:border-[#b20202] focus:ring-1 focus:ring-[#b20202]/20'
-                          }`}
-                        />
-                        {item.sourceStock && item.sourceStock > 1 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateItem(i, { quantity: item.sourceStock ?? 1 })
-                            }
-                            className="shrink-0 rounded-md bg-gray-100 px-1.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-200"
-                          >
-                            Max
-                          </button>
-                        )}
+                  {/* Line fields */}
+                  <div className="ml-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-8">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                        SKU
+                      </label>
+                      <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
+                        <span className="truncate font-mono text-xs text-gray-600">
+                          {item.sku || '—'}
+                        </span>
                       </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                        Qty
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) =>
+                          updateItem(i, {
+                            quantity: Math.max(1, Number(e.target.value)),
+                          })
+                        }
+                        className={`w-full rounded-lg border px-2 py-1.5 text-xs focus:outline-none ${
+                          errors?.exceedsStock
+                            ? 'border-red-300 bg-red-50 focus:border-red-500'
+                            : 'border-gray-200 focus:border-[#b20202]'
+                        }`}
+                      />
                       {errors?.exceedsStock && (
                         <p className="mt-0.5 text-[10px] text-red-500">
                           {errors.exceedsStock}
                         </p>
                       )}
-                      {item.subProductId && !errors?.exceedsStock && (
-                        <p className="mt-0.5 text-center text-[10px] text-gray-400">
-                          {packsLabel(item.quantity, item.packSize)}
-                        </p>
-                      )}
                     </div>
-
-                    <div className="w-24 shrink-0">
-                      <div className="relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-                          {CURRENCY_SYMBOLS[currency] ?? currency}
+                    <PackSizeInput
+                      value={item.packSize}
+                      onApply={(patch) => updateItem(i, patch)}
+                    />
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                        Packs
+                      </label>
+                      <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
+                        <span className="text-xs font-semibold text-gray-800">
+                          {packsLabel(item.quantity, item.packSize)}
                         </span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.costPrice ?? 0}
-                          onChange={(e) =>
-                            updateItem(i, {
-                              costPrice: Math.max(0, Number(e.target.value)),
-                              // Typed over — it is no longer the catalogue default.
-                              priceSource: null,
-                            })
-                          }
-                          className="w-full rounded-lg border border-gray-200 py-1.5 pl-7 pr-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
-                        />
                       </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                        Unit Cost
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.costPrice ?? 0}
+                        onChange={(e) =>
+                          updateItem(i, {
+                            costPrice: Math.max(0, Number(e.target.value)),
+                            // Typed over — it is no longer the catalogue default.
+                            priceSource: null,
+                          })
+                        }
+                        className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
+                      />
                       {item.priceSource && (
-                        <p className="mt-0.5 text-center text-[10px] text-gray-400">
+                        <p className="mt-0.5 text-[10px] text-gray-400">
                           {item.priceSource === 'wholesale'
                             ? 'Wholesale'
                             : 'Cost'}
                         </p>
                       )}
                     </div>
-
-                    <div className="w-16 shrink-0">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                        Discount %
+                      </label>
                       <input
                         type="number"
                         aria-label="Discount %"
-                        placeholder="Disc %"
                         min="0"
                         max="100"
                         step="0.1"
@@ -1063,18 +1123,16 @@ export default function StockTransferCreate() {
                             ),
                           })
                         }
-                        className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-center text-sm focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+                        className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                       />
-                      <p className="mt-0.5 text-center text-[10px] text-gray-400">
-                        Disc %
-                      </p>
                     </div>
-
-                    <div className="w-16 shrink-0">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                        Tax %
+                      </label>
                       <input
                         type="number"
                         aria-label="Tax %"
-                        placeholder="Tax %"
                         min="0"
                         max="100"
                         step="0.1"
@@ -1087,41 +1145,29 @@ export default function StockTransferCreate() {
                             ),
                           })
                         }
-                        className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-center text-sm focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+                        className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                       />
-                      <p className="mt-0.5 text-center text-[10px] text-gray-400">
-                        Tax %
-                      </p>
                     </div>
-
-                    <div className="mt-1.5 w-28 shrink-0 text-right">
-                      <p className="text-[10px] text-gray-400">Line Total</p>
-                      <p className="text-sm font-semibold text-gray-900">
-                        {fmtCur(line?.lineTotal ?? 0, currency)}
-                      </p>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                        Line Total
+                      </label>
+                      <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
+                        <span className="text-xs font-semibold text-gray-800">
+                          {fmtCur(line?.lineTotal ?? 0, currency)}
+                        </span>
+                      </div>
                       {(item.discountRate > 0 || item.taxRate > 0) && (
-                        <p className="text-[10px] text-gray-400">
-                          eff.{' '}
-                          {fmtCur(
-                            line?.effectiveUnitCost ?? 0,
-                            currency
-                          )}/unit
+                        <p className="mt-0.5 text-[10px] text-gray-400">
+                          eff. {fmtCur(line?.effectiveUnitCost ?? 0, currency)}
+                          /unit
                         </p>
                       )}
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => removeItem(i)}
-                      disabled={items.length === 1}
-                      className="mt-1.5 rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
-                    >
-                      <PiTrash className="h-4 w-4" />
-                    </button>
                   </div>
 
                   {errors?.duplicate && (
-                    <div className="ml-9 mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
+                    <div className="ml-8 mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
                       <PiWarning className="h-3.5 w-3.5 shrink-0" />
                       {errors.duplicate}
                     </div>
