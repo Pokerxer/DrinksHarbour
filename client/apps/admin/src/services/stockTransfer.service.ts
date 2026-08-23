@@ -148,6 +148,7 @@ export const stockTransferService = {
       items: Omit<TransferItem, '_id' | 'transferredQty'>[];
       notes?: string;
       scheduledDate?: string;
+      deliveryCharge?: number;
       status?: 'draft' | 'confirmed';
       currency?: string;
     },

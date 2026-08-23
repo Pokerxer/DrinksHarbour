@@ -9,7 +9,6 @@ import {
   PiTrash,
   PiMagnifyingGlass,
   PiFloppyDisk,
-  PiCheck,
   PiArrowLeft,
   PiCaretRight,
   PiCaretDown,
@@ -18,6 +17,7 @@ import {
   PiWarehouse,
   PiArrowElbowRightDown,
   PiSpinner,
+  PiPaperPlaneTilt,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -27,6 +27,8 @@ import { posApi } from '@/app/shared/point-of-sale/api';
 import { subproductService } from '@/services/subproduct.service';
 import { CURRENCIES, CURRENCY_SYMBOLS } from './types';
 import { fmtCur } from './purchases-analytics-helpers';
+import { computeTransferTotals } from './transfer-money';
+import TransferTotalsCard from './transfer-totals-card';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -62,6 +64,9 @@ interface LineItem {
   quantity: number;
   sourceStock?: number;
   costPrice?: number;
+  /** Destination purchase terms — what the destination pays the source. */
+  discountRate: number;
+  taxRate: number;
   priceSource?: PriceSource;
 }
 
@@ -122,6 +127,8 @@ function blankItem(): LineItem {
     quantity: 1,
     sourceStock: 0,
     costPrice: 0,
+    discountRate: 0,
+    taxRate: 0,
     priceSource: null,
   };
 }
@@ -515,6 +522,7 @@ export default function StockTransferCreate() {
   const [notes, setNotes] = useState('');
   const [scheduledDate, setScheduledDate] = useState('');
   const [currency, setCurrency] = useState('NGN');
+  const [deliveryCharge, setDeliveryCharge] = useState(0);
   const [saving, setSaving] = useState(false);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [loadingStock, setLoadingStock] = useState(false);
@@ -609,6 +617,8 @@ export default function StockTransferCreate() {
   }, []);
 
   const filledItems = items.filter((it) => it.subProductId.trim());
+  // Advisory figures for the UI; the server recomputes every number on save.
+  const money = computeTransferTotals(items, deliveryCharge);
 
   function getLineErrors(): Record<number, LineError> {
     const errors: Record<number, LineError> = {};
@@ -648,16 +658,12 @@ export default function StockTransferCreate() {
   const lineErrors = getLineErrors();
   const hasErrors = Object.keys(lineErrors).length > 0;
   const totalUnits = filledItems.reduce((s, it) => s + it.quantity, 0);
-  const totalCost = filledItems.reduce(
-    (s, it) => s + (it.costPrice ?? 0) * it.quantity,
-    0
-  );
   const totalSourceStock = filledItems.reduce(
     (s, it) => s + (it.sourceStock ?? 0),
     0
   );
 
-  async function handleSave(confirm = false) {
+  async function handleSave(send = false) {
     if (!sourceWarehouse) return toast.error('Select a source warehouse');
     if (!destWarehouse) return toast.error('Select a destination warehouse');
     if (sourceWarehouse._id === destWarehouse._id)
@@ -689,15 +695,28 @@ export default function StockTransferCreate() {
             sizeName: it.sizeName,
             quantity: it.quantity,
             costPrice: it.costPrice ?? 0,
+            discountRate: it.discountRate,
+            taxRate: it.taxRate,
           })),
           notes: notes || undefined,
           scheduledDate: scheduledDate || undefined,
-          status: confirm ? 'confirmed' : 'draft',
+          deliveryCharge: deliveryCharge || undefined,
+          status: send ? 'confirmed' : 'draft',
           currency,
         },
         token
       );
-      toast.success(confirm ? 'Transfer confirmed' : 'Saved as draft');
+
+      // Send = create-as-confirmed, then dispatch. An approval-gated transfer
+      // lands in pending_approval instead — nothing to dispatch yet.
+      if (send && res.data.status === 'confirmed') {
+        await stockTransferService.send(res.data._id, token);
+        toast.success(`Dispatched to ${destWarehouse.name}`);
+      } else if (send) {
+        toast.success('Submitted for approval');
+      } else {
+        toast.success('Saved as draft');
+      }
       router.push(routes.eCommerce.stockTransferDetails(res.data._id));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to save');
@@ -759,9 +778,9 @@ export default function StockTransferCreate() {
             {saving ? (
               <PiSpinner className="h-4 w-4 animate-spin" />
             ) : (
-              <PiCheck className="h-4 w-4" />
+              <PiPaperPlaneTilt className="h-4 w-4" />
             )}
-            Confirm
+            Send
           </button>
         </div>
       </div>
@@ -839,6 +858,22 @@ export default function StockTransferCreate() {
               </div>
             </div>
           </div>
+          {sourceWarehouse && destWarehouse && (
+            <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+              <PiArrowElbowRightDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-300" />
+              <span>
+                <span className="font-medium text-gray-700">
+                  {destWarehouse.name}
+                </span>{' '}
+                buys these goods from{' '}
+                <span className="font-medium text-gray-700">
+                  {sourceWarehouse.name}
+                </span>
+                . The unit cost is what the destination&rsquo;s stock will be
+                valued at when it is received.
+              </span>
+            </p>
+          )}
           <div className="mt-4">
             <label className="mb-1 block text-xs font-medium text-gray-600">
               Notes{' '}
@@ -869,10 +904,10 @@ export default function StockTransferCreate() {
             </button>
           </div>
 
-          <div className="divide-y divide-gray-100">
-            {items.map((item, i) => {
-              const errors = lineErrors[i];
-              const lineTotal = (item.costPrice ?? 0) * item.quantity;
+           <div className="divide-y divide-gray-100">
+             {items.map((item, i) => {
+               const errors = lineErrors[i];
+               const line = money.lines[i];
               return (
                 <div key={i} className="px-5 py-3">
                   <div className="flex items-start gap-3">
@@ -884,16 +919,18 @@ export default function StockTransferCreate() {
                       <ProductSearch
                         value={item.subProductName}
                         token={token}
-                        onSelect={(picked) =>
-                          updateItem(i, {
-                            subProductId: picked.subProductId,
-                            subProductName: picked.subProductName,
-                            sku: picked.sku,
-                            sizeId: picked.sizeId,
-                            sizeName: picked.sizeName,
-                            costPrice: picked.costPrice,
-                            priceSource: picked.priceSource,
-                            sourceStock: sourceWarehouse
+                         onSelect={(picked) =>
+                           updateItem(i, {
+                             subProductId: picked.subProductId,
+                             subProductName: picked.subProductName,
+                             sku: picked.sku,
+                             sizeId: picked.sizeId,
+                             sizeName: picked.sizeName,
+                             costPrice: picked.costPrice,
+                             priceSource: picked.priceSource,
+                             discountRate: 0,
+                             taxRate: 0,
+                             sourceStock: sourceWarehouse
                               ? (stockMap[
                                   stockKey(picked.subProductId, picked.sizeId)
                                 ] ?? 0)
@@ -997,11 +1034,68 @@ export default function StockTransferCreate() {
                       )}
                     </div>
 
-                    <div className="mt-1.5 w-24 shrink-0 text-right">
+                    <div className="w-16 shrink-0">
+                      <input
+                        type="number"
+                        aria-label="Discount %"
+                        placeholder="Disc %"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={item.discountRate || ''}
+                        onChange={(e) =>
+                          updateItem(i, {
+                            discountRate: Math.min(
+                              100,
+                              Math.max(0, Number(e.target.value) || 0)
+                            ),
+                          })
+                        }
+                        className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-center text-sm focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+                      />
+                      <p className="mt-0.5 text-center text-[10px] text-gray-400">
+                        Disc %
+                      </p>
+                    </div>
+
+                    <div className="w-16 shrink-0">
+                      <input
+                        type="number"
+                        aria-label="Tax %"
+                        placeholder="Tax %"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={item.taxRate || ''}
+                        onChange={(e) =>
+                          updateItem(i, {
+                            taxRate: Math.min(
+                              100,
+                              Math.max(0, Number(e.target.value) || 0)
+                            ),
+                          })
+                        }
+                        className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-center text-sm focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+                      />
+                      <p className="mt-0.5 text-center text-[10px] text-gray-400">
+                        Tax %
+                      </p>
+                    </div>
+
+                    <div className="mt-1.5 w-28 shrink-0 text-right">
                       <p className="text-[10px] text-gray-400">Line Total</p>
                       <p className="text-sm font-semibold text-gray-900">
-                        {fmtCur(lineTotal, currency)}
+                        {fmtCur(line?.lineTotal ?? 0, currency)}
                       </p>
+                      {(item.discountRate > 0 || item.taxRate > 0) && (
+                        <p className="text-[10px] text-gray-400">
+                          eff.{' '}
+                          {fmtCur(
+                            line?.effectiveUnitCost ?? 0,
+                            currency
+                          )}/unit
+                        </p>
+                      )}
                     </div>
 
                     <button
@@ -1039,7 +1133,7 @@ export default function StockTransferCreate() {
         {/* Summary */}
         <div className="rounded-xl border border-gray-200 bg-white p-5">
           <h2 className="mb-4 text-sm font-semibold text-gray-800">Summary</h2>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <div className="rounded-lg bg-gray-50 p-3">
               <p className="text-[11px] text-gray-500">Lines</p>
               <p className="mt-0.5 text-lg font-bold text-gray-900">
@@ -1050,12 +1144,6 @@ export default function StockTransferCreate() {
               <p className="text-[11px] text-gray-500">Total Units</p>
               <p className="mt-0.5 text-lg font-bold text-gray-900">
                 {totalUnits}
-              </p>
-            </div>
-            <div className="rounded-lg bg-gray-50 p-3">
-              <p className="text-[11px] text-gray-500">Total Cost</p>
-              <p className="mt-0.5 text-lg font-bold text-gray-900">
-                {totalCost > 0 ? fmtCur(totalCost, currency) : '—'}
               </p>
             </div>
             <div className="rounded-lg bg-gray-50 p-3">
@@ -1082,6 +1170,19 @@ export default function StockTransferCreate() {
                 <span className="font-medium text-gray-700">Currency:</span>{' '}
                 {currency} ({CURRENCY_SYMBOLS[currency] ?? currency})
               </span>
+            </div>
+          )}
+          {filledItems.length > 0 && (
+            <div className="mt-4 max-w-sm">
+              <TransferTotalsCard
+                currency={currency}
+                subtotal={money.subtotal}
+                discountAmount={money.discountAmount}
+                taxAmount={money.taxAmount}
+                total={money.total}
+                deliveryCharge={deliveryCharge}
+                onDeliveryChargeChange={setDeliveryCharge}
+              />
             </div>
           )}
 
