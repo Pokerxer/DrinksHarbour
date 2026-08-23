@@ -5,15 +5,14 @@ import { PiMagnifyingGlass, PiPlus } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import type { POSProduct } from '@/app/shared/point-of-sale/types';
-import type { PricelistItem } from '@/services/vendorPricelist.service';
 import { fmtCur } from '../purchases-analytics-helpers';
-import { emptyLine } from './helpers';
+import { emptyLine, type EditorLine } from './helpers';
 
 export function ProductPicker({
   onPick,
   label = 'Add Product',
 }: {
-  onPick: (line: PricelistItem) => void;
+  onPick: (line: EditorLine) => void;
   label?: string;
 }) {
   const { data: session } = useSession();
