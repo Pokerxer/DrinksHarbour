@@ -5,9 +5,6 @@ import {
   PiDownloadSimple,
   PiPackage,
   PiPlus,
-  PiStar,
-  PiStarFill,
-  PiTrash,
   PiUploadSimple,
   PiWarningCircle,
 } from 'react-icons/pi';
@@ -17,7 +14,6 @@ import {
   duplicateLineKeys,
   effectiveNet,
   emptyLine,
-  lineDelta,
   lineIsValid,
   netPrice,
   parsePricelistCsv,
@@ -26,15 +22,8 @@ import {
 import { fmtCur } from '../purchases-analytics-helpers';
 import { fraunces } from '../purchases-fonts';
 import { ProductPicker } from './product-picker';
-import DeltaBadge from './delta-badge';
 import PriceHistoryPanel from './price-history-panel';
-
-const inputCls = (invalid: boolean) =>
-  `w-full rounded border px-2 py-1 text-right text-xs tabular-nums focus:outline-none ${
-    invalid
-      ? 'border-red-300 bg-red-50/60 focus:border-red-400'
-      : 'border-[#ece4d6] focus:border-[#b20202]'
-  }`;
+import { LineItemsRow } from './line-items-row';
 
 export default function LineItemsEditor({
   lines,
@@ -184,161 +173,31 @@ export default function LineItemsEditor({
                   const isDupe = dupes.has(line._key);
                   return (
                     <Fragment key={line._key}>
-                      <tr
-                        className={
-                          invalid ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-[#FAF8F3]/60'
+                      <LineItemsRow
+                        line={line}
+                        index={i}
+                        invalid={invalid}
+                        isDupe={isDupe}
+                        historyOpen={openHistory === line._key}
+                        currency={currency}
+                        onToggleHistory={() =>
+                          setOpenHistory(
+                            openHistory === line._key ? null : line._key
+                          )
                         }
-                      >
-                        <td className="px-4 py-2">
-                          {line.subProductId ? (
-                            <>
-                              <p className="font-medium text-[#2a2420]">
-                                {line.subProductName || line.productName}
-                              </p>
-                              <p className="text-[11px] text-gray-400">
-                                {[line.sizeName, line.sku].filter(Boolean).join(' · ') || '—'}
-                              </p>
-                              <div className="mt-0.5 flex items-center gap-1.5">
-                                <DeltaBadge delta={lineDelta(line)} />
-                                {isDupe && (
-                                  <span
-                                    className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600"
-                                    title="This product+size appears in more than one line"
-                                  >
-                                    <PiWarningCircle className="h-2.5 w-2.5" /> Duplicate
-                                  </span>
-                                )}
-                                {line.priceHistory && line.priceHistory.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setOpenHistory(openHistory === line._key ? null : line._key)
-                                    }
-                                    className="text-[10px] font-medium text-gray-400 underline-offset-2 hover:text-[#b20202] hover:underline"
-                                  >
-                                    {openHistory === line._key
-                                      ? 'Hide history'
-                                      : `History (${line.priceHistory.length})`}
-                                  </button>
-                                )}
-                              </div>
-                            </>
-                          ) : (
-                            <input
-                              value={line.productName}
-                              onChange={(e) => update(i, { productName: e.target.value })}
-                              placeholder="Product name"
-                              aria-label={`Line ${i + 1} product name`}
-                              className={`w-44 rounded border px-2 py-1 text-xs focus:outline-none ${
-                                invalid && !(line.productName ?? '').trim()
-                                  ? 'border-red-300 bg-red-50/60 focus:border-red-400'
-                                  : 'border-[#ece4d6] focus:border-[#b20202]'
-                              }`}
-                            />
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={line.unitPrice}
-                            onChange={(e) => update(i, { unitPrice: Number(e.target.value) })}
-                            aria-label={`Line ${i + 1} unit price`}
-                            className={inputCls(invalid && !(Number(line.unitPrice) > 0))}
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.5"
-                            value={line.discountPercent}
-                            onChange={(e) => update(i, { discountPercent: Number(e.target.value) })}
-                            aria-label={`Line ${i + 1} discount percent`}
-                            className={inputCls(false)}
-                          />
-                        </td>
-                        <td
-                          className={`${fraunces.className} px-3 py-2 text-right font-semibold tabular-nums text-[#2a2420]`}
-                        >
-                          {fmtCur(netPrice(line), currency)}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <input
-                            type="number"
-                            min="1"
-                            value={line.minQuantity ?? 1}
-                            onChange={(e) => update(i, { minQuantity: Number(e.target.value) })}
-                            aria-label={`Line ${i + 1} minimum quantity`}
-                            className={inputCls(false)}
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            value={line.maxQuantity ?? ''}
-                            onChange={(e) =>
-                              update(i, {
-                                maxQuantity: e.target.value === '' ? undefined : Number(e.target.value),
-                              })
-                            }
-                            placeholder="∞"
-                            aria-label={`Line ${i + 1} maximum quantity`}
-                            className={inputCls(false)}
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            value={line.leadTimeDays ?? 0}
-                            onChange={(e) => update(i, { leadTimeDays: Number(e.target.value) })}
-                            aria-label={`Line ${i + 1} lead time days`}
-                            className={inputCls(false)}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            value={line.packaging ?? ''}
-                            onChange={(e) => update(i, { packaging: e.target.value })}
-                            placeholder="carton…"
-                            aria-label={`Line ${i + 1} packaging`}
-                            className="w-full rounded border border-[#ece4d6] px-2 py-1 text-xs focus:border-[#b20202] focus:outline-none"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => update(i, { isPreferred: !line.isPreferred })}
-                            title={line.isPreferred ? 'Preferred vendor line' : 'Mark preferred'}
-                            aria-label={line.isPreferred ? 'Unmark preferred' : 'Mark preferred'}
-                            className="text-gray-300 transition-colors hover:text-[#c8932c]"
-                          >
-                            {line.isPreferred ? (
-                              <PiStarFill className="h-4 w-4 text-[#c8932c]" />
-                            ) : (
-                              <PiStar className="h-4 w-4" />
-                            )}
-                          </button>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => remove(i)}
-                            aria-label={`Remove line ${i + 1}`}
-                            className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
-                          >
-                            <PiTrash className="h-3.5 w-3.5" />
-                          </button>
-                        </td>
-                      </tr>
+                        onUpdate={(patch) => update(i, patch)}
+                        onRemove={() => remove(i)}
+                        onTogglePreferred={() =>
+                          update(i, { isPreferred: !line.isPreferred })
+                        }
+                      />
                       {openHistory === line._key && (
                         <tr>
                           <td colSpan={10} className="bg-[#FAF8F3]/40">
-                            <PriceHistoryPanel history={line.priceHistory} currency={currency} />
+                            <PriceHistoryPanel
+                              history={line.priceHistory}
+                              currency={currency}
+                            />
                           </td>
                         </tr>
                       )}
