@@ -20,6 +20,10 @@ test('StockTransfer schema carries the purchase fields', () => {
   assert.equal(item('taxRate').options.default, 0);
   assert.equal(item('receivedQty').options.default, 0);
   assert.ok(item('receivedQty').options.min === 0);
+  // Pack snapshot: units per pack captured at create/send so documents can
+  // break quantities down ("5 packs & 1 bottle") without re-querying Size.
+  assert.equal(item('packSize').options.default, 1);
+  assert.ok(item('packSize').options.min === 1);
 
   const receiptsPath = StockTransfer.schema.path('receipts');
   const receipt = receiptsPath.schema.path.bind(receiptsPath.schema);

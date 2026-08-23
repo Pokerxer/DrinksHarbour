@@ -142,6 +142,7 @@ const createStockTransfer = asyncHandler(async (req, res) => {
     receivedQty: 0,
     discountRate: Number(it.discountRate) || 0,
     taxRate: Number(it.taxRate) || 0,
+    packSize: Math.max(1, Math.floor(Number(it.packSize) || 1)),
   }));
   const draft = { items: transferItems, deliveryCharge: Number(deliveryCharge) || 0 };
   applyTransferMoney(draft);
@@ -287,6 +288,7 @@ const updateStockTransfer = asyncHandler(async (req, res) => {
       receivedQty: 0,
       discountRate: Number(it.discountRate) || 0,
       taxRate: Number(it.taxRate) || 0,
+      packSize: Math.max(1, Math.floor(Number(it.packSize) || 1)),
     }));
   }
 

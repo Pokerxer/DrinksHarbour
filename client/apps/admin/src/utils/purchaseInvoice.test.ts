@@ -438,7 +438,8 @@ describe('buildTransferInvoice — detail', () => {
     approvedBy: { name: 'Ada Obi' },
     items: [
       { subProductName: 'Moet Imperial Brut', sizeName: '75cl', sku: 'MOE-IMP-075',
-        quantity: 60, receivedQty: 40, costPrice: 20000, discountRate: 0, taxRate: 7.5 },
+        quantity: 60, receivedQty: 40, costPrice: 20000, discountRate: 0, taxRate: 7.5,
+        packSize: 12 },
     ],
   } as unknown as StockTransfer;
 
@@ -457,10 +458,11 @@ describe('buildTransferInvoice — detail', () => {
 
   it('shows sent vs received with pending counts and money columns', () => {
     expect(doc.table.columns.map((c) => c.label)).toEqual([
-      'Product', 'Sent', 'Received', 'Unit Cost', 'Discount', 'Tax', 'Line Total',
+      'Product', 'Packs', 'Sent', 'Received', 'Unit Cost', 'Discount', 'Tax', 'Line Total',
     ]);
-    expect(doc.table.rows[0][2]).toMatchObject({ text: '40', sub: '20 pending' });
-    expect(doc.table.rows[0][6]).toEqual({ text: 'NGN 1,290,000.00', strong: true });
+    expect(doc.table.rows[0][1]).toEqual({ text: '5 packs' });
+    expect(doc.table.rows[0][3]).toMatchObject({ text: '40', sub: '20 pending' });
+    expect(doc.table.rows[0][7]).toEqual({ text: 'NGN 1,290,000.00', strong: true });
   });
 
   it('prints the full purchase totals block with words', () => {

@@ -25,7 +25,7 @@ import { stockTransferService } from '@/services/stockTransfer.service';
 import { warehouseService, type Warehouse } from '@/services/warehouse.service';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { subproductService } from '@/services/subproduct.service';
-import { CURRENCIES, CURRENCY_SYMBOLS } from './types';
+import { CURRENCIES, CURRENCY_SYMBOLS, packsLabel } from './types';
 import { fmtCur } from './purchases-analytics-helpers';
 import { computeTransferTotals } from './transfer-money';
 import TransferTotalsCard from './transfer-totals-card';
@@ -67,6 +67,8 @@ interface LineItem {
   /** Destination purchase terms — what the destination pays the source. */
   discountRate: number;
   taxRate: number;
+  /** Units per pack snapshot (Size.unitsPerPack) for the packs breakdown. */
+  packSize: number;
   priceSource?: PriceSource;
 }
 
@@ -80,6 +82,7 @@ interface Picked {
   sourceStock?: number;
   costPrice: number;
   priceSource: PriceSource;
+  unitsPerPack?: number;
 }
 
 interface LineError {
@@ -129,6 +132,7 @@ function blankItem(): LineItem {
     costPrice: 0,
     discountRate: 0,
     taxRate: 0,
+    packSize: 1,
     priceSource: null,
   };
 }
@@ -465,6 +469,7 @@ function ProductSearch({
                                   sizeId: s.size,
                                   sizeName: displaySize,
                                   sourceStock: stock,
+                                  unitsPerPack: priced.unitsPerPack ?? 1,
                                   ...defaultUnitPrice(p, priced),
                                 });
                                 setQuery(label);
@@ -697,6 +702,7 @@ export default function StockTransferCreate() {
             costPrice: it.costPrice ?? 0,
             discountRate: it.discountRate,
             taxRate: it.taxRate,
+            packSize: it.packSize,
           })),
           notes: notes || undefined,
           scheduledDate: scheduledDate || undefined,
@@ -928,6 +934,7 @@ export default function StockTransferCreate() {
                              sizeName: picked.sizeName,
                              costPrice: picked.costPrice,
                              priceSource: picked.priceSource,
+                             packSize: picked.unitsPerPack ?? 1,
                              discountRate: 0,
                              taxRate: 0,
                              sourceStock: sourceWarehouse
@@ -1001,6 +1008,11 @@ export default function StockTransferCreate() {
                       {errors?.exceedsStock && (
                         <p className="mt-0.5 text-[10px] text-red-500">
                           {errors.exceedsStock}
+                        </p>
+                      )}
+                      {item.subProductId && !errors?.exceedsStock && (
+                        <p className="mt-0.5 text-center text-[10px] text-gray-400">
+                          {packsLabel(item.quantity, item.packSize)}
                         </p>
                       )}
                     </div>

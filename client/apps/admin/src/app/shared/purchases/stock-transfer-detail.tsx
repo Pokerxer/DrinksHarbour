@@ -37,7 +37,7 @@ import {
   canReceiveTransfer,
   canSendTransfer,
 } from './transfer-receive-panel-helpers';
-import { CURRENCY_SYMBOLS } from './types';
+import { CURRENCY_SYMBOLS, packsLabel } from './types';
 import { fmtCur } from './purchases-analytics-helpers';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -633,6 +633,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">SKU</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Qty Requested</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Packs</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Cost Price</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Qty Transferred</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Progress</th>
@@ -660,6 +661,9 @@ export default function StockTransferDetail({ id }: { id: string }) {
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-gray-700">
                       {item.quantity}
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs text-gray-500">
+                      {packsLabel(item.quantity, item.packSize)}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-gray-700">
                       {item.costPrice != null && item.costPrice > 0
@@ -712,6 +716,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
                 <td colSpan={2} className="px-4 py-3 text-right text-xs font-semibold text-gray-500">
                   Total
                 </td>
+                <td className="px-4 py-3" />
                 <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">
                   {totalUnits}
                 </td>

@@ -61,6 +61,8 @@ export interface TransferItem {
   taxRate?: number;
   receivedQty?: number;
   shortfallQty?: number;
+  /** Units per pack snapshot for the "5 packs & 1 bottle" breakdown. */
+  packSize?: number;
 }
 
 export interface StockTransfer {

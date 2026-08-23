@@ -1,5 +1,9 @@
 import type { StockTransfer } from '@/services/stockTransfer.service';
 import {
+  linePackSize,
+  packsLabel,
+} from '@/app/shared/purchases/types';
+import {
   fmtAmt,
   fmtDate,
   moneyWords,
@@ -60,6 +64,7 @@ export function buildTransferInvoice(
     const pending = Math.max(0, item.quantity - recv);
     return [
       { text: name },
+      { text: packsLabel(item.quantity, linePackSize(item)) },
       { text: String(item.quantity) },
       done
         ? { text: String(recv), color: '#16a34a', strong: true }
@@ -109,6 +114,7 @@ export function buildTransferInvoice(
     table: {
       columns: [
         { label: 'Product' },
+        { label: 'Packs', align: 'center' },
         { label: 'Sent', align: 'center' },
         { label: 'Received', align: 'right' },
         { label: 'Unit Cost', align: 'right' },
