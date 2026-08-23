@@ -24,6 +24,8 @@ export interface Warehouse {
   type: 'warehouse' | 'store' | 'distribution_center';
   address?: WarehouseAddress;
   contact?: WarehouseContact;
+  /** Users responsible for this location; gates two-sided transfer actions. */
+  managers?: { _id: string; name: string; email?: string }[];
   notes?: string;
   isActive: boolean;
   isDefault: boolean;
@@ -146,6 +148,18 @@ export const warehouseService = {
         headers: auth(token),
       }),
       'Failed to delete warehouse'
+    );
+  },
+
+  /** Replace the location's manager list (tenant admins only server-side). */
+  async setManagers(id: string, managers: string[], token: string) {
+    return handle(
+      await fetch(`${API_URL}/api/warehouses/${id}/managers`, {
+        method: 'PATCH',
+        headers: jsonAuth(token),
+        body: JSON.stringify({ managers }),
+      }),
+      'Failed to save managers'
     );
   },
 

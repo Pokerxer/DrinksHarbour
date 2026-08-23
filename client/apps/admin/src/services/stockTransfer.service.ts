@@ -5,9 +5,47 @@ export type TransferStatus =
   | 'draft'
   | 'pending_approval'
   | 'confirmed'
+  | 'in_transit'
+  | 'partially_received'
   | 'completed'
   | 'cancelled'
   | 'rejected';
+
+/**
+ * A warehouse as populated onto a transfer. getStockTransfers /
+ * getStockTransfer return `name code type address contact managers`; older
+ * payloads carry only the raw id.
+ */
+export interface TransferWarehouseRef {
+  _id: string;
+  name: string;
+  code: string;
+  type?: string;
+  address?: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    postalCode?: string;
+  };
+  contact?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+  };
+  /** Populated manager objects — map to `m._id` where an id list is needed. */
+  managers?: { _id: string; name: string; email?: string }[];
+}
+
+/** One goods receipt booked against a transfer by the destination side. */
+export interface TransferReceipt {
+  _id?: string;
+  receivedBy?: { _id: string; name: string };
+  receivedAt?: string;
+  lines: { itemIndex: number; quantity: number; note?: string }[];
+  shortagesClosed?: boolean;
+}
 
 export interface TransferItem {
   _id?: string;
@@ -19,17 +57,17 @@ export interface TransferItem {
   quantity: number;
   transferredQty: number;
   costPrice?: number;
+  discountRate?: number;
+  taxRate?: number;
+  receivedQty?: number;
+  shortfallQty?: number;
 }
 
 export interface StockTransfer {
   _id: string;
   transferNumber: string;
-  sourceWarehouse:
-    | string
-    | { _id: string; name: string; code: string; type?: string };
-  destinationWarehouse:
-    | string
-    | { _id: string; name: string; code: string; type?: string };
+  sourceWarehouse: string | TransferWarehouseRef;
+  destinationWarehouse: string | TransferWarehouseRef;
   status: TransferStatus;
   currency?: string;
   items: TransferItem[];
@@ -51,12 +89,26 @@ export interface StockTransfer {
   rejectedBy?: { _id: string; name: string };
   rejectedAt?: string;
   rejectionReason?: string;
+
+  // ── Transfer-as-purchase money snapshot (authoritative: total) ──────────
+  deliveryCharge?: number;
+  subtotal?: number;
+  discountAmount?: number;
+  taxAmount?: number;
+  total?: number;
+
+  dispatchedBy?: { _id: string; name: string };
+  dispatchedAt?: string;
+  closedWithShortage?: boolean;
+  receipts?: TransferReceipt[];
 }
 
 export interface TransferStats {
   draft: number;
   pending_approval: number;
   confirmed: number;
+  in_transit: number;
+  partially_received: number;
   completed: number;
   cancelled: number;
   rejected: number;
@@ -196,6 +248,41 @@ export const stockTransferService = {
         body: JSON.stringify({ reason }),
       }),
       'Failed to reject transfer'
+    );
+  },
+
+  async send(id: string, token: string) {
+    return handle(
+      await fetch(`${API_URL}/api/stock-transfers/${id}/send`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+      }),
+      'Failed to dispatch transfer'
+    );
+  },
+
+  async receive(
+    id: string,
+    lines: { itemIndex: number; quantity: number; note?: string }[],
+    token: string
+  ) {
+    return handle(
+      await fetch(`${API_URL}/api/stock-transfers/${id}/receive`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify({ lines }),
+      }),
+      'Failed to record receipt'
+    );
+  },
+
+  async close(id: string, token: string) {
+    return handle(
+      await fetch(`${API_URL}/api/stock-transfers/${id}/close`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+      }),
+      'Failed to close transfer'
     );
   },
 };
