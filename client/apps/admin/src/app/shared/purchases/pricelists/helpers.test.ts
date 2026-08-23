@@ -13,8 +13,8 @@ import {
   netPrice,
   parsePricelistCsv,
   toPayloadItems,
+  type EditorLine,
 } from './helpers';
-import type { EditorLine } from './helpers';
 
 const line = (over: Partial<EditorLine> = {}): EditorLine => ({
   ...emptyLine(),
