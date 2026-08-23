@@ -410,72 +410,73 @@ describe('buildBillInvoice — detail', () => {
 describe('buildTransferInvoice — detail', () => {
   const transfer = {
     transferNumber: 'TRF-2026-007',
-    sourceWarehouse: { name: 'Central Warehouse', code: 'CWH' },
-    destinationWarehouse: { name: 'Maitama Store', code: 'MTM' },
-    status: 'confirmed',
+    sourceWarehouse: {
+      _id: 'w-src', name: 'Central Warehouse', code: 'CWH', type: 'warehouse',
+      address: { line1: 'Plot 5, Utako District', city: 'Abuja', state: 'FCT', country: 'Nigeria' },
+      contact: { phone: '+234 803 000 1111', email: 'central@drinksharbour.com' },
+    },
+    destinationWarehouse: {
+      _id: 'w-dst', name: 'Maitama Store', code: 'MTM', type: 'store',
+      address: { line1: '39 Gana Street', city: 'Abuja', state: 'FCT', country: 'Nigeria' },
+      contact: { email: 'maitama@drinksharbour.com', phone: '+234 803 555 0100' },
+    },
+    status: 'partially_received',
     currency: 'NGN',
     scheduledDate: '2026-08-10T00:00:00.000Z',
     createdAt: '2026-08-01T00:00:00.000Z',
-    totalValue: 1200000,
+    dispatchedBy: { name: 'Bola Ade' },
+    receipts: [
+      { receivedBy: { name: 'Ada Obi' }, receivedAt: '2026-08-11T09:00:00.000Z',
+        lines: [{ itemIndex: 0, quantity: 40 }] },
+    ],
+    deliveryCharge: 20000,
+    subtotal: 1200000,
+    discountAmount: 0,
+    taxAmount: 90000,
+    total: 1310000,
     createdBy: { name: 'Bola Ade' },
     approvedBy: { name: 'Ada Obi' },
     items: [
-      {
-        subProductName: 'Moet Imperial Brut',
-        sizeName: '75cl',
-        sku: 'MOE-IMP-075',
-        quantity: 60,
-        transferredQty: 60,
-        costPrice: 20000,
-      },
+      { subProductName: 'Moet Imperial Brut', sizeName: '75cl', sku: 'MOE-IMP-075',
+        quantity: 60, receivedQty: 40, costPrice: 20000, discountRate: 0, taxRate: 7.5 },
     ],
   } as unknown as StockTransfer;
 
   const doc = buildTransferInvoice(transfer, 'DrinksHarbour');
 
-  it('routes stock between named warehouses', () => {
-    expect(doc.parties[0]).toMatchObject({
-      heading: 'From Warehouse',
-      name: 'Central Warehouse (CWH)',
-    });
-    expect(doc.parties[1]).toMatchObject({
-      heading: 'To Warehouse',
-      name: 'Maitama Store (MTM)',
-    });
+  it('makes the destination warehouse the buyer and the source the supplier', () => {
+    expect(doc.parties[0]).toMatchObject({ heading: 'Buyer', name: 'Maitama Store (MTM)' });
+    expect(doc.parties[0].lines).toContain('Abuja, FCT, Nigeria');
+    expect(doc.parties[1]).toMatchObject({ heading: 'Supplier', name: 'Central Warehouse (CWH)' });
   });
 
-  it('marks completed lines green and flags pending ones', () => {
-    expect(doc.table.rows[0][2]).toEqual({
-      text: '60',
-      color: '#16a34a',
-      strong: true,
-    });
-    const partial = {
-      ...transfer,
-      items: [{ ...transfer.items[0], transferredQty: 40 }],
-    } as unknown as StockTransfer;
-    const partialDoc = buildTransferInvoice(partial, 'DrinksHarbour');
-    expect(partialDoc.table.rows[0][2].sub).toBe('20 pending');
+  it('carries the destination details into the head', () => {
+    expect(doc.companyName).toBe('Maitama Store');
+    expect(doc.head?.email).toBe('maitama@drinksharbour.com');
   });
 
-  it('totals quantity, transferred count and stock value at cost', () => {
-    expect(doc.totals).toEqual([
-      { label: 'Total Quantity', value: '60' },
-      { label: 'Transferred', value: '60', color: '#16a34a' },
-      {
-        label: 'Stock Value at Cost',
-        value: 'NGN 1,200,000.00',
-        variant: 'grand',
-      },
+  it('shows sent vs received with pending counts and money columns', () => {
+    expect(doc.table.columns.map((c) => c.label)).toEqual([
+      'Product', 'Sent', 'Received', 'Unit Cost', 'Discount', 'Tax', 'Line Total',
     ]);
+    expect(doc.table.rows[0][2]).toMatchObject({ text: '40', sub: '20 pending' });
+    expect(doc.table.rows[0][6]).toEqual({ text: 'NGN 1,290,000.00', strong: true });
   });
 
-  it('names who dispatched, approved and receives', () => {
-    expect(doc.signatures).toEqual([
-      { role: 'Dispatched by', name: 'Bola Ade' },
-      { role: 'Approved by', name: 'Ada Obi' },
-      { role: 'Received by' },
+  it('prints the full purchase totals block with words', () => {
+    expect(doc.totals.map((t) => t.label)).toEqual([
+      'Subtotal', 'Tax', 'Delivery / Charges', 'Total',
     ]);
+    const grand = doc.totals.find((t) => t.variant === 'grand');
+    expect(grand?.value).toBe('NGN 1,310,000.00');
+    expect(doc.words).toBe('One Million, Three Hundred Ten Thousand Naira Only');
+  });
+
+  it('signatures flip to dispatch/receipt and PARTIAL watermarks mid-flight', () => {
+    expect(doc.signatures[0]).toMatchObject({ role: 'Dispatched by', name: 'Bola Ade' });
+    expect(doc.signatures[1]).toMatchObject({ role: 'Received by', name: 'Ada Obi' });
+    expect(doc.watermark).toBeUndefined();
+    expect(doc.status).toBe('partially_received');
   });
 });
 
