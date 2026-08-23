@@ -225,6 +225,6 @@ export default function SubProductSearchField({
           </button>
         </div>
       )}
-    </div>
+    </>
   );
 }

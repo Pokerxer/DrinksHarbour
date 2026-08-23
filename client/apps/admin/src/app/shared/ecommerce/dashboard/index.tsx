@@ -2,7 +2,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { routes } from '@/config/routes';
 import { Button } from 'rizzui/button';
-import { Text, Title } from 'rizzui';
+// Import from the subpath, not the `rizzui` barrel: the barrel eagerly requires
+// every component chunk (Modal, Dropdown, Tab…), which pulls @headlessui/react
+// into this server component's RSC graph — where `createContext` does not exist.
+import { Text, Title } from 'rizzui/typography';
 import WelcomeBanner from '@core/components/banners/welcome';
 import StatCards from '@/app/shared/ecommerce/dashboard/stat-cards';
 import ProfitWidget from '@/app/shared/ecommerce/dashboard/profit-widget';
