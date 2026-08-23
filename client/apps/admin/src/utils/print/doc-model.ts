@@ -61,9 +61,25 @@ export interface DocSignature {
   name?: string;
 }
 
+/**
+ * Issuer block drawn in the branded band and footer. When present it replaces
+ * the platform COMPANY defaults — e.g. a PO's selected destination warehouse
+ * becomes the buying entity on paper.
+ */
+export interface DocHead {
+  /** Street line(s), e.g. "39 Gana Street, Off Aminu Kano Crescent". */
+  address?: string;
+  /** Locality line, e.g. "Abuja, FCT, Nigeria". */
+  city?: string;
+  email?: string;
+  phone?: string;
+}
+
 export interface DocumentModel {
   kind: 'rfq' | 'po' | 'bill' | 'transfer' | 'return';
   companyName: string;
+  /** Overrides the platform COMPANY contact block in band + footer when set. */
+  head?: DocHead;
   /** Small chip under the company name, e.g. "Purchase Department". */
   department: string;
   /** Right-hand document label, e.g. "Request for Quotation". */

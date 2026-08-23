@@ -4,7 +4,8 @@ import {
   packNounOf,
   packsLabel,
 } from '@/app/shared/purchases/types';
-import { COMPANY, fmtDate } from './print-shared';
+import { COMPANY, fmtDate, warehouseContactLine, warehouseHeadOf, warehouseLocalityLine, warehouseStreetLine } from './print-shared';
+import { warehouseLabelOf } from '@/services/purchaseOrder.service';
 import type { DocumentModel } from './doc-model';
 
 // An RFQ asks the vendor for prices — it does not state them. Lines are
@@ -14,6 +15,25 @@ export function buildRFQInvoice(
   po: PurchaseOrder,
   companyName: string
 ): DocumentModel {
+  // Same rule as the PO: the selected destination warehouse is the buyer.
+  const warehouse =
+    typeof po.warehouse === 'object' && po.warehouse?._id
+      ? po.warehouse
+      : null;
+  const head = warehouseHeadOf(warehouse);
+  const identityName = warehouse?.name || companyName;
+  const quoteToBox = warehouse
+    ? {
+        heading: 'Quote To (Buyer)',
+        name: warehouseLabelOf(po.warehouse),
+        lines: [
+          warehouseStreetLine(warehouse),
+          warehouseLocalityLine(warehouse),
+          warehouseContactLine(warehouse),
+        ].filter(Boolean),
+      }
+    : { heading: 'Quote To (Buyer)', name: companyName };
+
   const displayNameOf = (item: PurchaseOrder['items'][number]) => {
     const name = (item as any).subProductName ?? item.productName ?? '—';
     const size = item.sizeName;
@@ -36,12 +56,13 @@ export function buildRFQInvoice(
   });
 
   const sections: DocumentModel['sections'] = [];
+  const respondEmail = warehouse?.contact?.email || COMPANY.email;
   sections.push({
     title: 'How to Respond',
     body:
       `Please return your completed quote before ${fmtDate(po.validUntil)}, ` +
       `stating unit price, delivery lead time, and your payment conditions for each line. ` +
-      `Quotes may be submitted by email to ${COMPANY.email} quoting ${po.poNumber}.`,
+      `Quotes may be submitted by email to ${respondEmail} quoting ${po.poNumber}.`,
   });
   if (po.termsConditions)
     sections.push({
@@ -52,13 +73,14 @@ export function buildRFQInvoice(
 
   return {
     kind: 'rfq',
-    companyName,
+    companyName: identityName,
+    head,
     department: 'Purchase Department',
     docTitle: 'Request for Quotation',
     number: po.poNumber,
     status: po.rfqStatus ?? po.status,
     parties: [
-      { heading: 'Quote To (Buyer)', name: companyName },
+      quoteToBox,
       {
         heading: 'Vendor / Supplier',
         name: po.vendorName ?? '—',

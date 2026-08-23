@@ -393,7 +393,7 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
       populate: { path: "product", select: "tracksBatch isAlcoholic" },
     })
     .populate("items.sizeId", "size ml volume")
-    .populate("warehouse", "name code")
+    .populate("warehouse", "name code type address contact")
     .populate("partialReceipts.warehouseId", "name code")
     .populate("purchaseAgreement", "agreementNumber name status");
 
@@ -452,7 +452,8 @@ const getPurchaseOrders = asyncHandler(async (req, res) => {
     .populate("vendor", "name email")
     .populate("createdBy", "name")
     .populate("items.subProductId", "name sku")
-    .populate("items.sizeId", "size volume");
+    .populate("items.sizeId", "size volume")
+    .populate("warehouse", "name code type address contact");
 
   const totalCount = await PurchaseOrder.countDocuments(filter);
 

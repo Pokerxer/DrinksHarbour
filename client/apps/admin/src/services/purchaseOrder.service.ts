@@ -1,11 +1,30 @@
 // services/purchaseOrder.service.ts
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-/** A warehouse as populated onto a PO by getPurchaseOrder (`name code` only). */
+/**
+ * A warehouse as populated onto a PO. getPurchaseOrder / getPurchaseOrders
+ * return `name code type address contact` so printed purchase documents can
+ * show the destination warehouse as the buyer; older payloads carry only
+ * `_id name code`.
+ */
 export interface POWarehouseRef {
   _id: string;
   name?: string;
   code?: string;
+  type?: string;
+  address?: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    postalCode?: string;
+  };
+  contact?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+  };
 }
 
 /**
@@ -41,9 +60,10 @@ export interface PurchaseOrder {
   arrivalDate?: string;
   /**
    * Standing destination for this order's goods. A string id when written, a
-   * populated `{_id, name, code}` when read back from getPurchaseOrder. It seeds the
-   * receipt screen's picker but does not lock it — each partial receipt records its
-   * own warehouse, and that is what stock posts against.
+   * populated POWarehouseRef when read back from getPurchaseOrder /
+   * getPurchaseOrders. It seeds the receipt screen's picker but does not lock
+   * it — each partial receipt records its own warehouse, and that is what
+   * stock posts against.
    */
   warehouse?: string | POWarehouseRef | null;
   items: POItem[];

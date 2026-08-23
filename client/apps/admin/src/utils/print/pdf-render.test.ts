@@ -58,6 +58,22 @@ describe('renderDocument', () => {
     expect(safeText('北京')).toBe('??');
   });
 
+  it('renders when a warehouse head overrides the company block', () => {
+    const whDoc = renderDocument({
+      ...model,
+      companyName: 'Maitama Store',
+      head: {
+        address: '39 Gana Street, Off Aminu Kano Crescent',
+        city: 'Abuja, FCT, Nigeria',
+        email: 'maitama@drinksharbour.com',
+        phone: '+234 803 555 0100',
+      },
+    });
+    expect(whDoc.getNumberOfPages()).toBeGreaterThanOrEqual(1);
+    const bytes = whDoc.output('arraybuffer') as ArrayBuffer;
+    expect(bytes.byteLength).toBeGreaterThan(1000);
+  });
+
   it('flows long tables across multiple pages', () => {
     const rows = Array.from({ length: 80 }, (_, i) => [
       { text: `Product ${i + 1}`, sub: `SKU-${i}` },

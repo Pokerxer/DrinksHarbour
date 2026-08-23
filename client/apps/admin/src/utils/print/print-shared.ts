@@ -1,6 +1,8 @@
 // Shared data helpers for the printed purchase documents. Layout lives in
 // pdf-render.ts; each *-print builder turns a server record into a
 // DocumentModel using the helpers below.
+import type { POWarehouseRef } from '@/services/purchaseOrder.service';
+import type { DocHead } from './doc-model';
 
 export const COMPANY = {
   name: 'DrinksHarbour',
@@ -8,6 +10,54 @@ export const COMPANY = {
   city: 'Abuja, Nigeria',
   email: 'accounts@drinksharbour.com',
 };
+
+/** The warehouse ref carries full details only when freshly populated. */
+type PopulatedWarehouse = POWarehouseRef;
+
+function isPopulatedWarehouse(
+  wh: string | POWarehouseRef | null | undefined
+): wh is PopulatedWarehouse {
+  return !!wh && typeof wh === 'object';
+}
+
+/** Street line(s) of a warehouse, e.g. "39 Gana Street, Off Aminu Kano Crescent". */
+export function warehouseStreetLine(wh: PopulatedWarehouse | null): string {
+  return [wh?.address?.line1, wh?.address?.line2]
+    .filter(Boolean)
+    .join(', ');
+}
+
+/** Locality line of a warehouse, e.g. "Abuja, FCT, Nigeria". */
+export function warehouseLocalityLine(wh: PopulatedWarehouse | null): string {
+  return [wh?.address?.city, wh?.address?.state, wh?.address?.country]
+    .filter(Boolean)
+    .join(', ');
+}
+
+/**
+ * Head block from a populated warehouse — undefined unless the ref actually
+ * carries address/contact details, so stale `{_id, name, code}` refs fall
+ * back to the platform defaults instead of printing an empty band.
+ */
+export function warehouseHeadOf(
+  wh: string | POWarehouseRef | null | undefined
+): DocHead | undefined {
+  if (!isPopulatedWarehouse(wh)) return undefined;
+  const head: DocHead = {
+    address: warehouseStreetLine(wh) || undefined,
+    city: warehouseLocalityLine(wh) || undefined,
+    email: wh.contact?.email || undefined,
+    phone: wh.contact?.phone || undefined,
+  };
+  return Object.values(head).some(Boolean) ? head : undefined;
+}
+
+/** Buyer contact line, e.g. "+234 803 555 0100 · maitama@drinksharbour.com". */
+export function warehouseContactLine(wh: PopulatedWarehouse | null): string {
+  return [wh?.contact?.phone, wh?.contact?.email]
+    .filter(Boolean)
+    .join(' · ');
+}
 
 export function fmtDate(d?: string | Date | null): string {
   if (!d) return '—';

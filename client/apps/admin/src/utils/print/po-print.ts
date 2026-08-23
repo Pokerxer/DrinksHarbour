@@ -5,13 +5,38 @@ import {
   packNounOf,
   packsLabel,
 } from '@/app/shared/purchases/types';
-import { fmtAmt, fmtDate, moneyWords } from './print-shared';
+import { fmtAmt, fmtDate, moneyWords, warehouseContactLine, warehouseHeadOf, warehouseLocalityLine, warehouseStreetLine } from './print-shared';
 import type { DocumentModel, DocCell } from './doc-model';
 
 export function buildPOInvoice(
   po: PurchaseOrder,
   companyName: string
 ): DocumentModel {
+  // The selected destination warehouse is the buying entity on paper: it owns
+  // the head block and the Buyer box. Only a freshly populated ref carries
+  // address/contact details; bare ids fall back to the tenant company.
+  const warehouse =
+    typeof po.warehouse === 'object' && po.warehouse?._id
+      ? po.warehouse
+      : null;
+  const head = warehouseHeadOf(warehouse);
+  const identityName = warehouse?.name || companyName;
+  const buyerBox = warehouse
+    ? {
+        heading: 'Buyer',
+        name: warehouseLabelOf(po.warehouse),
+        lines: [
+          warehouseStreetLine(warehouse),
+          warehouseLocalityLine(warehouse),
+          warehouseContactLine(warehouse),
+        ].filter(Boolean),
+      }
+    : {
+        heading: 'Buyer',
+        name: companyName,
+        lines: ['Deliver to the destination stated above'],
+      };
+
   const lineOf = (it: (typeof po.items)[number]) =>
     it.totalCost ?? ((it as any).unitCost ?? it.unitPrice ?? 0) * it.quantity;
   const totalCost = po.items.reduce((s, it) => s + lineOf(it), 0);
@@ -79,7 +104,8 @@ export function buildPOInvoice(
 
   return {
     kind: 'po',
-    companyName,
+    companyName: identityName,
+    head,
     department: 'Purchase Order',
     docTitle: 'Purchase Order',
     number: po.poNumber,
@@ -94,11 +120,7 @@ export function buildPOInvoice(
         }
       : undefined,
     parties: [
-      {
-        heading: 'Buyer',
-        name: companyName,
-        lines: ['Deliver to the destination stated above'],
-      },
+      buyerBox,
       {
         heading: 'Vendor / Supplier',
         name: po.vendorName ?? '—',

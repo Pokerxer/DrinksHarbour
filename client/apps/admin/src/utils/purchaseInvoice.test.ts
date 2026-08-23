@@ -140,6 +140,36 @@ describe('buildRFQInvoice', () => {
   });
 });
 
+describe('buildRFQInvoice — selected warehouse as buyer', () => {
+  const doc = buildRFQInvoice(
+    { ...rfq, warehouse } as unknown as PurchaseOrder,
+    'DrinksHarbour'
+  );
+
+  it('quotes back to the selected warehouse', () => {
+    expect(doc.parties[0]).toMatchObject({
+      heading: 'Quote To (Buyer)',
+      name: 'Maitama Store (MTM)',
+    });
+    expect(doc.parties[0].lines).toContain('Abuja, FCT, Nigeria');
+  });
+
+  it('carries the selected warehouse details into the document head', () => {
+    expect(doc.companyName).toBe('Maitama Store');
+    expect(doc.head).toEqual({
+      address: '39 Gana Street, Off Aminu Kano Crescent',
+      city: 'Abuja, FCT, Nigeria',
+      email: 'maitama@drinksharbour.com',
+      phone: '+234 803 555 0100',
+    });
+  });
+
+  it('directs quote responses to the warehouse contact email', () => {
+    const respond = sectionOf(doc, 'How to Respond');
+    expect(respond?.body).toContain('maitama@drinksharbour.com');
+  });
+});
+
 describe('print documents — shared layout', () => {
   it('every document carries the company contact block', () => {
     const po = buildPOInvoice(
@@ -153,6 +183,26 @@ describe('print documents — shared layout', () => {
   });
 });
 
+// Fully populated destination warehouse as getPurchaseOrder returns it.
+const warehouse = {
+  _id: 'w1',
+  name: 'Maitama Store',
+  code: 'MTM',
+  type: 'store',
+  address: {
+    line1: '39 Gana Street',
+    line2: 'Off Aminu Kano Crescent',
+    city: 'Abuja',
+    state: 'FCT',
+    country: 'Nigeria',
+  },
+  contact: {
+    name: 'Ada Obi',
+    phone: '+234 803 555 0100',
+    email: 'maitama@drinksharbour.com',
+  },
+};
+
 describe('buildPOInvoice — detail', () => {
   const po = {
     ...rfq,
@@ -163,7 +213,7 @@ describe('buildPOInvoice — detail', () => {
     paymentTerms: 'Net 30',
     approvedByName: 'Ada Obi',
     purchaseAgreement: { _id: 'ag-1', agreementNumber: 'AGR-001' },
-    warehouse: { _id: 'w1', name: 'Maitama Store', code: 'MTM' },
+    warehouse,
     isBackorder: true,
     originalPO: 'po-orig',
     items: [
@@ -236,6 +286,46 @@ describe('buildPOInvoice — detail', () => {
     const grand = doc.totals.find((t) => t.variant === 'grand');
     expect(grand?.value).toBe('NGN 4,800,000.00');
     expect(doc.words).toBe('Four Million, Eight Hundred Thousand Naira Only');
+  });
+
+  it('makes the selected warehouse the buyer', () => {
+    expect(doc.parties[0]).toMatchObject({
+      heading: 'Buyer',
+      name: 'Maitama Store (MTM)',
+    });
+    expect(doc.parties[0].lines).toContain(
+      '39 Gana Street, Off Aminu Kano Crescent'
+    );
+    expect(doc.parties[0].lines).toContain('Abuja, FCT, Nigeria');
+    expect(
+      doc.parties[0].lines?.some((l) => l.includes('+234 803 555 0100'))
+    ).toBe(true);
+    expect(
+      doc.parties[0].lines?.some((l) => l.includes('maitama@drinksharbour.com'))
+    ).toBe(true);
+  });
+
+  it('carries the selected warehouse details into the document head', () => {
+    // The head is what the renderer draws in the branded band and footer —
+    // it must be the warehouse's identity, not platform defaults.
+    expect(doc.companyName).toBe('Maitama Store');
+    expect(doc.head).toEqual({
+      address: '39 Gana Street, Off Aminu Kano Crescent',
+      city: 'Abuja, FCT, Nigeria',
+      email: 'maitama@drinksharbour.com',
+      phone: '+234 803 555 0100',
+    });
+  });
+
+  it('falls back to the tenant company when no warehouse is populated', () => {
+    const bare = { ...po, warehouse: undefined } as unknown as PurchaseOrder;
+    const bareDoc = buildPOInvoice(bare, 'DrinksHarbour');
+    expect(bareDoc.companyName).toBe('DrinksHarbour');
+    expect(bareDoc.head).toBeUndefined();
+    expect(bareDoc.parties[0]).toMatchObject({
+      heading: 'Buyer',
+      name: 'DrinksHarbour',
+    });
   });
 });
 

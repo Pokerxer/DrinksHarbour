@@ -70,6 +70,12 @@ function sanitize(m: DocumentModel): DocumentModel {
   return {
     ...m,
     companyName: safeText(m.companyName),
+    head: m.head && {
+      address: m.head.address == null ? undefined : safeText(m.head.address),
+      city: m.head.city == null ? undefined : safeText(m.head.city),
+      email: m.head.email == null ? undefined : safeText(m.head.email),
+      phone: m.head.phone == null ? undefined : safeText(m.head.phone),
+    },
     department: safeText(m.department),
     docTitle: safeText(m.docTitle),
     number: safeText(m.number),
@@ -257,12 +263,12 @@ function drawBand(doc: jsPDF, m: DocumentModel): void {
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...(mix(BRAND.red, '#ffffff', 0.74) as RGB));
-  doc.text(
-    fitLine(doc, `${COMPANY.address}, ${COMPANY.city}`, leftW, 8),
-    MX,
-    55
-  );
-  doc.text(fitLine(doc, COMPANY.email, leftW, 8), MX, 66);
+  const place = [m.head?.address ?? COMPANY.address, m.head?.city ?? COMPANY.city]
+    .filter(Boolean)
+    .join(', ');
+  doc.text(fitLine(doc, place, leftW, 8), MX, 55);
+  const contact = [m.head?.email, m.head?.phone].filter(Boolean).join(' · ');
+  doc.text(fitLine(doc, contact || COMPANY.email, leftW, 8), MX, 66);
 
   ghostChip(doc, m.department, MX, 75);
 
@@ -331,8 +337,17 @@ function drawFooter(
 
   doc.setFont('helvetica', 'normal').setFontSize(7.3);
   paint(doc, BRAND.faint);
+  const footerPlace = [
+    m.head?.address ?? COMPANY.address,
+    m.head?.city ?? COMPANY.city,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const footerContact = [m.head?.email, m.head?.phone]
+    .filter(Boolean)
+    .join(' · ');
   doc.text(
-    `${m.companyName || COMPANY.name} · ${COMPANY.address}, ${COMPANY.city} · ${COMPANY.email}`,
+    `${m.companyName || COMPANY.name} · ${footerPlace} · ${footerContact || COMPANY.email}`,
     MX,
     ly + 14
   );
