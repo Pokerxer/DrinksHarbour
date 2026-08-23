@@ -120,6 +120,14 @@ export function buildTransferInvoice(
     },
     totals: [
       { label: 'Subtotal', value: fmtAmt(transfer.subtotal ?? 0, currency) },
+      ...(transfer.discountAmount
+        ? [
+            {
+              label: 'Discount',
+              value: `− ${fmtAmt(transfer.discountAmount, currency)}`,
+            },
+          ]
+        : []),
       ...(transfer.taxAmount
         ? [{ label: 'Tax', value: fmtAmt(transfer.taxAmount, currency) }]
         : []),
