@@ -3,18 +3,58 @@ const VendorPricelist = require('../models/VendorPricelist');
 const PurchaseOrder = require('../models/PurchaseOrder');
 const { syncVendorPricelistFromPO } = require('../services/vendorPricelistSync.service');
 const { pushHistory, changePercent, findLine } = require('../utils/pricelistHistory');
+const { activeWindowFilter } = require('../utils/pricelistWindow');
 const asyncHandler = require('../utils/asyncHandler');
+
+// Fields a client may write. Everything else (tenant, createdBy,
+// lastSyncedAt, lastSyncedPO, updatedBy…) is server-owned.
+const EDITABLE_FIELDS = [
+  'name',
+  'vendor',
+  'vendorName',
+  'currency',
+  'startDate',
+  'endDate',
+  'isActive',
+  'discountPercent',
+  'notes',
+  'items',
+  'source',
+  'autoManaged',
+];
+
+/**
+ * Embedded price lines must reference a product and carry a positive price.
+ * Returns an error message or null when valid.
+ */
+function validateItems(items) {
+  if (!Array.isArray(items)) return null;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (!it || !it.subProductId) {
+      return `Line ${i + 1}: a linked product is required`;
+    }
+    if (!(Number(it.unitPrice) > 0)) {
+      return `Line ${i + 1}: unit price must be greater than 0`;
+    }
+  }
+  return null;
+}
 
 const createVendorPricelist = asyncHandler(async (req, res) => {
   const tenantId = req.tenant._id;
   const userId = req.user._id;
-  const { 
-    name, vendor, vendorName, currency, startDate, endDate, 
-    isActive, discountPercent, notes, items 
+  const {
+    name, vendor, vendorName, currency, startDate, endDate,
+    isActive, discountPercent, notes, items,
   } = req.body;
 
   if (!name || !vendorName) {
     return res.status(400).json({ success: false, message: 'Name and vendor are required' });
+  }
+  const itemError = validateItems(items);
+  if (itemError) {
+    return res.status(400).json({ success: false, message: itemError });
   }
 
   const pricelist = await VendorPricelist.create({
@@ -36,8 +76,11 @@ const createVendorPricelist = asyncHandler(async (req, res) => {
 });
 
 const getVendorPricelist = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant._id;
   const { id } = req.params;
-  const pricelist = await VendorPricelist.findById(id)
+  // Workstream B: bare findById let any tenant read another tenant's list by
+  // guessing an _id. Scope every read by the JWT tenant.
+  const pricelist = await VendorPricelist.findOne({ _id: id, tenant: tenantId })
     .populate('vendor', 'name email phone')
     .populate('createdBy', 'name email');
 
@@ -87,6 +130,11 @@ const updateVendorPricelist = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Vendor pricelist not found' });
   }
 
+  const itemError = validateItems(updates.items);
+  if (itemError) {
+    return res.status(400).json({ success: false, message: itemError });
+  }
+
   // Log manual price changes into per-line history before applying item edits.
   if (Array.isArray(updates.items)) {
     const now = new Date();
@@ -113,10 +161,9 @@ const updateVendorPricelist = asyncHandler(async (req, res) => {
     });
   }
 
-  Object.keys(updates).forEach((key) => {
-    if (key !== 'tenant' && key !== 'createdBy') {
-      pricelist[key] = updates[key];
-    }
+  // Allowlist assignment — never copy arbitrary client keys onto the doc.
+  EDITABLE_FIELDS.forEach((key) => {
+    if (key in updates) pricelist[key] = updates[key];
   });
   pricelist.updatedBy = userId;
 
@@ -151,11 +198,7 @@ const getPricelistForProduct = asyncHandler(async (req, res) => {
     tenant: tenantId,
     vendor: vendorId,
     isActive: true,
-    $or: [
-      { startDate: { $lte: new Date() }, endDate: { $gte: new Date() } },
-      { startDate: { $exists: false }, endDate: { $exists: false } },
-      { startDate: { $lte: new Date() }, endDate: { $exists: false } },
-    ],
+    ...activeWindowFilter(),
   }).sort({ createdAt: -1 });
 
   for (const pricelist of pricelists) {
@@ -188,11 +231,7 @@ const getVendorPriceListsByProduct = asyncHandler(async (req, res) => {
   const pricelists = await VendorPricelist.find({
     tenant: tenantId,
     isActive: true,
-    $or: [
-      { startDate: { $lte: new Date() }, endDate: { $gte: new Date() } },
-      { startDate: { $exists: false }, endDate: { $exists: false } },
-      { startDate: { $lte: new Date() }, endDate: { $exists: false } },
-    ],
+    ...activeWindowFilter(),
   }).populate('vendor', 'name email phone');
 
   const results = pricelists.map(pricelist => {
@@ -254,16 +293,11 @@ const syncNow = asyncHandler(async (req, res) => {
 const getPriceMatrix = asyncHandler(async (req, res) => {
   const tenantId = req.tenant._id;
   const { search } = req.query;
-  const now = new Date();
 
   const pricelists = await VendorPricelist.find({
     tenant: tenantId,
     isActive: true,
-    $or: [
-      { startDate: { $lte: now }, endDate: { $gte: now } },
-      { startDate: { $exists: false }, endDate: { $exists: false } },
-      { startDate: { $lte: now }, endDate: { $exists: false } },
-    ],
+    ...activeWindowFilter(),
   }).populate('vendor', 'name email');
 
   const q = (search || '').trim().toLowerCase();
