@@ -29,6 +29,14 @@ import {
   stockTransferService,
   type StockTransfer,
 } from '@/services/stockTransfer.service';
+import TransferReceivePanel, {
+  type ReceiveLineInput,
+} from './transfer-receive-panel';
+import {
+  canCloseOperation,
+  canReceiveTransfer,
+  canSendTransfer,
+} from './transfer-receive-panel-helpers';
 import { CURRENCY_SYMBOLS } from './types';
 import { fmtCur } from './purchases-analytics-helpers';
 
@@ -54,6 +62,16 @@ const STATUS_STYLE: Record<string, { badge: string; dot: string; label: string }
     badge: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-300',
     dot: 'bg-blue-500',
     label: 'Confirmed',
+  },
+  in_transit: {
+    badge: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-300',
+    dot: 'bg-blue-500',
+    label: 'In Transit',
+  },
+  partially_received: {
+    badge: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-300',
+    dot: 'bg-amber-500',
+    label: 'Partially Received',
   },
   completed: {
     badge: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-300',
@@ -184,6 +202,15 @@ export default function StockTransferDetail({ id }: { id: string }) {
   } | null>(null);
   const [sourceStock, setSourceStock] = useState<Record<string, number>>({});
   const [stockLoading, setStockLoading] = useState(false);
+  const [showReceivePanel, setShowReceivePanel] = useState(false);
+
+  // Two-party gating: tenant admins bypass warehouse-manager checks; everyone
+  // else must be a manager of the relevant side. Mirrors the server's
+  // assertWarehouseSide — the server remains authoritative.
+  const uid = session?.user?.id ?? '';
+  const isAdminRole = ['super_admin', 'tenant_owner', 'tenant_admin'].includes(
+    session?.user?.role ?? ''
+  );
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -256,6 +283,21 @@ export default function StockTransferDetail({ id }: { id: string }) {
     }
   }
 
+  async function handleReceive(lines: ReceiveLineInput[]) {
+    setActing(true);
+    try {
+      await stockTransferService.receive(id, lines, token);
+      setShowReceivePanel(false);
+      await load();
+      toast.success('Receipt recorded');
+    } catch (e) {
+      await load();
+      toast.error(e instanceof Error ? e.message : 'Failed to record receipt');
+    } finally {
+      setActing(false);
+    }
+  }
+
   if (loading)
     return (
       <div className="pb-10">
@@ -288,7 +330,9 @@ export default function StockTransferDetail({ id }: { id: string }) {
   const canConfirm = transfer.status === 'draft';
   const canApprove = transfer.status === 'pending_approval';
   const canReject = transfer.status === 'pending_approval';
-  const canComplete = transfer.status === 'confirmed';
+  const canDispatch = canSendTransfer(transfer, uid, isAdminRole);
+  const canReceive = canReceiveTransfer(transfer, uid, isAdminRole);
+  const canClose = canCloseOperation(transfer, uid, isAdminRole);
   const canCancel =
     transfer.status === 'draft' ||
     transfer.status === 'confirmed' ||
@@ -418,21 +462,62 @@ export default function StockTransferDetail({ id }: { id: string }) {
               Reject
             </button>
           )}
-          {canComplete && (
+          {canDispatch && (
             <button
               type="button"
               disabled={acting}
               onClick={() => setConfirmAction({
-                title: 'Complete Transfer',
-                message: `This will move ${totalUnits} unit${totalUnits !== 1 ? 's' : ''} from ${whName(transfer.sourceWarehouse)} to ${whName(transfer.destinationWarehouse)}. Stock quantities will be updated in both warehouses.`,
-                confirmLabel: 'Complete',
+                title: 'Dispatch Transfer',
+                message: `Mark ${totalUnits} unit${totalUnits !== 1 ? 's' : ''} as dispatched from ${whName(transfer.sourceWarehouse)}? ${whName(transfer.destinationWarehouse)} will then be able to receive stock against this transfer.`,
+                confirmLabel: 'Dispatch',
                 confirmColor: 'bg-[#b20202] hover:bg-[#9a0101]',
-                action: () => stockTransferService.updateStatus(id, 'completed', token),
+                action: () => stockTransferService.send(id, token),
               })}
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
             >
-              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiCheckCircle className="h-4 w-4" />}
-              Complete Transfer
+              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiArrowsLeftRight className="h-4 w-4" />}
+              Dispatch
+            </button>
+          )}
+          {canReceive && (
+            <button
+              type="button"
+              onClick={() => setShowReceivePanel((v) => !v)}
+              className={
+                showReceivePanel
+                  ? 'flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-600 hover:bg-emerald-50'
+                  : 'flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700'
+              }
+            >
+              <PiCheckCircle className="h-4 w-4" />
+              {showReceivePanel ? 'Hide Receiving' : 'Receive Stock'}
+            </button>
+          )}
+          {canClose && (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                const ok = window.confirm(
+                  `Close ${transfer.transferNumber} with shortages? Outstanding units will no longer be expected — nothing is returned automatically and the transfer is completed as-is.`
+                );
+                if (!ok) return;
+                setActing(true);
+                try {
+                  await stockTransferService.close(id, token);
+                  await load();
+                  toast.success('Transfer closed');
+                } catch (e) {
+                  await load();
+                  toast.error(e instanceof Error ? e.message : 'Action failed');
+                } finally {
+                  setActing(false);
+                }
+              }}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+            >
+              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiWarningCircle className="h-4 w-4" />}
+              Close with shortage
             </button>
           )}
           {canCancel && (
@@ -494,6 +579,40 @@ export default function StockTransferDetail({ id }: { id: string }) {
           </div>
         ))}
       </div>
+
+      {/* Receive panel (destination side) */}
+      {showReceivePanel && canReceive && (
+        <div className="mb-6">
+          <TransferReceivePanel
+            items={transfer.items}
+            currency={transfer.currency ?? 'NGN'}
+            busy={acting}
+            onSubmit={handleReceive}
+          />
+        </div>
+      )}
+
+      {/* Sent / received discrepancy strip */}
+      {(transfer.status === 'partially_received' ||
+        transfer.closedWithShortage ||
+        transfer.items.some((it) => (it.shortfallQty ?? 0) > 0)) &&
+        (() => {
+          const received = transfer.items.reduce(
+            (s, it) => s + (it.receivedQty ?? it.transferredQty ?? 0),
+            0
+          );
+          const short = Math.max(0, totalUnits - received);
+          return (
+            <div className="mb-6 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <PiWarningCircle className="h-4 w-4 shrink-0" />
+              <span>
+                Discrepancy — Sent <strong>{totalUnits}</strong> · Received{' '}
+                <strong>{received}</strong> · Short{' '}
+                <strong>{short}</strong> unit{short !== 1 ? 's' : ''}
+              </span>
+            </div>
+          );
+        })()}
 
       {/* Items table */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
@@ -637,6 +756,29 @@ export default function StockTransferDetail({ id }: { id: string }) {
             ...(transfer.confirmedAt
               ? [{ label: 'Confirmed', date: transfer.confirmedAt, user: transfer.confirmedBy, dotColor: 'bg-blue-500' }]
               : []),
+            ...(transfer.dispatchedAt
+              ? [{ label: 'Dispatched', date: transfer.dispatchedAt, user: transfer.dispatchedBy, dotColor: 'bg-indigo-500' }]
+              : []),
+            ...(transfer.receipts ?? [])
+              .filter((r) => !r.shortagesClosed)
+              .map((r) => ({
+                label: r.lines.length
+                  ? r.lines
+                      .map(
+                        (l) =>
+                          `${l.quantity} × ${
+                            transfer.items[l.itemIndex]?.subProductName ?? 'item'
+                          }${l.note ? ` — ${l.note}` : ''}`
+                      )
+                      .join(', ')
+                  : 'Receipt recorded',
+                date: r.receivedAt,
+                user: r.receivedBy,
+                dotColor: 'bg-emerald-500',
+              })),
+            ...(transfer.closedWithShortage
+              ? [{ label: 'Closed with shortages', date: transfer.completedDate, user: transfer.completedBy, dotColor: 'bg-amber-500' }]
+              : []),
             ...(transfer.completedDate
               ? [{ label: 'Completed', date: transfer.completedDate, user: transfer.completedBy, dotColor: 'bg-emerald-500' }]
               : []),
@@ -644,7 +786,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
               ? [{ label: 'Cancelled', date: transfer.cancelledAt, user: transfer.cancelledBy, dotColor: 'bg-red-500' }]
               : []),
           ].map((entry, idx, arr) => (
-            <div key={entry.label} className="flex gap-3">
+            <div key={`${entry.label}-${idx}`} className="flex gap-3">
               <div className="flex flex-col items-center">
                 <div className={`h-2.5 w-2.5 rounded-full ring-2 ring-white ${entry.dotColor}`} />
                 {idx < arr.length - 1 && <div className="mt-0.5 h-full w-px bg-gray-200" />}
