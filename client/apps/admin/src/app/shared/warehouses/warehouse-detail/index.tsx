@@ -43,6 +43,7 @@ import StockTable from './stock-table';
 import ExportMenu from './export-menu';
 import AdjustStockModal from './adjust-stock-modal';
 import TransferStockModal from './transfer-stock-modal';
+import ManagersPanel from './managers-panel';
 import SubProductInventoryDrawer from './subproduct-inventory-drawer';
 import { GridSkeleton, TableSkeleton } from './skeletons';
 import {
@@ -379,6 +380,14 @@ export default function WarehouseDetail({
               />
               <TotalsBar totals={totals} count={filteredRows.length} inline />
             </>
+          )}
+
+          {phase === 'ready' && warehouse && (
+            <ManagersPanel
+              warehouse={warehouse}
+              token={token}
+              onChanged={reload}
+            />
           )}
         </>
       )}
