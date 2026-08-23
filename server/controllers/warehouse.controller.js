@@ -3,9 +3,10 @@ const warehouseService = require('../services/warehouse.service');
 const Tenant = require('../models/Tenant');
 const Warehouse = require('../models/Warehouse');
 const SubProduct = require('../models/SubProduct');
+const User = require('../models/User');
 const { logAudit } = require('../utils/auditLog');
 const asyncHandler = require('../utils/asyncHandler');
-const { ValidationError } = require('../utils/errors');
+const { ValidationError, NotFoundError } = require('../utils/errors');
 
 // Resolve whether a stock mutation on this sub-product should write the batch
 // sub-ledger: the tenant master switch (batchTrackingEnabled) AND the product's
@@ -77,12 +78,16 @@ const getWarehouses = asyncHandler(async (req, res) => {
   if (req.query.isActive !== undefined) filters.isActive = req.query.isActive === 'true';
   if (req.query.type) filters.type = req.query.type;
   const data = await warehouseService.getWarehouses(tenantId, filters);
+  // The service returns lean rows; managers are resolved here (static populate
+  // works on plain objects) so list/detail reads expose who runs each place.
+  await Warehouse.populate(data, { path: 'managers', select: 'name email' });
   res.json({ success: true, data });
 });
 
 const getWarehouseById = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
   const data = await warehouseService.getWarehouseById(req.params.id, tenantId);
+  await Warehouse.populate(data, { path: 'managers', select: 'name email' });
   res.json({ success: true, data });
 });
 
@@ -168,6 +173,52 @@ const transferStock = asyncHandler(async (req, res) => {
     tenantId
   );
   res.json({ success: true, message: 'Stock transferred', data });
+});
+
+// Validate a proposed manager list against this tenant's own users. Exported
+// for unit tests (same pattern as pickValidSettingUpdates): every id must
+// resolve to a User of the tenant, otherwise a caller could hand warehouse
+// authority (transfer send/receive gating) to an id from another organisation.
+async function validateManagerIds(ids, tenantId, User) {
+  if (!ids.length) return [];
+  const found = await User.find({
+    _id: { $in: ids.map(String) },
+    tenant: tenantId,
+  })
+    .select('_id')
+    .lean();
+  const valid = found.map((u) => String(u._id));
+  const missing = ids.map(String).filter((id) => !valid.includes(id));
+  if (missing.length) {
+    throw new ValidationError(
+      'Invalid manager selection: not a user of this tenant'
+    );
+  }
+  return valid;
+}
+
+// PATCH /api/warehouses/:id/managers — replace the location's manager list.
+// Tenant admins only (route-guarded). Managers gate the two-sided transfer
+// flow: source-side actions need a SOURCE manager, receiving needs a
+// DESTINATION manager; tenant admins always bypass.
+const setWarehouseManagers = asyncHandler(async (req, res) => {
+  const tenantId = requireTenant(req);
+  const warehouse = await Warehouse.findOne({
+    _id: req.params.id,
+    tenant: tenantId,
+  });
+  if (!warehouse) throw new NotFoundError('Warehouse not found');
+
+  const ids = Array.isArray(req.body.managers) ? req.body.managers : [];
+  warehouse.managers = await validateManagerIds(ids, tenantId, User);
+
+  await warehouse.save();
+  await warehouse.populate({ path: 'managers', select: 'name email' });
+  res.json({
+    success: true,
+    message: 'Warehouse managers updated',
+    data: warehouse,
+  });
 });
 
 // @desc    Get tenant warehouse settings
@@ -290,6 +341,7 @@ module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, getAllWarehouseStock, getWarehouseBatches, adjustWarehouseStock, transferStock,
   getWarehouseMovements,
+  setWarehouseManagers, validateManagerIds,
   getWarehouseSettings, updateWarehouseSettings, getTenantWarehouseSettings,
   pickValidSettingUpdates, WAREHOUSE_SETTING_VALIDATORS,
 };
