@@ -17,6 +17,8 @@ import {
   PiCheckCircle,
   PiClock,
   PiXCircle,
+  PiTruck,
+  PiPackage,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -35,6 +37,10 @@ const STATUS_BADGE: Record<string, string> = {
     'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-300',
   confirmed:
     'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-300',
+  in_transit:
+    'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-300',
+  partially_received:
+    'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-300',
   completed:
     'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-300',
   cancelled: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-300',
@@ -45,6 +51,8 @@ const STATUS_LABEL: Record<string, string> = {
   draft: 'Draft',
   pending_approval: 'Pending approval',
   confirmed: 'Confirmed',
+  in_transit: 'In transit',
+  partially_received: 'Partially received',
   completed: 'Completed',
   cancelled: 'Cancelled',
   rejected: 'Rejected',
@@ -119,6 +127,8 @@ export default function StockTransfersList() {
     draft: 0,
     pending_approval: 0,
     confirmed: 0,
+    in_transit: 0,
+    partially_received: 0,
     completed: 0,
     cancelled: 0,
     rejected: 0,
@@ -145,6 +155,8 @@ export default function StockTransfersList() {
           draft: 0,
           pending_approval: 0,
           confirmed: 0,
+          in_transit: 0,
+          partially_received: 0,
           completed: 0,
           cancelled: 0,
           rejected: 0,
@@ -210,13 +222,15 @@ export default function StockTransfersList() {
   return (
     <div>
       {/* Stats cards */}
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatsCard
           label="Total Transfers"
           value={
             stats.draft +
             stats.pending_approval +
             stats.confirmed +
+            stats.in_transit +
+            stats.partially_received +
             stats.completed +
             stats.cancelled +
             stats.rejected
@@ -241,6 +255,18 @@ export default function StockTransfersList() {
           value={stats.confirmed}
           color="bg-blue-100 text-blue-600"
           icon={<PiClock className="h-4 w-4" />}
+        />
+        <StatsCard
+          label="In Transit"
+          value={stats.in_transit}
+          color="bg-sky-100 text-sky-600"
+          icon={<PiTruck className="h-4 w-4" />}
+        />
+        <StatsCard
+          label="Partially Received"
+          value={stats.partially_received}
+          color="bg-orange-100 text-orange-600"
+          icon={<PiPackage className="h-4 w-4" />}
         />
       </div>
 
@@ -289,6 +315,11 @@ export default function StockTransfersList() {
           { key: 'draft', label: `Draft (${stats.draft})` },
           { key: 'pending_approval', label: `Pending (${stats.pending_approval})` },
           { key: 'confirmed', label: `Confirmed (${stats.confirmed})` },
+          { key: 'in_transit', label: `In Transit (${stats.in_transit})` },
+          {
+            key: 'partially_received',
+            label: `Partial (${stats.partially_received})`,
+          },
           { key: 'completed', label: `Completed (${stats.completed})` },
           { key: 'cancelled', label: `Cancelled (${stats.cancelled})` },
           { key: 'rejected', label: `Rejected (${stats.rejected})` },
