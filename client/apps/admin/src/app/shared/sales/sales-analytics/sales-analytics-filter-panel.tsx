@@ -15,18 +15,31 @@ import {
 
 type CatItem = { _id: string; name: string; parent?: string; level?: number };
 type DateItems = ReturnType<typeof buildDateFilterItems>;
+type SearchPrefix =
+  | 'customer_search:'
+  | 'product_search:'
+  | 'catname_search:'
+  | 'salesperson_search:';
 
 function Section({
   title,
+  active,
   children,
 }: {
   title: string;
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+      <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">
         {title}
+        {active && (
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-[#b20202]"
+            title="This section has active filters"
+          />
+        )}
       </p>
       <div className="space-y-0.5">{children}</div>
     </div>
@@ -60,6 +73,9 @@ function Chip({
 export default function SalesAnalyticsFilterPanel({
   filters,
   toggleFilter,
+  onQuickFilter,
+  onClearAll,
+  matchesSavedId,
   dateItems,
   statusItems,
   paymentItems,
@@ -80,6 +96,11 @@ export default function SalesAnalyticsFilterPanel({
 }: {
   filters: string[];
   toggleFilter: (key: string) => void;
+  /** Adds a free-text filter (customer/product/category/salesperson). */
+  onQuickFilter: (prefix: SearchPrefix, query: string) => void;
+  onClearAll: () => void;
+  /** Id of the saved view that IS the current page state, if any. */
+  matchesSavedId: string | null;
   dateItems: DateItems;
   statusItems: { key: string; label: string }[];
   paymentItems: { key: string; label: string }[];
@@ -98,8 +119,39 @@ export default function SalesAnalyticsFilterPanel({
   setSaveSearchName: (v: string) => void;
   saveSearch: () => void;
 }) {
-  const q = panelSearch.trim().toLowerCase();
-  const match = (label: string) => !q || label.toLowerCase().includes(q);
+  const q = panelSearch.trim();
+  const ql = q.toLowerCase();
+  const match = (label: string) => !ql || label.toLowerCase().includes(ql);
+
+  // Typing in "Find a filter…" also offers free-text filter actions — the
+  // only way to reach product/category/salesperson filters by keyboard alone.
+  const quickActions = useMemo(
+    () =>
+      q
+        ? (
+            [
+              { prefix: 'customer_search:', label: 'Customer' },
+              { prefix: 'product_search:', label: 'Product' },
+              { prefix: 'catname_search:', label: 'Category' },
+              { prefix: 'salesperson_search:', label: 'Salesperson' },
+            ] as { prefix: SearchPrefix; label: string }[]
+          ).filter(({ prefix }) => !filters.includes(`${prefix}${q}`))
+        : [],
+    [q, filters]
+  );
+
+  const activeBySection = useMemo(
+    () => ({
+      docs: filters.some((f) => f === 'not_cancelled' || f.startsWith('type_')),
+      status: filters.some((f) => f.startsWith('status_')),
+      payment: filters.some((f) => f.startsWith('pay_')),
+      period: filters.some((f) => f.startsWith('date_')),
+      catalog: filters.some(
+        (f) => f.startsWith('category_') || f.startsWith('brand_')
+      ),
+    }),
+    [filters]
+  );
 
   const topCats = useMemo(
     () => categories.filter((c) => !c.parent || c.level === 0),
@@ -109,18 +161,47 @@ export default function SalesAnalyticsFilterPanel({
   return (
     <div className="mb-4 grid grid-cols-2 gap-x-6 gap-y-4 rounded-2xl border border-[#ece4d6] bg-white p-4 shadow-sm md:grid-cols-3 lg:grid-cols-5">
       <div className="col-span-2 md:col-span-3 lg:col-span-5">
-        <div className="relative">
-          <PiMagnifyingGlass className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-          <input
-            value={panelSearch}
-            onChange={(e) => setPanelSearch(e.target.value)}
-            placeholder="Find a filter…"
-            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-xs focus:border-[#b20202] focus:outline-none"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <PiMagnifyingGlass className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <input
+              value={panelSearch}
+              onChange={(e) => setPanelSearch(e.target.value)}
+              placeholder="Find a filter, or type a customer / product / category / salesperson to filter by…"
+              className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-xs focus:border-[#b20202] focus:outline-none"
+            />
+          </div>
+          {filters.length > 0 && (
+            <button
+              type="button"
+              onClick={onClearAll}
+              className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+            >
+              Clear all ({filters.length})
+            </button>
+          )}
         </div>
+
+        {quickActions.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {quickActions.map(({ prefix, label }) => (
+              <button
+                key={prefix}
+                type="button"
+                onClick={() => {
+                  onQuickFilter(prefix, q);
+                  setPanelSearch('');
+                }}
+                className="flex items-center gap-1.5 rounded-full border border-[#b20202]/25 bg-[#b20202]/5 px-3 py-1 text-[11px] font-medium text-[#b20202] transition-colors hover:bg-[#b20202]/10"
+              >
+                Filter <strong>{label}</strong> &ldquo;{q}&rdquo;
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <Section title="Documents">
+      <Section title="Documents" active={activeBySection.docs}>
         <Chip
           active={filters.includes('not_cancelled')}
           label="Not Cancelled"
@@ -138,7 +219,7 @@ export default function SalesAnalyticsFilterPanel({
         />
       </Section>
 
-      <Section title="Status">
+      <Section title="Status" active={activeBySection.status}>
         {statusItems
           .filter((s) => match(s.label))
           .map((s) => (
@@ -151,7 +232,7 @@ export default function SalesAnalyticsFilterPanel({
           ))}
       </Section>
 
-      <Section title="Payment">
+      <Section title="Payment" active={activeBySection.payment}>
         {paymentItems
           .filter((s) => match(s.label))
           .map((s) => (
@@ -164,7 +245,7 @@ export default function SalesAnalyticsFilterPanel({
           ))}
       </Section>
 
-      <Section title="Period">
+      <Section title="Period" active={activeBySection.period}>
         <Chip
           active={filters.includes('date_today')}
           label="Today"
@@ -205,7 +286,7 @@ export default function SalesAnalyticsFilterPanel({
         ))}
       </Section>
 
-      <Section title="Catalog">
+      <Section title="Catalog" active={activeBySection.catalog}>
         {topCats
           .filter((c) => match(c.name))
           .slice(0, 8)
@@ -265,29 +346,43 @@ export default function SalesAnalyticsFilterPanel({
             Configure the page, then save it as a view.
           </p>
         )}
-        {savedSearches.map((s) => (
-          <div
-            key={s.id}
-            className="group flex items-center gap-1 rounded-lg px-2.5 py-1 hover:bg-gray-50"
-          >
-            <PiStar className="h-3 w-3 shrink-0 text-amber-400" />
-            <button
-              type="button"
-              onClick={() => applySavedSearch(s)}
-              className="flex-1 truncate text-left text-xs text-gray-700"
+        {savedSearches.map((s) => {
+          const isCurrent = s.id === matchesSavedId;
+          return (
+            <div
+              key={s.id}
+              className={`group flex items-center gap-1 rounded-lg px-2.5 py-1 transition-colors ${
+                isCurrent ? 'bg-teal-700/5' : 'hover:bg-gray-50'
+              }`}
             >
-              {s.name}
-            </button>
-            <button
-              type="button"
-              onClick={() => deleteSavedSearch(s.id)}
-              className="opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-              aria-label={`Delete ${s.name}`}
-            >
-              <PiX className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
+              <PiStar
+                className={`h-3 w-3 shrink-0 ${
+                  isCurrent ? 'text-teal-600' : 'text-amber-400'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => applySavedSearch(s)}
+                className="flex-1 truncate text-left text-xs text-gray-700"
+              >
+                {s.name}
+              </button>
+              {isCurrent && (
+                <span className="shrink-0 rounded-full bg-teal-700 px-1.5 py-px text-[9px] font-bold text-white">
+                  Current
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => deleteSavedSearch(s.id)}
+                className="opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                aria-label={`Delete ${s.name}`}
+              >
+                <PiX className="h-3 w-3" />
+              </button>
+            </div>
+          );
+        })}
         {savingSearch ? (
           <div className="flex gap-1 px-2.5 pt-1">
             <input

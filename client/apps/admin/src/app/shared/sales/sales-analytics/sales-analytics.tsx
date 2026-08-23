@@ -48,6 +48,8 @@ import {
   SalesStackedChart,
   SalesDrillDrawer,
 } from './sales-analytics-charts';
+import SalesAnalyticsPivot from './sales-analytics-pivot';
+import SalesWidgetsGrid from './sales-analytics-widgets';
 import {
   SAVED_KEY,
   SALES_GROUP_DATE_ITEMS,
@@ -58,8 +60,10 @@ import {
   PAYMENT_FILTER_ITEMS,
   buildDateFilterItems,
   applySalesFilters,
+  savedSearchMatches,
   computeSalesGroupData,
   computeSalesMultiSeries,
+  computeSalesHierarchicalPivot,
   type ChartType,
   type ProdMeta,
   type SavedSearch,
@@ -106,14 +110,35 @@ export default function SalesAnalytics() {
   );
   const [measure, setMeasure] = useState<SalesMeasure>('revenue');
   const [chartType, setChartType] = useState<ChartType>('bar');
-  const [viewMode, setViewMode] = useState<'graph' | 'stacked'>('graph');
+  const [viewMode, setViewMode] = useState<'graph' | 'stacked' | 'pivot'>(
+    'graph'
+  );
   const [sortStack, setSortStack] = useState<SortCriterion[]>([]);
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelSearch, setPanelSearch] = useState('');
   const searchRef = useRef<HTMLDivElement>(null);
   const sortRef = useRef<HTMLDivElement>(null);
+
+  // Pivot state — rows default to the deep-linked (or customer) dimension,
+  // columns to time, which is the cross-tab an operator asks for first.
+  const [pivotRowDims, setPivotRowDims] = useState<SalesGroupByKey[]>(
+    [initialGroupBy]
+  );
+  const [pivotColDims, setPivotColDims] = useState<SalesGroupByKey[]>([
+    'order_month',
+  ]);
+  const [pivotHeatMap, setPivotHeatMap] = useState(true);
+  const [pivotShowDocs, setPivotShowDocs] = useState(false);
+  const [pivotRowSearch, setPivotRowSearch] = useState('');
+  const [pivotExpandedRows, setPivotExpandedRows] = useState<Set<string>>(
+    new Set()
+  );
+  const [pivotExpandedCols, setPivotExpandedCols] = useState<Set<string>>(
+    new Set()
+  );
 
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [savingSearch, setSavingSearch] = useState(false);
@@ -216,13 +241,25 @@ export default function SalesAnalytics() {
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node))
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
         setPanelOpen(false);
+        setSearchOpen(false);
+      }
       if (sortRef.current && !sortRef.current.contains(e.target as Node))
         setSortPickerOpen(false);
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setSearchOpen(false);
+        setSortPickerOpen(false);
+      }
+    }
     document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   const filtered = useMemo(
@@ -263,6 +300,18 @@ export default function SalesAnalytics() {
     );
   }, [filtered, groupBy, groupBy2, measure, prodMeta, toBase, sortStack]);
 
+  const pivotData = useMemo(() => {
+    if (viewMode !== 'pivot' || pivotRowDims.length === 0) return null;
+    return computeSalesHierarchicalPivot(
+      filtered,
+      pivotRowDims,
+      pivotColDims,
+      measure,
+      prodMeta,
+      toBase
+    );
+  }, [viewMode, filtered, pivotRowDims, pivotColDims, measure, prodMeta, toBase]);
+
   const kpis = useMemo(() => {
     const live = filtered.filter(
       (o) =>
@@ -302,14 +351,31 @@ export default function SalesAnalytics() {
     );
   }
 
-  function addSearchFilter(prefix: 'customer_search:' | 'product_search:' | 'catname_search:') {
-    const q = searchText.trim();
+  function addSearchFilter(
+    prefix:
+      | 'customer_search:'
+      | 'product_search:'
+      | 'catname_search:'
+      | 'salesperson_search:',
+    query?: string
+  ) {
+    const q = (query ?? searchText).trim();
     if (!q) return;
     const key = `${prefix}${q}`;
     setAppliedSearchName(null);
     setFilters((prev) => (prev.includes(key) ? prev : [...prev, key]));
     setSearchText('');
+    setSearchOpen(false);
   }
+
+  // The star in the saved-views list points at the view that IS the current
+  // page state — no guessing which one is live.
+  const matchesSavedId = useMemo(() => {
+    const hit = savedSearches.find((s) =>
+      savedSearchMatches(s, filters, groupByStack, measure)
+    );
+    return hit?.id ?? null;
+  }, [savedSearches, filters, groupByStack, measure]);
 
   const saveSearch = useCallback(() => {
     if (!saveSearchName.trim()) return;
@@ -348,6 +414,8 @@ export default function SalesAnalytics() {
       return `Customer: ${key.slice(16)}`;
     if (key.startsWith('product_search:')) return `Product: ${key.slice(15)}`;
     if (key.startsWith('catname_search:')) return `Category: ${key.slice(16)}`;
+    if (key.startsWith('salesperson_search:'))
+      return `Salesperson: ${key.slice(19)}`;
     if (key.startsWith('category_'))
       return categories.find((c) => c._id === key.slice(9))?.name ?? 'Category';
     if (key.startsWith('brand_'))
@@ -588,17 +656,70 @@ export default function SalesAnalytics() {
         </div>
 
         {/* Search */}
-        <div ref={searchRef} className="relative min-w-[200px] flex-1">
+        <div ref={searchRef} className="relative min-w-[220px] flex-1">
           <PiMagnifyingGlass className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
           <input
             value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
+            onChange={(e) => {
+              setSearchText(e.target.value);
+              setSearchOpen(true);
+            }}
+            onFocus={() => setSearchOpen(true)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') addSearchFilter('customer_search:');
+              if (e.key === 'Escape') setSearchOpen(false);
             }}
-            placeholder="Search customer, product, or category…"
+            placeholder="Search customer, product, category, or salesperson…"
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-xs text-gray-700 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
           />
+          {searchOpen && searchText.trim() && (
+            <div className="absolute left-0 top-full z-30 mt-1 w-full overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+              {(
+                [
+                  {
+                    prefix: 'customer_search:' as const,
+                    icon: 'Customer',
+                    hint: 'documents billed to this name',
+                  },
+                  {
+                    prefix: 'product_search:' as const,
+                    icon: 'Product',
+                    hint: 'documents containing this line',
+                  },
+                  {
+                    prefix: 'catname_search:' as const,
+                    icon: 'Category',
+                    hint: 'lines in a matching category',
+                  },
+                  {
+                    prefix: 'salesperson_search:' as const,
+                    icon: 'Salesperson',
+                    hint: 'documents they sold',
+                  },
+                ]
+              ).map(({ prefix, icon, hint }) => (
+                <button
+                  key={prefix}
+                  type="button"
+                  onMouseDown={(e) => {
+                    // mousedown so the input keeps focus context; the click
+                    // would otherwise blur before the filter lands.
+                    e.preventDefault();
+                    addSearchFilter(prefix);
+                  }}
+                  className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <span className="font-semibold text-gray-900">{icon}</span>
+                  <span className="truncate">
+                    for &ldquo;{searchText.trim()}&rdquo;
+                  </span>
+                  <span className="ml-auto shrink-0 text-[10px] text-gray-300">
+                    {hint}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* View mode */}
@@ -626,6 +747,18 @@ export default function SalesAnalytics() {
             }`}
           >
             Breakdown
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('pivot')}
+            title="Pivot table"
+            className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'pivot'
+                ? 'bg-[#b20202] text-white shadow-sm'
+                : 'text-gray-500 hover:bg-gray-100'
+            }`}
+          >
+            Pivot
           </button>
         </div>
 
@@ -661,6 +794,12 @@ export default function SalesAnalytics() {
         <SalesAnalyticsFilterPanel
           filters={filters}
           toggleFilter={toggleFilter}
+          onQuickFilter={addSearchFilter}
+          onClearAll={() => {
+            setFilters([]);
+            setAppliedSearchName(null);
+          }}
+          matchesSavedId={matchesSavedId}
           dateItems={dateItems}
           statusItems={STATUS_FILTER_ITEMS}
           paymentItems={PAYMENT_FILTER_ITEMS}
@@ -726,56 +865,81 @@ export default function SalesAnalytics() {
         </div>
       )}
 
-      {/* ── Chart card ── */}
-      <div className="overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
-        <div className="flex items-center justify-between gap-3 border-b border-[#ece4d6] px-5 py-3">
-          <h2 className="text-sm font-semibold text-[#2a2420]">
-            {measureLabel} by {groupLabel}
-            {groupLabel2 ? ` & ${groupLabel2}` : ''}
-          </h2>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={exportCurrentView}
-              title="Export current view as CSV"
-              className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
-            >
-              <PiFloppyDisk className="h-3 w-3" />
-              CSV
-            </button>
-            <span className="rounded-full bg-[#b20202]/8 px-2.5 py-1 text-xs font-semibold text-[#b20202]">
-              {IS_CURRENCY[measure]
-                ? `₦${totalValue.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`
-                : totalValue.toLocaleString()}
-            </span>
+      {/* ── Chart / breakdown / pivot ── */}
+      {viewMode === 'pivot' ? (
+        <SalesAnalyticsPivot
+          pivot={pivotData}
+          rowDims={pivotRowDims}
+          colDims={pivotColDims}
+          measure={measure}
+          heatMap={pivotHeatMap}
+          showDocs={pivotShowDocs}
+          rowSearch={pivotRowSearch}
+          expandedRows={pivotExpandedRows}
+          expandedCols={pivotExpandedCols}
+          setRowDims={setPivotRowDims}
+          setColDims={setPivotColDims}
+          setHeatMap={setPivotHeatMap}
+          setShowDocs={setPivotShowDocs}
+          setRowSearch={setPivotRowSearch}
+          setExpandedRows={setPivotExpandedRows}
+          setExpandedCols={setPivotExpandedCols}
+          onCellClick={(orders, title) => setDrill({ orders, title })}
+        />
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-[#ece4d6] px-5 py-3">
+            <h2 className="text-sm font-semibold text-[#2a2420]">
+              {measureLabel} by {groupLabel}
+              {groupLabel2 ? ` & ${groupLabel2}` : ''}
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={exportCurrentView}
+                title="Export current view as CSV"
+                className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+              >
+                <PiFloppyDisk className="h-3 w-3" />
+                CSV
+              </button>
+              <span className="rounded-full bg-[#b20202]/8 px-2.5 py-1 text-xs font-semibold text-[#b20202]">
+                {IS_CURRENCY[measure]
+                  ? `₦${totalValue.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`
+                  : totalValue.toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-1">
+            {viewMode === 'stacked' && multiSeries ? (
+              <SalesStackedChart
+                rows={multiSeries.rows}
+                series={multiSeries.series}
+                measure={measure}
+                groupBy={groupBy!}
+                onCellClick={(rowLabel, seriesKey, orders) =>
+                  openDrill(rowLabel, orders, seriesKey)
+                }
+              />
+            ) : (
+              <SalesMainChart
+                data={groupData}
+                chartType={chartType}
+                measure={measure}
+                groupBy={groupBy ?? 'customer'}
+                measureLabel={measureLabel}
+                totalValue={totalValue}
+                totalOrders={totalOrders}
+                onDrill={(label, orders) => openDrill(label, orders)}
+              />
+            )}
           </div>
         </div>
+      )}
 
-        <div className="p-1">
-          {viewMode === 'stacked' && multiSeries ? (
-            <SalesStackedChart
-              rows={multiSeries.rows}
-              series={multiSeries.series}
-              measure={measure}
-              groupBy={groupBy!}
-              onCellClick={(rowLabel, seriesKey, orders) =>
-                openDrill(rowLabel, orders, seriesKey)
-              }
-            />
-          ) : (
-            <SalesMainChart
-              data={groupData}
-              chartType={chartType}
-              measure={measure}
-              groupBy={groupBy ?? 'customer'}
-              measureLabel={measureLabel}
-              totalValue={totalValue}
-              totalOrders={totalOrders}
-              onDrill={(label, orders) => openDrill(label, orders)}
-            />
-          )}
-        </div>
-      </div>
+      {/* ── Insight widgets ── */}
+      <SalesWidgetsGrid docs={filtered} prodMeta={prodMeta} toBase={toBase} />
 
       {drill && (
         <SalesDrillDrawer

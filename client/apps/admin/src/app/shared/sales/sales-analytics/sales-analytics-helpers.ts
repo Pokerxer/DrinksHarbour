@@ -487,6 +487,18 @@ export function applySalesFilters(
       )
     );
 
+  // A chip with an empty query value matches NOTHING — it is a broken state
+  // and must surface, not silently keep every unassigned document.
+  const spVals = filters
+    .filter((f) => f.startsWith('salesperson_search:'))
+    .map((f) => f.slice(19).toLowerCase());
+  if (spVals.length > 0)
+    r = r.filter((o) =>
+      spVals.some(
+        (q) => q.length > 0 && (o.salesperson ?? '').toLowerCase().includes(q)
+      )
+    );
+
   const productVals = filters
     .filter((f) => f.startsWith('product_search:'))
     .map((f) => f.slice(15).toLowerCase());
@@ -627,7 +639,18 @@ function computeMulti<O, I>(
   cfg: EngineConfig<O, I>,
   toBase: (a: number, c: string) => number,
   sortStack: SortCriterion[]
-): MultiSeriesResult & { rowsRaw: MultiSeriesResult['rows'] } {
+): {
+  rows: {
+    label: string;
+    isoKey: string;
+    __total__: number;
+    orders: number;
+    orderList: O[];
+    [seriesKey: string]: unknown;
+  }[];
+  series: string[];
+  orderMap: Record<string, Record<string, O[]>>;
+} {
   const orderMap: Record<string, Record<string, O[]>> = {};
   const cellItems: Record<string, Record<string, Cell<I>[]>> = {};
   const cellSets: Record<string, Record<string, Set<O>>> = {};
@@ -717,7 +740,7 @@ function computeMulti<O, I>(
   });
 
   const sortedRows = sortRows(rows, groupBy, sortStack, (r) => r.__total__);
-  return { rows: sortedRows, rowsRaw: sortedRows, series, orderMap };
+  return { rows: sortedRows, series, orderMap };
 }
 
 // ── Sales-bound engine ─────────────────────────────────────────────────────────
@@ -771,7 +794,7 @@ export function computeSalesMultiSeries(
   sortStack: SortCriterion[]
 ): MultiSeriesResult {
   withProdMeta(prodMeta);
-  const { rowsRaw, ...rest } = computeMulti(
+  return computeMulti(
     orders,
     groupBy,
     groupBy2,
@@ -780,8 +803,256 @@ export function computeSalesMultiSeries(
     toBase,
     sortStack
   );
-  void rowsRaw;
-  return rest;
+}
+
+// ── Hierarchical pivot (Odoo-style) ────────────────────────────────────────────
+
+export interface SalesHierPivotResult {
+  rowVals0: string[];
+  colVals0: string[];
+  subRowValsMap: Record<string, string[]>;
+  subColValsMap: Record<string, string[]>;
+  getValue: (rowPath: string[], colPath: string[]) => number;
+  getOrderCount: (rowPath: string[], colPath: string[]) => number;
+  getOrders: (rowPath: string[], colPath: string[]) => SalesOrder[];
+  rowTotals: Record<string, number>;
+  colTotals: Record<string, number>;
+  grandTotal: number;
+  maxCellVal: number;
+}
+
+function computeHier<O, I>(
+  orders: O[],
+  rowDims: string[],
+  colDims: string[],
+  measure: string,
+  cfg: EngineConfig<O, I>,
+  toBase: (a: number, c: string) => number
+): {
+  rowVals0: string[];
+  colVals0: string[];
+  subRowValsMap: Record<string, string[]>;
+  subColValsMap: Record<string, string[]>;
+  getValue: (rowPath: string[], colPath: string[]) => number;
+  getOrderCount: (rowPath: string[], colPath: string[]) => number;
+  getOrders: (rowPath: string[], colPath: string[]) => O[];
+  rowTotals: Record<string, number>;
+  colTotals: Record<string, number>;
+  grandTotal: number;
+  maxCellVal: number;
+} | null {
+  if (rowDims.length === 0) return null;
+
+  interface CacheEntry {
+    docs: Map<string, O>;
+    cells: Cell<I>[];
+  }
+  const cache = new Map<string, CacheEntry>();
+  const numCache = new Map<string, number>();
+
+  const cacheKey = (rPath: string[], cPath: string[]) =>
+    rPath.join('\x00') + '\x01' + cPath.join('\x00');
+
+  const addToCache = (
+    rPath: string[],
+    cPath: string[],
+    docId: string,
+    doc: O,
+    cells: Cell<I>[]
+  ) => {
+    const k = cacheKey(rPath, cPath);
+    let e = cache.get(k);
+    if (!e) {
+      e = { docs: new Map(), cells: [] };
+      cache.set(k, e);
+    }
+    e.docs.set(docId, doc);
+    e.cells.push(...cells);
+  };
+
+  const anyItemDim =
+    rowDims.some((d) => cfg.itemDims.has(d)) ||
+    colDims.some((d) => cfg.itemDims.has(d));
+
+  const rValSets: Set<string>[] = rowDims.map(() => new Set<string>());
+  const cValSets: Set<string>[] = colDims.map(() => new Set<string>());
+  const subRVals = new Map<string, Set<string>>();
+  const subCVals = new Map<string, Set<string>>();
+
+  orders.forEach((o) => {
+    const currency = cfg.currencyOf(o);
+    const allItems = cfg.itemsOf(o);
+
+    // One atom per line when an item dimension is involved — a multi-line
+    // document contributes to several buckets at once, never collapsing into
+    // items[0] the way a careless pivot does.
+    const processAtom = (item: I | null) => {
+      const rKeys = rowDims.map((d) =>
+        cfg.itemDims.has(d) && item ? cfg.itemKey(item, d) : cfg.orderKey(o, d)
+      );
+      const cKeys = colDims.map((d) =>
+        cfg.itemDims.has(d) && item ? cfg.itemKey(item, d) : cfg.orderKey(o, d)
+      );
+
+      rKeys.forEach((k, i) => rValSets[i]?.add(k));
+      cKeys.forEach((k, i) => cValSets[i]?.add(k));
+      if (rKeys.length >= 2) {
+        const set = subRVals.get(rKeys[0]) ?? new Set<string>();
+        set.add(rKeys[1]);
+        subRVals.set(rKeys[0], set);
+      }
+      if (cKeys.length >= 2) {
+        const set = subCVals.get(cKeys[0]) ?? new Set<string>();
+        set.add(cKeys[1]);
+        subCVals.set(cKeys[0], set);
+      }
+
+      const atomCells: Cell<I>[] = item
+        ? [{ item, currency }]
+        : allItems.map((i) => ({ item: i, currency }));
+
+      // Cache every prefix of both paths so totals at every level are one
+      // lookup, not a re-scan.
+      for (let ri = 0; ri <= rKeys.length; ri++) {
+        for (let ci = 0; ci <= cKeys.length; ci++) {
+          addToCache(
+            rKeys.slice(0, ri),
+            cKeys.slice(0, ci),
+            cfg.idOf(o),
+            o,
+            atomCells
+          );
+        }
+      }
+    };
+
+    if (anyItemDim) {
+      if (allItems.length > 0) allItems.forEach((item) => processAtom(item));
+      else processAtom(null);
+    } else {
+      processAtom(null);
+    }
+  });
+
+  const getVal = (rowPath: string[], colPath: string[]): number => {
+    const k = cacheKey(rowPath, colPath);
+    if (numCache.has(k)) return numCache.get(k)!;
+    const e = cache.get(k);
+    if (!e) {
+      numCache.set(k, 0);
+      return 0;
+    }
+    const val = cfg.aggregate(
+      Array.from(e.docs.values()),
+      e.cells,
+      measure,
+      toBase
+    );
+    numCache.set(k, val);
+    return val;
+  };
+
+  const getOrderCount = (rowPath: string[], colPath: string[]): number =>
+    cache.get(cacheKey(rowPath, colPath))?.docs.size ?? 0;
+
+  const isDateDim = (d: string) => d.startsWith('order_');
+
+  const rowVals0 = Array.from(rValSets[0] ?? []);
+  const colVals0 = Array.from(cValSets[0] ?? []);
+  const rowTotals: Record<string, number> = {};
+  const colTotals: Record<string, number> = {};
+  rowVals0.forEach((k) => {
+    rowTotals[k] = getVal([k], []);
+  });
+  colVals0.forEach((k) => {
+    colTotals[k] = getVal([], [k]);
+  });
+
+  if (isDateDim(rowDims[0])) rowVals0.sort((a, b) => a.localeCompare(b));
+  else rowVals0.sort((a, b) => rowTotals[b] - rowTotals[a]);
+  if (colDims[0]) {
+    if (isDateDim(colDims[0])) colVals0.sort((a, b) => a.localeCompare(b));
+    else colVals0.sort((a, b) => colTotals[b] - colTotals[a]);
+  }
+
+  const subRowValsMap: Record<string, string[]> = {};
+  rowVals0.forEach((rk) => {
+    const vals = Array.from(subRVals.get(rk) ?? []);
+    if (rowDims[1] && isDateDim(rowDims[1]))
+      vals.sort((a, b) => a.localeCompare(b));
+    else vals.sort((a, b) => getVal([rk, b], []) - getVal([rk, a], []));
+    subRowValsMap[rk] = vals;
+  });
+  const subColValsMap: Record<string, string[]> = {};
+  colVals0.forEach((ck) => {
+    const vals = Array.from(subCVals.get(ck) ?? []);
+    if (colDims[1] && isDateDim(colDims[1]))
+      vals.sort((a, b) => a.localeCompare(b));
+    else vals.sort((a, b) => getVal([], [ck, b]) - getVal([], [ck, a]));
+    subColValsMap[ck] = vals;
+  });
+
+  const grandTotal = getVal([], []);
+  // The heat scale spans BODY cells only — row/col totals are chrome, not
+  // cells, and letting them dominate would wash out every real value.
+  let maxCellVal = 0;
+  rowVals0.forEach((rk) =>
+    colVals0.forEach((ck) => {
+      maxCellVal = Math.max(maxCellVal, getVal([rk], [ck]));
+    })
+  );
+  if (colVals0.length === 0)
+    rowVals0.forEach((rk) => {
+      maxCellVal = Math.max(maxCellVal, rowTotals[rk]);
+    });
+
+  return {
+    rowVals0,
+    colVals0,
+    subRowValsMap,
+    subColValsMap,
+    getValue: getVal,
+    getOrderCount,
+    getOrders: (rowPath, colPath) =>
+      Array.from(cache.get(cacheKey(rowPath, colPath))?.docs.values() ?? []),
+    rowTotals,
+    colTotals,
+    grandTotal,
+    maxCellVal,
+  };
+}
+
+export function computeSalesHierarchicalPivot(
+  orders: SalesOrder[],
+  rowDims: SalesGroupByKey[],
+  colDims: SalesGroupByKey[],
+  measure: SalesMeasure,
+  prodMeta: Record<string, ProdMeta>,
+  toBase: (a: number, c: string) => number
+): SalesHierPivotResult | null {
+  withProdMeta(prodMeta);
+  return computeHier(orders, rowDims, colDims, measure, SALES_ENGINE, toBase);
+}
+
+/**
+ * True when the current page state IS this saved view. Filters compare as a
+ * set (order is meaningless); dimensions compare in order — Customer→Product
+ * is a different lens than Product→Customer.
+ */
+export function savedSearchMatches(
+  s: SavedSearch,
+  filters: string[],
+  groupByStack: SalesGroupByKey[],
+  measure: SalesMeasure
+): boolean {
+  const asSet = (xs: string[]) => [...xs].sort().join('\x00');
+  const dim = (i: number): SalesGroupByKey | null => groupByStack[i] ?? null;
+  return (
+    asSet(s.filters) === asSet(filters) &&
+    (s.groupBy ?? null) === dim(0) &&
+    (s.groupBy2 ?? null) === dim(1) &&
+    s.measure === measure
+  );
 }
 
 export function buildDateFilterItems(now: Date) {

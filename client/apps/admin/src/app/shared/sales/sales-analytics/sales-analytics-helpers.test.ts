@@ -22,6 +22,8 @@ import {
   aggregateSalesMeasure,
   computeSalesGroupData,
   computeSalesMultiSeries,
+  computeSalesHierarchicalPivot,
+  savedSearchMatches,
   type SalesGroupByKey,
   type SalesMeasure,
 } from './sales-analytics-helpers';
@@ -308,6 +310,242 @@ describe('formatting helpers', () => {
   test('group keys are unique', () => {
     const keys = SALES_GROUP_ITEMS.map((g) => g.key as string);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('computeSalesHierarchicalPivot', () => {
+  const meta = {
+    sp1: { catId: 'c1', catName: 'Beer', brandId: 'b1', brandName: 'Star' },
+    sp2: { catId: 'c2', catName: 'Wine', brandId: 'b2', brandName: 'Chapel' },
+  };
+  const toBase = (a: number) => a;
+
+  function ledger(): SalesOrder[] {
+    return [
+      so({
+        customerSnapshot: { name: 'A Hotel' },
+        createdAt: '2026-07-02T10:00:00Z',
+        items: [line({ subproduct: 'sp1', lineTotal: 300 })],
+        total: 300,
+      }),
+      so({
+        _id: 'so-p2',
+        soNumber: 'P2',
+        customerSnapshot: { name: 'A Hotel' },
+        createdAt: '2026-08-02T10:00:00Z',
+        items: [
+          line({ subproduct: 'sp1', lineTotal: 200 }),
+          line({ subproduct: 'sp2', lineTotal: 100 }),
+        ],
+        total: 300,
+      }),
+      so({
+        _id: 'so-p3',
+        soNumber: 'P3',
+        customerSnapshot: { name: 'B Bar' },
+        createdAt: '2026-08-09T10:00:00Z',
+        items: [line({ subproduct: 'sp2', lineTotal: 50 })],
+        total: 50,
+      }),
+    ];
+  }
+
+  test('cell values aggregate along row × col paths', () => {
+    const p = computeSalesHierarchicalPivot(
+      ledger(),
+      ['customer'],
+      ['order_month'],
+      'revenue',
+      meta,
+      toBase
+    );
+    expect(p).not.toBeNull();
+    expect(p!.getValue(['A Hotel'], ['2026-07'])).toBe(300);
+    expect(p!.getValue(['A Hotel'], ['2026-08'])).toBe(300);
+    expect(p!.getValue(['B Bar'], ['2026-08'])).toBe(50);
+    expect(p!.getValue(['A Hotel'], [])).toBe(600); // row total
+    expect(p!.getValue([], ['2026-07'])).toBe(300); // col total
+    expect(p!.grandTotal).toBe(650);
+  });
+
+  test('row and col totals maps agree with the cells', () => {
+    const p = computeSalesHierarchicalPivot(
+      ledger(),
+      ['customer'],
+      ['order_month'],
+      'revenue',
+      meta,
+      toBase
+    )!;
+    expect(p.rowTotals['A Hotel']).toBe(600);
+    expect(p.rowTotals['B Bar']).toBe(50);
+    expect(p.colTotals['2026-07']).toBe(300);
+    expect(p.colTotals['2026-08']).toBe(350);
+    // The heat scale spans BODY cells only — totals are chrome, not cells.
+    expect(p.maxCellVal).toBe(300);
+  });
+
+  test('two row dims nest: sub-rows sorted by their own value', () => {
+    const docs = [
+      so({
+        customerSnapshot: { name: 'A Hotel' },
+        items: [
+          line({ name: 'Star Lager', subproduct: 'sp1', lineTotal: 200 }),
+          line({ name: 'Chapel Red', subproduct: 'sp2', lineTotal: 100 }),
+        ],
+        total: 300,
+      }),
+    ];
+    const p = computeSalesHierarchicalPivot(
+      docs,
+      ['customer', 'product'],
+      [],
+      'revenue',
+      meta,
+      toBase
+    )!;
+    expect(p.subRowValsMap['A Hotel']).toEqual(['Star Lager', 'Chapel Red']);
+  });
+
+  test('getOrders returns the distinct documents behind a cell', () => {
+    const p = computeSalesHierarchicalPivot(
+      ledger(),
+      ['customer'],
+      ['order_month'],
+      'revenue',
+      meta,
+      toBase
+    )!;
+    // A Hotel in Aug = one doc (P2); the July doc lives in a different cell.
+    const aug = p.getOrders(['A Hotel'], ['2026-08']);
+    expect(aug.map((o) => o._id)).toEqual(['so-p2']);
+    const row = p.getOrders(['A Hotel'], []);
+    expect(row).toHaveLength(2);
+  });
+
+  test('an item dim on both axes splits one document across cells', () => {
+    const p = computeSalesHierarchicalPivot(
+      [ledger()[1]],
+      ['product'],
+      ['brand'],
+      'revenue',
+      meta,
+      toBase
+    )!;
+    expect(p.getValue(['Hennessy VSOP'], ['Star'])).toBe(200);
+    expect(p.getValue(['Hennessy VSOP'], ['Chapel'])).toBe(100);
+    expect(p.getValue(['Hennessy VSOP'], [])).toBe(300);
+  });
+
+  test('date dims sort chronologically, others by value desc', () => {
+    const p = computeSalesHierarchicalPivot(
+      ledger(),
+      ['customer'],
+      ['order_month'],
+      'revenue',
+      meta,
+      toBase
+    )!;
+    expect(p.colVals0).toEqual(['2026-07', '2026-08']);
+    expect(p.rowVals0).toEqual(['A Hotel', 'B Bar']); // 600 > 50
+  });
+
+  test('no row dims means no pivot', () => {
+    expect(
+      computeSalesHierarchicalPivot(
+        ledger(),
+        [],
+        ['order_month'],
+        'revenue',
+        meta,
+        toBase
+      )
+    ).toBeNull();
+  });
+});
+
+describe('applySalesFilters — salesperson', () => {
+  test('salesperson_search matches names case-insensitively', () => {
+    const docs = [
+      so({ salesperson: 'Ada Obi' }),
+      so({ salesperson: 'Bola', _id: 'so-b', soNumber: 'B' }),
+      so({ salesperson: undefined, _id: 'so-c', soNumber: 'C' }),
+    ];
+    expect(applySalesFilters(docs, ['salesperson_search:ada'], {})).toHaveLength(1);
+    expect(applySalesFilters(docs, ['salesperson_search:obi'], {})).toHaveLength(1);
+    expect(applySalesFilters(docs, ['salesperson_search:zhu'], {})).toHaveLength(0);
+  });
+
+  test('unassigned documents never match a salesperson search', () => {
+    const docs = [so({ salesperson: undefined })];
+    expect(applySalesFilters(docs, ['salesperson_search:'], {})).toHaveLength(0);
+  });
+});
+
+describe('savedSearchMatches', () => {
+  const base = {
+    id: 's1',
+    name: 'My view',
+    groupBy: 'customer' as SalesGroupByKey,
+    groupBy2: null,
+    measure: 'revenue' as SalesMeasure,
+  };
+
+  test('matches when filters, dimensions and measure all agree', () => {
+    expect(
+      savedSearchMatches(
+        { ...base, filters: ['not_cancelled'] },
+        ['not_cancelled'],
+        ['customer'],
+        'revenue'
+      )
+    ).toBe(true);
+  });
+
+  test('any difference in filters, dims or measure breaks the match', () => {
+    expect(
+      savedSearchMatches(
+        { ...base, filters: ['not_cancelled'] },
+        ['not_cancelled', 'pay_paid'],
+        ['customer'],
+        'revenue'
+      )
+    ).toBe(false);
+    expect(
+      savedSearchMatches(
+        { ...base, filters: ['not_cancelled'] },
+        ['not_cancelled'],
+        ['salesperson'],
+        'revenue'
+      )
+    ).toBe(false);
+    expect(
+      savedSearchMatches(
+        { ...base, filters: ['not_cancelled'] },
+        ['not_cancelled'],
+        ['customer'],
+        'untaxed_total'
+      )
+    ).toBe(false);
+  });
+
+  test('filter order is irrelevant, dimension order is not', () => {
+    expect(
+      savedSearchMatches(
+        { ...base, filters: ['pay_paid', 'not_cancelled'] },
+        ['not_cancelled', 'pay_paid'],
+        ['customer'],
+        'revenue'
+      )
+    ).toBe(true);
+    expect(
+      savedSearchMatches(
+        { ...base, groupBy: 'product', groupBy2: 'customer', filters: [] },
+        [],
+        ['customer', 'product'],
+        'revenue'
+      )
+    ).toBe(false);
   });
 });
 
