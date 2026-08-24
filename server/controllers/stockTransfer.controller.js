@@ -541,6 +541,11 @@ const receiveStockTransfer = asyncHandler(async (req, res) => {
     transfer.completedBy = req.user._id;
   }
   await transfer.save();
+  if (allIn) {
+    // Full receipt completes the transfer here rather than via /close —
+    // capture the tax snapshot on this path too.
+    captureDocumentTax({ sourceType: 'stock_transfer', doc: transfer, postedBy: req.user._id });
+  }
   res.json({
     success: true, data: transfer,
     message: allIn ? "Transfer fully received" : "Receipt recorded",
