@@ -196,9 +196,11 @@ export const stockTransferService = {
     body: Partial<{
       sourceWarehouse: string;
       destinationWarehouse: string;
-      items: Omit<TransferItem, '_id' | 'transferredQty'>[];
+      items: Omit<TransferItem, '_id' | 'transferredQty' | 'receivedQty'>[];
       notes: string;
       scheduledDate: string;
+      deliveryCharge: number;
+      currency: string;
     }>,
     token: string
   ) {

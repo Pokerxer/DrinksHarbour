@@ -48,6 +48,10 @@ interface LineItem {
   taxRate: number;
   /** Units per pack snapshot (Size.unitsPerPack) for the packs breakdown. */
   packSize: number;
+  /** Immutable cost-source price from the pick — the Cost toggle re-seeds from it. */
+  costSourcePrice: number;
+  /** Wholesale-source price from the pick (0 when the size has none). */
+  wholesalePrice: number;
   priceSource?: PriceSource;
 }
 
@@ -67,6 +71,8 @@ function blankItem(): LineItem {
     discountRate: 0,
     taxRate: 0,
     packSize: 1,
+    costSourcePrice: 0,
+    wholesalePrice: 0,
     priceSource: null,
   };
 }
@@ -188,6 +194,7 @@ interface StockRowOption {
   quantity: number;
   unitsPerPack: number;
   costPrice: number;
+  wholesalePrice: number;
 }
 
 /**
@@ -294,7 +301,11 @@ function SourceProductSearch({
   );
 }
 
-export default function StockTransferCreate() {
+export default function StockTransferCreate({
+  editId,
+}: {
+  editId?: string;
+}) {
   const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
@@ -316,6 +327,11 @@ export default function StockTransferCreate() {
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [stockRows, setStockRows] = useState<StockRowOption[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
+  // Bulk pricing controls: seed/re-seed every line from the chosen source.
+  const [priceMode, setPriceMode] = useState<'cost' | 'wholesale'>('cost');
+  const [bulkTax, setBulkTax] = useState('');
+  // Draft hydration for edit mode.
+  const [hydrating, setHydrating] = useState(!!editId);
 
   useEffect(() => {
     if (!token) return;
@@ -326,6 +342,88 @@ export default function StockTransferCreate() {
       .catch(() => toast.error('Failed to load warehouses'))
       .finally(() => setWarehousesLoading(false));
   }, [token]);
+
+  // ── Edit mode: hydrate the draft into the form ─────────────────
+  useEffect(() => {
+    if (!editId || !token) return;
+    let cancelled = false;
+    stockTransferService
+      .get(editId, token)
+      .then((res) => {
+        if (cancelled) return;
+        const t = res.data;
+        if (t.status !== 'draft') {
+          toast.error('Only draft transfers can be edited');
+          router.replace(routes.eCommerce.stockTransferDetails(editId));
+          return;
+        }
+        const asWarehouse = (ref: unknown): Warehouse =>
+          (typeof ref === 'object' && ref ? ref : {}) as Warehouse;
+        setSourceWarehouse(asWarehouse(t.sourceWarehouse));
+        setDestWarehouse(asWarehouse(t.destinationWarehouse));
+        setItems(
+          (t.items ?? []).map((it) => ({
+            subProductId: it.subProductId,
+            subProductName: it.sizeName
+              ? `${it.subProductName} – ${it.sizeName}`
+              : it.subProductName,
+            sku: it.sku ?? '',
+            sizeId: it.sizeId,
+            sizeName: it.sizeName,
+            quantity: it.quantity,
+            sourceStock: 0,
+            costPrice: it.costPrice ?? 0,
+            costSourcePrice: it.costPrice ?? 0,
+            discountRate: it.discountRate ?? 0,
+            taxRate: it.taxRate ?? 0,
+            packSize: it.packSize ?? 1,
+            wholesalePrice: 0, // server stores one price; toggle falls back to it
+            priceSource: null,
+          }))
+        );
+        setNotes(t.notes ?? '');
+        setScheduledDate(t.scheduledDate ? t.scheduledDate.slice(0, 10) : '');
+        setCurrency(t.currency ?? 'NGN');
+        setDeliveryCharge(t.deliveryCharge ?? 0);
+      })
+      .catch(() => {
+        toast.error('Failed to load draft');
+        router.replace(routes.eCommerce.stockTransfers);
+      })
+      .finally(() => {
+        if (!cancelled) setHydrating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, token]);
+
+  /** Re-seed every filled line's unit cost from the chosen price source. */
+  function applyPriceMode(mode: 'cost' | 'wholesale') {
+    setPriceMode(mode);
+    setItems((prev) =>
+      prev.map((it) => {
+        if (!it.subProductId) return it;
+        const seeded =
+          mode === 'wholesale'
+            ? it.wholesalePrice || it.costSourcePrice
+            : it.costSourcePrice;
+        return { ...it, costPrice: seeded, priceSource: seeded > 0 ? mode : null };
+      })
+    );
+  }
+
+  /** Set one tax rate across every filled line. */
+  function applyBulkTax() {
+    const rate = Math.min(100, Math.max(0, Number(bulkTax) || 0));
+    setItems((prev) =>
+      prev.map((it) =>
+        it.subProductId ? { ...it, taxRate: rate } : it
+      )
+    );
+    toast.success(`Tax ${rate}% applied to all lines`);
+  }
 
   const sourceOptions = warehouses.filter(
     (w) => !destWarehouse || w._id !== destWarehouse._id
@@ -385,6 +483,7 @@ export default function StockTransferCreate() {
                 ? Math.floor(Number(sz.unitsPerPack))
                 : 1,
             costPrice: Number(sz?.costPrice ?? sp?.costPrice ?? 0) || 0,
+            wholesalePrice: Number(sz?.wholesalePrice ?? 0) || 0,
           });
         }
         setStockMap(map);
@@ -489,6 +588,7 @@ export default function StockTransferCreate() {
   );
 
   async function handleSave(send = false) {
+    if (hydrating) return;
     if (!sourceWarehouse) return toast.error('Select a source warehouse');
     if (!destWarehouse) return toast.error('Select a destination warehouse');
     if (sourceWarehouse._id === destWarehouse._id)
@@ -508,32 +608,34 @@ export default function StockTransferCreate() {
 
     setSaving(true);
     try {
-      const res = await stockTransferService.create(
-        {
-          sourceWarehouse: sourceWarehouse._id,
-          destinationWarehouse: destWarehouse._id,
-          items: filledItems.map((it) => ({
-            subProductId: it.subProductId,
-            subProductName: it.subProductName,
-            sku: it.sku,
-            sizeId: it.sizeId,
-            sizeName: it.sizeName,
-            quantity: it.quantity,
-            costPrice: it.costPrice ?? 0,
-            discountRate: it.discountRate,
-            taxRate: it.taxRate,
-            packSize: it.packSize,
-          })),
-          notes: notes || undefined,
-          scheduledDate: scheduledDate || undefined,
-          deliveryCharge: deliveryCharge || undefined,
-          status: send ? 'confirmed' : 'draft',
-          currency,
-        },
-        token
-      );
+      const payload = {
+        sourceWarehouse: sourceWarehouse._id,
+        destinationWarehouse: destWarehouse._id,
+        items: filledItems.map((it) => ({
+          subProductId: it.subProductId,
+          subProductName: it.subProductName,
+          sku: it.sku,
+          sizeId: it.sizeId,
+          sizeName: it.sizeName,
+          quantity: it.quantity,
+          costPrice: it.costPrice ?? 0,
+          discountRate: it.discountRate,
+          taxRate: it.taxRate,
+          packSize: it.packSize,
+        })),
+        notes: notes || undefined,
+        scheduledDate: scheduledDate || undefined,
+        deliveryCharge: deliveryCharge || undefined,
+        currency,
+      };
+      const res = editId
+        ? await stockTransferService.update(editId, payload, token)
+        : await stockTransferService.create(
+            { ...payload, status: send ? 'confirmed' : 'draft' },
+            token
+          );
 
-      // Send = create-as-confirmed, then dispatch. An approval-gated transfer
+      // Send = save-as-confirmed, then dispatch. An approval-gated transfer
       // lands in pending_approval instead — nothing to dispatch yet.
       if (send && res.data.status === 'confirmed') {
         await stockTransferService.send(res.data._id, token);
@@ -541,7 +643,7 @@ export default function StockTransferCreate() {
       } else if (send) {
         toast.success('Submitted for approval');
       } else {
-        toast.success('Saved as draft');
+        toast.success(editId ? 'Draft updated' : 'Saved as draft');
       }
       router.push(routes.eCommerce.stockTransferDetails(res.data._id));
     } catch (e) {
@@ -562,17 +664,19 @@ export default function StockTransferCreate() {
           <PiArrowLeft className="h-3.5 w-3.5" /> Stock Transfers
         </Link>
         <span className="text-gray-300">›</span>
-        <span className="font-medium text-gray-900">New Transfer</span>
+        <span className="font-medium text-gray-900">
+          {editId ? 'Edit Transfer' : 'New Transfer'}
+        </span>
       </div>
 
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">
-            New Stock Transfer
+            {editId ? 'Edit Stock Transfer' : 'New Stock Transfer'}
           </h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            Choose warehouses, add product lines, then save or confirm.
+            Choose warehouses, add product lines, then save or send.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -585,7 +689,7 @@ export default function StockTransferCreate() {
           <button
             type="button"
             onClick={() => handleSave(false)}
-            disabled={saving || filledItems.length === 0}
+            disabled={saving || hydrating || filledItems.length === 0}
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             {saving ? (
@@ -598,7 +702,9 @@ export default function StockTransferCreate() {
           <button
             type="button"
             onClick={() => handleSave(true)}
-            disabled={saving || filledItems.length === 0 || hasErrors}
+            disabled={
+              saving || hydrating || filledItems.length === 0 || hasErrors
+            }
             className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
           >
             {saving ? (
@@ -721,13 +827,61 @@ export default function StockTransferCreate() {
             <h2 className="text-sm font-semibold text-gray-800">
               Transfer Lines
             </h2>
-            <button
-              type="button"
-              onClick={addItem}
-              className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
-            >
-              <PiPlus className="h-3.5 w-3.5" /> Add Line
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Apply tax across every line at once */}
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  aria-label="Tax % for all lines"
+                  placeholder="Tax %"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={bulkTax}
+                  onChange={(e) => setBulkTax(e.target.value)}
+                  className="w-20 rounded-lg border border-gray-200 px-2 py-1.5 text-center text-xs focus:border-[#b20202] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={applyBulkTax}
+                  disabled={filledItems.length === 0 || bulkTax === ''}
+                  title="Apply this tax rate to every line"
+                  className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  Apply to all
+                </button>
+              </div>
+
+              {/* Seed every line from cost or wholesale price */}
+              <div className="flex overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                <span className="hidden px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 sm:inline">
+                  Price
+                </span>
+                {(['cost', 'wholesale'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => applyPriceMode(m)}
+                    title={`Re-seed every line's unit cost from the size's ${m} price`}
+                    className={`rounded-md px-2.5 py-1 text-xs font-bold transition-all ${
+                      priceMode === m
+                        ? 'bg-white text-[#b20202] shadow-sm'
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    {m === 'cost' ? 'Cost' : 'Wholesale'}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={addItem}
+                className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
+              >
+                <PiPlus className="h-3.5 w-3.5" /> Add Line
+              </button>
+            </div>
           </div>
 
            <div className="divide-y divide-gray-100">
@@ -785,8 +939,18 @@ export default function StockTransferCreate() {
                             sku: row.sku,
                             sizeId: row.sizeId,
                             sizeName: row.sizeName,
-                            costPrice: row.costPrice,
-                            priceSource: row.costPrice > 0 ? 'cost' : null,
+                            costSourcePrice: row.costPrice,
+                            wholesalePrice: row.wholesalePrice,
+                            costPrice:
+                              priceMode === 'wholesale'
+                                ? row.wholesalePrice || row.costPrice
+                                : row.costPrice,
+                            priceSource:
+                              (priceMode === 'wholesale'
+                                ? row.wholesalePrice
+                                : row.costPrice) > 0
+                                ? priceMode
+                                : null,
                             packSize: row.unitsPerPack,
                             discountRate: 0,
                             taxRate: 0,
