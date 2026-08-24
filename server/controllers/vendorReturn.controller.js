@@ -4,6 +4,7 @@ const PurchaseOrder = require("../models/PurchaseOrder");
 const SubProduct = require("../models/SubProduct");
 const VendorBill = require("../models/VendorBill");
 const asyncHandler = require('../utils/asyncHandler');
+const { captureDocumentTax, reverseDocumentTax } = require("../services/tax.service");
 
 async function generateReturnNumber(tenantId) {
   const year = new Date().getFullYear();
@@ -415,6 +416,12 @@ exports.updateReturnStatus = asyncHandler(async (req, res) => {
     { $set: updateData },
     { new: true }
   );
+
+  if (status === "refunded") {
+    captureDocumentTax({ sourceType: 'vendor_return', doc: updated, postedBy: req.user._id });
+  } else if (status === "cancelled") {
+    reverseDocumentTax({ sourceType: 'vendor_return', doc: updated, userId: req.user._id });
+  }
 
   res.json({
     success: true,

@@ -20,6 +20,7 @@ const {
 } = require("../services/poReceive.helpers");
 const VendorBill = require("../models/VendorBill");
 const { syncVendorPricelistFromPO } = require("../services/vendorPricelistSync.service");
+const { captureDocumentTax } = require("../services/tax.service");
 const {
   NotFoundError,
   ValidationError,
@@ -885,6 +886,10 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
 
   await purchaseOrder.save();
 
+  if (status === "confirmed" && purchaseOrder.approvalStatus === "approved") {
+    captureDocumentTax({ sourceType: "purchase_order", doc: purchaseOrder, postedBy: req.user?._id });
+  }
+
   res.status(200).json({
     success: true,
     data: purchaseOrder,
@@ -1716,6 +1721,8 @@ const approvePO = asyncHandler(async (req, res) => {
   }
   
   await po.save();
+
+  captureDocumentTax({ sourceType: 'purchase_order', doc: po, postedBy: userId });
 
   res.status(200).json({
     success: true,

@@ -7,6 +7,7 @@ const {
   ValidationError,
   ForbiddenError,
 } = require("../utils/errors");
+const { captureDocumentTax } = require("../services/tax.service");
 
 /**
  * Helper to get tenant ID
@@ -646,11 +647,16 @@ const validateBill = asyncHandler(async (req, res) => {
   vendorBill.validatedBy = req.user?._id;
   vendorBill.validatedAt = new Date();
 
-  if (vendorBill.status === "draft") {
+  const wasDraft = vendorBill.status === "draft";
+  if (wasDraft) {
     vendorBill.status = "confirmed";
   }
 
   await vendorBill.save();
+
+  if (wasDraft) {
+    captureDocumentTax({ sourceType: 'vendor_bill', doc: vendorBill, postedBy: req.user?._id });
+  }
 
   res.status(200).json({
     success: true,

@@ -9,6 +9,7 @@ const salesImportSvc = require('../services/salesImport.service');
 const salesPayment = require('../services/salesPayment.service');
 const salesFulfillSvc = require('../services/salesFulfill.service');
 const salesLog = require('../services/salesActivity.service');
+const { captureDocumentTax, reverseDocumentTax } = require('../services/tax.service');
 const { logPrivilegedAction } = require('../utils/auditLog');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 const { paginatedResponse } = require('../utils/response');
@@ -277,6 +278,7 @@ exports.deleteSalesOrder = asyncHandler(async (req, res) => {
   if (so.docType === 'order') so.orderStatus = 'cancelled';
   else so.quoteStatus = 'rejected';
   await so.save();
+  if (so.docType === 'order') reverseDocumentTax({ sourceType: 'sales_order', doc: so, userId: req.user?._id });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_CANCEL', 'delete', so);
   await salesLog.logActivity(tenantId, so._id, {
     subject: salesLog.statusSubject(so.docType, so.docType === 'order' ? 'cancelled' : 'rejected'),
@@ -383,6 +385,7 @@ exports.confirmSalesOrder = asyncHandler(async (req, res) => {
   so.loyaltyRedeemed = result.loyaltyRedeemed || 0;
   so.pointsRedeemed = result.pointsRedeemed || 0;
   await so.save();
+  captureDocumentTax({ sourceType: 'sales_order', doc: so, postedBy: req.user?._id });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_CONFIRM', 'update', so);
   await salesLog.logActivity(tenantId, so._id, {
     subject: salesLog.statusSubject(so.docType, 'confirmed'), userId: req.user?._id,
@@ -705,7 +708,13 @@ exports.bulkCancel = asyncHandler(async (req, res) => {
   if (!requireResolvedTenant(tenantId, res)) return;
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ success: false, message: 'ids must be a non-empty array' });
-  const results = await processBulk(ids, tenantId, (doc) => svc.bulkCancelDoc(doc));
+  const results = await processBulk(ids, tenantId, async (doc) => {
+    const out = await svc.bulkCancelDoc(doc);
+    if (out && doc.docType === 'order') {
+      reverseDocumentTax({ sourceType: 'sales_order', doc, userId: req.user?._id });
+    }
+    return out;
+  });
   res.json({ success: true, results });
 });
 

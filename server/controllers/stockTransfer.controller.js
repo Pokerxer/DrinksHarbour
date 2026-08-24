@@ -13,6 +13,7 @@ const { computeTransferMoney } = require("../services/stockTransfer.money");
 const {
   receiveStockTransferLines,
 } = require("../services/stockTransferReceive");
+const { captureDocumentTax, reverseDocumentTax } = require("../services/tax.service");
 const { getTenantWarehouseSettings } = require("./warehouse.controller");
 const { NotFoundError, ValidationError, ForbiddenError } = require("../utils/errors");
 
@@ -471,6 +472,10 @@ const updateStockTransferStatus = asyncHandler(async (req, res) => {
   transfer.status = status;
   await transfer.save();
 
+  if (status === "cancelled") {
+    reverseDocumentTax({ sourceType: 'stock_transfer', doc: transfer, userId });
+  }
+
   res.json({ success: true, data: transfer });
 });
 
@@ -571,6 +576,7 @@ const closeStockTransfer = asyncHandler(async (req, res) => {
   transfer.completedBy = req.user._id;
   transfer.status = "completed";
   await transfer.save();
+  captureDocumentTax({ sourceType: 'stock_transfer', doc: transfer, postedBy: req.user._id });
   res.json({ success: true, data: transfer, message: "Transfer closed" });
 });
 
