@@ -200,6 +200,16 @@ export const menuItems = [
     ],
   },
   {
+    name: 'Taxes',
+    href: '#',
+    icon: <PiReceiptDuotone />,
+    dropdownItems: [
+      { name: 'Tax Rates', href: routes.taxes },
+      { name: 'Tax Ledger', href: '/accounting/taxes?tab=ledger' },
+      { name: 'Tax Summary', href: '/accounting/taxes?tab=summary' },
+    ],
+  },
+  {
     name: 'Inventory',
     href: '#',
     icon: <PiPackageDuotone />,

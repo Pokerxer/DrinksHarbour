@@ -123,6 +123,8 @@ export const routes = {
     // Exchange Rates
     exchangeRates: '/purchases/exchange-rates',
     createExchangeRate: '/purchases/exchange-rates/create',
+    // Taxes (Your Store accounting)
+    taxes: '/accounting/taxes',
     // Stock Transfers
     stockTransfers: '/purchases/transfers',
     createStockTransfer: '/purchases/transfers/create',
