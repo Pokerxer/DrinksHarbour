@@ -11,7 +11,6 @@ import {
   PiFloppyDisk,
   PiDotsSixVertical,
   PiArrowLeft,
-  PiCaretRight,
   PiCaretDown,
   PiWarning,
   PiX,
@@ -24,8 +23,6 @@ import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { stockTransferService } from '@/services/stockTransfer.service';
 import { warehouseService, type Warehouse } from '@/services/warehouse.service';
-import { posApi } from '@/app/shared/point-of-sale/api';
-import { subproductService } from '@/services/subproduct.service';
 import { CURRENCIES, CURRENCY_SYMBOLS, packsLabel } from './types';
 import { fmtCur } from './purchases-analytics-helpers';
 import { computeTransferTotals } from './transfer-money';
@@ -33,26 +30,6 @@ import TransferTotalsCard from './transfer-totals-card';
 import PackSizeInput from './pack-size-input';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-
-interface SizeOption {
-  size: string;
-  displayName?: string;
-  sku?: string;
-  availableStock?: number;
-  unitsPerPack?: number;
-  wholesalePrice?: number;
-  costPrice?: number;
-}
-
-interface ProductOption {
-  _id: string;
-  name: string;
-  sku: string;
-  costPrice?: number;
-  defaultSize?: string;
-  sellWithoutSizeVariants?: boolean;
-  sizes: SizeOption[];
-}
 
 /** Where a line's default unit price came from — shown under the price input. */
 type PriceSource = 'wholesale' | 'cost' | null;
@@ -74,54 +51,9 @@ interface LineItem {
   priceSource?: PriceSource;
 }
 
-/** What ProductSearch hands back when a product (or one of its sizes) is picked. */
-interface Picked {
-  subProductId: string;
-  subProductName: string;
-  sku: string;
-  sizeId?: string;
-  sizeName?: string;
-  sourceStock?: number;
-  costPrice: number;
-  priceSource: PriceSource;
-  unitsPerPack?: number;
-}
-
 interface LineError {
   duplicate?: string;
   exceedsStock?: string;
-}
-
-const positive = (n: unknown): number | null =>
-  typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
-
-/**
- * Mirror of resolveTransferUnitCost() in server/services/stockTransfer.helpers.js:
- * a transfer line defaults to the size's wholesale price, else its cost price,
- * else the sub-product's cost price. `wholesalePrice` lives on Size, not on
- * SubProduct — a sub-product sold without size variants carries it on its
- * `defaultSize`. The server applies the same rule on save, so an operator who
- * clears the field still gets the right number.
- */
-function defaultUnitPrice(
-  product: ProductOption,
-  size?: SizeOption | null
-): { costPrice: number; priceSource: PriceSource } {
-  const wholesale = positive(size?.wholesalePrice);
-  if (wholesale !== null)
-    return { costPrice: wholesale, priceSource: 'wholesale' };
-  const cost = positive(size?.costPrice) ?? positive(product.costPrice);
-  if (cost !== null) return { costPrice: cost, priceSource: 'cost' };
-  return { costPrice: 0, priceSource: null };
-}
-
-/** The size that prices a sub-product sold without size variants. */
-function pricingSizeFor(product: ProductOption): SizeOption | null {
-  if (!product.sizes.length) return null;
-  return (
-    product.sizes.find((s) => s.size === product.defaultSize) ??
-    product.sizes[0]
-  );
 }
 
 function blankItem(): LineItem {
@@ -246,267 +178,115 @@ function WarehouseSelector({
   );
 }
 
-function ProductSearch({
+/** One selectable line from the source warehouse's stock. */
+interface StockRowOption {
+  subProductId: string;
+  sizeId?: string;
+  sizeName?: string;
+  name: string;
+  sku: string;
+  quantity: number;
+  unitsPerPack: number;
+  costPrice: number;
+}
+
+/**
+ * Product picker fed by the SOURCE WAREHOUSE's stock — only items the source
+ * can actually ship are selectable. Rows come from getWarehouseStock, which
+ * carries names, SKUs, pack sizes and cost prices, so no second fetch is
+ * needed and the catalogue-wide search is not offered by mistake.
+ */
+function SourceProductSearch({
   value,
-  token,
+  rows,
+  loading,
   onSelect,
 }: {
   value: string;
-  token: string;
-  onSelect: (picked: Picked) => void;
+  rows: StockRowOption[];
+  loading: boolean;
+  onSelect: (row: StockRowOption) => void;
 }) {
-  const [query, setQuery] = useState(value);
-  const [initial, setInitial] = useState<ProductOption[]>([]);
-  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [initialLoaded, setInitialLoaded] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expandedData, setExpandedData] = useState<Record<string, any>>({});
   const ref = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setQuery(value);
-  }, [value]);
-
-  function mapProducts(raw: any[]): ProductOption[] {
-    return raw.map((sp: any) => ({
-      _id: sp._id,
-      name: sp.product?.name ?? sp.name ?? sp.productName ?? '',
-      sku: sp.sku ?? '',
-      costPrice: sp.costPrice ?? 0,
-      defaultSize: sp.defaultSize ? String(sp.defaultSize) : undefined,
-      sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
-      sizes: (sp.sizes ?? []).map((s: any) => ({
-        size: String(s._id ?? s.size ?? ''),
-        displayName: s.displayName ?? s.size ?? '',
-        sku: s.sku ?? sp.sku ?? '',
-        availableStock: s.availableStock ?? s.stock ?? 0,
-        unitsPerPack: s.unitsPerPack ?? 1,
-        wholesalePrice: s.wholesalePrice ?? undefined,
-        costPrice: s.costPrice ?? undefined,
-      })),
-    }));
-  }
-
-  async function fetchFullSubproduct(id: string) {
-    if (expandedData[id]) return;
-    try {
-      const res = await subproductService.getSubProduct(id, token);
-      const sp = res?.data ?? res;
-      setExpandedData((prev) => ({ ...prev, [id]: sp }));
-    } catch {
-      // ignore
-    }
-  }
-
-  async function ensureInitial() {
-    if (initialLoaded || !token) return;
-    setLoading(true);
-    try {
-      const res = await posApi.getProducts(token, { limit: 8 });
-      const list = mapProducts(res?.products ?? []);
-      setInitial(list);
-      setProducts(list);
-      setInitialLoaded(true);
-    } catch {
-      setInitial([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!token) return;
-    if (query.trim().length < 2) {
-      setProducts(initial);
-      return;
-    }
-    const t = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const res = await posApi.getProducts(token, {
-          search: query.trim(),
-          limit: 8,
-        });
-        setProducts(mapProducts(res?.products ?? []));
-        setExpandedId(null);
-      } catch {
-        setProducts([]);
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [query, token, initial]);
-
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
+    const close = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node))
         setOpen(false);
-    }
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
   }, []);
 
+  const q = query.trim().toLowerCase();
+  const inStock = rows.filter((r) => r.quantity > 0);
+  const matches = (
+    q
+      ? inStock.filter(
+          (r) =>
+            r.name.toLowerCase().includes(q) ||
+            r.sku.toLowerCase().includes(q)
+        )
+      : inStock
+  ).slice(0, 20);
+
   return (
-    <div ref={ref} className="relative">
-      <div className="relative">
-        <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setExpandedId(null);
-          }}
-          onFocus={() => {
-            ensureInitial();
-            setOpen(true);
-          }}
-          placeholder="Search product…"
-          className="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
-        />
-        {loading && (
-          <PiSpinner className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-gray-400" />
-        )}
-      </div>
-
+    <div className="relative" ref={ref}>
+      <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+      <input
+        value={open ? query : value}
+        onFocus={() => {
+          setOpen(true);
+          setQuery('');
+        }}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        placeholder={
+          loading
+            ? 'Loading source stock…'
+            : 'Search products in the source warehouse…'
+        }
+        className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-8 text-sm focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+      />
       {open && (
-        <div className="absolute left-0 z-30 mt-1 w-96 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
-          {products.length === 0 && !loading ? (
-            <div className="px-3 py-4 text-center text-sm text-gray-400">
-              {query.trim().length >= 2
-                ? `No products match "${query}"`
-                : 'Type to search products'}
-            </div>
+        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+          {matches.length === 0 ? (
+            <p className="px-3 py-6 text-center text-xs text-gray-400">
+              {loading
+                ? 'Loading…'
+                : 'No stocked products in the source warehouse'}
+            </p>
           ) : (
-            <div className="max-h-72 overflow-y-auto">
-              {products.map((p) => {
-                const hasSizes =
-                  !p.sellWithoutSizeVariants && p.sizes.length > 0;
-                const isExpanded = expandedId === p._id;
-
-                return (
-                  <div key={p._id}>
-                    <button
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        if (hasSizes) {
-                          const next = isExpanded ? null : p._id;
-                          setExpandedId(next);
-                          if (next) fetchFullSubproduct(next);
-                        } else {
-                          onSelect({
-                            subProductId: p._id,
-                            subProductName: p.name,
-                            sku: p.sku,
-                            sourceStock: 0,
-                            ...defaultUnitPrice(p, pricingSizeFor(p)),
-                          });
-                          setQuery(p.name);
-                          setOpen(false);
-                        }
-                      }}
-                      className={`flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''}`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-gray-900">
-                          {p.name}
-                        </p>
-                        <div className="mt-0.5 flex items-center gap-2">
-                          {p.sku && (
-                            <span className="font-mono text-[11px] text-gray-400">
-                              {p.sku}
-                            </span>
-                          )}
-                          {hasSizes && (
-                            <span className="text-[11px] text-gray-400">
-                              {p.sizes.length} size
-                              {p.sizes.length !== 1 ? 's' : ''}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {hasSizes && (
-                        <PiCaretRight
-                          className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                        />
-                      )}
-                    </button>
-
-                    {hasSizes && isExpanded && (
-                      <div className="border-t border-gray-100 bg-gray-50/60 pb-2 pl-5 pt-1">
-                        {p.sizes.map((s) => {
-                          const fullSizes: any[] =
-                            expandedData[p._id]?.sizes ?? [];
-                          const match = fullSizes.find(
-                            (fs: any) => fs._id === s.size || fs.size === s.size
-                          );
-                          const displaySize =
-                            match?.displayName ?? s.displayName ?? s.size;
-                          const stock =
-                            match?.availableStock ?? s.availableStock ?? 0;
-                          // The full sub-product fetch carries the richer price
-                          // fields; the search hit is the fallback.
-                          const priced: SizeOption = {
-                            ...s,
-                            wholesalePrice:
-                              match?.wholesalePrice ?? s.wholesalePrice,
-                            costPrice: match?.costPrice ?? s.costPrice,
-                          };
-                          return (
-                            <button
-                              key={s.size}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                const label = `${p.name} – ${displaySize}`;
-                                onSelect({
-                                  subProductId: p._id,
-                                  subProductName: label,
-                                  sku: s.sku ?? p.sku,
-                                  sizeId: s.size,
-                                  sizeName: displaySize,
-                                  sourceStock: stock,
-                                  unitsPerPack: priced.unitsPerPack ?? 1,
-                                  ...defaultUnitPrice(p, priced),
-                                });
-                                setQuery(label);
-                                setOpen(false);
-                              }}
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-white"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-gray-800">
-                                  {displaySize}
-                                </p>
-                                <div className="mt-0.5 flex items-center gap-2">
-                                  {s.sku && (
-                                    <span className="font-mono text-[11px] text-gray-400">
-                                      {s.sku}
-                                    </span>
-                                  )}
-                                  <span
-                                    className={`text-[11px] ${stock > 0 ? 'text-emerald-600' : 'text-gray-400'}`}
-                                  >
-                                    {stock > 0
-                                      ? `${stock} in stock`
-                                      : 'Out of stock'}
-                                  </span>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            matches.map((r) => (
+              <button
+                key={`${r.subProductId}::${r.sizeId || ''}`}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelect(r);
+                  setOpen(false);
+                  setQuery('');
+                }}
+                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-gray-50"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm text-gray-900">
+                    {r.name}
+                    {r.sizeName ? ` – ${r.sizeName}` : ''}
+                  </span>
+                  <span className="block truncate font-mono text-[11px] text-gray-400">
+                    {r.sku || '—'}
+                  </span>
+                </span>
+                <span className="shrink-0 text-xs font-semibold text-emerald-600">
+                  {r.quantity} in stock
+                </span>
+              </button>
+            ))
           )}
         </div>
       )}
@@ -534,6 +314,7 @@ export default function StockTransferCreate() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
+  const [stockRows, setStockRows] = useState<StockRowOption[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
 
   useEffect(() => {
@@ -570,18 +351,44 @@ export default function StockTransferCreate() {
         const json = await res.json();
         const list: any[] = json?.data ?? [];
         const map: Record<string, number> = {};
+        // Picker rows: one per stocked (subProduct, size) in the source
+        // warehouse, with the name/sku/pack/cost fields the line needs.
+        const rowMap = new Map<string, StockRowOption>();
         for (const row of list) {
-          const spId =
-            typeof row.subProduct === 'string'
+          const sp =
+            typeof row.subProduct === 'object' && row.subProduct
               ? row.subProduct
-              : row.subProduct?._id;
-          const szId = typeof row.size === 'string' ? row.size : row.size?._id;
-          if (spId) {
-            const k = stockKey(spId, szId);
-            map[k] = (map[k] || 0) + (row.currentQuantity || 0);
+              : null;
+          const spId = sp?._id ?? (typeof row.subProduct === 'string' ? row.subProduct : undefined);
+          if (!spId) continue;
+          const sz =
+            typeof row.size === 'object' && row.size ? row.size : null;
+          const szId =
+            sz?._id ?? (typeof row.size === 'string' ? row.size : undefined);
+          const qty = row.currentQuantity || 0;
+          const k = stockKey(String(spId), szId ? String(szId) : undefined);
+          map[k] = (map[k] || 0) + qty;
+          const existing = rowMap.get(k);
+          if (existing) {
+            existing.quantity += qty;
+            continue;
           }
+          rowMap.set(k, {
+            subProductId: String(spId),
+            sizeId: szId ? String(szId) : undefined,
+            sizeName: sz?.size ?? undefined,
+            name: sp?.product?.name ?? sp?.sku ?? 'Product',
+            sku: sp?.sku ?? '',
+            quantity: qty,
+            unitsPerPack:
+              Number(sz?.unitsPerPack) > 0
+                ? Math.floor(Number(sz.unitsPerPack))
+                : 1,
+            costPrice: Number(sz?.costPrice ?? sp?.costPrice ?? 0) || 0,
+          });
         }
         setStockMap(map);
+        setStockRows([...rowMap.values()]);
         setItems((prev) =>
           prev.map((it) => ({
             ...it,
@@ -604,6 +411,7 @@ export default function StockTransferCreate() {
       fetchStock(sourceWarehouse._id);
     } else {
       setStockMap({});
+      setStockRows([]);
     }
   }, [sourceWarehouse, fetchStock]);
 
@@ -964,28 +772,27 @@ export default function StockTransferCreate() {
                       {i + 1}
                     </span>
                     <div className="flex-1">
-                      <ProductSearch
+                      <SourceProductSearch
                         value={item.subProductName}
-                        token={token}
-                         onSelect={(picked) =>
-                           updateItem(i, {
-                             subProductId: picked.subProductId,
-                             subProductName: picked.subProductName,
-                             sku: picked.sku,
-                             sizeId: picked.sizeId,
-                             sizeName: picked.sizeName,
-                             costPrice: picked.costPrice,
-                             priceSource: picked.priceSource,
-                             packSize: picked.unitsPerPack ?? 1,
-                             discountRate: 0,
-                             taxRate: 0,
-                             sourceStock: sourceWarehouse
-                              ? (stockMap[
-                                  stockKey(picked.subProductId, picked.sizeId)
-                                ] ?? 0)
-                              : (picked.sourceStock ?? 0),
-                           })
-                         }
+                        rows={stockRows}
+                        loading={loadingStock}
+                        onSelect={(row) =>
+                          updateItem(i, {
+                            subProductId: row.subProductId,
+                            subProductName: row.sizeName
+                              ? `${row.name} – ${row.sizeName}`
+                              : row.name,
+                            sku: row.sku,
+                            sizeId: row.sizeId,
+                            sizeName: row.sizeName,
+                            costPrice: row.costPrice,
+                            priceSource: row.costPrice > 0 ? 'cost' : null,
+                            packSize: row.unitsPerPack,
+                            discountRate: 0,
+                            taxRate: 0,
+                            sourceStock: row.quantity,
+                          })
+                        }
                       />
                       {item.subProductId && (
                         <div className="ml-1 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">

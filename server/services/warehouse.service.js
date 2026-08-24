@@ -104,7 +104,9 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
         select: 'sku product imagesOverride costPrice baseSellingPrice currency',
         populate: { path: 'product', select: 'name slug images' },
       })
-      .populate('size', 'size sellingPrice costPrice')
+      // wholesalePrice + unitsPerPack feed the transfer create form's seeded
+      // cost and packs breakdown (same defaults as the purchases module).
+      .populate('size', 'size sellingPrice costPrice wholesalePrice unitsPerPack')
       .sort({ updatedAt: -1 })
       .lean(),
     WarehouseBatch.find({
