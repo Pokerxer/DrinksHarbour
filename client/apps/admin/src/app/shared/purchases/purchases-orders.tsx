@@ -27,6 +27,7 @@ import {
   PiWarning,
   PiPrinter,
   PiWarehouse,
+  PiFunnel,
 } from 'react-icons/pi';
 import {
   ResponsiveContainer,
@@ -52,6 +53,15 @@ import {
   statusLabel,
   type PurchaseOrder,
 } from './types';
+import {
+  matchesSearch,
+  distinctVendors,
+  distinctWarehouses,
+  withinDatePreset,
+  orderItemsSummary,
+  DATE_PRESETS,
+  type DatePreset,
+} from './purchases-orders-helpers';
 
 // Drafts print as RFQs, everything else as the purchase order — the same
 // branch the detail page uses.
@@ -68,6 +78,7 @@ type GraphPeriod = 'day' | 'month' | 'year';
 type SortCol =
   | 'poNumber'
   | 'vendor'
+  | 'warehouse'
   | 'status'
   | 'total'
   | 'arrival'
@@ -308,6 +319,7 @@ function OrderCard({
         </p>
       )}
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
+        <span>{orderItemsSummary(order)}</span>
         {showBillNow ? (
           <>
             <span>
@@ -501,6 +513,28 @@ function GraphView({
       const name = o.vendorName ?? 'Unknown';
       const prev = map.get(name) ?? { spend: 0, count: 0 };
       map.set(name, {
+        spend: prev.spend + orderTotal(o),
+        count: prev.count + 1,
+      });
+    });
+    return Array.from(map.entries())
+      .map(([name, v]) => ({ name, spend: v.spend, count: v.count }))
+      .sort((a, b) => b.spend - a.spend)
+      .slice(0, 7);
+  }, [orders]);
+
+  // ── spend by destination warehouse ────────────────────────────
+  const warehouseSpendData = useMemo(() => {
+    const map = new Map<string, { spend: number; count: number }>();
+    orders.forEach((o) => {
+      const wh =
+        typeof o.warehouse === 'object' && o.warehouse
+          ? o.warehouse.code
+            ? `${o.warehouse.name} (${o.warehouse.code})`
+            : o.warehouse.name
+          : 'Unassigned';
+      const prev = map.get(wh) ?? { spend: 0, count: 0 };
+      map.set(wh, {
         spend: prev.spend + orderTotal(o),
         count: prev.count + 1,
       });
@@ -864,6 +898,63 @@ function GraphView({
             </div>
           )}
         </div>
+        {/* Spend by destination warehouse */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="mb-1 text-sm font-bold text-gray-800">
+            Spend by Warehouse
+          </p>
+          <p className="mb-4 text-xs text-gray-400">
+            Where purchased goods are being delivered
+          </p>
+          {warehouseSpendData.length === 0 ? (
+            <p className="text-sm text-gray-400">No warehouse data</p>
+          ) : (
+            <div className="space-y-3">
+              {warehouseSpendData.map((w, i) => {
+                const pct =
+                  warehouseSpendData[0].spend > 0
+                    ? (w.spend / warehouseSpendData[0].spend) * 100
+                    : 0;
+                const color = VENDOR_PALETTE[i % VENDOR_PALETTE.length];
+                return (
+                  <div key={w.name}>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-black text-white"
+                          style={{ background: color }}
+                        >
+                          {i + 1}
+                        </span>
+                        <span
+                          className="truncate text-xs font-medium text-gray-700"
+                          title={w.name}
+                        >
+                          {w.name}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-[10px] text-gray-400">
+                          {w.count} PO
+                          {w.count !== 1 ? 's' : ''}
+                        </span>
+                        <span className="text-xs font-bold text-gray-900">
+                          {fmtCurrency(w.spend, currency)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, background: color }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Top Products ───────────────────────────────────────────── */}
@@ -977,6 +1068,9 @@ export default function PurchasesOrders() {
   const [graphPeriod, setGraphPeriod] = useState<GraphPeriod>('month');
   const [sortCol, setSortCol] = useState<SortCol>('created');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [vendorFilter, setVendorFilter] = useState('');
+  const [warehouseFilter, setWarehouseFilter] = useState('');
+  const [datePreset, setDatePreset] = useState<DatePreset>('all');
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -1065,16 +1159,24 @@ export default function PurchasesOrders() {
     return orders;
   }, [orders, activeTab]);
 
+  const vendorOptions = useMemo(() => distinctVendors(orders), [orders]);
+  const warehouseOptions = useMemo(() => distinctWarehouses(orders), [orders]);
+  const hasActiveFilters =
+    !!vendorFilter || !!warehouseFilter || datePreset !== 'all';
+
   const filtered = useMemo(() => {
     let list = tabFiltered;
-    if (search) {
-      const q = search.toLowerCase();
+    if (search) list = list.filter((o) => matchesSearch(o, search));
+    if (vendorFilter)
+      list = list.filter((o) => o.vendorName === vendorFilter);
+    if (warehouseFilter)
       list = list.filter(
         (o) =>
-          o.poNumber?.toLowerCase().includes(q) ||
-          o.vendorName?.toLowerCase().includes(q)
+          typeof o.warehouse === 'object' &&
+          o.warehouse &&
+          o.warehouse._id === warehouseFilter
       );
-    }
+    list = list.filter((o) => withinDatePreset(o, datePreset));
     return [...list].sort((a, b) => {
       let va: number | string = 0,
         vb: number | string = 0;
@@ -1084,6 +1186,9 @@ export default function PurchasesOrders() {
       } else if (sortCol === 'vendor') {
         va = a.vendorName ?? '';
         vb = b.vendorName ?? '';
+      } else if (sortCol === 'warehouse') {
+        va = warehouseLabelOf(a.warehouse);
+        vb = warehouseLabelOf(b.warehouse);
       } else if (sortCol === 'status') {
         va = a.status;
         vb = b.status;
@@ -1103,7 +1208,15 @@ export default function PurchasesOrders() {
           : (va as number) - (vb as number);
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [tabFiltered, search, sortCol, sortDir]);
+  }, [
+    tabFiltered,
+    search,
+    vendorFilter,
+    warehouseFilter,
+    datePreset,
+    sortCol,
+    sortDir,
+  ]);
 
   const EMPTY_MSGS: Record<TabKey, string> = {
     all: 'No purchase orders yet',
@@ -1345,14 +1458,14 @@ export default function PurchasesOrders() {
       )}
 
       {/* ── Toolbar ─────────────────────────────────────────────── */}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         {view !== 'graph' && (
-          <div className="relative max-w-xs flex-1">
+          <div className="relative min-w-[220px] max-w-sm flex-1">
             <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search PO# or vendor…"
+              placeholder="Search PO#, vendor, warehouse, product…"
               className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-8 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/15"
             />
             {search && (
@@ -1393,6 +1506,99 @@ export default function PurchasesOrders() {
         </div>
       </div>
 
+      {/* ── Filter bar ──────────────────────────────────────────── */}
+      {view !== 'graph' && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3">
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-500">
+            <PiFunnel className="h-3.5 w-3.5" /> Filters
+          </span>
+
+          <select
+            value={vendorFilter}
+            onChange={(e) => setVendorFilter(e.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none"
+          >
+            <option value="">All vendors</option>
+            {vendorOptions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={warehouseFilter}
+            onChange={(e) => setWarehouseFilter(e.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none"
+          >
+            <option value="">All warehouses</option>
+            {warehouseOptions.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={datePreset}
+            onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none"
+          >
+            {DATE_PRESETS.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+
+          {hasActiveFilters && (
+            <>
+              {vendorFilter && (
+                <button
+                  type="button"
+                  onClick={() => setVendorFilter('')}
+                  className="inline-flex items-center gap-1 rounded-full bg-[#b20202]/10 px-2.5 py-1 text-xs font-semibold text-[#b20202] hover:bg-[#b20202]/15"
+                >
+                  {vendorFilter} <PiX className="h-3 w-3" />
+                </button>
+              )}
+              {warehouseFilter && (
+                <button
+                  type="button"
+                  onClick={() => setWarehouseFilter('')}
+                  className="inline-flex items-center gap-1 rounded-full bg-[#b20202]/10 px-2.5 py-1 text-xs font-semibold text-[#b20202] hover:bg-[#b20202]/15"
+                >
+                  {warehouseOptions.find((w) => w.id === warehouseFilter)
+                    ?.label ?? 'Warehouse'}{' '}
+                  <PiX className="h-3 w-3" />
+                </button>
+              )}
+              {datePreset !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => setDatePreset('all')}
+                  className="inline-flex items-center gap-1 rounded-full bg-[#b20202]/10 px-2.5 py-1 text-xs font-semibold text-[#b20202] hover:bg-[#b20202]/15"
+                >
+                  {DATE_PRESETS.find((p) => p.key === datePreset)?.label}{' '}
+                  <PiX className="h-3 w-3" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setVendorFilter('');
+                  setWarehouseFilter('');
+                  setDatePreset('all');
+                }}
+                className="text-xs font-medium text-gray-400 underline-offset-2 hover:text-gray-600 hover:underline"
+              >
+                Clear all
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* ── Grid view ───────────────────────────────────────────── */}
       {view === 'grid' &&
         (loading ? (
@@ -1425,13 +1631,11 @@ export default function PurchasesOrders() {
       {view === 'list' && (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/80">
+            <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur">
+              <tr className="border-b border-gray-100">
                 <Th col="poNumber" label="PO Number" />
                 <Th col="vendor" label="Vendor" />
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">
-                  Warehouse
-                </th>
+                <Th col="warehouse" label="Warehouse" />
                 <Th col="status" label="Status" />
                 <Th col="total" label="Value" right />
                 {activeTab === 'to_bill' ? (
@@ -1502,6 +1706,9 @@ export default function PurchasesOrders() {
                             </span>
                           )}
                         </div>
+                        <p className="mt-0.5 text-[11px] text-gray-400">
+                          {orderItemsSummary(order)}
+                        </p>
                       </td>
                       <td className="px-4 py-3.5 text-gray-700">
                         {order.vendorName ?? (
