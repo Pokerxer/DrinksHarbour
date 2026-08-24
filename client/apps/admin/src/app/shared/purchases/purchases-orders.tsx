@@ -26,6 +26,7 @@ import {
   PiCheck,
   PiWarning,
   PiPrinter,
+  PiWarehouse,
 } from 'react-icons/pi';
 import {
   ResponsiveContainer,
@@ -40,14 +41,17 @@ import {
 } from 'recharts';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import { purchaseOrderService, warehouseLabelOf } from '@/services/purchaseOrder.service';
 import { useTenant } from '@/context/TenantContext';
 import {
   printPOInvoice,
   printRFQInvoice,
 } from '@/utils/purchaseInvoice';
-import type { PurchaseOrder } from './types';
-import { STATUS_BADGE, statusLabel } from './types';
+import {
+  STATUS_BADGE,
+  statusLabel,
+  type PurchaseOrder,
+} from './types';
 
 // Drafts print as RFQs, everything else as the purchase order — the same
 // branch the detail page uses.
@@ -297,6 +301,12 @@ function OrderCard({
       <p className="mb-1 text-sm font-medium text-gray-700">
         {order.vendorName ?? <span className="text-gray-400">No vendor</span>}
       </p>
+      {warehouseLabelOf(order.warehouse) && (
+        <p className="mb-1 flex items-center gap-1 text-xs text-gray-500">
+          <PiWarehouse className="h-3.5 w-3.5 text-gray-400" />
+          {warehouseLabelOf(order.warehouse)}
+        </p>
+      )}
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
         {showBillNow ? (
           <>
@@ -1419,6 +1429,9 @@ export default function PurchasesOrders() {
               <tr className="border-b border-gray-100 bg-gray-50/80">
                 <Th col="poNumber" label="PO Number" />
                 <Th col="vendor" label="Vendor" />
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">
+                  Warehouse
+                </th>
                 <Th col="status" label="Status" />
                 <Th col="total" label="Value" right />
                 {activeTab === 'to_bill' ? (
@@ -1444,7 +1457,7 @@ export default function PurchasesOrders() {
                 Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center">
+                  <td colSpan={8} className="py-16 text-center">
                     <EmptyState
                       tab={activeTab}
                       msg={EMPTY_MSGS[activeTab]}
@@ -1492,6 +1505,16 @@ export default function PurchasesOrders() {
                       </td>
                       <td className="px-4 py-3.5 text-gray-700">
                         {order.vendorName ?? (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-gray-700">
+                        {warehouseLabelOf(order.warehouse) ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <PiWarehouse className="h-3.5 w-3.5 text-gray-400" />
+                            {warehouseLabelOf(order.warehouse)}
+                          </span>
+                        ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
