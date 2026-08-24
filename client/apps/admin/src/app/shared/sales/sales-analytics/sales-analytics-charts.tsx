@@ -141,28 +141,120 @@ interface TipEntry {
   name?: string;
   dataKey?: string | number;
   color?: string;
+  /** Recharts attaches the source row to every entry. */
+  payload?: unknown;
 }
 
+interface TipRow {
+  label?: string;
+  orders?: number;
+  value?: number;
+  __total__?: number;
+  [k: string]: unknown;
+}
+
+/**
+ * The one tooltip every analytics chart shares. It answers the four questions
+ * a hover actually asks: WHAT is this bucket, HOW MUCH (in the measure's own
+ * vocabulary), what SHARE of the whole it carries, and how many DOCUMENTS
+ * stand behind the number. Stacked mode lists each visible series with its
+ * swatch and sums only what is on screen — a total that includes hidden
+ * series would not match the bars it floats over.
+ */
 function ChartTooltip({
   active,
   payload,
+  label,
   measure,
+  measureLabel,
+  totalValue,
+  stacked = false,
 }: {
   active?: boolean;
   payload?: TipEntry[];
+  label?: string | number;
   measure: SalesMeasure;
+  measureLabel?: string;
+  totalValue?: number;
+  stacked?: boolean;
 }) {
   if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-lg border border-gray-100 bg-white px-3 py-2 shadow-xl">
-      {payload.map((p, i) => (
-        <p key={i} className="text-xs font-semibold text-gray-800">
-          {p.name ? `${p.name}: ` : ''}
-          {IS_CURRENCY[measure]
-            ? fmtMoney(Number(p.value ?? 0))
-            : Number(p.value ?? 0).toLocaleString()}
+  const fmt = (v: number) =>
+    IS_CURRENCY[measure] ? fmtMoney(v) : Math.round(v).toLocaleString();
+
+  // Recharts attaches the source row to every entry — doc count and totals
+  // come from there, never recomputed.
+  const row = (payload[0]?.payload ?? null) as TipRow | null;
+  if (stacked) {
+    const shown = payload.reduce(
+      (s, p) => s + Number(p.value ?? 0),
+      0
+    );
+    return (
+      <div className="min-w-[180px] rounded-xl border border-gray-100 bg-white px-3 py-2.5 shadow-xl">
+        <p className="text-xs font-bold text-gray-900">
+          {label ?? row?.label ?? '—'}
         </p>
-      ))}
+        <p className="mb-1.5 text-[10px] text-gray-400">
+          {row?.orders ?? 0} document{(row?.orders ?? 0) === 1 ? '' : 's'}
+        </p>
+        <div className="space-y-1">
+          {payload.map((p, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ background: p.color ?? '#d1d5db' }}
+              />
+              <span className="min-w-0 flex-1 truncate text-gray-600">
+                {p.name}
+              </span>
+              <span className="font-semibold tabular-nums text-gray-900">
+                {fmt(Number(p.value ?? 0))}
+              </span>
+            </div>
+          ))}
+        </div>
+        {payload.length > 1 && (
+          <div className="mt-1.5 flex items-center gap-2 border-t border-gray-100 pt-1.5 text-xs">
+            <span className="flex-1 font-semibold text-gray-700">Shown total</span>
+            <span className="font-bold tabular-nums text-gray-900">
+              {fmt(shown)}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const value = Number(payload[0]?.value ?? 0);
+  const header = label ?? row?.label ?? payload[0]?.name ?? '—';
+  const docs = row?.orders ?? 0;
+  const showShare =
+    measure !== 'avg_order' &&
+    totalValue != null &&
+    totalValue > 0 &&
+    value > 0;
+  const share = showShare
+    ? `${((value / (totalValue as number)) * 100).toFixed(1)}% of total`
+    : null;
+
+  return (
+    <div className="min-w-[160px] rounded-xl border border-gray-100 bg-white px-3 py-2.5 shadow-xl">
+      <p className="max-w-[220px] truncate text-xs font-bold text-gray-900">
+        {header}
+      </p>
+      {measureLabel && (
+        <p className="text-[10px] uppercase tracking-wider text-gray-400">
+          {measureLabel}
+        </p>
+      )}
+      <p className="mt-1 text-sm font-bold tabular-nums text-[#b20202]">
+        {fmt(value)}
+      </p>
+      <p className="mt-0.5 text-[10px] text-gray-400">
+        {docs} document{docs === 1 ? '' : 's'}
+        {share ? ` · ${share}` : ''}
+      </p>
     </div>
   );
 }
@@ -255,10 +347,14 @@ function TableView({
 function PieView({
   data,
   measure,
+  measureLabel,
+  totalValue,
   onSliceClick,
 }: {
   data: GroupRow[];
   measure: SalesMeasure;
+  measureLabel?: string;
+  totalValue?: number;
   onSliceClick: (label: string, orders: SalesOrder[]) => void;
 }) {
   return (
@@ -282,7 +378,15 @@ function PieView({
             <Cell key={i} fill={PALETTE[i % PALETTE.length]} cursor="pointer" />
           ))}
         </Pie>
-        <Tooltip content={<ChartTooltip measure={measure} />} />
+        <Tooltip
+          content={
+            <ChartTooltip
+              measure={measure}
+              measureLabel={measureLabel}
+              totalValue={totalValue}
+            />
+          }
+        />
       </PieChart>
     </ResponsiveContainer>
   );
@@ -291,10 +395,14 @@ function PieView({
 function LineView({
   data,
   measure,
+  measureLabel,
+  totalValue,
   onPointClick,
 }: {
   data: GroupRow[];
   measure: SalesMeasure;
+  measureLabel?: string;
+  totalValue?: number;
   onPointClick: (label: string, orders: SalesOrder[]) => void;
 }) {
   return (
@@ -311,7 +419,15 @@ function LineView({
         <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe4" vertical={false} />
         <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" />
         <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={(v) => fmtAxis(v, measure)} width={56} />
-        <Tooltip content={<ChartTooltip measure={measure} />} />
+        <Tooltip
+          content={
+            <ChartTooltip
+              measure={measure}
+              measureLabel={measureLabel}
+              totalValue={totalValue}
+            />
+          }
+        />
         <Line
           type="monotone"
           dataKey="value"
@@ -330,10 +446,14 @@ function LineView({
 function BarView({
   data,
   measure,
+  measureLabel,
+  totalValue,
   onBarClick,
 }: {
   data: GroupRow[];
   measure: SalesMeasure;
+  measureLabel?: string;
+  totalValue?: number;
   onBarClick: (label: string, orders: SalesOrder[]) => void;
 }) {
   const manyItems = data.length > 8;
@@ -360,7 +480,16 @@ function BarView({
             <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={(v) => fmtAxis(v, measure)} width={56} />
           </>
         )}
-        <Tooltip cursor={{ fill: '#b2020210' }} content={<ChartTooltip measure={measure} />} />
+        <Tooltip
+          cursor={{ fill: '#b2020210' }}
+          content={
+            <ChartTooltip
+              measure={measure}
+              measureLabel={measureLabel}
+              totalValue={totalValue}
+            />
+          }
+        />
         <Bar dataKey="value" radius={manyItems ? [0, 6, 6, 0] : [6, 6, 0, 0]} maxBarSize={manyItems ? 26 : 48} isAnimationActive={false} cursor="pointer">
           {data.map((_, i) => (
             <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
@@ -427,11 +556,35 @@ export function SalesMainChart({
         orders: rest.reduce((s, r) => s + r.orders, 0),
         orderList: rest.flatMap((r) => r.orderList),
       });
-    return <PieView data={pieData} measure={measure} onSliceClick={onDrill} />;
+    return (
+      <PieView
+        data={pieData}
+        measure={measure}
+        measureLabel={measureLabel}
+        totalValue={totalValue}
+        onSliceClick={onDrill}
+      />
+    );
   }
   if (chartType === 'line')
-    return <LineView data={rows.slice(0, 30)} measure={measure} onPointClick={onDrill} />;
-  return <BarView data={rows.slice(0, 30)} measure={measure} onBarClick={onDrill} />;
+    return (
+      <LineView
+        data={rows.slice(0, 30)}
+        measure={measure}
+        measureLabel={measureLabel}
+        totalValue={totalValue}
+        onPointClick={onDrill}
+      />
+    );
+  return (
+    <BarView
+      data={rows.slice(0, 30)}
+      measure={measure}
+      measureLabel={measureLabel}
+      totalValue={totalValue}
+      onBarClick={onDrill}
+    />
+  );
 }
 
 /** Re-forms display labels for date buckets already formatted upstream. */
@@ -467,6 +620,8 @@ export function SalesStackedChart({
   rows,
   series,
   measure,
+  measureLabel,
+  totalValue,
   groupBy,
   onCellClick,
 }: {
@@ -480,6 +635,8 @@ export function SalesStackedChart({
   }[];
   series: string[];
   measure: SalesMeasure;
+  measureLabel?: string;
+  totalValue?: number;
   groupBy: SalesGroupByKey;
   onCellClick: (rowLabel: string, seriesKey: string, orders: SalesOrder[]) => void;
 }) {
@@ -561,7 +718,17 @@ export function SalesStackedChart({
             height={58}
           />
           <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={(v) => fmtAxis(v, measure)} width={56} />
-          <Tooltip cursor={{ fill: '#b202020d' }} content={<ChartTooltip measure={measure} />} />
+          <Tooltip
+            cursor={{ fill: '#b202020d' }}
+            content={
+              <ChartTooltip
+                measure={measure}
+                measureLabel={measureLabel}
+                totalValue={totalValue}
+                stacked
+              />
+            }
+          />
           {visibleSeries.map((s) => (
             <Bar
               key={s}

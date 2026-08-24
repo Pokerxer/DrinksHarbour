@@ -26,6 +26,7 @@ import type { SalesOrder } from '@/services/salesOrder.service';
 import {
   computeSalesGroupData,
   formatSalesG1Label,
+  type GroupRow,
   type ProdMeta,
 } from './sales-analytics-helpers';
 
@@ -60,18 +61,22 @@ function Empty({ what }: { what: string }) {
 
 function MonthlyTrendCard({ docs }: { docs: SalesOrder[] }) {
   const data = useMemo(() => {
-    const byMonth = new Map<string, number>();
+    const byMonth = new Map<string, { amount: number; docs: number }>();
     for (const o of docs) {
       const d = new Date(o.createdAt || Date.now());
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      byMonth.set(key, (byMonth.get(key) ?? 0) + (o.total ?? 0));
+      const cur = byMonth.get(key) ?? { amount: 0, docs: 0 };
+      cur.amount += o.total ?? 0;
+      cur.docs += 1;
+      byMonth.set(key, cur);
     }
     const rows = Array.from(byMonth.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-6)
-      .map(([key, amount]) => ({
+      .map(([key, v]) => ({
         label: formatSalesG1Label(key, 'order_month'),
-        amount,
+        amount: v.amount,
+        docs: v.docs,
         prev: null as number | null,
       }));
     for (let i = 1; i < rows.length; i++) rows[i].prev = rows[i - 1].amount;
@@ -109,11 +114,15 @@ function MonthlyTrendCard({ docs }: { docs: SalesOrder[] }) {
                   if (!active || !payload?.length) return null;
                   const d = payload[0].payload as {
                     amount: number;
+                    docs: number;
                     prev: number | null;
                   };
                   return (
                     <div className="rounded-xl border border-[#ece4d6] bg-white px-3 py-2 shadow-lg">
                       <p className="text-xs font-semibold text-[#2a2420]">{label}</p>
+                      <p className="text-[10px] text-gray-400">
+                        Revenue · {d.docs} document{d.docs === 1 ? '' : 's'}
+                      </p>
                       <p className="mt-0.5 text-sm font-bold tabular-nums text-[#b20202]">
                         {naira(d.amount)}
                       </p>
@@ -204,6 +213,84 @@ function RankTable({
                 </td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ── Top products (best sellers) ────────────────────────────────────────────────
+
+/**
+ * Best Sellers — rank by revenue, but always show units: for a beverage
+ * business a cheap high-volume lager and a premium cognac tell different
+ * stories, and revenue alone hides the lager. Qty comes from a second engine
+ * pass (same buckets, different measure) merged by bucket key.
+ */
+function TopProductsCard({
+  byRevenue,
+  byQty,
+}: {
+  byRevenue: GroupRow[];
+  byQty: Map<string, number>;
+}) {
+  const rows = byRevenue.slice(0, 6);
+  const totalRevenue = byRevenue.reduce((s, r) => s + r.value, 0);
+  return (
+    <div className={CARD}>
+      <CardHead eyebrow="What moves" title="Top Products" />
+      {rows.length === 0 ? (
+        <Empty what="No product lines yet" />
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[#ece4d6] bg-[#FAF8F3] text-xs">
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Product
+              </th>
+              <th className="px-2 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Units
+              </th>
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Revenue
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#f1ece2]">
+            {rows.map((r, i) => {
+              const qty = byQty.get(r.isoKey);
+              const share =
+                totalRevenue > 0 ? ((r.value / totalRevenue) * 100).toFixed(1) : '0.0';
+              return (
+                <tr key={r.isoKey} className="transition-colors hover:bg-[#FAF8F3]">
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                        style={{ background: PALETTE[i % PALETTE.length] }}
+                      >
+                        {i + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-[#2a2420]">{r.label}</p>
+                        <p className="text-[11px] text-gray-400">
+                          {r.orders} doc{r.orders === 1 ? '' : 's'} · {share}% of product revenue
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-2 py-2.5 text-right text-xs tabular-nums text-gray-600">
+                    {qty != null ? qty.toLocaleString() : '—'}
+                  </td>
+                  <td
+                    className={`${fraunces.className} px-4 py-2.5 text-right font-semibold tabular-nums text-[#2a2420]`}
+                  >
+                    {naira(r.value)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -395,7 +482,21 @@ export default function SalesWidgetsGrid({
   );
   const products = useMemo(
     () =>
-      computeSalesGroupData(docs, 'product', 'revenue', prodMeta, toBase, []).slice(0, 6),
+      computeSalesGroupData(docs, 'product', 'revenue', prodMeta, toBase, []),
+    [docs, prodMeta, toBase]
+  );
+  const productQty = useMemo(
+    () =>
+      new Map(
+        computeSalesGroupData(
+          docs,
+          'product',
+          'product_qty',
+          prodMeta,
+          toBase,
+          []
+        ).map((r) => [r.isoKey, r.value])
+      ),
     [docs, prodMeta, toBase]
   );
   const salespeople = useMemo(
@@ -421,21 +522,12 @@ export default function SalesWidgetsGrid({
         />
       </div>
       <LifecycleCard docs={docs} />
-      <MonthlyTrendCard docs={docs} />
-      <PaymentCard docs={docs} />
-      <div className="lg:col-span-1">
-        <RankTable
-          eyebrow="What moves"
-          title="Top Products"
-          rows={products.map((r) => ({
-            label: r.label,
-            orders: r.orders,
-            value: r.value,
-          }))}
-          emptyText="No product lines yet"
-        />
+      <div className="lg:col-span-2">
+        <TopProductsCard byRevenue={products} byQty={productQty} />
       </div>
-      <div className="lg:col-span-3">
+      <PaymentCard docs={docs} />
+      <MonthlyTrendCard docs={docs} />
+      <div className="lg:col-span-2">
         <RankTable
           eyebrow="Who sells"
           title="Salesperson Leaderboard"

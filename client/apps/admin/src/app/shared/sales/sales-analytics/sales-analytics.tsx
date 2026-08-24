@@ -917,6 +917,8 @@ export default function SalesAnalytics() {
                 rows={multiSeries.rows}
                 series={multiSeries.series}
                 measure={measure}
+                measureLabel={measureLabel}
+                totalValue={totalValue}
                 groupBy={groupBy!}
                 onCellClick={(rowLabel, seriesKey, orders) =>
                   openDrill(rowLabel, orders, seriesKey)
