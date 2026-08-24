@@ -35,6 +35,8 @@ interface LocationsTabProps {
    * open its own adjustment modal (with last-cost context etc.).
    */
   onCustomAdjust?: (row: WarehouseStockRow, type: AdjustType) => void;
+  /** Case-insensitive filter over warehouse name/code and size label. */
+  filterText?: string;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -65,6 +67,7 @@ export function LocationsTab({
   token,
   onRefresh,
   onCustomAdjust,
+  filterText = '',
 }: LocationsTabProps) {
   const [rows, setRows] = useState<WarehouseStockRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -93,8 +96,14 @@ export function LocationsTab({
   }, [load]);
 
   const groups: Group[] = useMemo(() => {
+    const q = filterText.trim().toLowerCase();
+    const visible = q
+      ? rows.filter((r) =>
+          `${whName(r)} ${whCode(r)} ${sizeName(r)}`.toLowerCase().includes(q)
+        )
+      : rows;
     const map = new Map<string, Group>();
-    for (const r of rows) {
+    for (const r of visible) {
       const id = String(idOf(r.warehouse));
       let g = map.get(id);
       if (!g) {
@@ -273,7 +282,9 @@ export function LocationsTab({
         <div className="rounded-2xl border-2 border-dashed border-gray-200 py-16 text-center">
           <PiWarehouse className="mx-auto h-12 w-12 text-gray-200" />
           <p className="mt-3 text-sm font-medium text-gray-500">
-            Not stocked in any warehouse yet
+            {rows.length > 0
+              ? `No locations match “${filterText.trim()}”`
+              : 'Not stocked in any warehouse yet'}
           </p>
           <p className="mt-1 text-xs text-gray-400">
             Receive this item into a warehouse from the warehouse&apos;s stock

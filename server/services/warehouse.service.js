@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 const Warehouse = require('../models/Warehouse');
 const WarehouseStock = require('../models/WarehouseStock');
 const WarehouseMovement = require('../models/WarehouseMovement');
+// The unified audit trail the inventory history/summary reads. Warehouse-side
+// operations write BOTH ledgers so no movement is invisible to either view.
+const InventoryMovement = require('../models/InventoryMovement');
 const { recalcSubProductStock, computeStockFlags } = require('./warehouseStock.helpers');
 const { valuationCost } = require('./batch.helpers');
 const batchService = require('./batch.service');
@@ -145,6 +148,48 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
  * type: 'received' | 'shipped' | 'adjusted'
  *   received → +quantity, shipped → -quantity, adjusted → set to quantity (absolute)
  */
+/**
+ * Mirror a warehouse-ledger change into the unified InventoryMovement ledger
+ * (what /inventory/movements and the product history/summary read). Kept in
+ * step with the WarehouseMovement write inside the same session/transaction.
+ * Mapping: received→received(in) · shipped→shipped(out) · returned→return(in)
+ * adjusted→adjustment_in/out · transfer_out/in (category 'transfer').
+ */
+async function mirrorToInventoryLedger(entries, session = null) {
+  if (!entries.length) return;
+  try {
+    await InventoryMovement.create(entries, session ? { session } : {});
+  } catch (err) {
+    // The warehouse ledger is authoritative for stock levels; a mirror write
+    // must not roll back a completed stock operation. Surface for monitoring.
+    console.error('[warehouse] InventoryMovement mirror failed:', err.message);
+  }
+}
+
+function adjustmentSplit(type, quantity, balanceAfter, prevBalance) {
+  if (type === 'adjusted') {
+    const delta = balanceAfter - (typeof prevBalance === 'number' ? prevBalance : 0);
+    return {
+      type: delta >= 0 ? 'adjustment_in' : 'adjustment_out',
+      category: 'adjustment',
+      quantity: Math.abs(delta),
+      quantityBefore:
+        typeof prevBalance === 'number' ? prevBalance : balanceAfter,
+    };
+  }
+  const map = {
+    received: { t: 'received', c: 'in', sign: 1 },
+    shipped: { t: 'shipped', c: 'out', sign: -1 },
+    returned: { t: 'return', c: 'in', sign: 1 },
+  }[type];
+  return {
+    type: map.t,
+    category: map.c,
+    quantity,
+    quantityBefore: balanceAfter - map.sign * quantity,
+  };
+}
+
 async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, unitCost = null, tracksBatch = false, allowNegativeStock = false, fefoPicking = false }, userId, tenantId) {
   if (!['received', 'shipped', 'adjusted'].includes(type)) {
     throw new ValidationError('Invalid adjustment type');
@@ -168,6 +213,7 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
     }
     row.currentQuantity = Math.max(0, before - quantity);
   } else if (type === 'adjusted') row.currentQuantity = Math.max(0, quantity);
+  const prevBalance = before; // captured before mutation above
   await row.save();
 
   await WarehouseMovement.create({
@@ -179,6 +225,30 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
       typeof unitCost === 'number' && unitCost >= 0 ? unitCost : null,
     performedBy: userId,
   });
+
+  // Mirror into the unified ledger so /inventory/movements-based views see it.
+  const split = adjustmentSplit(type, quantity, row.currentQuantity, prevBalance);
+  await mirrorToInventoryLedger([
+    {
+      subProduct, tenant: tenantId, warehouse: warehouseId, size,
+      type: split.type, category: split.category,
+      quantity: Math.abs(split.quantity),
+      quantityBefore: split.quantityBefore,
+      quantityAfter: row.currentQuantity,
+      unitCost: typeof unitCost === 'number' && unitCost > 0 ? unitCost : undefined,
+      totalCost:
+        typeof unitCost === 'number' && unitCost > 0
+          ? unitCost * Math.abs(split.quantity)
+          : undefined,
+      reference: notes ? String(notes).slice(0, 100) : undefined,
+      referenceType: 'manual',
+      reason: notes ? String(notes).slice(0, 200) : undefined,
+      performedBy: userId,
+      performedAt: new Date(),
+      source: 'system',
+    },
+  ]);
+
   await recalcSubProductStock(subProduct);
 
   // Reconcile batches on a downward correction: deplete the shortfall FEFO. An
@@ -256,6 +326,42 @@ async function transferStock(
             quantity, balanceAfter: dest.currentQuantity, reference: notes, transferGroupId, performedBy: userId },
         ],
         { session, ordered: true }
+      );
+
+      // Mirror the pair into the unified ledger (same transaction) so the
+      // product history/summary reflects transfers immediately.
+      await mirrorToInventoryLedger(
+        [
+          {
+            subProduct, tenant: tenantId, warehouse: fromWarehouse, size,
+            type: 'transfer_out', category: 'transfer',
+            quantity, quantityBefore: src.currentQuantity + quantity,
+            quantityAfter: src.currentQuantity,
+            sourceWarehouse: fromWarehouse,
+            destinationWarehouse: toWarehouse,
+            reference: notes ? String(notes).slice(0, 100) : String(transferGroupId),
+            referenceType: 'transfer',
+            reason: notes ? String(notes).slice(0, 200) : undefined,
+            performedBy: userId,
+            performedAt: new Date(),
+            source: 'system',
+          },
+          {
+            subProduct, tenant: tenantId, warehouse: toWarehouse, size,
+            type: 'transfer_in', category: 'transfer',
+            quantity, quantityBefore: dest.currentQuantity - quantity,
+            quantityAfter: dest.currentQuantity,
+            sourceWarehouse: fromWarehouse,
+            destinationWarehouse: toWarehouse,
+            reference: notes ? String(notes).slice(0, 100) : String(transferGroupId),
+            referenceType: 'transfer',
+            reason: notes ? String(notes).slice(0, 200) : undefined,
+            performedBy: userId,
+            performedAt: new Date(),
+            source: 'system',
+          },
+        ],
+        session
       );
       // Total across warehouses is unchanged; recompute as a safety no-op.
       await recalcSubProductStock(subProduct, session);
@@ -456,12 +562,13 @@ async function getAllStock(tenantId, settings = null) {
 }
 
 async function getStockByWarehouse(subProductId, tenantId) {
-  // Prices included so product-level inventory views can show last/standard
-  // cost and stock value without per-line round-trips.
+  // Prices + product identity included so product-level inventory views can
+  // show names, last/standard cost and stock value without extra round-trips.
   return WarehouseStock.find({ tenant: tenantId, subProduct: subProductId })
     .populate({
       path: 'subProduct',
       select: 'sku costPrice baseSellingPrice currency',
+      populate: { path: 'product', select: 'name slug images' },
     })
     .populate('warehouse', 'name code type')
     .populate('size', 'size costPrice sellingPrice')

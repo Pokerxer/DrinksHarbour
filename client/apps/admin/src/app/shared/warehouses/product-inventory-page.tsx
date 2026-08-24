@@ -5,11 +5,10 @@
 // /warehouses/product/[id] — the warehouse-side home for one product:
 // its inventory across every location and its full movement history.
 //
-// Reuses the sub-product page's LocationsTab (stock-by-warehouse groups) and
-// HistoryTab pieces (InventorySummaryCard + ServerMovementsList), upgraded with
-// page-level functionality: KPI strip with estimated stock value, real
-// adjustment modal (with last-cost capture) instead of window.prompt,
-// CSV export, and tab state synced to the URL query.
+// Identity comes straight from GET /subproducts/:id so the header renders the
+// real product name/image even when the product has no stock anywhere (the
+// stocked rows only carry identity as populated refs). Reuses the sub-product
+// page's LocationsTab + HistoryTab pieces.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -20,6 +19,7 @@ import {
   PiChartLine,
   PiCubeBold,
   PiLockKeyBold,
+  PiMagnifyingGlass,
   PiPackageBold,
   PiSpinner,
   PiWarehouse,
@@ -29,6 +29,7 @@ import {
   type InventoryMovement,
   type InventorySummary,
 } from '@/services/inventory.service';
+import { subproductService } from '@/services/subproduct.service';
 import type { WarehouseStockRow } from '@/services/warehouseStock.service';
 import { routes } from '@/config/routes';
 import { fraunces } from '../purchases/purchases-fonts';
@@ -40,7 +41,56 @@ import type { AdjustType } from '@/services/warehouseStock.service';
 
 type Tab = 'inventory' | 'history';
 
-const isTab = (v: string | null): v is Tab => v === 'inventory' || v === 'history';
+const isTab = (v: string | null): v is Tab =>
+  v === 'inventory' || v === 'history';
+
+/** Header identity, tolerant of whatever the sub-product endpoint populates. */
+interface ProductIdentity {
+  name: string;
+  sku: string;
+  image: string | null;
+}
+
+function identityFromSubProduct(sp: unknown): ProductIdentity {
+  const doc = sp as {
+    sku?: string;
+    name?: string;
+    imagesOverride?: { url?: string }[];
+    images?: { url?: string }[];
+    product?:
+      | string
+      | { name?: string; images?: { url?: string }[] }
+      | null;
+  };
+  const prod =
+    doc?.product && typeof doc.product === 'object' ? doc.product : null;
+  return {
+    name: prod?.name || doc?.name || '',
+    sku: doc?.sku ?? '',
+    image:
+      doc?.imagesOverride?.[0]?.url ??
+      doc?.images?.[0]?.url ??
+      prod?.images?.[0]?.url ??
+      null,
+  };
+}
+
+function identityFromRows(rows: WarehouseStockRow[]): ProductIdentity {
+  const first = rows[0];
+  if (!first) return { name: '', sku: '', image: null };
+  const sp =
+    first.subProduct && typeof first.subProduct === 'object'
+      ? first.subProduct
+      : null;
+  return {
+    name: sp?.product?.name ?? '',
+    sku: sp?.sku ?? '',
+    image:
+      sp?.imagesOverride?.[0]?.url ??
+      sp?.product?.images?.[0]?.url ??
+      null,
+  };
+}
 
 export default function ProductInventoryPage({
   subProductId,
@@ -63,14 +113,34 @@ export default function ProductInventoryPage({
     [router]
   );
 
+  const [identity, setIdentity] = useState<ProductIdentity | null>(null);
   const [rows, setRows] = useState<WarehouseStockRow[] | null>(null);
   const [summary, setSummary] = useState<InventorySummary | null>(null);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [filterText, setFilterText] = useState('');
   const [adjustTarget, setAdjustTarget] = useState<{
     row: WarehouseStockRow;
     type: AdjustType;
   } | null>(null);
+
+  // Authoritative identity — works even with zero stock anywhere.
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    subproductService
+      .getSubProduct(subProductId, token)
+      .then((res: unknown) => {
+        if (!alive) return;
+        const sp = (res as { data?: { subProduct?: unknown } })?.data
+          ?.subProduct;
+        if (sp) setIdentity(identityFromSubProduct(sp));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token, subProductId]);
 
   const loadLocations = useCallback(async () => {
     if (!token) return;
@@ -160,14 +230,9 @@ export default function ProductInventoryPage({
     };
   }, [rows]);
 
-  // Product identity comes off the first stocked row (refs are populated).
-  const first = rows?.[0];
-  const name = first ? rowName(first) : '';
-  const image = first ? rowImage(first) : null;
-  const sku =
-    first && typeof first.subProduct === 'object' && first.subProduct
-      ? first.subProduct.sku
-      : '';
+  // Rows-derived identity is a fallback while the direct fetch is in flight.
+  const shown: ProductIdentity =
+    identity ?? (rows ? identityFromRows(rows) : { name: '', sku: '', image: null });
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-3 py-4 sm:px-4 sm:py-6">
@@ -182,9 +247,13 @@ export default function ProductInventoryPage({
 
         <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-[#ece4d6] bg-white p-6 shadow-sm">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
-            {image ? (
+            {shown.image ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={image} alt={name} className="h-full w-full object-cover" />
+              <img
+                src={shown.image}
+                alt={shown.name}
+                className="h-full w-full object-cover"
+              />
             ) : (
               <PiPackageBold className="h-6 w-6 text-gray-300" />
             )}
@@ -196,14 +265,24 @@ export default function ProductInventoryPage({
             <h1
               className={`${fraunces.className} truncate text-2xl font-semibold text-[#2a2420]`}
             >
-              {name || (rows === null ? 'Loading…' : 'Unknown product')}
+              {shown.name ||
+                (identity === null && rows === null ? 'Loading…' : '')}
+              {!shown.name &&
+                identity !== null && (
+                  <span className="text-base font-normal text-gray-400">
+                    Unnamed product
+                  </span>
+                )}
             </h1>
-            {sku && <p className="font-mono text-xs text-gray-400">{sku}</p>}
+            {shown.sku && (
+              <p className="font-mono text-xs text-gray-400">{shown.sku}</p>
+            )}
           </div>
           {rows !== null && rows.length > 0 && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
               <PiWarehouse className="h-3.5 w-3.5" />
-              Stocked in {kpis.locations} location{kpis.locations === 1 ? '' : 's'}
+              Stocked in {kpis.locations} location
+              {kpis.locations === 1 ? '' : 's'}
             </span>
           )}
         </div>
@@ -218,7 +297,11 @@ export default function ProductInventoryPage({
           <Kpi label="Available" value={kpis.available.toLocaleString()} icon={<PiCubeBold className="h-4 w-4" />} tone="green" />
           <Kpi
             label="Est. stock value"
-            value={kpis.value === null ? '—' : `₦${Math.round(kpis.value).toLocaleString()}`}
+            value={
+              kpis.value === null
+                ? '—'
+                : `₦${Math.round(kpis.value).toLocaleString()}`
+            }
             title={kpis.value === null ? 'No cost basis on file' : undefined}
             icon={<PiPackageBold className="h-4 w-4" />}
             tone="brand"
@@ -227,29 +310,54 @@ export default function ProductInventoryPage({
       )}
 
       {/* ── Tabs ── */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {(
-          [
-            ['inventory', 'Inventory', <PiWarehouse key="i" className="h-3.5 w-3.5" />],
-            ['history', 'History & Movements', <PiChartLine key="h" className="h-3.5 w-3.5" />],
-          ] as [Tab, string, React.ReactNode][]
-        ).map(([id, label, icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            aria-selected={tab === id}
-            role="tab"
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold transition-colors ${
-              tab === id
-                ? 'border-b-2 border-[#b20202] text-[#b20202]'
-                : 'text-gray-400 hover:text-gray-700'
-            }`}
-          >
-            {icon}
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200">
+        <div className="flex gap-1">
+          {(
+            [
+              ['inventory', 'Inventory', <PiWarehouse key="i" className="h-3.5 w-3.5" />],
+              ['history', 'History & Movements', <PiChartLine key="h" className="h-3.5 w-3.5" />],
+            ] as [Tab, string, React.ReactNode][]
+          ).map(([id, label, icon]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              aria-selected={tab === id}
+              role="tab"
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold transition-colors ${
+                tab === id
+                  ? 'border-b-2 border-[#b20202] text-[#b20202]'
+                  : 'text-gray-400 hover:text-gray-700'
+              }`}
+            >
+              {icon}
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'inventory' && rows !== null && rows.length > 0 && (
+          <div className="relative mb-1 w-full max-w-xs">
+            <PiMagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <input
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder="Filter by warehouse or size…"
+              aria-label="Filter inventory by warehouse or size"
+              className="w-full rounded-lg border border-gray-200 bg-white py-1.5 pl-9 pr-8 text-xs text-gray-700 outline-none focus:border-[#b20202]"
+            />
+            {filterText && (
+              <button
+                type="button"
+                onClick={() => setFilterText('')}
+                aria-label="Clear filter"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Panels ── */}
@@ -261,6 +369,7 @@ export default function ProductInventoryPage({
         <LocationsTab
           subProductId={subProductId}
           token={token}
+          filterText={filterText}
           onRefresh={loadLocations}
           onCustomAdjust={(row, type) => setAdjustTarget({ row, type })}
         />
@@ -347,7 +456,9 @@ function Kpi({
         <p className="truncate text-[10px] font-bold uppercase tracking-wider text-gray-400">
           {label}
         </p>
-        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${colorCls}`}>
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${colorCls}`}
+        >
           {icon}
         </span>
       </div>
@@ -357,20 +468,5 @@ function Kpi({
         {value}
       </p>
     </div>
-  );
-}
-
-// Local accessors over the null-safe helpers (kept tiny to avoid re-imports).
-function rowName(r: WarehouseStockRow): string {
-  return r.subProduct && typeof r.subProduct === 'object'
-    ? (r.subProduct.product?.name ?? '')
-    : '';
-}
-function rowImage(r: WarehouseStockRow): string | null {
-  if (!r.subProduct || typeof r.subProduct !== 'object') return null;
-  return (
-    r.subProduct.imagesOverride?.[0]?.url ??
-    r.subProduct.product?.images?.[0]?.url ??
-    null
   );
 }
