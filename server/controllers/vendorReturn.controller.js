@@ -4,7 +4,8 @@ const PurchaseOrder = require("../models/PurchaseOrder");
 const SubProduct = require("../models/SubProduct");
 const VendorBill = require("../models/VendorBill");
 const asyncHandler = require('../utils/asyncHandler');
-const { captureDocumentTax, reverseDocumentTax } = require("../services/tax.service");
+const { captureDocumentTax, reverseDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
+const { round2 } = require("../services/tax.helpers");
 
 async function generateReturnNumber(tenantId) {
   const year = new Date().getFullYear();
@@ -87,6 +88,16 @@ exports.createVendorReturn = asyncHandler(async (req, res) => {
     returnAddress,
   } = req.body;
 
+  // Resolve the header Tax ref (or tenant default). VendorReturn stores only
+  // header-level tax (no per-line rate in the schema), so the resolved rate is
+  // applied to taxAmount below unless the caller signalled per-line tax.
+  let resolvedTax;
+  try {
+    resolvedTax = await effectiveTaxForFlow({ tenantId, taxId: req.body.taxId, sourceType: "vendor_return" });
+  } catch (e) {
+    throw new ValidationError(e.message);
+  }
+
   // Calculate totals
   let subtotal = 0;
   let taxAmount = 0;
@@ -100,6 +111,10 @@ exports.createVendorReturn = asyncHandler(async (req, res) => {
       amount: amount + tax,
     };
   }) || [];
+
+  if (resolvedTax && resolvedTax.taxRate !== null && !taxAmount) {
+    taxAmount = round2((subtotal * resolvedTax.taxRate) / 100);
+  }
 
   const totalAmount = subtotal + taxAmount;
 
@@ -262,6 +277,15 @@ exports.updateVendorReturn = asyncHandler(async (req, res) => {
 
   // If items are updated, recalculate totals
   if (updates.items) {
+    // Resolve the header Tax ref (or tenant default). VendorReturn stores only
+    // header-level tax (no per-line rate in the schema), so the resolved rate
+    // is applied to taxAmount below unless the caller signalled per-line tax.
+    let resolvedTax;
+    try {
+      resolvedTax = await effectiveTaxForFlow({ tenantId, taxId: req.body.taxId, sourceType: "vendor_return" });
+    } catch (e) {
+      throw new ValidationError(e.message);
+    }
     let subtotal = 0;
     let taxAmount = 0;
     updates.items = updates.items.map((item) => {
@@ -274,6 +298,9 @@ exports.updateVendorReturn = asyncHandler(async (req, res) => {
         amount: amount + tax,
       };
     });
+    if (resolvedTax && resolvedTax.taxRate !== null && !taxAmount) {
+      taxAmount = round2((subtotal * resolvedTax.taxRate) / 100);
+    }
     updates.subtotal = subtotal;
     updates.taxAmount = taxAmount;
     updates.totalAmount = subtotal + taxAmount;

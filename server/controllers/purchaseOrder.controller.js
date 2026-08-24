@@ -20,7 +20,7 @@ const {
 } = require("../services/poReceive.helpers");
 const VendorBill = require("../models/VendorBill");
 const { syncVendorPricelistFromPO } = require("../services/vendorPricelistSync.service");
-const { captureDocumentTax } = require("../services/tax.service");
+const { captureDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
 const {
   NotFoundError,
   ValidationError,
@@ -302,6 +302,19 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
   // Validate subProducts exist in tenant's catalog
   await validateSubProducts(items, tenantId);
 
+  // Snapshot the effective taxRate for lines carrying a configured Tax ref —
+  // enrichPOItems spreads each item, so the rate set here flows into persistence.
+  for (const item of items) {
+    if (!item || !item.tax) continue;
+    let resolved;
+    try {
+      resolved = await effectiveTaxForFlow({ tenantId, taxId: item.tax, sourceType: "purchase_order" });
+    } catch (e) {
+      throw new ValidationError(e.message);
+    }
+    if (resolved && resolved.taxRate !== null) item.taxRate = resolved.taxRate;
+  }
+
   // Enrich items with subProduct and Size data (auto-lookup)
   const enrichedItems = await enrichPOItems(items, tenantId);
 
@@ -516,6 +529,18 @@ const updatePurchaseOrder = asyncHandler(async (req, res) => {
   if (purchaseAgreement !== undefined) po.purchaseAgreement = purchaseAgreement;
 
   if (items !== undefined && Array.isArray(items)) {
+    // Snapshot the effective taxRate for lines carrying a configured Tax ref
+    // before enrichment copies them into po.items.
+    for (const item of items) {
+      if (!item || !item.tax) continue;
+      let resolved;
+      try {
+        resolved = await effectiveTaxForFlow({ tenantId, taxId: item.tax, sourceType: "purchase_order" });
+      } catch (e) {
+        throw new ValidationError(e.message);
+      }
+      if (resolved && resolved.taxRate !== null) item.taxRate = resolved.taxRate;
+    }
     await validateSubProducts(items, tenantId);
     po.items = await enrichPOItems(items, tenantId);
   }

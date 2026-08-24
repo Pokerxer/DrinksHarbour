@@ -154,6 +154,22 @@ async function getDefaultTax(tenantId, type) {
   return Tax.findOne({ tenant: tenantId, type, isActive: true, isDefault: true });
 }
 
+/**
+ * Resolve the effective taxRate for a flow from a client-supplied tax ref,
+ * falling back to the tenant default. Returns { taxId: ObjectId|null, taxRate }.
+ * Throws Error when an explicit ref is invalid (controller → HTTP 400).
+ */
+async function effectiveTaxForFlow({ tenantId, taxId, sourceType }) {
+  const flow = FLOW_FOR_SOURCE[sourceType];
+  const type = TAX_TYPE_FOR_SOURCE[sourceType];
+  if (taxId) {
+    const tax = await resolveTaxForFlow({ tenantId, taxId, flow });
+    return { taxId: tax._id, taxRate: tax.rate };
+  }
+  const fallback = await getDefaultTax(tenantId, type);
+  return fallback ? { taxId: fallback._id, taxRate: fallback.rate } : { taxId: null, taxRate: null };
+}
+
 /** Period aggregate for GET /api/taxes/summary. */
 async function getSummary(tenantId, { from, to } = {}) {
   const filter = { tenant: tenantId };
@@ -177,5 +193,6 @@ module.exports = {
   reverseDocumentTax,
   resolveTaxForFlow,
   getDefaultTax,
+  effectiveTaxForFlow,
   getSummary,
 };

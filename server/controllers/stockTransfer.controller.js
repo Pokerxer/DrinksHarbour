@@ -13,7 +13,7 @@ const { computeTransferMoney } = require("../services/stockTransfer.money");
 const {
   receiveStockTransferLines,
 } = require("../services/stockTransferReceive");
-const { captureDocumentTax, reverseDocumentTax } = require("../services/tax.service");
+const { captureDocumentTax, reverseDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
 const { getTenantWarehouseSettings } = require("./warehouse.controller");
 const { NotFoundError, ValidationError, ForbiddenError } = require("../utils/errors");
 
@@ -132,6 +132,20 @@ const createStockTransfer = asyncHandler(async (req, res) => {
   const settings = await getTenantWarehouseSettings(tenantId);
   if (!settings.allowInterWarehouseTransfers)
     throw new ValidationError("Inter-warehouse transfers are disabled for this tenant");
+
+  // Resolve the header Tax ref (or tenant default) and stamp every line BEFORE
+  // enrichment/money math, so applyTransferMoney's taxAmount picks it up.
+  {
+    let resolved;
+    try {
+      resolved = await effectiveTaxForFlow({ tenantId, taxId: req.body.taxId, sourceType: "stock_transfer" });
+    } catch (e) {
+      throw new ValidationError(e.message);
+    }
+    if (resolved && resolved.taxRate !== null) {
+      for (const it of items) it.taxRate = resolved.taxRate;
+    }
+  }
 
   const enriched = await enrichItems(items, tenantId);
   const transferNumber = await generateTransferNumber(tenantId);
@@ -280,7 +294,18 @@ const updateStockTransfer = asyncHandler(async (req, res) => {
   if (currency) transfer.currency = currency;
   if (deliveryCharge !== undefined)
     transfer.deliveryCharge = Number(deliveryCharge) || 0;
-  if (items) {
+  if (items && Array.isArray(items)) {
+    // Resolve the header Tax ref (or tenant default) and stamp every line
+    // BEFORE enrichment/money math, so applyTransferMoney's taxAmount picks it up.
+    let resolved;
+    try {
+      resolved = await effectiveTaxForFlow({ tenantId, taxId: req.body.taxId, sourceType: "stock_transfer" });
+    } catch (e) {
+      throw new ValidationError(e.message);
+    }
+    if (resolved && resolved.taxRate !== null) {
+      for (const it of items) it.taxRate = resolved.taxRate;
+    }
     const enriched = await enrichItems(items, tenantId);
     transfer.items = enriched.map((it) => ({
       ...it,

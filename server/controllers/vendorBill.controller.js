@@ -7,7 +7,7 @@ const {
   ValidationError,
   ForbiddenError,
 } = require("../utils/errors");
-const { captureDocumentTax } = require("../services/tax.service");
+const { captureDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
 
 /**
  * Helper to get tenant ID
@@ -55,6 +55,20 @@ const createVendorBill = asyncHandler(async (req, res) => {
   // Validate required fields
   if (!billNumber || !vendorName) {
     throw new ValidationError("Bill number and vendor are required");
+  }
+
+  // Resolve the header Tax ref (or tenant default) and apply it to every line
+  // BEFORE totals are recomputed, so taxAmount picks up the effective rate.
+  if (Array.isArray(items)) {
+    let resolved;
+    try {
+      resolved = await effectiveTaxForFlow({ tenantId, taxId: req.body.taxId, sourceType: "vendor_bill" });
+    } catch (e) {
+      throw new ValidationError(e.message);
+    }
+    if (resolved && resolved.taxRate !== null) {
+      for (const it of items) it.taxRate = resolved.taxRate;
+    }
   }
 
   // Calculate totals
@@ -235,6 +249,17 @@ const updateVendorBill = asyncHandler(async (req, res) => {
 
   // Recalculate if items updated
   if (items && Array.isArray(items)) {
+    // Resolve the header Tax ref (or tenant default) and apply it to every line
+    // BEFORE totals are recomputed, so taxAmount picks up the effective rate.
+    let resolved;
+    try {
+      resolved = await effectiveTaxForFlow({ tenantId, taxId: req.body.taxId, sourceType: "vendor_bill" });
+    } catch (e) {
+      throw new ValidationError(e.message);
+    }
+    if (resolved && resolved.taxRate !== null) {
+      for (const it of items) it.taxRate = resolved.taxRate;
+    }
     let subtotal = 0;
     let taxAmount = 0;
     const processedItems = items.map((item) => {
