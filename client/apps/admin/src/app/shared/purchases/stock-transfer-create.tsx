@@ -60,6 +60,25 @@ interface LineError {
   exceedsStock?: string;
 }
 
+/**
+ * Strip any trailing " – {size}" suffixes a legacy bug appended to stored
+ * product names, so re-saving a draft heals the name instead of growing it.
+ */
+function baseNameOf(name: string, sizeName?: string): string {
+  if (!sizeName) return name;
+  const suffix = ` – ${sizeName}`;
+  let out = name ?? '';
+  while (out.endsWith(suffix)) out = out.slice(0, -suffix.length);
+  return out;
+}
+
+/** Display label for a line: base product name plus its size, once. */
+function lineLabel(item: { subProductName: string; sizeName?: string }) {
+  return item.sizeName && !item.subProductName.includes(item.sizeName)
+    ? `${item.subProductName} – ${item.sizeName}`
+    : item.subProductName;
+}
+
 function blankItem(): LineItem {
   return {
     subProductId: '',
@@ -364,9 +383,9 @@ export default function StockTransferCreate({
         setItems(
           (t.items ?? []).map((it) => ({
             subProductId: it.subProductId,
-            subProductName: it.sizeName
-              ? `${it.subProductName} – ${it.sizeName}`
-              : it.subProductName,
+            // Store the BASE name — the size is appended for display only, so
+            // edit/save round-trips can't grow "– 75cl – 75cl – …" tails.
+            subProductName: baseNameOf(it.subProductName ?? '', it.sizeName),
             sku: it.sku ?? '',
             sizeId: it.sizeId,
             sizeName: it.sizeName,
@@ -927,15 +946,14 @@ export default function StockTransferCreate({
                     </span>
                     <div className="flex-1">
                       <SourceProductSearch
-                        value={item.subProductName}
+                        value={lineLabel(item)}
                         rows={stockRows}
                         loading={loadingStock}
                         onSelect={(row) =>
                           updateItem(i, {
                             subProductId: row.subProductId,
-                            subProductName: row.sizeName
-                              ? `${row.name} – ${row.sizeName}`
-                              : row.name,
+                            // Base name only — the size renders separately.
+                            subProductName: row.name,
                             sku: row.sku,
                             sizeId: row.sizeId,
                             sizeName: row.sizeName,
