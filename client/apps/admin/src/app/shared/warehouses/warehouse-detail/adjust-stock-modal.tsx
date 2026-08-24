@@ -20,6 +20,7 @@ import {
 import {
   warehouseStockService,
   type AdjustType,
+  type LastCost,
   type WarehouseStockRow,
 } from '@/services/warehouseStock.service';
 import {
@@ -73,8 +74,32 @@ export default function AdjustStockModal({
   const token = (session?.user as { token?: string })?.token ?? '';
   const [type, setType] = useState<AdjustType>('received');
   const [quantity, setQuantity] = useState('');
+  const [unitCost, setUnitCost] = useState('');
+  const [lastCost, setLastCost] = useState<LastCost | null>(null);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Latest known buy price — shown as context and pre-fills receipts so the
+  // movement trail can carry real costs without retyping.
+  useEffect(() => {
+    if (!token) return;
+    const sp = subProductIdOf(row);
+    const sz = sizeIdOf(row);
+    if (!sp || !sz) return;
+    let alive = true;
+    warehouseStockService
+      .getLastCost(sp, sz, token)
+      .then((res) => {
+        if (!alive) return;
+        setLastCost(res.data);
+        if (res.data.unitCost && res.data.unitCost > 0)
+          setUnitCost(String(res.data.unitCost));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token, row]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -124,6 +149,10 @@ export default function AdjustStockModal({
           quantity: qty,
           type,
           notes: notes.trim() || undefined,
+          unitCost:
+            type === 'received' && Number(unitCost) > 0
+              ? Number(unitCost)
+              : null,
         },
         token
       );
@@ -202,6 +231,30 @@ export default function AdjustStockModal({
             {OPTIONS.find((o) => o.type === type)?.hint}
           </p>
 
+          {/* Last known buy price context */}
+          {lastCost && lastCost.unitCost !== null && (
+            <p className="-mt-2 text-center text-xs text-gray-500">
+              Last bought at{' '}
+              <b className="tabular-nums text-gray-800">
+                ₦{lastCost.unitCost.toLocaleString()}
+              </b>
+              {lastCost.source === 'standard' ? (
+                <span className="text-gray-300"> · standard cost</span>
+              ) : lastCost.asOf ? (
+                <span className="text-gray-300">
+                  {' '}
+                  ·{' '}
+                  {new Date(lastCost.asOf).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                  {lastCost.reference ? ` · ${lastCost.reference}` : ''}
+                </span>
+              ) : null}
+            </p>
+          )}
+
           {/* Quantity */}
           <label className="block text-sm font-medium text-gray-700">
             {type === 'adjusted'
@@ -226,6 +279,26 @@ export default function AdjustStockModal({
               }
             />
           </label>
+
+          {/* Unit cost — captured on receipts so valuation & history track it */}
+          {type === 'received' && (
+            <label className="block text-sm font-medium text-gray-700">
+              Unit cost{' '}
+              <span className="font-normal text-gray-400">
+                (₦ per unit, optional)
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                inputMode="decimal"
+                className={`mt-1.5 ${field}`}
+                value={unitCost}
+                onChange={(e) => setUnitCost(e.target.value)}
+                placeholder={lastCost?.unitCost ? String(lastCost.unitCost) : '0'}
+              />
+            </label>
+          )}
 
           {/* Projection */}
           <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3 text-sm">

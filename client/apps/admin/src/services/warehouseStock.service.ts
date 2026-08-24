@@ -36,10 +36,20 @@ export interface WarehouseMovement {
     | 'returned';
   quantity: number;
   balanceAfter: number;
+  /** Per-unit buy price captured with the movement (receipts), when known. */
+  unitCost?: number | null;
   reference?: string | null;
   transferGroupId?: string | null;
   performedBy?: { _id: string; name?: string; email?: string } | null;
   createdAt: string;
+}
+
+/** Resolved "last cost price" for a stock line — drives the buy/transfer UIs. */
+export interface LastCost {
+  unitCost: number | null;
+  source: 'movement' | 'batch' | 'standard' | 'none';
+  asOf: string | null;
+  reference?: string | null;
 }
 
 export interface WarehouseStockRow {
@@ -147,6 +157,19 @@ export const warehouseStockService = {
       'Failed to load warehouse stock'
     );
   },
+  async getLastCost(
+    subProduct: string,
+    size: string,
+    token: string
+  ): Promise<{ success: boolean; data: LastCost }> {
+    const qs = new URLSearchParams({ subProduct, size });
+    return handle(
+      await fetch(`${API_URL}/api/warehouses/last-cost?${qs.toString()}`, {
+        headers: auth(token),
+      }),
+      'Failed to load last cost'
+    ) as { success: boolean; data: LastCost };
+  },
   async getWarehouseMovements(
     warehouseId: string,
     token: string,
@@ -173,6 +196,8 @@ export const warehouseStockService = {
       quantity: number;
       type: AdjustType;
       notes?: string;
+      /** Per-unit buy price for receipts; persisted on the movement. */
+      unitCost?: number | null;
     },
     token: string
   ) {

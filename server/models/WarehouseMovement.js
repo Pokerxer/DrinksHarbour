@@ -15,6 +15,10 @@ const warehouseMovementSchema = new Schema(
       required: true,
     },
     quantity: { type: Number, required: true },
+    // Per-unit cost captured with the movement when known (receipts carry the
+    // buy price; transfers/consumption may inherit it client-side for the
+    // trail). Nullable — legacy movements and recounts have none.
+    unitCost: { type: Number, min: 0, default: null },
     balanceAfter: { type: Number, required: true },
     reference: { type: String, maxlength: 200 },
     transferGroupId: { type: ObjectId },

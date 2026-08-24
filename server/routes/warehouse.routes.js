@@ -17,6 +17,10 @@ router.post('/transfer', tenantAdminOrSuperAdmin, c.transferStock);
 // Registered before '/:id' so the literal 'stock' segment isn't read as an id.
 router.get('/stock/all', tenantAdminOrSuperAdmin, c.getAllWarehouseStock);
 
+// Latest known buy price for a stock line (receipt → batch → standard).
+// Registered before '/:id' so the literal 'last-cost' segment isn't read as an id.
+router.get('/last-cost', tenantAdminOrSuperAdmin, c.getLastCost);
+
 // Tenant-level warehouse settings.
 // Registered before '/:id' so the literal 'settings' segment isn't read as an id.
 router.route('/settings')

@@ -23,12 +23,18 @@ import {
   sizeLabelOf,
 } from '@/app/shared/warehouses/warehouse-ref-helpers';
 import { routes } from '@/config/routes';
+import { csvEscapeField } from '@/app/shared/warehouses/warehouse-analysis-helpers';
 
 interface LocationsTabProps {
   subProductId?: string;
   token?: string;
   /** notify the parent so it can refresh the subproduct rollups after a change */
   onRefresh?: () => void;
+  /**
+   * When provided, replaces the legacy window.prompt flow so a host page can
+   * open its own adjustment modal (with last-cost context etc.).
+   */
+  onCustomAdjust?: (row: WarehouseStockRow, type: AdjustType) => void;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -58,6 +64,7 @@ export function LocationsTab({
   subProductId,
   token,
   onRefresh,
+  onCustomAdjust,
 }: LocationsTabProps) {
   const [rows, setRows] = useState<WarehouseStockRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,10 +76,10 @@ export function LocationsTab({
     if (!subProductId || !token) return;
     setLoading(true);
     try {
-      const res = await warehouseStockService.getStockByWarehouse(
+      const res = (await warehouseStockService.getStockByWarehouse(
         subProductId,
         token
-      );
+      )) as { data?: WarehouseStockRow[] };
       setRows(res.data ?? []);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load stock');
@@ -115,7 +122,70 @@ export function LocationsTab({
     [rows]
   );
 
+  // Standard cost basis per line: size-level wins over sub-product level.
+  // Rows carry prices since the endpoint populates them; older caches may not.
+  const costOf = useCallback((r: WarehouseStockRow): number | null => {
+    const sz = r.size && typeof r.size === 'object' ? r.size : null;
+    const sp = r.subProduct && typeof r.subProduct === 'object' ? r.subProduct : null;
+    const c =
+      sz?.costPrice && sz.costPrice > 0
+        ? sz.costPrice
+        : sp?.costPrice && sp.costPrice > 0
+          ? sp.costPrice
+          : null;
+    return c ?? null;
+  }, []);
+
+  const currencyOf = useCallback(
+    (r: WarehouseStockRow) =>
+      r.subProduct && typeof r.subProduct === 'object'
+        ? (r.subProduct.currency ?? 'NGN')
+        : 'NGN',
+    []
+  );
+
+  const showCosts = useMemo(() => rows.some((r) => costOf(r) !== null), [rows, costOf]);
+
+  const downloadCsv = useCallback(() => {
+    const esc = csvEscapeField;
+    const lines = [
+      ['Warehouse', 'Size', 'On Hand', 'Reserved', 'Available', 'Unit Cost', 'Stock Value']
+        .map(esc)
+        .join(','),
+      ...rows.map((r) => {
+        const c = costOf(r);
+        const qty = r.currentQuantity || 0;
+        return [
+          whName(r),
+          sizeName(r),
+          qty,
+          r.reservedQuantity || 0,
+          available(r),
+          c ?? '',
+          c !== null ? qty * c : '',
+        ]
+          .map(esc)
+          .join(',');
+      }),
+    ];
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stock-by-warehouse-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [rows, costOf]);
+
   const adjust = async (row: WarehouseStockRow, type: AdjustType) => {
+    if (onCustomAdjust) {
+      onCustomAdjust(row, type);
+      return;
+    }
     if (!token) return;
     const raw = prompt(
       type === 'adjusted'
@@ -161,6 +231,15 @@ export function LocationsTab({
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {showCosts && rows.length > 0 && (
+            <button
+              type="button"
+              onClick={downloadCsv}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+            >
+              Export CSV
+            </button>
+          )}
           <button
             type="button"
             onClick={load}
@@ -264,6 +343,16 @@ export function LocationsTab({
                     <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider text-gray-400">
                       Available
                     </th>
+                    {showCosts && (
+                      <>
+                        <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                          Unit Cost
+                        </th>
+                        <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                          Stock Value
+                        </th>
+                      </>
+                    )}
                     <th className="px-4 py-2.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-400">
                       Actions
                     </th>
@@ -284,6 +373,20 @@ export function LocationsTab({
                       <td className="px-4 py-3 text-right font-semibold tabular-nums text-green-600">
                         {available(r)}
                       </td>
+                      {showCosts && (
+                        <>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-500">
+                            {costOf(r) !== null
+                              ? `${currencyOf(r) === 'NGN' ? '₦' : currencyOf(r) + ' '}${(costOf(r) as number).toLocaleString()}`
+                              : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold tabular-nums text-gray-800">
+                            {costOf(r) !== null
+                              ? `${currencyOf(r) === 'NGN' ? '₦' : currencyOf(r) + ' '}${((costOf(r) as number) * (r.currentQuantity || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                              : '—'}
+                          </td>
+                        </>
+                      )}
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1">
                           <button

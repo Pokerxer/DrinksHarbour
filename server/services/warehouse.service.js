@@ -145,7 +145,7 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
  * type: 'received' | 'shipped' | 'adjusted'
  *   received → +quantity, shipped → -quantity, adjusted → set to quantity (absolute)
  */
-async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, tracksBatch = false, allowNegativeStock = false, fefoPicking = false }, userId, tenantId) {
+async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, unitCost = null, tracksBatch = false, allowNegativeStock = false, fefoPicking = false }, userId, tenantId) {
   if (!['received', 'shipped', 'adjusted'].includes(type)) {
     throw new ValidationError('Invalid adjustment type');
   }
@@ -172,7 +172,12 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
 
   await WarehouseMovement.create({
     tenant: tenantId, warehouse: warehouseId, subProduct, size,
-    type, quantity, balanceAfter: row.currentQuantity, reference: notes, performedBy: userId,
+    type, quantity, balanceAfter: row.currentQuantity, reference: notes,
+    // Cost rides along on receipts (the buy price); other types leave null
+    // unless the caller explicitly supplies one.
+    unitCost:
+      typeof unitCost === 'number' && unitCost >= 0 ? unitCost : null,
+    performedBy: userId,
   });
   await recalcSubProductStock(subProduct);
 
@@ -276,6 +281,64 @@ async function getBatches({ warehouseId, subProduct, size } = {}, tenantId) {
     .populate('size', 'size')
     .sort({ expiryDate: 1, createdAt: 1 })
     .lean();
+}
+
+/**
+ * Resolve the most recent known buy price for a stock line from candidate
+ * sources, in priority order:
+ *   1. a receipt movement that captured unitCost
+ *   2. the latest still-stocked batch's landed unit cost
+ *   3. the configured standard cost (size, then sub-product)
+ * Pure so it can be unit-tested; the controller gathers the candidates.
+ */
+function resolveLastCost({ movementCost, movementDate, batch, standardCost }) {
+  if (
+    typeof movementCost === 'number' &&
+    movementCost > 0 &&
+    (!batch?.receivedDate ||
+      !movementDate ||
+      new Date(movementDate) >= new Date(batch.receivedDate))
+  ) {
+    return {
+      unitCost: movementCost,
+      source: 'movement',
+      asOf: movementDate,
+      reference: null,
+    };
+  }
+  if (batch && typeof batch.unitCost === 'number' && batch.unitCost > 0) {
+    return {
+      unitCost: batch.unitCost,
+      source: 'batch',
+      asOf: batch.receivedDate ?? null,
+      reference: batch.poNumber || batch.batchNumber || null,
+    };
+  }
+  if (typeof standardCost === 'number' && standardCost > 0) {
+    return { unitCost: standardCost, source: 'standard', asOf: null, reference: null };
+  }
+  return { unitCost: null, source: 'none', asOf: null, reference: null };
+}
+
+/** Latest receipt cost + latest batch for one (subProduct, size) line. */
+async function getLastCost({ subProduct, size }, tenantId) {
+  const WarehouseBatch = require('../models/WarehouseBatch');
+  const [lastReceipt, lastBatch] = await Promise.all([
+    WarehouseMovement.findOne({
+      tenant: tenantId, subProduct, size,
+      type: 'received', unitCost: { $gt: 0 },
+    })
+      .sort({ createdAt: -1 })
+      .select('unitCost createdAt')
+      .lean(),
+    WarehouseBatch.findOne({
+      tenant: tenantId, subProduct, size, quantity: { $gt: 0 },
+    })
+      .sort({ receivedDate: -1 })
+      .select('unitCost receivedDate poNumber batchNumber')
+      .lean(),
+  ]);
+  return { lastReceipt, lastBatch };
 }
 
 /**
@@ -393,9 +456,15 @@ async function getAllStock(tenantId, settings = null) {
 }
 
 async function getStockByWarehouse(subProductId, tenantId) {
+  // Prices included so product-level inventory views can show last/standard
+  // cost and stock value without per-line round-trips.
   return WarehouseStock.find({ tenant: tenantId, subProduct: subProductId })
+    .populate({
+      path: 'subProduct',
+      select: 'sku costPrice baseSellingPrice currency',
+    })
     .populate('warehouse', 'name code type')
-    .populate('size', 'size')
+    .populate('size', 'size costPrice sellingPrice')
     .lean();
 }
 
@@ -513,5 +582,5 @@ module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, adjustStock, transferStock, getStockByWarehouse,
   sellStock, returnStock, resolveShopWarehouse, getBatches, getAllStock,
-  getMovements,
+  getMovements, getLastCost, resolveLastCost,
 };

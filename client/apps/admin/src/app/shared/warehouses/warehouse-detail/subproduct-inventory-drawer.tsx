@@ -456,6 +456,11 @@ export default function SubProductInventoryDrawer({
                               ? `−${m.quantity}`
                               : `→ ${m.balanceAfter}`}
                         </b>
+                        {m.unitCost != null && m.unitCost > 0 && (
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium tabular-nums text-gray-600">
+                            @ ₦{m.unitCost.toLocaleString()}
+                          </span>
+                        )}
                         <span className="text-xs text-gray-400">
                           bal. {m.balanceAfter}
                         </span>
@@ -495,11 +500,11 @@ export default function SubProductInventoryDrawer({
           </button>
           {subProductId && (
             <Link
-              href={routes.eCommerce.editSubProduct(subProductId)}
+              href={routes.warehouses.product(subProductId)}
               className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-500 transition-colors hover:text-gray-800"
             >
               <PiArrowUpRightBold className="h-3.5 w-3.5" />
-              Open full product page
+              Full inventory &amp; movement history
             </Link>
           )}
         </div>

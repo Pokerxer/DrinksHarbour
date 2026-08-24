@@ -8,6 +8,7 @@ export const routes = {
     list: '/warehouses',
     analysis: '/warehouses/analysis',
     detail: (id: string) => `/warehouses/${id}`,
+    product: (id: string) => `/warehouses/product/${id}`,
     // Warehouse / inventory settings (sections of the central settings page)
     settings: '/settings#warehouses',
     inventorySettings: '/settings#pos_inventory',

@@ -139,14 +139,49 @@ const getWarehouseMovements = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+// Most recent known buy price for one stock line (receipt movement → batch →
+// standard cost), used by the adjust/transfer UIs to pre-fill and display cost.
+const getLastCost = asyncHandler(async (req, res) => {
+  const tenantId = requireTenant(req);
+  const { subProduct, size } = req.query;
+  if (!subProduct || !size) {
+    throw new ValidationError('subProduct and size are required');
+  }
+  const { lastReceipt, lastBatch } = await warehouseService.getLastCost(
+    { subProduct, size },
+    tenantId
+  );
+  // Standard cost needs the populated refs; fetch the line's standard basis.
+  const sp = await SubProduct.findById(subProduct)
+    .select('costPrice')
+    .populate('sizes', 'costPrice')
+    .lean();
+  const sz = (sp?.sizes || []).find((s) => String(s._id) === String(size));
+  const standardCost =
+    (sz?.costPrice > 0 ? sz.costPrice : null) ?? sp?.costPrice ?? null;
+
+  const resolved = warehouseService.resolveLastCost({
+    movementCost: lastReceipt?.unitCost,
+    movementDate: lastReceipt?.createdAt,
+    batch: lastBatch,
+    standardCost,
+  });
+  res.json({ success: true, data: resolved });
+});
+
 const adjustWarehouseStock = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
   const { subProduct, size, quantity, type, notes } = req.body;
+  const unitCostRaw = req.body.unitCost;
   const settings = await getTenantWarehouseSettings(tenantId);
   const tracksBatch = await resolveTracksBatch(subProduct, settings.batchTrackingEnabled);
   const data = await warehouseService.adjustStock(
     {
       warehouseId: req.params.id, subProduct, size, quantity: Number(quantity), type, notes,
+      unitCost:
+        unitCostRaw === undefined || unitCostRaw === null || unitCostRaw === ''
+          ? null
+          : Number(unitCostRaw),
       tracksBatch, allowNegativeStock: settings.allowNegativeStock,
       fefoPicking: settings.fefoPicking,
     },
@@ -340,7 +375,7 @@ const updateWarehouseSettings = asyncHandler(async (req, res) => {
 module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, getAllWarehouseStock, getWarehouseBatches, adjustWarehouseStock, transferStock,
-  getWarehouseMovements,
+  getWarehouseMovements, getLastCost,
   setWarehouseManagers, validateManagerIds,
   getWarehouseSettings, updateWarehouseSettings, getTenantWarehouseSettings,
   pickValidSettingUpdates, WAREHOUSE_SETTING_VALIDATORS,
