@@ -279,7 +279,7 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
     // Also restore SubProduct aggregate stock
     const spAfter = await SubProduct.findByIdAndUpdate(
       subProductId,
-      { $inc: { availableStock: quantity, totalStock: quantity } },
+      { $inc: { availableStock: quantity, totalStock: quantity, totalSold: -quantity } },
       { new: true }
     );
     if (spAfter) {
@@ -309,7 +309,7 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
   } else {
     const spAfter = await SubProduct.findByIdAndUpdate(
       subProductId,
-      { $inc: { availableStock: quantity, totalStock: quantity } },
+      { $inc: { availableStock: quantity, totalStock: quantity, totalSold: -quantity } },
       { new: true }
     );
     if (spAfter) {
@@ -599,14 +599,21 @@ exports.getClosingControl = asyncHandler(async (req, res) => {
  */
 exports.closeSession = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
-  const session  = await POSSession.findOne({ _id: req.params.id, tenant: tenantId });
 
-  if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
-  if (session.status === 'closed') {
-    return res.status(400).json({ success: false, message: 'Session already closed' });
+  // Atomically claim the session — only one close request wins.
+  const session = await POSSession.findOneAndUpdate(
+    { _id: req.params.id, tenant: tenantId, status: 'open' },
+    { $set: { status: 'closed', closedBy: req.user._id, closedAt: new Date() } },
+    { new: false }
+  );
+
+  if (!session) {
+    // Either doesn't exist or already closed
+    const exists = await POSSession.findOne({ _id: req.params.id, tenant: tenantId }).lean();
+    if (!exists) return res.status(404).json({ success: false, message: 'Session not found' });
+    return res.status(409).json({ success: false, message: 'Session already closed' });
   }
 
-  const { countedBalances = [], closingNotes = '' } = req.body;
   const closedAt = new Date();
 
   // Final order stats
@@ -619,6 +626,7 @@ exports.closeSession = asyncHandler(async (req, res) => {
   const netCashMove  = totalCashIn - totalCashOut;
 
   // Build methodBalances with theoretical + counted + difference
+  const { countedBalances = [], closingNotes = '' } = req.body;
   const methodBalances = PAYMENT_METHODS.filter(m => m !== 'split').map(method => {
     const orderTotal = stats.breakdown?.[method]?.total || 0;
     const theoretical = method === 'cash'
@@ -646,31 +654,30 @@ exports.closeSession = asyncHandler(async (req, res) => {
     lastEntry.endedAt = closedAt;
   }
 
-  session.status          = 'closed';
-  session.closedBy        = req.user._id;
-  session.closedAt        = closedAt;
-  session.closingNotes    = closingNotes;
-  session.methodBalances  = methodBalances;
-  session.hasDifference   = hasDifference;
-  session.cashierLog      = log;
+  // Update with computed values (session is already closed, just enriching)
+  await POSSession.findByIdAndUpdate(session._id, {
+    $set: {
+      closingNotes,
+      methodBalances,
+      hasDifference,
+      cashierLog: log,
+      totalSales:       stats.totalSales,
+      orderCount:       stats.orderCount,
+      cashSales:        stats.breakdown?.cash?.total        || 0,
+      cardSales:        stats.breakdown?.card?.total        || 0,
+      transferSales:    stats.breakdown?.bank_transfer?.total || 0,
+      mobileMoneySales: stats.breakdown?.mobile_money?.total || 0,
+      splitSales:       stats.breakdown?.split?.total       || 0,
+      closingBalance:   (methodBalances.find(m => m.method === 'cash'))?.counted
+        ?? (methodBalances.find(m => m.method === 'cash'))?.theoretical
+        ?? 0,
+    },
+  });
 
-  // Legacy totals
-  session.totalSales       = stats.totalSales;
-  session.orderCount       = stats.orderCount;
-  session.cashSales        = stats.breakdown?.cash?.total        || 0;
-  session.cardSales        = stats.breakdown?.card?.total        || 0;
-  session.transferSales    = stats.breakdown?.bank_transfer?.total || 0;
-  session.mobileMoneySales = stats.breakdown?.mobile_money?.total || 0;
-  session.splitSales       = stats.breakdown?.split?.total       || 0;
+  const updatedSession = await POSSession.findById(session._id)
+    .populate('openedBy closedBy activeCashier', 'firstName lastName email posName');
 
-  // Legacy closing balance = cash counted (or theoretical if not counted)
-  const cashMethod = methodBalances.find(m => m.method === 'cash');
-  session.closingBalance = cashMethod?.counted ?? cashMethod?.theoretical ?? 0;
-
-  await session.save();
-  await session.populate('openedBy closedBy activeCashier', 'firstName lastName email posName');
-
-  res.json({ success: true, data: { session, hasDifference } });
+  res.json({ success: true, data: { session: updatedSession, hasDifference } });
 });
 
 // ─── Cash In / Cash Out ───────────────────────────────────────────────────────
@@ -911,16 +918,42 @@ exports.getPOSDashboard = asyncHandler(async (req, res) => {
       .lean(),
   ]);
 
-  // 7-day chart
+  // 7-day chart — single aggregation instead of N+1 loop
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+
+  const chartAgg = await Order.aggregate([
+    {
+      $match: {
+        tenant: tenantId,
+        source: 'pos',
+        paymentStatus: 'paid',
+        isVoided: { $ne: true },
+        placedAt: { $gte: sevenDaysAgo, $lte: endOfDay(now) },
+      },
+    },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$placedAt' } },
+        sales: { $sum: '$totalAmount' },
+        orders: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  // Fill in missing days with zeros
   const chartData = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const stats = await getPOSOrderStats(tenantId, startOfDay(d), endOfDay(d));
+    const dateStr = startOfDay(d).toISOString().split('T')[0];
+    const found = chartAgg.find((c) => c._id === dateStr);
     chartData.push({
-      date:   startOfDay(d).toISOString().split('T')[0],
-      sales:  stats.totalSales,
-      orders: stats.orderCount,
+      date: dateStr,
+      sales: found?.sales || 0,
+      orders: found?.orders || 0,
     });
   }
 
@@ -1698,8 +1731,55 @@ exports.staffLogin = asyncHandler(async (req, res) => {
         name:         tenant.name,
         primaryColor: tenant.primaryColor,
         logo:         tenant.logo?.url || null,
-        bankAccounts: tenant.bankAccounts || [],
-        posSettings:  tenant.posSettings  || {},
+        posSettings:  {
+          allowOverselling:      tenant.posSettings?.allowOverselling ?? false,
+          isBarRestaurant:       tenant.posSettings?.isBarRestaurant ?? false,
+          autoValidateOrder:     tenant.posSettings?.autoValidateOrder ?? false,
+          cashRounding:          tenant.posSettings?.cashRounding ?? false,
+          roundingIncrement:     tenant.posSettings?.roundingIncrement ?? 1,
+          tipsEnabled:           tenant.posSettings?.tipsEnabled ?? false,
+          loginWithEmployees:    tenant.posSettings?.loginWithEmployees ?? false,
+          largeScrollbars:       tenant.posSettings?.largeScrollbars ?? false,
+          shareOpenOrders:       tenant.posSettings?.shareOpenOrders ?? false,
+          hidePictures:          tenant.posSettings?.hidePictures ?? false,
+          showProductImages:     tenant.posSettings?.showProductImages ?? true,
+          showCategoryImages:    tenant.posSettings?.showCategoryImages ?? true,
+          restrictCategories:    tenant.posSettings?.restrictCategories ?? false,
+          sortCartByCategory:    tenant.posSettings?.sortCartByCategory ?? false,
+          flexiblePricelists:    tenant.posSettings?.flexiblePricelists ?? false,
+          priceControl:          tenant.posSettings?.priceControl ?? false,
+          productPriceDisplay:   tenant.posSettings?.productPriceDisplay ?? 'tax_excluded',
+          lineDiscounts:         tenant.posSettings?.lineDiscounts ?? true,
+          globalDiscounts:       tenant.posSettings?.globalDiscounts ?? false,
+          promotionsEnabled:     tenant.posSettings?.promotionsEnabled ?? true,
+          maxDiscountPct:        tenant.posSettings?.maxDiscountPct ?? 100,
+          requireOpeningCash:    tenant.posSettings?.requireOpeningCash ?? false,
+          splitPayments:         tenant.posSettings?.splitPayments ?? true,
+          enabledPaymentMethods: tenant.posSettings?.enabledPaymentMethods ?? ['cash','card','bank_transfer','mobile_money'],
+          receiptHeader:         tenant.posSettings?.receiptHeader ?? '',
+          receiptFooter:         tenant.posSettings?.receiptFooter ?? '',
+          showTaxOnReceipt:      tenant.posSettings?.showTaxOnReceipt ?? false,
+          taxRate:               tenant.posSettings?.taxRate ?? 0,
+          basicReceipt:          tenant.posSettings?.basicReceipt ?? false,
+          autoPrintReceipt:      tenant.posSettings?.autoPrintReceipt ?? false,
+          receiptCopies:         tenant.posSettings?.receiptCopies ?? 1,
+          showOrderNumber:       tenant.posSettings?.showOrderNumber ?? true,
+          showCashierName:       tenant.posSettings?.showCashierName ?? true,
+          showLoyaltyBalanceAtCheckout: tenant.posSettings?.showLoyaltyBalanceAtCheckout ?? true,
+          loyaltyEnabled:        tenant.posSettings?.loyalty?.enabled ?? false,
+          loyaltyPointsPerNaira: tenant.posSettings?.loyalty?.pointsPerNaira ?? 0.01,
+          loyaltyPointsValue:    tenant.posSettings?.loyalty?.pointsValue ?? 1,
+          loyaltyMaxRedemptionPct: tenant.posSettings?.loyalty?.maxRedemptionPct ?? 50,
+          loyaltyCard:           tenant.posSettings?.loyalty?.card ?? {},
+          coupons:               tenant.posSettings?.coupons ?? [],
+          discountCodes:         tenant.posSettings?.discountCodes ?? [],
+          promotions:            tenant.posSettings?.promotions ?? [],
+          buyXGetY:              tenant.posSettings?.buyXGetY ?? [],
+          discountPrograms:      tenant.posSettings?.discountPrograms ?? [],
+          nextOrderCoupon:       tenant.posSettings?.nextOrderCoupon ?? null,
+          shops:                 tenant.posSettings?.shops ?? [],
+          sessionTimeoutMins:    tenant.posSettings?.sessionTimeoutMins ?? 0,
+        },
       },
     },
   });
@@ -2301,9 +2381,10 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         (fsDoc.remainingQuantity == null || fsDoc.remainingQuantity > 0);
 
       if (fsApplied && fsDoc.remainingQuantity != null) {
-        SubProduct.findByIdAndUpdate(subProductId, {
-          $inc: { 'flashSale.remainingQuantity': -quantity }
-        }).catch(() => {});
+        SubProduct.findOneAndUpdate(
+          { _id: subProductId, 'flashSale.remainingQuantity': { $gte: quantity } },
+          { $inc: { 'flashSale.remainingQuantity': -quantity } }
+        ).catch(() => {});
       }
 
       // ── Apply pricelist price rules sequentially (shared with /sales — pricelistPricing.service) ──
@@ -2977,7 +3058,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
  */
 exports.voidPOSOrder = asyncHandler(async (req, res) => {
   const { reason = '' } = req.body;
-  const order = await Order.findOne({ _id: req.params.id, 'items.tenant': req.tenant?._id });
+  const order = await Order.findOne({ _id: req.params.id, tenant: req.tenant?._id });
   if (!order)          return res.status(404).json({ success: false, message: 'Order not found' });
   if (order.isVoided)  return res.status(400).json({ success: false, message: 'Already voided' });
 
@@ -3244,8 +3325,11 @@ exports.recallPOSOrder = asyncHandler(async (req, res) => {
         discount:     0,
       }));
 
-  // Delete the hold order so it can't be recalled twice
-  await Order.deleteOne({ _id: order._id });
+  // Mark as recalled instead of deleting — preserves audit trail
+  await Order.findOneAndUpdate(
+    { _id: order._id },
+    { $set: { status: 'recalled', paymentStatus: 'cancelled' } }
+  );
 
   res.json({
     success: true,
@@ -3371,7 +3455,7 @@ exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
   const session = await POSSession.findOne({ _id: req.params.id, tenant: req.tenant?._id });
   if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
 
-  const orders = await Order.find({ posSessionId: req.params.id })
+  const orders = await Order.find({ posSessionId: req.params.id, tenant: req.tenant?._id })
     .select('orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails')
     .populate('posStaff', 'firstName lastName posName')
     .populate({
@@ -3746,7 +3830,8 @@ exports.getSalesOrdersForPOS = asyncHandler(async (req, res) => {
 
   // Text search
   if (search) {
-    const searchRegex = { $regex: search, $options: 'i' };
+    const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchRegex = { $regex: escapedSearch, $options: 'i' };
     const textFilter = [
       { soNumber: searchRegex },
       { 'customerSnapshot.name': searchRegex },

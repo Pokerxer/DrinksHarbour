@@ -119,7 +119,7 @@ async function hold(t, items) {
 /** Recall a persisted hold and return the cart the cashier gets back. */
 async function recall(t, persisted) {
   t.mock.method(Order, 'findOne', () => chainable(persisted));
-  t.mock.method(Order, 'deleteOne', async () => ({ deletedCount: 1 }));
+  t.mock.method(Order, 'findOneAndUpdate', () => chainable({ ...persisted, status: 'recalled', paymentStatus: 'cancelled' }));
 
   const r = res();
   await pos.recallPOSOrder(

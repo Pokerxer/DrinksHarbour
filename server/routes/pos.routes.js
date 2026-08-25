@@ -8,6 +8,7 @@ const {
   tenantUserOnly,
 } = require('../middleware/auth.middleware');
 const { protectPOS, requirePOSPermission, protectPOSOrAdmin } = require('../middleware/pos.middleware');
+const rateLimit = require('express-rate-limit');
 
 const {
   getSessionReport,
@@ -90,9 +91,22 @@ function rejectPOSTokens(req, res, next) {
   next();
 }
 
+// ── Brute-force protection for POS auth endpoints ────────────────────────────
+const posAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,                    // 5 attempts per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many login attempts. Please try again in 15 minutes.' },
+  keyGenerator: (req) => {
+    const slug = req.body?.tenantSlug || req.body?.staffId || 'unknown';
+    return `${req.ip}:${slug}`;
+  },
+});
+
 // ── Public ───────────────────────────────────────────────────────────────────
-router.post('/auth/pin-login',   pinLogin);      // legacy
-router.post('/auth/staff-login', staffLogin);    // new: returns 12h POS token
+router.post('/auth/pin-login',   posAuthLimiter, pinLogin);
+router.post('/auth/staff-login', posAuthLimiter, staffLogin);
 router.get('/staff',             listPOSStaff);  // staff grid (public, no secrets)
 
 // ── POS-token protected ───────────────────────────────────────────────────────
