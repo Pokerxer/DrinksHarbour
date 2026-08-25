@@ -24,6 +24,7 @@ import { runSyncEngine, registerBackgroundSync } from './offline/sync';
 import { useOnlineStatus } from './offline/use-online-status';
 import { useRegisterSW } from './offline/register-sw';
 import { ProductImageProvider } from './offline/use-product-images';
+import { usePOSRealtime } from './hooks/usePOSRealtime';
 
 export default function POSSell() {
   const router = useRouter();
@@ -34,6 +35,9 @@ export default function POSSell() {
   const settings = usePOSSettings();
   const isOnline = useOnlineStatus();
   useRegisterSW();
+  // Live session feed — another device closing/switching this terminal's
+  // session reaches us the moment it happens, not on the next poll.
+  usePOSRealtime();
   // Auto-select & apply the selected customer's assigned pricelist (reverts on clear).
   usePOSCustomerPricelistSync(token ?? '');
 

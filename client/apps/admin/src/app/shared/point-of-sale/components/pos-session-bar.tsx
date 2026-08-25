@@ -8,6 +8,7 @@ import {
   usePOSAuth,
   usePOSCart,
   usePOSSaleSignal,
+  usePOSRealtimeTick,
   usePOSPricelist,
   usePOSAvailablePricelists,
   usePOSActiveShop,
@@ -688,6 +689,9 @@ function StatChip({
 export default function POSSessionBar({ className }: { className?: string }) {
   const { token, staff, tenant, terminal } = usePOSAuth();
   const { saleCounter } = usePOSSaleSignal();
+  // Realtime events from other devices (cashier switch, orders) bump this and
+  // re-fetch the session view below without waiting for a poll.
+  const { tick: realtimeTick } = usePOSRealtimeTick();
   const router = useRouter();
   const [session, setSession] = useState<POSSession | null>(null);
   const [loading, setLoading] = useState(true);
@@ -750,7 +754,7 @@ export default function POSSessionBar({ className }: { className?: string }) {
       .then((data) => setSession(data.currentSession))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token, terminal, saleCounter]);
+  }, [token, terminal, saleCounter, realtimeTick]);
 
   async function handleOpenSession() {
     if (!token) return;

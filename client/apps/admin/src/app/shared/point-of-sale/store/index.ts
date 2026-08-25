@@ -964,6 +964,22 @@ export const usePOSSaleSignal = () => {
   return { saleCounter, notifySale };
 };
 
+// Bumped by realtime events from OTHER devices on this tenant terminal
+// (session opened/closed, cashier switched, order created). Anything that
+// displays live session state adds the tick to its fetch dependencies, so a
+// change made two counters away shows up here without waiting for a poll.
+// Own sales go through usePOSSaleSignal instead — same refresh, no socket.
+const posRealtimeTickAtom = atom(0);
+
+export const usePOSRealtimeTick = () => {
+  const [tick, setTick] = useAtom(posRealtimeTickAtom);
+  const bumpRealtimeTick = useCallback(
+    () => setTick((n) => n + 1),
+    [setTick]
+  );
+  return { tick, bumpRealtimeTick };
+};
+
 // ─── Warehouse ───────────────────────────────────────────────────────────────
 
 export type POSWarehouse = { _id: string; name: string; isDefault?: boolean };

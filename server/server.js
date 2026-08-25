@@ -468,7 +468,11 @@ async function startServer() {
         },
       });
       app.set('io', io);
-      console.log('   Socket.io attached (scan pairing ready)');
+
+      // POS session rooms — authenticated with the POS JWT at handshake.
+      const { attachPosGateway } = require('./socket');
+      attachPosGateway(io);
+      console.log('   Socket.io attached (scan pairing + POS sessions ready)');
     } catch (err) {
       console.warn('   Socket.io not attached:', err.message);
     }

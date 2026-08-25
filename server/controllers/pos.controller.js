@@ -24,6 +24,7 @@ const { mutateLoyalty } = require('../services/loyalty.service');
 const { loyaltyDelta } = require('../services/contact.helpers');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
+const { emitToTerminal } = require('../services/pos.realtime');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, resolveRevenueRates, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const {
   findMatchingPriceRules,
@@ -552,6 +553,13 @@ exports.openSession = asyncHandler(async (req, res) => {
 
   await session.populate('openedBy activeCashier', 'firstName lastName email posName avatar');
 
+  emitToTerminal(req, tenantId, terminal, 'session:opened', {
+    sessionId:  session._id,
+    terminal,
+    openedBy:   req.user._id,
+    openedAt:   now.toISOString(),
+  });
+
   res.status(201).json({ success: true, data: { session } });
 });
 
@@ -710,6 +718,13 @@ exports.closeSession = asyncHandler(async (req, res) => {
   const updatedSession = await POSSession.findById(session._id)
     .populate('openedBy closedBy activeCashier', 'firstName lastName email posName');
 
+  emitToTerminal(req, tenantId, session.terminalType, 'session:closed', {
+    sessionId: session._id,
+    terminal:  session.terminalType,
+    closedBy:  req.user._id,
+    closedAt:  closedAt.toISOString(),
+  });
+
   res.json({ success: true, data: { session: updatedSession, hasDifference } });
 });
 
@@ -858,6 +873,14 @@ exports.switchCashier = asyncHandler(async (req, res) => {
   session.activeCashier = matchedUser._id;
   session.cashierLog    = log;
   await session.save();
+
+  emitToTerminal(req, tenantId, session.terminalType, 'session:cashier_switched', {
+    sessionId:   session._id,
+    terminal:    session.terminalType,
+    cashierId:   matchedUser._id,
+    cashierName: matchedUser.posName || `${matchedUser.firstName} ${matchedUser.lastName}`.trim(),
+    switchedAt:  now.toISOString(),
+  });
 
   res.json({
     success: true,
@@ -2857,6 +2880,20 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       },
     },
   });
+
+  // Other terminals and dashboards on this room refresh their live view.
+  // The selling device learns about its own sale from the response above, not
+  // from its own echo — receiving both is harmless (idempotent refetch).
+  if (session) {
+    emitToTerminal(req, tenantId, session.terminalType, 'order:created', {
+      sessionId:     session._id,
+      terminal:      session.terminalType,
+      orderId:       order._id,
+      receiptNumber: order.receiptNumber,
+      total:         payableTotal,
+      paymentMethod,
+    });
+  }
 });
 
 // Credit a POS customer's wallet back when a wallet-paid sale is refunded or
