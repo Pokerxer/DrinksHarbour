@@ -184,7 +184,7 @@ const MONTHS_ABBR = [
 ];
 
 /** Deterministic short date — bare YYYY-MM-DD parsed as a local calendar day. */
-function fmtDay(iso?: string): string {
+export function fmtDay(iso?: string): string {
   if (!iso) return '';
   let d: Date;
   if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
@@ -583,18 +583,38 @@ export function applyAvailabilityFromStock<
   });
 }
 
-/** Open the price list in a print window (browser dialog saves it as PDF). */
+/**
+ * Print the price list via a hidden iframe — same document as
+ * `buildCustomerPricelistHtml`, but immune to popup blockers (unlike the old
+ * `window.open` approach). Returns false only when there is nothing to print.
+ */
 export function printCustomerPricelist(
   rows: PricableStockLine[],
   pricelist: PricelistLite | null,
   options: PricelistPrintOptions
 ): boolean {
-  if (rows.length === 0) return false;
+  if (rows.length === 0 || typeof document === 'undefined') return false;
   const html = buildCustomerPricelistHtml(rows, pricelist, options);
-  const win = window.open('', '_blank', 'width=900,height=720');
-  if (!win) return false;
-  win.document.write(html);
-  win.document.close();
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.position = 'fixed';
+  frame.style.right = '0';
+  frame.style.bottom = '0';
+  frame.style.width = '1px';
+  frame.style.height = '1px';
+  frame.style.opacity = '0';
+  frame.style.border = '0';
+  frame.srcdoc = html;
+  frame.onload = () => {
+    try {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+    } finally {
+      // Spool headroom before the frame (and its print job) is dropped.
+      setTimeout(() => frame.remove(), 60_000);
+    }
+  };
+  document.body.appendChild(frame);
   return true;
 }
 

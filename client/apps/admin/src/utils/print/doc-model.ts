@@ -76,7 +76,16 @@ export interface DocHead {
 }
 
 export interface DocumentModel {
-  kind: 'rfq' | 'po' | 'bill' | 'transfer' | 'return' | 'quotation' | 'proforma' | 'sales-order';
+  kind:
+    | 'rfq'
+    | 'po'
+    | 'bill'
+    | 'transfer'
+    | 'return'
+    | 'quotation'
+    | 'proforma'
+    | 'sales-order'
+    | 'pricelist';
   companyName: string;
   /** Overrides the platform COMPANY contact block in band + footer when set. */
   head?: DocHead;

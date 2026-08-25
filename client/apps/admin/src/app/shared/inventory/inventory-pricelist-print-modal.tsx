@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import {
   PiCheckCircle,
   PiDownloadSimple,
+  PiFilePdf,
   PiPrinter,
   PiSpinner,
   PiTag,
@@ -20,6 +21,7 @@ import type { StockRow } from '@/services/warehouseStock.service';
 import { pricelistService } from '@/services/pricelist.service';
 import { subproductService } from '@/services/subproduct.service';
 import ScopePicker from './inventory-pricelist-scope-picker';
+import { downloadPricelistPdf } from '@/utils/print/pricelist-print';
 import {
   downloadPricelistCsv,
   printCustomerPricelist,
@@ -315,7 +317,16 @@ export default function PricelistPrintModal({
       buildOptions()
     );
     if (!ok)
-      toast.error('Print window blocked — allow pop-ups for this site');
+      toast.error('Nothing to print — pick at least one line first');
+  }
+
+  function handlePdf() {
+    try {
+      downloadPricelistPdf(effectiveRows, selectedPl, buildOptions());
+      toast.success('PDF downloaded');
+    } catch {
+      toast.error('Could not generate the PDF');
+    }
   }
 
   function handleCsv() {
@@ -613,22 +624,32 @@ export default function PricelistPrintModal({
             {origin.warehouseCount > 1 && (
               <> — products drawn from {origin.warehouseCount} warehouses</>
             )}
-            . Selected lines merge per product and size across warehouses. The
-            PDF opens in a print window — choose “Save as PDF” as the
-            destination.
+            . Selected lines merge per product and size across warehouses.
+            Print opens the browser dialog; Download PDF saves the branded
+            file directly.
           </p>
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-2 border-t border-gray-100 px-5 py-3.5">
-          <button
-            type="button"
-            onClick={handleCsv}
-            disabled={effectiveRows.length === 0}
-            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
-          >
-            <PiDownloadSimple className="h-3.5 w-3.5" /> Download CSV
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCsv}
+              disabled={effectiveRows.length === 0}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
+            >
+              <PiDownloadSimple className="h-3.5 w-3.5" /> CSV
+            </button>
+            <button
+              type="button"
+              onClick={handlePdf}
+              disabled={effectiveRows.length === 0}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
+            >
+              <PiFilePdf className="h-3.5 w-3.5" /> PDF
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -643,7 +664,7 @@ export default function PricelistPrintModal({
               disabled={effectiveRows.length === 0}
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#9a0101] disabled:opacity-50"
             >
-              <PiPrinter className="h-4 w-4" /> Print / Save PDF
+              <PiPrinter className="h-4 w-4" /> Print
             </button>
           </div>
         </div>
