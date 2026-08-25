@@ -182,6 +182,23 @@ const orderSchema = new Schema(
       default: 0,
     },
 
+    // POS gratuity — added on top of the order total, never part of subtotal
+    // or vendor/commission math. Kept separate so revenue reconciliation and
+    // tenant payout never treat a tip as product income.
+    tipAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // POS cash rounding — the delta applied to reach the payable total for
+    // cash tenders (e.g. ₦4,997 rounded to ₦5,000 → roundingAmount 3).
+    // Positive = rounded up; negative = rounded down in the customer's favour.
+    roundingAmount: {
+      type: Number,
+      default: 0,
+    },
+
     totalAmount: {
       type: Number,
       required: true,

@@ -419,6 +419,7 @@ const tenantSchema = new Schema(
       // ── Payment options ───────────────────────────────────────────────────────
       autoValidateOrder:   { type: Boolean, default: false },
       cashRounding:        { type: Boolean, default: false },
+      roundingIncrement:   { type: Number,  default: 1, enum: [1, 5, 10, 50] },
       maxDifferenceEnabled:{ type: Boolean, default: false },
       tipsEnabled:         { type: Boolean, default: false },
 

@@ -2234,6 +2234,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     shopId,              // posSettings.shops._id — resolves a bound warehouse, if any
     cartOriginalSubtotal,// client-computed pre-pricelist subtotal for receipt savings display
     linkedSalesOrderId,  // a quotation/order loaded into the cart — an ID, never a price
+    tipAmount: rawTipAmount = 0,           // gratuity added on top of the total
   } = req.body;
 
   if (!items?.length) return res.status(400).json({ success: false, message: 'No items in order' });
@@ -2581,6 +2582,31 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
   const total = Math.max(0, subtotal - orderDiscountAmount - cartThresholdDiscount);
 
+  // ── Tip (gratuity) ─────────────────────────────────────────────────────────
+  // A tip is money for the staff, not income from the goods. It is added on top
+  // of `total` and never folded into subtotal, discountTotal or the per-item
+  // revenue split — otherwise the tenant's commission and the platform's cut
+  // would both be computed on a gratuity the customer chose to leave.
+  const tipsEnabled = req.tenant?.posSettings?.tipsEnabled ?? false;
+  const tipAmount = tipsEnabled
+    ? Math.max(0, parseFloat((Number(rawTipAmount) || 0).toFixed(2)))
+    : 0;
+
+  // ── Cash rounding ──────────────────────────────────────────────────────────
+  // Recomputed here from the tenant's own increment rather than trusted from the
+  // till: the rounding delta is real money, and a client that sent its own would
+  // be setting the price. Only a cash tender rounds — card and transfer settle
+  // the exact figure, so rounding them would leave the books off by the delta.
+  const cashRoundingEnabled = req.tenant?.posSettings?.cashRounding ?? false;
+  const roundingIncrement = req.tenant?.posSettings?.roundingIncrement ?? 1;
+  const payableBeforeRounding = total + tipAmount;
+  let roundingAmount = 0;
+  if (cashRoundingEnabled && paymentMethod === 'cash' && roundingIncrement > 1) {
+    const rounded = Math.round(payableBeforeRounding / roundingIncrement) * roundingIncrement;
+    roundingAmount = parseFloat((rounded - payableBeforeRounding).toFixed(2));
+  }
+  const payableTotal = parseFloat((payableBeforeRounding + roundingAmount).toFixed(2));
+
   // Determine active session — prefer the caller's terminal type
   const orderTerminal = ['retail', 'wholesale'].includes(req.body.terminalType)
     ? req.body.terminalType
@@ -2601,7 +2627,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   // the sale here — after which we roll the just-deducted stock back. A zero-total
   // sale (fully discounted) charges nothing.
   let walletTx = null;
-  if (paymentMethod === 'wallet' && total > 0) {
+  if (paymentMethod === 'wallet' && payableTotal > 0) {
     const walletResult = await mutateWallet({
       owner: {
         Model: POSCustomer,
@@ -2610,7 +2636,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         filter: { _id: customer.customerId, tenant: tenantId },
       },
       tenantId,
-      value: { type: 'debit', amount: total, reason: `POS sale — receipt ${receiptNumber}` },
+      value: { type: 'debit', amount: payableTotal, reason: `POS sale — receipt ${receiptNumber}` },
       reference: receiptNumber,
       createdBy: staffId,
     });
@@ -2634,7 +2660,9 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     items:         orderItems,
     subtotal,
     shippingFee:   0,
-    totalAmount:   total,                 // schema field is totalAmount
+    totalAmount:   payableTotal,          // goods total + tip ± cash rounding
+    tipAmount,
+    roundingAmount,
     discountTotal: (orderDiscountAmount || 0) + (cartThresholdDiscount || 0),
     paymentMethod,
     paymentStatus: 'paid',
@@ -2649,7 +2677,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         phone:      customer.phone      || '',
         customerId: customer.customerId || null,
       },
-      ...(paymentMethod === 'cash'  && { amount: amountTendered, change: Math.max(0, amountTendered - total) }),
+      ...(paymentMethod === 'cash'  && { amount: amountTendered, change: Math.max(0, amountTendered - payableTotal) }),
       ...(paymentMethod === 'split' && { splitPayments }),
     },
     status:                  'confirmed',
@@ -2674,7 +2702,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
           filter: { _id: customer.customerId, tenant: tenantId },
         },
         tenantId,
-        value: { type: 'refund', amount: total, reason: `Reversed — failed POS sale ${receiptNumber}` },
+        value: { type: 'refund', amount: payableTotal, reason: `Reversed — failed POS sale ${receiptNumber}` },
         reference: receiptNumber,
         createdBy: staffId,
       }).catch(() => {});
@@ -2698,13 +2726,16 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
   // Update session stats atomically
   if (session) {
+    // Session money movement is what the drawer actually took, so it counts the
+    // tip and the rounding delta too. Using the goods-only `total` here would
+    // leave the till short by exactly the gratuity at closing control.
     const sessionInc = {
       orderCount: 1,
-      totalSales: total,
-      ...(paymentMethod === 'cash'          && { cashSales:        total }),
-      ...(paymentMethod === 'card'          && { cardSales:        total }),
-      ...(paymentMethod === 'bank_transfer' && { transferSales:    total }),
-      ...(paymentMethod === 'mobile_money'  && { mobileMoneySales: total }),
+      totalSales: payableTotal,
+      ...(paymentMethod === 'cash'          && { cashSales:        payableTotal }),
+      ...(paymentMethod === 'card'          && { cardSales:        payableTotal }),
+      ...(paymentMethod === 'bank_transfer' && { transferSales:    payableTotal }),
+      ...(paymentMethod === 'mobile_money'  && { mobileMoneySales: payableTotal }),
     };
     // For split payments, distribute sales across methods
     if (paymentMethod === 'split' && splitPayments?.length) {
@@ -2729,7 +2760,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     const methodUpdates = {};
     const effectivePayments = paymentMethod === 'split'
       ? splitPayments
-      : [{ method: paymentMethod, amount: total }];
+      : [{ method: paymentMethod, amount: payableTotal }];
     for (const ep of effectivePayments) {
       methodUpdates[`methodBalances.$[el_${ep.method}].theoretical`] = ep.amount;
     }
@@ -2771,14 +2802,16 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         pricelistName:     selectedPricelist?.name || undefined,
         thresholdDiscount: cartThresholdDiscount > 0 ? cartThresholdDiscount : undefined,
         discountTotal: orderDiscountAmount || 0,
+        tipAmount:      order.tipAmount || 0,
+        roundingAmount: order.roundingAmount || 0,
         paymentMethod: order.paymentMethod,
         splitPayments: paymentMethod === 'split' ? splitPayments : undefined,
         amountTendered: paymentMethod === 'split'
           ? (amountTendered || 0)
-          : paymentMethod === 'cash' ? amountTendered : total,
+          : paymentMethod === 'cash' ? amountTendered : payableTotal,
         change:        paymentMethod === 'split'
-          ? Math.max(0, (amountTendered || 0) - total)
-          : paymentMethod === 'cash' ? Math.max(0, amountTendered - total) : 0,
+          ? Math.max(0, (amountTendered || 0) - payableTotal)
+          : paymentMethod === 'cash' ? Math.max(0, amountTendered - payableTotal) : 0,
         items:         receiptItems,
         note:          note || '',
         placedAt:      order.placedAt,
