@@ -184,12 +184,18 @@ async function transferBatchesFefo(
     if (session) dec.session(session);
     await dec;
 
+    // unitCost must live under exactly ONE operator per update: MongoDB throws
+    // "Updating the path 'unitCost' would create a conflict" when $set and
+    // $setOnInsert both target it. Fresh lots price via $setOnInsert; merged
+    // twins re-value via $set only.
+    const setOnInsert = {
+      ...destFilter, product: src && src.product, expiryDate: a.expiryDate || null,
+      receivedDate: new Date(),
+    };
+    if (!existing) setOnInsert.unitCost = nextCost;
     const update = {
       $inc: { quantity: a.quantity, initialQuantity: a.quantity },
-      $setOnInsert: {
-        ...destFilter, product: src && src.product, expiryDate: a.expiryDate || null,
-        unitCost: nextCost, receivedDate: new Date(),
-      },
+      $setOnInsert: setOnInsert,
     };
     if (existing) update.$set = { unitCost: nextCost };
     const up = WarehouseBatch.findOneAndUpdate(destFilter, update, {

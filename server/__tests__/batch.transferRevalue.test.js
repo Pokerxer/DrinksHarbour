@@ -44,6 +44,10 @@ test('transferBatchesFefo prices new lots at destUnitCost and reweights existing
   // FEFO: 4 from A then 6 from B.
   // A merges into its twin: (6×900 + 4×1200) / 10 = 1020 via $set.
   assert.equal(upserts[0].update.$set.unitCost, 1020);
+  // Regression: unitCost must NOT also appear under $setOnInsert for the merge
+  // case — two operators on one path make MongoDB throw
+  // "Updating the path 'unitCost' would create a conflict at 'unitCost'".
+  assert.ok(!('unitCost' in upserts[0].update.$setOnInsert), 'merged twin must carry unitCost only via $set');
   // B is new at the destination: created at exactly destUnitCost.
   assert.equal(upserts[1].update.$setOnInsert.unitCost, 1200);
   assert.ok(!upserts[1].update.$set, 'fresh lot carries no $set revaluation');
