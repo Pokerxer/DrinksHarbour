@@ -18,6 +18,8 @@ export interface ProductLineSelection {
   taxRate: number;
   sizeId?: string;
   sizeName?: string;
+  /** Units per pack for the picked size — seeds the line's Pack Size field. */
+  unitsPerPack?: number;
   availableStock?: number;
   bundleDeals?: POSBundleDeal[];
   originalPrice?: number;
@@ -29,6 +31,7 @@ interface SizeOption {
   sku?: string;
   sellingPrice: number;
   costPrice: number;
+  unitsPerPack?: number;
   availableStock?: number;
 }
 
@@ -68,6 +71,7 @@ function mapProducts(raw: any[]): ProductOption[] {
       sku: s.sku ?? sp.sku ?? '',
       sellingPrice: s.sellingPrice ?? 0,
       costPrice: s.costPrice ?? sp.costPrice ?? 0,
+      unitsPerPack: s.unitsPerPack ?? 1,
       availableStock: s.availableStock ?? s.stock ?? 0,
     })),
   }));
@@ -164,6 +168,7 @@ export default function ProductLineSearch({
                 sku: s.sku ?? item.sku ?? '',
                 sellingPrice: s.sellingPrice ?? 0,
                 costPrice: s.costPrice ?? item.costPrice ?? 0,
+                unitsPerPack: s.unitsPerPack ?? 1,
                 availableStock: s.availableStock ?? s.stock ?? 0,
               })),
             }))
@@ -225,6 +230,7 @@ export default function ProductLineSearch({
       taxRate: p.taxRate,
       sizeId: s.size,
       sizeName: displaySize,
+      unitsPerPack: s.unitsPerPack && s.unitsPerPack > 1 ? s.unitsPerPack : 1,
       availableStock: s.availableStock ?? undefined,
       bundleDeals: p.bundleDeals,
       originalPrice: sizePrice,
@@ -356,6 +362,11 @@ export default function ProductLineSearch({
                                 )}
                               </div>
                             </div>
+                            {(s.unitsPerPack ?? 1) > 1 && (
+                              <span className="shrink-0 rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] text-gray-500">
+                                ×{s.unitsPerPack}
+                              </span>
+                            )}
                             {s.sellingPrice > 0 && (
                               <span className="shrink-0 text-xs font-semibold text-gray-700">
                                 {s.sellingPrice.toFixed(2)}

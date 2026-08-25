@@ -37,7 +37,7 @@ export default function SalesLineSectionRow({
   return (
     <>
       <td className="w-6 bg-gray-50/70 px-1 py-2 align-middle">{dragHandle}</td>
-      <td colSpan={6} className="bg-gray-50/70 px-2 py-2">
+      <td colSpan={8} className="bg-gray-50/70 px-2 py-2">
         <div className="flex items-center gap-2">
           <input
             type="text"

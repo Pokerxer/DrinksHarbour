@@ -3,6 +3,7 @@
 import { PiPackage } from 'react-icons/pi';
 import type { SalesOrder } from '@/services/salesOrder.service';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
+import { packsLabel, packNounOf } from '../purchases/types';
 import { outstanding, fmtDate } from './sales-helpers';
 import {
   isNonProductLine,
@@ -165,6 +166,15 @@ export default function SalesOrderDetailLines({ so }: Props) {
                       {item.quantity}
                     </span>
                     <span className="ml-1 text-xs text-gray-400">units</span>
+                    {(item.packSize ?? 1) > 1 && (
+                      <p className="mt-0.5 text-[10px] text-gray-400">
+                        {packsLabel(
+                          item.quantity,
+                          item.packSize,
+                          packNounOf(item.uom)
+                        )}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3.5 text-right">
                     <span

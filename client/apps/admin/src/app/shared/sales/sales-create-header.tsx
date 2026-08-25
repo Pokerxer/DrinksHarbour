@@ -25,8 +25,7 @@ import {
   PiTag,
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
-import { StagePill } from './sales-stage-pill';
-import { quoteStatusLabel, orderStatusLabel } from './sales-helpers';
+import { SalesSteps, salesStepIndex } from './sales-stage-pill';
 import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
 
 export interface SalesCreateHeaderProps {
@@ -326,23 +325,18 @@ export default function SalesCreateHeader({
           )}
         </div>
 
-        {/* Stage pills */}
-        <div className="ml-2 flex items-center gap-1.5">
+        {/* Lifecycle steps: Quotation → Quotation Sent → Sales Order */}
+        <div className="ml-2">
           {isEdit ? (
-            <StagePill
-              label={
-                initial!.docType === 'quotation'
-                  ? quoteStatusLabel(initial!.quoteStatus)
-                  : orderStatusLabel(initial!.orderStatus)
-              }
-              active
+            <SalesSteps
+              current={salesStepIndex(
+                initial!.docType,
+                initial!.quoteStatus,
+                initial!.orderStatus
+              )}
             />
           ) : (
-            <>
-              <StagePill label="Quotation" active />
-              <StagePill label="Quotation Sent" active={false} />
-              <StagePill label="Sales Order" active={false} />
-            </>
+            <SalesSteps current={0} />
           )}
         </div>
       </div>

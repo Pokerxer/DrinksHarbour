@@ -384,6 +384,9 @@ function mapLine(input) {
     sku: it.sku, name: it.name,
     description: it.description || '',
     quantity: Number(it.quantity) || 0,
+    // Pack metadata: units per pack (≥1) + optional packaging UOM noun.
+    packSize: Math.max(1, Math.floor(Number(it.packSize) || 1)),
+    uom: it.uom || undefined,
     unitPrice,
     discount,
     discountType,

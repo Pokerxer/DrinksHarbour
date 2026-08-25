@@ -19,9 +19,14 @@ import SalesTotals from './sales-totals';
 import SalesOtherInfoTab from './sales-other-info-tab';
 import SalesCatalogModal from './sales-catalog-modal';
 import SalesScanDrawer from './sales-scan-drawer';
-import SalesPrintSheet, { type PrintSheetType } from './sales-print-sheet';
 import SalesActivityPanel from './sales-activity-panel';
 import SalesConfirmModal from './sales-confirm-modal';
+import { useTenant } from '@/context/TenantContext';
+import {
+  printProformaInvoice,
+  printQuotation,
+} from '@/utils/salesInvoice';
+import type { SalesDocVariant } from '@/utils/print/so-print';
 import type { CreateTab } from './sales-stage-pill';
 
 export default function SalesCreate({
@@ -34,11 +39,7 @@ export default function SalesCreate({
   const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
-
-  const [printState, setPrintState] = useState<{
-    so: SalesOrder;
-    type: PrintSheetType;
-  } | null>(null);
+  const { tenant } = useTenant();
 
   const form = useSalesCreateForm({ token, mode, initial });
 
@@ -194,7 +195,10 @@ export default function SalesCreate({
     form.setTab(next);
   }
 
-  async function handlePrint(type: 'quotation' | 'proforma') {
+  // Printed documents follow the purchase flow: a branded PDF built from the
+  // freshly-fetched order, with the selected fulfilment warehouse as the
+  // issuing entity on paper.
+  async function handlePrint(type: SalesDocVariant) {
     const id = await ensureSaved();
     if (!id) {
       toast.error('Add at least one product before printing');
@@ -202,8 +206,10 @@ export default function SalesCreate({
     }
     try {
       const res = await salesOrderService.get(id, token);
-      setPrintState({ so: res.data, type });
-      setTimeout(() => window.print(), 150);
+      (type === 'proforma' ? printProformaInvoice : printQuotation)(
+        res.data,
+        tenant?.name || 'DrinksHarbour'
+      );
     } catch {
       toast.error('Could not load document for printing');
     }
@@ -373,10 +379,6 @@ export default function SalesCreate({
         onClose={() => form.setScanOpen(false)}
         onAdd={form.addProductFromCatalog}
       />
-
-      {printState && (
-        <SalesPrintSheet so={printState.so} type={printState.type} />
-      )}
 
       <SalesConfirmModal
         open={confirmPrices}

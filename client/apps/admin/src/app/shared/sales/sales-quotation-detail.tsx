@@ -25,8 +25,12 @@ import {
 } from '@/services/salesOrder.service';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 import { fmtDate } from './sales-helpers';
-import type { PrintSheetType } from './sales-print-sheet';
-import SalesPrintSheet from './sales-print-sheet';
+import { useTenant } from '@/context/TenantContext';
+import {
+  printProformaInvoice,
+  printQuotation,
+} from '@/utils/salesInvoice';
+import type { SalesDocVariant } from '@/utils/print/so-print';
 import SalesDetailShell, { type DetailAction } from './sales-detail-shell';
 import SalesQuotationDetailInfo from './sales-quotation-detail-info';
 import SalesQuotationDetailLines from './sales-quotation-detail-lines';
@@ -103,10 +107,8 @@ export default function SalesQuotationDetail({
 }) {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
+  const { tenant } = useTenant();
   const [busy, setBusy] = useState(false);
-  const [printState, setPrintState] = useState<{ type: PrintSheetType } | null>(
-    null
-  );
 
   async function run(
     action: () => Promise<{ data: SalesOrder }>,
@@ -124,9 +126,13 @@ export default function SalesQuotationDetail({
     }
   }
 
-  function handlePrint(type: PrintSheetType) {
-    setPrintState({ type });
-    setTimeout(() => window.print(), 150);
+  // Branded PDF like the purchase documents; the selected fulfilment warehouse
+  // is the issuing entity on paper.
+  function handlePrint(type: SalesDocVariant) {
+    (type === 'proforma' ? printProformaInvoice : printQuotation)(
+      so,
+      tenant?.name || 'DrinksHarbour'
+    );
   }
 
   function handleConvert() {
@@ -201,8 +207,6 @@ export default function SalesQuotationDetail({
 
   return (
     <>
-      {printState && <SalesPrintSheet so={so} type={printState.type} />}
-
       <SalesDetailShell
         backHref={routes.eCommerce.salesQuotations}
         backLabel="Quotations"

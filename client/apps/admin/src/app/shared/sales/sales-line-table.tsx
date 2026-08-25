@@ -33,6 +33,8 @@ import {
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
+import { packsLabel, packNounOf } from '../purchases/types';
+import PackSizeInput from '../purchases/pack-size-input';
 import { resolveDiscount } from './sales-create-pricing-helpers';
 import ProductLineSearch, {
   type ProductLineSelection,
@@ -59,6 +61,10 @@ export interface DraftLine {
   sizeId?: string;
   sizeName?: string;
   quantity: number;
+  /** Units per pack. Quantity stays in units; this drives the Packs breakdown. */
+  packSize: number;
+  /** Packaging UOM noun ('Cases', 'Cartons'…) shown with the pack label. */
+  uom?: string;
   baseUnitPrice: number;
   discount: number;
   /** 'fixed' = flat ₦ off the whole line; 'percentage' = % of each unit. */
@@ -161,6 +167,12 @@ export default function SalesLineTable({
                 </th>
                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
                   Qty
+                </th>
+                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
+                  Pack Size
+                </th>
+                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
+                  Packs
                 </th>
                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
                   Unit Price
@@ -410,6 +422,9 @@ function SalesLineProductRow({
                 sku: '',
                 sizeId: undefined,
                 sizeName: undefined,
+                quantity: line.quantity,
+                packSize: 1,
+                uom: undefined,
                 baseUnitPrice: 0,
                 costPrice: 0,
                 taxRate: 0,
@@ -434,6 +449,8 @@ function SalesLineProductRow({
                 baseUnitPrice: info.sellingPrice,
                 costPrice: info.costPrice,
                 taxRate: info.taxRate,
+                packSize: Math.max(1, Math.floor(info.unitsPerPack ?? 1)),
+                uom: undefined,
                 priceOverridden: false,
                 activeBundles: info.bundleDeals,
                 originalPrice: info.originalPrice,
@@ -518,6 +535,27 @@ function SalesLineProductRow({
         </div>
       </td>
       <td className="px-2 py-2 align-top">
+        <PackSizeInput
+          value={line.packSize}
+          onApply={(patch) =>
+            onUpdate(line.key, {
+              packSize: Math.max(1, Math.floor(patch.packSize) || 1),
+              uom: patch.uom ?? line.uom,
+            })
+          }
+        />
+      </td>
+      <td className="px-2 py-2 align-top">
+        <div className="flex h-[38px] items-center justify-end rounded-lg border border-gray-100 bg-gray-50 px-2">
+          <span
+            title="Pack breakdown of the ordered quantity"
+            className="text-right text-[11px] font-semibold text-gray-700"
+          >
+            {packsLabel(line.quantity, line.packSize, packNounOf(line.uom))}
+          </span>
+        </div>
+      </td>
+      <td className="px-2 py-2 align-top">
         <div className="flex items-center justify-end gap-1.5">
           {line.priceOverridden && (
             <span
@@ -582,6 +620,11 @@ function SalesLineProductRow({
       </td>
       <td className="px-2 py-2 text-right align-top text-sm font-semibold text-gray-900">
         {fmtCur(line.lineTotal, 'NGN')}
+        {line.taxRate > 0 && (
+          <p className="mt-0.5 text-[10px] font-normal text-gray-400">
+            + {fmtCur(line.taxAmount, 'NGN')} tax
+          </p>
+        )}
       </td>
       <td className="px-2 py-2 text-right align-top">
         <button

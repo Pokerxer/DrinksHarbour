@@ -18,6 +18,11 @@ const lineSchema = new Schema({
   description: { type: String, trim: true, maxlength: 1000 }, // operator-entered per-line note shown on the order/invoice
   // required only for product lines — section/note lines have no qty/price.
   quantity:    { type: Number, required: function() { return this.lineType === 'product'; }, min: 0, default: 0 },
+  // Units per pack (Size.unitsPerPack snapshot). Quantity stays in sellable
+  // units; packSize only drives the "N packs & M bottles" breakdown shown on
+  // the order. Default 1 = loose units, so legacy lines are unaffected.
+  packSize:    { type: Number, min: 1, default: 1 },
+  uom:         { type: String, trim: true },                    // packaging noun for the pack label ('Cases', 'Cartons'…)
   unitPrice:   { type: Number, required: function() { return this.lineType === 'product'; }, min: 0, default: 0 }, // snapshot at line creation
   discount:    { type: Number, default: 0, min: 0 }, // raw operator input; meaning set by discountType
   discountType: { type: String, enum: ['fixed', 'percentage'], default: 'fixed' }, // fixed = flat ₦ off the whole line; percentage = % of each unit

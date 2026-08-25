@@ -33,7 +33,9 @@ test('getSalesOrder populates the warehouse and the person on every fulfilment',
   await ctrl.getSalesOrder(req, res, (err) => { throw err; });
 
   assert.strictEqual(payload.data, doc);
-  assert.ok(populated.includes('warehouseId:name'));
+  // warehouseId carries address/contact too — the printed quotation/invoice
+  // presents the selected warehouse as the issuing entity (PO parity).
+  assert.ok(populated.includes('warehouseId:name code type address contact'));
   assert.ok(populated.includes('fulfillments.warehouseId:name'));
   assert.ok(populated.includes('fulfillments.by:firstName lastName'));
 });

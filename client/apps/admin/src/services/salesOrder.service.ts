@@ -10,6 +10,10 @@ export interface SalesLineItem {
   name?: string;
   description?: string;
   quantity: number;
+  /** Units per pack snapshot (Size.unitsPerPack); 1 = loose units. */
+  packSize?: number;
+  /** Packaging UOM noun for the pack label ('Cases', 'Cartons'…). */
+  uom?: string;
   unitPrice: number;
   discount: number;
   discountType?: 'fixed' | 'percentage';
@@ -43,11 +47,28 @@ export interface SalesOrderAddress {
 /**
  * A Mongoose ref reaches the client as a bare id string OR as the populated
  * document, depending on the endpoint. The detail endpoint populates these;
- * the list endpoint does not.
+ * the list endpoint does not. warehouseId is populated with name/code/type/
+ * address/contact so the printed quotation/invoice can present the selected
+ * warehouse as the issuing entity (mirrors a PO's destination warehouse).
  */
 export interface PopulatedWarehouse {
   _id: string;
   name?: string;
+  code?: string;
+  type?: string;
+  address?: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    postalCode?: string;
+  };
+  contact?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+  };
 }
 
 export interface PopulatedUser {
@@ -149,6 +170,8 @@ export interface SalesOrderLineInput {
   name?: string;
   description?: string;
   quantity: number;
+  packSize?: number;
+  uom?: string;
   unitPrice: number;
   discount?: number;
   discountType?: 'fixed' | 'percentage';

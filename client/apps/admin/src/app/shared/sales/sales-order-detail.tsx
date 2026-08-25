@@ -23,8 +23,12 @@ import {
   type SalesOrder,
 } from '@/services/salesOrder.service';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
-import type { PrintSheetType } from './sales-print-sheet';
-import SalesPrintSheet from './sales-print-sheet';
+import { useTenant } from '@/context/TenantContext';
+import {
+  printProformaInvoice,
+  printSalesInvoice,
+} from '@/utils/salesInvoice';
+import type { SalesDocVariant } from '@/utils/print/so-print';
 import SalesConfirmPaymentModal from './sales-confirm-payment-modal';
 import SalesInvoiceView from './sales-invoice-view';
 import SalesDetailShell, { type DetailAction } from './sales-detail-shell';
@@ -96,12 +100,11 @@ export default function SalesOrderDetail({
 }) {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
+  const { tenant } = useTenant();
+  const tenantName = tenant?.name || 'DrinksHarbour';
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
-  const [printState, setPrintState] = useState<{ type: PrintSheetType } | null>(
-    null
-  );
 
   const status = so.orderStatus ?? 'draft';
   const sc = ORDER_STATUS_CONFIG[status] ?? ORDER_STATUS_CONFIG.draft;
@@ -151,9 +154,13 @@ export default function SalesOrderDetail({
     }
   }
 
-  function handlePrint(type: PrintSheetType) {
-    setPrintState({ type });
-    setTimeout(() => window.print(), 150);
+  // Branded PDF like the purchase documents; the selected fulfilment warehouse
+  // is the issuing entity on paper. Orders print as Sales Order / Pro-Forma.
+  function handlePrint(type: SalesDocVariant) {
+    (type === 'proforma' ? printProformaInvoice : printSalesInvoice)(
+      so,
+      tenantName
+    );
   }
 
   if (showInvoice) {
@@ -230,8 +237,6 @@ export default function SalesOrderDetail({
 
   return (
     <>
-      {printState && <SalesPrintSheet so={so} type={printState.type} />}
-
       <SalesConfirmPaymentModal
         hasCustomer={!!so.customer}
         open={confirmOpen}

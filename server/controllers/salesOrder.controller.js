@@ -9,7 +9,7 @@ const salesImportSvc = require('../services/salesImport.service');
 const salesPayment = require('../services/salesPayment.service');
 const salesFulfillSvc = require('../services/salesFulfill.service');
 const salesLog = require('../services/salesActivity.service');
-const { captureDocumentTax, reverseDocumentTax, effectiveTaxForFlow } = require('../services/tax.service');
+const { captureDocumentTax, reverseDocumentTax } = require('../services/tax.service');
 const { logPrivilegedAction } = require('../utils/auditLog');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 const { paginatedResponse } = require('../utils/response');
@@ -47,21 +47,6 @@ exports.createSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   if (!requireResolvedTenant(tenantId, res)) return;
   const salesperson = req.user?.name || '';
-  // Snapshot the effective taxRate for any line carrying a configured Tax ref
-  // before the service normalises/copies the lines (mapLine reads item.taxRate).
-  if (Array.isArray(req.body?.items)) {
-    for (const item of req.body.items) {
-      if (!item || !item.tax) continue;
-      if (item.lineType && item.lineType !== 'product') continue;
-      let resolved;
-      try {
-        resolved = await effectiveTaxForFlow({ tenantId, taxId: item.tax, sourceType: 'sales_order' });
-      } catch (e) {
-        return res.status(400).json({ success: false, message: e.message });
-      }
-      if (resolved && resolved.taxRate !== null) item.taxRate = resolved.taxRate;
-    }
-  }
   const so = await svc.createSalesOrderDoc({ tenantId, salesperson, body: req.body });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_CREATE', 'create', so);
   await salesLog.logActivity(tenantId, so._id, {
@@ -157,21 +142,6 @@ exports.updateSalesOrder = asyncHandler(async (req, res) => {
     validUntil: so.validUntil,
     notes: so.notes,
   };
-  // Snapshot the effective taxRate for any line carrying a configured Tax ref
-  // before applyEdit maps the payload lines (mapLine reads item.taxRate).
-  if (Array.isArray(req.body?.items)) {
-    for (const item of req.body.items) {
-      if (!item || !item.tax) continue;
-      if (item.lineType && item.lineType !== 'product') continue;
-      let resolved;
-      try {
-        resolved = await effectiveTaxForFlow({ tenantId, taxId: item.tax, sourceType: 'sales_order' });
-      } catch (e) {
-        return res.status(400).json({ success: false, message: e.message });
-      }
-      if (resolved && resolved.taxRate !== null) item.taxRate = resolved.taxRate;
-    }
-  }
   await svc.applyEdit(so, req.body);
   await so.save();
   auditPrivilegedSalesAction(req, 'SALES_ORDER_UPDATE', 'update', so);

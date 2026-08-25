@@ -51,6 +51,8 @@ function toLinePayload(l: PricedLine) {
     name: l.name,
     description: l.description || undefined,
     quantity: l.quantity,
+    packSize: l.packSize,
+    uom: l.uom,
     unitPrice: l.unitPrice,
     discount: l.discount,
     discountType: l.discountType,
@@ -251,6 +253,13 @@ export function useSalesCreateForm({
             availableStock: stock ?? line.availableStock,
             activeBundles: sp.bundleDeals ?? line.activeBundles,
             originalPrice: catalogPrice || line.originalPrice,
+            // Pack metadata is metadata-only: fill it from the size doc when
+            // the stored order didn't snapshot it, never clobber an operator
+            // choice made through the Pack Size field.
+            packSize:
+              line.packSize && line.packSize > 1
+                ? line.packSize
+                : Math.max(1, Math.floor(matchedSize?.unitsPerPack ?? 1)),
           };
         })
       );
@@ -448,6 +457,8 @@ export function useSalesCreateForm({
             costPrice: info.costPrice,
             taxRate: info.taxRate,
             quantity: inc,
+            packSize: Math.max(1, Math.floor(info.unitsPerPack ?? 1)),
+            uom: undefined,
             priceOverridden: false,
             availableStock: info.availableStock,
             activeBundles: info.bundleDeals,

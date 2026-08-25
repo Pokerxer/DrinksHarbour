@@ -30,7 +30,7 @@ export default function SalesLineNoteRow({
   return (
     <>
       <td className="w-6 bg-amber-50/40 px-1 py-1.5 align-middle">{dragHandle}</td>
-      <td colSpan={6} className="bg-amber-50/40 px-2 py-1.5">
+      <td colSpan={8} className="bg-amber-50/40 px-2 py-1.5">
         <textarea
           value={line.description ?? ''}
           onChange={(e) => onUpdate(line.key, { description: e.target.value })}
