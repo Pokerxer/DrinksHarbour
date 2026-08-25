@@ -269,4 +269,3 @@ export default function PricelistTable({
   );
 }
 
-const PAGE_SIZE = 50;

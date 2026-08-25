@@ -5,7 +5,7 @@ import { PiSpinner, PiLightning, PiPlus, PiTag, PiCaretLeft, PiCaretRight } from
 import { BRAND } from '@/app/shared/point-of-sale/pricelist-constants';
 import type { PricelistRule } from './types';
 
-const PAGE = 40;
+export const RULES_PAGE_SIZE = 40;
 
 interface Props {
   rules: PricelistRule[];
@@ -39,8 +39,8 @@ export default function PanelRulesTab({
   children,
 }: Props) {
   const [page, setPage] = useState(1);
-  const pageRules = rules.slice((page - 1) * PAGE, page * PAGE);
-  const totalPages = Math.max(1, Math.ceil(rules.length / PAGE));
+  const pageRules = rules.slice((page - 1) * RULES_PAGE_SIZE, page * RULES_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(rules.length / RULES_PAGE_SIZE));
   const now = new Date();
   const expiredCount = rules.filter(
     (r) => r.endDate && new Date(r.endDate) < now
@@ -102,7 +102,7 @@ export default function PanelRulesTab({
           <EmptyRules onCreate={onAddRule} />
         ) : (
           <>
-            {rules.length > PAGE && (
+            {rules.length > RULES_PAGE_SIZE && (
               <Pager
                 page={page}
                 totalPages={totalPages}
@@ -169,7 +169,7 @@ function Pager({
   return (
     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-1.5 text-[10px] text-gray-400">
       <span>
-        {(page - 1) * PAGE + 1}–{Math.min(page * PAGE, total)} of {total}
+        {(page - 1) * RULES_PAGE_SIZE + 1}–{Math.min(page * RULES_PAGE_SIZE, total)} of {total}
       </span>
       <div className="flex gap-0.5">
         <button

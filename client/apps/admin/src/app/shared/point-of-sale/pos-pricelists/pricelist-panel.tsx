@@ -7,7 +7,7 @@ import { pricelistService } from '@/services/pricelist.service';
 import PanelModals from './panel-modals';
 import PanelBindings from './panel-bindings';
 import PanelHeader from './panel-header';
-import PanelRulesTab from './panel-rules-tab';
+import PanelRulesTab, { RULES_PAGE_SIZE } from './panel-rules-tab';
 import RuleCard from './rule-card';
 import CreateRuleModal from './create-rule-modal';
 import { usePanelActions } from './use-panel-actions';
@@ -245,7 +245,7 @@ export default function PricelistPanel({ pl, token, onClose, onRefresh }: Props)
                   key={r._id}
                   rule={r}
                   deleting={deleting === r._id}
-                  sequenceIndex={page * 40 - 40 + idx}
+                  sequenceIndex={(page - 1) * RULES_PAGE_SIZE + idx}
                   totalRules={rules.length}
                   onDelete={() => setConfirmRuleId(r._id)}
                   onEdit={() => setEditRule(r)}
