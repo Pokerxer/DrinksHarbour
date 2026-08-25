@@ -82,6 +82,13 @@ const POSSessionSchema = new mongoose.Schema(
     mobileMoneySales: { type: Number, default: 0 },
     splitSales:       { type: Number, default: 0 },
 
+    // Gratuity and cash-rounding taken during the session. Both are already
+    // inside totalSales (which is the payable total); they are recorded
+    // separately so the Z-report can show what part of the drawer is a tip
+    // and what part is the rounding delta.
+    totalTips:        { type: Number, default: 0 },
+    totalRounding:    { type: Number, default: 0 },
+
     // ── Cash movements (mid-session in/out) ──────────────────────────────────
     cashMovements: { type: [CashMovementSchema], default: [] },
 

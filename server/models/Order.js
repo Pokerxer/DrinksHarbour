@@ -139,6 +139,23 @@ const orderSchema = new Schema(
       index: true,
     },
 
+    // Owning tenant for single-tenant orders (every POS sale, and any
+    // marketplace order whose lines all belong to one tenant).
+    //
+    // `items.tenant` remains the authority for revenue split and for
+    // multi-tenant marketplace baskets. This root field exists because the
+    // POS handlers were already WRITING it and QUERYING it — holds, voids and
+    // session order lists all scope on `{ tenant }` at the root — while the
+    // schema never declared it. Strict mode dropped it on write, so those
+    // queries matched nothing and failed as an empty result rather than an
+    // error. Declaring it makes the existing reads and writes agree.
+    tenant: {
+      type: ObjectId,
+      ref: 'Tenant',
+      required: false,
+      index: true,
+    },
+
     // ────────────────────────────────────────────────
     // Items & Totals
     // ────────────────────────────────────────────────

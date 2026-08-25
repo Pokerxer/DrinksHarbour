@@ -434,6 +434,20 @@ function endOfDay(d = new Date()) {
   return e;
 }
 
+/**
+ * Scope an Order query to a tenant.
+ *
+ * Orders carry the tenant in two places: a root `tenant` field, and a `tenant`
+ * on every item. The root field is the simpler scope and is what the POS
+ * handlers were always written against, but it went undeclared on the schema
+ * for a long time, so orders created before it existed have only the per-item
+ * one. Matching either keeps that history reachable — scoping on the root
+ * alone silently hides every older order instead of erroring.
+ */
+function tenantScope(tenantId) {
+  return { $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] };
+}
+
 const PAYMENT_METHODS = ['cash', 'card', 'bank_transfer', 'mobile_money', 'split'];
 
 /** Aggregate POS orders by payment method for a time range */
@@ -452,18 +466,33 @@ async function getPOSOrderStats(tenantId, from, to) {
         _id: '$paymentMethod',
         total: { $sum: '$totalAmount' },
         count: { $sum: 1 },
+        tips:     { $sum: { $ifNull: ['$tipAmount', 0] } },
+        rounding: { $sum: { $ifNull: ['$roundingAmount', 0] } },
       },
     },
   ]);
   let totalSales = 0;
   let orderCount = 0;
+  // Tips and rounding are already inside totalAmount (it is the payable total).
+  // They are reported separately so the Z-report can show what part of the
+  // drawer is gratuity and what part is the rounding delta, rather than
+  // leaving both buried in takings that no longer reconcile to the goods.
+  let totalTips = 0;
+  let totalRounding = 0;
   const breakdown = {};
   agg.forEach((g) => {
     totalSales += g.total;
     orderCount += g.count;
-    breakdown[g._id] = { total: g.total, count: g.count };
+    totalTips += g.tips || 0;
+    totalRounding += g.rounding || 0;
+    breakdown[g._id] = {
+      total: g.total,
+      count: g.count,
+      tips: g.tips || 0,
+      rounding: g.rounding || 0,
+    };
   });
-  return { totalSales, orderCount, breakdown };
+  return { totalSales, orderCount, totalTips, totalRounding, breakdown };
 }
 
 /** Aggregate orders placed during an open session window */
@@ -577,6 +606,8 @@ exports.getClosingControl = asyncHandler(async (req, res) => {
       openingCash:  session.openingCash,
       totalSales:   stats.totalSales,
       orderCount:   stats.orderCount,
+      totalTips:     stats.totalTips || 0,
+      totalRounding: stats.totalRounding || 0,
       totalCashIn,
       totalCashOut,
       netCashMove,
@@ -663,6 +694,8 @@ exports.closeSession = asyncHandler(async (req, res) => {
       cashierLog: log,
       totalSales:       stats.totalSales,
       orderCount:       stats.orderCount,
+      totalTips:        stats.totalTips     || 0,
+      totalRounding:    stats.totalRounding || 0,
       cashSales:        stats.breakdown?.cash?.total        || 0,
       cardSales:        stats.breakdown?.card?.total        || 0,
       transferSales:    stats.breakdown?.bank_transfer?.total || 0,
@@ -926,7 +959,7 @@ exports.getPOSDashboard = asyncHandler(async (req, res) => {
   const chartAgg = await Order.aggregate([
     {
       $match: {
-        tenant: tenantId,
+        ...tenantScope(tenantId),
         source: 'pos',
         paymentStatus: 'paid',
         isVoided: { $ne: true },
@@ -3091,7 +3124,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
  */
 exports.voidPOSOrder = asyncHandler(async (req, res) => {
   const { reason = '' } = req.body;
-  const order = await Order.findOne({ _id: req.params.id, tenant: req.tenant?._id });
+  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(req.tenant?._id) });
   if (!order)          return res.status(404).json({ success: false, message: 'Order not found' });
   if (order.isVoided)  return res.status(400).json({ success: false, message: 'Already voided' });
 
@@ -3298,7 +3331,10 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
 exports.getHeldPOSOrders = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
 
-  const holds = await Order.find({ tenant: tenantId, status: 'hold' })
+  // Match either scoping: the root `tenant` (written since it was declared on
+  // the schema) or `items.tenant` (every hold parked before that). Scoping on
+  // the root alone would make existing holds unreachable.
+  const holds = await Order.find({ ...tenantScope(tenantId), status: 'hold' })
     .select('orderNumber items note createdAt holdMetadata')
     .sort({ createdAt: -1 })
     .lean();
@@ -3327,7 +3363,7 @@ exports.getHeldPOSOrders = asyncHandler(async (req, res) => {
 exports.recallPOSOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
 
-  const order = await Order.findOne({ _id: req.params.id, tenant: tenantId, status: 'hold' }).lean();
+  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), status: 'hold' }).lean();
   if (!order) {
     return res.status(404).json({ success: false, message: 'Held order not found' });
   }
@@ -3488,7 +3524,7 @@ exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
   const session = await POSSession.findOne({ _id: req.params.id, tenant: req.tenant?._id });
   if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
 
-  const orders = await Order.find({ posSessionId: req.params.id, tenant: req.tenant?._id })
+  const orders = await Order.find({ posSessionId: req.params.id, ...tenantScope(req.tenant?._id) })
     .select('orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails')
     .populate('posStaff', 'firstName lastName posName')
     .populate({
