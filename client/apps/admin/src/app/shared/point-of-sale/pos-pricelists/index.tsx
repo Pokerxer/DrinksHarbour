@@ -3,21 +3,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import {
-  PiPlus,
-  PiMagnifyingGlass,
-  PiX,
-  PiCaretLeft,
-  PiCaretRight,
-  PiArrowsClockwise,
-  PiTag,
-} from 'react-icons/pi';
+import { PiTag } from 'react-icons/pi';
 import { BRAND } from '@/app/shared/point-of-sale/pricelist-constants';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
 import { pricelistService } from '@/services/pricelist.service';
 import ConfirmDialog from '@/app/shared/purchases/pricelists/confirm-dialog';
 import type { Pricelist } from './types';
 import { useDebouncedValue } from './use-debounced-value';
+import ListToolbar from './list-toolbar';
+import ListDialogs, { EmptyPanel } from './list-dialogs';
 import StatsStrip from './stats-strip';
 import PricelistTable from './pricelist-table';
 import PricelistPanel from './pricelist-panel';
@@ -176,114 +170,20 @@ export default function POSPricelists() {
     <div className="flex h-dvh flex-col bg-gray-50">
       <POSNavHeader />
 
-      {/* Top bar */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2.5">
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
-          style={{ backgroundColor: BRAND }}
-        >
-          <PiPlus className="h-3.5 w-3.5" /> New
-        </button>
-
-        <div>
-          <h1 className="text-base font-bold text-gray-900">Pricelists</h1>
-          <p className="text-[11px] text-gray-400">
-            {total} total · {filtered.length} shown
-          </p>
-        </div>
-
-        {/* Search — raw value drives input; debounced value drives load() */}
-        <div className="relative max-w-md flex-1">
-          <div
-            className={`flex overflow-hidden rounded-xl border bg-white transition-all ${
-              search ? 'border-[#b20202] ring-1 ring-[#b20202]/10' : 'border-gray-200'
-            }`}
-          >
-            <div className="relative flex-1">
-              <PiMagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                aria-label="Search pricelists"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search pricelists…"
-                className="h-9 w-full bg-transparent pl-9 pr-2 text-sm outline-none"
-              />
-            </div>
-            {search && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => setSearch('')}
-                className="flex items-center px-2 text-gray-400 hover:text-gray-600"
-              >
-                <PiX className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Status pills */}
-        <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-0.5 text-xs font-semibold">
-          {(
-            [
-              ['all', 'All'],
-              ['selectable', 'Selectable'],
-              ['website', 'Has Website'],
-            ] as const
-          ).map(([k, l]) => (
-            <button
-              key={k}
-              type="button"
-              aria-pressed={status === k}
-              onClick={() => setStatus(k)}
-              className={`rounded-lg px-3 py-1.5 capitalize transition-all ${
-                status === k ? 'text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-              style={status === k ? { backgroundColor: BRAND } : {}}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
-
-        {/* Pagination */}
-        <div className="flex shrink-0 items-center gap-1 text-xs text-gray-500">
-          <span className="px-1">
-            {page}/{totalPages}
-          </span>
-          <button
-            type="button"
-            aria-label="Previous page"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
-          >
-            <PiCaretLeft className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Next page"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
-          >
-            <PiCaretRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        <button
-          type="button"
-          aria-label="Reload"
-          onClick={load}
-          disabled={loading}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:bg-gray-50 disabled:opacity-40"
-        >
-          <PiArrowsClockwise className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
-      </div>
+      <ListToolbar
+        total={total}
+        shownCount={filtered.length}
+        search={search}
+        status={status}
+        page={page}
+        totalPages={totalPages}
+        loading={loading}
+        onSearchChange={setSearch}
+        onStatusChange={setStatus}
+        onPage={setPage}
+        onReload={load}
+        onCreate={() => setCreating(true)}
+      />
 
       <StatsStrip rows={rows} />
 
@@ -371,46 +271,18 @@ export default function POSPricelists() {
         </div>
       </div>
 
-      {/* Single delete confirmation */}
-      <ConfirmDialog
-        open={!!deleteTarget}
-        title="Delete pricelist?"
-        message={
-          deleteTarget
-            ? `"${deleteTarget.name}" and its ${
-                deleteTarget.rules?.length ?? 0
-              } rule(s) will be permanently removed.`
-            : ''
-        }
-        confirmLabel="Delete"
-        tone="danger"
-        onConfirm={confirmDelete}
-        onCancel={() => setDeleteTarget(null)}
-      />
-
-      {/* Bulk delete confirmation */}
-      <ConfirmDialog
-        open={bulkConfirm}
-        title={`Delete ${checked.size} pricelist${checked.size === 1 ? '' : 's'}?`}
-        message="All selected pricelists and their rules will be permanently removed."
-        confirmLabel={`Delete ${checked.size}`}
-        tone="danger"
-        busy={bulkBusy}
-        onConfirm={handleBulkDelete}
-        onCancel={() => setBulkConfirm(false)}
+      <ListDialogs
+        deleteTarget={deleteTarget}
+        bulkConfirm={bulkConfirm}
+        checkedCount={checked.size}
+        bulkBusy={bulkBusy}
+        selected={selected}
+        onConfirmDelete={confirmDelete}
+        onCancelDelete={() => setDeleteTarget(null)}
+        onConfirmBulk={handleBulkDelete}
+        onCancelBulk={() => setBulkConfirm(false)}
       />
     </div>
   );
 }
 
-function EmptyPanel() {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100">
-        <PiTag className="h-7 w-7 text-gray-300" />
-      </div>
-      <p className="text-sm font-semibold text-gray-500">Select a pricelist</p>
-      <p className="text-xs text-gray-400">Click a row to view and edit rules</p>
-    </div>
-  );
-}

@@ -11,6 +11,8 @@ import {
   PiCaretRight,
 } from 'react-icons/pi';
 import { BRAND } from '@/app/shared/point-of-sale/pricelist-constants';
+import TableFooter from './table-footer';
+import TableCreateRow from './table-create-row';
 import type { Pricelist } from './types';
 
 interface Props {
@@ -109,43 +111,12 @@ export default function PricelistTable({
           </thead>
           <tbody>
             {creating && (
-              <tr className="border-b border-gray-100 bg-[#b20202]/5">
-                <td className="px-2 py-2.5" />
-                <td className="px-1 py-2.5" />
-                <td className="px-3 py-2.5" colSpan={5}>
-                  <div className="flex items-center gap-2">
-                    <input
-                      autoFocus
-                      type="text"
-                      aria-label="New pricelist name"
-                      value={newName}
-                      onChange={(e) => onNewNameChange(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') onCreate();
-                        if (e.key === 'Escape') onCancelCreate();
-                      }}
-                      placeholder="New pricelist name…"
-                      className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-[#b20202]"
-                    />
-                    <button
-                      type="button"
-                      onClick={onCreate}
-                      className="rounded-lg px-3 py-1.5 text-xs font-bold text-white"
-                      style={{ backgroundColor: BRAND }}
-                    >
-                      Create
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onCancelCreate}
-                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </td>
-                <td className="px-2 py-2.5" />
-              </tr>
+              <TableCreateRow
+                newName={newName}
+                onNameChange={onNewNameChange}
+                onCreate={onCreate}
+                onCancel={onCancelCreate}
+              />
             )}
 
             {rows.length === 0 && !creating ? (
@@ -291,36 +262,8 @@ export default function PricelistTable({
         </table>
       </div>
 
-      {/* Pagination footer */}
       {totalPages > 1 && (
-        <div className="flex shrink-0 items-center justify-between border-t border-gray-100 bg-white px-4 py-2.5 text-xs text-gray-500">
-          <span>
-            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of{' '}
-            {total}
-          </span>
-          <div className="flex gap-1">
-            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-              const p =
-                totalPages <= 7 ? i + 1 : i === 0 ? 1 : i === 6 ? totalPages : page - 2 + i;
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  aria-label={`Page ${p}`}
-                  onClick={() => onPage(p)}
-                  className={`flex h-7 w-7 items-center justify-center rounded-lg border text-[11px] font-semibold ${
-                    p === page ? 'text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                  }`}
-                  style={
-                    p === page ? { backgroundColor: BRAND, borderColor: BRAND } : {}
-                  }
-                >
-                  {p}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <TableFooter page={page} totalPages={totalPages} total={total} onPage={onPage} />
       )}
     </>
   );
