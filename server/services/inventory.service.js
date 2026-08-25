@@ -288,7 +288,7 @@ async function recordReceived(subProductId, tenantId, data, performedBy) {
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
 
   const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select(
-    'totalStock availableStock reservedStock lowStockThreshold stockStatus tenant'
+    'totalStock availableStock reservedStock lowStockThreshold stockStatus costPrice product tenant'
   );
   if (!sp) throw new Error('SubProduct not found');
 
@@ -308,6 +308,7 @@ async function recordReceived(subProductId, tenantId, data, performedBy) {
   const movement = await InventoryMovement.create({
     subProduct:     subProductId,
     tenant:         tenantId || sp.tenant,
+    product:        sp.product || undefined,
     warehouse:      movementWarehouse || undefined,
     type:           'received',
     category:       'in',
@@ -499,7 +500,7 @@ async function adjustInventory(subProductId, tenantId, adjustment, reason, perfo
   if (adjustment === 0) throw new Error('Adjustment cannot be zero');
 
   const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select(
-    'totalStock availableStock reservedStock lowStockThreshold stockStatus tenant sizes sellWithoutSizeVariants'
+    'totalStock availableStock reservedStock lowStockThreshold stockStatus costPrice product tenant sizes sellWithoutSizeVariants'
   );
   if (!sp) throw new Error('SubProduct not found');
 
@@ -551,6 +552,7 @@ async function adjustInventory(subProductId, tenantId, adjustment, reason, perfo
   const movement = await InventoryMovement.create({
     subProduct:     subProductId,
     tenant:         tenantId || sp.tenant,
+    product:        sp.product || undefined,
     warehouse:      movementWarehouse || undefined,
     type,
     category:       cat,
@@ -559,6 +561,8 @@ async function adjustInventory(subProductId, tenantId, adjustment, reason, perfo
     quantityAfter:  qAfter,
     reference,
     referenceType:  'adjustment',
+    unitCost:       sp.costPrice ?? 0,
+    totalCost:      (sp.costPrice ?? 0) * Math.abs(adjustment),
     reason:         reason || (adjustment > 0 ? 'Manual adjustment in' : 'Manual adjustment out'),
     notes,
     performedBy,
@@ -580,7 +584,7 @@ async function recordReturn(subProductId, tenantId, data, performedBy) {
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
 
   const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select(
-    'totalStock availableStock lowStockThreshold stockStatus tenant sizes sellWithoutSizeVariants'
+    'totalStock availableStock lowStockThreshold stockStatus costPrice product tenant sizes sellWithoutSizeVariants'
   );
   if (!sp) throw new Error('SubProduct not found');
 
@@ -598,6 +602,7 @@ async function recordReturn(subProductId, tenantId, data, performedBy) {
   const movement = await InventoryMovement.create({
     subProduct:     subProductId,
     tenant:         tenantId || sp.tenant,
+    product:        sp.product || undefined,
     warehouse:      movementWarehouse || undefined,
     type:           'return',
     category:       'in',
@@ -607,6 +612,8 @@ async function recordReturn(subProductId, tenantId, data, performedBy) {
     reference,
     referenceType:  'return',
     relatedOrder,
+    unitCost:       sp.costPrice ?? 0,
+    totalCost:      (sp.costPrice ?? 0) * quantity,
     reason:         reason || 'Customer return',
     notes,
     performedBy,
@@ -653,14 +660,16 @@ async function transferStock(data, performedBy, tenantId) {
   const { subProductId, sourceWarehouseId, destinationWarehouseId, quantity, notes, reference } = data;
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
 
-  const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select('totalStock availableStock tenant');
+  const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select('totalStock availableStock costPrice product tenant');
   if (!sp) throw new Error('SubProduct not found');
 
   const qBefore = sp.availableStock ?? 0;
+  const unitCost = sp.costPrice ?? 0;
 
   const outMovement = await InventoryMovement.create({
     subProduct:          subProductId,
     tenant:              tenantId || sp.tenant,
+    product:             sp.product || undefined,
     type:                'transfer_out',
     category:            'transfer',
     quantity,
@@ -671,6 +680,8 @@ async function transferStock(data, performedBy, tenantId) {
     destinationWarehouse: destinationWarehouseId,
     reference,
     referenceType:       'transfer',
+    unitCost,
+    totalCost:           unitCost * quantity,
     reason:              'Stock transfer',
     notes,
     performedBy,
@@ -682,6 +693,7 @@ async function transferStock(data, performedBy, tenantId) {
   const inMovement = await InventoryMovement.create({
     subProduct:          subProductId,
     tenant:              tenantId || sp.tenant,
+    product:             sp.product || undefined,
     type:                'transfer_in',
     category:            'transfer',
     quantity,
@@ -692,6 +704,8 @@ async function transferStock(data, performedBy, tenantId) {
     destinationWarehouse: destinationWarehouseId,
     reference,
     referenceType:       'transfer',
+    unitCost,
+    totalCost:           unitCost * quantity,
     reason:              'Stock transfer',
     notes,
     performedBy,
@@ -708,13 +722,14 @@ async function transferStock(data, performedBy, tenantId) {
  */
 async function createMovement(data, performedBy, tenantId) {
   const sp = await SubProduct.findOne({ _id: data.subProductId, tenant: tenantId }).select(
-    'availableStock totalStock lowStockThreshold stockStatus tenant'
+    'availableStock totalStock lowStockThreshold stockStatus costPrice product tenant'
   );
   if (!sp) throw new Error('SubProduct not found');
 
   const qBefore = sp.availableStock ?? 0;
   const isIn = ['in'].includes(data.category);
   const qty  = isIn ? Math.abs(data.quantity) : -Math.abs(data.quantity);
+  const unitCost = data.unitCost ?? sp.costPrice ?? 0;
 
   if (data.category !== 'transfer') {
     sp.totalStock     = Math.max(0, (sp.totalStock     ?? 0) + qty);
@@ -731,6 +746,7 @@ async function createMovement(data, performedBy, tenantId) {
   const movement = await InventoryMovement.create({
     subProduct:     data.subProductId,
     tenant:         tenantId || sp.tenant,
+    product:        sp.product || undefined,
     warehouse:      movementWarehouse || undefined,
     type:           data.type,
     category:       data.category,
@@ -741,8 +757,8 @@ async function createMovement(data, performedBy, tenantId) {
     referenceType:  data.referenceType || 'manual',
     reason:         data.reason,
     notes:          data.notes,
-    unitCost:       data.unitCost,
-    totalCost:      data.unitCost ? data.unitCost * Math.abs(data.quantity) : undefined,
+    unitCost,
+    totalCost:      unitCost * Math.abs(data.quantity),
     performedBy,
     performedAt:    new Date(),
     source:         'manual',
@@ -783,9 +799,15 @@ async function getMovements(tenantId, options = {}) {
       .sort(sort)
       .skip(skip)
       .limit(limit)
-      .populate('performedBy', 'firstName lastName email posName')
+      .populate('performedBy', 'firstName lastName displayName email posName')
       .populate('product', 'name')
-      .populate('subProduct', 'name sku')
+      .populate({
+        path: 'subProduct',
+        select: 'sku product',
+        // Most movement writers only store subProduct — resolve the central
+        // Product name through it so the UI can always show a real name.
+        populate: { path: 'product', select: 'name' },
+      })
       .populate('size', 'displayName size')
       .populate('relatedOrder', 'orderNumber receiptNumber placedAt')
       .populate('warehouse', 'name code')
@@ -814,7 +836,8 @@ async function getInventorySummary(tenantId, subProductId) {
     InventoryMovement.find({ tenant: tId, subProduct: spId })
       .sort({ createdAt: -1 })
       .limit(10)
-      .populate('performedBy', 'firstName lastName')
+      .populate('performedBy', 'firstName lastName displayName')
+      .populate('product', 'name')
       .populate('size', 'displayName size')
       .populate('warehouse', 'name code')
       .populate('sourceWarehouse', 'name code')

@@ -231,8 +231,18 @@ export function moveDate(m: InventoryMovement) {
 
 export function productLabel(m: InventoryMovement): string {
   const p = m.product as { name?: string } | undefined;
-  const sp = m.subProduct as { name?: string; sku?: string } | undefined;
-  return p?.name ?? sp?.name ?? sp?.sku ?? m.reference ?? '—';
+  const sp = m.subProduct as
+    | {
+        name?: string;
+        sku?: string;
+        product?: { name?: string } | string;
+      }
+    | undefined;
+  const spProduct =
+    typeof sp?.product === 'object' ? sp?.product?.name : undefined;
+  return (
+    p?.name ?? spProduct ?? sp?.name ?? sp?.sku ?? m.reference ?? '—'
+  );
 }
 export function sizeLabel(m: InventoryMovement): string | null {
   return (
@@ -251,9 +261,9 @@ export function warehouseLabel(
 }
 export function byLabel(m: InventoryMovement): string {
   const u = m.performedBy;
-  return u
-    ? u.posName || `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || '—'
-    : '—';
+  if (!u) return '—';
+  const name = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim();
+  return name || u.displayName || u.posName || u.email || '—';
 }
 export function referenceLabel(m: InventoryMovement): string {
   const po = m.relatedPurchaseOrder as { poNumber?: string } | undefined;
