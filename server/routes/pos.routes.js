@@ -289,4 +289,18 @@ router.post('/shops',                tenantAdminOrSuperAdmin, createPOSShop);
 router.patch('/shops/:shopId',       tenantAdminOrSuperAdmin, updatePOSShop);
 router.delete('/shops/:shopId',      tenantAdminOrSuperAdmin, deletePOSShop);
 
+// ── Venue floor tables (back-office CRUD) ────────────────────────────────────
+// Table CRUD is back-office work: reshaping the floor happens from the
+// settings screens, not from a till mid-shift. Same admin-JWT chain as the
+// cashiers/shops blocks above (rejectPOSTokens + protect + attachTenant +
+// tenantUserOnly arrive via router.use); tenantAdminOrSuperAdmin tightens it
+// further. Handlers self-gate on venue mode. Static /tables paths are declared
+// ahead of any future parametric sibling (/tables/:id/...) so nothing shadows
+// the collection routes.
+const pt = require('../controllers/posTable.controller');
+router.get('/tables',        tenantAdminOrSuperAdmin, pt.listTables);
+router.post('/tables',       tenantAdminOrSuperAdmin, pt.createTable);
+router.put('/tables/:id',    tenantAdminOrSuperAdmin, pt.updateTable);
+router.delete('/tables/:id', tenantAdminOrSuperAdmin, pt.deleteTable);
+
 module.exports = router;
