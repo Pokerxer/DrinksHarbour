@@ -41,6 +41,8 @@ const {
   holdPOSOrder,
   getHeldPOSOrders,
   recallPOSOrder,
+  openTabAtTable,
+  updateTab,
   refundPOSOrder,
   voidPOSOrder,
   getAllPOSOrders,
@@ -125,6 +127,14 @@ router.get('/orders/held',                    protectPOS, getHeldPOSOrders);
 router.post('/orders/:id/recall',             protectPOS, requirePOSPermission('pos:sell'),   recallPOSOrder);
 router.post('/orders/:id/refund',             protectPOS, requirePOSPermission('pos:refund'), refundPOSOrder);
 router.post('/orders/:id/void',               protectPOS, requirePOSPermission('pos:void'),   voidPOSOrder);
+
+// Venue tabs — an open tab IS a hold bound to a POSTable, so both routes ride
+// the same POS-token chain as the hold/recall pair above (sell-flow mutations).
+// Parametric /tables/:id/open-tab never shadows the static /tables CRUD below:
+// different methods and full paths, and the collection routes live behind the
+// admin-JWT chain anyway.
+router.post('/tables/:id/open-tab',           protectPOS, requirePOSPermission('pos:sell'),   openTabAtTable);
+router.put('/tabs/:id',                       protectPOS, requirePOSPermission('pos:sell'),   updateTab);
 
 // Session management — called from POS terminal, uses POS token
 // ── Selectable pricelists (cashier pricelist selector + back-office callers,

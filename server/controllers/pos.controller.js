@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const POSSession = require('../models/POSSession');
 const Order = require('../models/Order');
+const POSTable = require('../models/POSTable');
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
@@ -25,6 +26,7 @@ const { loyaltyDelta } = require('../services/contact.helpers');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
 const { emitToTerminal } = require('../services/pos.realtime');
+const { venueBlocked } = require('../services/posVenue.service');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, resolveRevenueRates, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const {
   findMatchingPriceRules,
@@ -3233,62 +3235,52 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
 /**
  * POST /api/pos/orders/hold
  * Body: { items, customer, note, discountType, discountValue, pricelistId,
- *         shopId, terminalType, sessionId, appliedRewards }
+ *         shopId, terminalType, sessionId, appliedRewards, tableId, guests }
  *
  * Saves a cart snapshot as an Order with status 'hold'. No stock is deducted.
  * The held order can be recalled later to rehydrate the cart.
  */
-exports.holdPOSOrder = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  const staffId  = req.posUser._id;
 
-  const {
-    items = [],
-    customer = {},
-    note = '',
-    discountType,
-    discountValue = 0,
-    pricelistId,
-    shopId,
-    terminalType = 'retail',
-    sessionId,
-    appliedRewards = [],
-  } = req.body;
+/** Strict "24-hex-char string" check — looser validators accept numbers and
+ *  ObjectIds, which would turn a client typo into a CastError 500 downstream. */
+function isObjectIdString(v) {
+  return typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
+}
 
-  if (!items.length) {
-    return res.status(400).json({ success: false, message: 'No items to hold' });
-  }
-
-  const orderNumber = await generateOrderNumber();
-
-  const holdItems = items.map((item) => ({
+/**
+ * The Order.items lines a hold persists. A hold is not a sale: these stay 0 so
+ * a parked cart never books revenue — `getAllPOSOrders` has no status filter, so
+ * a hold that carried a total would show up in POS history and the session
+ * report as money taken.
+ */
+function buildHoldLineItems(items, tenantId) {
+  return items.map((item) => ({
     product:               item.productId,
     subproduct:            item.subProductId,
     size:                  item.sizeId || undefined,
     quantity:              item.quantity,
-    // A hold is not a sale. These stay 0 so a parked cart never books revenue —
-    // `getAllPOSOrders` has no status filter, so a hold that carried a total
-    // would show up in POS history and the session report as money taken.
     priceAtPurchase:       0,
     itemSubtotal:          0,
     discountAmount:        0,
     tenant:                tenantId,
   }));
+}
 
-  /**
-   * The cart lines themselves, kept whole.
-   *
-   * `Order.items` cannot carry a cart line: `orderItemSchema` is strict, so the
-   * display fields this used to write as `_name`/`_variant`/`_sku` were dropped
-   * before they reached Mongo and every recalled line came back called
-   * "Product" — and its money had to be zeroed for the reason above, which left
-   * the price and the cashier's negotiated discount with nowhere to live.
-   *
-   * `holdMetadata` is Mixed and exists for exactly this: cart state that is not
-   * an order. Mapped field by field rather than storing `req.body.items` raw,
-   * so a client cannot smuggle arbitrary keys into a persisted document.
-   */
-  const cartItems = items.map((item) => ({
+/**
+ * The cart lines themselves, kept whole.
+ *
+ * `Order.items` cannot carry a cart line: `orderItemSchema` is strict, so the
+ * display fields this used to write as `_name`/`_variant`/`_sku` were dropped
+ * before they reached Mongo and every recalled line came back called
+ * "Product" — and its money had to be zeroed for the reason above, which left
+ * the price and the cashier's negotiated discount with nowhere to live.
+ *
+ * `holdMetadata` is Mixed and exists for exactly this: cart state that is not
+ * an order. Mapped field by field rather than storing `req.body.items` raw,
+ * so a client cannot smuggle arbitrary keys into a persisted document.
+ */
+function buildHoldCartItems(items) {
+  return items.map((item) => ({
     subProductId:  item.subProductId,
     productId:     item.productId,
     sizeId:        item.sizeId || undefined,
@@ -3308,6 +3300,34 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
     comboRef:      item.comboRef,
     bxgyRef:       item.bxgyRef,
   }));
+}
+
+/**
+ * Document construction shared by every path that parks a hold: the manual
+ * /orders/hold endpoint and openTabAtTable (a venue tab IS a hold, bound to a
+ * POSTable). Keeping one builder means the snapshot rules — zeroed revenue
+ * lines, mapped cart items, session resolution — cannot drift between them.
+ */
+async function createHoldOrder({
+  tenantId,
+  staffId,
+  items,
+  customer,
+  note,
+  discountType,
+  discountValue,
+  pricelistId,
+  shopId, // eslint-disable-line no-unused-vars — accepted for call-site parity with the hold body
+  terminalType,
+  sessionId,
+  appliedRewards,
+  tableId,
+  guests,
+}) {
+  const orderNumber = await generateOrderNumber();
+
+  const holdItems = buildHoldLineItems(items, tenantId);
+  const cartItems = buildHoldCartItems(items);
 
   // Session lookup — optional, for scoping holds to a session
   let session = null;
@@ -3319,7 +3339,7 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
       .sort({ openedAt: -1 });
   }
 
-  const order = await Order.create({
+  return Order.create({
     orderNumber,
     tenant:        tenantId,
     source:        'pos',
@@ -3345,7 +3365,57 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
       terminalType,
       appliedRewards,
       cartItems,
+      // Table binding for venue tabs. listTables reads tableId/guests/openedAt
+      // from here (see posTable.controller.listTables) — createdAt alone can't
+      // distinguish "opened at 21:58" from "last edited at 22:40".
+      tableId: tableId || null,
+      guests:  guests || 0,
+      openedAt: new Date().toISOString(),
     },
+  });
+}
+
+exports.holdPOSOrder = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const staffId  = req.posUser._id;
+
+  const {
+    items = [],
+    customer = {},
+    note = '',
+    discountType,
+    discountValue = 0,
+    pricelistId,
+    shopId,
+    terminalType = 'retail',
+    sessionId,
+    appliedRewards = [],
+    tableId,
+    guests = 0,
+  } = req.body;
+
+  if (!items.length) {
+    return res.status(400).json({ success: false, message: 'No items to hold' });
+  }
+  if (tableId !== undefined && !isObjectIdString(tableId)) {
+    return res.status(400).json({ success: false, message: 'invalid tableId' });
+  }
+
+  const order = await createHoldOrder({
+    tenantId,
+    staffId,
+    items,
+    customer,
+    note,
+    discountType,
+    discountValue,
+    pricelistId,
+    shopId,
+    terminalType,
+    sessionId,
+    appliedRewards,
+    tableId,
+    guests,
   });
 
   res.status(201).json({
@@ -3355,13 +3425,124 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
         _id:           order._id,
         orderNumber:   order.orderNumber,
         status:        order.status,
-        itemCount:     holdItems.reduce((s, i) => s + i.quantity, 0),
+        itemCount:     (order.items || []).reduce((s, i) => s + i.quantity, 0),
         customer,
         note,
         createdAt:     order.createdAt,
       },
     },
   });
+});
+
+// ─── Open Tab at Table ────────────────────────────────────────────────────────
+/**
+ * POST /api/pos/tables/:id/open-tab  (body carries tableId)
+ * Body: { tableId, guests?, terminalType? }
+ *
+ * Seats a party: parks an empty hold as the table's tab and claims the table in
+ * the same breath. Items arrive later via updateTab as the party orders.
+ *
+ * The claim is deliberately conditional (`status: 'available'`) so two terminals
+ * reaching for one free table resolve to a single winner at Mongo, not in JS:
+ * the loser's just-created hold is recalled immediately, leaving no orphaned
+ * bill pretending to sit at somebody else's table.
+ */
+exports.openTabAtTable = asyncHandler(async (req, res) => {
+  if (venueBlocked(req, res)) return;
+
+  const tenantId = req.tenant?._id;
+  const { tableId, guests = 0, terminalType = 'retail' } = req.body;
+
+  if (!tableId) {
+    return res.status(400).json({ success: false, message: 'tableId is required' });
+  }
+  if (!isObjectIdString(tableId)) {
+    return res.status(400).json({ success: false, message: 'invalid tableId' });
+  }
+
+  const table = await POSTable.findOne({ _id: tableId, tenant: tenantId });
+  if (!table) {
+    return res.status(404).json({ success: false, message: 'Table not found' });
+  }
+  if (table.status === 'occupied' && table.currentTabId) {
+    return res.status(409).json({ success: false, message: 'table already has an open tab' });
+  }
+
+  const order = await createHoldOrder({
+    tenantId,
+    staffId:         req.posUser._id,
+    items:           [],
+    customer:        {},
+    note:            '',
+    discountType:    undefined,
+    discountValue:   0,
+    pricelistId:     undefined,
+    terminalType,
+    sessionId:       undefined,
+    appliedRewards:  [],
+    tableId,
+    guests,
+  });
+
+  const claimed = await POSTable.findOneAndUpdate(
+    { _id: tableId, tenant: tenantId, status: 'available' },
+    { $set: { status: 'occupied', currentTabId: order._id } },
+    { new: true }
+  );
+
+  if (!claimed) {
+    // Someone else claimed the table between our check and our claim. Recall
+    // the orphaned hold (same treatment as recallPOSOrder — findOneAndUpdate
+    // skips enum validation, which is how 'recalled'/'cancelled' persist).
+    await Order.findOneAndUpdate(
+      { _id: order._id, ...tenantScope(tenantId) },
+      { $set: { status: 'recalled', paymentStatus: 'cancelled' } }
+    );
+    return res.status(409).json({ success: false, message: 'table no longer available' });
+  }
+
+  res.status(201).json({ success: true, data: { table: claimed, tab: order } });
+});
+
+// ─── Update Tab ───────────────────────────────────────────────────────────────
+/**
+ * PUT /api/pos/tabs/:id
+ * Body: any of { items, customer, note, discountType, discountValue, appliedRewards }
+ *
+ * Edits a parked tab in place — new rounds, a name on the bill, a comped
+ * dessert. Identity (_id, createdAt, table binding) is never touched: the floor
+ * map points at the tab's _id, so an edit that changed identity would orphan
+ * every table pointing at the old one.
+ */
+exports.updateTab = asyncHandler(async (req, res) => {
+  if (venueBlocked(req, res)) return;
+
+  const tenantId = req.tenant?._id;
+
+  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), status: 'hold' });
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Held order not found' });
+  }
+
+  const { items, customer, note, discountType, discountValue, appliedRewards } = req.body;
+
+  if (!order.holdMetadata || typeof order.holdMetadata !== 'object') {
+    // Legacy holds parked before holdMetadata existed still deserve edits.
+    order.holdMetadata = {};
+  }
+  if (Array.isArray(items)) {
+    order.items = buildHoldLineItems(items, tenantId);
+    order.holdMetadata.cartItems = buildHoldCartItems(items);
+  }
+  if (customer !== undefined)      order.holdMetadata.customer = customer;
+  if (note !== undefined)          order.note = note;
+  if (discountType !== undefined)  order.holdMetadata.discountType = discountType;
+  if (discountValue !== undefined) order.holdMetadata.discountValue = discountValue;
+  if (appliedRewards !== undefined) order.holdMetadata.appliedRewards = appliedRewards;
+
+  await order.save();
+
+  res.json({ success: true, data: { tab: order } });
 });
 
 // ─── Get Held Orders ───────────────────────────────────────────────────────────
