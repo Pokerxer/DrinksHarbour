@@ -34,6 +34,17 @@ export interface PricelistPrintOptions {
   showAvailability: boolean;
   /** Optional trading name shown on the letterhead above the brand line. */
   businessName?: string;
+  /**
+   * Issuer line on the masthead — the source warehouse, or the tenant when
+   * lines are drawn from more than one warehouse. Resolved via
+   * `resolvePricelistOrigin`.
+   */
+  originName?: string;
+  /**
+   * Distinct warehouses behind the lines (from `resolvePricelistOrigin`).
+   * >1 renders a "{n} warehouses" provenance stamp on the letterhead.
+   */
+  originWarehouseCount?: number;
   /** Ad-hoc wholesale discount % applied after the chosen price source. */
   discountPercent?: number;
 }
@@ -167,22 +178,34 @@ function fmtMoney(v: number, currency: string): string {
   }
 }
 
+const MONTHS_ABBR = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/** Deterministic short date — bare YYYY-MM-DD parsed as a local calendar day. */
 function fmtDay(iso?: string): string {
   if (!iso) return '';
-  const d = new Date(iso);
+  let d: Date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [y, m, day] = iso.split('-').map(Number);
+    d = new Date(y, m - 1, day);
+  } else {
+    d = new Date(iso);
+  }
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  return `${String(d.getDate()).padStart(2, '0')} ${MONTHS_ABBR[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 function lineHtml(l: PricedLine, o: PricelistPrintOptions, currency: string) {
   const skuCell = o.showSku
     ? `<span class="sku">${escapeHtml(l.sku)}</span>`
     : '';
-  const availCell = o.showAvailability ? `<td class="num">${l.currentQuantity}</td>` : '';
+  const availCell = !o.showAvailability
+    ? ''
+    : l.currentQuantity > 0
+      ? `<td class="num">${l.currentQuantity}</td>`
+      : '<td class="num zero">\u2014</td>';
   const wasCell =
     l.was != null
       ? `<span class="was">${fmtMoney(l.was, currency)}</span>`
@@ -197,6 +220,11 @@ function lineHtml(l: PricedLine, o: PricelistPrintOptions, currency: string) {
 /**
  * Branded, print-ready customer price list. Pure — returns the full HTML
  * document string; `printCustomerPricelist` opens it in a print window.
+ *
+ * Letterhead hierarchy: the issuer (business name, else resolved warehouse/
+ * tenant origin) is the hero; DrinksHarbour sits in the footer as the platform
+ * mark. A red provenance stamp names the source warehouse — or counts mixed
+ * warehouses — only when it adds information beyond the issuer.
  */
 export function buildCustomerPricelistHtml(
   rows: PricableStockLine[],
@@ -222,7 +250,7 @@ export function buildCustomerPricelistHtml(
           return map;
         }, new Map<string, PricedLine[]>()),
         ([category, catLines]) => `
-      <h2>${escapeHtml(category)} <span class="count">${catLines.length}</span></h2>
+      <h2><span class="cat">${escapeHtml(category)}</span><span class="rule"></span><span class="count">${catLines.length}</span></h2>
       <table>
         <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th></tr></thead>
         <tbody>${catLines.map((l) => lineHtml(l, o, currency)).join('')}</tbody>
@@ -233,62 +261,135 @@ export function buildCustomerPricelistHtml(
         <tbody>${lines.map((l) => lineHtml(l, o, currency)).join('')}</tbody>
       </table>`;
 
-  const validity = o.validUntil
-    ? `Prices valid until ${escapeHtml(fmtDay(o.validUntil))}`
-    : 'Prices subject to stock availability';
-  const plNote = pricelist
-    ? `${escapeHtml(pricelist.name)} \u00b7 `
-    : '';
-  const pctNote =
-    Number(o.discountPercent) > 0
-      ? ` \u00b7 incl. ${o.discountPercent}% trade discount`
-      : '';
-  const businessLine = o.businessName?.trim()
-    ? `<p class="business">${escapeHtml(o.businessName.trim())}</p>`
+  // ── Letterhead identity ──
+  const issuerName =
+    o.businessName?.trim() || o.originName?.trim() || 'DrinksHarbour';
+  const whCount = o.originWarehouseCount ?? 0;
+  let stampText = '';
+  if (whCount > 1) stampText = `${whCount} warehouses`;
+  else if (whCount === 1 && o.originName?.trim() !== issuerName)
+    stampText = o.originName!.trim();
+  const stamp = stampText
+    ? `<span class="stamp">${escapeHtml(stampText)}</span>`
     : '';
 
-  return `<!doctype html><html><head><title>${escapeHtml(o.title)}</title><style>
-    * { box-sizing: border-box; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
-    body { margin: 32px; color: #111827; }
-    .masthead { display:flex; justify-content:space-between; align-items:flex-end; background:#b20202; color:#fff; padding:22px 26px; border-radius:12px; margin-bottom:22px; }
-    .brand { font-weight:800; letter-spacing:.1em; font-size:11px; opacity:.85; text-transform:uppercase; }
-    .business { margin:6px 0 0; font-size:14px; font-weight:600; opacity:.95; }
-    h1 { font-size:23px; margin:2px 0 0; font-weight:800; letter-spacing:-.01em; }
-    .meta { text-align:right; font-size:11px; opacity:.92; line-height:1.6; }
-    h2 { font-size:12px; text-transform:uppercase; letter-spacing:.09em; color:#b20202; margin:24px 0 8px; display:flex; align-items:center; gap:8px; }
-    h2 .count { background:#f3f4f6; color:#6b7280; border-radius:99px; padding:1px 8px; font-size:10px; }
+  // ── Meta strip ──
+  const categories = new Set(lines.map((l) => l.categoryName)).size;
+  const stat = (label: string, value: string) =>
+    `<div class="stat"><span class="meta-label">${label}</span><span class="meta-value">${value}</span></div>`;
+  const generated = fmtDay(new Date().toISOString()) || '—';
+  const validUntil = o.validUntil ? fmtDay(o.validUntil) : '';
+
+  // ── Footer notes ──
+  const notes: string[] = [];
+  if (pricelist?.name) notes.push(escapeHtml(pricelist.name));
+  if (Number(o.discountPercent) > 0)
+    notes.push(`incl. ${o.discountPercent}% trade discount`);
+  const footLeft =
+    notes.join(' \u00b7 ') || 'Prices subject to stock availability';
+
+  return `<!doctype html><html><head><title>${escapeHtml(issuerName)} \u2014 ${escapeHtml(o.title)}</title><style>
+    :root { --ink:#141210; --red:#b20202; --paper:#ffffff; --hairline:#e7e2da; --muted:#8a8378; }
+    * { box-sizing:border-box; }
+    body { margin:32px; color:var(--ink); font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif; font-size:12.5px; line-height:1.45; background:var(--paper); }
+    .issuer { font-family:Didot,'Bodoni MT','Playfair Display','Times New Roman',serif; }
+
+    /* Masthead — thick+thin double rule, issuer hero, provenance stamp */
+    .masthead { border-top:3px solid var(--red); padding-top:6px; }
+    .masthead::before { content:''; display:block; border-top:1px solid var(--red); margin-bottom:22px; }
+    .issuer-row { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:18px; }
+    .eyebrow { margin:0 0 6px; font-size:10px; font-weight:700; letter-spacing:.24em; text-transform:uppercase; color:var(--red); }
+    .issuer { margin:0; font-size:30px; line-height:1.05; font-weight:500; letter-spacing:.01em; color:var(--ink); }
+    .stamp { flex-shrink:0; border:1.5px solid var(--red); color:var(--red); border-radius:3px; padding:5px 12px; font-size:9px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; transform:rotate(-2deg); transform-origin:center; max-width:200px; text-align:center; }
+
+    /* Labelled stat strip */
+    .meta { display:flex; gap:0; border-top:1px solid var(--hairline); border-bottom:1px solid var(--hairline); padding:12px 0; margin-bottom:26px; }
+    .stat { flex:1; min-width:0; padding:0 18px; border-left:1px solid var(--hairline); }
+    .stat:first-child { padding-left:0; border-left:none; }
+    .meta-label { display:block; font-size:9px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:2px; }
+    .meta-value { display:block; font-size:13px; font-weight:600; font-variant-numeric:tabular-nums lining-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    /* Category sections */
+    h2 { display:flex; align-items:center; gap:12px; margin:30px 0 10px; break-after:avoid; page-break-after:avoid; }
+    h2:first-of-type { margin-top:4px; }
+    h2 .cat { font-size:11px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); }
+    h2 .rule { flex:1; border-top:1px solid var(--hairline); }
+    h2 .count { min-width:26px; text-align:center; background:var(--paper); border:1px solid var(--hairline); color:var(--muted); border-radius:99px; padding:1px 8px; font-size:10px; font-weight:600; font-variant-numeric:tabular-nums; }
+
+    /* Line-item table */
     table { width:100%; border-collapse:collapse; font-size:12.5px; }
     thead { display:table-header-group; }
-    th { text-align:left; text-transform:uppercase; letter-spacing:.06em; font-size:9px; color:#9ca3af; border-bottom:1.5px solid #e5e7eb; padding:7px 10px; }
-    td { border-bottom:1px solid #f3f4f6; padding:10px; vertical-align:middle; }
-    tbody tr:nth-child(even) { background:#fafafa; }
+    th { text-align:left; font-size:9px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); border-bottom:1.5px solid var(--ink); padding:7px 10px; }
+    td { border-bottom:1px solid var(--hairline); padding:11px 10px; vertical-align:middle; }
+    tbody tr:last-child td { border-bottom:1.5px solid var(--hairline); }
     tr { page-break-inside:avoid; break-inside:avoid; }
-    td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    td strong { font-weight:600; letter-spacing:-.005em; }
+    td.num, th.num { text-align:right; font-variant-numeric:tabular-nums lining-nums; white-space:nowrap; }
     .price { font-weight:800; font-size:13.5px; }
-    .was { margin-left:8px; color:#9ca3af; text-decoration:line-through; font-size:11px; font-weight:400; }
-    .sku { display:block; color:#9ca3af; font-size:10px; margin-top:2px; }
-    .muted { color:#6b7280; }
-    .foot { margin-top:28px; padding-top:12px; border-top:2px solid #b20202; display:flex; justify-content:space-between; gap:16px; font-size:10px; color:#6b7280; }
+    .was { margin-left:8px; color:var(--muted); text-decoration:line-through; font-size:11px; font-weight:400; }
+    .sku { display:block; color:var(--muted); font-family:'SF Mono',Menlo,Consolas,monospace; font-size:9.5px; margin-top:3px; letter-spacing:.02em; }
+    .muted { color:var(--muted); }
+    td.zero { color:var(--muted); }
+
+    /* Footer */
+    .foot { margin-top:34px; padding-top:12px; border-top:2px solid var(--ink); position:relative; display:flex; justify-content:space-between; gap:16px; font-size:10px; color:var(--muted); }
+    .foot::before { content:''; position:absolute; top:-2px; left:0; width:64px; border-top:2px solid var(--red); }
+    .foot .mark { font-weight:700; letter-spacing:.12em; color:var(--ink); }
+
     @page { size:A4; margin:14mm; }
-    @media print { body { margin:0; } .masthead { border-radius:0; } }
+    @media print { body { margin:0; } }
   </style></head><body>
-    <div class="masthead">
-      <div>
-        <div class="brand">DRINKSHARBOUR</div>
-        ${businessLine}
-        <h1>${escapeHtml(o.title)}</h1>
+    <header class="masthead">
+      <div class="issuer-row">
+        <div>
+          <p class="eyebrow">${escapeHtml(o.title)}</p>
+          <p class="issuer">${escapeHtml(issuerName)}</p>
+        </div>
+        ${stamp}
       </div>
       <div class="meta">
-        ${lines.length} item${lines.length === 1 ? '' : 's'}<br/>
-        Generated ${escapeHtml(fmtDay(new Date().toISOString()) || '')}
+        ${stat('Items', String(lines.length))}
+        ${stat('Categories', `${categories} categor${categories === 1 ? 'y' : 'ies'}`)}
+        ${stat('Generated', escapeHtml(generated))}
+        ${stat('Valid until', validUntil ? escapeHtml(validUntil) : '\u2014')}
       </div>
-    </div>
+    </header>
     ${body}
-    <div class="foot">
-      <span>${plNote}${escapeHtml(validity)}${pctNote}</span>
-      <span>DRINKSHARBOUR \u00b7 drinksharbour.com</span>
-    </div>
+    <footer class="foot">
+      <span>${footLeft}</span>
+      <span><span class="mark">DRINKSHARBOUR</span> \u00b7 drinksharbour.com</span>
+    </footer>
   </body></html>`;
+}
+
+// ── Letterhead origin (warehouse vs tenant) ───────────────────────────────────
+
+export interface PricelistOrigin {
+  /** Display name: the single source warehouse, else the tenant name. */
+  name?: string;
+  /** Distinct warehouses represented in the rows (0 when unknown). */
+  warehouseCount: number;
+}
+
+/**
+ * Who the pricelist is issued from: when every line sits in one warehouse the
+ * invoice carries that warehouse's name; once lines mix warehouses (or carry
+ * none, e.g. catalogue-resolved lines) it falls back to the tenant name.
+ */
+export function resolvePricelistOrigin(
+  rows: Array<{ warehouseName?: string | null }>,
+  tenantName?: string | null
+): PricelistOrigin {
+  const names = new Set<string>();
+  for (const r of rows) {
+    const n = typeof r.warehouseName === 'string' ? r.warehouseName.trim() : '';
+    if (n) names.add(n);
+  }
+  if (names.size === 1) {
+    return { name: names.values().next().value, warehouseCount: 1 };
+  }
+  const tenant = tenantName?.trim();
+  return { name: tenant || undefined, warehouseCount: names.size };
 }
 
 // ── Catalog-driven scope resolution ───────────────────────────────────────────

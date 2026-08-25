@@ -15,6 +15,7 @@ import {
   PiX,
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
+import { useTenant } from '@/context/TenantContext';
 import type { StockRow } from '@/services/warehouseStock.service';
 import { pricelistService } from '@/services/pricelist.service';
 import { subproductService } from '@/services/subproduct.service';
@@ -24,6 +25,7 @@ import {
   printCustomerPricelist,
   priceAndSortLines,
   resolveCatalogLines,
+  resolvePricelistOrigin,
   applyAvailabilityFromStock,
   scopeIsEmpty,
   type CatalogProduct,
@@ -106,6 +108,7 @@ export default function PricelistPrintModal({
 }: PricelistPrintModalProps) {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
+  const { tenant } = useTenant();
 
   const [pricelists, setPricelists] = useState<PricelistLite[]>([]);
   const [loadingLists, setLoadingLists] = useState(false);
@@ -261,6 +264,13 @@ export default function PricelistPrintModal({
       ? Math.min(90, discountPercent)
       : 0;
 
+  // Letterhead issuer: source warehouse, or the tenant when lines mix
+  // warehouses (or none carry one — catalogue-resolved lists).
+  const origin = useMemo(
+    () => resolvePricelistOrigin(effectiveRows, tenant?.name),
+    [effectiveRows, tenant?.name]
+  );
+
   const summary = useMemo(() => {
     if (!open || effectiveRows.length === 0)
       return { products: 0, lines: 0, changed: 0 };
@@ -281,6 +291,8 @@ export default function PricelistPrintModal({
       showAvailability,
       discountPercent: effectiveDiscount,
       businessName: businessName.trim() || undefined,
+      originName: origin.name,
+      originWarehouseCount: origin.warehouseCount,
     }),
     [
       title,
@@ -290,6 +302,7 @@ export default function PricelistPrintModal({
       showAvailability,
       effectiveDiscount,
       businessName,
+      origin.name,
     ]
   );
 
@@ -593,8 +606,16 @@ export default function PricelistPrintModal({
           </div>
 
           <p className="text-[11px] leading-relaxed text-gray-400">
-            Selected lines merge per product and size across warehouses. The PDF
-            opens in a print window — choose “Save as PDF” as the destination.
+            Letterhead:{' '}
+            <span className="font-semibold text-gray-600">
+              {origin.name ?? 'DrinksHarbour'}
+            </span>
+            {origin.warehouseCount > 1 && (
+              <> — products drawn from {origin.warehouseCount} warehouses</>
+            )}
+            . Selected lines merge per product and size across warehouses. The
+            PDF opens in a print window — choose “Save as PDF” as the
+            destination.
           </p>
         </div>
 

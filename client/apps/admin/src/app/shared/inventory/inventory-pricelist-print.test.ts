@@ -7,6 +7,7 @@ import {
   dedupeRowsForPricelist,
   effectivePriceForRow,
   resolveCatalogLines,
+  resolvePricelistOrigin,
   type CatalogProduct,
   type PricelistPrintOptions,
   type PricelistPrintRow,
@@ -215,19 +216,136 @@ describe('buildCustomerPricelistHtml', () => {
     expect(withoutAvail).not.toContain('>Available<');
   });
 
-  it('renders the business name on the letterhead when provided', () => {
+  it('renders zero availability as a quiet dash, stock as a plain count', () => {
+    const out = buildCustomerPricelistHtml(
+      [row({ currentQuantity: 0 }), row({ subProductId: 'sp2', sizeId: 's2', currentQuantity: 7 })],
+      null,
+      opts({ showAvailability: true })
+    );
+    expect(out).toContain('class="num zero"');
+    expect(out).not.toContain('<td class="num">0</td>');
+    expect(out).toContain('<td class="num">7</td>');
+  });
+
+  it('promotes the issuer to the letterhead hero, preferring the business name', () => {
     const html = buildCustomerPricelistHtml(
       [row()],
       null,
-      opts({ businessName: 'Cork & Barrel Wines <Abuja>' })
+      opts({ businessName: 'Cork & Barrel Wines <Abuja>', originName: 'Main Cellar' })
     );
-    expect(html).toContain('class="business"');
+    expect(html).toContain('class="issuer"');
     expect(html).toContain('Cork &amp; Barrel Wines &lt;Abuja&gt;');
   });
 
   it('notes the trade discount in the footer when set', () => {
     const html = buildCustomerPricelistHtml([row()], null, opts({ discountPercent: 10 }));
     expect(html).toContain('incl. 10% trade discount');
+  });
+
+  it('renders the resolved origin on the masthead and escapes it', () => {
+    const html = buildCustomerPricelistHtml(
+      [row()],
+      null,
+      opts({ businessName: 'Acme', originName: '<b>Main Cellar</b> & Co', originWarehouseCount: 1 })
+    );
+    expect(html).toContain('class="stamp"');
+    expect(html).toContain('&lt;b&gt;Main Cellar&lt;/b&gt; &amp; Co');
+  });
+
+  it('omits the provenance stamp when no distinct origin resolved', () => {
+    const html = buildCustomerPricelistHtml([row()], null, opts());
+    expect(html).not.toContain('class="stamp"');
+  });
+
+  it('falls back to the resolved origin as the hero issuer', () => {
+    const html = buildCustomerPricelistHtml(
+      [row()],
+      null,
+      opts({ originName: 'Main Cellar' })
+    );
+    expect(html).toContain('class="issuer"');
+    expect(html).toContain('>Main Cellar</p>');
+    // Issuer already names the warehouse — no duplicate stamp
+    expect(html).not.toContain('class="stamp"');
+  });
+
+  it('stamps warehouse count when lines span multiple warehouses', () => {
+    const counted = buildCustomerPricelistHtml(
+      [row()],
+      null,
+      opts({
+        businessName: 'Acme Wines',
+        originName: 'Acme Wines',
+        originWarehouseCount: 3,
+      })
+    );
+    expect(counted).toContain('3 warehouses');
+  });
+
+  it('summarises the document in a labelled meta strip', () => {
+    const html = buildCustomerPricelistHtml(
+      [row(), row({ subProductId: 'sp9', sizeId: 's9', categoryName: 'Beer' })],
+      null,
+      opts({ validUntil: '2026-09-30' })
+    );
+    expect(html).toContain('class="meta-label"');
+    expect(html).toContain('>Items<');
+    expect(html).toContain('>Categories<');
+    expect(html).toContain('>Valid until<');
+    expect(html).toContain('30 Sep 2026');
+    expect(html).toContain('2 categories');
+  });
+});
+
+describe('resolvePricelistOrigin', () => {
+  it('returns the warehouse name when every line shares one warehouse', () => {
+    const rows = [
+      { warehouseName: 'Main Cellar' },
+      { warehouseName: 'Main Cellar' },
+    ];
+    expect(resolvePricelistOrigin(rows, 'Acme Wines')).toEqual({
+      name: 'Main Cellar',
+      warehouseCount: 1,
+    });
+  });
+
+  it('falls back to the tenant name when lines span multiple warehouses', () => {
+    const rows = [
+      { warehouseName: 'Main Cellar' },
+      { warehouseName: 'Wuse Annex' },
+      { warehouseName: 'Main Cellar' },
+    ];
+    expect(resolvePricelistOrigin(rows, 'Acme Wines')).toEqual({
+      name: 'Acme Wines',
+      warehouseCount: 2,
+    });
+  });
+
+  it('uses the tenant name for catalogue lines that carry no warehouse', () => {
+    expect(resolvePricelistOrigin([{}, {}], 'Acme Wines')).toEqual({
+      name: 'Acme Wines',
+      warehouseCount: 0,
+    });
+  });
+
+  it('returns no name when neither warehouse nor tenant is known', () => {
+    expect(resolvePricelistOrigin([{ warehouseName: '' }], undefined)).toEqual({
+      name: undefined,
+      warehouseCount: 0,
+    });
+  });
+
+  it('ignores blank or whitespace-only warehouse labels', () => {
+    const rows = [{ warehouseName: '  ' }, { warehouseName: 'Main Cellar' }];
+    expect(resolvePricelistOrigin(rows, 'Acme')).toEqual({
+      name: 'Main Cellar',
+      warehouseCount: 1,
+    });
+  });
+
+  it('trims surrounding whitespace from names', () => {
+    expect(resolvePricelistOrigin([{ warehouseName: ' Wuse ' }]).name).toBe('Wuse');
+    expect(resolvePricelistOrigin([], '  Acme  ').name).toBe('Acme');
   });
 });
 
