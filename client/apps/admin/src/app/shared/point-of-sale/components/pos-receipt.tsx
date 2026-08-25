@@ -13,6 +13,7 @@ import {
   POSCartItem,
   POSNextOrderCouponConfig,
 } from '@/app/shared/point-of-sale/types';
+import { printReceiptElement } from './pos-receipt-print';
 import type {
   PaymentLine,
   AppliedCode,
@@ -105,28 +106,10 @@ export default function ReceiptScreen({
   function handlePrint() {
     const el = printRef.current;
     if (!el) return;
-    const win = window.open(
-      '',
-      '_blank',
-      'width=400,height=750,scrollbars=yes'
-    );
-    if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head>
-      <title>${order.receiptNumber}</title>
-      <style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Courier New',Courier,monospace;font-size:12px;
-             background:#fff;color:#111;max-width:384px;margin:0 auto;padding:8px 12px}
-        @page{margin:0}
-        @media print{body{width:100%;max-width:100%;padding:4px 6px;font-size:11px}}
-      </style>
-    </head><body>${el.innerHTML}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-    }, 400);
+    void printReceiptElement(el, {
+      title: order.receiptNumber,
+      copies: settings.receiptCopies ?? 1,
+    });
   }
 
   // Shared row: label left, value right — all inline styles

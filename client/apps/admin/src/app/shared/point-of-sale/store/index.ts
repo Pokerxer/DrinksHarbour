@@ -1126,6 +1126,7 @@ export const usePOSSettings = () => {
       'mobile_money',
     ],
     autoPrintReceipt: s.autoPrintReceipt ?? false,
+    receiptCopies: s.receiptCopies ?? 1,
     basicReceipt: s.basicReceipt ?? false,
     showTaxOnReceipt: s.showTaxOnReceipt ?? false,
     taxRate: s.taxRate ?? 7.5,
