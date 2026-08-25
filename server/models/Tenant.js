@@ -269,7 +269,8 @@ const tenantSchema = new Schema(
       trim: true,
       enum: [
         'Wine Merchant', 'Spirit Importer', 'Beverage Brand', 'Liquor Store',
-        'Bar / Lounge', 'Restaurant', 'Hotel', 'Distributor', 'Other',
+        'Bar / Lounge', 'Nightclub / Club', 'Restaurant', 'Hotel',
+        'Distributor', 'Other',
       ],
     },
     cacNumber: { type: String, trim: true, uppercase: true },

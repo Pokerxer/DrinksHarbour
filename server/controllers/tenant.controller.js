@@ -9,6 +9,7 @@ const User = require('../models/User');
 const cloudinaryService = require('../services/cloudinary.service');
 const emailService = require('../services/email.service');
 const { logPrivilegedAction } = require('../utils/auditLog');
+const { isVenueBusinessType } = require('../services/posVenue.service');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -441,6 +442,14 @@ exports.updateAdminTenant = asyncHandler(async (req, res) => {
     updateData.approvedAt = new Date();
     updateData.approvedBy = req.user?._id;
     if (!before.onboardedAt) updateData.onboardedAt = new Date();
+    // Venues trade from tables from day one; resellers opt in manually.
+    if (
+      isVenueBusinessType(updateData.businessType || before.businessType) &&
+      updateData['posSettings.isBarRestaurant'] === undefined &&
+      before.posSettings?.isBarRestaurant !== true
+    ) {
+      updateData['posSettings.isBarRestaurant'] = true;
+    }
   }
 
   // Dot paths, so untouched keys inside address/purchaseSettings survive
