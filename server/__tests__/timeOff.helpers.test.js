@@ -472,6 +472,67 @@ test('a populated employee doc counts as the same person as its id', () => {
   assert.strictEqual(verdict.ok, true);
 });
 
+// ── The claim race ───────────────────────────────────────────────────────────
+//
+// An OPEN swap is claimed by whoever accepts it first, and two people tapping
+// "Take this shift" within the same second both pass every check on a stale
+// read. The controller settles the winner with a conditional update; this rule
+// decides what the LOSER is told, by reading the row as it now stands.
+//
+// `null` means "not a lost race" — the caller falls back to the ordinary
+// bad-transition refusal, because the row moved for a reason that is not
+// somebody else winning it.
+
+const { swapTakenByOther } = require('../services/timeOff.helpers');
+
+test('an open swap claimed by somebody else is named as such', () => {
+  // B won the race while C was still looking at the button. "A pending request
+  // cannot become accepted" is technically true and entirely useless — C would
+  // retry forever.
+  const refusal = swapTakenByOther(
+    { status: 'accepted', targetEmployee: OID_B },
+    OID_C
+  );
+  assert.strictEqual(refusal.code, 'already_taken');
+  assert.match(refusal.message, /somebody else/i);
+});
+
+test('a populated target doc counts as the person who took it', () => {
+  const refusal = swapTakenByOther(
+    { status: 'accepted', targetEmployee: { _id: OID_B, firstName: 'Bisi' } },
+    OID_C
+  );
+  assert.strictEqual(refusal.code, 'already_taken');
+});
+
+test('the winner re-submitting the same claim is not a lost race', () => {
+  // A flaky network resubmit from the person who won should not be told they
+  // lost to somebody else. (The pre-read transition guard catches it first;
+  // this is the classifier agreeing.)
+  const refusal = swapTakenByOther(
+    { status: 'accepted', targetEmployee: OID_B },
+    OID_B
+  );
+  assert.strictEqual(refusal, null);
+});
+
+test('a row that moved for any other reason is not "taken"', () => {
+  // Withdrawn, rejected, approved, or still pending (a spurious miss) — each
+  // gets the ordinary transition refusal instead of a claim about a rival.
+  for (const status of ['pending', 'cancelled', 'rejected', 'approved']) {
+    assert.strictEqual(
+      swapTakenByOther({ status, targetEmployee: OID_B }, OID_C),
+      null,
+      status
+    );
+  }
+});
+
+test('a row missing a target cannot have been taken by one', () => {
+  const refusal = swapTakenByOther({ status: 'accepted', targetEmployee: null }, OID_C);
+  assert.strictEqual(refusal, null);
+});
+
 test('cancellation is reported ahead of the shift merely having started', () => {
   // Both are true of an old cancelled shift. "It was cancelled" is the more
   // useful thing to tell somebody staring at the swap board.

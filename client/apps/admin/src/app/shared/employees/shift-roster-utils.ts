@@ -350,6 +350,9 @@ const CONFLICT_LABELS: Record<string, string> = {
   inactive: 'Not an active employee',
   no_employee: 'Employee not found',
   not_draft: 'Published — cancel it instead of deleting',
+  // Swap claims are settled by whoever's write lands first; this is what the
+  // loser of that race is told.
+  already_taken: 'Somebody else has already taken that shift',
   // Fill-only: a seat's position was already staffed, or points at a position
   // the pattern doesn't have (edited out from under an in-flight fill). Both
   // are judgements about the SEAT, not the person, so they read as such —

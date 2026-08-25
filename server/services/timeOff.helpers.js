@@ -449,6 +449,34 @@ function checkSwapShiftStillValid(swap, shift, opts = {}) {
   return { ok: true };
 }
 
+/**
+ * Did somebody else win the claim on this swap while we were validating?
+ *
+ * An OPEN swap is claimed by whoever accepts it first, and two people tapping
+ * "Take this shift" in the same second both pass every check on a stale read.
+ * The controller settles the winner with a conditional update; this decides
+ * what the LOSER is told, from the row as it now stands.
+ *
+ * Returns null when the row moved for any OTHER reason — withdrawn, rejected,
+ * approved, or a spurious miss while still pending. Those get the ordinary
+ * bad-transition refusal, because naming a rival that does not exist would be
+ * its own confusion. Only an `accepted` row held by somebody else is a race
+ * somebody lost.
+ *
+ * @param {object|null} current - the row re-read after the update missed
+ * @param {string} me           - the id that tried to answer
+ * @returns {{code: string, message: string}|null}
+ */
+function swapTakenByOther(current, me) {
+  if (!current || current.status !== 'accepted') return null;
+  const winner = idOf(current.targetEmployee);
+  if (!winner || winner === idOf(me)) return null;
+  return {
+    code: 'already_taken',
+    message: 'Somebody else has already taken that shift',
+  };
+}
+
 module.exports = {
   TIME_OFF_TYPES,
   TIME_OFF_STATUSES,
@@ -470,4 +498,5 @@ module.exports = {
   buildTimeOffPayload,
   buildSwapPayload,
   checkSwapShiftStillValid,
+  swapTakenByOther,
 };

@@ -155,8 +155,10 @@ export interface SwapInput {
 /**
  * A 409. `code` distinguishes the refusals that need different words:
  * `overlapping_request`, `already_requested`, `bad_transition`, `no_target`,
- * `shift_cancelled`, and the assignment guard's own `overlap` / `time_off` /
- * `role_mismatch` when approving a swap re-checks eligibility.
+ * `shift_cancelled`, `already_taken` (somebody else claimed an open swap
+ * first — claims are settled by whoever's write lands first), and the
+ * assignment guard's own `overlap` / `time_off` / `role_mismatch` when
+ * approving a swap re-checks eligibility.
  */
 export class TimeOffConflictError extends Error {
   code: string;

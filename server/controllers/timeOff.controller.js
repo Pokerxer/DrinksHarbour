@@ -48,9 +48,11 @@ const {
   resolveTimeOffAction,
   resolveSwapAction,
   resolveApprover,
+  swapStatusesThatCanBecome,
   buildTimeOffPayload,
   buildSwapPayload,
   checkSwapShiftStillValid,
+  swapTakenByOther,
 } = require('../services/timeOff.helpers');
 const { assignmentContext } = require('./shift.controller');
 
@@ -383,11 +385,23 @@ const listSwaps = asyncHandler(async (req, res) => {
  * done from the roster, where the full picture is already on screen.
  */
 const myShifts = asyncHandler(async (req, res) => {
+  // A shift that is already up for swap (pending or accepted) cannot be
+  // offered again — the server refuses with `already_requested`. Listing it
+  // would be offering a guaranteed refusal, so it is left out here. The swap
+  // board is where an in-flight offer is watched, not this drawer.
+  const upForSwap = await ShiftSwapRequest.find({
+    tenant: req.tenant?._id,
+    status: { $in: ['pending', 'accepted'] },
+  })
+    .select('shift')
+    .lean();
+
   const items = await Shift.find({
     tenant: req.tenant?._id,
     employee: selfId(req),
     status: 'published',
     start: { $gt: new Date() },
+    _id: { $nin: upForSwap.map((s) => s.shift) },
   })
     .select('_id start end status role department')
     .populate([
@@ -529,18 +543,43 @@ const respondToSwap = asyncHandler(async (req, res) => {
       timeOff: ctx.timeOff,
     });
     if (!verdict.ok) return conflict(res, verdict);
-
-    // Claiming an open swap. For a named one this is a no-op rewrite of the
-    // same id, which keeps the two paths from needing different code.
-    row.targetEmployee = me;
   }
 
-  row.status = next;
-  row.respondedAt = new Date();
-  await row.save();
+  // ── THE CLAIM IS ATOMIC ──────────────────────────────────────────────────
+  //
+  // Everything above judged a row we merely read. Between that read and a
+  // plain `row.save()`, a second person accepting the same OPEN swap would
+  // pass the very same checks and overwrite `targetEmployee` — both told
+  // "Accepted", one silently erased — and an accept racing the requester's
+  // withdraw could land on a state neither of them chose.
+  //
+  // The conditional update settles it: exactly one pending row can become
+  // accepted, whoever's write touches the database first. The loser is re-read
+  // so they are told WHY, not handed a bare transition error.
+  const claimed = await ShiftSwapRequest.findOneAndUpdate(
+    { _id: row._id, tenant: tenantId, status: 'pending' },
+    {
+      $set: {
+        status: next,
+        // Claiming an open swap writes the accepter here; for a named swap it
+        // rewrites the same id, which keeps both paths on one line.
+        ...(next === 'accepted' ? { targetEmployee: me } : {}),
+        respondedAt: new Date(),
+      },
+    },
+    { new: true }
+  ).populate(SWAP_POPULATE);
 
-  const item = await ShiftSwapRequest.findById(row._id).populate(SWAP_POPULATE).lean();
-  res.json({ success: true, data: { item } });
+  if (!claimed) {
+    const current = await ShiftSwapRequest.findById(row._id)
+      .populate(SWAP_POPULATE)
+      .lean();
+    const taken = next === 'accepted' ? swapTakenByOther(current, me) : null;
+    if (taken) return conflict(res, taken);
+    return badTransition(res, current ? current.status : row.status, next);
+  }
+
+  res.json({ success: true, data: { item: claimed } });
 });
 
 /**
@@ -603,17 +642,38 @@ const decideSwap = asyncHandler(async (req, res) => {
   });
   if (!verdict.ok) return conflict(res, verdict);
 
+  // ── TWO WRITES, ONE OUTCOME ─────────────────────────────────────────────
+  //
+  // Approval moves `Shift.employee` AND flips the row to `approved`, with no
+  // transaction under it. The order matters: the shift is moved first, then
+  // the row is claimed with a conditional update that only fires while the
+  // swap is still `accepted`.
+  //
+  // If that claim misses, the requester withdrew the swap in the window since
+  // our checks — so the move is UNDONE before refusing. Without the revert, a
+  // withdrawn swap would still have handed its shift to somebody, which is
+  // exactly the "approved a hole" outcome the transition table exists to stop.
+  const previousHolder = shift.employee;
   shift.employee = targetId;
   await shift.save();
 
-  row.status = 'approved';
-  row.decidedBy = req.user?._id ?? null;
-  row.decidedAt = new Date();
-  if (req.body?.note !== undefined) row.decisionNote = String(req.body.note).trim();
-  await row.save();
+  const decision = { status: 'approved', decidedBy: req.user?._id ?? null, decidedAt: new Date() };
+  if (req.body?.note !== undefined) decision.decisionNote = String(req.body.note).trim();
 
-  const item = await ShiftSwapRequest.findById(row._id).populate(SWAP_POPULATE).lean();
-  res.json({ success: true, data: { item, warnings: verdict.warnings || [] } });
+  const decided = await ShiftSwapRequest.findOneAndUpdate(
+    { _id: row._id, tenant: tenantId, status: 'accepted' },
+    { $set: decision },
+    { new: true }
+  ).populate(SWAP_POPULATE);
+
+  if (!decided) {
+    shift.employee = previousHolder;
+    await shift.save();
+    const current = await ShiftSwapRequest.findById(row._id).lean();
+    return badTransition(res, current ? current.status : row.status, 'approved');
+  }
+
+  res.json({ success: true, data: { item: decided, warnings: verdict.warnings || [] } });
 });
 
 /** PATCH /api/shift-swaps/:id/cancel — the requester withdraws, or an admin does. */
@@ -631,13 +691,28 @@ const cancelSwap = asyncHandler(async (req, res) => {
     return badTransition(res, row.status, 'cancelled');
   }
 
-  row.status = 'cancelled';
-  row.decidedBy = req.user?._id ?? null;
-  row.decidedAt = new Date();
-  await row.save();
+  // Same discipline as the claim above: withdraw races accept for real (the
+  // requester giving up while somebody is mid-tap), so the write is
+  // conditional on the row still being live. A stale-read save here could
+  // erase a claim that was already confirmed to its taker.
+  const withdrawn = await ShiftSwapRequest.findOneAndUpdate(
+    {
+      _id: row._id,
+      tenant: tenantId,
+      status: { $in: swapStatusesThatCanBecome('cancelled') },
+    },
+    {
+      $set: {
+        status: 'cancelled',
+        decidedBy: req.user?._id ?? null,
+        decidedAt: new Date(),
+      },
+    },
+    { new: true }
+  ).populate(SWAP_POPULATE);
 
-  const item = await ShiftSwapRequest.findById(row._id).populate(SWAP_POPULATE).lean();
-  res.json({ success: true, data: { item } });
+  if (!withdrawn) return badTransition(res, row.status, 'cancelled');
+  res.json({ success: true, data: { item: withdrawn } });
 });
 
 module.exports = {

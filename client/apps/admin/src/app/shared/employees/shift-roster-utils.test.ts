@@ -314,6 +314,7 @@ describe('conflicts', () => {
     expect(conflictLabel('overlap')).toMatch(/already scheduled/i);
     expect(conflictLabel('role_mismatch')).toMatch(/not marked/i);
     expect(conflictLabel('time_off')).toMatch(/time off/i);
+    expect(conflictLabel('already_taken')).toMatch(/somebody else/i);
     expect(conflictLabel('something_new')).toBe('Could not be scheduled');
   });
 });
