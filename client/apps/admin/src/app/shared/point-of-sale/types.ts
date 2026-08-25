@@ -489,6 +489,10 @@ export interface POSOrderRequest {
   priceOverrides?: Record<string, number>;
   /** Gratuity added on top of the total. Server clamps and gates on tipsEnabled. */
   tipAmount?: number;
+  /** Venue settle: the POSTable whose tab this sale pays out. */
+  tableId?: string;
+  /** Venue settle: the held order this sale consumes. Both ids together trigger the server's concurrent-settle guard. */
+  heldOrderId?: string;
 }
 
 export interface POSOrderResponse {
@@ -513,6 +517,8 @@ export interface POSOrderResponse {
   change: number;
   items: POSReceiptItem[];
   note?: string;
+  /** Venue settle: name of the table this sale settled, stamped on the receipt. */
+  tableName?: string;
   placedAt: string;
   posStaff: string;
 }

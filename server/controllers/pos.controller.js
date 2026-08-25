@@ -2271,6 +2271,48 @@ async function resolveLinkedSalesOrderPrices(salesOrderId, tenantId) {
   return prices;
 }
 
+/**
+ * Validate a tab-settlement claim against the table it names.
+ *
+ * Pure — the caller loads the table doc and owns the HTTP mapping. A claim is
+ * valid when the table has no open tab (it may have been cleared out-of-band)
+ * or when it is still held open by exactly the order being paid for. Anything
+ * else means another device got there first, and refusing HERE — before any
+ * stock deduction or wallet charge — is what keeps money from moving twice.
+ *
+ * @returns {{ ok: true, tableName: string } |
+ *           { ok: false, status: 404|409, message: string }}
+ */
+function assertSettleClaim(table, heldOrderId) {
+  if (!table) return { ok: false, status: 404, message: 'table not found' };
+  if (table.currentTabId && String(table.currentTabId) !== String(heldOrderId)) {
+    return { ok: false, status: 409, message: 'this table was settled on another device' };
+  }
+  return { ok: true, tableName: table.name };
+}
+exports.assertSettleClaim = assertSettleClaim;
+
+/**
+ * Free a table and recall its tab once the sale has actually persisted.
+ *
+ * Both writes are guarded so they are idempotent: the free only lands while
+ * this exact tab still owns the table row, and the recall only touches an
+ * order still parked as a hold. Returns whether the free landed — false means
+ * the row had already moved on between guard and settlement.
+ */
+async function settleTableAfterSale({ tableId, heldOrderId, tenantId }) {
+  const freed = await POSTable.findOneAndUpdate(
+    { _id: tableId, tenant: tenantId, currentTabId: heldOrderId },
+    { $set: { status: 'available', currentTabId: null } }
+  );
+  await Order.updateOne(
+    { _id: heldOrderId, ...tenantScope(tenantId), status: 'hold' },
+    { $set: { status: 'recalled', paymentStatus: 'cancelled' } }
+  );
+  return !!freed;
+}
+exports.settleTableAfterSale = settleTableAfterSale;
+
 // ─── Create POS Order (with atomic stock deduction) ──────────────────────────
 /**
  * POST /api/pos/orders
@@ -2297,6 +2339,8 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     cartOriginalSubtotal,// client-computed pre-pricelist subtotal for receipt savings display
     linkedSalesOrderId,  // a quotation/order loaded into the cart — an ID, never a price
     tipAmount: rawTipAmount = 0,           // gratuity added on top of the total
+    tableId = null,      // venue table whose tab this sale settles
+    heldOrderId = null,  // the held order this settle consumes
   } = req.body;
 
   if (!items?.length) return res.status(400).json({ success: false, message: 'No items in order' });
@@ -2313,6 +2357,21 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   const hasOverrides = Object.keys(priceOverrides).length > 0;
   if (hasOverrides && !req.posPermissions.includes('pos:price_override')) {
     return res.status(403).json({ success: false, message: 'Price override permission required' });
+  }
+
+  // ── Tab settlement claim ───────────────────────────────────────────────────
+  // Sending BOTH ids declares "this sale settles that table's tab". It is
+  // validated before any stock or wallet moves: a table already settled on
+  // another device must refuse here, not after money has been taken. The
+  // table's name rides along for the receipt stamp.
+  let settledTableName;
+  if (tableId && heldOrderId) {
+    const table = await POSTable.findOne({ _id: tableId, tenant: tenantId }).lean();
+    const claim = assertSettleClaim(table, heldOrderId);
+    if (!claim.ok) {
+      return res.status(claim.status).json({ success: false, message: claim.message });
+    }
+    settledTableName = claim.tableName;
   }
 
   // A saved customer may have an assigned pricelist; it takes top precedence in
@@ -2741,6 +2800,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       },
       ...(paymentMethod === 'cash'  && { amount: amountTendered, change: Math.max(0, amountTendered - payableTotal) }),
       ...(paymentMethod === 'split' && { splitPayments }),
+      ...(settledTableName ? { tableName: settledTableName } : {}),
     },
     status:                  'confirmed',
     ageVerifiedAtOrderTime:  true,
@@ -2785,6 +2845,17 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     { reference: receiptNumber, tenant: tenantId, relatedOrder: { $exists: false } },
     { $set: { relatedOrder: order._id } }
   ).catch(err => console.error('[Inventory] back-link movements failed:', err.message));
+
+  // ── Table settlement ───────────────────────────────────────────────────────
+  // Freeing the table is part of the same success path as the sale. The
+  // currentTabId match inside settleTableAfterSale makes this idempotent:
+  // settling twice, or settling a tab that moved, frees nothing. Best-effort —
+  // the sale has persisted and money has moved, so a hiccup here is logged,
+  // never fatal.
+  if (tableId && heldOrderId && settledTableName !== undefined) {
+    await settleTableAfterSale({ tableId, heldOrderId, tenantId })
+      .catch(err => console.error('[POS] free table failed:', err.message));
+  }
 
   // Update session stats atomically
   if (session) {
@@ -2876,6 +2947,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
           : paymentMethod === 'cash' ? Math.max(0, amountTendered - payableTotal) : 0,
         items:         receiptItems,
         note:          note || '',
+        tableName:     settledTableName || undefined,
         placedAt:      order.placedAt,
         posStaff:      staffId,
         appliedPricelist: order.appliedPricelist,

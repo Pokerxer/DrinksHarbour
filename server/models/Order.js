@@ -274,6 +274,9 @@ const orderSchema = new Schema(
       channel: String,
       change: Number,
       splitPayments: [{ method: String, amount: Number }],
+      // Venue receipt stamp: the POSTable this sale settled, when the till
+      // paid out a held tab (createPOSOrder with tableId + heldOrderId).
+      tableName: String,
       // POS customer snapshot (walk-in or named customer). `customerId` links
       // back to the POSCustomer record when a named customer was attached at the
       // till — it's what the Contacts directory matches an in-store contact's
