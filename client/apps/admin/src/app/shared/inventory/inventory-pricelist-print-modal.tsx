@@ -185,8 +185,18 @@ export default function PricelistPrintModal({
     pricelistService
       .list(token)
       .then((res: unknown) => {
-        if (!cancelled)
-          setPricelists(((res as { data?: PricelistLite[] }).data) ?? []);
+        if (cancelled) return;
+        // API shape: { data: { pricelists: [...], total } } — normalise
+        // defensively so a non-array can never reach state (crashed the modal).
+        const payload = (res as { data?: unknown }).data;
+        const list = Array.isArray(payload)
+          ? (payload as PricelistLite[])
+          : Array.isArray(
+                (payload as { pricelists?: PricelistLite[] })?.pricelists
+              )
+            ? (payload as { pricelists: PricelistLite[] }).pricelists
+            : [];
+        setPricelists(list);
       })
       .catch(() => {
         if (!cancelled) toast.error('Failed to load pricelists');

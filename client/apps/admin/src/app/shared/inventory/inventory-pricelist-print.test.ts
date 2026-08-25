@@ -326,6 +326,37 @@ describe('resolveCatalogLines', () => {
     expect(lines[0].sizeName).toBe('35cl');
   });
 
+  it('reads facets and display name from the nested product object', () => {
+    const nested: CatalogProduct[] = [
+      {
+        _id: 'sp9',
+        sku: 'WYN-1',
+        // Real API shape: flat fields absent, everything under `product`
+        product: {
+          name: 'Monte do Barao Vinho Branco',
+          category: { _id: 'c1', name: 'White Wine' },
+          subCategory: null,
+          brand: null,
+        },
+        baseSellingPrice: 9500,
+        costPrice: 6000,
+      },
+    ];
+    const f = catalogFacets(nested);
+    expect(f.categories.get('White Wine')).toBe(1);
+
+    const lines = resolveCatalogLines(nested, {
+      categories: ['White Wine'],
+      subCategories: [],
+      brands: [],
+      productIds: [],
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0].productName).toBe('Monte do Barao Vinho Branco');
+    expect(lines[0].categoryName).toBe('White Wine');
+    expect(lines[0].sellingPrice).toBe(9500);
+  });
+
   it('unions selections across facets', () => {
     const lines = resolveCatalogLines(catalog, {
       categories: ['Wine'],

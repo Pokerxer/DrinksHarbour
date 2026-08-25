@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import { PiMagnifyingGlass, PiSpinner, PiX } from 'react-icons/pi';
 import {
   catalogFacets,
+  catalogFacetLabel,
+  catalogProductName,
   type CatalogProduct,
   type ScopeSelection,
 } from './inventory-pricelist-print';
@@ -52,15 +54,13 @@ export default function ScopePicker({
   const productList = useMemo(() => {
     if (tab !== 'products') return [];
     const q = query.trim().toLowerCase();
-    const label = (v: unknown) =>
-      v == null ? '' : typeof v === 'string' ? v : String((v as { name?: string }).name ?? '');
     return catalog
       .filter(
         (p) =>
           !q ||
-          (p.productName || p.name || '').toLowerCase().includes(q) ||
+          catalogProductName(p).toLowerCase().includes(q) ||
           (p.sku ?? '').toLowerCase().includes(q) ||
-          label(p.brand).toLowerCase().includes(q)
+          catalogFacetLabel(p, 'brand').toLowerCase().includes(q)
       )
       .slice(0, 200);
   }, [tab, catalog, query]);
@@ -189,12 +189,7 @@ export default function ScopePicker({
             productList.map((p) => {
               const id = String(p._id);
               const checked = selection.productIds.includes(id);
-              const cat =
-                p.category == null
-                  ? ''
-                  : typeof p.category === 'string'
-                    ? p.category
-                    : String((p.category as { name?: string }).name ?? '');
+              const cat = catalogFacetLabel(p, 'category');
               return (
                 <label
                   key={id}
@@ -207,7 +202,7 @@ export default function ScopePicker({
                     className="h-3.5 w-3.5 accent-[#b20202]"
                   />
                   <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-700">
-                    {p.productName || p.name}
+                    {catalogProductName(p)}
                   </span>
                   {cat && (
                     <span className="hidden shrink-0 text-[10px] text-gray-400 sm:inline">

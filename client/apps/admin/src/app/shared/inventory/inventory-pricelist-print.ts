@@ -302,6 +302,13 @@ export interface CatalogProduct {
   brand?: unknown;
   category?: unknown;
   subCategory?: unknown;
+  /** List endpoint nests the central Product: facets + display name live here. */
+  product?: {
+    name?: string;
+    brand?: unknown;
+    category?: unknown;
+    subCategory?: unknown;
+  };
   baseSellingPrice?: number;
   sellingPrice?: number;
   costPrice?: number;
@@ -346,6 +353,31 @@ function facetLabel(v: unknown): string {
   return o.name ?? '';
 }
 
+/**
+ * Facet value for a catalog product, checking the flat field first and the
+ * nested central Product second (the list endpoint populates
+ * `product.category` / `product.subCategory` / `product.brand`).
+ */
+export function catalogFacetLabel(
+  p: CatalogProduct,
+  field: 'category' | 'subCategory' | 'brand'
+): string {
+  return (
+    facetLabel(p[field]) ||
+    facetLabel((p.product as Record<string, unknown> | undefined)?.[field])
+  );
+}
+
+/** Display name: flat field, then the nested central Product name. */
+export function catalogProductName(p: CatalogProduct): string {
+  return (
+    p.productName ||
+    p.name ||
+    p.product?.name ||
+    `Product ${String(p._id).slice(-6)}`
+  );
+}
+
 export function catalogFacets(catalog: CatalogProduct[]): {
   categories: Map<string, number>;
   subCategories: Map<string, number>;
@@ -357,9 +389,9 @@ export function catalogFacets(catalog: CatalogProduct[]): {
   const subCategories = new Map<string, number>();
   const brands = new Map<string, number>();
   for (const p of catalog) {
-    count(categories, facetLabel(p.category) || 'Uncategorized');
-    count(subCategories, facetLabel(p.subCategory) || 'Uncategorized');
-    count(brands, facetLabel(p.brand) || 'No brand');
+    count(categories, catalogFacetLabel(p, 'category') || 'Uncategorized');
+    count(subCategories, catalogFacetLabel(p, 'subCategory') || 'Uncategorized');
+    count(brands, catalogFacetLabel(p, 'brand') || 'No brand');
   }
   return { categories, subCategories, brands };
 }
@@ -381,9 +413,9 @@ export function resolveCatalogLines(
 
   const out: PricelistPrintRow[] = [];
   for (const p of catalog) {
-    const cat = facetLabel(p.category) || 'Uncategorized';
-    const sub = facetLabel(p.subCategory) || 'Uncategorized';
-    const brand = facetLabel(p.brand) || 'No brand';
+    const cat = catalogFacetLabel(p, 'category') || 'Uncategorized';
+    const sub = catalogFacetLabel(p, 'subCategory') || 'Uncategorized';
+    const brand = catalogFacetLabel(p, 'brand') || 'No brand';
     const matches =
       selProd.has(String(p._id)) ||
       selCat.has(cat) ||
@@ -391,8 +423,7 @@ export function resolveCatalogLines(
       selBrand.has(brand);
     if (!matches) continue;
 
-    const name =
-      p.productName || p.name || `Product ${String(p._id).slice(-6)}`;
+    const name = catalogProductName(p);
     const sku = p.sku ?? '';
     const productCost = Number(p.costPrice) || 0;
 
