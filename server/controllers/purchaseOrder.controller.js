@@ -21,6 +21,7 @@ const {
 const VendorBill = require("../models/VendorBill");
 const { syncVendorPricelistFromPO } = require("../services/vendorPricelistSync.service");
 const { captureDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
+const { postDocumentEntry } = require("../services/accounting.posting");
 const {
   NotFoundError,
   ValidationError,
@@ -913,6 +914,7 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
 
   if (status === "confirmed" && purchaseOrder.approvalStatus === "approved") {
     captureDocumentTax({ sourceType: "purchase_order", doc: purchaseOrder, postedBy: req.user?._id });
+    postDocumentEntry({ sourceType: "purchase_order", doc: purchaseOrder, postedBy: req.user?._id });
   }
 
   res.status(200).json({
@@ -1748,6 +1750,7 @@ const approvePO = asyncHandler(async (req, res) => {
   await po.save();
 
   captureDocumentTax({ sourceType: 'purchase_order', doc: po, postedBy: userId });
+  postDocumentEntry({ sourceType: 'purchase_order', doc: po, postedBy: userId });
 
   res.status(200).json({
     success: true,

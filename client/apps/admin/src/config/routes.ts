@@ -234,6 +234,22 @@ export const routes = {
     jobFeed: '/job-board/feed',
   },
   analytics: '/analytics',
+  // Accounting module (Pro-tier ERM — double-entry ledger + AR/AP)
+  accounting: {
+    index: '/accounting',
+    journalEntries: '/accounting/journal-entries',
+    reports: '/accounting/reports',
+    chartOfAccounts: '/accounting/chart-of-accounts',
+    taxes: '/accounting/taxes',
+    invoices: '/accounting/invoices',
+    bills: '/accounting/bills',
+    creditNotes: '/accounting/credit-notes',
+    payments: '/accounting/payments',
+    batchPayments: '/accounting/batch-payments',
+    products: '/accounting/products',
+    customers: '/accounting/customers',
+    vendors: '/accounting/vendors',
+  },
   // Taxes (Your Store accounting — rates, ledger, summary tabs)
   taxes: '/accounting/taxes',
   financial: {

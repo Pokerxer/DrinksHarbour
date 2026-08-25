@@ -8,6 +8,7 @@ const {
   ForbiddenError,
 } = require("../utils/errors");
 const { captureDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
+const { postDocumentEntry } = require("../services/accounting.posting");
 
 /**
  * Helper to get tenant ID
@@ -681,6 +682,7 @@ const validateBill = asyncHandler(async (req, res) => {
 
   if (wasDraft) {
     captureDocumentTax({ sourceType: 'vendor_bill', doc: vendorBill, postedBy: req.user?._id });
+    postDocumentEntry({ sourceType: 'vendor_bill', doc: vendorBill, postedBy: req.user?._id });
   }
 
   res.status(200).json({

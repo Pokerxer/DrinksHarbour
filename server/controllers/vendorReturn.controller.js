@@ -5,6 +5,7 @@ const SubProduct = require("../models/SubProduct");
 const VendorBill = require("../models/VendorBill");
 const asyncHandler = require('../utils/asyncHandler');
 const { captureDocumentTax, reverseDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
+const { postDocumentEntry } = require("../services/accounting.posting");
 const { round2 } = require("../services/tax.helpers");
 
 async function generateReturnNumber(tenantId) {
@@ -446,6 +447,7 @@ exports.updateReturnStatus = asyncHandler(async (req, res) => {
 
   if (status === "refunded") {
     captureDocumentTax({ sourceType: 'vendor_return', doc: updated, postedBy: req.user._id });
+    postDocumentEntry({ sourceType: 'vendor_return', doc: updated, postedBy: req.user._id });
   } else if (status === "cancelled") {
     reverseDocumentTax({ sourceType: 'vendor_return', doc: updated, userId: req.user._id });
   }
