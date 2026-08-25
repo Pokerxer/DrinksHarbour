@@ -57,6 +57,13 @@ export interface Pricelist {
   rules?: PricelistRule[];
 }
 
+/** Name of a possibly-unpopulated product reference (populated object vs id string). */
+export function refName(
+  ref: { name?: string } | string | undefined
+): string | undefined {
+  return typeof ref === 'string' ? undefined : ref?.name;
+}
+
 /** Loose shape of the rule form while editing — all values strings for controlled inputs. */
 export interface RuleFormValues {
   applyTo: 'product' | 'all';

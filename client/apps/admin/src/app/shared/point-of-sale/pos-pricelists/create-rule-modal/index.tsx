@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { PiX, PiSpinner, PiWarning, PiInfo } from 'react-icons/pi';
 import { BRAND, RULE_TYPE_META } from '@/app/shared/point-of-sale/pricelist-constants';
-import type { PricelistRule, RuleFormValues, SubProductLite } from '../types';
+import { refName, type PricelistRule, type RuleFormValues, type SubProductLite } from '../types';
 import ProductPicker from '../product-picker';
 import RuleTypePicker from './rule-type-picker';
 import TypeFields from './type-fields';
@@ -84,7 +84,7 @@ function ruleToFormValues(rule: PricelistRule): RuleFormValues {
     bundleTargetSubProduct: asId(tgt),
     bundleTargetName:
       (tgt && typeof tgt === 'object'
-        ? tgt.product?.name || tgt.sku || ''
+        ? refName(tgt.product) || tgt.sku || ''
         : '') || '',
     thresholdAmount: rule.thresholdAmount ? String(rule.thresholdAmount) : '',
     minQuantity: rule.minQuantity ? String(rule.minQuantity) : '',
@@ -372,7 +372,7 @@ export default function CreateRuleModal({
                   f('appliedOn', '');
                 } else {
                   f('subProduct', p._id);
-                  f('appliedOn', p.product?.name || p.sku || '');
+                  f('appliedOn', refName(p.product) || p.sku || '');
                 }
               }}
             />
@@ -412,7 +412,7 @@ export default function CreateRuleModal({
                       f('bundleTargetName', '');
                     } else {
                       f('bundleTargetSubProduct', p._id);
-                      f('bundleTargetName', p.product?.name || p.sku || '');
+                      f('bundleTargetName', refName(p.product) || p.sku || '');
                     }
                   }}
                 />

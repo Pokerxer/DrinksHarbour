@@ -9,7 +9,7 @@ import {
   PiSpinner,
 } from 'react-icons/pi';
 import { RULE_TYPE_META } from '@/app/shared/point-of-sale/pricelist-constants';
-import type { PricelistRule } from './types';
+import { refName, type PricelistRule } from './types';
 import { fmt, fmtDate, ruleStatus, ruleDescription } from './rule-format';
 
 const META = RULE_TYPE_META as unknown as Record<
@@ -59,7 +59,7 @@ export default function RuleCard({
     (!rule.appliedOn || rule.appliedOn === 'All products');
   const productName = isAllProducts
     ? null
-    : rule.appliedOn || sp?.product?.name || sp?.sku;
+    : rule.appliedOn || refName(sp?.product) || sp?.sku;
 
   const desc = ruleDescription(rule);
 

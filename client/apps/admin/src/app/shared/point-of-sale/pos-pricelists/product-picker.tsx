@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PiMagnifyingGlass, PiX } from 'react-icons/pi';
-import type { SubProductLite } from './types';
+import { refName, type SubProductLite } from './types';
 import { fmt } from './rule-format';
 
 interface Props {
@@ -42,14 +42,14 @@ export default function ProductPicker({
   const shown = open
     ? search
     : sel
-      ? sel.product?.name || sel.sku || ''
+      ? refName(sel.product) || sel.sku || ''
       : displayValue;
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return products
       .filter((p) =>
-        `${p.product?.name || ''} ${p.sku || ''}`.toLowerCase().includes(q)
+        `${refName(p.product) || ''} ${p.sku || ''}`.toLowerCase().includes(q)
       )
       .slice(0, 50);
   }, [products, search]);
@@ -79,6 +79,7 @@ export default function ProductPicker({
           type="text"
           role="combobox"
           aria-expanded={open}
+          aria-controls="product-picker-listbox"
           aria-label="Search products"
           value={shown}
           onFocus={() => {
@@ -124,6 +125,7 @@ export default function ProductPicker({
 
       {open && (
         <div
+          id="product-picker-listbox"
           role="listbox"
           aria-label="Products"
           className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl"
@@ -145,7 +147,7 @@ export default function ProductPicker({
           )}
           {filtered.map((p, i) => {
             const idx = allowAll ? i + 1 : i;
-            const name = p.product?.name || p.sku || p._id;
+            const name = refName(p.product) || p.sku || p._id;
             const isSel = value === p._id;
             return (
               <button

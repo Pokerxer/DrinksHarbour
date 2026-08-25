@@ -1,5 +1,5 @@
 // Pure formatting/description helpers for POS pricelist rules — unit tested.
-import type { PricelistRule } from './types';
+import { refName, type PricelistRule } from './types';
 
 export const fmt = (n: unknown): string =>
   `₦${Number(n || 0).toLocaleString('en-NG', {
@@ -47,7 +47,7 @@ export function ruleStatus(
 function withBundleTarget(desc: string, rule: PricelistRule): string {
   const t = rule.bundleTargetSubProduct;
   if (!t || typeof t === 'string') return desc;
-  const name = t.product?.name || t.sku || 'another product';
+  const name = refName(t.product) || t.sku || 'another product';
   return desc.endsWith('off') ? `${desc} ${name}` : `${desc} off ${name}`;
 }
 

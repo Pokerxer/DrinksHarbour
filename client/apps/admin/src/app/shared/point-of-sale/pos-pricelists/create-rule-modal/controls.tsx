@@ -30,7 +30,8 @@ export function RuleField({ label, error, hint, children }: FieldProps) {
   );
 }
 
-interface RuleInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+interface RuleInputProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix' | 'suffix'> {
   hasError?: boolean;
   prefix?: React.ReactNode;
   suffix?: React.ReactNode;
