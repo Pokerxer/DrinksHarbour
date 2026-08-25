@@ -26,6 +26,7 @@ import {
   PiPrinter,
   PiSquare,
   PiStack,
+  PiTag,
   PiUploadSimple,
   PiWarningCircle,
   PiX,
@@ -36,6 +37,7 @@ import {
   type StockRow,
 } from '@/services/warehouseStock.service';
 import InventoryStockImport from './inventory-stock-import';
+import PricelistPrintModal from './inventory-pricelist-print-modal';
 import {
   PAGE_SIZE,
   fmtDate,
@@ -559,6 +561,9 @@ export default function InventoryStockBrowser({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [showImport, setShowImport] = useState(false);
+  const [showPricelist, setShowPricelist] = useState(false);
+  // Rows captured when the pricelist modal is opened (selection or filtered view).
+  const [pricelistRows, setPricelistRows] = useState<StockRow[]>([]);
 
   useEffect(() => {
     setSavedSearches(loadSavedFor(meta.savedKey));
@@ -1147,9 +1152,25 @@ export default function InventoryStockBrowser({
               disabled={filtered.length === 0}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-colors hover:bg-gray-50 hover:text-[#b20202] disabled:opacity-40"
               title={`Print ${meta.docTitle.toLowerCase()}`}
+              aria-label={`Print ${meta.docTitle.toLowerCase()}`}
             >
               <PiPrinter className="h-4 w-4" />
             </button>
+            {mode === 'stock' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPricelistRows(filtered);
+                  setShowPricelist(true);
+                }}
+                disabled={filtered.length === 0}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-colors hover:bg-gray-50 hover:text-[#b20202] disabled:opacity-40"
+                title="Print customer pricelist for the current view"
+                aria-label="Print customer pricelist for the current view"
+              >
+                <PiTag className="h-4 w-4" />
+              </button>
+            )}
             {mode === 'stock' && (
               <button
                 type="button"
@@ -1400,6 +1421,18 @@ export default function InventoryStockBrowser({
               >
                 Clear
               </button>
+              {mode === 'stock' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPricelistRows(checkedRows);
+                    setShowPricelist(true);
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#b20202]/30 bg-[#b20202]/5 px-3 py-1.5 text-xs font-bold text-[#b20202] transition-colors hover:bg-[#b20202]/10"
+                >
+                  <PiTag className="h-3.5 w-3.5" /> Print pricelist
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() =>
@@ -1650,6 +1683,13 @@ export default function InventoryStockBrowser({
           load();
         }}
       />
+      {mode === 'stock' && (
+        <PricelistPrintModal
+          open={showPricelist}
+          rows={pricelistRows}
+          onClose={() => setShowPricelist(false)}
+        />
+      )}
     </div>
   );
 }
