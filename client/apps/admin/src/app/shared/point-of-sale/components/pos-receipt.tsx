@@ -632,6 +632,23 @@ export default function ReceiptScreen({
                 </>
               );
             })()}
+
+            {/* Tip and rounding sit between the discount breakdown and TOTAL:
+                `order.total` already includes both, so showing them here is
+                what makes the arithmetic on the slip add up for the customer. */}
+            {(order.tipAmount ?? 0) > 0 && (
+              <Row label="Tip" value={`+${formatCurrency(order.tipAmount ?? 0)}`} />
+            )}
+            {(order.roundingAmount ?? 0) !== 0 && (
+              <Row
+                label={`Rounding`}
+                value={`${(order.roundingAmount ?? 0) > 0 ? '+' : '-'}${formatCurrency(
+                  Math.abs(order.roundingAmount ?? 0)
+                )}`}
+                vStyle={R.muted}
+              />
+            )}
+
             <div style={R.rule} />
             <div
               style={{
@@ -695,14 +712,22 @@ export default function ReceiptScreen({
 
             <div style={R.rule} />
 
-            {/* Tax line (estimated — prices assumed VAT-inclusive) */}
+            {/* Tax line (estimated — prices assumed VAT-inclusive).
+                Computed on the goods only: a tip is a gratuity, not a taxable
+                supply, and the rounding delta is not consideration for goods
+                either. Using order.total here would overstate the VAT by a
+                fraction of whatever the customer chose to leave. */}
             {settings.showTaxOnReceipt && settings.taxRate > 0 && (
               <>
                 <div style={R.divider} />
                 <Row
                   label={`VAT ${settings.taxRate}%`}
                   value={formatCurrency(
-                    (order.total * settings.taxRate) / (100 + settings.taxRate)
+                    ((order.total -
+                      (order.tipAmount ?? 0) -
+                      (order.roundingAmount ?? 0)) *
+                      settings.taxRate) /
+                      (100 + settings.taxRate)
                   )}
                   vStyle={R.muted}
                 />

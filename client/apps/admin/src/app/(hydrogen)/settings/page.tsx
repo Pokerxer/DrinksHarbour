@@ -61,6 +61,7 @@ type PosState = {
   isBarRestaurant: boolean;
   autoValidateOrder: boolean;
   cashRounding: boolean;
+  roundingIncrement: number;
   maxDifferenceEnabled: boolean;
   tipsEnabled: boolean;
   loginWithEmployees: boolean;
@@ -141,6 +142,7 @@ const D_POS: PosState = {
   isBarRestaurant: false,
   autoValidateOrder: false,
   cashRounding: false,
+  roundingIncrement: 1,
   maxDifferenceEnabled: false,
   tipsEnabled: false,
   loginWithEmployees: false,
@@ -1053,6 +1055,7 @@ export default function SettingsPage() {
           isBarRestaurant: s.isBarRestaurant ?? false,
           autoValidateOrder: s.autoValidateOrder ?? false,
           cashRounding: s.cashRounding ?? false,
+          roundingIncrement: s.roundingIncrement ?? 1,
           maxDifferenceEnabled: s.maxDifferenceEnabled ?? false,
           tipsEnabled: s.tipsEnabled ?? false,
           loginWithEmployees: s.loginWithEmployees ?? false,
@@ -2055,10 +2058,34 @@ export default function SettingsPage() {
                     />
                     <CbRow
                       label="Cash rounding"
-                      sub="Round totals to the nearest denomination"
+                      sub="Round cash totals to the nearest denomination"
                       checked={pos.cashRounding}
                       onChange={(v) => setField('cashRounding', v)}
                     />
+                    {pos.cashRounding && (
+                      <div className="flex items-center justify-between gap-4 py-2 pl-8 pr-1">
+                        <div>
+                          <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                            Round to nearest
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            Applied to cash payments only
+                          </p>
+                        </div>
+                        <select
+                          value={pos.roundingIncrement}
+                          onChange={(e) =>
+                            setField('roundingIncrement', Number(e.target.value))
+                          }
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 outline-none focus:border-[#b20202] dark:bg-gray-800 dark:text-gray-100"
+                        >
+                          <option value={1}>₦1</option>
+                          <option value={5}>₦5</option>
+                          <option value={10}>₦10</option>
+                          <option value={50}>₦50</option>
+                        </select>
+                      </div>
+                    )}
                     <CbRow
                       label="Maximum difference"
                       sub="Allow closing a session with a small cash discrepancy"

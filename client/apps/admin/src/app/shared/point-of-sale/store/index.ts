@@ -1103,6 +1103,7 @@ export const usePOSSettings = () => {
     autoValidateOrder: s.autoValidateOrder ?? false,
     tipsEnabled: s.tipsEnabled ?? false,
     cashRounding: s.cashRounding ?? false,
+    roundingIncrement: s.roundingIncrement ?? 1,
     lineDiscounts: s.lineDiscounts ?? true,
     globalDiscounts: s.globalDiscounts ?? false,
     maxDiscountPct: s.maxDiscountPct ?? 100,

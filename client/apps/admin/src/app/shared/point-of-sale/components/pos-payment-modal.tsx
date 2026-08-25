@@ -266,11 +266,35 @@ export default function POSPaymentModal() {
   const [loading, setLoading] = useState(false);
   const [orderResult, setOrderResult] = useState<POSOrderResponse | null>(null);
   const [nextOrderCode, setNextOrderCode] = useState<string | null>(null);
+  const [tipAmount, setTipAmount] = useState(0);
 
   // ── Discount computation ──────────────────────────────────────────────────────
   // `total` from the cart already includes rewards (subtotal - cartDiscount - rewardsDiscount).
   // `effectiveTotal` IS the cart total — no further deduction needed here.
   const effectiveTotal = total; // cart store owns all discount arithmetic
+
+  // ── Tip + cash rounding ───────────────────────────────────────────────────────
+  // Both are previewed here so the cashier sees the figure they will ask for;
+  // the server recomputes both and its answer is the one that is charged.
+  // Rounding applies to a lone cash tender only — mirroring the server, so the
+  // amount shown here and the amount taken never disagree.
+  const cashRoundingEnabled = settings.cashRounding ?? false;
+  const roundingIncrement = settings.roundingIncrement ?? 1;
+  const isCashOnly = lines.length === 1 && lines[0].method === 'cash';
+  const payableBeforeRounding = effectiveTotal + tipAmount;
+  const roundingPreview =
+    cashRoundingEnabled && isCashOnly && roundingIncrement > 1
+      ? parseFloat(
+          (
+            Math.round(payableBeforeRounding / roundingIncrement) *
+              roundingIncrement -
+            payableBeforeRounding
+          ).toFixed(2)
+        )
+      : 0;
+  const payableTotal = parseFloat(
+    (payableBeforeRounding + roundingPreview).toFixed(2)
+  );
 
   // ── Customer / Loyalty helpers ───────────────────────────────────────────────
   const hasCustomer = !!customer.customerId;
@@ -299,7 +323,7 @@ export default function POSPaymentModal() {
   // total, and selecting it replaces all lines with one fixed wallet line.
   const walletBalance = customer.walletBalance ?? 0;
   const walletEligible =
-    hasCustomer && effectiveTotal > 0 && walletBalance >= effectiveTotal;
+    hasCustomer && payableTotal > 0 && walletBalance >= payableTotal;
 
   // Build AppliedDiscount list from appliedRewards for the breakdown UI + receipt
   const autoDiscounts: AppliedDiscount[] = appliedRewards.map((r) => ({
@@ -333,8 +357,8 @@ export default function POSPaymentModal() {
     : 0;
 
   const paidTotal = lines.reduce((s, l) => s + l.amount, 0);
-  const remaining = effectiveTotal - paidTotal;
-  const change = Math.max(0, paidTotal - effectiveTotal);
+  const remaining = payableTotal - paidTotal;
+  const change = Math.max(0, paidTotal - payableTotal);
   const canValidate = remaining <= 0.01 && lines.length > 0;
   const activeLine = lines.find((l) => l.id === activeId) ?? null;
 
@@ -370,7 +394,7 @@ export default function POSPaymentModal() {
   function selectWallet() {
     const id = `ln-wallet-${Date.now()}`;
     setLines([
-      { id, method: 'wallet', label: 'Wallet', amount: effectiveTotal },
+      { id, method: 'wallet', label: 'Wallet', amount: payableTotal },
     ]);
     setActiveId(null);
     setInputStr('0');
@@ -505,8 +529,8 @@ export default function POSPaymentModal() {
     if (lines.some((l) => l.method === 'wallet')) {
       const ok =
         lines.length === 1 &&
-        Math.abs(lines[0].amount - effectiveTotal) < 0.01 &&
-        (customer.walletBalance ?? 0) >= effectiveTotal;
+        Math.abs(lines[0].amount - payableTotal) < 0.01 &&
+        (customer.walletBalance ?? 0) >= payableTotal;
       if (!ok) {
         toast.error(
           'Wallet must cover the full order total as the only payment method.'
@@ -600,6 +624,10 @@ export default function POSPaymentModal() {
         discountType: effDiscType,
         discountValue: effDiscValue,
         cartOriginalSubtotal,
+        // Gratuity only. The rounding delta is deliberately NOT sent: the
+        // server derives it from the tenant's own increment, so the till can
+        // never nudge the amount charged.
+        tipAmount,
         note: note || undefined,
         terminalType: terminal ?? 'retail',
         pricelistId: selectedPricelist?._id ?? undefined,
@@ -752,6 +780,7 @@ export default function POSPaymentModal() {
     setInputStr('0');
     setFreshInput(false);
     setNextOrderCode(null);
+    setTipAmount(0);
   }
 
   // ── Receipt ───────────────────────────────────────────────────────────────────
@@ -928,23 +957,48 @@ export default function POSPaymentModal() {
             })()}
         </div>
 
-        {/* Tips — shown when tipsEnabled */}
+        {/* Tips — a tip raises the amount owed; it is not a tender, so it sets
+            an amount rather than adding a payment line. */}
         {settings.tipsEnabled && (
           <div className="border-t border-gray-200 px-3 py-2">
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
               Tip
+              {tipAmount > 0 && (
+                <span className="ml-1 font-bold text-[#b20202]">
+                  {formatCurrency(tipAmount)}
+                </span>
+              )}
             </p>
             <div className="flex gap-1.5">
-              {[5, 10, 15, 20].map((pct) => (
-                <button
-                  key={pct}
-                  type="button"
-                  onClick={() => addMethod('tip', `Tip ${pct}%`)}
-                  className="flex-1 rounded-lg border border-gray-200 bg-white py-1.5 text-xs font-semibold text-gray-700 hover:border-[#b20202] hover:text-[#b20202]"
-                >
-                  {pct}%
-                </button>
-              ))}
+              {[5, 10, 15, 20].map((pct) => {
+                const amt = parseFloat(
+                  ((effectiveTotal * pct) / 100).toFixed(2)
+                );
+                const active = amt > 0 && Math.abs(tipAmount - amt) < 0.01;
+                return (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setTipAmount(active ? 0 : amt)}
+                    className={cn(
+                      'flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-colors',
+                      active
+                        ? 'border-[#b20202] bg-red-50 text-[#b20202]'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-[#b20202] hover:text-[#b20202]'
+                    )}
+                  >
+                    {pct}%
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setTipAmount(0)}
+                disabled={tipAmount === 0}
+                className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-50 disabled:opacity-30"
+              >
+                Clear
+              </button>
             </div>
           </div>
         )}
@@ -1132,7 +1186,7 @@ export default function POSPaymentModal() {
         {/* Order total */}
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-8">
           <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
-            Order Total
+            {tipAmount > 0 || roundingPreview !== 0 ? 'Amount Due' : 'Order Total'}
           </p>
           <p
             className={cn(
@@ -1140,8 +1194,35 @@ export default function POSPaymentModal() {
               canValidate ? 'text-green-600' : 'text-gray-900'
             )}
           >
-            {formatCurrency(effectiveTotal)}
+            {formatCurrency(payableTotal)}
           </p>
+          {/* Show the goods total whenever a tip or rounding has moved the
+              figure, so the cashier can see what the customer is paying for. */}
+          {(tipAmount > 0 || roundingPreview !== 0) && (
+            <div className="mt-1 w-full space-y-1">
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-1.5 text-xs text-gray-600">
+                <span>Goods</span>
+                <span className="font-bold text-gray-800">
+                  {formatCurrency(effectiveTotal)}
+                </span>
+              </div>
+              {tipAmount > 0 && (
+                <div className="flex items-center justify-between rounded-xl bg-red-50 px-3 py-1.5 text-xs text-[#b20202]">
+                  <span className="font-semibold">Tip</span>
+                  <span className="font-bold">+{formatCurrency(tipAmount)}</span>
+                </div>
+              )}
+              {roundingPreview !== 0 && (
+                <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-1.5 text-xs text-gray-600">
+                  <span>Rounding (nearest ₦{roundingIncrement})</span>
+                  <span className="font-bold text-gray-800">
+                    {roundingPreview > 0 ? '+' : '−'}
+                    {formatCurrency(Math.abs(roundingPreview))}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           {/* Discount breakdown — cart discount + all applied rewards */}
           {(discountAmount > 0 || rewardsDiscountTotal > 0) && (
             <div className="mt-2 w-full space-y-1">

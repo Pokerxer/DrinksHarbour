@@ -1257,6 +1257,10 @@ exports.updatePOSSettings = asyncHandler(async (req, res) => {
     allowed['posSettings.autoValidateOrder'] = posSettings.autoValidateOrder;
   if (typeof posSettings.cashRounding === 'boolean')
     allowed['posSettings.cashRounding'] = posSettings.cashRounding;
+  // Constrained to the schema's enum here as well as in the model, so a bad
+  // value is rejected at the edge rather than surfacing as a cast error.
+  if ([1, 5, 10, 50].includes(Number(posSettings.roundingIncrement)))
+    allowed['posSettings.roundingIncrement'] = Number(posSettings.roundingIncrement);
   if (typeof posSettings.maxDifferenceEnabled === 'boolean')
     allowed['posSettings.maxDifferenceEnabled'] = posSettings.maxDifferenceEnabled;
   if (typeof posSettings.tipsEnabled === 'boolean')

@@ -245,6 +245,7 @@ export interface POSSettings {
   isBarRestaurant?: boolean;
   autoValidateOrder?: boolean;
   cashRounding?: boolean;
+  roundingIncrement?: number;
   maxDifferenceEnabled?: boolean;
   tipsEnabled?: boolean;
   loginWithEmployees?: boolean;
@@ -486,6 +487,8 @@ export interface POSOrderRequest {
   note?: string;
   sessionId?: string;
   priceOverrides?: Record<string, number>;
+  /** Gratuity added on top of the total. Server clamps and gates on tipsEnabled. */
+  tipAmount?: number;
 }
 
 export interface POSOrderResponse {
@@ -500,6 +503,10 @@ export interface POSOrderResponse {
   /** Cart-level spend-threshold discount from cart_threshold pricelist rules. */
   thresholdDiscount?: number;
   discountTotal?: number;
+  /** Gratuity — already included in `total`, shown separately on the receipt. */
+  tipAmount?: number;
+  /** Cash-rounding delta — already applied to `total`. Positive = rounded up. */
+  roundingAmount?: number;
   paymentMethod: string;
   splitPayments?: { method: string; amount: number }[];
   amountTendered?: number;
