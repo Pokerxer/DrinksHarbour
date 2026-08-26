@@ -19,6 +19,15 @@ function terminalRoom(tenantId, terminalType) {
   return `pos:${tenantId}:${t}`;
 }
 
+/**
+ * Room name for a tenant's kitchen display screens.
+ * One room per tenant — every KDS device sees every ticket for the business,
+ * unlike terminals which split by retail/wholesale.
+ */
+function kdsRoom(tenantId) {
+  return `kds:${tenantId}`;
+}
+
 function getIo(app) {
   return app?.get?.('io') || null;
 }
@@ -34,4 +43,15 @@ function emitToTerminal(req, tenantId, terminalType, event, payload) {
   return true;
 }
 
-module.exports = { terminalRoom, emitToTerminal };
+/** Broadcast an event to every kitchen display of one tenant. */
+function emitToKds(req, tenantId, event, payload) {
+  const io = getIo(req?.app);
+  if (!io || !tenantId) return false;
+  io.to(kdsRoom(tenantId)).emit(event, {
+    ...payload,
+    at: new Date().toISOString(),
+  });
+  return true;
+}
+
+module.exports = { terminalRoom, kdsRoom, emitToTerminal, emitToKds };

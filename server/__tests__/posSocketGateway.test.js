@@ -122,6 +122,32 @@ test('pos:join derives the room from the pinned tenant, not the payload', () => 
   );
 });
 
+test('kds:join derives the room from the pinned tenant, not the payload', () => {
+  // The kitchen display joins `kds:<tenantId>`; the TENANT comes from its
+  // verified token, exactly like pos:join. A tampered tenantId in the join
+  // message changes nothing — a screen must not subscribe to another
+  // tenant's ticket feed by asking.
+  const h = makeHarness();
+  const socket = makeSocket({ token: signPOS('64f000000000000000000001') });
+  socket.data.tenantId = '64f000000000000000000001';
+  const registered = {};
+  socket.on = (event, fn) => {
+    registered[event] = fn;
+  };
+
+  h.connectionHandler(socket);
+  registered['kds:join']({ tenantId: 'SOMEONE_ELSE' }, undefined);
+
+  assert.ok(
+    socket.joinedRooms.has('kds:64f000000000000000000001'),
+    `joined ${[...socket.joinedRooms]} instead of the token's own room`
+  );
+  assert.ok(
+    !socket.joinedRooms.has('kds:SOMEONE_ELSE'),
+    'a client-supplied tenant leaked into the room name'
+  );
+});
+
 test('an unknown terminal type falls back to retail', () => {
   const h = makeHarness();
   const socket = makeSocket({ token: signPOS('64f000000000000000000002') });

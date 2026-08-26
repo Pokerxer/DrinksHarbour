@@ -43,6 +43,9 @@ const {
   recallPOSOrder,
   openTabAtTable,
   updateTab,
+  fireRoundFromCart,
+  getKitchenActive,
+  bumpKitchenRound,
   refundPOSOrder,
   voidPOSOrder,
   getAllPOSOrders,
@@ -135,6 +138,13 @@ router.post('/orders/:id/void',               protectPOS, requirePOSPermission('
 // admin-JWT chain anyway.
 router.post('/tables/:id/open-tab',           protectPOS, requirePOSPermission('pos:sell'),   openTabAtTable);
 router.put('/tabs/:id',                       protectPOS, requirePOSPermission('pos:sell'),   updateTab);
+// Kitchen display — firing sends lines to the pass and mutates the parked
+// cart, so it rides the sell permission like the tab edits above. The kitchen
+// screen itself only reads the board and bumps rounds, and kitchen PINs carry
+// no pos:sell — those two routes stay bare protectPOS.
+router.post('/tabs/:id/fire',                 protectPOS, requirePOSPermission('pos:sell'),   fireRoundFromCart);
+router.get('/kitchen/active',                 protectPOS, getKitchenActive);
+router.post('/kitchen/rounds/bump',           protectPOS, bumpKitchenRound);
 
 // Session management — called from POS terminal, uses POS token
 // ── Selectable pricelists (cashier pricelist selector + back-office callers,

@@ -25,7 +25,7 @@ const { mutateLoyalty } = require('../services/loyalty.service');
 const { loyaltyDelta } = require('../services/contact.helpers');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
-const { emitToTerminal } = require('../services/pos.realtime');
+const { emitToTerminal, emitToKds } = require('../services/pos.realtime');
 const { venueBlocked } = require('../services/posVenue.service');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, resolveRevenueRates, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const {
@@ -1290,6 +1290,9 @@ exports.updatePOSSettings = asyncHandler(async (req, res) => {
     allowed['posSettings.maxDifferenceEnabled'] = posSettings.maxDifferenceEnabled;
   if (typeof posSettings.tipsEnabled === 'boolean')
     allowed['posSettings.tipsEnabled'] = posSettings.tipsEnabled;
+  // Kitchen display: minutes before an unfired/bumped round highlights late.
+  if (typeof posSettings.kitchenAlertMins === 'number' && Number(posSettings.kitchenAlertMins) >= 1)
+    allowed['posSettings.kitchenAlertMins'] = Math.floor(posSettings.kitchenAlertMins);
 
   // POS interface
   if (typeof posSettings.loginWithEmployees === 'boolean')
@@ -1800,6 +1803,7 @@ exports.staffLogin = asyncHandler(async (req, res) => {
           cashRounding:          tenant.posSettings?.cashRounding ?? false,
           roundingIncrement:     tenant.posSettings?.roundingIncrement ?? 1,
           tipsEnabled:           tenant.posSettings?.tipsEnabled ?? false,
+          kitchenAlertMins:      tenant.posSettings?.kitchenAlertMins ?? 10,
           loginWithEmployees:    tenant.posSettings?.loginWithEmployees ?? false,
           largeScrollbars:       tenant.posSettings?.largeScrollbars ?? false,
           shareOpenOrders:       tenant.posSettings?.shareOpenOrders ?? false,
@@ -3710,6 +3714,238 @@ exports.recallPOSOrder = asyncHandler(async (req, res) => {
       },
     },
   });
+});
+
+// ─── Kitchen display (Phase 6B) ──────────────────────────────────────────────
+//
+// A fired round is a frozen ticket: the cashier selects lines on a held tab,
+// the server snapshots what the kitchen owes the pass into
+// holdMetadata.firedRounds, and the kitchen screen bumps each round forward
+// through pending → preparing → ready → served. The parked cart keeps living
+// after a fire (lines renamed, quantities edited) — that is exactly why the
+// snapshot exists, and why it is built by copying values rather than keeping
+// references.
+
+/**
+ * Identity of one cart line, byte-compatible with the client's itemKey:
+ * `subProductId[_sizeId]` plus a combo-instance or buy-x-get-y suffix. Every
+ * later fire looks its lines up with this key, so any drift between the two
+ * sides silently strands orders on the board — mirror pos-cart.tsx exactly.
+ */
+function buildPosItemKey(it) {
+  const base = it.sizeId ? `${it.subProductId}_${it.sizeId}` : String(it.subProductId);
+  if (it.comboRef?.instanceId) return `${base}__ci_${it.comboRef.instanceId}`;
+  if (it.bxgyRef?.rewardId) return `${base}__bxgy_${it.bxgyRef.rewardId}_${it.bxgyRef.role}`;
+  return base;
+}
+
+/**
+ * What of the parked cart has not gone to the kitchen yet: per line key, the
+ * quantity still owed after netting every fired round. Lines fully consumed
+ * drop out; partial ones come back with their remainder.
+ */
+function computeUnfiredLines(cartItems, firedRounds) {
+  const rounds = Array.isArray(firedRounds) ? firedRounds : [];
+  return (Array.isArray(cartItems) ? cartItems : [])
+    .map((item) => {
+      const key = buildPosItemKey(item);
+      let fired = 0;
+      for (const round of rounds) {
+        for (const ri of round.items || []) {
+          if (ri.key === key) fired += Number(ri.quantity) || 0;
+        }
+      }
+      const remaining = Math.max(0, (Number(item.quantity) || 0) - fired);
+      return { item, key, remaining };
+    })
+    .filter((l) => l.remaining > 0);
+}
+
+/**
+ * Forward-only pipeline: pending → preparing → ready → served. Served is
+ * terminal and unknown statuses have nowhere to go — both answer null so a
+ * stale client cannot walk a ticket backwards.
+ */
+const KITCHEN_FLOW = { pending: 'preparing', preparing: 'ready', ready: 'served' };
+function nextRoundStatus(status) {
+  return KITCHEN_FLOW[status] ?? null;
+}
+exports.buildPosItemKey = buildPosItemKey;
+exports.computeUnfiredLines = computeUnfiredLines;
+exports.nextRoundStatus = nextRoundStatus;
+
+/**
+ * POST /api/pos/tabs/:id/fire
+ * Body: { itemKeys: string[] }   (client-format keys from buildPosItemKey)
+ *
+ * Fires the unfired remainder of the requested lines as one kitchen round.
+ * Every requested key must still have something to fire — a cashier tapping an
+ * already-fired course expects a complaint, not a silently empty ticket.
+ */
+exports.fireRoundFromCart = asyncHandler(async (req, res) => {
+  if (venueBlocked(req, res)) return;
+
+  const tenantId = req.tenant?._id;
+
+  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), status: 'hold' });
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Held order not found' });
+  }
+
+  const { itemKeys } = req.body;
+  if (!Array.isArray(itemKeys) || !itemKeys.length || itemKeys.some((k) => typeof k !== 'string')) {
+    return res.status(400).json({ success: false, message: 'itemKeys must be a non-empty array of strings' });
+  }
+
+  const meta = order.holdMetadata && typeof order.holdMetadata === 'object' ? order.holdMetadata : {};
+  const remainingByKey = new Map(
+    computeUnfiredLines(meta.cartItems || [], meta.firedRounds || []).map((l) => [l.key, l])
+  );
+
+  // Refuse up front if ANY requested key is exhausted or unknown — the fire is
+  // all-or-nothing, so the ticket never half-matches what was tapped.
+  const missing = [...new Set(itemKeys)].filter((k) => !remainingByKey.has(k));
+  if (missing.length) {
+    return res.status(400).json({ success: false, message: `nothing to fire for ${missing[0]}` });
+  }
+
+  // Frozen snapshot, in the order the cashier fired them. Values copied, not
+  // referenced: cartItems keep changing after this point.
+  const items = [...new Set(itemKeys)].map((k) => {
+    const { item, remaining } = remainingByKey.get(k);
+    return {
+      key:           k,
+      name:          item.name,
+      variant:       item.variant,
+      quantity:      remaining,
+      subProductId:  item.subProductId,
+    };
+  });
+
+  const rounds = Array.isArray(meta.firedRounds) ? meta.firedRounds : [];
+  const lastRound = rounds[rounds.length - 1];
+  const round = {
+    roundNo:  (lastRound?.roundNo ?? 0) + 1,
+    items,
+    firedAt:  new Date(),
+    firedBy:  req.posUser._id,
+    status:   'pending',
+    bumpedAt: null,
+    bumpedBy: null,
+  };
+
+  meta.firedRounds = [...rounds, round];
+  order.holdMetadata = meta;
+  order.markModified('holdMetadata');   // Mixed type — deep edits are invisible to Mongoose otherwise
+  await order.save();
+
+  emitToKds(req, tenantId, 'kds:update', { orderId: order._id });
+
+  res.json({ success: true, data: { round } });
+});
+
+/**
+ * GET /api/pos/kitchen/active
+ *
+ * One board query for every held tab carrying at least one fired round, with
+ * served rounds stripped out. Table names resolve in a single batched query —
+ * the board refetches often enough that N+1 would be felt at every bump.
+ */
+exports.getKitchenActive = asyncHandler(async (req, res) => {
+  if (venueBlocked(req, res)) return;
+
+  const tenantId = req.tenant?._id;
+
+  const rows = await Order.find({
+    ...tenantScope(tenantId),
+    status: 'hold',
+    'holdMetadata.firedRounds.0': { $exists: true },
+  })
+    .select('holdMetadata createdAt')
+    .lean();
+
+  // Served rounds leave the ticket; tickets left with nothing active leave the board.
+  const candidates = rows
+    .map((o) => {
+      const meta = o.holdMetadata || {};
+      const rounds = (Array.isArray(meta.firedRounds) ? meta.firedRounds : [])
+        .filter((r) => r && r.status !== 'served')
+        .sort((a, b) => (a.roundNo ?? 0) - (b.roundNo ?? 0));
+      return {
+        orderId:  o._id,
+        tableId:  meta.tableId ? String(meta.tableId) : null,
+        guests:   meta.guests ?? 0,
+        openedAt: meta.openedAt || o.createdAt,
+        rounds,
+      };
+    })
+    .filter((row) => row.rounds.length > 0);
+
+  const tableIds = [...new Set(candidates.map((c) => c.tableId).filter(Boolean))];
+  const tables = tableIds.length
+    ? await POSTable.find({ tenant: tenantId, _id: { $in: tableIds } }).select('name').lean()
+    : [];
+  const nameByTable = new Map(tables.map((tb) => [String(tb._id), tb.name]));
+
+  const oldestFired = (row) =>
+    Math.min(...row.rounds.map((r) => new Date(r.firedAt || 0).getTime()));
+
+  const orders = candidates
+    .map(({ tableId, ...row }) => ({
+      ...row,
+      tableName: tableId ? nameByTable.get(tableId) ?? null : null,
+    }))
+    .sort((a, b) => oldestFired(a) - oldestFired(b));
+
+  res.json({ success: true, data: { orders } });
+});
+
+/**
+ * POST /api/pos/kitchen/rounds/bump
+ * Body: { orderId, roundNo, nextStatus }
+ *
+ * Moves one kitchen round exactly one step along the pipeline. The next state
+ * is computed server-side from the current one, so a stale screen (or a tired
+ * cook) cannot drag a ticket backwards past food that already left.
+ */
+exports.bumpKitchenRound = asyncHandler(async (req, res) => {
+  if (venueBlocked(req, res)) return;
+
+  const tenantId = req.tenant?._id;
+  const { orderId, roundNo, nextStatus } = req.body;
+
+  if (!orderId || roundNo === undefined || roundNo === null || !nextStatus) {
+    return res.status(400).json({ success: false, message: 'orderId, roundNo and nextStatus are required' });
+  }
+
+  const order = await Order.findOne({ _id: orderId, ...tenantScope(tenantId), status: 'hold' });
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Held order not found' });
+  }
+
+  const rounds = Array.isArray(order.holdMetadata?.firedRounds) ? order.holdMetadata.firedRounds : [];
+  const round = rounds.find((r) => Number(r.roundNo) === Number(roundNo));
+  if (!round) {
+    return res.status(404).json({ success: false, message: 'Round not found' });
+  }
+
+  const expected = nextRoundStatus(round.status);
+  if (!expected || nextStatus !== expected) {
+    return res.status(400).json({
+      success: false,
+      message: `round is ${round.status}, next is ${expected}`,
+    });
+  }
+
+  round.status   = nextStatus;
+  round.bumpedAt = new Date();
+  round.bumpedBy = req.posUser._id;
+  order.markModified('holdMetadata');
+  await order.save();
+
+  emitToKds(req, tenantId, 'kds:update', { orderId: order._id, roundNo: round.roundNo });
+
+  res.json({ success: true, data: { round } });
 });
 
 // ─── Get POS Session Orders ───────────────────────────────────────────────────

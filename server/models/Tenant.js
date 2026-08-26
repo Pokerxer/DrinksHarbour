@@ -423,6 +423,8 @@ const tenantSchema = new Schema(
       roundingIncrement:   { type: Number,  default: 1, enum: [1, 5, 10, 50] },
       maxDifferenceEnabled:{ type: Boolean, default: false },
       tipsEnabled:         { type: Boolean, default: false },
+      // Kitchen display: minutes before a fired-but-unbumped round flags late.
+      kitchenAlertMins:    { type: Number,  default: 10, min: 1 },
 
       // ── POS interface options ─────────────────────────────────────────────────
       loginWithEmployees: { type: Boolean, default: false },

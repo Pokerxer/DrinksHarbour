@@ -10,7 +10,7 @@
 // forged or foreign token cannot eavesdrop on another tenant's session feed.
 
 const jwt = require('jsonwebtoken');
-const { terminalRoom } = require('../services/pos.realtime');
+const { terminalRoom, kdsRoom } = require('../services/pos.realtime');
 
 function attachPosGateway(io) {
   // Authenticate once at handshake. Reject anything that is not a POS token;
@@ -31,6 +31,14 @@ function attachPosGateway(io) {
   io.on('connection', (socket) => {
     socket.on('pos:join', ({ terminalType } = {}, ack) => {
       const room = terminalRoom(socket.data.tenantId, terminalType);
+      socket.join(room);
+      if (typeof ack === 'function') ack({ ok: true, room });
+    });
+
+    // Kitchen display screens. Same rule as pos:join: the tenant comes from
+    // the verified POS JWT, never from the join message.
+    socket.on('kds:join', (_payload, ack) => {
+      const room = kdsRoom(socket.data.tenantId);
       socket.join(room);
       if (typeof ack === 'function') ack({ ok: true, room });
     });
