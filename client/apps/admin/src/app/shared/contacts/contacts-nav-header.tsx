@@ -95,7 +95,7 @@ export default function ContactsNavHeader() {
   return (
     <nav
       ref={navRef}
-      className="relative mb-0 flex items-center border-b border-gray-200 bg-white"
+      className="relative mb-0 flex flex-wrap items-center border-b border-gray-200 bg-white"
     >
       {/* App launcher toggle */}
       <LauncherButton className="me-1 ms-3 shadow-none" />
@@ -112,11 +112,11 @@ export default function ContactsNavHeader() {
           height={30}
           className="rounded-full"
         />
-        <span className="text-sm font-semibold text-gray-900">Contacts</span>
+        <span className="hidden min-[480px]:inline text-sm font-semibold text-gray-900">Contacts</span>
       </Link>
 
       {/* Nav links */}
-      <div className="flex items-center pl-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center pl-2">
         {navItems.map((item) => {
           const isDirectActive = 'href' in item && item.href === pathname;
           const isDropdownActive =
@@ -135,7 +135,7 @@ export default function ContactsNavHeader() {
               <Link
                 key={item.label}
                 href={item.href}
-                className={`relative flex items-center gap-1.5 px-4 py-3 text-sm transition-colors ${
+                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors md:px-4 ${
                   isActive
                     ? `${activeCls} text-[#b20202]`
                     : 'font-normal text-gray-600 hover:text-gray-900'
@@ -154,7 +154,7 @@ export default function ContactsNavHeader() {
               <button
                 type="button"
                 onClick={() => setOpenMenu(isOpen ? null : item.label)}
-                className={`relative flex items-center gap-1.5 px-4 py-3 text-sm transition-colors ${
+                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors md:px-4 ${
                   isActive || isOpen
                     ? `${activeCls} text-[#b20202]`
                     : 'font-normal text-gray-600 hover:text-gray-900'

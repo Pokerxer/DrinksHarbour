@@ -87,7 +87,7 @@ export default function NavDropdownPanel({
   const twoCol = isSectioned || columns === 2;
   return (
     <div
-      className="nav-dd absolute left-0 top-full z-50 mt-2 rounded-2xl border border-gray-100 bg-white p-2 shadow-2xl shadow-gray-300/40 ring-1 ring-black/[0.04]"
+      className="nav-dd absolute left-0 top-full z-50 mt-2 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-gray-100 bg-white p-2 shadow-2xl shadow-gray-300/40 ring-1 ring-black/[0.04]"
       style={{ minWidth: twoCol ? 460 : 264 }}
     >
       <style>{`

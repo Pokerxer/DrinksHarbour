@@ -50,7 +50,7 @@ export default function EcommerceNavHeader() {
   return (
     <nav
       ref={navRef}
-      className="relative mb-0 flex items-center border-b border-muted bg-gray-0"
+      className="relative mb-0 flex flex-wrap items-center border-b border-muted bg-gray-0"
       style={{ ['--nav-accent' as string]: accentColor }}
     >
       {/* App launcher toggle */}
@@ -73,8 +73,9 @@ export default function EcommerceNavHeader() {
         </span>
       </Link>
 
-      {/* Nav links — horizontally scrollable on mobile */}
-      <div className="flex min-w-0 flex-1 items-center overflow-x-auto pl-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* Nav links — wrap onto extra rows on narrow screens (never clip
+          the absolutely-positioned dropdown panels) */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center pl-2">
         {navItems.map((item) => {
           const isDirectActive = 'href' in item && item.href === pathname;
           const isDropdownActive =
