@@ -5,10 +5,11 @@ import Image from 'next/image';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
+import { BannerClickLayer } from './banner-link';
 
 interface BannerData {
   _id: string;
-  title: string;
+  title?: string;
   subtitle?: string;
   description?: string;
   type: string;
@@ -17,6 +18,8 @@ interface BannerData {
   ctaText?: string;
   ctaLink?: string;
   ctaStyle?: string;
+  linkType?: string;
+  imageClickable?: boolean;
   backgroundColor?: string;
   textColor?: string;
   overlayOpacity?: number;
@@ -187,15 +190,16 @@ const PromotionalSlider: React.FC<PromotionalSliderProps> = ({
     setIsAutoPlaying(false);
   }, [banners.length]);
 
-  const extractDiscount = (title: string): { value: string; type: string } => {
-    const percentageMatch = title.match(/(\d+)%/);
+  const extractDiscount = (rawTitle = ''): { value: string; type: string } => {
+    const t = rawTitle || '';
+    const percentageMatch = t.match(/(\d+)%/);
     if (percentageMatch) {
       return { value: percentageMatch[1], type: 'percentage' };
     }
-    if (title.toLowerCase().includes('buy') && title.toLowerCase().includes('get')) {
+    if (t.toLowerCase().includes('buy') && t.toLowerCase().includes('get')) {
       return { value: 'BOGO', type: 'bogo' };
     }
-    if (title.toLowerCase().includes('free')) {
+    if (t.toLowerCase().includes('free')) {
       return { value: 'FREE', type: 'free' };
     }
     return { value: 'SALE', type: 'general' };
@@ -267,6 +271,13 @@ const PromotionalSlider: React.FC<PromotionalSliderProps> = ({
               />
             </div>
 
+            {/* Whole-slide click-through — above imagery, below the content
+                layer so an existing CTA button keeps its own behaviour. */}
+            <BannerClickLayer
+              banner={currentBanner}
+              ariaLabel={currentBanner.title || 'Open promotion'}
+            />
+
             <div className={`relative z-10 h-full container mx-auto px-4 md:px-8 flex flex-col justify-center ${
               isTextRight ? 'items-end text-right' :
               isTextLeft ? 'items-start text-left' :
@@ -297,13 +308,15 @@ const PromotionalSlider: React.FC<PromotionalSliderProps> = ({
                   </span>
                 )}
 
-                <motion.h2
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-white text-3xl md:text-4xl lg:text-5xl font-bold mb-4 leading-tight"
-                >
-                  {currentBanner.title}
-                </motion.h2>
+                {currentBanner.title && (
+                  <motion.h2
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-white text-3xl md:text-4xl lg:text-5xl font-bold mb-4 leading-tight"
+                  >
+                    {currentBanner.title}
+                  </motion.h2>
+                )}
 
                 {currentBanner.description && (
                   <motion.p

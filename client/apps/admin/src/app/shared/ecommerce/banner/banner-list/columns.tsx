@@ -1,7 +1,12 @@
 // @ts-nocheck
 'use client';
 
-import { routes } from '@/config/routes';
+/**
+ * Column definitions for the banners list table.
+ * Badges come from banner-shared so list, details and form always match.
+ */
+
+import { useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
 import Link from 'next/link';
 import { ActionIcon, Checkbox, Text, Tooltip } from 'rizzui';
@@ -14,8 +19,13 @@ import {
   PiPauseBold,
   PiSpinnerBold,
 } from 'react-icons/pi';
-import { useState } from 'react';
-import { BANNER_TYPE_OPTIONS, BANNER_PLACEMENT_OPTIONS } from '@/types/banner.types';
+import { routes } from '@/config/routes';
+import {
+  StatusBadge,
+  PriorityBadge,
+  TypeBadge,
+  PlacementLabel,
+} from '../banner-shared';
 
 export interface BannerListItem {
   _id?: string;
@@ -45,89 +55,126 @@ export interface BannerListItem {
 
 const columnHelper = createColumnHelper<BannerListItem>();
 
-function getStatusBadge(status: string | undefined) {
-  if (!status) return { label: '-', bg: 'bg-gray-100', text: 'text-gray-600' };
-  
-  const badges: Record<string, { label: string; bg: string; text: string }> = {
-    draft:     { label: 'Draft',     bg: 'bg-gray-100', text: 'text-gray-600' },
-    scheduled: { label: 'Scheduled',  bg: 'bg-amber-100', text: 'text-amber-700' },
-    active:    { label: 'Active',    bg: 'bg-green-100', text: 'text-green-700' },
-    paused:    { label: 'Paused',    bg: 'bg-orange-100', text: 'text-orange-700' },
-    expired:   { label: 'Expired',   bg: 'bg-red-100', text: 'text-red-700' },
-    archived:  { label: 'Archived',  bg: 'bg-gray-100', text: 'text-gray-600' },
-  };
-  
-  return badges[status] || { label: status, bg: 'bg-gray-100', text: 'text-gray-600' };
-}
-
-function getTypeBadge(type: string | undefined) {
-  if (!type) return { label: '-', bg: 'bg-gray-100', text: 'text-gray-600' };
-  
-  const badges: Record<string, { label: string; bg: string; text: string }> = {
-    hero:         { label: 'Hero',         bg: 'bg-blue-100', text: 'text-blue-700' },
-    promotional:  { label: 'Promotional',  bg: 'bg-purple-100', text: 'text-purple-700' },
-    category:    { label: 'Category',     bg: 'bg-green-100', text: 'text-green-700' },
-    product:     { label: 'Product',      bg: 'bg-orange-100', text: 'text-orange-700' },
-    seasonal:    { label: 'Seasonal',     bg: 'bg-amber-100', text: 'text-amber-700' },
-    announcement:{ label: 'Announcement', bg: 'bg-pink-100', text: 'text-pink-700' },
-    custom:      { label: 'Custom',       bg: 'bg-gray-100', text: 'text-gray-600' },
-  };
-  
-  return badges[type] || { label: type, bg: 'bg-gray-100', text: 'text-gray-600' };
-}
-
-function getPriorityBadge(priority: string | undefined) {
-  if (!priority) return { label: '-', bg: 'bg-gray-100', text: 'text-gray-600' };
-  
-  const badges: Record<string, { label: string; bg: string; text: string }> = {
-    low:    { label: 'Low',    bg: 'bg-gray-100', text: 'text-gray-600' },
-    medium: { label: 'Medium', bg: 'bg-amber-100', text: 'text-amber-700' },
-    high:   { label: 'High',   bg: 'bg-red-100', text: 'text-red-700' },
-    urgent: { label: 'Urgent', bg: 'bg-red-100', text: 'text-red-700' },
-  };
-  
-  return badges[priority] || { label: priority, bg: 'bg-gray-100', text: 'text-gray-600' };
-}
-
-function BannerImage({ src, alt }: { src?: string; alt?: string }) {
+function BannerThumb({ src, alt }: { src?: string; alt?: string }) {
   if (!src) {
     return (
-      <div className="w-16 h-12 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center flex-shrink-0 border border-gray-200">
-        <Text className="text-gray-400 text-xs">No img</Text>
+      <div className="flex h-12 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gradient-to-br from-gray-100 to-gray-200">
+        <Text className="text-xs text-gray-400">No img</Text>
       </div>
     );
   }
   return (
-    <div className="w-16 h-12 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0 bg-gray-50">
-      <img src={src} alt={alt || 'Banner'} className="w-full h-full object-cover" />
+    <div className="h-12 w-16 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt || 'Banner'} className="h-full w-full object-cover" />
     </div>
   );
 }
 
-function StatusBadge({ status }: { status?: string }) {
-  const badge = getStatusBadge(status);
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${badge.bg} ${badge.text}`}>
-      {badge.label}
-    </span>
-  );
+interface TableActionMeta {
+  onDelete?: (id: string) => void;
+  onStatusChange?: (id: string, status: string) => void;
+  onClone?: (id: string) => void;
 }
 
-function TypeBadge({ type }: { type?: string }) {
-  const badge = getTypeBadge(type);
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
-      {badge.label}
-    </span>
-  );
-}
+/**
+ * Row action buttons. Extracted as a real component: the previous inline
+ * version called useState inside a cell renderer with an eslint-disable —
+ * illegal hook usage that breaks when rows reorder or unmount.
+ */
+function RowActions({
+  banner,
+  meta,
+}: {
+  banner: BannerListItem;
+  meta?: TableActionMeta;
+}) {
+  const id = banner._id;
+  const status = banner.status;
+  const [cloning, setCloning] = useState(false);
 
-function PriorityBadge({ priority }: { priority?: string }) {
-  const badge = getPriorityBadge(priority);
+  if (!id) return null;
+
+  const isActive = status === 'active';
+  const isPaused = status === 'paused';
+
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
-      {badge.label}
-    </span>
+    <div className="flex items-center justify-end gap-1.5">
+      {(isActive || isPaused) && (
+        <Tooltip
+          content={isActive ? 'Pause' : 'Activate'}
+          placement="top"
+          color="invert"
+        >
+          <ActionIcon
+            variant="outline"
+            size="sm"
+            aria-label={isActive ? 'Pause banner' : 'Activate banner'}
+            className={
+              isActive
+                ? 'hover:border-amber-400 hover:text-amber-600'
+                : 'hover:border-green-400 hover:text-green-600'
+            }
+            onClick={() => meta?.onStatusChange?.(id, isActive ? 'paused' : 'active')}
+          >
+            {isActive ? (
+              <PiPauseBold className="h-4 w-4" />
+            ) : (
+              <PiPlayBold className="h-4 w-4" />
+            )}
+          </ActionIcon>
+        </Tooltip>
+      )}
+
+      <Tooltip content="View" placement="top" color="invert">
+        <Link href={routes.eCommerce.bannerDetails(id)}>
+          <ActionIcon variant="outline" size="sm" aria-label="View banner">
+            <PiEyeBold className="h-4 w-4" />
+          </ActionIcon>
+        </Link>
+      </Tooltip>
+
+      <Tooltip content="Edit" placement="top" color="invert">
+        <Link href={routes.eCommerce.editBanner(id)}>
+          <ActionIcon variant="outline" size="sm" aria-label="Edit banner">
+            <PiPencilLineBold className="h-4 w-4" />
+          </ActionIcon>
+        </Link>
+      </Tooltip>
+
+      <Tooltip content="Clone" placement="top" color="invert">
+        <ActionIcon
+          variant="outline"
+          size="sm"
+          aria-label="Clone banner"
+          className="hover:border-blue-400 hover:text-blue-600"
+          onClick={async () => {
+            setCloning(true);
+            await meta?.onClone?.(id);
+            setCloning(false);
+          }}
+          disabled={cloning}
+        >
+          {cloning ? (
+            <PiSpinnerBold className="h-4 w-4 animate-spin" />
+          ) : (
+            <PiCopyBold className="h-4 w-4" />
+          )}
+        </ActionIcon>
+      </Tooltip>
+
+      <Tooltip content="Delete" placement="top" color="invert">
+        <ActionIcon
+          variant="outline"
+          size="sm"
+          aria-label="Delete banner"
+          className="hover:border-red-400 hover:text-red-600"
+          onClick={() => meta?.onDelete?.(id)}
+        >
+          <PiTrashBold className="h-4 w-4" />
+        </ActionIcon>
+      </Tooltip>
+    </div>
   );
 }
 
@@ -158,7 +205,7 @@ export const bannersListColumns = [
     header: 'Image',
     size: 100,
     cell: ({ row }) => (
-      <BannerImage src={row.original?.image?.url} alt={row.original?.title} />
+      <BannerThumb src={row.original?.image?.url} alt={row.original?.title} />
     ),
   }),
 
@@ -170,9 +217,13 @@ export const bannersListColumns = [
       const subtitle = row.original?.subtitle;
       return (
         <div className="flex flex-col">
-          <Text className="font-semibold text-gray-900 line-clamp-1">{title || '-'}</Text>
+          <Text className="line-clamp-1 font-semibold text-gray-900">
+            {title || '-'}
+          </Text>
           {subtitle && (
-            <Text className="text-gray-500 text-xs line-clamp-1 mt-0.5">{subtitle}</Text>
+            <Text className="mt-0.5 line-clamp-1 text-xs text-gray-500">
+              {subtitle}
+            </Text>
           )}
         </div>
       );
@@ -185,15 +236,11 @@ export const bannersListColumns = [
     cell: ({ row }) => <TypeBadge type={row.original?.type} />,
   }),
 
-  columnHelper.accessor('placement', {
+  columnHelper.display({
+    id: 'placement',
     header: 'Placement',
     size: 140,
-    cell: ({ row }) => {
-      const placement = row.original?.placement;
-      if (!placement) return <Text className="text-gray-400 text-sm">-</Text>;
-      const label = BANNER_PLACEMENT_OPTIONS.find(p => p.value === placement)?.label || placement;
-      return <Text className="text-gray-700 text-sm">{label}</Text>;
-    },
+    cell: ({ row }) => <PlacementLabel placement={row.original?.placement} />,
   }),
 
   columnHelper.accessor('priority', {
@@ -205,7 +252,7 @@ export const bannersListColumns = [
   columnHelper.accessor('status', {
     header: 'Status',
     size: 110,
-    cell: ({ row }) => <StatusBadge status={row.original?.status} />,
+    cell: ({ row }) => <StatusBadge status={row.original?.status} size="sm" />,
   }),
 
   columnHelper.display({
@@ -213,7 +260,19 @@ export const bannersListColumns = [
     header: 'Order',
     size: 70,
     cell: ({ row }) => (
-      <Text className="font-medium text-center">{row.original?.displayOrder ?? '-'}</Text>
+      <Text className="text-center font-medium">
+        {row.original?.displayOrder ?? '-'}
+      </Text>
+    ),
+  }),
+
+  columnHelper.accessor('clickThroughRate', {
+    header: 'CTR',
+    size: 80,
+    cell: ({ row }) => (
+      <Text className="tabular-nums text-gray-600">
+        {(row.original?.clickThroughRate ?? 0).toFixed(1)}%
+      </Text>
     ),
   }),
 
@@ -222,10 +281,14 @@ export const bannersListColumns = [
     size: 110,
     cell: ({ row }) => {
       const date = row.original?.createdAt;
-      if (!date) return <Text className="text-gray-400 text-sm">-</Text>;
+      if (!date) return <Text className="text-sm text-gray-400">-</Text>;
       return (
-        <Text className="text-gray-500 text-sm">
-          {new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        <Text className="text-sm text-gray-500">
+          {new Date(date).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })}
         </Text>
       );
     },
@@ -235,78 +298,11 @@ export const bannersListColumns = [
     id: 'actions',
     header: '',
     size: 150,
-    cell: ({ row, table }) => {
-      const id = row.original?._id;
-      const status = row.original?.status;
-      if (!id) return null;
-
-      const meta = table.options.meta as any;
-      const isActive = status === 'active';
-      const isPaused = status === 'paused';
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      const [cloning, setCloning] = useState(false);
-
-      const handleClone = async () => {
-        setCloning(true);
-        await meta?.onClone?.(id);
-        setCloning(false);
-      };
-
-      return (
-        <div className="flex items-center justify-end gap-1.5">
-          {(isActive || isPaused) && (
-            <Tooltip content={isActive ? 'Pause' : 'Activate'} placement="top" color="invert">
-              <ActionIcon
-                variant="outline"
-                size="sm"
-                className={isActive ? 'hover:text-amber-600 hover:border-amber-400' : 'hover:text-green-600 hover:border-green-400'}
-                onClick={() => meta?.onStatusChange?.(id, isActive ? 'paused' : 'active')}
-              >
-                {isActive ? <PiPauseBold className="w-4 h-4" /> : <PiPlayBold className="w-4 h-4" />}
-              </ActionIcon>
-            </Tooltip>
-          )}
-
-          <Tooltip content="View" placement="top" color="invert">
-            <Link href={routes.eCommerce.bannerDetails(id)}>
-              <ActionIcon variant="outline" size="sm" className="hover:text-gray-900">
-                <PiEyeBold className="w-4 h-4" />
-              </ActionIcon>
-            </Link>
-          </Tooltip>
-
-          <Tooltip content="Edit" placement="top" color="invert">
-            <Link href={routes.eCommerce.editBanner(id)}>
-              <ActionIcon variant="outline" size="sm" className="hover:text-gray-900">
-                <PiPencilLineBold className="w-4 h-4" />
-              </ActionIcon>
-            </Link>
-          </Tooltip>
-
-          <Tooltip content="Clone" placement="top" color="invert">
-            <ActionIcon
-              variant="outline"
-              size="sm"
-              className="hover:text-blue-600 hover:border-blue-400"
-              onClick={handleClone}
-              disabled={cloning}
-            >
-              {cloning ? <PiSpinnerBold className="w-4 h-4 animate-spin" /> : <PiCopyBold className="w-4 h-4" />}
-            </ActionIcon>
-          </Tooltip>
-
-          <Tooltip content="Delete" placement="top" color="invert">
-            <ActionIcon
-              variant="outline"
-              size="sm"
-              className="hover:text-red-600 hover:border-red-400"
-              onClick={() => meta?.onDelete?.(id)}
-            >
-              <PiTrashBold className="w-4 h-4" />
-            </ActionIcon>
-          </Tooltip>
-        </div>
-      );
-    },
+    cell: ({ row, table }) => (
+      <RowActions
+        banner={row.original}
+        meta={table.options.meta as TableActionMeta}
+      />
+    ),
   }),
 ];

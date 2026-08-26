@@ -5,9 +5,10 @@ const mongoose = require('mongoose');
 const bannerSchema = new mongoose.Schema(
   {
     // Basic Info
+    // Title is OPTIONAL — image-only banners (no text overlay) are supported;
+    // slug falls back to a placement-timestamp value when title is empty.
     title: {
       type: String,
-      required: [true, 'Banner title is required'],
       trim: true,
       maxlength: [100, 'Title cannot exceed 100 characters'],
     },
@@ -100,6 +101,14 @@ const bannerSchema = new mongoose.Schema(
       type: String,
       enum: ['internal', 'external', 'product', 'category', 'brand', 'collection', 'page'],
       default: 'internal',
+    },
+
+    // Whole-banner click-through: when true AND ctaLink is set, clicking
+    // anywhere on the banner image navigates to ctaLink (not just the CTA
+    // button). Lets admins run text-free image banners.
+    imageClickable: {
+      type: Boolean,
+      default: true,
     },
 
     // Link References
@@ -439,18 +448,22 @@ bannerSchema.virtual('daysUntilExpiration').get(function () {
 // METHODS
 // ============================================================
 
-// Generate slug from title
+// Generate slug from title; falls back to a placement-stamp base when the
+// banner has no title (image-only banners).
 bannerSchema.methods.generateSlug = async function () {
-  const baseSlug = this.title
+  const fallback = `${this.placement || 'banner'}-${Date.now().toString(36)}`;
+  const base = (
+    this.title || fallback
+  )
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/^-+|-+$/g, '') || fallback;
 
-  let slug = baseSlug;
+  let slug = base;
   let counter = 1;
 
   while (await this.constructor.findOne({ slug, _id: { $ne: this._id } })) {
-    slug = `${baseSlug}-${counter}`;
+    slug = `${base}-${counter}`;
     counter++;
   }
 

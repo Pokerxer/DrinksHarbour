@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence, Variants, useReducedMotion } from 'framer-motion';
+import { BannerClickLayer } from './banner-link';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -18,7 +19,7 @@ interface HeroBannerProps {
 
 interface BannerData {
   _id: string;
-  title: string;
+  title?: string;
   subtitle?: string;
   description?: string;
   type: string;
@@ -27,6 +28,7 @@ interface BannerData {
   ctaLink?: string;
   ctaStyle?: string;
   linkType?: string;
+  imageClickable?: boolean;
   backgroundColor?: string;
   textColor?: string;
   overlayOpacity?: number;
@@ -245,7 +247,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
           custom={direction}
           role="group"
           aria-roledescription="slide"
-          aria-label={`${currentIndex + 1} of ${slides.length}: ${slide.title}`}
+          aria-label={`${currentIndex + 1} of ${slides.length}: ${slide.title || 'promotion'}`}
           variants={slideVariants}
           initial="enter"
           animate="center"
@@ -273,7 +275,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
             >
               <Image
                 src={imgSrc}
-                alt={slide.image.alt || slide.title}
+                alt={slide.image.alt || slide.title || ''}
                 fill
                 className="object-cover"
                 priority
@@ -324,6 +326,10 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
             />
           </motion.div>
 
+          {/* Whole-slide click-through — sits above the imagery but below the
+              text/CTA layer so the button keeps its own link behaviour. */}
+          <BannerClickLayer banner={slide} ariaLabel={slide.title || 'Open promotion'} />
+
           {/* Content */}
           <div className={`relative z-10 container mx-auto px-5 md:px-10 h-full flex ${contentPos(slide.contentPosition)}`}>
             <motion.div
@@ -345,13 +351,15 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               )}
 
               {/* Title — Kavoon display for cinematic hero presence */}
-              <motion.h2
-                variants={textVariants}
-                className="text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-black text-white mb-3 leading-[1.05] tracking-tight drop-shadow-[0_2px_24px_rgba(0,0,0,0.55)]"
-                style={{ fontFamily: "var(--font-kavoon), 'Kavoon', serif" }}
-              >
-                {slide.title}
-              </motion.h2>
+              {slide.title && (
+                <motion.h2
+                  variants={textVariants}
+                  className="text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-black text-white mb-3 leading-[1.05] tracking-tight drop-shadow-[0_2px_24px_rgba(0,0,0,0.55)]"
+                  style={{ fontFamily: "var(--font-kavoon), 'Kavoon', serif" }}
+                >
+                  {slide.title}
+                </motion.h2>
+              )}
 
               {/* Description */}
               {slide.description && (

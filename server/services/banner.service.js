@@ -21,8 +21,8 @@ const createBanner = async (bannerData, userId) => {
     bannerData.updatedBy = userId;
 
     // Set default values
-    if (!bannerData.slug && bannerData.title) {
-      bannerData.slug = generateSlugFromTitle(bannerData.title);
+    if (!bannerData.slug) {
+      bannerData.slug = generateSlugFromTitle(bannerData.title, bannerData.placement);
     }
 
     // Validate schedule if provided
@@ -1048,13 +1048,18 @@ function generateCtaLink(bannerData) {
 }
 
 /**
- * Generate slug from title
+ * Generate slug from title; falls back to a placement-stamp base when the
+ * title is empty (image-only banners).
  */
-function generateSlugFromTitle(title) {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+function generateSlugFromTitle(title, placement) {
+  const fallback = `${placement || 'banner'}-${Date.now().toString(36)}`;
+  const source = typeof title === 'string' && title.trim() ? title : fallback;
+  return (
+    source
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || fallback
+  );
 }
 
 /**

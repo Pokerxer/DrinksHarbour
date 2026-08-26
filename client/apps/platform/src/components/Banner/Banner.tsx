@@ -6,7 +6,7 @@ import Link from 'next/link';
 
 interface BannerData {
   _id: string;
-  title: string;
+  title?: string;
   subtitle?: string;
   ctaText?: string;
   ctaLink?: string;
@@ -59,21 +59,28 @@ const Banner = () => {
             <Image
               src={banner.image.url}
               fill
-              alt={banner.image.alt || banner.title}
+              alt={banner.image.alt || banner.title || ''}
               priority
               className="object-cover duration-1000"
             />
           </div>
           <div className="banner-content absolute top-0 left-0 w-full h-full flex flex-col items-center justify-center">
-            <div className="heading2" style={{ color: banner.textColor || '#f9fafb' }}>
-              {banner.title}
-            </div>
-            <div
-              className="text-button relative inline-block pb-1 border-b-2 border-current duration-500 mt-2"
-              style={{ color: banner.textColor || '#f9fafb' }}
-            >
-              {banner.ctaText || 'Shop Now'}
-            </div>
+            {banner.title && (
+              <div className="heading2" style={{ color: banner.textColor || '#f9fafb' }}>
+                {banner.title}
+              </div>
+            )}
+            {/* Text-free banners stay clean: only render a button-like label
+                when the admin actually set CTA copy. The whole card is a Link
+                either way. */}
+            {banner.ctaText && (
+              <div
+                className="text-button relative inline-block pb-1 border-b-2 border-current duration-500 mt-2"
+                style={{ color: banner.textColor || '#f9fafb' }}
+              >
+                {banner.ctaText}
+              </div>
+            )}
           </div>
         </Link>
       ))}

@@ -80,7 +80,7 @@ export type BannerVisibleTo = 'all' | 'guests' | 'authenticated' | 'new_customer
 
 export interface Banner {
   _id: string;
-  title: string;
+  title?: string;
   subtitle?: string;
   description?: string;
   slug: string;
@@ -94,6 +94,8 @@ export interface Banner {
   ctaLink?: string;
   ctaStyle?: 'primary' | 'secondary' | 'outline' | 'text' | 'custom';
   linkType: BannerLinkType;
+  /** Whole-banner click-through (defaults true server-side). */
+  imageClickable?: boolean;
   targetProduct?: BannerTargetProduct;
   targetCategory?: BannerTargetCategory;
   targetBrand?: BannerTargetBrand;
@@ -178,7 +180,7 @@ export interface BannerResponse {
 }
 
 export interface BannerFormData {
-  title: string;
+  title?: string;
   subtitle?: string;
   description?: string;
   image?: BannerImage;
@@ -191,6 +193,7 @@ export interface BannerFormData {
   ctaLink?: string;
   ctaStyle?: 'primary' | 'secondary' | 'outline' | 'text' | 'custom';
   linkType?: BannerLinkType;
+  imageClickable?: boolean;
   targetProduct?: string;
   targetCategory?: string;
   targetBrand?: string;

@@ -11,12 +11,13 @@ import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { gtagEvent } from '@/lib/gtag';
+import { BannerClickLayer, BannerClickArea, isImageClickable } from './banner-link';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 interface BannerData {
   _id: string;
-  title: string;
+  title?: string;
   subtitle?: string;
   description?: string;
   type?: string;
@@ -24,6 +25,8 @@ interface BannerData {
   ctaText?: string;
   ctaLink?: string;
   ctaStyle?: string;
+  linkType?: string;
+  imageClickable?: boolean;
   backgroundColor?: string;
   textColor?: string;
   overlayOpacity?: number;
@@ -153,9 +156,11 @@ export default function PlacementBanner({
           )}
           <div className="relative flex flex-col items-center gap-3 p-6 text-center sm:flex-row sm:justify-between sm:text-left">
             <div>
-              <h3 className="text-lg font-black text-white drop-shadow" style={{ color: banner.textColor || '#fff' }}>
-                {banner.title}
-              </h3>
+              {banner.title && (
+                <h3 className="text-lg font-black text-white drop-shadow" style={{ color: banner.textColor || '#fff' }}>
+                  {banner.title}
+                </h3>
+              )}
               {banner.subtitle && (
                 <p className="mt-0.5 text-sm text-white/70" style={{ color: banner.textColor ? `${banner.textColor}b0` : undefined }}>
                   {banner.subtitle}
@@ -192,18 +197,33 @@ export default function PlacementBanner({
             style={{ backgroundColor: banner.backgroundColor || '#1A1A2E' }}
           >
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              {banner.image?.url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={banner.image.url}
-                  alt={banner.image?.alt || banner.title}
-                  className="hidden h-12 w-20 flex-shrink-0 rounded-lg object-cover sm:block"
-                />
-              )}
+              {banner.image?.url &&
+                (isImageClickable(banner) ? (
+                  <BannerClickArea
+                    banner={banner}
+                    ariaLabel={banner.title || 'Open promotion'}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={banner.image.url}
+                      alt={banner.image?.alt || banner.title || 'Promotion'}
+                      className="hidden h-12 w-20 cursor-pointer flex-shrink-0 rounded-lg object-cover sm:block"
+                    />
+                  </BannerClickArea>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={banner.image.url}
+                    alt={banner.image?.alt || banner.title || 'Promotion'}
+                    className="hidden h-12 w-20 flex-shrink-0 rounded-lg object-cover sm:block"
+                  />
+                ))}
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold" style={{ color: banner.textColor || '#fff' }}>
-                  {banner.title}
-                </p>
+                {banner.title && (
+                  <p className="truncate text-sm font-bold" style={{ color: banner.textColor || '#fff' }}>
+                    {banner.title}
+                  </p>
+                )}
                 {banner.subtitle && (
                   <p className="truncate text-xs" style={{ color: banner.textColor ? `${banner.textColor}b0` : 'rgba(255,255,255,0.7)' }}>
                     {banner.subtitle}
@@ -255,7 +275,9 @@ export default function PlacementBanner({
               style={{ backgroundColor: `rgba(0,0,0,${overlay})` }}
             />
           )}
-          <div className="absolute inset-0 flex flex-col items-start justify-end gap-1.5 p-4">
+          {/* Whole-card click-through — under the text/CTA layer */}
+          <BannerClickLayer banner={banner} ariaLabel={banner.title || 'Open promotion'} />
+          <div className="absolute inset-0 z-10 flex flex-col items-start justify-end gap-1.5 p-4">
             {banner.subtitle && (
               <p
                 className="text-xs font-medium text-white/80"
@@ -264,12 +286,14 @@ export default function PlacementBanner({
                 {banner.subtitle}
               </p>
             )}
-            <h3
-              className="text-lg font-black leading-tight drop-shadow"
-              style={{ color: banner.textColor || '#fff' }}
-            >
-              {banner.title}
-            </h3>
+            {banner.title && (
+              <h3
+                className="text-lg font-black leading-tight drop-shadow"
+                style={{ color: banner.textColor || '#fff' }}
+              >
+                {banner.title}
+              </h3>
+            )}
             {banner.ctaText && (
               <Link
                 href={banner.ctaLink || '#'}
@@ -330,8 +354,12 @@ export default function PlacementBanner({
           />
         )}
 
+        {/* Whole-banner click-through — above imagery, below the text/CTA
+            layer so an existing CTA button keeps its own behaviour. */}
+        <BannerClickLayer banner={banner} ariaLabel={banner.title || 'Open promotion'} />
+
         {/* Positioned content */}
-        <div className={`absolute inset-0 flex flex-col gap-2 p-5 md:p-8 ${posCls}`}>
+        <div className={`absolute inset-0 z-10 flex flex-col gap-2 p-5 md:p-8 ${posCls}`}>
           {banner.subtitle && (
             <p
               className="text-sm font-medium text-white/80 drop-shadow md:text-base"
@@ -340,12 +368,14 @@ export default function PlacementBanner({
               {banner.subtitle}
             </p>
           )}
-          <h2
-            className="text-xl font-black drop-shadow-lg md:text-3xl"
-            style={{ color: banner.textColor || '#fff' }}
-          >
-            {banner.title}
-          </h2>
+          {banner.title && (
+            <h2
+              className="text-xl font-black drop-shadow-lg md:text-3xl"
+              style={{ color: banner.textColor || '#fff' }}
+            >
+              {banner.title}
+            </h2>
+          )}
           {banner.description && (
             <p
               className="max-w-md text-sm text-white/70 drop-shadow md:text-base"
