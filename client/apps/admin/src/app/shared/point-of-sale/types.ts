@@ -282,6 +282,8 @@ export interface POSSettings {
   iotBox?: boolean;
   preparationPrinters?: boolean;
   preparationDisplay?: boolean;
+  /** Minutes before an unfired-to-ready kitchen round is flagged late on the KDS. */
+  kitchenAlertMins?: number;
   internalNotes?: boolean;
   allowShipLater?: boolean;
   barcodes?: boolean;
@@ -891,4 +893,32 @@ export interface POSCombo {
   discountPercentage?: number;
   choiceLines: POSChoiceLine[];
   active: boolean;
+}
+
+// ─── Kitchen display (KDS) ───────────────────────────────────────────────────
+// Fired rounds snapshot the cart lines at fire time, so later cart edits can
+// never rewrite what the kitchen was told to cook. Mirrors server B1 shapes.
+
+export type KitchenRoundStatus = 'pending' | 'preparing' | 'ready' | 'served';
+
+export interface KitchenRoundItem {
+  key: string;
+  name: string;
+  variant?: string;
+  quantity: number;
+}
+
+export interface KitchenRound {
+  roundNo: number;
+  items: KitchenRoundItem[];
+  firedAt: string;
+  status: KitchenRoundStatus;
+}
+
+export interface KitchenOrder {
+  orderId: string;
+  tableName: string | null;
+  guests: number;
+  openedAt: string;
+  rounds: KitchenRound[];
 }

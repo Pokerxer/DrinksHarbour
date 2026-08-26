@@ -1225,6 +1225,7 @@ export const usePOSSettings = () => {
     receiptHeader: s.receiptHeader ?? '',
     receiptFooter: s.receiptFooter ?? '',
     isBarRestaurant: s.isBarRestaurant ?? false,
+    kitchenAlertMins: s.kitchenAlertMins ?? 10,
   } as const;
 };
 

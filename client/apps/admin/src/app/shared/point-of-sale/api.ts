@@ -20,6 +20,9 @@ import type {
   POSShop,
   POSNotification,
   POSTableSummary,
+  KitchenOrder,
+  KitchenRound,
+  KitchenRoundStatus,
 } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -831,5 +834,31 @@ export const posApi = {
       headers: authHeaders(token),
       body: JSON.stringify(body),
     });
+  },
+
+  // Kitchen board feed: every held tab with at least one non-served fired
+  // round, oldest-fired order first, served rounds already stripped.
+  async getKitchenActive(token: string) {
+    return request<{ orders: KitchenOrder[] }>(
+      `${API_URL}/api/pos/kitchen/active`,
+      { headers: authHeaders(token) }
+    );
+  },
+
+  // Advance a fired round one step (pending→preparing→ready→served). The
+  // forward-only transition is computed and enforced server-side, so a stale
+  // screen sending an illegal status gets a loud 400 instead of silent drift.
+  async bumpKitchenRound(
+    token: string,
+    body: { orderId: string; roundNo: number; nextStatus: KitchenRoundStatus }
+  ) {
+    return request<{ round: KitchenRound }>(
+      `${API_URL}/api/pos/kitchen/rounds/bump`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify(body),
+      }
+    );
   },
 };
