@@ -26,6 +26,7 @@ import { useOnlineStatus } from './offline/use-online-status';
 import { useRegisterSW } from './offline/register-sw';
 import { ProductImageProvider } from './offline/use-product-images';
 import { usePOSRealtime } from './hooks/usePOSRealtime';
+import useTabAutoRepark from './hooks/useTabAutoRepark';
 
 export default function POSSell() {
   const router = useRouter();
@@ -39,6 +40,11 @@ export default function POSSell() {
   // Live session feed — another device closing/switching this terminal's
   // session reaches us the moment it happens, not on the next poll.
   usePOSRealtime();
+  // Re-park a bound table tab when the cashier leaves the sell screen.
+  // Mounted here, not in POSCart: POSSell stays mounted across the sell/
+  // payment/receipt views (POSCart unmounts exactly when payment opens, the
+  // moment this must fire) and its unmount covers lock-screen navigation.
+  useTabAutoRepark();
   // Auto-select & apply the selected customer's assigned pricelist (reverts on clear).
   usePOSCustomerPricelistSync(token ?? '');
 

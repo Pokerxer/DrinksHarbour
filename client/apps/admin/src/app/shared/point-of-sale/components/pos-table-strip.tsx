@@ -68,12 +68,17 @@ export default function POSTableStrip() {
     if (!token || opening) return;
     setOpening(true);
     try {
-      await posApi.openTableTab(token, {
+      const { tab } = await posApi.openTableTab(token, {
         tableId: table._id,
         guests,
         terminalType: terminal ?? 'retail',
       });
-      bindTable({ tableId: table._id, name: table.name, guests });
+      bindTable({
+        tableId: table._id,
+        name: table.name,
+        guests,
+        heldOrderId: String(tab._id),
+      });
       toast.success(`Tab opened on ${table.name}`);
       setAssigning(null);
       refresh(token);
@@ -122,6 +127,7 @@ export default function POSTableStrip() {
         tableId: table._id,
         name: table.name,
         guests: table.tab?.guests,
+        heldOrderId: table.currentTabId,
       });
       toast.success(`${table.name} tab loaded`);
     } catch (err: unknown) {

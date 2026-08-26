@@ -858,6 +858,8 @@ export interface CartTableBinding {
   tableId: string;
   name: string;
   guests?: number;
+  /** The held Order that IS the tab — repark targets it; settle consumes it. */
+  heldOrderId: string;
 }
 
 export type POSComboPriceMode =

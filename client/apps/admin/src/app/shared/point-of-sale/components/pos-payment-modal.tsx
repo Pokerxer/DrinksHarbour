@@ -235,6 +235,8 @@ export default function POSPaymentModal() {
     clearCart,
     appliedRewards,
     rewardsDiscountTotal,
+    tableBinding,
+    unbindTable,
   } = usePOSCart();
 
   // Snapshot of cart items at the moment the order completes — needed for
@@ -641,6 +643,14 @@ export default function POSPaymentModal() {
         // 'wholesale'), matching how the allowed pricelists were fetched — so the
         // server honors the selected pricelist instead of silently dropping it.
         shopId: activeShop?._id ?? shopKey,
+        // Settling a seated party: point the sale at the held order that IS
+        // the tab, so the server consumes the hold and frees the table.
+        ...(tableBinding?.heldOrderId
+          ? {
+              tableId: tableBinding.tableId,
+              heldOrderId: tableBinding.heldOrderId,
+            }
+          : {}),
       });
 
       setCartSnapshot([...items]);
@@ -773,6 +783,7 @@ export default function POSPaymentModal() {
 
   function handleNewSale() {
     clearCart(); // also clears appliedRewards via store
+    unbindTable(); // end-of-tab: the sale consumed the hold, so free the table
     setActiveView('sell');
     setOrderResult(null);
     setLines([]);
