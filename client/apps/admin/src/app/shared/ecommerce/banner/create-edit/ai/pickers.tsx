@@ -77,6 +77,7 @@ export function ProductPicker({
   selectedId,
   onSelect,
   isLoadingContext,
+  isPartial,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
@@ -86,6 +87,8 @@ export function ProductPicker({
   selectedId: string;
   onSelect: (p: any) => void;
   isLoadingContext: boolean;
+  /** True when the preloaded set is a head of the catalogue, not all of it. */
+  isPartial?: boolean;
 }) {
   if (isLoadingContext) return <LoadingRow label="Loading products..." />;
 
@@ -97,9 +100,7 @@ export function ProductPicker({
       ? results
       : q
         ? popularProducts.filter((p) =>
-            `${p.name} ${p.brand || ''}`
-              .toLowerCase()
-              .includes(q.toLowerCase())
+            `${p.name} ${p.brand || ''}`.toLowerCase().includes(q.toLowerCase())
           )
         : popularProducts;
 
@@ -133,7 +134,9 @@ export function ProductPicker({
                 onClick={() => onSelect(p)}
                 className={cn(
                   'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                  selected ? 'bg-purple-50 ring-1 ring-purple-300' : 'hover:bg-gray-50'
+                  selected
+                    ? 'bg-purple-50 ring-1 ring-purple-300'
+                    : 'hover:bg-gray-50'
                 )}
               >
                 <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
@@ -171,8 +174,10 @@ export function ProductPicker({
       </div>
       <p className="text-[11px] text-gray-400">
         {q.length >= 2
-          ? `${results.length} result${results.length === 1 ? '' : 's'} across all products`
-          : 'Showing popular products — keep typing to search the full catalog by name or brand'}
+          ? `${results.length} live product${results.length === 1 ? '' : 's'} match — searching the full catalogue by name or brand`
+          : isPartial
+            ? `Showing the top ${popularProducts.length} products by sales and views — type 2+ characters to search the full catalogue`
+            : `Showing all ${popularProducts.length} live products`}
       </p>
     </div>
   );
@@ -221,6 +226,8 @@ interface ListPickerProps {
   loadingLabel: string;
   emptyLabel: string;
   countNoun: string;
+  /** Total available server-side, so a filtered view can say "12 of 360". */
+  totalCount?: number;
   /** Renders leading thumbnail + name lines for an item. */
   renderItem: (item: any, selected: boolean) => React.ReactNode;
 }
@@ -236,31 +243,54 @@ export function SearchableListPicker({
   loadingLabel,
   emptyLabel,
   countNoun,
+  totalCount,
   renderItem,
 }: ListPickerProps) {
   if (isLoadingContext) return <LoadingRow label={loadingLabel} />;
 
   const q = search.trim().toLowerCase();
+  // Matches name plus whichever secondary line the item renders — parent
+  // category for subcategories, country of origin for brands. Both of those
+  // fields have to be in the payload for this to do anything.
   const list = q
     ? items.filter((i) =>
-        `${i.name} ${i.parentName || i.countryOfOrigin || ''}`
+        `${i.name || ''} ${i.parentName || ''} ${i.countryOfOrigin || ''}`
           .toLowerCase()
           .includes(q)
       )
     : items;
 
-  const countWord =
+  const plural = (n: number) =>
     countNoun === 'subcategor'
-      ? `${list.length} subcategor${list.length === 1 ? 'y' : 'ies'}`
-      : `${list.length} ${countNoun}${list.length === 1 ? '' : 's'}`;
+      ? `subcategor${n === 1 ? 'y' : 'ies'}`
+      : `${countNoun}${n === 1 ? '' : 's'}`;
+  const total = totalCount ?? items.length;
+  const countWord =
+    list.length === total
+      ? `${total} ${plural(total)}`
+      : `${list.length} of ${total} ${plural(total)}`;
 
   return (
     <div className="space-y-2">
-      <SearchInput value={search} onChange={onSearchChange} placeholder={placeholder} />
-      <div className="max-h-48 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
+      <SearchInput
+        value={search}
+        onChange={onSearchChange}
+        placeholder={placeholder}
+      />
+      {/* Matches the product picker's height — these lists now carry the whole
+          catalogue (612 subcategories, 360 brands), and 48 showed ~3 rows. */}
+      <div className="max-h-72 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
         {list.length === 0 ? (
           <div className="flex items-center justify-center py-8 text-sm text-gray-400">
-            {emptyLabel} &ldquo;{search}&rdquo;
+            {/* Without the guard an unfiltered empty list reads `No brands
+                match ""`, which blames the search for a data problem. */}
+            {q ? (
+              <>
+                {emptyLabel} &ldquo;{search}&rdquo;
+              </>
+            ) : (
+              `No ${plural(0)} available`
+            )}
           </div>
         ) : (
           list.map((item) => {
@@ -272,7 +302,9 @@ export function SearchableListPicker({
                 onClick={() => onSelect(item.id)}
                 className={cn(
                   'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                  selected ? 'bg-purple-50 ring-1 ring-purple-300' : 'hover:bg-gray-50'
+                  selected
+                    ? 'bg-purple-50 ring-1 ring-purple-300'
+                    : 'hover:bg-gray-50'
                 )}
               >
                 {renderItem(item, selected)}

@@ -16,6 +16,11 @@ const {
   sanitizeBannerData,
   computeScheduledStatus,
   MANAGED_STATUSES,
+  productCtaLink,
+  categoryCtaLink,
+  subcategoryCtaLink,
+  brandCtaLink,
+  buildCtaFromContext,
 } = require('../services/banner.helpers');
 
 test('isEnhanceableField accepts non-empty text fields, rejects empty/unknown', () => {
@@ -147,4 +152,92 @@ test('exports action + goal enums', () => {
   assert.deepStrictEqual(AI_FIELD_ACTIONS, ['rewrite', 'expand', 'shorten', 'punchier']);
   assert.deepStrictEqual(ENHANCE_GOALS, ['urgency', 'engagement', 'trust', 'conversions']);
   assert.deepStrictEqual(BANNER_TEXT_FIELDS, ['title', 'subtitle', 'ctaText']);
+});
+
+// ── CTA links ────────────────────────────────────────────────────────────────
+// The storefront resolves ?category= / ?subcategory= / ?brand= as slugs or
+// names. Handing it an ObjectId (what the AI generator used to emit for
+// categories) still matches products but leaves the page noindex with a generic
+// hero and no active filter chip — so these builders must never emit an id.
+
+test('productCtaLink uses the product detail route, falling back to shop search', () => {
+  assert.strictEqual(
+    productCtaLink({ slug: 'aberfeldy-23-years', name: 'Aberfeldy 23 Years' }),
+    '/product/aberfeldy-23-years'
+  );
+  assert.strictEqual(
+    productCtaLink({ name: 'Aberfeldy 23 Years' }),
+    '/shop?search=Aberfeldy%2023%20Years'
+  );
+  assert.strictEqual(productCtaLink(null), null);
+});
+
+test('categoryCtaLink emits the SLUG, never an ObjectId', () => {
+  assert.strictEqual(
+    categoryCtaLink({ id: '6980da3b58ead2c5fb89f623', slug: 'wines', name: 'Wines' }),
+    '/shop?category=wines'
+  );
+  // No slug — degrade to a search rather than leak the id into the URL.
+  assert.strictEqual(
+    categoryCtaLink({ id: '6980da3b58ead2c5fb89f623', name: 'Wines' }),
+    '/shop?search=Wines'
+  );
+  assert.ok(!categoryCtaLink({ slug: 'wines', id: 'x' }).includes('x'));
+});
+
+test('subcategoryCtaLink uses the canonical category+subcategory pair', () => {
+  assert.strictEqual(
+    subcategoryCtaLink({ slug: 'chablis', name: 'Chablis', parentSlug: 'wines' }),
+    '/shop?category=wines&subcategory=chablis'
+  );
+  // Orphan subcategory (no parent slug) still links to something usable.
+  assert.strictEqual(
+    subcategoryCtaLink({ slug: 'chablis', name: 'Chablis' }),
+    '/shop?subcategory=chablis'
+  );
+  assert.strictEqual(subcategoryCtaLink({ name: 'Chablis' }), '/shop?search=Chablis');
+});
+
+test('brandCtaLink filters the shop by brand instead of free-text search', () => {
+  assert.strictEqual(brandCtaLink({ name: 'Guinness', slug: 'guinness' }), '/shop?brand=Guinness');
+  assert.strictEqual(brandCtaLink({ slug: 'moet-chandon' }), '/shop?brand=moet-chandon');
+  assert.strictEqual(brandCtaLink({}), '/shop');
+});
+
+test('buildCtaFromContext picks the most specific target and its linkType', () => {
+  const ctx = {
+    product: { slug: 'guinness-stout', name: 'Guinness Stout' },
+    subcategory: { slug: 'stouts', parentSlug: 'beers', name: 'Stouts' },
+    category: { slug: 'beers', name: 'Beers' },
+    brand: { name: 'Guinness' },
+  };
+  assert.deepStrictEqual(buildCtaFromContext(ctx), {
+    linkType: 'product',
+    ctaLink: '/product/guinness-stout',
+  });
+
+  const { product, ...noProduct } = ctx;
+  assert.deepStrictEqual(buildCtaFromContext(noProduct), {
+    linkType: 'category',
+    ctaLink: '/shop?category=beers&subcategory=stouts',
+  });
+
+  assert.deepStrictEqual(buildCtaFromContext({ category: ctx.category }), {
+    linkType: 'category',
+    ctaLink: '/shop?category=beers',
+  });
+  assert.deepStrictEqual(buildCtaFromContext({ brand: ctx.brand }), {
+    linkType: 'brand',
+    ctaLink: '/shop?brand=Guinness',
+  });
+  assert.strictEqual(buildCtaFromContext({}), null);
+  assert.strictEqual(buildCtaFromContext(null), null);
+});
+
+test('CTA links encode names and slugs so a URL never breaks', () => {
+  assert.strictEqual(brandCtaLink({ name: 'Moët & Chandon' }), '/shop?brand=Mo%C3%ABt%20%26%20Chandon');
+  assert.strictEqual(
+    subcategoryCtaLink({ slug: 'côtes-du-rhône', parentSlug: 'wines' }),
+    '/shop?category=wines&subcategory=c%C3%B4tes-du-rh%C3%B4ne'
+  );
 });

@@ -73,6 +73,137 @@ const STYLE_OPTIONS = [
   },
 ] as const;
 
+/**
+ * Target cards + the picker for whichever target is open.
+ *
+ * Rendered in BOTH tabs: the "Multiple Options" tab used to have no picker at
+ * all while its empty state told you to "pick a context above", so the only way
+ * to target a suggestion set was to set it in the other tab first.
+ */
+function ContextSection({
+  ai,
+  contextLabels,
+}: {
+  ai: BannerAIController;
+  contextLabels: {
+    product?: string;
+    category?: string;
+    subcategory?: string;
+    brand?: string;
+  };
+}) {
+  return (
+    <div className="space-y-4">
+      <ContextTargetCards
+        contextData={ai.contextData}
+        activeTarget={ai.activeTarget}
+        selectedProductName={
+          ai.contextData.productId
+            ? (ai.selectedProduct?.id === ai.contextData.productId
+                ? ai.selectedProduct.name
+                : contextLabels.product) || 'Selected'
+            : undefined
+        }
+        categoryName={contextLabels.category}
+        subcategoryName={contextLabels.subcategory}
+        brandName={contextLabels.brand}
+        onToggle={ai.handleToggleTarget}
+        onClear={ai.handleClearContext}
+      />
+
+      {ai.activeTarget === 'product' && (
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-gray-500">
+            Select Product
+          </label>
+          <ProductPicker
+            search={ai.productSearch}
+            onSearchChange={ai.setProductSearch}
+            results={ai.productResults}
+            searching={ai.searchingProducts}
+            popularProducts={ai.contextProducts}
+            selectedId={ai.contextData.productId}
+            onSelect={(p) => {
+              ai.setContextData((prev) => ({ ...prev, productId: p.id }));
+              ai.setSelectedProduct(p);
+            }}
+            isLoadingContext={ai.isLoadingContext}
+            isPartial={ai.productsArePartial}
+          />
+        </div>
+      )}
+
+      {ai.activeTarget === 'category' && (
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-gray-500">
+            Select Category
+          </label>
+          <CategorySelect
+            categories={ai.contextCategories}
+            selectedId={ai.contextData.categoryId}
+            onSelect={(id) =>
+              ai.setContextData((prev) => ({ ...prev, categoryId: id }))
+            }
+            isLoadingContext={ai.isLoadingContext}
+          />
+        </div>
+      )}
+
+      {ai.activeTarget === 'subcategory' && (
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-gray-500">
+            Select Subcategory
+          </label>
+          <SearchableListPicker
+            search={ai.subcategorySearch}
+            onSearchChange={ai.setSubcategorySearch}
+            placeholder="Search subcategories by name or parent category..."
+            items={ai.contextSubcategories}
+            selectedId={ai.contextData.subcategoryId}
+            onSelect={(id) =>
+              ai.setContextData((prev) => ({ ...prev, subcategoryId: id }))
+            }
+            isLoadingContext={ai.isLoadingContext}
+            loadingLabel="Loading subcategories..."
+            emptyLabel="No subcategories match"
+            countNoun="subcategor"
+            totalCount={ai.contextCounts?.subcategories}
+            renderItem={(s, selected) => (
+              <SubcategoryItem s={s} selected={selected} />
+            )}
+          />
+        </div>
+      )}
+
+      {ai.activeTarget === 'brand' && (
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-gray-500">
+            Select Brand
+          </label>
+          <SearchableListPicker
+            search={ai.brandSearch}
+            onSearchChange={ai.setBrandSearch}
+            placeholder="Search brands by name or country..."
+            items={ai.contextBrands}
+            selectedId={ai.contextData.brandId}
+            onSelect={(id) =>
+              ai.setContextData((prev) => ({ ...prev, brandId: id }))
+            }
+            isLoadingContext={ai.isLoadingContext}
+            loadingLabel="Loading brands..."
+            emptyLabel="No brands match"
+            countNoun="brand"
+            totalCount={ai.contextCounts?.brands}
+            renderItem={(b, selected) => (
+              <BrandItem b={b} selected={selected} />
+            )}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function GenerateModal({
   ai,
   contextLabels,
@@ -191,115 +322,7 @@ export default function GenerateModal({
           {!ai.showSuggestions ? (
             /* Single generation mode */
             <div className="space-y-6">
-              <ContextTargetCards
-                contextData={ai.contextData}
-                activeTarget={ai.activeTarget}
-                selectedProductName={
-                  ai.contextData.productId
-                    ? (ai.selectedProduct?.id === ai.contextData.productId
-                        ? ai.selectedProduct.name
-                        : contextLabels.product) || 'Selected'
-                    : undefined
-                }
-                categoryName={contextLabels.category}
-                subcategoryName={contextLabels.subcategory}
-                brandName={contextLabels.brand}
-                onToggle={ai.handleToggleTarget}
-                onClear={ai.handleClearContext}
-              />
-
-              {ai.activeTarget === 'product' && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                    Select Product
-                  </label>
-                  <ProductPicker
-                    search={ai.productSearch}
-                    onSearchChange={ai.setProductSearch}
-                    results={ai.productResults}
-                    searching={ai.searchingProducts}
-                    popularProducts={ai.contextProducts}
-                    selectedId={ai.contextData.productId}
-                    onSelect={(p) => {
-                      ai.setContextData((prev) => ({
-                        ...prev,
-                        productId: p.id,
-                      }));
-                      ai.setSelectedProduct(p);
-                    }}
-                    isLoadingContext={ai.isLoadingContext}
-                  />
-                </div>
-              )}
-
-              {ai.activeTarget === 'category' && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                    Select Category
-                  </label>
-                  <CategorySelect
-                    categories={ai.contextCategories}
-                    selectedId={ai.contextData.categoryId}
-                    onSelect={(id) =>
-                      ai.setContextData((prev) => ({ ...prev, categoryId: id }))
-                    }
-                    isLoadingContext={ai.isLoadingContext}
-                  />
-                </div>
-              )}
-
-              {ai.activeTarget === 'subcategory' && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                    Select Subcategory
-                  </label>
-                  <SearchableListPicker
-                    search={ai.subcategorySearch}
-                    onSearchChange={ai.setSubcategorySearch}
-                    placeholder="Search subcategories..."
-                    items={ai.contextSubcategories}
-                    selectedId={ai.contextData.subcategoryId}
-                    onSelect={(id) =>
-                      ai.setContextData((prev) => ({
-                        ...prev,
-                        subcategoryId: id,
-                      }))
-                    }
-                    isLoadingContext={ai.isLoadingContext}
-                    loadingLabel="Loading..."
-                    emptyLabel="No subcategories match"
-                    countNoun="subcategor"
-                    renderItem={(s, selected) => (
-                      <SubcategoryItem s={s} selected={selected} />
-                    )}
-                  />
-                </div>
-              )}
-
-              {ai.activeTarget === 'brand' && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                    Select Brand
-                  </label>
-                  <SearchableListPicker
-                    search={ai.brandSearch}
-                    onSearchChange={ai.setBrandSearch}
-                    placeholder="Search brands..."
-                    items={ai.contextBrands}
-                    selectedId={ai.contextData.brandId}
-                    onSelect={(id) =>
-                      ai.setContextData((prev) => ({ ...prev, brandId: id }))
-                    }
-                    isLoadingContext={ai.isLoadingContext}
-                    loadingLabel="Loading brands..."
-                    emptyLabel="No brands match"
-                    countNoun="brand"
-                    renderItem={(b, selected) => (
-                      <BrandItem b={b} selected={selected} />
-                    )}
-                  />
-                </div>
-              )}
+              <ContextSection ai={ai} contextLabels={contextLabels} />
 
               {/* Placement & Type */}
               <div className="grid gap-6 lg:grid-cols-2">
@@ -455,6 +478,60 @@ export default function GenerateModal({
           ) : (
             /* Multiple options mode */
             <div className="space-y-4">
+              <ContextSection ai={ai} contextLabels={contextLabels} />
+
+              {/* Style — the suggestions endpoint honours this the same way the
+                  single-generate one does, so it belongs in both tabs. */}
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-gray-700">
+                  Style Direction
+                </label>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {STYLE_OPTIONS.map(({ key, icon: Ic, color, bg, text }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() =>
+                        ai.setContextData((prev) => ({ ...prev, style: key }))
+                      }
+                      className={cn(
+                        'flex flex-col items-center gap-1.5 rounded-xl p-3 text-center transition-all',
+                        ai.contextData.style === key
+                          ? `bg-gradient-to-br ${color} scale-105 text-white shadow-lg`
+                          : `${bg} ${text} hover:scale-105`
+                      )}
+                    >
+                      <Ic className="h-5 w-5" />
+                      <span className="text-xs font-medium capitalize">
+                        {key}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-gray-400">
+                  Every option stays in this style — the variation is in the
+                  angle and wording, not the tone.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-gray-700">
+                  Additional Context (optional)
+                </label>
+                <textarea
+                  value={ai.contextData.customContext}
+                  onChange={(e) =>
+                    ai.setContextData((prev) => ({
+                      ...prev,
+                      customContext: e.target.value,
+                    }))
+                  }
+                  placeholder="E.g., 'Include mentions of Valentine's Day' or 'Focus on gift-giving angle'"
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-gray-200 px-4 py-3 text-sm placeholder-gray-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                />
+              </div>
+
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm text-gray-600">
                   Generate multiple style variations for{' '}
@@ -546,7 +623,9 @@ export default function GenerateModal({
               {!ai.showSuggestions ? (
                 ai.generatedContent ? (
                   <Button
-                    onClick={() => ai.applyGeneratedContent(ai.generatedContent)}
+                    onClick={() =>
+                      ai.applyGeneratedContent(ai.generatedContent)
+                    }
                     type="button"
                     className="bg-green-600 hover:bg-green-700"
                   >

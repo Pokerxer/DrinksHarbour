@@ -57,6 +57,9 @@ export const EMPTY_BANNER_FORM: BannerFormData = {
   backgroundColor: '#FFFFFF',
   textColor: '#000000',
   overlayOpacity: 0,
+  imageFit: 'cover',
+  gradientIntensity: 100,
+  blurIntensity: 100,
   textAlignment: 'center',
   contentPosition: 'center',
   startDate: '',
@@ -104,14 +107,17 @@ export default function CreateEditBanner({
     _id: string;
     name: string;
   } | null>(null);
+  // Banner.targetBrand exists on the model but nothing ever set it — a
+  // brand-targeted banner saved with no brand ref at all.
+  const [targetBrand, setTargetBrand] = useState<{
+    _id: string;
+    name: string;
+  } | null>(null);
 
-  const set = useCallback(
-    (field: keyof BannerFormData, value: any) => {
-      setFormData((prev) => ({ ...prev, [field]: value }));
-      setHasUnsavedChanges(true);
-    },
-    []
-  );
+  const set = useCallback((field: keyof BannerFormData, value: any) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setHasUnsavedChanges(true);
+  }, []);
 
   const ai = useBannerAI({
     token,
@@ -119,6 +125,7 @@ export default function CreateEditBanner({
     setField: set,
     setTargetProduct,
     setTargetCategory,
+    setTargetBrand,
   });
 
   useEffect(() => {
@@ -174,6 +181,10 @@ export default function CreateEditBanner({
       backgroundColor: data.backgroundColor || '#FFFFFF',
       textColor: data.textColor || '#000000',
       overlayOpacity: data.overlayOpacity || 0,
+      imageFit: data.imageFit || 'cover',
+      // `?? 100` not `|| 100` — a deliberate 0 must survive the round-trip.
+      gradientIntensity: data.gradientIntensity ?? 100,
+      blurIntensity: data.blurIntensity ?? 100,
       textAlignment: data.textAlignment || 'center',
       contentPosition: data.contentPosition || 'center',
       startDate: data.startDate
@@ -208,6 +219,13 @@ export default function CreateEditBanner({
         name: typeof c === 'object' ? c.name || '' : '',
       });
     }
+    if ((data as any).targetBrand) {
+      const b = (data as any).targetBrand;
+      setTargetBrand({
+        _id: typeof b === 'object' ? b._id || b.id : b,
+        name: typeof b === 'object' ? b.name || '' : '',
+      });
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -239,6 +257,9 @@ export default function CreateEditBanner({
           : undefined,
         targetCategory: isObjectId(targetCategory?._id)
           ? targetCategory!._id
+          : undefined,
+        targetBrand: isObjectId(targetBrand?._id)
+          ? targetBrand!._id
           : undefined,
       };
       const response =
@@ -328,7 +349,11 @@ export default function CreateEditBanner({
           >
             Cancel
           </Button>
-          <Button type="submit" isLoading={submitting} className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]">
+          <Button
+            type="submit"
+            isLoading={submitting}
+            className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]"
+          >
             {isEdit ? 'Update Banner' : 'Create Banner'}
           </Button>
         </div>
@@ -338,12 +363,18 @@ export default function CreateEditBanner({
       <GenerateModal
         ai={ai}
         contextLabels={{
-          product: ai.contextProducts.find((p: any) => p.id === ai.contextData.productId)?.name,
-          category: ai.contextCategories.find((c: any) => c.id === ai.contextData.categoryId)?.name,
+          product: ai.contextProducts.find(
+            (p: any) => p.id === ai.contextData.productId
+          )?.name,
+          category: ai.contextCategories.find(
+            (c: any) => c.id === ai.contextData.categoryId
+          )?.name,
           subcategory: ai.contextSubcategories.find(
             (s: any) => s.id === ai.contextData.subcategoryId
           )?.name,
-          brand: ai.contextBrands.find((b: any) => b.id === ai.contextData.brandId)?.name,
+          brand: ai.contextBrands.find(
+            (b: any) => b.id === ai.contextData.brandId
+          )?.name,
         }}
       />
 
@@ -432,7 +463,11 @@ export default function CreateEditBanner({
             >
               Cancel
             </Button>
-            <Button type="submit" isLoading={submitting} className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]">
+            <Button
+              type="submit"
+              isLoading={submitting}
+              className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]"
+            >
               {isEdit ? 'Update Banner' : 'Create Banner'}
             </Button>
           </div>

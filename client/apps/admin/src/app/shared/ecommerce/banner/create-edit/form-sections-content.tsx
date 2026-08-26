@@ -86,7 +86,9 @@ export function BasicInfoSection({
             <FieldSparkle
               field="title"
               busy={enhancingField === 'title'}
-              disabled={enhancingField === 'title' || !(formData.title || '').trim()}
+              disabled={
+                enhancingField === 'title' || !(formData.title || '').trim()
+              }
               onClick={() => onEnhanceField('title')}
             />
           }
@@ -101,7 +103,10 @@ export function BasicInfoSection({
             <FieldSparkle
               field="subtitle"
               busy={enhancingField === 'subtitle'}
-              disabled={enhancingField === 'subtitle' || !(formData.subtitle || '').trim()}
+              disabled={
+                enhancingField === 'subtitle' ||
+                !(formData.subtitle || '').trim()
+              }
               onClick={() => onEnhanceField('subtitle')}
             />
           }
@@ -179,7 +184,9 @@ export function BasicInfoSection({
                     : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
                 }`}
               >
-                <span className={`h-2 w-2 rounded-full ${PRIORITY_DOTS[opt.value]}`} />
+                <span
+                  className={`h-2 w-2 rounded-full ${PRIORITY_DOTS[opt.value]}`}
+                />
                 {opt.label}
               </button>
             ))}
@@ -224,7 +231,9 @@ export function ImagesSection({
         <ImageUploadField
           label="Mobile Image"
           value={formData.mobileImage?.url || ''}
-          onChange={(url) => set('mobileImage', { ...formData.mobileImage, url })}
+          onChange={(url) =>
+            set('mobileImage', { ...formData.mobileImage, url })
+          }
           token={token}
           folder="banners"
           aspectRatio="wide"
@@ -284,7 +293,10 @@ export function CtaSection({
             onProductSelect(product);
             onCategorySelect(null);
             if (product) {
-              set('ctaLink', `/shop?search=${encodeURIComponent(product.name)}`);
+              set(
+                'ctaLink',
+                `/shop?search=${encodeURIComponent(product.name)}`
+              );
             }
           }}
           onCategorySelect={(category) => {
@@ -305,7 +317,9 @@ export function CtaSection({
             <FieldSparkle
               field="ctaText"
               busy={enhancingField === 'ctaText'}
-              disabled={enhancingField === 'ctaText' || !(formData.ctaText || '').trim()}
+              disabled={
+                enhancingField === 'ctaText' || !(formData.ctaText || '').trim()
+              }
               onClick={() => onEnhanceField('ctaText')}
             />
           }
@@ -444,6 +458,53 @@ export function StylingSection({ formData, set }: SectionBaseProps) {
             onChange={(e) => set('overlayOpacity', Number(e.target.value))}
             className="w-full accent-blue-600"
           />
+        </div>
+        <Select
+          label="Image Fit"
+          options={[
+            { value: 'cover', label: 'Cover (crop to fill)' },
+            { value: 'contain', label: 'Contain (fit whole image)' },
+          ]}
+          value={formData.imageFit}
+          getOptionValue={(o) => o.value}
+          displayValue={(v: any) => v}
+          onChange={(v: any) => set('imageFit', v?.value ?? v)}
+        />
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            Gradient Intensity:{' '}
+            <span className="font-semibold">{formData.gradientIntensity}%</span>
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={formData.gradientIntensity}
+            onChange={(e) => set('gradientIntensity', Number(e.target.value))}
+            className="w-full accent-blue-600"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            Dims the hero&apos;s cinematic gradient and vignette. 0% removes it.
+          </p>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            Blur Intensity:{' '}
+            <span className="font-semibold">{formData.blurIntensity}%</span>
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={formData.blurIntensity}
+            onChange={(e) => set('blurIntensity', Number(e.target.value))}
+            className="w-full accent-blue-600"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            Scales the slide transition blur and the frosted buttons and badges.
+          </p>
         </div>
       </div>
     </CollapsibleSection>

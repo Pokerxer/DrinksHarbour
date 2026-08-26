@@ -143,10 +143,13 @@ const bannerSchema = new mongoose.Schema(
       default: '#000000',
     },
 
+    // 0-100 percent. The admin slider and the storefront both speak percent;
+    // this was capped at 1 for a long time, which made every non-zero overlay
+    // fail validation on save.
     overlayOpacity: {
       type: Number,
       min: 0,
-      max: 1,
+      max: 100,
       default: 0,
     },
 
@@ -160,6 +163,37 @@ const bannerSchema = new mongoose.Schema(
       type: String,
       enum: ['top-left', 'top-center', 'top-right', 'center-left', 'center', 'center-right', 'bottom-left', 'bottom-center', 'bottom-right'],
       default: 'center',
+    },
+
+    // ---- Hero display controls -------------------------------------------
+    // Defaults reproduce the shipped hero exactly: full-strength gradient,
+    // full-strength blur, cropped-to-fill image.
+
+    // 'contain' fits the whole image inside the frame and letterboxes with
+    // backgroundColor; it also flattens the hero's background parallax, which
+    // would otherwise crop ~8% and defeat the point of fitting.
+    imageFit: {
+      type: String,
+      enum: ['cover', 'contain'],
+      default: 'cover',
+    },
+
+    // Scales the hero's cinematic gradient, vignette and light-wipe. 0 removes
+    // them entirely; 100 is the shipped look.
+    gradientIntensity: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 100,
+    },
+
+    // Scales BOTH the slide-transition blur and the frosted-glass chrome
+    // (CTA, badge, trust pills, arrows). 0 removes all blur; 100 is shipped.
+    blurIntensity: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 100,
     },
 
     customCSS: {

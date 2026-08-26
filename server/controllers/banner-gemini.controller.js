@@ -5,6 +5,7 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 const asyncHandler = require('express-async-handler');
+const mongoose = require('mongoose');
 const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
 const Product = require('../models/Product');
@@ -41,22 +42,64 @@ async function callBannerHaikuJson(prompt, maxTokens = 1024) {
   return message.content?.[0]?.text || '';
 }
 
+// Safety caps for the context payload. These sit far above the live catalogue
+// (46 categories / 612 subcategories / 551 approved products / 360 active brands
+// as of 2026-08-26) so the pickers show EVERYTHING — the previous 150/50 caps
+// silently hid 462 subcategories and 310 brands from a picker that only filters
+// client-side. If a cap is ever hit we log it rather than truncating in silence.
+const CONTEXT_CAPS = {
+  categories: 300,
+  subcategories: 1500,
+  products: 120,
+  brands: 1000,
+};
+
+// Warn loudly when a cap actually bites — a silent truncation reads as
+// "that's the whole catalogue" to whoever is using the picker.
+const warnIfCapped = (label, count, cap) => {
+  if (count >= cap) {
+    console.warn(`[banner-ai] ${label} hit the ${cap} cap — the picker is showing a truncated list`);
+  }
+};
+
 const fetchCategories = async () => {
   try {
-    const categories = await Category.find({ status: 'published' }).select('_id name slug type').lean();
-    return categories.map(c => ({ id: c._id.toString(), name: c.name, slug: c.slug, type: c.type }));
+    const categories = await Category.find({ status: 'published' })
+      .select('_id name slug type description displayOrder')
+      .sort({ displayOrder: 1, name: 1 })
+      .limit(CONTEXT_CAPS.categories)
+      .lean();
+    warnIfCapped('categories', categories.length, CONTEXT_CAPS.categories);
+    return categories.map(c => ({
+      id: c._id.toString(),
+      name: c.name,
+      slug: c.slug,
+      type: c.type,
+    }));
   } catch (error) {
     console.error('Error fetching categories:', error);
     return [];
   }
 };
 
-const fetchProducts = async (limit = 20) => {
+// Pick the primary gallery image, else the first one. Images are objects
+// ({ url, isPrimary, order, ... }) but tolerate a bare string array.
+const primaryImageUrl = (images) => {
+  if (!Array.isArray(images) || images.length === 0) return '';
+  const pick = images.find(i => i && i.isPrimary) || images[0];
+  return (typeof pick === 'string' ? pick : pick?.url) || '';
+};
+
+// The preloaded product set is labelled "popular" in the picker, so it has to
+// actually BE popular — unsorted `find()` was returning insertion order. Anything
+// outside this set is still reachable through the picker's live server search.
+const fetchProducts = async (limit = CONTEXT_CAPS.products) => {
   try {
     // Product status enum has no 'published' — approved is the live/visible state.
     const products = await Product.find({ status: 'approved' })
-      .select('_id name slug type brand')
-      .populate('brand', 'name')
+      .select('_id name slug type brand images totalSold viewCount averageRating isFeatured')
+      .populate('brand', 'name slug')
+      .sort({ isFeatured: -1, totalSold: -1, viewCount: -1, averageRating: -1, name: 1 })
       .limit(limit)
       .lean();
     return products.map(p => ({
@@ -64,7 +107,12 @@ const fetchProducts = async (limit = 20) => {
       name: p.name,
       slug: p.slug,
       type: p.type,
-      brand: p.brand?.name || ''
+      brand: p.brand?.name || '',
+      brandSlug: p.brand?.slug || '',
+      // The picker renders a thumbnail; omitting `images` from the projection is
+      // what made every preloaded row fall back to the placeholder icon while
+      // searched rows (a different endpoint) showed real images.
+      image: primaryImageUrl(p.images),
     }));
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -72,33 +120,53 @@ const fetchProducts = async (limit = 20) => {
   }
 };
 
-const fetchBrands = async (limit = 20) => {
+const fetchBrands = async (limit = CONTEXT_CAPS.brands) => {
   try {
-    const brands = await Brand.find({ status: 'active' }).select('_id name').limit(limit).lean();
-    return brands.map(b => ({ id: b._id.toString(), name: b.name }));
+    // logo + countryOfOrigin are RENDERED by the brand picker and its search
+    // filter matches on countryOfOrigin — projecting only `_id name` meant no
+    // logos, no country line, and country search that could never match.
+    const brands = await Brand.find({ status: 'active' })
+      .select('_id name slug logo countryOfOrigin')
+      .sort({ name: 1 })
+      .limit(limit)
+      .lean();
+    warnIfCapped('brands', brands.length, limit);
+    return brands.map(b => ({
+      id: b._id.toString(),
+      name: b.name,
+      slug: b.slug || '',
+      countryOfOrigin: b.countryOfOrigin || '',
+      logo: b.logo?.url ? { url: b.logo.url } : null,
+    }));
   } catch (error) {
     console.error('Error fetching brands:', error);
     return [];
   }
 };
 
-const fetchSubCategories = async (limit = 100) => {
+const fetchSubCategories = async (limit = CONTEXT_CAPS.subcategories) => {
   try {
     const subs = await SubCategory.find({ status: 'published' })
-      .select('_id name slug type parent')
+      .select('_id name slug type parent displayOrder')
       .populate('parent', 'name slug')
       .sort({ displayOrder: 1, name: 1 })
       .limit(limit)
       .lean();
-    return subs.map(s => ({
-      id: s._id.toString(),
-      name: s.name,
-      slug: s.slug,
-      type: s.type,
-      parentId: s.parent?._id ? s.parent._id.toString() : '',
-      parentName: s.parent?.name || '',
-      parentSlug: s.parent?.slug || '',
-    }));
+    warnIfCapped('subcategories', subs.length, limit);
+    return subs
+      .map(s => ({
+        id: s._id.toString(),
+        name: s.name,
+        slug: s.slug,
+        type: s.type,
+        parentId: s.parent?._id ? s.parent._id.toString() : '',
+        parentName: s.parent?.name || '',
+        parentSlug: s.parent?.slug || '',
+      }))
+      // Group by parent so a 600-row list reads as a catalogue, not a jumble.
+      .sort((a, b) =>
+        a.parentName.localeCompare(b.parentName) || a.name.localeCompare(b.name)
+      );
   } catch (error) {
     console.error('Error fetching subcategories:', error);
     return [];
@@ -112,72 +180,180 @@ const STYLE_GUIDANCE = {
   calm: '- Calm, reassuring, trustworthy tone',
 };
 
+// ── Context resolution ───────────────────────────────────────────────────────
+// One resolver shared by /generate and /suggestions so both endpoints see the
+// same context and hand the client the same link-building material.
+//
+// `validate` is inert repo-wide (all bare `validate,` positions call next()
+// immediately), so the routes' isMongoId() rules never actually run — the id
+// check has to happen HERE or a malformed id reaches Mongoose and throws a
+// CastError that the old catch swallowed into generic demo copy.
+
+const TARGET_KEYS = ['productId', 'categoryId', 'subcategoryId', 'brandId'];
+
+/** Collect the ids in the body that aren't castable ObjectIds. */
+const invalidTargetIds = (body = {}) =>
+  TARGET_KEYS.filter(
+    (k) => body[k] && !mongoose.Types.ObjectId.isValid(String(body[k]))
+  );
+
+/**
+ * Load whichever targets were asked for.
+ *
+ * Returns `{ context, resolved, unresolved }` where:
+ *  - `context`    — the rich fields the prompt interpolates
+ *  - `resolved`   — id/name/slug (+ parent slug) the CLIENT needs to build a
+ *                   storefront CTA link; the AI is never trusted with a URL
+ *  - `unresolved` — targets whose id was well-formed but matched no live
+ *                   document. Surfaced to the caller instead of being ignored:
+ *                   generating "about your product" copy with no product loaded
+ *                   is the failure mode that looks like success.
+ */
+const resolveBannerContext = async ({ productId, categoryId, subcategoryId, brandId } = {}) => {
+  const context = {};
+  const resolved = {};
+  const unresolved = [];
+
+  const [product, category, subcategory, brand] = await Promise.all([
+    productId
+      ? Product.findById(productId).populate('brand', 'name slug').populate('category', 'name slug').lean()
+      : null,
+    categoryId ? Category.findById(categoryId).lean() : null,
+    subcategoryId ? SubCategory.findById(subcategoryId).populate('parent', 'name slug').lean() : null,
+    brandId ? Brand.findById(brandId).lean() : null,
+  ]);
+
+  if (productId) {
+    if (product) {
+      context.product = {
+        name: product.name,
+        type: product.type,
+        brand: product.brand?.name,
+        category: product.category?.name,
+        shortDescription: product.shortDescription,
+        abv: product.abv,
+        origin: product.originCountry,
+        vintage: product.vintage,
+      };
+      resolved.product = {
+        id: product._id.toString(),
+        name: product.name,
+        slug: product.slug || '',
+        brand: product.brand?.name || '',
+      };
+    } else unresolved.push('product');
+  }
+
+  if (categoryId) {
+    if (category) {
+      context.category = { name: category.name, type: category.type, description: category.description };
+      resolved.category = {
+        id: category._id.toString(),
+        name: category.name,
+        slug: category.slug || '',
+      };
+    } else unresolved.push('category');
+  }
+
+  if (subcategoryId) {
+    if (subcategory) {
+      context.subcategory = {
+        name: subcategory.name,
+        type: subcategory.type,
+        parent: subcategory.parent?.name,
+        description: subcategory.description || subcategory.shortDescription,
+      };
+      resolved.subcategory = {
+        id: subcategory._id.toString(),
+        name: subcategory.name,
+        slug: subcategory.slug || '',
+        // The storefront scopes a subcategory filter by its parent when
+        // ?category= is present, so the parent slug travels with it.
+        parentName: subcategory.parent?.name || '',
+        parentSlug: subcategory.parent?.slug || '',
+      };
+    } else unresolved.push('subcategory');
+  }
+
+  if (brandId) {
+    if (brand) {
+      context.brand = { name: brand.name, description: brand.description };
+      resolved.brand = {
+        id: brand._id.toString(),
+        name: brand.name,
+        slug: brand.slug || '',
+      };
+    } else unresolved.push('brand');
+  }
+
+  return { context, resolved, unresolved };
+};
+
+/** Human-readable one-liner describing the loaded context (suggestions prompt). */
+const describeContext = (context) => {
+  if (context.product) {
+    return `Product: "${context.product.name}"${context.product.brand ? ` by ${context.product.brand}` : ''}`;
+  }
+  if (context.subcategory) {
+    return `Subcategory: "${context.subcategory.name}"${context.subcategory.parent ? ` (under ${context.subcategory.parent})` : ''}`;
+  }
+  if (context.category) return `Category: "${context.category.name}"`;
+  if (context.brand) return `Brand: "${context.brand.name}"`;
+  return '';
+};
+
 /**
  * Generate complete banner content using AI
  * POST /api/banner-ai/generate
  */
 const generateBannerContent = asyncHandler(async (req, res) => {
-  const { productId, categoryId, subcategoryId, brandId, bannerType, placement, customContext, style } = req.body;
+  const { bannerType, placement, customContext, style } = req.body;
+
+  // Bad ids are a client bug, not an AI failure — say so instead of quietly
+  // returning generic copy the admin will believe was written for their product.
+  const badIds = invalidTargetIds(req.body);
+  if (badIds.length) {
+    return res.status(400).json({
+      success: false,
+      message: `Invalid id for: ${badIds.join(', ')}`,
+    });
+  }
+
+  // Context resolution happens BEFORE the AI-configured check so an unreachable
+  // target is reported the same way with or without an API key.
+  let context;
+  let resolved;
+  let unresolved;
+  try {
+    ({ context, resolved, unresolved } = await resolveBannerContext(req.body));
+  } catch (error) {
+    console.error('Banner context resolution failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load the selected banner context' });
+  }
+
+  if (unresolved.length) {
+    return res.status(404).json({
+      success: false,
+      message: `Could not find the selected ${unresolved.join(' / ')} — it may have been deleted or unpublished.`,
+      unresolved,
+    });
+  }
 
   if (!anthropic) {
     return res.json({
       success: true,
       data: generateDemoBannerContent(req.body),
+      resolvedContext: resolved,
       note: 'Using demo data - AI not configured (ANTHROPIC_API_KEY missing)',
       fallback: true,
     });
   }
 
   try {
-    let productContext = null;
-    let categoryContext = null;
-    let subcategoryContext = null;
-    let brandContext = null;
-
-    if (productId) {
-      const product = await Product.findById(productId)
-        .populate('brand', 'name')
-        .populate('category', 'name')
-        .lean();
-      if (product) {
-        productContext = {
-          name: product.name,
-          type: product.type,
-          brand: product.brand?.name,
-          category: product.category?.name,
-          shortDescription: product.shortDescription,
-          abv: product.abv,
-          origin: product.originCountry,
-          vintage: product.vintage
-        };
-      }
-    }
-
-    if (categoryId) {
-      const category = await Category.findById(categoryId).lean();
-      if (category) {
-        categoryContext = { name: category.name, type: category.type, description: category.description };
-      }
-    }
-
-    if (subcategoryId) {
-      const subcategory = await SubCategory.findById(subcategoryId).populate('parent', 'name').lean();
-      if (subcategory) {
-        subcategoryContext = {
-          name: subcategory.name,
-          type: subcategory.type,
-          parent: subcategory.parent?.name,
-          description: subcategory.description || subcategory.shortDescription,
-        };
-      }
-    }
-
-    if (brandId) {
-      const brand = await Brand.findById(brandId).lean();
-      if (brand) {
-        brandContext = { name: brand.name, description: brand.description };
-      }
-    }
+    const productContext = context.product || null;
+    const categoryContext = context.category || null;
+    const subcategoryContext = context.subcategory || null;
+    const brandContext = context.brand || null;
 
     const prompt = `Generate catchy, conversion-optimized banner content for a beverage e-commerce platform.
 
@@ -249,6 +425,8 @@ Return ONLY valid JSON (no markdown, no explanation):
     res.json({
       success: true,
       data,
+      // The client derives the CTA link from THIS, never from an AI-invented URL.
+      resolvedContext: resolved,
       metadata: {
         hasProduct: !!productContext,
         hasCategory: !!categoryContext,
@@ -262,6 +440,7 @@ Return ONLY valid JSON (no markdown, no explanation):
     return res.json({
       success: true,
       data: generateDemoBannerContent(req.body),
+      resolvedContext: resolved,
       note: 'Using demo data - AI service unavailable',
       fallback: true
     });
@@ -330,7 +509,10 @@ const generateDemoBannerContent = (params) => {
  * POST /api/banner-ai/suggestions
  */
 const generateBannerSuggestions = asyncHandler(async (req, res) => {
-  const { productId, categoryId, subcategoryId, brandId, bannerType, placement, count = 3 } = req.body;
+  const { bannerType, placement, customContext, style } = req.body;
+  // Clamp before use — `count` reaches the prompt and the slice, and `validate`
+  // is inert so the route's isInt({min:1,max:5}) rule never runs.
+  const count = Math.min(Math.max(parseInt(req.body.count, 10) || 3, 1), 5);
 
   const demoFallback = () => {
     const demoSuggestions = [];
@@ -340,11 +522,35 @@ const generateBannerSuggestions = asyncHandler(async (req, res) => {
     return demoSuggestions;
   };
 
+  const badIds = invalidTargetIds(req.body);
+  if (badIds.length) {
+    return res.status(400).json({ success: false, message: `Invalid id for: ${badIds.join(', ')}` });
+  }
+
+  let context;
+  let resolved;
+  let unresolved;
+  try {
+    ({ context, resolved, unresolved } = await resolveBannerContext(req.body));
+  } catch (error) {
+    console.error('Banner context resolution failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load the selected banner context' });
+  }
+
+  if (unresolved.length) {
+    return res.status(404).json({
+      success: false,
+      message: `Could not find the selected ${unresolved.join(' / ')} — it may have been deleted or unpublished.`,
+      unresolved,
+    });
+  }
+
   if (!anthropic) {
     const demo = demoFallback();
     return res.json({
       success: true,
       data: demo,
+      resolvedContext: resolved,
       note: 'Using demo data - AI not configured',
       fallback: true,
       metadata: { count: demo.length, generatedAt: new Date().toISOString() }
@@ -352,44 +558,38 @@ const generateBannerSuggestions = asyncHandler(async (req, res) => {
   }
 
   try {
-    let contextDesc = '';
-
-    if (productId) {
-      const product = await Product.findById(productId).populate('brand', 'name').lean();
-      if (product) contextDesc = `Product: "${product.name}" by ${product.brand?.name || 'Unknown Brand'}`;
-    } else if (subcategoryId) {
-      const subcategory = await SubCategory.findById(subcategoryId).populate('parent', 'name').lean();
-      if (subcategory) contextDesc = `Subcategory: "${subcategory.name}"${subcategory.parent?.name ? ` (under ${subcategory.parent.name})` : ''}`;
-    } else if (categoryId) {
-      const category = await Category.findById(categoryId).lean();
-      if (category) contextDesc = `Category: "${category.name}"`;
-    } else if (brandId) {
-      const brand = await Brand.findById(brandId).lean();
-      if (brand) contextDesc = `Brand: "${brand.name}"`;
-    }
+    const contextDesc = describeContext(context);
 
     const placementDesc = [
       placement ? `Placement: ${placement}` : '',
       bannerType ? `Banner type: ${bannerType}` : '',
     ].filter(Boolean).join(' | ');
 
+    // The single-generate endpoint has always honoured style + customContext;
+    // this one silently discarded both, so the style buttons and the "Additional
+    // Context" box did nothing in the Multiple Options tab.
     const prompt = `Generate ${count} different banner content options for: ${contextDesc || 'a promotional banner'}
-${placementDesc ? `\nTarget: ${placementDesc}. Tailor copy length and tone to suit this placement (e.g. header/checkout strips need very short punchy copy; hero placements can be more expressive).\n` : ''}
-Create varied options with different tones (urgent, playful, elegant, informative), CTA styles, and complementary color schemes for beverage marketing.
+${placementDesc ? `\nTarget: ${placementDesc}. Tailor copy length and tone to suit this placement (e.g. header/checkout strips need very short punchy copy; hero placements can be more expressive).\n` : ''}${customContext ? `\nADDITIONAL CONTEXT (must be reflected in every option):\n${customContext}\n` : ''}${STYLE_GUIDANCE[style] ? `\nOVERALL STYLE DIRECTION:\n${STYLE_GUIDANCE[style]}\nKeep every option within this style, varying the angle and wording rather than the tone.\n` : `\nCreate varied options with different tones (urgent, playful, elegant, informative).\n`}
+Vary CTA wording and use complementary color schemes for beverage marketing.
 
-Each option must include: title (max 60 chars), subtitle (max 100 chars), ctaText (3-6 words), backgroundColor (hex), textColor (hex for contrast), tags (4-6), styleNote (brief tone description).
+Each option must include: title (max 60 chars), subtitle (max 100 chars), ctaText (3-6 words), backgroundColor (hex), textColor (hex for contrast), tags (4-6), styleNote (brief tone description), plus contentPosition (${CONTENT_POSITIONS.join(' | ')}) and textAlignment (${TEXT_ALIGNMENTS.join(' | ')}) and ctaStyle (${BANNER_CTA_STYLES.join(' | ')}).
 
 Return ONLY a valid JSON array (no markdown):
-[{ "title": "...", "subtitle": "...", "ctaText": "...", "backgroundColor": "#...", "textColor": "#...", "tags": ["..."], "styleNote": "..." }]`;
+[{ "title": "...", "subtitle": "...", "ctaText": "...", "backgroundColor": "#...", "textColor": "#...", "tags": ["..."], "styleNote": "...", "contentPosition": "...", "textAlignment": "...", "ctaStyle": "..." }]`;
 
     const text = await callBannerHaikuJson(prompt, 4096);
     let suggestions = parseAiJson(text, []);
     if (!Array.isArray(suggestions)) suggestions = [];
     suggestions = suggestions.slice(0, count).map(sanitizeBannerData);
 
+    // An empty array renders as "0 options generated" with no explanation —
+    // treat a model that returned nothing usable as a failure, not a result.
+    if (suggestions.length === 0) throw new Error('AI returned no usable options');
+
     res.json({
       success: true,
       data: suggestions,
+      resolvedContext: resolved,
       metadata: { count: suggestions.length, generatedAt: new Date().toISOString() }
     });
   } catch (error) {
@@ -398,6 +598,7 @@ Return ONLY a valid JSON array (no markdown):
     res.json({
       success: true,
       data: demo,
+      resolvedContext: resolved,
       note: 'Using demo data - AI service unavailable',
       fallback: true,
       metadata: { count: demo.length, generatedAt: new Date().toISOString() }
@@ -551,11 +752,26 @@ const getContextData = asyncHandler(async (req, res) => {
   try {
     const [categories, subcategories, products, brands] = await Promise.all([
       fetchCategories(),
-      fetchSubCategories(150),
-      fetchProducts(50),
-      fetchBrands(50)
+      fetchSubCategories(),
+      fetchProducts(),
+      fetchBrands()
     ]);
-    res.json({ success: true, data: { categories, subcategories, products, brands } });
+    res.json({
+      success: true,
+      data: { categories, subcategories, products, brands },
+      // Counts let the picker say what it is actually showing. `products` is a
+      // popularity-ranked HEAD of the catalogue (the rest is reachable through
+      // the picker's live search); the other three are complete.
+      metadata: {
+        counts: {
+          categories: categories.length,
+          subcategories: subcategories.length,
+          products: products.length,
+          brands: brands.length,
+        },
+        productsArePartial: products.length >= CONTEXT_CAPS.products,
+      },
+    });
   } catch (error) {
     console.error('Error fetching context data:', error);
     res.status(500);
@@ -569,5 +785,16 @@ module.exports = {
   enhanceBannerContent,
   enhanceField,
   generateImagePrompt,
-  getContextData
+  getContextData,
+  // Exported for scripts/tests that need to check the picker payload against a
+  // live database without standing up the HTTP layer.
+  _context: {
+    CONTEXT_CAPS,
+    fetchCategories,
+    fetchSubCategories,
+    fetchProducts,
+    fetchBrands,
+    resolveBannerContext,
+    invalidTargetIds,
+  },
 };

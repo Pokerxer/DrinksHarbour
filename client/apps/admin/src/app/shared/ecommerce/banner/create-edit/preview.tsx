@@ -35,8 +35,30 @@ function PositionedContent({
       <img
         src={formData.image?.url}
         alt="Preview"
-        className="absolute inset-0 h-full w-full object-cover"
+        className={cn(
+          'absolute inset-0 h-full w-full',
+          formData.imageFit === 'contain' ? 'object-contain' : 'object-cover'
+        )}
+        style={
+          formData.imageFit === 'contain'
+            ? { backgroundColor: formData.backgroundColor || '#1A1A2E' }
+            : undefined
+        }
       />
+      {/* Simplified stand-in for the storefront's three-layer cinematic
+          treatment — this preview is a placement sketch, not a pixel mirror. */}
+      {(formData.gradientIntensity ?? 100) > 0 && (
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `linear-gradient(110deg, ${formData.backgroundColor || '#1A1A2E'}${Math.round(
+              242 * ((formData.gradientIntensity ?? 100) / 100)
+            )
+              .toString(16)
+              .padStart(2, '0')} 0%, transparent 78%)`,
+          }}
+        />
+      )}
       {overlay > 0 && (
         <div
           className="absolute inset-0"
@@ -115,7 +137,10 @@ function BannerPreviewInner({ formData }: { formData: BannerFormData }) {
           className="flex items-center justify-between gap-3 rounded-lg px-4 py-2.5"
           style={{ backgroundColor: formData.backgroundColor || '#7C1D1D' }}
         >
-          <p className="truncate text-sm font-bold" style={{ color: textColor }}>
+          <p
+            className="truncate text-sm font-bold"
+            style={{ color: textColor }}
+          >
             {formData.title}
           </p>
           {formData.ctaText && (
@@ -149,7 +174,10 @@ function BannerPreviewInner({ formData }: { formData: BannerFormData }) {
             className="hidden h-12 w-20 flex-shrink-0 rounded-lg object-cover sm:block"
           />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold" style={{ color: textColor }}>
+            <p
+              className="truncate text-sm font-bold"
+              style={{ color: textColor }}
+            >
               {formData.title}
             </p>
             {formData.subtitle && (

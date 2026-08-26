@@ -34,6 +34,9 @@ interface BannerData {
   overlayOpacity?: number;
   textAlignment?: string;
   contentPosition?: string;
+  imageFit?: 'cover' | 'contain';
+  gradientIntensity?: number;
+  blurIntensity?: number;
   image: { url: string; alt?: string };
   animation?: { type: string; duration?: number; delay?: number };
   autoplay?: { enabled: boolean; interval?: number };
@@ -107,6 +110,34 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   const slides = banners.length > 0 ? banners : FALLBACK_SLIDES;
 
+  // `currentIndex` can outlive a shrinking slide array (fallbacks have 2 entries,
+  // a fetch may return 1), so fall back to the first slide rather than crashing.
+  const slide = slides[currentIndex] ?? slides[0];
+  const imgSrc = imgErrors[slide._id] ? '/images/images/product/1000x1000.png' : slide.image.url;
+  // Animated GIFs must skip the Next image optimizer so they keep animating.
+  const gifSrc = /\.gif(\?|$)/i.test(imgSrc);
+
+  // ---- Per-banner display controls --------------------------------------
+  // Every hardcoded blur/alpha below is SCALED by these, never replaced. At
+  // 100 the emitted CSS is byte-identical to the original design.
+  const clamp01 = (n: number | undefined) => Math.max(0, Math.min(100, n ?? 100)) / 100;
+  const blurK = clamp01(slide.blurIntensity);
+  const gradK = clamp01(slide.gradientIntensity);
+  const fitContain = slide.imageFit === 'contain';
+
+  // `+(...).toFixed(2)` drops trailing zeros: 14 * 1 -> "14px", not "14.00px".
+  const bpx = (n: number) => `blur(${+(n * blurK).toFixed(2)}px)`;
+  // Hex alpha pair scaled by gradK: 242 at full strength -> "f2".
+  const hexA = (a: number) => Math.round(a * gradK).toString(16).padStart(2, '0');
+  const rgbaA = (a: number) => +(a * gradK).toFixed(3);
+  // Tailwind's `backdrop-blur-md` IS blur(12px); at blurK 0 we emit no property
+  // at all rather than blur(0px).
+  const chromeBlur = (px = 12): React.CSSProperties => {
+    if (blurK === 0) return {};
+    const v = `blur(${+(px * blurK).toFixed(2)}px)`;
+    return { backdropFilter: v, WebkitBackdropFilter: v };
+  };
+
   // Cinematic transition — layered parallax (dolly) + rack-focus + light-wipe
   // Background, gradient, and text move at different parallax depths. When the
   // visitor prefers reduced motion we collapse every layer to a simple opacity
@@ -114,13 +145,15 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   const slideVariants = reduceMotion
     ? { enter: { opacity: 0 }, center: { zIndex: 1, opacity: 1 }, exit: { zIndex: 0, opacity: 0 } }
     : {
-        enter:  (d: number) => ({ opacity: 0, scale: 1.18, filter: 'blur(14px)' }),
-        center: { zIndex: 1, opacity: 1, scale: 1, filter: 'blur(0px)' },
-        exit:   (d: number) => ({ zIndex: 0, opacity: 0, scale: 0.94, filter: 'blur(12px)' }),
+        enter:  (d: number) => ({ opacity: 0, scale: 1.18, filter: bpx(14) }),
+        center: { zIndex: 1, opacity: 1, scale: 1, filter: bpx(0) },
+        exit:   (d: number) => ({ zIndex: 0, opacity: 0, scale: 0.94, filter: bpx(12) }),
       };
 
-  // Parallax depth layers — background drifts opposite to foreground
-  const bgParallaxVariants: Variants = reduceMotion
+  // Parallax depth layers — background drifts opposite to foreground.
+  // In `contain` mode the parallax is flattened: its resting scale of 1.08
+  // crops ~8%, which would defeat the point of fitting the whole image.
+  const bgParallaxVariants: Variants = (reduceMotion || fitContain)
     ? { enter: {}, center: {}, exit: {} }
     : {
         enter:  (d: number) => ({ x: d > 0 ? '6%' : '-6%', scale: 1.18 }),
@@ -147,16 +180,16 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   const textVariants: Variants = reduceMotion
     ? { initial: { opacity: 1 }, animate: { opacity: 1 }, exit: { opacity: 1 } }
     : {
-        initial:  { y: 36, opacity: 0, filter: 'blur(10px)' },
-        animate:  { y: 0, opacity: 1, filter: 'blur(0px)', transition: { duration: 0.85, ease: [0.16, 1, 0.3, 1] } },
-        exit:     { y: -22, opacity: 0, filter: 'blur(8px)', transition: { duration: 0.4, ease: [0.4, 0, 1, 1] } },
+        initial:  { y: 36, opacity: 0, filter: bpx(10) },
+        animate:  { y: 0, opacity: 1, filter: bpx(0), transition: { duration: 0.85, ease: [0.16, 1, 0.3, 1] } },
+        exit:     { y: -22, opacity: 0, filter: bpx(8), transition: { duration: 0.4, ease: [0.4, 0, 1, 1] } },
       };
 
   const btnVariants: Variants = reduceMotion
     ? { initial: { opacity: 1 }, animate: { opacity: 1 } }
     : {
-        initial:  { scale: 0.82, opacity: 0, y: 18, filter: 'blur(6px)' },
-        animate:  { scale: 1, opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.7, ease: [0.34, 1.56, 0.64, 1] } },
+        initial:  { scale: 0.82, opacity: 0, y: 18, filter: bpx(6) },
+        animate:  { scale: 1, opacity: 1, y: 0, filter: bpx(0), transition: { duration: 0.7, ease: [0.34, 1.56, 0.64, 1] } },
       };
 
   // Auto-advance
@@ -211,7 +244,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   const ctaClass = (style = 'primary') => {
     if (style === 'primary')   return 'bg-gradient-to-r from-red-700 to-red-800 hover:from-red-800 hover:to-red-900 text-white shadow-lg shadow-red-900/40 ring-1 ring-amber-400/30';
-    if (style === 'secondary') return 'bg-white/12 backdrop-blur-md border border-amber-300/35 text-white hover:bg-white/22 shadow-[0_2px_18px_rgba(245,176,66,0.18)]';
+    // Blur moved to an inline style so `blurIntensity` can scale it.
+    if (style === 'secondary') return 'bg-white/12 border border-amber-300/35 text-white hover:bg-white/22 shadow-[0_2px_18px_rgba(245,176,66,0.18)]';
     return 'bg-transparent text-white hover:underline';
   };
 
@@ -224,11 +258,6 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
       </div>
     );
   }
-
-  const slide = slides[currentIndex];
-  const imgSrc = imgErrors[slide._id] ? '/images/images/product/1000x1000.png' : slide.image.url;
-  // Animated GIFs must skip the Next image optimizer so they keep animating.
-  const gifSrc = /\.gif(\?|$)/i.test(imgSrc);
 
   return (
     <div
@@ -260,7 +289,13 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
           className="absolute inset-0"
         >
           {/* Background — deepest parallax layer (background image) */}
-          <div className="absolute inset-0 overflow-hidden">
+          <div
+            className="absolute inset-0 overflow-hidden"
+            // Only in `contain` mode: the letterbox bars need a colour. In
+            // `cover` mode the image fills the frame, so painting this would
+            // be invisible anyway — left off to keep the shipped output exact.
+            style={fitContain ? { backgroundColor: slide.backgroundColor || '#1A1A2E' } : undefined}
+          >
             <motion.div
               custom={direction}
               variants={bgParallaxVariants}
@@ -277,7 +312,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
                 src={imgSrc}
                 alt={slide.image.alt || slide.title || ''}
                 fill
-                className="object-cover"
+                className={fitContain ? 'object-contain' : 'object-cover'}
                 priority
                 sizes="100vw"
                 unoptimized={gifSrc}
@@ -290,41 +325,44 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
             )}
           </div>
 
-          {/* Midground — gradient + vignette drift at mid-depth (slower parallax) */}
-          <motion.div
-            custom={direction}
-            variants={midParallaxVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{
-              x: { type: 'spring', stiffness: 120, damping: 30, mass: 1 },
-              opacity: { duration: 0.6, ease: [0.16, 1, 0.3, 1] },
-            }}
-            className="absolute inset-0 pointer-events-none"
-          >
-            {/* Cinematic golden-hour gradient — warm depth-of-field treatment */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background: `linear-gradient(110deg, ${slide.backgroundColor || '#1A1A2E'}f2 0%, ${slide.backgroundColor || '#1A1A2E'}b3 32%, ${slide.backgroundColor || '#1A1A2E'}40 60%, transparent 78%), radial-gradient(ellipse at 78% 28%, rgba(245, 176, 66, 0.22) 0%, transparent 45%), linear-gradient(to top, ${slide.backgroundColor || '#1A1A2E'}e6 0%, transparent 38%)`,
+          {/* Midground — gradient + vignette drift at mid-depth (slower parallax).
+              Skipped outright when the admin has dialled the gradient to 0. */}
+          {gradK > 0 && (
+            <motion.div
+              custom={direction}
+              variants={midParallaxVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                x: { type: 'spring', stiffness: 120, damping: 30, mass: 1 },
+                opacity: { duration: 0.6, ease: [0.16, 1, 0.3, 1] },
               }}
-            />
-            {/* Cinematic vignette for depth-of-field feel */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background: 'radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,0.42) 100%)',
-              }}
-            />
-            {/* Light-wipe sweep — directional light bleed that fades with the slide */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background: `linear-gradient(${direction > 0 ? 105 : 255}deg, transparent 40%, rgba(245,176,66,0.10) 55%, transparent 72%)`,
-              }}
-            />
-          </motion.div>
+              className="absolute inset-0 pointer-events-none"
+            >
+              {/* Cinematic golden-hour gradient — warm depth-of-field treatment */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: `linear-gradient(110deg, ${slide.backgroundColor || '#1A1A2E'}${hexA(242)} 0%, ${slide.backgroundColor || '#1A1A2E'}${hexA(179)} 32%, ${slide.backgroundColor || '#1A1A2E'}${hexA(64)} 60%, transparent 78%), radial-gradient(ellipse at 78% 28%, rgba(245, 176, 66, ${rgbaA(0.22)}) 0%, transparent 45%), linear-gradient(to top, ${slide.backgroundColor || '#1A1A2E'}${hexA(230)} 0%, transparent 38%)`,
+                }}
+              />
+              {/* Cinematic vignette for depth-of-field feel */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: `radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,${rgbaA(0.42)}) 100%)`,
+                }}
+              />
+              {/* Light-wipe sweep — directional light bleed that fades with the slide */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: `linear-gradient(${direction > 0 ? 105 : 255}deg, transparent 40%, rgba(245,176,66,${rgbaA(0.10)}) 55%, transparent 72%)`,
+                }}
+              />
+            </motion.div>
+          )}
 
           {/* Whole-slide click-through — sits above the imagery but below the
               text/CTA layer so the button keeps its own link behaviour. */}
@@ -343,7 +381,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               {/* Badge */}
               {slide.subtitle && (
                 <motion.div variants={textVariants} className="mb-4">
-                  <span className="inline-flex items-center gap-2 px-4 py-2 bg-amber-400/12 backdrop-blur-md rounded-full text-sm font-semibold text-amber-100 border border-amber-300/25 shadow-[0_2px_12px_rgba(245,176,66,0.18)]">
+                  <span style={chromeBlur()} className="inline-flex items-center gap-2 px-4 py-2 bg-amber-400/12 rounded-full text-sm font-semibold text-amber-100 border border-amber-300/25 shadow-[0_2px_12px_rgba(245,176,66,0.18)]">
                     <Icon.PiSparkleFill className="text-amber-300" size={13} />
                     {slide.subtitle}
                   </span>
@@ -380,6 +418,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => trackClick(slide._id)}
+                      style={slide.ctaStyle === 'secondary' ? chromeBlur() : undefined}
                       className={`inline-flex items-center gap-2 px-8 py-4 rounded-full font-bold text-sm transition-all duration-300 ${ctaClass(slide.ctaStyle)}`}
                     >
                       {slide.ctaText} <Icon.PiArrowRight size={16} />
@@ -388,6 +427,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
                     <Link
                       href={slide.ctaLink || '#'}
                       onClick={() => trackClick(slide._id)}
+                      style={slide.ctaStyle === 'secondary' ? chromeBlur() : undefined}
                       className={`inline-flex items-center gap-2 px-8 py-4 rounded-full font-bold text-sm transition-all duration-300 ${ctaClass(slide.ctaStyle)}`}
                     >
                       {slide.ctaText} <Icon.PiArrowRight size={16} />
@@ -406,7 +446,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
                   { icon: <Icon.PiSealCheck size={14} />, label: 'Authentic Products' },
                   { icon: <Icon.PiLockKey size={14} />, label: 'Secure Checkout' },
                 ].map(({ icon, label }) => (
-                  <div key={label} className="flex items-center gap-2 px-4 py-2 bg-white/8 backdrop-blur-md rounded-full text-xs text-white/90 border border-white/12">
+                  <div key={label} style={chromeBlur()} className="flex items-center gap-2 px-4 py-2 bg-white/8 rounded-full text-xs text-white/90 border border-white/12">
                     <span className="text-amber-300">{icon}</span>
                     {label}
                   </div>
@@ -424,7 +464,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
             initial={{ opacity: 0, x: -40 }} animate={{ opacity: 1, x: 0 }}
             whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}
             onClick={handlePrev}
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-black/30 backdrop-blur-md border border-amber-300/25 flex items-center justify-center text-white hover:bg-black/50 hover:border-amber-300/50 transition-all"
+            style={chromeBlur()}
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-black/30 border border-amber-300/25 flex items-center justify-center text-white hover:bg-black/50 hover:border-amber-300/50 transition-all"
             aria-label="Previous slide"
           >
             <Icon.PiCaretLeft size={20} />
@@ -433,7 +474,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
             initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }}
             whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}
             onClick={handleNext}
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-black/30 backdrop-blur-md border border-amber-300/25 flex items-center justify-center text-white hover:bg-black/50 hover:border-amber-300/50 transition-all"
+            style={chromeBlur()}
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-black/30 border border-amber-300/25 flex items-center justify-center text-white hover:bg-black/50 hover:border-amber-300/50 transition-all"
             aria-label="Next slide"
           >
             <Icon.PiCaretRight size={20} />

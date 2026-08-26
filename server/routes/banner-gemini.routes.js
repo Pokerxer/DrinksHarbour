@@ -9,6 +9,11 @@ const { body } = require('express-validator');
 
 // ============================================================
 // VALIDATION RULES
+//
+// NOTE: `validate` is currently inert across the server (every bare `validate,`
+// position calls next() immediately and the collected errors are discarded), so
+// these rules document the contract but do NOT enforce it. The controller
+// re-checks anything that must hold — ObjectId shape and `count` bounds — itself.
 // ============================================================
 
 const generateBannerValidation = [
@@ -40,6 +45,12 @@ const generateBannerValidation = [
     .optional()
     .isIn(['playful', 'elegant', 'urgent', 'calm'])
     .withMessage('Invalid style'),
+  body('customContext')
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Custom context cannot exceed 1000 characters'),
 ];
 
 const generateSuggestionsValidation = [
@@ -63,6 +74,25 @@ const generateSuggestionsValidation = [
     .optional()
     .isInt({ min: 1, max: 5 })
     .withMessage('Count must be between 1 and 5'),
+  // Suggestions honours style + customContext the same way /generate does.
+  body('bannerType')
+    .optional()
+    .isIn(['hero', 'promotional', 'category', 'product', 'seasonal', 'announcement', 'custom'])
+    .withMessage('Invalid banner type'),
+  body('placement')
+    .optional()
+    .isIn(['home_hero', 'home_secondary', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'])
+    .withMessage('Invalid placement'),
+  body('style')
+    .optional()
+    .isIn(['playful', 'elegant', 'urgent', 'calm'])
+    .withMessage('Invalid style'),
+  body('customContext')
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Custom context cannot exceed 1000 characters'),
 ];
 
 const enhanceBannerValidation = [

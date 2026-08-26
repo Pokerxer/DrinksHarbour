@@ -1028,15 +1028,19 @@ function generateCtaLink(bannerData) {
     return ctaLink;
   }
 
+  // Storefront routes, verified against client/apps/platform/src/app:
+  // /product/<slug> (SINGULAR), /categories/<slug>, /brands/<slug>, /shop.
+  // There is no /products and no /collections — those emitted 404s.
   switch (linkType) {
     case 'product':
-      return targetProduct ? `/products/${targetProduct.slug || targetProduct}` : '/products';
+      return targetProduct ? `/product/${targetProduct.slug || targetProduct}` : '/shop';
     case 'category':
       return targetCategory ? `/categories/${targetCategory.slug || targetCategory}` : '/categories';
     case 'brand':
       return targetBrand ? `/brands/${targetBrand.slug || targetBrand}` : '/brands';
     case 'collection':
-      return targetCollection ? `/collections/${targetCollection.slug || targetCollection}` : '/collections';
+      // No /collections route exists — fall back to the shop rather than a 404.
+      return '/shop';
     case 'internal':
     case 'page':
       return ctaLink || '/';

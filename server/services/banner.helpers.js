@@ -131,6 +131,74 @@ function sanitizeBannerData(data) {
   return out;
 }
 
+// ── Storefront CTA links ─────────────────────────────────────────────────────
+// Built from the RESOLVED context, never from an AI-generated URL.
+//
+// The storefront contract (verified against client/apps/platform):
+//   /product/<slug>                              — product detail page
+//   /shop?category=<slug>                        — ?category= resolves as a SLUG
+//                                                  (an ObjectId matches products
+//                                                  but leaves the page noindex
+//                                                  with a generic hero)
+//   /shop?category=<parent>&subcategory=<slug>   — canonical combined form; the
+//                                                  API scopes the subcategory
+//                                                  lookup by the parent slug
+//   /shop?brand=<name>                           — ?brand= resolves by name/slug
+//                                                  and matches the facet chip the
+//                                                  sidebar itself writes
+// Each builder falls back to a shop search on the name when no slug exists, so a
+// slugless record still produces a link that lands on something.
+
+const enc = encodeURIComponent;
+
+/** Fallback for any target without a usable slug. */
+function shopSearchLink(name) {
+  const q = String(name || '').trim();
+  return q ? `/shop?search=${enc(q)}` : '/shop';
+}
+
+function productCtaLink(product) {
+  if (!product) return null;
+  return product.slug ? `/product/${enc(product.slug)}` : shopSearchLink(product.name);
+}
+
+function categoryCtaLink(category) {
+  if (!category) return null;
+  return category.slug ? `/shop?category=${enc(category.slug)}` : shopSearchLink(category.name);
+}
+
+function subcategoryCtaLink(subcategory) {
+  if (!subcategory) return null;
+  if (!subcategory.slug) return shopSearchLink(subcategory.name);
+  return subcategory.parentSlug
+    ? `/shop?category=${enc(subcategory.parentSlug)}&subcategory=${enc(subcategory.slug)}`
+    : `/shop?subcategory=${enc(subcategory.slug)}`;
+}
+
+function brandCtaLink(brand) {
+  if (!brand) return null;
+  // Name first: the shop's brand facet is keyed by name, so a name-based link
+  // lights up the matching filter chip; the slug is the fallback.
+  const key = brand.name || brand.slug;
+  return key ? `/shop?brand=${enc(key)}` : '/shop';
+}
+
+/**
+ * Pick the single CTA the banner should use for a resolved context, most
+ * specific target first. Returns `{ linkType, ctaLink }` or null when there is
+ * no context to link to.
+ */
+function buildCtaFromContext(context) {
+  // A default parameter only fires on `undefined`, and an absent context
+  // arrives as `null` from the controller — guard explicitly.
+  const resolved = context || {};
+  if (resolved.product) return { linkType: 'product', ctaLink: productCtaLink(resolved.product) };
+  if (resolved.subcategory) return { linkType: 'category', ctaLink: subcategoryCtaLink(resolved.subcategory) };
+  if (resolved.category) return { linkType: 'category', ctaLink: categoryCtaLink(resolved.category) };
+  if (resolved.brand) return { linkType: 'brand', ctaLink: brandCtaLink(resolved.brand) };
+  return null;
+}
+
 module.exports = {
   BANNER_TYPES,
   BANNER_PLACEMENTS,
@@ -151,4 +219,9 @@ module.exports = {
   clampField,
   parseAiJson,
   sanitizeBannerData,
+  productCtaLink,
+  categoryCtaLink,
+  subcategoryCtaLink,
+  brandCtaLink,
+  buildCtaFromContext,
 };

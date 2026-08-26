@@ -44,10 +44,7 @@ import {
   CTA_STYLE_CLS,
 } from '../banner-shared';
 import { BannerPreview } from '../create-edit/preview';
-import {
-  PlacementThumb,
-  PLACEMENT_PREVIEW,
-} from '../create-edit/placement';
+import { PlacementThumb, PLACEMENT_PREVIEW } from '../create-edit/placement';
 import {
   StatCard,
   Card,
@@ -58,11 +55,8 @@ import {
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default function BannerDetailsView({
-  id,
-}: {
-  id: string;
-}) {  const { data: session } = useSession() as any;
+export default function BannerDetailsView({ id }: { id: string }) {
+  const { data: session } = useSession() as any;
   const token = session?.token || session?.user?.token || '';
   const router = useRouter();
 
@@ -157,7 +151,10 @@ export default function BannerDetailsView({
       {/* POS-style header — breadcrumb, title row, actions */}
       <div className="mb-6">
         <p className="text-xs text-gray-400">
-          <Link href={routes.eCommerce.banners} className="hover:text-[#b20202]">
+          <Link
+            href={routes.eCommerce.banners}
+            className="hover:text-[#b20202]"
+          >
             Banners
           </Link>
           <span className="mx-1.5">/</span>
@@ -263,9 +260,7 @@ export default function BannerDetailsView({
           {/* Right — sidebar */}
           <div className="space-y-4">
             <ScheduleCard banner={banner} />
-            {banner.deviceTargeting && (
-              <DeviceTargetingCard banner={banner} />
-            )}
+            {banner.deviceTargeting && <DeviceTargetingCard banner={banner} />}
             {banner.tags?.length > 0 && <TagsCard banner={banner} />}
             <TimestampsCard banner={banner} />
           </div>
@@ -283,9 +278,7 @@ export default function BannerDetailsView({
           {(isActive || isPaused) && (
             <Button
               size="sm"
-              onClick={() =>
-                handleStatusChange(isActive ? 'paused' : 'active')
-              }
+              onClick={() => handleStatusChange(isActive ? 'paused' : 'active')}
               className="flex-1 border-0 bg-[#b20202] text-white hover:bg-[#9f0101]"
             >
               {isActive ? (
@@ -412,7 +405,10 @@ function DetailsCard({
           label="Priority"
           badge={<PriorityBadge priority={banner.priority} size="sm" />}
         />
-        <InfoRow label="Display Order" value={String(banner.displayOrder ?? 0)} />
+        <InfoRow
+          label="Display Order"
+          value={String(banner.displayOrder ?? 0)}
+        />
         <InfoRow
           label="Visible To"
           value={
@@ -478,9 +474,7 @@ function CtaCard({
         <InfoRow
           label="Link Type"
           value={
-            banner.linkType
-              ? String(banner.linkType).replace(/_/g, ' ')
-              : '—'
+            banner.linkType ? String(banner.linkType).replace(/_/g, ' ') : '—'
           }
         />
         <InfoRow
@@ -581,6 +575,20 @@ function StylingCard({ banner }: { banner: any }) {
         <InfoRow
           label="Overlay Opacity"
           value={`${banner.overlayOpacity ?? 0}%`}
+        />
+        <InfoRow
+          label="Image Fit"
+          value={
+            banner.imageFit === 'contain' ? 'Contain (fit)' : 'Cover (crop)'
+          }
+        />
+        <InfoRow
+          label="Gradient Intensity"
+          value={`${banner.gradientIntensity ?? 100}%`}
+        />
+        <InfoRow
+          label="Blur Intensity"
+          value={`${banner.blurIntensity ?? 100}%`}
         />
       </dl>
       {/* Content position visual indicator */}

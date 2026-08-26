@@ -66,17 +66,52 @@ export interface BannerAutoplay {
   interval: number;
 }
 
-export type BannerType = 'hero' | 'promotional' | 'category' | 'product' | 'seasonal' | 'announcement' | 'custom';
+export type BannerType =
+  | 'hero'
+  | 'promotional'
+  | 'category'
+  | 'product'
+  | 'seasonal'
+  | 'announcement'
+  | 'custom';
 
-export type BannerPlacement = 'home_hero' | 'home_secondary' | 'category_top' | 'product_page' | 'checkout' | 'sidebar' | 'footer' | 'popup' | 'header';
+export type BannerPlacement =
+  | 'home_hero'
+  | 'home_secondary'
+  | 'category_top'
+  | 'product_page'
+  | 'checkout'
+  | 'sidebar'
+  | 'footer'
+  | 'popup'
+  | 'header';
 
-export type BannerStatus = 'draft' | 'scheduled' | 'active' | 'paused' | 'expired' | 'archived';
+export type BannerStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'active'
+  | 'paused'
+  | 'expired'
+  | 'archived';
 
 export type BannerPriority = 'low' | 'medium' | 'high' | 'urgent';
 
-export type BannerLinkType = 'internal' | 'external' | 'product' | 'category' | 'brand' | 'collection' | 'page';
+export type BannerLinkType =
+  | 'internal'
+  | 'external'
+  | 'product'
+  | 'category'
+  | 'brand'
+  | 'collection'
+  | 'page';
 
-export type BannerVisibleTo = 'all' | 'guests' | 'authenticated' | 'new_customers' | 'returning_customers' | 'vip';
+export type BannerVisibleTo =
+  | 'all'
+  | 'guests'
+  | 'authenticated'
+  | 'new_customers'
+  | 'returning_customers'
+  | 'vip';
 
 export interface Banner {
   _id: string;
@@ -103,8 +138,20 @@ export interface Banner {
   backgroundColor: string;
   textColor: string;
   overlayOpacity: number;
+  imageFit: 'cover' | 'contain';
+  gradientIntensity: number;
+  blurIntensity: number;
   textAlignment: 'left' | 'center' | 'right';
-  contentPosition: 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+  contentPosition:
+    | 'top-left'
+    | 'top-center'
+    | 'top-right'
+    | 'center-left'
+    | 'center'
+    | 'center-right'
+    | 'bottom-left'
+    | 'bottom-center'
+    | 'bottom-right';
   startDate?: string;
   endDate?: string;
   isScheduled: boolean;
@@ -201,8 +248,20 @@ export interface BannerFormData {
   backgroundColor?: string;
   textColor?: string;
   overlayOpacity?: number;
+  imageFit?: 'cover' | 'contain';
+  gradientIntensity?: number;
+  blurIntensity?: number;
   textAlignment?: 'left' | 'center' | 'right';
-  contentPosition?: 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+  contentPosition?:
+    | 'top-left'
+    | 'top-center'
+    | 'top-right'
+    | 'center-left'
+    | 'center'
+    | 'center-right'
+    | 'bottom-left'
+    | 'bottom-center'
+    | 'bottom-right';
   startDate?: string;
   endDate?: string;
   isScheduled?: boolean;
@@ -225,7 +284,10 @@ export const BANNER_TYPE_OPTIONS: { value: BannerType; label: string }[] = [
   { value: 'custom', label: 'Custom' },
 ];
 
-export const BANNER_PLACEMENT_OPTIONS: { value: BannerPlacement; label: string }[] = [
+export const BANNER_PLACEMENT_OPTIONS: {
+  value: BannerPlacement;
+  label: string;
+}[] = [
   { value: 'home_hero', label: 'Home Hero' },
   { value: 'home_secondary', label: 'Home Secondary' },
   { value: 'category_top', label: 'Category Top' },
@@ -246,7 +308,10 @@ export const BANNER_STATUS_OPTIONS: { value: BannerStatus; label: string }[] = [
   { value: 'archived', label: 'Archived' },
 ];
 
-export const BANNER_PRIORITY_OPTIONS: { value: BannerPriority; label: string }[] = [
+export const BANNER_PRIORITY_OPTIONS: {
+  value: BannerPriority;
+  label: string;
+}[] = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
@@ -261,7 +326,10 @@ export const BANNER_CTA_STYLE_OPTIONS: { value: string; label: string }[] = [
   { value: 'custom', label: 'Custom' },
 ];
 
-export const BANNER_CONTENT_POSITION_OPTIONS: { value: string; label: string }[] = [
+export const BANNER_CONTENT_POSITION_OPTIONS: {
+  value: string;
+  label: string;
+}[] = [
   { value: 'top-left', label: 'Top Left' },
   { value: 'top-center', label: 'Top Center' },
   { value: 'top-right', label: 'Top Right' },
@@ -273,7 +341,10 @@ export const BANNER_CONTENT_POSITION_OPTIONS: { value: string; label: string }[]
   { value: 'bottom-right', label: 'Bottom Right' },
 ];
 
-export const BANNER_LINK_TYPE_OPTIONS: { value: BannerLinkType; label: string }[] = [
+export const BANNER_LINK_TYPE_OPTIONS: {
+  value: BannerLinkType;
+  label: string;
+}[] = [
   { value: 'internal', label: 'Internal Link' },
   { value: 'external', label: 'External Link' },
   { value: 'product', label: 'Product' },
@@ -283,7 +354,10 @@ export const BANNER_LINK_TYPE_OPTIONS: { value: BannerLinkType; label: string }[
   { value: 'page', label: 'Page' },
 ];
 
-export const BANNER_VISIBLE_TO_OPTIONS: { value: BannerVisibleTo; label: string }[] = [
+export const BANNER_VISIBLE_TO_OPTIONS: {
+  value: BannerVisibleTo;
+  label: string;
+}[] = [
   { value: 'all', label: 'All Users' },
   { value: 'guests', label: 'Guests Only' },
   { value: 'authenticated', label: 'Authenticated Users' },
