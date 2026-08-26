@@ -1,6 +1,14 @@
 'use client';
 
-import { POSApplicableItems, POSCartItem } from '@/app/shared/point-of-sale/types';
+import {
+  CartTableBinding,
+  POSApplicableItems,
+  POSCartItem,
+} from '@/app/shared/point-of-sale/types';
+
+// CartTableBinding lives in ../types with the other POS interfaces; it is
+// re-exported here because it is part of the persisted cart shape.
+export type { CartTableBinding };
 
 // ─── Cart types ───────────────────────────────────────────────────────────────
 
@@ -63,6 +71,12 @@ export type CartData = {
   note: string;
   appliedRewards: CartAppliedReward[];
   linkedSalesOrderId?: string | null;
+  /**
+   * Venue tab binding — set by bindTable while a table's tab is open, cleared
+   * by unbindTable on settle/recall. Optional so carts persisted before this
+   * field existed load from localStorage unchanged.
+   */
+  table?: CartTableBinding | null;
 };
 
 export const DEFAULT_CUSTOMER: CartCustomer = {
@@ -83,4 +97,5 @@ export const INITIAL_CART: CartData = {
   discountValue: 0,
   note: '',
   appliedRewards: [],
+  table: null,
 };

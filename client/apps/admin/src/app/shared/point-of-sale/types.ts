@@ -829,6 +829,37 @@ export interface POSShop {
   warehouse?: { _id: string; name: string; code: string } | null;
 }
 
+// ── Venue tables ──────────────────────────────────────────────────────────────
+
+export type TableStatus = 'available' | 'occupied' | 'reserved' | 'inactive';
+
+/**
+ * One row of GET /api/pos/tables (see posTable.controller.listTables): the
+ * floor map entry plus a summary of any open tab parked on it.
+ */
+export interface POSTableSummary {
+  _id: string;
+  name: string;
+  section: string;
+  seats: number;
+  sortOrder: number;
+  status: TableStatus;
+  currentTabId?: string | null;
+  tab: null | {
+    orderId: string;
+    guests: number;
+    openedAt: string;
+    itemCount: number;
+  };
+}
+
+/** The cart's binding to a venue table while a tab is open. */
+export interface CartTableBinding {
+  tableId: string;
+  name: string;
+  guests?: number;
+}
+
 export type POSComboPriceMode =
   | 'dynamic'
   | 'fixed'

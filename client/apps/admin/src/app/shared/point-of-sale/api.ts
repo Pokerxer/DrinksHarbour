@@ -19,6 +19,7 @@ import type {
   POSCustomerAddress,
   POSShop,
   POSNotification,
+  POSTableSummary,
 } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -200,6 +201,48 @@ export const posApi = {
     return request<{ cart: POSRecallCart }>(
       `${API_URL}/api/pos/orders/${orderId}/recall`,
       { method: 'POST', headers: authHeaders(token) }
+    );
+  },
+
+  // ── Venue tables / tabs ─────────────────────────────────────────────────────
+  // A tab IS a hold (status 'hold' Order) bound to a POSTable; open-tab parks
+  // it, update-tab edits it in place, settle consumes it via the sale call.
+
+  async listTables(token: string) {
+    return request<{ tables: POSTableSummary[] }>(`${API_URL}/api/pos/tables`, {
+      headers: authHeaders(token),
+    });
+  },
+
+  async openTableTab(
+    token: string,
+    body: { tableId: string; guests?: number; terminalType?: string }
+  ) {
+    return request<{ table: POSTableSummary; tab: Record<string, unknown> }>(
+      `${API_URL}/api/pos/tables/${body.tableId}/open-tab`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify(body),
+      }
+    );
+  },
+
+  async updateTableTab(
+    token: string,
+    heldOrderId: string,
+    body: {
+      items?: unknown[];
+      customer?: Record<string, unknown>;
+      note?: string;
+      discountType?: 'percent' | 'fixed';
+      discountValue?: number;
+      appliedRewards?: unknown[];
+    }
+  ) {
+    return request<{ tab: Record<string, unknown> }>(
+      `${API_URL}/api/pos/tabs/${heldOrderId}`,
+      { method: 'PUT', headers: authHeaders(token), body: JSON.stringify(body) }
     );
   },
 

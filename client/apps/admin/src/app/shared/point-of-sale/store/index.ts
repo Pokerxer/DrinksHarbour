@@ -11,7 +11,10 @@ import {
   POSProduct,
   POSShop,
   POSNotification,
+  POSTableSummary,
 } from '@/app/shared/point-of-sale/types';
+// Static (not dynamic) import is cycle-safe: api.ts pulls from './types' only.
+import { posApi } from '@/app/shared/point-of-sale/api';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 // ─── Auth (persisted) ────────────────────────────────────────────────────────
@@ -81,6 +84,36 @@ export const usePOSActiveShop = () => {
   return { activeShopId, setActiveShopId, activeShop };
 };
 
+// ─── Venue tables ──────────────────────────────────────────────────────────────
+// Ephemeral server state — deliberately NOT persisted. The floor is refetched
+// on mount and on realtime ticks, so a stale localStorage copy could show a
+// table as free while another terminal just seated it.
+
+const posTablesAtom = atom<POSTableSummary[]>([]);
+const posTablesLoadedAtom = atom(false);
+
+export const usePOSTables = () => {
+  const [tables, setTables] = useAtom(posTablesAtom);
+  const [loaded, setLoaded] = useAtom(posTablesLoadedAtom);
+
+  const refresh = useCallback(
+    async (token: string) => {
+      try {
+        const data = await posApi.listTables(token);
+        setTables(data.tables ?? []);
+      } catch {
+        // Offline or venue mode off — keep whatever we had; the strip hides
+        // itself when the list is empty.
+      } finally {
+        setLoaded(true);
+      }
+    },
+    [setTables, setLoaded]
+  );
+
+  return { tables, loaded, refresh, setTables };
+};
+
 // ─── Notifications ────────────────────────────────────────────────────────────
 
 type StoredNotification = POSNotification & { seen: boolean };
@@ -140,6 +173,7 @@ import {
   CartAppliedReward,
   CartPendingCode,
   CartData,
+  CartTableBinding,
   DEFAULT_CUSTOMER,
   INITIAL_CART_ID,
   INITIAL_CART,
@@ -165,6 +199,7 @@ export type {
   CartAppliedReward,
   CartPendingCode,
   CartData,
+  CartTableBinding,
   BxgyItemDiscount,
 };
 export {
@@ -244,9 +279,12 @@ export const usePOSCart = () => {
     [carts, activeCartId]
   );
 
-  const { items, customer, discountType, discountValue, note, ref } =
+  const { items, customer, discountType, discountValue, note, ref, table } =
     activeCart;
   const appliedRewards: CartAppliedReward[] = activeCart.appliedRewards ?? [];
+  // Carts persisted before the venue-tab field existed read back undefined —
+  // coerce to null so consumers can branch on a single "no binding" value.
+  const tableBinding = table ?? null;
 
   // Derived values
   const subtotal = useMemo(
@@ -540,6 +578,20 @@ export const usePOSCart = () => {
     [patchActive]
   );
 
+  // ── Venue tab binding ───────────────────────────────────────────────────────
+  // bindTable is called when open-tab succeeds; unbindTable when the tab is
+  // settled (sale consumed the hold) or recalled. Deliberately NOT reset by
+  // clearCart — clearing lines mid-tab must not orphan a seated party's bill.
+  const bindTable = useCallback(
+    (binding: CartTableBinding) => patchActive({ table: binding }),
+    [patchActive]
+  );
+
+  const unbindTable = useCallback(
+    () => patchActive({ table: null }),
+    [patchActive]
+  );
+
   const setAppliedRewards = useCallback(
     (rewards: CartAppliedReward[]) => patchActive({ appliedRewards: rewards }),
     [patchActive]
@@ -680,6 +732,7 @@ export const usePOSCart = () => {
       discountType,
       discountValue,
       note,
+      tableBinding,
       subtotal,
       discountAmount,
       thresholdDiscount,
@@ -704,6 +757,8 @@ export const usePOSCart = () => {
       setCustomer,
       setDiscount,
       setNote,
+      bindTable,
+      unbindTable,
     }),
     [
       carts,
@@ -717,6 +772,7 @@ export const usePOSCart = () => {
       discountType,
       discountValue,
       note,
+      tableBinding,
       subtotal,
       discountAmount,
       thresholdDiscount,
@@ -739,6 +795,8 @@ export const usePOSCart = () => {
       setCustomer,
       setDiscount,
       setNote,
+      bindTable,
+      unbindTable,
     ]
   );
 };
