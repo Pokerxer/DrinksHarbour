@@ -613,6 +613,14 @@ export const usePOSCart = () => {
     [patchActive]
   );
 
+  // Wholesale item-list replacement — split-bill settlement decrements lines by
+  // posItemKey (which folds in combo/bxgy identity, unlike removeItem's looser
+  // key), so it hands the store the exact surviving list instead of keying ops.
+  const setCartItems = useCallback(
+    (next: POSCartItem[]) => patchActive({ items: next }),
+    [patchActive]
+  );
+
   const addReward = useCallback(
     (r: CartAppliedReward) => {
       if (r.kind === 'bxgy') {
@@ -760,6 +768,7 @@ export const usePOSCart = () => {
       setAppliedRewards,
       addReward,
       removeReward,
+      setCartItems,
       // Item ops
       addItem,
       removeItem,
@@ -800,6 +809,7 @@ export const usePOSCart = () => {
       setAppliedRewards,
       addReward,
       removeReward,
+      setCartItems,
       addItem,
       removeItem,
       removeComboGroup,

@@ -12,6 +12,7 @@ import {
   PiArrowLeft,
   PiArrowRight,
   PiStar,
+  PiUsers,
   PiWallet,
 } from 'react-icons/pi';
 import {
@@ -35,12 +36,15 @@ import {
 } from '@/app/shared/point-of-sale/offline/api';
 import { useOnlineStatus } from '@/app/shared/point-of-sale/offline/use-online-status';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
+import { computeSubtotal } from '@/app/shared/point-of-sale/store/cart-pricing';
+import { posItemKey } from './pos-table-helpers';
 import { POSOrderResponse } from '@/app/shared/point-of-sale/types';
 import cn from '@core/utils/class-names';
 
 // ── Types & constants ─────────────────────────────────────────────────────────
 
 import ReceiptScreen from './pos-receipt';
+import POSSplitModal, { PayerTender } from './pos-split-modal';
 import type {
   PaymentLine,
   AppliedCode,
@@ -237,6 +241,7 @@ export default function POSPaymentModal() {
     rewardsDiscountTotal,
     tableBinding,
     unbindTable,
+    setCartItems,
   } = usePOSCart();
 
   // Snapshot of cart items at the moment the order completes — needed for
@@ -269,6 +274,10 @@ export default function POSPaymentModal() {
   const [orderResult, setOrderResult] = useState<POSOrderResponse | null>(null);
   const [nextOrderCode, setNextOrderCode] = useState<string | null>(null);
   const [tipAmount, setTipAmount] = useState(0);
+  const [splitOpen, setSplitOpen] = useState(false);
+  // Split receipts show the payer order's own tender (paymentLines=[] falls
+  // back to order.paymentMethod); ordinary receipts keep the numpad lines.
+  const [isSplitReceipt, setIsSplitReceipt] = useState(false);
 
   // ── Discount computation ──────────────────────────────────────────────────────
   // `total` from the cart already includes rewards (subtotal - cartDiscount - rewardsDiscount).
@@ -520,6 +529,116 @@ export default function POSPaymentModal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canValidate, settings.autoValidateOrder]);
 
+  // ── Shared order-payload builder ─────────────────────────────────────────────
+  // THE single source of payload construction for both the ordinary validate
+  // and every payer of a split bill (pos-split-modal receives this function):
+  // one item mapping, one pricing snapshot, one discount scoping — the split
+  // path never forks pricing math. The server recomputes each order's charge
+  // from these fields; `clientTotal` is what the till displays and tenders.
+  function buildOrderPayload(
+    itemSubset: POSCartItem[],
+    tender: PayerTender,
+    opts?: { tableContext?: boolean }
+  ): { payload: Record<string, unknown>; clientTotal: number } {
+    const orderItems = itemSubset.map((item) => {
+      const isGet = item.bxgyRef?.role === 'get';
+      const effectivePrice = getEffectiveBundlePriceForItem(
+        item,
+        selectedPricelist
+      ).price;
+      return {
+        subProductId: item.subProductId,
+        productId: item.productId,
+        sizeId: item.sizeId || undefined,
+        quantity: item.quantity,
+        // BXGY get items: send the original pre-BXGY price for audit clarity.
+        // The server ignores client price and recomputes its own, but offline
+        // queues and receipt snapshots use this value.
+        price: isGet
+          ? (item.bxgyRef?.originalPrice ?? item.price)
+          : item.price,
+        // Authoritative client-computed price after pricelist + bundle rules.
+        clientPrice: effectivePrice,
+        // BXGY get items: 0% item discount — the reward rides the order-level
+        // discount below. Non-BXGY items pass their cashier discount.
+        discount: isGet ? 0 : item.discount,
+        sku: item.sku,
+        variant: item.variant,
+        name: item.name,
+        bxgyRole: item.bxgyRef?.role, // 'buy' | 'get' — for receipt display
+      };
+    });
+
+    // Subset-scoped discounts. A percent cart-discount scales exactly with the
+    // subset's net goods value; a fixed cart-discount and the whole-cart
+    // reward pool are shared pro-rata by net value — re-qualifying rewards per
+    // payer could change their meaning (e.g. B1G1 pairs straddling payers), so
+    // the pool is allocated, not recomputed. The final payer's server-side
+    // total absorbs any kobo remainder.
+    const fullNet = Math.max(0, subtotal);
+    const subsetNet = computeSubtotal(
+      itemSubset,
+      selectedPricelist ?? undefined
+    );
+    const share = fullNet > 0 ? subsetNet / fullNet : 1;
+    const pctCartDisc =
+      discountType === 'percent' && discountValue > 0
+        ? (subsetNet * discountValue) / 100
+        : 0;
+    const fixedCartShare =
+      discountType === 'fixed' && discountValue > 0 ? discountValue * share : 0;
+    const rewardsShare = rewardsDiscountTotal * share;
+    const totalDisc = Math.max(
+      0,
+      Math.round((pctCartDisc + fixedCartShare + rewardsShare) * 100) / 100
+    );
+
+    // Pre-pricelist "normal" subtotal of THIS subset as the cashier saw it in
+    // the cart — the server uses it for pricelist savings on the receipt.
+    const cartOriginalSubtotal = itemSubset.reduce((s, i) => {
+      const unitPrice =
+        i.bxgyRef?.role === 'get'
+          ? (i.bxgyRef.originalPrice ?? i.price)
+          : i.price;
+      return s + unitPrice * i.quantity;
+    }, 0);
+
+    const clientTotal = Math.max(
+      0,
+      Math.round((subsetNet - totalDisc) * 100) / 100
+    );
+
+    return {
+      clientTotal,
+      payload: {
+        items: orderItems,
+        customer,
+        paymentMethod: tender.paymentMethod,
+        total: clientTotal,
+        amountTendered: tender.amountTendered,
+        splitPayments: tender.splitPayments ?? [],
+        discountType: totalDisc > 0 ? ('fixed' as const) : undefined,
+        discountValue: totalDisc > 0 ? totalDisc : 0,
+        cartOriginalSubtotal,
+        note: note || undefined,
+        terminalType: terminal ?? 'retail',
+        pricelistId: selectedPricelist?._id ?? undefined,
+        // Quotation link rides every payload so quoted prices hold per payer.
+        linkedSalesOrderId: linkedSalesOrderId ?? undefined,
+        shopId: activeShop?._id ?? shopKey,
+        // Venue settle: table context ONLY where the caller asks for it. The
+        // ordinary validate includes it; split payloads do so on the FINAL
+        // payer alone so the hold-recall/table-free path runs exactly once.
+        ...(opts?.tableContext && tableBinding?.heldOrderId
+          ? {
+              tableId: tableBinding.tableId,
+              heldOrderId: tableBinding.heldOrderId,
+            }
+          : {}),
+      },
+    };
+  }
+
   // ── Validate ─────────────────────────────────────────────────────────────────
 
   async function handleValidate() {
@@ -543,114 +662,40 @@ export default function POSPaymentModal() {
 
     setLoading(true);
     try {
-      const orderItems = items.map((item) => {
-        const isGet = item.bxgyRef?.role === 'get';
-        const effectivePrice = getEffectiveBundlePriceForItem(
-          item,
-          selectedPricelist
-        ).price;
-        return {
-          subProductId: item.subProductId,
-          productId: item.productId,
-          sizeId: item.sizeId || undefined,
-          quantity: item.quantity,
-          // BXGY get items: send the original pre-BXGY price for audit clarity.
-          // The server ignores client price and recomputes its own, but offline
-          // queues and receipt snapshots use this value.
-          price: isGet
-            ? (item.bxgyRef?.originalPrice ?? item.price)
-            : item.price,
-          // Authoritative client-computed price after pricelist + bundle rules.
-          // Server uses this as priceAtPurchase when present, ensuring the receipt
-          // charge matches what the cart displayed.
-          clientPrice: effectivePrice,
-          // BXGY get items: 0% item discount — the reward is applied at the
-          // order level via totalDisc. Non-BXGY items pass their cashier discount.
-          discount: isGet ? 0 : item.discount,
-          sku: item.sku,
-          variant: item.variant,
-          name: item.name,
-          bxgyRole: item.bxgyRef?.role, // 'buy' | 'get' — for receipt display
-        };
+      const tender: PayerTender =
+        lines.length === 1
+          ? {
+              paymentMethod: lines[0].method,
+              amountTendered: lines[0].amount,
+            }
+          : {
+              paymentMethod: 'split',
+              amountTendered:
+                lines.find((l) => l.method === 'cash')?.amount ?? 0,
+              splitPayments: lines.map((l) => ({
+                method: l.method,
+                amount: l.amount,
+              })),
+            };
+
+      // Gratuity is single-settle only — it rides the one whole-cart order.
+      // The rounding delta is deliberately NOT sent: the server derives it
+      // from the tenant's own increment, so the till can never nudge the
+      // amount charged.
+      const { payload } = buildOrderPayload(items, tender, {
+        tableContext: true,
       });
-
-      let paymentMethod: string;
-      let amountTendered = 0;
-      let splitPayments: { method: string; amount: number }[] = [];
-
-      if (lines.length === 1) {
-        paymentMethod = lines[0].method;
-        amountTendered = lines[0].amount;
-      } else {
-        paymentMethod = 'split';
-        splitPayments = lines.map((l) => ({
-          method: l.method,
-          amount: l.amount,
-        }));
-        amountTendered = lines.find((l) => l.method === 'cash')?.amount ?? 0;
-      }
-
-      // Total discount = cart-level discount + all rewards (including BXGY).
-      // BXGY is now part of the order-level discount instead of item-level,
-      // so the receipt shows it as a named auto-discount rather than doubling
-      // it under "Item Discounts".
-      const cartDiscFixed =
-        discountValue > 0
-          ? discountType === 'fixed'
-            ? discountValue
-            : (subtotal * discountValue) / 100
-          : 0;
-      const totalDisc = cartDiscFixed + rewardsDiscountTotal;
-      const effDiscType = totalDisc > 0 ? 'fixed' : undefined;
-      const effDiscValue = totalDisc > 0 ? totalDisc : 0;
-
-      // Pre-pricelist "normal" subtotal as the cashier saw it in the cart.
-      // The server uses this to compute pricelist savings on the receipt.
-      // BXGY get items use bxgyRef.originalPrice (pre-BXGY baseline) since the
-      // BXGY discount is already embedded in item.discount (→ server's discountAmount).
-      const cartOriginalSubtotal = items.reduce((s, i) => {
-        const unitPrice =
-          i.bxgyRef?.role === 'get'
-            ? (i.bxgyRef.originalPrice ?? i.price)
-            : i.price;
-        return s + unitPrice * i.quantity;
-      }, 0);
+      // The mapped order items live inside the payload now — the linked-SO
+      // reconcile below needs the same subset the order was built from.
+      const orderItems = payload.items as Array<{
+        subProductId: string;
+        sizeId?: string;
+        quantity: number;
+      }>;
 
       const result = await createOrderOffline(token, terminal ?? 'retail', {
-        items: orderItems,
-        customer,
-        paymentMethod,
-        total: effectiveTotal,
-        amountTendered,
-        splitPayments,
-        discountType: effDiscType,
-        discountValue: effDiscValue,
-        cartOriginalSubtotal,
-        // Gratuity only. The rounding delta is deliberately NOT sent: the
-        // server derives it from the tenant's own increment, so the till can
-        // never nudge the amount charged.
+        ...payload,
         tipAmount,
-        note: note || undefined,
-        terminalType: terminal ?? 'retail',
-        pricelistId: selectedPricelist?._id ?? undefined,
-        // The quotation this cart was loaded from — an ID, never a price. The
-        // server re-reads the order and prices the matching lines from it, so
-        // the negotiated price is authoritative without ever being trusted from
-        // here. Without this the 1% band silently replaced every quoted price
-        // with today's, and the customer was charged something they never agreed.
-        linkedSalesOrderId: linkedSalesOrderId ?? undefined,
-        // Send the resolved shop key (custom shop _id OR built-in 'retail'/
-        // 'wholesale'), matching how the allowed pricelists were fetched — so the
-        // server honors the selected pricelist instead of silently dropping it.
-        shopId: activeShop?._id ?? shopKey,
-        // Settling a seated party: point the sale at the held order that IS
-        // the tab, so the server consumes the hold and frees the table.
-        ...(tableBinding?.heldOrderId
-          ? {
-              tableId: tableBinding.tableId,
-              heldOrderId: tableBinding.heldOrderId,
-            }
-          : {}),
       });
 
       setCartSnapshot([...items]);
@@ -670,10 +715,10 @@ export default function POSPaymentModal() {
       if (linkedSalesOrderId && token) {
         setFulfillStatus('running');
         reconcileSalesOrderOffline(token, linkedSalesOrderId, {
-          paymentMethod,
+          paymentMethod: tender.paymentMethod,
           ref: result.order?.receiptNumber,
           warehouseId,
-          items: orderItems.map((i: any) => ({
+          items: orderItems.map((i) => ({
             subProductId: i.subProductId,
             sizeId: i.sizeId,
             quantity: i.quantity,
@@ -792,6 +837,45 @@ export default function POSPaymentModal() {
     setFreshInput(false);
     setNextOrderCode(null);
     setTipAmount(0);
+    setIsSplitReceipt(false);
+  }
+
+  // ── Split bill ────────────────────────────────────────────────────────────────
+  // The split modal owns the sequential settlement loop and calls back per
+  // payer; this side keeps the store authoritative.
+
+  // After each successful payer, strike their units off the cart by
+  // posItemKey (combo/bxgy-aware — removeItem's looser key could hit a
+  // coexisting line). A payer that errors mid-loop leaves their own and later
+  // payers' lines in-cart / still table-bound, recoverable by re-running the
+  // split for the remainder.
+  const handlePayerSettled = useCallback(
+    (units: Array<{ key: string; qty: number }>) => {
+      const settled = new Map(units.map((u) => [u.key, u.qty]));
+      const next: POSCartItem[] = [];
+      for (const line of items) {
+        const done = settled.get(posItemKey(line)) ?? 0;
+        if (done >= line.quantity) continue;
+        next.push(done > 0 ? { ...line, quantity: line.quantity - done } : line);
+      }
+      setCartItems(next);
+      notifySale();
+    },
+    [items, setCartItems, notifySale]
+  );
+
+  // Full split done: show the FINAL payer's receipt exactly like an ordinary
+  // sale. Remaining cart lines are already empty (each payer was struck off),
+  // and handleNewSale performs the clearCart + unbindTable cleanup when the
+  // cashier leaves the receipt.
+  function handleSplitComplete(
+    lastOrder: POSOrderResponse,
+    lastItems: POSCartItem[]
+  ) {
+    setCartSnapshot([...lastItems]);
+    setIsSplitReceipt(true);
+    setOrderResult(lastOrder);
+    setSplitOpen(false);
   }
 
   // ── Receipt ───────────────────────────────────────────────────────────────────
@@ -801,7 +885,7 @@ export default function POSPaymentModal() {
       <div className="relative">
         <ReceiptScreen
           order={orderResult}
-          paymentLines={lines}
+          paymentLines={isSplitReceipt ? [] : lines}
           onNewSale={handleNewSale}
           cartSnapshot={cartSnapshot}
           appliedCode={appliedCode ?? undefined}
@@ -1164,14 +1248,22 @@ export default function POSPaymentModal() {
           </div>
         </div>
 
-        {/* ── Back + Validate ── */}
-        <div className="grid grid-cols-2 border-t border-gray-300">
+        {/* ── Back + Split + Validate ── */}
+        <div className="grid grid-cols-3 border-t border-gray-300">
           <button
             type="button"
             onClick={() => setActiveView('sell')}
             className="flex items-center justify-center gap-2 bg-gray-200 py-4 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-300"
           >
             <PiArrowLeft className="h-4 w-4" /> Back
+          </button>
+          <button
+            type="button"
+            onClick={() => setSplitOpen(true)}
+            disabled={loading || items.length <= 1}
+            className="flex items-center justify-center gap-2 bg-gray-100 py-4 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <PiUsers className="h-4 w-4" /> Split bill
           </button>
           <button
             type="button"
@@ -1376,6 +1468,17 @@ export default function POSPaymentModal() {
           )}
         </div>
       </div>
+
+      {/* Split-bill overlay — shares buildOrderPayload so every payer is
+          priced by the exact same engine as the ordinary Validate. */}
+      {splitOpen && (
+        <POSSplitModal
+          buildOrderPayload={buildOrderPayload}
+          onClose={() => setSplitOpen(false)}
+          onPayerSettled={handlePayerSettled}
+          onComplete={handleSplitComplete}
+        />
+      )}
     </div>
   );
 }
