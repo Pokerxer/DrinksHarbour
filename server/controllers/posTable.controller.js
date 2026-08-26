@@ -59,11 +59,23 @@ exports.listTables = asyncHandler(async (req, res) => {
       // parked cart, not an order; createdAt is the fallback when the tab flow
       // never recorded an explicit open time.
       const meta = order.holdMetadata || {};
+      // Kitchen-round counts come straight off the already-fetched doc — pure
+      // aggregation, no extra queries. The till's tabs panel reads this to show
+      // "T3 · 2 rounds · 1 ready" without touching the kitchen board endpoint.
+      const rounds = Array.isArray(meta.firedRounds) ? meta.firedRounds : [];
+      const countBy = (status) => rounds.filter((r) => r && r.status === status).length;
       row.tab = {
         orderId: order._id,
         guests: meta.guests,
         openedAt: meta.openedAt || order.createdAt || null,
         itemCount: Array.isArray(order.items) ? order.items.length : 0,
+        rounds: {
+          total: rounds.length,
+          active: rounds.filter((r) => r && r.status !== 'served').length,
+          pending: countBy('pending'),
+          preparing: countBy('preparing'),
+          ready: countBy('ready'),
+        },
       };
     }
 

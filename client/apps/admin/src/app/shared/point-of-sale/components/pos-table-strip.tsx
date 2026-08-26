@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import toast from 'react-hot-toast';
 import {
   PiArrowsOutSimple,
   PiSpinner,
@@ -11,51 +10,39 @@ import {
 } from 'react-icons/pi';
 import {
   usePOSAuth,
-  usePOSCart,
   usePOSTables,
   usePOSRealtimeTick,
   usePOSSettings,
 } from '@/app/shared/point-of-sale/store';
-import { posApi } from '@/app/shared/point-of-sale/api';
-import type {
-  POSTableSummary,
-  POSHoldOrder,
-  POSRecallCart,
-} from '@/app/shared/point-of-sale/types';
-import { recallCartToItems } from '@/app/shared/point-of-sale/components/pos-recall-cart-lines';
-import { tabElapsedLabel, tableStatusClasses } from '@/app/shared/point-of-sale/components/pos-table-helpers';
+import type { POSTableSummary } from '@/app/shared/point-of-sale/types';
+import {
+  tabElapsedLabel,
+  tableStatusClasses,
+} from '@/app/shared/point-of-sale/components/pos-table-helpers';
+import { useTabActions } from '@/app/shared/point-of-sale/hooks/useTabActions';
 import POSTableMapModal from '@/app/shared/point-of-sale/components/pos-table-map-modal';
-
-// The held-orders list is the only read-only source of a tab's parked cart —
-// recall would consume it. The server includes holdMetadata on each row; older
-// deployments omit it, so every access below tolerates its absence.
-type HeldOrderWithCart = POSHoldOrder & {
-  holdMetadata?: {
-    cartItems?: POSRecallCart['items'];
-    customer?: Partial<POSRecallCart['customer']>;
-    discountType?: 'percent' | 'fixed';
-    discountValue?: number;
-  };
-};
 
 /**
  * Venue floor strip above the product grid. Bar/restaurant tenants only —
  * resellers and venues with no tables render nothing at all.
  */
 export default function POSTableStrip() {
-  const { token, terminal } = usePOSAuth();
+  const { token } = usePOSAuth();
   const settings = usePOSSettings();
   const { tables, refresh } = usePOSTables();
   const { tick } = usePOSRealtimeTick();
-  const { items, bindTable, addItem, clearCart } = usePOSCart();
+  const {
+    opening,
+    loadingTabId,
+    openTabAndBind,
+    loadTabAndBind,
+  } = useTabActions();
 
   const [assigning, setAssigning] = useState<POSTableSummary | null>(null);
-  const [opening, setOpening] = useState(false);
-  const [loadingTabId, setLoadingTabId] = useState<string | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
 
   // Fetch on mount, then again whenever another device opens/moves a tab (the
-  // realtime tick bumps on order:created etc.).
+  // realtime tick bumps on order:created etc.) or this terminal fires a round.
   useEffect(() => {
     if (!token) return;
     refresh(token);
@@ -64,83 +51,10 @@ export default function POSTableStrip() {
   if (!settings.isBarRestaurant) return null;
   if (tables.length === 0) return null;
 
-  async function openTab(table: POSTableSummary, guests?: number) {
-    if (!token || opening) return;
-    setOpening(true);
-    try {
-      const { tab } = await posApi.openTableTab(token, {
-        tableId: table._id,
-        guests,
-        terminalType: terminal ?? 'retail',
-      });
-      bindTable({
-        tableId: table._id,
-        name: table.name,
-        guests,
-        heldOrderId: String(tab._id),
-      });
-      toast.success(`Tab opened on ${table.name}`);
-      setAssigning(null);
-      refresh(token);
-    } catch (err: unknown) {
-      // 409 (table taken elsewhere) surfaces the server's own message.
-      toast.error(err instanceof Error ? err.message : 'Could not open the tab');
-    } finally {
-      setOpening(false);
-    }
-  }
-
-  async function loadTab(table: POSTableSummary) {
-    if (!token || !table.currentTabId || loadingTabId) return;
-    if (
-      items.length > 0 &&
-      !window.confirm(`Replace current cart with ${table.name} tab?`)
-    )
-      return;
-    setLoadingTabId(table._id);
-    try {
-      const data = await posApi.getHeldOrders(token);
-      const entry = (data.orders as HeldOrderWithCart[]).find(
-        (o) => o._id === table.currentTabId
-      );
-      const snapshot = entry?.holdMetadata;
-      if (!snapshot?.cartItems?.length) {
-        toast.error(`${table.name} has no saved lines to load`);
-        return;
-      }
-      clearCart();
-      for (const line of recallCartToItems({
-        items: snapshot.cartItems,
-        customer: {
-          firstName: snapshot.customer?.firstName ?? 'Walk-in',
-          lastName: snapshot.customer?.lastName ?? 'Customer',
-          email: snapshot.customer?.email ?? '',
-          phone: snapshot.customer?.phone ?? '',
-        },
-        note: '',
-        discountType: snapshot.discountType ?? 'percent',
-        discountValue: snapshot.discountValue ?? 0,
-        pricelistId: null,
-      }))
-        addItem(line);
-      bindTable({
-        tableId: table._id,
-        name: table.name,
-        guests: table.tab?.guests,
-        heldOrderId: table.currentTabId,
-      });
-      toast.success(`${table.name} tab loaded`);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Could not load the tab');
-    } finally {
-      setLoadingTabId(null);
-    }
-  }
-
   function handleTableClick(table: POSTableSummary) {
     if (table.status === 'inactive') return;
     if (table.status === 'occupied') {
-      void loadTab(table);
+      void loadTabAndBind(table);
       return;
     }
     setAssigning(table);
@@ -191,7 +105,7 @@ export default function POSTableStrip() {
         <AssignGuestsModal
           table={assigning}
           busy={opening}
-          onConfirm={(guests) => void openTab(assigning, guests)}
+          onConfirm={(guests) => void openTabAndBind(assigning, guests)}
           onClose={() => {
             if (!opening) setAssigning(null);
           }}
@@ -230,6 +144,7 @@ function AssignGuestsModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
       <div className="w-full max-w-xs overflow-hidden rounded-2xl bg-white shadow-2xl">
+        {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
           <div>
             <h2 className="text-sm font-bold text-gray-900">{table.name}</h2>

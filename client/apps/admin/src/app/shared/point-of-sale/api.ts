@@ -246,6 +246,29 @@ export const posApi = {
     );
   },
 
+  async fireTableTab(
+    token: string,
+    heldOrderId: string,
+    body: { itemKeys: string[] }
+  ) {
+    return request<{
+      round: {
+        roundNo: number;
+        status: string;
+        items: {
+          key: string;
+          name?: string;
+          variant?: string;
+          quantity: number;
+        }[];
+      };
+    }>(`${API_URL}/api/pos/tabs/${heldOrderId}/fire`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    });
+  },
+
   async refundOrder(
     token: string,
     orderId: string,

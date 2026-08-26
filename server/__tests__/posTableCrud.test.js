@@ -274,6 +274,41 @@ test('listTables pairs each occupied table with a tab summary in one Order query
     guests: 4,
     openedAt,
     itemCount: 2,
+    rounds: { total: 0, active: 0, pending: 0, preparing: 0, ready: 0 },
+  });
+});
+
+test('listTables summarises kitchen rounds from the fetched doc without extra queries', async (t) => {
+  t.mock.method(POSTable, 'find', () => chainable([{
+    _id: oid(), name: 'T3', section: 'Main', seats: 4, sortOrder: 0,
+    status: 'occupied', currentTabId: TAB_ID,
+  }]));
+  const orderFind = t.mock.method(Order, 'find', () => chainable([{
+    _id: TAB_ID,
+    items: [{}],
+    holdMetadata: {
+      guests: 2,
+      openedAt: new Date('2026-08-26T18:00:00Z'),
+      firedRounds: [
+        { roundNo: 1, status: 'served' },
+        { roundNo: 2, status: 'pending' },
+        { roundNo: 3, status: 'preparing' },
+        { roundNo: 4, status: 'ready' },
+      ],
+    },
+    createdAt: new Date('2026-08-26T17:55:00Z'),
+  }]));
+
+  const r = res();
+  await pt.listTables(req(), r, boom);
+
+  assert.equal(orderFind.mock.callCount(), 1, 'round counts must ride the single tab query');
+  assert.deepEqual(r.body.data.tables[0].tab.rounds, {
+    total: 4,
+    active: 3,
+    pending: 1,
+    preparing: 1,
+    ready: 1,
   });
 });
 

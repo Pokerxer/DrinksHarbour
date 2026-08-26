@@ -850,6 +850,14 @@ export interface POSTableSummary {
     guests: number;
     openedAt: string;
     itemCount: number;
+    /** Kitchen-round counts computed server-side from holdMetadata.firedRounds. */
+    rounds?: {
+      total: number;
+      active: number;
+      pending: number;
+      preparing: number;
+      ready: number;
+    };
   };
 }
 
@@ -860,6 +868,8 @@ export interface CartTableBinding {
   guests?: number;
   /** The held Order that IS the tab — repark targets it; settle consumes it. */
   heldOrderId: string;
+  /** Local mirror of the tab's fired kitchen rounds — qty already sent per line key. */
+  firedLog?: Array<{ key: string; qty: number; roundNo: number }>;
 }
 
 export type POSComboPriceMode =

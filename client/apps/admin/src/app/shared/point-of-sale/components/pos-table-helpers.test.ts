@@ -1,10 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
+  computeUnfiredLocal,
   groupTablesBySection,
+  posItemKey,
   tabElapsedLabel,
   tableStatusClasses,
 } from './pos-table-helpers';
-import type { POSTableSummary } from '../types';
+import type { POSTableSummary, POSCartItem } from '../types';
+
+function cartItem(over: Partial<POSCartItem> = {}): POSCartItem {
+  return {
+    subProductId: 'sp1',
+    name: 'Line',
+    variant: '',
+    sku: '',
+    price: 100,
+    quantity: 2,
+    discount: 0,
+    stock: 10,
+    costPrice: 50,
+    ...over,
+  } as POSCartItem;
+}
 
 function table(over: Partial<POSTableSummary> = {}): POSTableSummary {
   return {
@@ -96,6 +113,98 @@ describe('tabElapsedLabel', () => {
 
   it('clamps a future open time to zero rather than going negative', () => {
     expect(tabElapsedLabel('2026-08-26T18:05:00Z', now)).toBe('0m');
+  });
+});
+
+describe('posItemKey', () => {
+  it('matches the server buildPosItemKey for every line shape', () => {
+    expect(posItemKey({ subProductId: 'sp1' })).toBe('sp1');
+    expect(posItemKey({ subProductId: 'sp1', sizeId: 'sz9' })).toBe('sp1_sz9');
+    const comboLine: POSCartItem = {
+      ...(cartItem({ quantity: 1 })),
+      sizeId: 'sz9',
+      comboRef: { comboId: 'cb1', comboName: 'Combo', instanceId: 'ci7' },
+    };
+    expect(posItemKey(comboLine)).toBe('sp1_sz9__ci_ci7');
+    const bxgyLine: POSCartItem = {
+      ...cartItem({ quantity: 1 }),
+      bxgyRef: {
+        rewardId: 'rw2',
+        role: 'get',
+        discPct: 100,
+        originalPrice: 100,
+      },
+    };
+    expect(posItemKey(bxgyLine)).toBe('sp1__bxgy_rw2_get');
+  });
+});
+
+describe('computeUnfiredLocal', () => {
+  it('returns full quantities when nothing has been fired yet', () => {
+    const items = [cartItem({ subProductId: 'a', quantity: 3 }), cartItem({ subProductId: 'b' })];
+
+    const unfired = computeUnfiredLocal(items, posItemKey, undefined);
+
+    expect(unfired).toHaveLength(2);
+    expect(unfired.map((l) => l.remaining)).toEqual([3, 2]);
+    expect(unfired[0].key).toBe('a');
+  });
+
+  it('nets partial fires across two rounds down to the remainder', () => {
+    const items = [cartItem({ subProductId: 'a', quantity: 5 })];
+    const firedLog = [
+      { key: 'a', qty: 2, roundNo: 1 },
+      { key: 'a', qty: 1, roundNo: 2 },
+    ];
+
+    const unfired = computeUnfiredLocal(items, posItemKey, firedLog);
+
+    expect(unfired).toHaveLength(1);
+    expect(unfired[0].remaining).toBe(2);
+  });
+
+  it('filters out a line whose quantity is fully exhausted by fires', () => {
+    const items = [
+      cartItem({ subProductId: 'done', quantity: 2 }),
+      cartItem({ subProductId: 'left', quantity: 4 }),
+    ];
+    const firedLog = [{ key: 'done', qty: 2, roundNo: 1 }];
+
+    const unfired = computeUnfiredLocal(items, posItemKey, firedLog);
+
+    expect(unfired.map((l) => l.key)).toEqual(['left']);
+  });
+
+  it('treats combo instances of the same product as distinct lines', () => {
+    const items = [
+      cartItem({
+        subProductId: 'sp1',
+        comboRef: { comboId: 'cb1', comboName: 'Combo', instanceId: 'c1' },
+        quantity: 2,
+      }),
+      cartItem({
+        subProductId: 'sp1',
+        comboRef: { comboId: 'cb1', comboName: 'Combo', instanceId: 'c2' },
+        quantity: 1,
+      }),
+    ];
+    const firedLog = [{ key: 'sp1__ci_c1', qty: 2, roundNo: 1 }];
+
+    const unfired = computeUnfiredLocal(items, posItemKey, firedLog);
+
+    expect(unfired).toHaveLength(1);
+    expect(unfired[0].key).toBe('sp1__ci_c2');
+    expect(unfired[0].remaining).toBe(1);
+  });
+
+  it('ignores over-firing rather than going negative', () => {
+    const items = [cartItem({ subProductId: 'a', quantity: 1 })];
+    const firedLog = [
+      { key: 'a', qty: 2, roundNo: 1 },
+      { key: 'a', qty: 1, roundNo: 2 },
+    ];
+
+    expect(computeUnfiredLocal(items, posItemKey, firedLog)).toHaveLength(0);
   });
 });
 

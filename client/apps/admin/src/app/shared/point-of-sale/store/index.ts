@@ -592,6 +592,22 @@ export const usePOSCart = () => {
     [patchActive]
   );
 
+  // Replaces the active cart's firedLog wholesale — callers spread the previous
+  // entries themselves. Reads the binding inside the functional setCarts so a
+  // fire completing after other cart edits still lands on the live binding.
+  const setFiredLog = useCallback(
+    (entries: CartTableBinding['firedLog']) => {
+      setCarts((prev) =>
+        prev.map((c) =>
+          c.id === activeCartId && c.table
+            ? { ...c, table: { ...c.table, firedLog: entries } }
+            : c
+        )
+      );
+    },
+    [activeCartId, setCarts]
+  );
+
   const setAppliedRewards = useCallback(
     (rewards: CartAppliedReward[]) => patchActive({ appliedRewards: rewards }),
     [patchActive]
@@ -759,6 +775,7 @@ export const usePOSCart = () => {
       setNote,
       bindTable,
       unbindTable,
+      setFiredLog,
     }),
     [
       carts,
@@ -797,6 +814,7 @@ export const usePOSCart = () => {
       setNote,
       bindTable,
       unbindTable,
+      setFiredLog,
     ]
   );
 };

@@ -26,6 +26,7 @@ import {
   PiSpinner,
   PiPencilSimple,
   PiPercent,
+  PiPaperPlaneRight,
 } from 'react-icons/pi';
 import {
   usePOSCart,
@@ -45,6 +46,7 @@ import {
   usePOSWarehouse,
   usePOSAvailableWarehouses,
   usePOSLinkedSalesOrder,
+  usePOSRealtimeTick,
 } from '@/app/shared/point-of-sale/store';
 import type { CartAppliedReward } from '@/app/shared/point-of-sale/store';
 import {
@@ -65,18 +67,11 @@ import {
 import { recallCartToItems } from '@/app/shared/point-of-sale/components/pos-recall-cart-lines';
 import RewardsModal from '@/app/shared/point-of-sale/components/pos-rewards-modal';
 import CustomerModal from '@/app/shared/point-of-sale/components/pos-customer-modal';
-
-// ── helpers ────────────────────────────────────────────────────────────────────
-function itemKey(item: POSCartItem) {
-  const base = item.sizeId
-    ? `${item.subProductId}_${item.sizeId}`
-    : item.subProductId;
-  if (item.comboRef?.instanceId)
-    return `${base}__ci_${item.comboRef.instanceId}`;
-  if (item.bxgyRef?.rewardId)
-    return `${base}__bxgy_${item.bxgyRef.rewardId}_${item.bxgyRef.role}`;
-  return base;
-}
+import POSTKitchenPanel from '@/app/shared/point-of-sale/components/pos-kitchen-panel';
+import {
+  computeUnfiredLocal,
+  posItemKey,
+} from '@/app/shared/point-of-sale/components/pos-table-helpers';
 
 type DialMode = 'qty' | 'disc' | 'price';
 
@@ -378,6 +373,7 @@ export default function POSCart() {
     itemCount,
     tableBinding,
     unbindTable,
+    setFiredLog,
     removeItem,
     addItem,
     removeComboGroup,
@@ -400,6 +396,7 @@ export default function POSCart() {
   const { setActiveView } = usePOSUI();
   const { staff, token } = usePOSAuth();
   const settings = usePOSSettings();
+  const { bumpRealtimeTick } = usePOSRealtimeTick();
   const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
   const { combos, setCombos } = usePOSCombos();
   // The POS catalogue — a loaded Sales Order line takes its cost, stock, image
@@ -497,7 +494,7 @@ export default function POSCart() {
 
   // BXGY get items are non-interactive; never treat them as the active dialpad item
   const selectedItem =
-    items.find((i) => itemKey(i) === selectedKey && !i.bxgyRef) ?? null;
+    items.find((i) => posItemKey(i) === selectedKey && !i.bxgyRef) ?? null;
 
   function getInitialInput(_item: POSCartItem, _mode: DialMode) {
     return '';
@@ -505,7 +502,7 @@ export default function POSCart() {
 
   function selectItem(item: POSCartItem) {
     if (item.bxgyRef) return; // BXGY items are managed by the reward toggle
-    const key = itemKey(item);
+    const key = posItemKey(item);
     setSelectedKey(key);
     setDialInput(getInitialInput(item, dialMode));
   }
@@ -583,11 +580,11 @@ export default function POSCart() {
     }
     // BXGY get items can't be selected — skip them for dialpad selection
     const selectableItems = items.filter((i) => !i.bxgyRef);
-    const stillValid = selectableItems.some((i) => itemKey(i) === selectedKey);
+    const stillValid = selectableItems.some((i) => posItemKey(i) === selectedKey);
     if (!stillValid) {
       const last = selectableItems[selectableItems.length - 1];
       if (last) {
-        setSelectedKey(itemKey(last));
+        setSelectedKey(posItemKey(last));
         setDialInput(String(last.quantity));
       } else {
         setSelectedKey(null);
@@ -709,6 +706,55 @@ export default function POSCart() {
     setActiveView('payment');
   }
 
+  // ── Send to kitchen (venue tab fire) ────────────────────────────────────────
+  // Local view of what has not been fired yet — the server re-checks against
+  // its own firedRounds and rejects an over-fire, so a stale local mirror can
+  // never send the kitchen a duplicate ticket.
+  const [firing, setFiring] = useState(false);
+  const unfired = useMemo(
+    () =>
+      tableBinding?.heldOrderId
+        ? computeUnfiredLocal(items, posItemKey, tableBinding.firedLog)
+        : [],
+    [items, tableBinding]
+  );
+  const fireCount = useMemo(
+    () => unfired.reduce((s, l) => s + l.remaining, 0),
+    [unfired]
+  );
+
+  async function handleFire() {
+    if (!token || !tableBinding?.heldOrderId || firing || unfired.length === 0)
+      return;
+    setFiring(true);
+    try {
+      const itemKeys = unfired.flatMap(({ key, remaining }) =>
+        Array.from({ length: remaining }, () => key)
+      );
+      const { round } = await posApi.fireTableTab(
+        token,
+        tableBinding.heldOrderId,
+        { itemKeys }
+      );
+      setFiredLog([
+        ...(tableBinding.firedLog ?? []),
+        ...round.items.map((ri) => ({
+          key: ri.key,
+          qty: ri.quantity,
+          roundNo: round.roundNo,
+        })),
+      ]);
+      toast.success(`Round ${round.roundNo} sent to kitchen`);
+      bumpRealtimeTick();
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not send to kitchen'
+      );
+    } finally {
+      setFiring(false);
+    }
+  }
+
   const hasCustomer = !!customer.customerId;
   const customerLabel = hasCustomer
     ? `${customer.firstName} ${customer.lastName}`.trim()
@@ -732,7 +778,7 @@ export default function POSCart() {
 
   // ── Cart item row renderer (shared for regular + combo items) ─────────────
   function renderCartItem(item: POSCartItem, isComboChild: boolean) {
-    const key = itemKey(item);
+    const key = posItemKey(item);
     const isSelected = selectedKey === key;
     const ci = item.comboRef?.instanceId;
     const isBxgy = !!item.bxgyRef;
@@ -1082,6 +1128,9 @@ export default function POSCart() {
           )}
         </div>
 
+        {/* ── Tabs status (venue mode) ── */}
+        <POSTKitchenPanel />
+
         {/* ── Item list ── */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {items.length === 0 ? (
@@ -1146,7 +1195,7 @@ export default function POSCart() {
                       return s + effPrice * i.quantity;
                     }, 0);
                     const anySelected = groupItems.some(
-                      (i) => selectedKey === itemKey(i)
+                      (i) => selectedKey === posItemKey(i)
                     );
 
                     // combo qty = first item's quantity (all items in group are same qty)
@@ -1405,6 +1454,25 @@ export default function POSCart() {
               </div>
             </div>
           )}
+
+        {/* ── Send to kitchen (bound venue tab with unfired lines) ── */}
+        {tableBinding?.heldOrderId && fireCount > 0 && (
+          <div className="shrink-0 px-4 pt-2">
+            <button
+              type="button"
+              onClick={handleFire}
+              disabled={firing}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#b20202] py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#8f0202] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {firing ? (
+                <PiSpinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <PiPaperPlaneRight className="h-4 w-4" />
+              )}
+              Send to kitchen · {fireCount}
+            </button>
+          </div>
+        )}
 
         {/* ── Total ── */}
         <div className="shrink-0 border-t border-gray-200 px-4 py-2.5">

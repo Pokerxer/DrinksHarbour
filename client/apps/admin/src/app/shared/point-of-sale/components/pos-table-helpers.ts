@@ -42,3 +42,61 @@ export function tabElapsedLabel(openedAt?: string, now = new Date()): string {
   if (mins < 60) return `${mins}m`;
   return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
 }
+
+// ─── Kitchen fire flow (client side) ─────────────────────────────────────────
+
+/** One line of the cart's local mirror of a tab's fired kitchen rounds. */
+export interface FiredEntry {
+  key: string;
+  qty: number;
+  roundNo: number;
+}
+
+/** Structural minimum a cart line needs for its server-compatible key. */
+export interface KeyedLine {
+  subProductId: string;
+  sizeId?: string;
+  comboRef?: { instanceId: string };
+  bxgyRef?: { rewardId: string; role: string };
+}
+
+/**
+ * Identity of one cart line — byte-compatible with the server's
+ * buildPosItemKey (pos.controller.js). Single source for React keys, the
+ * dialpad selection and the send-to-kitchen payload.
+ */
+export function posItemKey(i: KeyedLine): string {
+  const base = i.sizeId ? `${i.subProductId}_${i.sizeId}` : i.subProductId;
+  if (i.comboRef?.instanceId) return `${base}__ci_${i.comboRef.instanceId}`;
+  if (i.bxgyRef?.rewardId)
+    return `${base}__bxgy_${i.bxgyRef.rewardId}_${i.bxgyRef.role}`;
+  return base;
+}
+
+/**
+ * What of the cart has not gone to the kitchen yet, mirroring the server's
+ * computeUnfiredLines: per line key, quantity remaining after netting every
+ * fired round; fully-consumed lines drop out. `firedLog` is the local mirror
+ * kept on the table binding — absent (legacy carts) means nothing fired.
+ */
+export function computeUnfiredLocal<T extends KeyedLine & { quantity: number }>(
+  items: T[],
+  itemKeyOf: (i: T) => string,
+  firedLog: FiredEntry[] | undefined
+): Array<{ item: T; key: string; remaining: number }> {
+  const rounds = Array.isArray(firedLog) ? firedLog : [];
+  const firedByKey = new Map<string, number>();
+  for (const e of rounds) {
+    firedByKey.set(e.key, (firedByKey.get(e.key) ?? 0) + (Number(e.qty) || 0));
+  }
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const key = itemKeyOf(item);
+      const remaining = Math.max(
+        0,
+        (Number(item.quantity) || 0) - (firedByKey.get(key) ?? 0)
+      );
+      return { item, key, remaining };
+    })
+    .filter((l) => l.remaining > 0);
+}
