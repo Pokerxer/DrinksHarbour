@@ -16,6 +16,7 @@ const {
   nextDocNumber,
   agingBucket,
   validateAllocations,
+  buildJournalEntryFilter,
 } = require('../services/accounting.helpers');
 
 const ACCOUNTS = [
@@ -129,6 +130,25 @@ test('buildGeneralLedger produces a running balance', () => {
   assert.equal(gl.totals.credits, 50);
 });
 
+test('buildGeneralLedger honours credit nature and opening balance', () => {
+  const entries = [
+    { date: '2026-08-01T00:00:00Z', lines: [{ account: '4000', debit: 0, credit: 500 }] },
+    { date: '2026-08-02T00:00:00Z', lines: [{ account: '4000', debit: 100, credit: 0 }] }, // credit note
+  ];
+  const income = buildGeneralLedger(entries, '4000', { creditNature: true });
+  assert.deepEqual(
+    income.lines.map((l) => l.balance),
+    [500, 400] // credits grow the balance; a debit shrinks it
+  );
+  const withOpening = buildGeneralLedger([entries[1]], '4000', {
+    openingBalance: 1200,
+    creditNature: true,
+  });
+  assert.equal(withOpening.openingBalance, 1200);
+  assert.equal(withOpening.lines[0].balance, 1100);
+  assert.equal(withOpening.totals.closing, 1100);
+});
+
 test('sumMovementCosts splits outbound COGS from losses', () => {
   const movements = [
     { type: 'sold', quantity: 2, unitCost: 100, totalCost: 200 },
@@ -181,4 +201,27 @@ test('validateAllocations rejects over-allocation and unknown docs', () => {
   assert.match(perDoc.errors[0], /outstanding balance/);
   const unknown = validateAllocations({ amount: 100, allocations: [{ docId: 'nope', amount: 100 }], outstandingByDoc: outstanding });
   assert.match(unknown.errors[0], /not found/);
+});
+
+test('buildJournalEntryFilter maps valid query params and ignores junk', () => {
+  const filter = buildJournalEntryFilter({
+    period: '2026-08',
+    entryType: 'manual',
+    status: 'posted',
+    account: ' 4000 ',
+    from: '2026-08-01',
+    to: '2026-08-31',
+    q: 'stock',
+  });
+  assert.equal(filter.period, '2026-08');
+  assert.equal(filter.entryType, 'manual');
+  assert.equal(filter.status, 'posted');
+  assert.equal(filter['lines.account'], '4000');
+  assert.ok(filter.date.$gte instanceof Date);
+  assert.ok(filter.date.$lte instanceof Date);
+  assert.equal(filter.$or.length, 2);
+
+  const junk = buildJournalEntryFilter({ period: 'aug-2026', q: '(.*', from: 'nope' });
+  assert.deepEqual(junk, { $or: [{ memo: /\(\.\*/i }, { source: /\(\.\*/i }] });
+  assert.deepEqual(buildJournalEntryFilter({}), {});
 });

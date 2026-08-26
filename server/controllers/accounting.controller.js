@@ -11,6 +11,7 @@ const { logPrivilegedAction } = require('../utils/auditLog');
 const journalService = require('../services/journalEntry.service');
 const coaService = require('../services/chartOfAccounts.service');
 const accountingService = require('../services/accounting.service');
+const { buildJournalEntryFilter } = require('../services/accounting.helpers');
 
 function bad(message, status = 400) {
   const err = new Error(message);
@@ -22,21 +23,10 @@ function bad(message, status = 400) {
 
 exports.getJournalEntries = asyncHandler(async (req, res) => {
   const tenantId = req.tenant._id;
-  const { period, entryType, refDocType, status, account } = req.query;
   const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
 
-  const filter = { tenant: tenantId };
-  if (period) filter.period = period;
-  if (entryType) filter.entryType = entryType;
-  if (refDocType) filter.refDocType = refDocType;
-  if (status) filter.status = status;
-  if (account) filter['lines.account'] = String(account);
-  if (req.query.from || req.query.to) {
-    filter.date = {};
-    if (req.query.from) filter.date.$gte = new Date(req.query.from);
-    if (req.query.to) filter.date.$lte = new Date(req.query.to);
-  }
+  const filter = { tenant: tenantId, ...buildJournalEntryFilter(req.query) };
 
   const [data, total] = await Promise.all([
     JournalEntry.find(filter)

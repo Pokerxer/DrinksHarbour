@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import {
@@ -11,11 +11,23 @@ import {
   type ProfitLoss,
   type TrialBalance,
 } from '@/services/accounting.service';
-import { ACCOUNT_TYPE_LABELS } from './accounting-helpers';
+import {
+  ACCOUNT_TYPE_LABELS,
+  ACCOUNT_TYPE_ORDER,
+  dateWindowLabel,
+  periodLabel,
+} from './accounting-helpers';
 import TrialBalanceTable from './trial-balance-table';
 import PlTable from './pl-table';
 import BalanceSheetTable from './balance-sheet-table';
 import GeneralLedgerTable from './general-ledger-table';
+import { BSKpis, GLKpis, PLKpis, TBKpis } from './report-widgets';
+import {
+  BSPositionChart,
+  GLBalanceChart,
+  PLBreakdownChart,
+  TBTypeMixChart,
+} from './report-charts';
 
 type Tab = 'trial-balance' | 'profit-loss' | 'balance-sheet' | 'general-ledger';
 
@@ -29,7 +41,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
 const SELECT_CLS =
   'rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-400';
 
-/** /accounting/reports — tabbed report workspace (taxes-view pattern). */
+/** /accounting/reports — tabbed workspace: KPI chips, chart, then the table. */
 export default function ReportsView({ initialTab = 'trial-balance' }: { initialTab?: Tab }) {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
@@ -47,6 +59,16 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
   const [bs, setBs] = useState<BalanceSheet | null>(null);
   const [gl, setGl] = useState<GeneralLedger | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Accounts grouped by canonical type for the GL selector.
+  const accountsByType = useMemo(
+    () =>
+      ACCOUNT_TYPE_ORDER.map((type) => ({
+        type,
+        rows: accounts.filter((a) => a.type === type),
+      })).filter((g) => g.rows.length > 0),
+    [accounts]
+  );
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -93,10 +115,18 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
       .catch(() => {});
   }, [token]);
 
+  const windowLabel = dateWindowLabel(from, to);
+  const subtitle =
+    tab === 'trial-balance'
+      ? `Period ${periodLabel(period)} · NGN`
+      : tab === 'balance-sheet'
+        ? `As of ${to ? new Date(to).toLocaleDateString() : 'today'} · NGN`
+        : `${windowLabel} · NGN`;
+
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200">
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -153,15 +183,19 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
           )}
           {tab === 'general-ledger' && (
             <select
-              className={SELECT_CLS}
+              className={`${SELECT_CLS} max-w-[260px]`}
               value={glAccount}
               onChange={(e) => setGlAccount(e.target.value)}
               aria-label="Account"
             >
-              {accounts.map((a) => (
-                <option key={a._id} value={a.code}>
-                  {a.code} · {a.name} ({ACCOUNT_TYPE_LABELS[a.type] ?? a.type})
-                </option>
+              {accountsByType.map((g) => (
+                <optgroup key={g.type} label={ACCOUNT_TYPE_LABELS[g.type] ?? g.type}>
+                  {g.rows.map((a) => (
+                    <option key={a._id} value={a.code}>
+                      {a.code} · {a.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           )}
@@ -169,22 +203,66 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
             type="button"
             onClick={load}
             disabled={loading}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className={`rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 ${
+              loading ? 'animate-pulse disabled:opacity-50' : ''
+            }`}
           >
-            {loading ? 'Loading…' : 'Refresh'}
+            {loading ? 'Crunching…' : 'Refresh'}
           </button>
         </div>
       </div>
 
-      {!loading && tab === 'trial-balance' && tb && <TrialBalanceTable data={tb} period={period} />}
-      {!loading && tab === 'profit-loss' && pl && <PlTable data={pl} />}
-      {!loading && tab === 'balance-sheet' && bs && <BalanceSheetTable data={bs} />}
-      {!loading && tab === 'general-ledger' && gl && <GeneralLedgerTable data={gl} />}
-      {loading && (
-        <div className="animate-pulse rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-400">
-          Crunching numbers…
-        </div>
-      )}
+      {/* Active-window caption; everything stays visible (dimmed) while refreshing */}
+      <p className="mb-2 text-xs text-gray-500" aria-live="polite">
+        {subtitle}
+      </p>
+      <div className={loading ? 'pointer-events-none opacity-50 transition-opacity' : ''}>
+        {tab === 'trial-balance' && tb && (
+          <>
+            <TBKpis data={tb} />
+            {tb.rows.length > 0 && (
+              <div className="mb-3 max-w-sm">
+                <TBTypeMixChart data={tb} />
+              </div>
+            )}
+            <TrialBalanceTable data={tb} period={period} />
+          </>
+        )}
+        {tab === 'profit-loss' && pl && (
+          <>
+            <PLKpis data={pl} />
+            <div className="mb-3">
+              <PLBreakdownChart data={pl} />
+            </div>
+            <PlTable data={pl} subtitle={subtitle} />
+          </>
+        )}
+        {tab === 'balance-sheet' && bs && (
+          <>
+            <BSKpis data={bs} />
+            <div className="mb-3">
+              <BSPositionChart data={bs} />
+            </div>
+            <BalanceSheetTable data={bs} subtitle={subtitle} />
+          </>
+        )}
+        {tab === 'general-ledger' && gl && (
+          <>
+            <GLKpis data={gl} />
+            {(gl.lines.length > 0 || (gl.openingBalance ?? 0) !== 0) && (
+              <div className="mb-3">
+                <GLBalanceChart data={gl} />
+              </div>
+            )}
+            <GeneralLedgerTable data={gl} subtitle={subtitle} />
+          </>
+        )}
+        {!loading && !tb && !pl && !bs && !gl && (
+          <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-sm text-gray-400">
+            Choose a report and window above.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

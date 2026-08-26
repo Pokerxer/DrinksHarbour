@@ -97,6 +97,8 @@ export interface GeneralLedger {
     balance: number;
   }>;
   totals: { debits: number; credits: number; closing: number };
+  openingBalance?: number;
+  account?: { code: string; name: string; type: AccountType };
 }
 
 export interface MonthlyPoint {

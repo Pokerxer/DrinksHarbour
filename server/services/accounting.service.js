@@ -93,15 +93,48 @@ async function getBalanceSheet(tenantId, { asOf } = {}) {
   return buildBalanceSheet(entries, asOf, lifetime.netProfit);
 }
 
+/**
+ * Nature-aware general ledger: 404 on unknown codes, running balance follows
+ * the account's natural side, and a dated window opens with the balance
+ * carried forward from pre-window history instead of restarting at zero.
+ */
 async function getGeneralLedger(tenantId, { account, from, to } = {}) {
   if (!account) {
     const err = new Error('account query param is required');
     err.status = 400;
     throw err;
   }
+  const accountDoc = await Account.findOne({ tenant: tenantId, code: String(account) }).lean();
+  if (!accountDoc) {
+    const err = new Error(`Unknown account code "${account}"`);
+    err.status = 404;
+    throw err;
+  }
+  const creditNature = ['liability', 'equity', 'income'].includes(accountDoc.type);
+  let openingBalance = 0;
+  if (from) {
+    const prior = await JournalEntry.find({
+      tenant: tenantId,
+      status: 'posted',
+      date: { $lt: new Date(from) },
+    })
+      .select('lines')
+      .lean();
+    for (const entry of prior) {
+      for (const line of entry.lines || []) {
+        if (String(line.account) !== String(account)) continue;
+        openingBalance = creditNature
+          ? round2(openingBalance + (line.credit || 0) - (line.debit || 0))
+          : round2(openingBalance + (line.debit || 0) - (line.credit || 0));
+      }
+    }
+  }
   const entries = await fetchEntries(tenantId, { from, to });
-  const accountDoc = await Account.findOne({ tenant: tenantId, code: account }).lean();
-  return buildGeneralLedger(entries, account);
+  const gl = buildGeneralLedger(entries, account, { openingBalance, creditNature });
+  return {
+    ...gl,
+    account: { code: accountDoc.code, name: accountDoc.name, type: accountDoc.type },
+  };
 }
 
 /** KPI payload for the Accounting dashboard (all MTD unless dates given). */

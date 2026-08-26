@@ -9,13 +9,20 @@ import {
 import type { JournalEntry } from '@/services/accounting.service';
 import { exportEntriesCsv } from './journal-entry-detail';
 
+/** Every posted entry type — kept in ledger-report order for the pill row. */
 export const TYPE_TABS: Array<{ key: string; label: string }> = [
   { key: '', label: 'All' },
   { key: 'sales_revenue', label: 'Sales Revenue' },
+  { key: 'customer_payment', label: 'Customer Payments' },
+  { key: 'vendor_payment', label: 'Vendor Payments' },
   { key: 'expense_accrual', label: 'Expense Accrual' },
-  { key: 'manual', label: 'Manual' },
-  { key: 'reversal', label: 'Reversals' },
+  { key: 'cogs', label: 'COGS' },
+  { key: 'tax_collected', label: 'Tax Collected' },
+  { key: 'tax_paid', label: 'Tax Paid' },
   { key: 'refund', label: 'Refunds' },
+  { key: 'inventory_adjust', label: 'Inventory Adjust' },
+  { key: 'reversal', label: 'Reversals' },
+  { key: 'manual', label: 'Manual' },
 ];
 
 export const DATE_PRESETS = [
@@ -27,7 +34,7 @@ export const DATE_PRESETS = [
 const SELECT_CLS =
   'rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-400';
 
-/** Control bar (title tabs · refresh · export · new) + filter row. */
+/** Control bar (type tabs · refresh · export · new) + filter row. */
 export default function JournalEntriesControls({
   tabFilter,
   onTab,
@@ -41,8 +48,9 @@ export default function JournalEntriesControls({
   to,
   onFrom,
   onTo,
-  total,
+  rangeLabel,
   entries,
+  loading,
   onRefresh,
   onNewEntry,
 }: {
@@ -58,8 +66,9 @@ export default function JournalEntriesControls({
   to: string;
   onFrom: (v: string) => void;
   onTo: (v: string) => void;
-  total: number;
+  rangeLabel: string;
   entries: JournalEntry[];
+  loading: boolean;
   onRefresh: () => void;
   onNewEntry: () => void;
 }) {
@@ -82,19 +91,22 @@ export default function JournalEntriesControls({
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">{total} entries</span>
+          <span className="text-xs text-gray-500" aria-live="polite">
+            {loading ? 'Loading…' : rangeLabel ? `${rangeLabel} entries` : '0 entries'}
+          </span>
           <button
             type="button"
             onClick={onRefresh}
             className="rounded-lg border border-gray-200 bg-white p-2 text-gray-600 hover:text-gray-900"
             aria-label="Refresh"
           >
-            <PiArrowsClockwise size={16} />
+            <PiArrowsClockwise size={16} className={loading ? 'animate-spin' : ''} />
           </button>
           <button
             type="button"
+            disabled={loading || entries.length === 0}
             onClick={() => exportEntriesCsv(entries)}
-            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
           >
             <PiDownloadSimple size={14} /> Export CSV
           </button>
@@ -114,7 +126,7 @@ export default function JournalEntriesControls({
           <button
             key={p.key}
             type="button"
-            onClick={() => onPreset(p.key)}
+            onClick={() => onPreset(p.key === preset ? '' : p.key)}
             className={`rounded-full px-3 py-1 text-xs font-medium transition ${
               preset === p.key
                 ? 'bg-[#fef2f2] text-[#b20202]'

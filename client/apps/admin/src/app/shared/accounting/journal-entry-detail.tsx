@@ -1,29 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PiCaretRight } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
 import {
   accountingService,
+  type Account,
   type JournalEntry,
 } from '@/services/accounting.service';
 import {
+  STATUS_STYLES,
   downloadCsv,
+  entryTotals,
   entryTypeLabel,
   fmtDate,
   fmtMoney,
-  postedByLabel,
   refDocLabel,
 } from './accounting-helpers';
 
 /** Right-hand detail panel for a selected journal entry. */
 export default function JournalEntryDetail({
   entry,
+  accountsByCode,
   onClose,
   onChanged,
 }: {
   entry: JournalEntry;
+  accountsByCode?: Map<string, Account>;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -31,8 +35,17 @@ export default function JournalEntryDetail({
   const token = (session?.user as { token?: string })?.token ?? '';
   const [busy, setBusy] = useState(false);
 
-  const totalDebit = entry.lines.reduce((s, l) => s + (l.debit || 0), 0);
-  const totalCredit = entry.lines.reduce((s, l) => s + (l.credit || 0), 0);
+  const accountName = (code: string) => accountsByCode?.get(code)?.name;
+  const totalDebit = entryTotals(entry).debit;
+  const totalCredit = entryTotals(entry).credit;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const run = async (action: () => Promise<unknown>, successMsg: string) => {
     setBusy(true);
@@ -52,7 +65,7 @@ export default function JournalEntryDetail({
     const rows = entry.lines
       .map(
         (l) =>
-          `<tr><td>${l.account}</td><td>${l.memo ?? ''}</td><td class="num">${fmtMoney(l.debit)}</td><td class="num">${fmtMoney(l.credit)}</td></tr>`
+          `<tr><td>${l.account}${accountName(l.account) ? ` — ${accountName(l.account)}` : ''}</td><td>${l.memo ?? ''}</td><td class="num">${fmtMoney(l.debit)}</td><td class="num">${fmtMoney(l.credit)}</td></tr>`
       )
       .join('');
     const html = `<!doctype html><html><head><title>Journal Entry</title><style>
@@ -77,6 +90,12 @@ export default function JournalEntryDetail({
     win.document.close();
   };
 
+  const meta: Array<[string, string]> = [
+    ['Period', entry.period || '—'],
+    ['Source', (entry.source || '—').replace(/_/g, ' ')],
+    ['Posted by', entry.postedBy?.name || 'System'],
+  ];
+
   return (
     <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-xl">
       <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
@@ -86,42 +105,65 @@ export default function JournalEntryDetail({
             {entryTypeLabel(entry.entryType)} · {fmtDate(entry.date)}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          aria-label="Close detail"
-        >
-          <PiCaretRight size={18} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+              STATUS_STYLES[entry.status] ?? 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            {entry.status}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            aria-label="Close detail"
+          >
+            <PiCaretRight size={18} />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <p className="mb-3 text-sm text-gray-600">{entry.memo || 'No memo'}</p>
+
+        <dl className="mb-3 grid grid-cols-3 gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-xs">
+          {meta.map(([label, value]) => (
+            <div key={label}>
+              <dt className="uppercase tracking-wide text-gray-400">{label}</dt>
+              <dd className="mt-0.5 font-medium capitalize text-gray-700">{value}</dd>
+            </div>
+          ))}
+        </dl>
 
         <div className="overflow-hidden rounded-lg border border-gray-200">
           <table className="w-full text-xs">
             <thead className="bg-gray-50 text-left uppercase tracking-wide text-gray-500">
               <tr>
                 <th className="px-3 py-2">Account</th>
-                <th className="px-3 py-2">Memo</th>
                 <th className="px-3 py-2 text-right">Debit</th>
                 <th className="px-3 py-2 text-right">Credit</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {entry.lines.map((l, i) => (
-                <tr key={i}>
-                  <td className="px-3 py-2 font-medium tabular-nums">{l.account}</td>
-                  <td className="px-3 py-2 text-gray-500">{l.memo ?? '—'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(l.debit)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(l.credit)}</td>
-                </tr>
-              ))}
+              {entry.lines.map((l, i) => {
+                const name = accountName(l.account);
+                return (
+                  <tr key={i}>
+                    <td className="px-3 py-2">
+                      <span className="font-medium tabular-nums">{l.account}</span>
+                      {name && <span className="block text-[11px] text-gray-500">{name}</span>}
+                      {l.memo && <span className="block text-[11px] italic text-gray-400">{l.memo}</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(l.debit)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(l.credit)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot className="bg-gray-50 font-semibold">
               <tr>
-                <td colSpan={2} className="px-3 py-2">Totals</td>
+                <td className="px-3 py-2">Totals</td>
                 <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(totalDebit)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(totalCredit)}</td>
               </tr>
@@ -131,7 +173,7 @@ export default function JournalEntryDetail({
       </div>
 
       <div className="flex items-center gap-2 border-t border-gray-200 px-5 py-3">
-        {entry.status === 'posted' && (
+        {entry.status === 'posted' && entry.entryType !== 'reversal' && (
           <button
             type="button"
             disabled={busy}
@@ -172,17 +214,16 @@ export default function JournalEntryDetail({
 
 export function exportEntriesCsv(entries: JournalEntry[]) {
   downloadCsv(
-    ['Date', 'Reference', 'Ref Number', 'Type', 'Memo', 'Debit', 'Credit', 'Status', 'By'],
+    ['Date', 'Reference', 'Ref Number', 'Type', 'Memo', 'Debit', 'Credit', 'Status'],
     entries.map((e) => [
       fmtDate(e.date),
       refDocLabel(e.refDocType),
       e.refDoc,
       entryTypeLabel(e.entryType),
       e.memo ?? '',
-      e.lines.reduce((s, l) => s + (l.debit || 0), 0).toFixed(2),
-      e.lines.reduce((s, l) => s + (l.credit || 0), 0).toFixed(2),
+      entryTotals(e).debit.toFixed(2),
+      entryTotals(e).credit.toFixed(2),
       e.status,
-      postedByLabel(e),
     ]),
     'journal-entries'
   );

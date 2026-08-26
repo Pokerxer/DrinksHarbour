@@ -221,8 +221,14 @@ function buildBalanceSheet(entries, _asOf, retainedEarnings = 0) {
   };
 }
 
-/** Per-account line listing in chronological order with running balance. */
-function buildGeneralLedger(entries, accountCode) {
+/**
+ * Per-account line listing in chronological order with a running balance.
+ * The balance follows the account's natural side — debit-nature accounts
+ * (assets/expenses) run debits−credits, credit-nature accounts (liabilities/
+ * equity/income) run credits−debits — starting from `openingBalance` so a
+ * dated window continues history instead of restarting at zero.
+ */
+function buildGeneralLedger(entries, accountCode, { openingBalance = 0, creditNature = false } = {}) {
   const lines = [];
   for (const entry of entries || []) {
     for (const line of entry.lines || []) {
@@ -238,16 +244,16 @@ function buildGeneralLedger(entries, accountCode) {
     }
   }
   lines.sort((a, b) => new Date(a.date) - new Date(b.date));
-  let balance = 0;
+  let balance = round2(openingBalance);
   let debits = 0;
   let credits = 0;
   for (const l of lines) {
-    balance = round2(balance + l.debit - l.credit);
+    balance = round2(creditNature ? balance + l.credit - l.debit : balance + l.debit - l.credit);
     debits = round2(debits + l.debit);
     credits = round2(credits + l.credit);
     l.balance = balance;
   }
-  return { lines, totals: { debits, credits, closing: balance } };
+  return { lines, totals: { debits, credits, closing: balance }, openingBalance: round2(openingBalance) };
 }
 
 const COGS_MOVEMENT_TYPES = new Set(['sold', 'shipped']);
@@ -343,6 +349,42 @@ function buildMonthlySeries(entries, endPeriod, months = 6) {
   return buckets;
 }
 
+/** Escape a user string for literal use inside a RegExp. */
+function escapeRegExp(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const PERIOD_RX = /^\d{4}-\d{2}$/;
+
+/**
+ * Pure translation of the journal-entries list query into a Mongo filter
+ * (tenant added by the caller). Unknown/invalid values are ignored rather
+ * than rejected so a bad filter can never 500 the list view. `q` is a safe
+ * literal contains-match over memo and source; `account` matches line codes.
+ */
+function buildJournalEntryFilter(query = {}) {
+  const filter = {};
+  if (PERIOD_RX.test(String(query.period || ''))) filter.period = query.period;
+  if (query.entryType) filter.entryType = String(query.entryType);
+  if (query.refDocType) filter.refDocType = String(query.refDocType);
+  if (query.status) filter.status = String(query.status);
+  if (query.account) filter['lines.account'] = String(query.account).trim();
+  if (query.from || query.to) {
+    filter.date = {};
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    if (!Number.isNaN(from.getTime())) filter.date.$gte = from;
+    if (!Number.isNaN(to.getTime())) filter.date.$lte = to;
+    if (!Object.keys(filter.date).length) delete filter.date;
+  }
+  const q = String(query.q || '').trim();
+  if (q) {
+    const rx = new RegExp(escapeRegExp(q), 'i');
+    filter.$or = [{ memo: rx }, { source: rx }];
+  }
+  return filter;
+}
+
 module.exports = {
   round2,
   normalizeLines,
@@ -358,4 +400,6 @@ module.exports = {
   nextDocNumber,
   agingBucket,
   validateAllocations,
+  escapeRegExp,
+  buildJournalEntryFilter,
 };

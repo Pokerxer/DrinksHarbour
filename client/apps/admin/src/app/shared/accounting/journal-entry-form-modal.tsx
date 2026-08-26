@@ -41,12 +41,24 @@ export default function JournalEntryFormModal({
   const [busy, setBusy] = useState(false);
 
   const balance = linesBalanced(lines);
+  // Backend rejects entries with fewer than two lines — mirror that client-side.
+  const filledLines = lines.filter((l) => l.account).length;
+  const incompleteLines = lines.filter((l) => !l.account && (l.debit || l.credit)).length;
+  const canPost = balance.balanced && filledLines >= 2 && incompleteLines === 0;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const setLine = (i: number, patch: Partial<FormLine>) =>
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
 
   const submit = async () => {
-    if (!balance.balanced) return;
+    if (!canPost) return;
     setBusy(true);
     try {
       await accountingService.createJournalEntry(token, {
@@ -180,12 +192,16 @@ export default function JournalEntryFormModal({
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
           <p
             className={`text-sm font-medium ${
-              balance.balanced ? 'text-emerald-600' : 'text-red-600'
+              balance.balanced && incompleteLines === 0 ? 'text-emerald-600' : 'text-red-600'
             }`}
           >
-            {balance.balanced
-              ? '✓ Balanced'
-              : `Unbalanced — Debits ${fmtMoney(balance.debit)} vs Credits ${fmtMoney(balance.credit)}`}
+            {!balance.balanced
+              ? `Unbalanced — Debits ${fmtMoney(balance.debit)} vs Credits ${fmtMoney(balance.credit)}`
+              : incompleteLines > 0
+                ? `${incompleteLines} line${incompleteLines > 1 ? 's' : ''} missing an account`
+                : filledLines < 2
+                  ? 'At least two account lines are required'
+                  : '✓ Balanced'}
           </p>
           <div className="flex gap-2">
             <button
@@ -197,7 +213,7 @@ export default function JournalEntryFormModal({
             </button>
             <button
               type="button"
-              disabled={!balance.balanced || busy}
+              disabled={!canPost || busy}
               onClick={submit}
               className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
             >
