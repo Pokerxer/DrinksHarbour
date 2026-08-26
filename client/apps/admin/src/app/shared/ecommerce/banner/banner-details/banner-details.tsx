@@ -11,7 +11,6 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { routes } from '@/config/routes';
-import PageHeader from '@/app/shared/page-header';
 import { bannerService } from '@/services/banner.service';
 import { Button, Text } from 'rizzui';
 import {
@@ -122,7 +121,7 @@ export default function BannerDetailsView({
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-orange-500" />
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-[#b20202]" />
       </div>
     );
   }
@@ -155,26 +154,35 @@ export default function BannerDetailsView({
 
   return (
     <>
-      <PageHeader
-        title={banner.title || 'Banner Details'}
-        breadcrumb={[
-          { href: routes.eCommerce.dashboard, name: 'E-Commerce' },
-          { href: routes.eCommerce.banners, name: 'Banners' },
-          { name: banner.title || id },
-        ]}
-      >
-        <DetailsActions
-          id={id}
-          isActive={isActive}
-          isPaused={isPaused}
-          priority={banner.priority}
-          onPauseActivate={() =>
-            handleStatusChange(isActive ? 'paused' : 'active')
-          }
-          onClone={handleClone}
-          onDelete={handleDelete}
-        />
-      </PageHeader>
+      {/* POS-style header — breadcrumb, title row, actions */}
+      <div className="mb-6">
+        <p className="text-xs text-gray-400">
+          <Link href={routes.eCommerce.banners} className="hover:text-[#b20202]">
+            Banners
+          </Link>
+          <span className="mx-1.5">/</span>
+          <span className="text-gray-500">{banner.title || id}</span>
+        </p>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <h1 className="truncate text-xl font-bold text-gray-900">
+              {banner.title || 'Untitled banner'}
+            </h1>
+            <StatusBadge status={banner.status} />
+            <PriorityBadge priority={banner.priority} />
+          </div>
+          <DetailsActions
+            id={id}
+            isActive={isActive}
+            isPaused={isPaused}
+            onPauseActivate={() =>
+              handleStatusChange(isActive ? 'paused' : 'active')
+            }
+            onClone={handleClone}
+            onDelete={handleDelete}
+          />
+        </div>
+      </div>
 
       <div className="space-y-5">
         {/* Live preview */}
@@ -274,12 +282,11 @@ export default function BannerDetailsView({
           </Link>
           {(isActive || isPaused) && (
             <Button
-              variant="outline"
               size="sm"
               onClick={() =>
                 handleStatusChange(isActive ? 'paused' : 'active')
               }
-              className="flex-1"
+              className="flex-1 border-0 bg-[#b20202] text-white hover:bg-[#9f0101]"
             >
               {isActive ? (
                 <>
@@ -296,8 +303,9 @@ export default function BannerDetailsView({
           )}
           <Button
             size="sm"
+            variant="outline"
             onClick={handleDelete}
-            className="flex-1 border-0 bg-red-500 text-white hover:bg-red-600"
+            className="flex-1 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
           >
             <PiTrashBold className="mr-1.5 h-4 w-4" />
             Delete
@@ -315,7 +323,6 @@ function DetailsActions({
   id,
   isActive,
   isPaused,
-  priority,
   onPauseActivate,
   onClone,
   onDelete,
@@ -323,16 +330,18 @@ function DetailsActions({
   id: string;
   isActive: boolean;
   isPaused: boolean;
-  priority?: string;
   onPauseActivate: () => void;
   onClone: () => void;
   onDelete: () => void;
 }) {
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-2 @lg:mt-0">
-      <PriorityBadge priority={priority} />
+    <div className="flex flex-wrap items-center gap-2">
       {(isActive || isPaused) && (
-        <Button variant="outline" size="sm" onClick={onPauseActivate}>
+        <Button
+          size="sm"
+          onClick={onPauseActivate}
+          className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]"
+        >
           {isActive ? (
             <>
               <PiPauseBold className="mr-1.5 h-4 w-4" />
@@ -351,15 +360,19 @@ function DetailsActions({
         Clone
       </Button>
       <Link href={routes.eCommerce.editBanner(id)}>
-        <Button variant="outline" size="sm">
+        <Button
+          size="sm"
+          className="border border-gray-300 bg-white text-gray-700 hover:border-[#b20202] hover:text-[#b20202]"
+        >
           <PiPencilLineBold className="mr-1.5 h-4 w-4" />
           Edit
         </Button>
       </Link>
       <Button
         size="sm"
+        variant="outline"
         onClick={onDelete}
-        className="border-0 bg-red-500 text-white hover:bg-red-600"
+        className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
       >
         <PiTrashBold className="mr-1.5 h-4 w-4" />
         Delete

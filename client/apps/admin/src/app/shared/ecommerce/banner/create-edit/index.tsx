@@ -328,7 +328,7 @@ export default function CreateEditBanner({
           >
             Cancel
           </Button>
-          <Button type="submit" isLoading={submitting}>
+          <Button type="submit" isLoading={submitting} className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]">
             {isEdit ? 'Update Banner' : 'Create Banner'}
           </Button>
         </div>
@@ -432,7 +432,7 @@ export default function CreateEditBanner({
             >
               Cancel
             </Button>
-            <Button type="submit" isLoading={submitting}>
+            <Button type="submit" isLoading={submitting} className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]">
               {isEdit ? 'Update Banner' : 'Create Banner'}
             </Button>
           </div>

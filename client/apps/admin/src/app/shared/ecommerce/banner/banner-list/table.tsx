@@ -38,6 +38,7 @@ import { routes } from '@/config/routes';
 import StatsHeader from './stats-header';
 import ServerPagination from './server-pagination';
 import BannerMobileCards from './mobile-cards';
+import BannerHero from '../banner-hero';
 
 const SEARCH_DEBOUNCE_MS = 400;
 
@@ -348,6 +349,14 @@ export default function BannersTable({
 
   return (
     <div className={cn('space-y-5', className)}>
+      {/* POS-style hero band */}
+      <BannerHero
+        total={stats.total}
+        active={stats.active}
+        loading={isLoading}
+        onRefresh={refresh}
+      />
+
       <StatsHeader
         stats={stats}
         activeFilter={statusFilter}
@@ -376,7 +385,7 @@ export default function BannersTable({
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search by title, subtitle or CTA…"
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-4 text-sm transition-all focus:border-blue-400 focus:bg-white focus:outline-none"
+              className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-4 text-sm text-gray-900 transition-all placeholder:text-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
             />
             {searchInput && (
               <button
@@ -399,7 +408,7 @@ export default function BannersTable({
               Refresh
             </Button>
             <Link href={routes.eCommerce.createBanner}>
-              <Button className="h-10">
+              <Button className="h-10 border-0 bg-[#b20202] text-white hover:bg-[#9f0101]">
                 <PiPlusBold className="mr-2 h-4 w-4" />
                 Add Banner
               </Button>
@@ -413,12 +422,16 @@ export default function BannersTable({
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-[#b20202]/20 bg-[#fef2f2] p-3"
         >
-          <Text className="text-sm font-semibold text-blue-800">
+          <Text className="text-sm font-semibold text-[#b20202]">
             {selectedCount} selected
           </Text>
-          <Button size="sm" onClick={() => handleBulkStatusChange('active')}>
+          <Button
+            size="sm"
+            onClick={() => handleBulkStatusChange('active')}
+            className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]"
+          >
             Activate
           </Button>
           <Button
@@ -465,7 +478,7 @@ export default function BannersTable({
           </Text>
           {!searchQuery && !statusFilter && (
             <Link href={routes.eCommerce.createBanner}>
-              <Button>
+              <Button className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]">
                 <PiPlusBold className="mr-2 h-4 w-4" />
                 Create Banner
               </Button>
