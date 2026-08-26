@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import POSSessionBar from '@/app/shared/point-of-sale/components/pos-session-bar';
+import POSTableStrip from '@/app/shared/point-of-sale/components/pos-table-strip';
 import POSProductGrid from '@/app/shared/point-of-sale/components/pos-product-grid';
 import POSCart from '@/app/shared/point-of-sale/components/pos-cart';
 import POSPaymentModal from '@/app/shared/point-of-sale/components/pos-payment-modal';
@@ -166,6 +167,8 @@ export default function POSSell() {
     <ProductImageProvider>
     <div className="flex h-dvh flex-col bg-white">
       <POSSessionBar />
+
+      <POSTableStrip />
 
       <div className="flex flex-1 overflow-hidden">
         {/* LEFT: cart + dialpad */}

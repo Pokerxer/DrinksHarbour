@@ -376,6 +376,8 @@ export default function POSCart() {
     customer,
     note,
     itemCount,
+    tableBinding,
+    unbindTable,
     removeItem,
     addItem,
     removeComboGroup,
@@ -1049,6 +1051,33 @@ export default function POSCart() {
                   {(customer.loyaltyPoints ?? 0).toLocaleString()}pts
                 </span>
               )}
+            </div>
+          )}
+
+          {/* Venue table badge */}
+          {tableBinding && (
+            <div className="flex shrink-0 items-center gap-1 border-l border-gray-200 px-3 py-2">
+              <span className="truncate text-xs font-semibold text-[#b20202]">
+                {tableBinding.name}
+                {tableBinding.guests ? ` · ${tableBinding.guests}p` : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  // Unbinding detaches this cart VIEW only — the tab stays
+                  // parked on its table server-side until a sale settles it.
+                  if (
+                    window.confirm(
+                      'Unassign table? The tab stays parked on it.'
+                    )
+                  )
+                    unbindTable();
+                }}
+                className="text-gray-400 transition-colors hover:text-red-500"
+                title="Unassign table"
+              >
+                <PiX className="h-3 w-3" />
+              </button>
             </div>
           )}
         </div>

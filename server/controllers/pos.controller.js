@@ -3643,6 +3643,9 @@ exports.getHeldPOSOrders = asyncHandler(async (req, res) => {
       customer:    `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || 'Walk-in Customer',
       note:        h.note || '',
       createdAt:   h.createdAt,
+      // The parked cart snapshot, read-only. Venue tab loading needs it and
+      // must not go through recallPOSOrder, which consumes the hold.
+      holdMetadata: meta,
     };
   });
 
