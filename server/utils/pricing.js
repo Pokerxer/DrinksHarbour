@@ -112,20 +112,45 @@ const applyDiscount = (price, discount) => {
  * @param {string} revenueModel - 'markup' or 'commission'
  * @param {number} markupPct - Tenant markup percentage
  * @param {number} commissionPct - Tenant commission percentage
+ * @param {number} [wholesalePrice] - Optional B2B wholesale price. When >0, it
+ *   REPLACES the costPrice (markup) or tenantSellingPrice (commission) as the
+ *   revenue-model input, and the model still applies its markup/commission on top.
  * @returns {number} platformCostPrice
  */
-const calcPlatformCostPrice = (costPrice, tenantSellingPrice, revenueModel, markupPct = 25, commissionPct = 12) => {
+const calcPlatformCostPrice = (costPrice, tenantSellingPrice, revenueModel, markupPct = 25, commissionPct = 12, wholesalePrice = 0) => {
   // Normalize revenueModel - 'platform_markup' is treated as 'markup'
   const normalizedRevenueModel = revenueModel === 'platform_markup' ? 'markup' : revenueModel;
   
+  // If a wholesale price is provided (>0), it replaces the normal input for
+  // the revenue model. The markup/commission still applies on top of wholesale.
+  const effectiveCost = wholesalePrice > 0 ? wholesalePrice : null;
+
   if (normalizedRevenueModel === 'markup') {
-    if (!costPrice || costPrice <= 0) return 0;
-    return parseFloat((costPrice * (1 + markupPct / 100)).toFixed(2));
+    const input = effectiveCost ?? costPrice;
+    if (!input || input <= 0) return 0;
+    return parseFloat((input * (1 + markupPct / 100)).toFixed(2));
   } else {
     // commission
-    if (!tenantSellingPrice || tenantSellingPrice <= 0) return 0;
-    return parseFloat((tenantSellingPrice * (1 - commissionPct / 100)).toFixed(2));
+    const input = effectiveCost ?? tenantSellingPrice;
+    if (!input || input <= 0) return 0;
+    return parseFloat((input * (1 - commissionPct / 100)).toFixed(2));
   }
+};
+
+/**
+ * Convenience: pick the correct "cost input" for calcPlatformCostPrice.
+ * When size has wholesalePrice > 0, that B2B rate is used instead of costPrice
+ * (markup) or tenantSellingPrice (commission).
+ * @param {object} size - Size document/lean object
+ * @param {string} revenueModel - 'markup' | 'commission'
+ * @returns {{ costInput: number, tenantSellingPrice: number }}
+ */
+const resolveCostInput = (size, revenueModel) => {
+  const hasWholesale = size?.wholesalePrice && size.wholesalePrice > 0;
+  if (hasWholesale) {
+    return { costInput: size.wholesalePrice, tenantSellingPrice: size.wholesalePrice };
+  }
+  return { costInput: size?.costPrice ?? 0, tenantSellingPrice: size?.sellingPrice ?? 0 };
 };
 
 /**

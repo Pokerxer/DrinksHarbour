@@ -4570,19 +4570,21 @@ const searchProducts = async (searchParams = {}) => {
       const processedSizes = (subProduct.sizes || []).map((size) => {
         const sellingPrice = size.sellingPrice || 0;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
+        const wholesalePrice = size.wholesalePrice || 0; // B2B wholesale price (replaces cost/selling for revenue model)
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
         // Step 1: Platform cost price (from revenue model)
         //   Markup:     platformCostPrice = costPrice × (1 + markupPct/100)
         //   Commission: platformCostPrice = sellingPrice × (1 − commissionPct/100)
+        //   When wholesalePrice > 0, it REPLACES the normal input for the revenue model.
         // Step 2: Platform selling price (platform markup + product-level discount)
         //   platformSellingPrice = platformCostPrice × (1 + platformMarkupPct/100) [− productDiscount]
         // Tenant discounts are for the tenant's own store only — not used here.
         // ─────────────────────────────────────────────────────────────────────
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
 
         // Calculate platform selling price with product discount first
         let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
@@ -4671,7 +4673,7 @@ const searchProducts = async (searchParams = {}) => {
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
+                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, size.wholesalePrice || 0),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
@@ -4681,6 +4683,7 @@ const searchProducts = async (searchParams = {}) => {
             markupPct: effMarkupPct,
             commissionPct: effCommissionPct,
             platformMarkupPct,
+            wholesalePrice: size.wholesalePrice || 0,
           },
 
           discount: discountInfo,
@@ -5342,22 +5345,48 @@ const getAvailableFilters = async (query) => {
                 }
               },
               { $unwind: '$tenant' },
-              {
-                $lookup: {
-                  from: 'sizes',
-                  localField: '_id',
-                  foreignField: 'subproduct',
-                  as: 'sizes',
-                  pipeline: [
-                    {
-                      $match: {
-                        availability: { $in: ['available', 'low_stock'] },
-                        stock: { $gt: 0 }
-                      }
-                    }
-                  ]
-                }
-              },
+{
+            $lookup: {
+              from: 'sizes',
+              localField: '_id',
+              foreignField: 'subproduct',
+              as: 'sizes',
+              pipeline: [
+                {
+                  $match: {
+                    availability: { $in: ['available', 'low_stock'] },
+                    stock: { $gt: 0 },
+                  },
+                },
+                {
+                  $project: {
+                    size: 1,
+                    displayName: 1,
+                    unitType: 1,
+                    sellingPrice: 1,
+                    costPrice: 1,
+                    wholesalePrice: 1,
+                    unitsPerPack: 1,
+                    platformMarkupOverridePct: 1,
+                    packPlatformMarkupOverridePct: 1,
+                    availableStock: 1,
+                    compareAtPrice: 1,
+                    discount: 1,
+                    discountType: 1,
+                    discountStart: 1,
+                    discountEnd: 1,
+                    currency: 1,
+                    sku: 1,
+                    isDefault: 1,
+                    status: 1,
+                    availability: 1,
+                    stock: 1,
+                    volumeMl: 1,
+                  },
+                },
+              ],
+            },
+          },
               {
                 $project: {
                   tenant: 1,
@@ -5719,7 +5748,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
       status: 'active',
     })
       .populate('tenant', 'name slug logo city state country revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency primaryColor')
-      .populate('sizes', 'volume unit displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability')
+      .populate('sizes', 'volume unit displayName sellingPrice costPrice wholesalePrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability')
       .select(
         'tenant baseSellingPrice costPrice discountPercentage finalPrice currency sizes stockQuantity availability minOrderQuantity maxOrderQuantity revenueModel isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
       )
@@ -5745,12 +5774,13 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
         const sizeSellingPrice = sizeItem.sellingPrice || subProduct.baseSellingPrice || sizeItem.costPrice || 0;
         const sellingPrice = sizeSellingPrice;
         const costPrice = sizeItem.costPrice || subProduct.costPrice || 0;
+        const wholesalePrice = sizeItem.wholesalePrice || 0;
         const currency = sizeItem.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
         // Platform Pricing Pipeline (same as getAllProducts)
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
         
         // Calculate platform selling price with product discount first
         let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
@@ -5843,7 +5873,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
             formattedPrice: formatPrice(websitePriceVal, currency),
             compareAtPrice: sizeItem.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
+                  calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, sizeItem.wholesalePrice || 0),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
@@ -5853,6 +5883,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
             markupPct: effMarkupPct,
             commissionPct: effCommissionPct,
             platformMarkupPct,
+            wholesalePrice: sizeItem.wholesalePrice || 0,
           },
           discount: discountInfo,
           metadata: {
@@ -8006,12 +8037,13 @@ const getAllProducts = async (queryParams) => {
       const processedSizes = (subProduct.sizes || []).map((size) => {
         const sellingPrice = size.sellingPrice || 0;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
+        const wholesalePrice = size.wholesalePrice || 0;
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
         let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount
@@ -8994,12 +9026,13 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
         const sizeSellingPrice = sizeItem.sellingPrice || subProduct.baseSellingPrice || sizeItem.costPrice || 0;
         const sellingPrice = sizeSellingPrice;
         const costPrice = sizeItem.costPrice || subProduct.costPrice || 0;
+        const wholesalePrice = sizeItem.wholesalePrice || 0;
         const currency = sizeItem.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
         // Full pricing pipeline (same as getAllProducts)
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
         const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePriceVal = platformSellingPrice;
@@ -9040,7 +9073,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
             formattedPrice: formatPrice(websitePriceVal, currency),
             compareAtPrice: sizeItem.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
+                  calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, sizeItem.wholesalePrice || 0),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
@@ -9050,6 +9083,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
             markupPct: effMarkupPct,
             commissionPct: effCommissionPct,
             platformMarkupPct: product.platformMarkup || 15,
+            wholesalePrice: sizeItem.wholesalePrice || 0,
           },
           discount: discountInfo,
           metadata: {
@@ -9348,6 +9382,34 @@ const getBestsellers = async (page = 1, limit = 12) => {
               localField: '_id',
               foreignField: 'subproduct',
               as: 'sizes',
+              pipeline: [
+                {
+                  $project: {
+                    size: 1,
+                    displayName: 1,
+                    unitType: 1,
+                    sellingPrice: 1,
+                    costPrice: 1,
+                    wholesalePrice: 1,
+                    unitsPerPack: 1,
+                    platformMarkupOverridePct: 1,
+                    packPlatformMarkupOverridePct: 1,
+                    availableStock: 1,
+                    compareAtPrice: 1,
+                    discount: 1,
+                    discountType: 1,
+                    discountStart: 1,
+                    discountEnd: 1,
+                    currency: 1,
+                    sku: 1,
+                    isDefault: 1,
+                    status: 1,
+                    availability: 1,
+                    stock: 1,
+                    volumeMl: 1,
+                  },
+                },
+              ],
             },
           },
         ],
@@ -9424,11 +9486,12 @@ const getBestsellers = async (page = 1, limit = 12) => {
         const sizeSellingPrice = size.sellingPrice || subProduct.baseSellingPrice || size.costPrice || 0;
         const sellingPrice = sizeSellingPrice;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
+        const wholesalePrice = size.wholesalePrice || 0;
         const currency = size.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
         const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePrice = platformSellingPrice;
@@ -9468,7 +9531,7 @@ const getBestsellers = async (page = 1, limit = 12) => {
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
+                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, size.wholesalePrice || 0),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
@@ -9478,8 +9541,11 @@ const getBestsellers = async (page = 1, limit = 12) => {
             markupPct: effMarkupPct,
             commissionPct: effCommissionPct,
             platformMarkupPct,
+            wholesalePrice: size.wholesalePrice || 0,
           },
+
           discount: discountInfo,
+
           metadata: {
             priceCalculatedAt: new Date(),
             taxIncluded: false,
@@ -9487,7 +9553,6 @@ const getBestsellers = async (page = 1, limit = 12) => {
         };
       });
 
-      // Find cheapest and most expensive sizes
       const sizePrices = processedSizes.map((s) => s.pricing.websitePrice);
       const minSizePrice = Math.min(...sizePrices);
       const maxSizePrice = Math.max(...sizePrices);
@@ -9770,7 +9835,7 @@ const getProductBySlug = async (slug) => {
       path: 'sizes',
       match: SELLABLE_SIZE_MATCH,
       select:
-        'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
+        'size displayName sellingPrice costPrice wholesalePrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
     })
     .select(
       'tenant sku costPrice baseSellingPrice currency discount discountType discountedPrice discountStart discountEnd sizes status totalSold totalRevenue isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
@@ -9841,17 +9906,19 @@ const getProductBySlug = async (slug) => {
         const sizeSellingPrice = size.sellingPrice || subProduct.baseSellingPrice || size.costPrice || 0;
         const sellingPrice = sizeSellingPrice;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
+        const wholesalePrice = size.wholesalePrice || 0;
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
       // ── Platform Pricing Pipeline ────────────────────────────────────────
       // Markup:     platformCostPrice = costPrice × (1 + markupPct/100)
       // Commission: platformCostPrice = sellingPrice × (1 − commissionPct/100)
+      // When wholesalePrice > 0, it REPLACES the normal input for the revenue model.
       // platformSellingPrice = platformCostPrice × (1 + platformMarkupPct/100) [− productDiscount]
       // SubProduct sale discount applied after platform selling price is computed.
       // ─────────────────────────────────────────────────────────────────────
       // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
       const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
-      const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+      const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
       let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
       // Store original price before sale discount for display
@@ -9892,7 +9959,7 @@ const getProductBySlug = async (slug) => {
         const packRates = resolveRevenueRates(tenant, _unitsPerPack);
         packMarkupPctUsed = packRates.markupPct;
         packCommissionPctUsed = packRates.commissionPct;
-        packPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, packRates.markupPct, packRates.commissionPct);
+        packPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, packRates.markupPct, packRates.commissionPct, wholesalePrice);
         let packSelling = calcPlatformSellingPrice(packPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: size?.packPlatformMarkupOverridePct ?? size?.platformMarkupOverridePct ?? null });
         if (saleActive && subProduct.saleDiscountValue > 0) {
           const discountType = subProduct.saleType || 'percentage';
@@ -9974,7 +10041,7 @@ const getProductBySlug = async (slug) => {
           formattedPrice: formatPrice(websitePrice, currency),
           compareAtPrice: size.compareAtPrice
             ? calcPlatformSellingPrice(
-                calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
+                calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, size.wholesalePrice || 0),
                 platformMarkupPct
               ).toFixed(2)
             : null,
@@ -9990,6 +10057,7 @@ const getProductBySlug = async (slug) => {
           packPlatformCostPrice,
           packMarkupPct: packMarkupPctUsed,
           packCommissionPct: packCommissionPctUsed,
+          wholesalePrice: size.wholesalePrice || 0,
         },
 
         discount: discountInfo,
@@ -11559,12 +11627,13 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
       const processedSizes = (subProduct.sizes || []).map((size) => {
         const sellingPrice = size.sellingPrice || 0;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
+        const wholesalePrice = size.wholesalePrice || 0;
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
         let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount
