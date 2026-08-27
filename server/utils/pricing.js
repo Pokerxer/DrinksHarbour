@@ -6,8 +6,13 @@
  * Step 2: Apply tenant revenue model → platformCostPrice
  *         - Markup: costPrice × (1 + tenantMarkup%)
  *         - Commission: tenantSellingPrice × (1 − tenantCommission%)
+ *         ** When the size carries a wholesalePrice (> 0), that B2B rate replaces
+ *            the SUPPLIER COST as the revenue-model input (not the final cost).
+ *            The model still applies its markup/commission — and its reduced
+ *            PACK rates — to wholesale.
  * Step 3: Apply platformMarkup from Product → platformSellingPrice
  *         - platformSellingPrice = platformCostPrice × (1 + platformMarkup%)
+ *           (admin override % takes precedence when set)
  * Step 4: Apply product-level discount (optional)
  *         - finalPlatformPrice = platformSellingPrice - discount
  */
@@ -292,6 +297,14 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   const costPrice = size?.costPrice > 0 ? size.costPrice : fallbackCostPrice;
   const tenantSellingPrice = size?.sellingPrice > 0 ? size.sellingPrice : fallbackSellingPrice;
 
+  // Wholesale (B2B) price, when present, replaces the supplier cost as the
+  // INPUT to the tenant's revenue model. The revenue model still applies its
+  // markup/commission to wholesale, so the tenant's pack rates (reduced
+  // markup/commission for multi-packs) still produce a lower pack cost and a
+  // meaningful pack discount.
+  const wholesalePrice = size?.wholesalePrice > 0 ? size.wholesalePrice : null;
+  const effectiveCostPrice = wholesalePrice ?? costPrice;
+
   // Tenant discount (for tenant store display only)
   const tenantDiscount = size?.discountValue > 0 && size?.discountType
     ? { value: size.discountValue, type: size.discountType, start: size.discountStart, end: size.discountEnd }
@@ -300,8 +313,10 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     ? applyDiscount(tenantSellingPrice, tenantDiscount)
     : null;
 
-  // Step 1: Platform cost price
-  const platformCostPrice = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, markupPct, commissionPct);
+  // Step 1: Platform cost price. Wholesale replaces the supplier cost as the
+  // input to the revenue model; the model still applies its markup/commission
+  // (markup: cost × (1+markup%), commission: price × (1−commission%)).
+  const platformCostPrice = calcPlatformCostPrice(effectiveCostPrice, tenantSellingPrice, revenueModel, markupPct, commissionPct);
 
   // Step 2: Platform selling price (markup/override + product discount +
   // round-up-to-100 + undercut vs the tenant's store price)
@@ -320,9 +335,6 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   const minUnits = tenant?.packRateMinUnits ?? DEFAULT_PACK_RATE_MIN_UNITS;
   const thresholdReachable = !size?.maxOrderQuantity || size.maxOrderQuantity >= unitsPerPack;
   const packOverridePct = size?.packPlatformMarkupOverridePct ?? null;
-  // Pack cost is computed at the tenant's reduced pack rates (e.g. supplier
-  // cost × (1 + packMarkup%) for markup model). Exposed even when the final
-  // pack selling price doesn't beat the normal price, so the admin can see it.
   let packPlatformCostPrice = null;
   let packRatesUsed = null;
   let packUnitPrice = null;
@@ -335,7 +347,10 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   const saleActive = isDiscountActive(productDiscount);
   if (unitsPerPack >= minUnits && thresholdReachable && platformSellingPrice > 0 && !saleActive) {
     packRatesUsed = resolveRevenueRates(tenant, unitsPerPack);
-    packPlatformCostPrice = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, packRatesUsed.markupPct, packRatesUsed.commissionPct);
+    // Pack cost uses the same effective cost input (wholesale or supplier cost)
+    // but the tenant's reduced pack rates (e.g. packMarkup 10% vs normal 25%),
+    // so packs produce a lower platform cost and a meaningful discount.
+    packPlatformCostPrice = calcPlatformCostPrice(effectiveCostPrice, tenantSellingPrice, revenueModel, packRatesUsed.markupPct, packRatesUsed.commissionPct);
     const packSelling = calcPlatformSellingPrice(packPlatformCostPrice, platformMarkupPct, productDiscount, {
       tenantStorePrice: tenantSellingPrice,
       platformMarkupOverridePct: packOverridePct ?? overridePct,
@@ -377,6 +392,10 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     platformCostPrice,
     platformSellingPrice,
     platformMargin,
+    // True when the effective cost input came from the size's wholesale price
+    // rather than the supplier cost. The revenue model still applies its
+    // markup/commission to wholesale.
+    isPlatformCostFromWholesale: wholesalePrice != null,
 
     // Final price
     finalPrice: platformSellingPrice,
@@ -385,8 +404,9 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     packUnitPrice,
     packThreshold,
     packSavingsPct,
-    // Pack cost price at the tenant's reduced rates (supplier cost × (1+packMarkup%))
-    // and the rates used — exposed so the admin can see the pack cost breakdown.
+    // Pack cost price — derived from the same effective cost input (wholesale
+    // or supplier cost) but at the tenant's reduced pack rates — exposed so the
+    // admin can see the pack cost breakdown.
     packPlatformCostPrice,
     packMarkupPct: packRatesUsed?.markupPct ?? null,
     packCommissionPct: packRatesUsed?.commissionPct ?? null,

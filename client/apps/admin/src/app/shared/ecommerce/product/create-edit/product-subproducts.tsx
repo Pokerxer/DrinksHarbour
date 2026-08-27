@@ -910,8 +910,20 @@ function ReviewDrawer({
                                   sizePricing.costPrice || 0;
                                 const sizeSellingPrice =
                                   sizePricing.tenantSellingPrice || 0;
+                                // If the size carries a wholesale (B2B) price,
+                                // that is what the platform pays the tenant — so
+                                // use it as the platform's cost. Otherwise fall
+                                // back to the server-computed platform cost
+                                // (supplier cost × (1+markup%) for markup, or
+                                // tenant price × (1−commission%) for commission).
+                                const sizeWholesalePrice =
+                                  Number.isFinite(s.wholesalePrice) &&
+                                  s.wholesalePrice > 0
+                                    ? s.wholesalePrice
+                                    : null;
                                 const sizePlatformCost =
-                                  sizePricing.platformCostPrice || 0;
+                                  sizeWholesalePrice ??
+                                  (sizePricing.platformCostPrice || 0);
                                 const sizePlatformSelling =
                                   sizePricing.platformSellingPrice || 0;
                                 const sizePlatformMargin =
@@ -995,6 +1007,11 @@ function ReviewDrawer({
                                           <div className="rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 text-center">
                                             <div className="mb-0.5 text-blue-500">
                                               Platform Cost
+                                              {sizeWholesalePrice != null && (
+                                                <span className="ml-1 rounded bg-teal-100 px-1 text-[8px] font-semibold text-teal-700">
+                                                  Wholesale
+                                                </span>
+                                              )}
                                             </div>
                                             <div className="font-bold text-blue-700">
                                               {sizePlatformCost > 0
@@ -1039,6 +1056,11 @@ function ReviewDrawer({
                                           <div className="rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 text-center">
                                             <div className="mb-0.5 text-blue-500">
                                               Platform Cost
+                                              {sizeWholesalePrice != null && (
+                                                <span className="ml-1 rounded bg-teal-100 px-1 text-[8px] font-semibold text-teal-700">
+                                                  Wholesale
+                                                </span>
+                                              )}
                                             </div>
                                             <div className="font-bold text-blue-700">
                                               {sizePlatformCost > 0

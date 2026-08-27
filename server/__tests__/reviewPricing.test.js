@@ -135,3 +135,96 @@ test('backCalc treats platform_markup revenue model as markup', () => {
   const asPlatformMarkup = backCalcStoredPrice(10000, { revenueModel: 'platform_markup', markupPct: 25, platformMarkupPct: 15 });
   assert.strictEqual(asMarkup, asPlatformMarkup);
 });
+
+// ── Wholesale price as the platform's cost basis ────────────────────────────
+
+test('markup model: a wholesale price on the size replaces the supplier cost input', () => {
+  const product = { platformMarkup: 15 };
+  const tenant = { revenueModel: 'markup', markupPercentage: 25 };
+  // Wholesale replaces supplier cost; revenue model still applies markup.
+  // Effective cost: 1500 × 1.25 = 1875 → platformSelling: 1875 × 1.15 = 2156.25 → 2200
+  const size = { costPrice: 1000, sellingPrice: 0, wholesalePrice: 1500 };
+
+  const pricing = calculateSizePricing(size, product, tenant, 0, 0);
+  assert.strictEqual(pricing.platformCostPrice, 1875);
+  assert.strictEqual(pricing.isPlatformCostFromWholesale, true);
+  assert.strictEqual(pricing.platformSellingPrice, 2200);
+});
+
+test('commission model: a wholesale price replaces the supplier cost input (revenue model still applies)', () => {
+  const product = { platformMarkup: 15 };
+  const tenant = { revenueModel: 'commission', commissionPercentage: 10 };
+  // Wholesale replaces supplier cost; commission derives from tenantSellingPrice (unchanged).
+  // platformCostPrice = tenantPrice × (1 − commission) = 2000 × 0.9 = 1800
+  // But effectiveCostPrice = wholesale (1600) replaces costPrice, not tenantSellingPrice.
+  // Since commission model uses tenantSellingPrice (not costPrice), platformCostPrice = 2000 × 0.9 = 1800.
+  const size = { costPrice: 0, sellingPrice: 2000, wholesalePrice: 1600 };
+
+  const pricing = calculateSizePricing(size, product, tenant, 0, 0);
+  // Commission model: platformCostPrice = tenantSellingPrice × (1 − commission%)
+  // wholesale replaces costPrice (supplier cost), not tenantSellingPrice.
+  assert.strictEqual(pricing.platformCostPrice, 1800); // 2000 × 0.9
+  assert.strictEqual(pricing.isPlatformCostFromWholesale, true);
+  // 1800 × 1.15 = 2070, but undercut caps it just below tenant price 2000 → 1900
+  assert.strictEqual(pricing.platformSellingPrice, 1900);
+});
+
+test('no wholesale price falls back to the computed platform cost (unchanged behaviour)', () => {
+  const product = { platformMarkup: 15 };
+  const tenant = { revenueModel: 'markup', markupPercentage: 25 };
+  const size = { costPrice: 1000, sellingPrice: 0, wholesalePrice: null };
+
+  const pricing = calculateSizePricing(size, product, tenant, 0, 0);
+  assert.strictEqual(pricing.platformCostPrice, 1250);
+  assert.strictEqual(pricing.isPlatformCostFromWholesale, false);
+});
+
+test('a zero wholesale price is not a price — falls through to the computed platform cost', () => {
+  const product = { platformMarkup: 15 };
+  const tenant = { revenueModel: 'markup', markupPercentage: 25 };
+  const size = { costPrice: 1000, sellingPrice: 0, wholesalePrice: 0 };
+
+  const pricing = calculateSizePricing(size, product, tenant, 0, 0);
+  assert.strictEqual(pricing.platformCostPrice, 1250);
+  assert.strictEqual(pricing.isPlatformCostFromWholesale, false);
+});
+
+test('admin override pct survives a WHOLESALE price change (auto-recalculated selling)', () => {
+  const product = { platformMarkup: 15 };
+  const tenant = { revenueModel: 'markup', markupPercentage: 25 };
+  // Wholesale replaces supplier cost; revenue model applies markup to it.
+  // effectiveCostPrice=1000 → platformCostPrice=1250 → selling=1250×1.30=1625→1700
+  const size = { costPrice: 1000, sellingPrice: 0, wholesalePrice: 1000, platformMarkupOverridePct: 30 };
+
+  const before = calculateSizePricing(size, product, tenant, 0, 0);
+  assert.strictEqual(before.platformCostPrice, 1250); // 1000 × 1.25
+  assert.strictEqual(before.platformSellingPrice, 1700); // 1250 × 1.30 = 1625 → 1700
+  assert.strictEqual(before.isPlatformMarkupOverridden, true);
+
+  // The tenant raises their wholesale rate — the SAME override %
+  // is reapplied automatically, exactly like a supplier-cost change does.
+  size.wholesalePrice = 1200;
+  const after = calculateSizePricing(size, product, tenant, 0, 0);
+  assert.strictEqual(after.platformCostPrice, 1500); // 1200 × 1.25
+  assert.strictEqual(after.platformSellingPrice, 2000); // 1500 × 1.30 = 1950 → 2000
+});
+
+test('wholesale price feeds into the pack cost via tenant pack rates (not wholesale directly)', () => {
+  const product = { platformMarkup: 15 };
+  const tenant = {
+    revenueModel: 'markup',
+    markupPercentage: 25,
+    packMarkupPercentage: 10,
+    packRateMinUnits: 2,
+  };
+  const size = {
+    costPrice: 1000,
+    sellingPrice: 0,
+    wholesalePrice: 1500,
+    unitsPerPack: 6,
+  };
+
+  const pricing = calculateSizePricing(size, product, tenant, 0, 0);
+  // Pack cost = wholesale × (1 + packMarkup%) = 1500 × 1.10 = 1650
+  assert.strictEqual(pricing.packPlatformCostPrice, 1650);
+});

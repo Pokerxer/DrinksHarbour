@@ -1328,18 +1328,21 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
 };
 
 /**
- * Preserve the LAST effective platform markup across a cost-price change.
+ * Preserve the LAST effective platform markup across a platform-cost-basis change.
  *
  * Platform (and pack) selling prices are computed live from a stored effective
  * markup % — `platformMarkupOverridePct` / `packPlatformMarkupOverridePct` — or,
- * when those are null, from the product/tenant default. When the supplier cost
- * changes (e.g. an import or an admin edit on /sub-products/[id]/edit) a null
- * override means the platform price would snap to the default markup, dropping
- * any rounding/undercut adjustment the admin last saw. To keep the "Final
- * Platform Unit Selling Price" and "Pack Unit Price" proportional to their prior
- * markup, we snapshot the CURRENT effective markup (derived from the pre-change
- * cost) into the override fields — but only when no explicit override exists yet,
- * so we never fold rounding drift into an admin-set override.
+ * when those are null, from the product/tenant default. The platform cost basis
+ * is the size's `wholesalePrice` when present; otherwise it is derived from the
+ * supplier cost (markup model) or the tenant selling price (commission model).
+ * When ANY of those inputs changes (supplier cost, wholesale price, or tenant
+ * selling price) a null override means the platform price would snap to the
+ * default markup, dropping any rounding/undercut adjustment the admin last saw.
+ * To keep the "Final Platform Unit Selling Price" and "Pack Unit Price"
+ * proportional to their prior markup, we snapshot the CURRENT effective markup
+ * (derived from the pre-change cost) into the override fields — but only when
+ * no explicit override exists yet, so we never fold rounding drift into an
+ * admin-set override.
  *
  * Mutates `sizeLean` in place (a plain/lean Size object) and returns it.
  */
@@ -2014,16 +2017,22 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
         console.log(`📦 Matching size "${sizeData.size}":`, existingSize ? `Found (${existingSize._id})` : 'Not found - will create new');
         
         if (existingSize) {
-          // When the supplier cost changes, snapshot the last effective platform
-          // and pack markup (from the pre-change cost) so the Final Platform Unit
-          // Selling Price and Pack Unit Price stay proportional at the new cost.
-          const incomingCost = sizeData.costPrice ?? existingSize.costPrice;
-          const oldCost = Number(existingSize.costPrice) || 0;
-          if (
-            incomingCost != null &&
-            Number(incomingCost) !== oldCost &&
-            oldCost > 0
-          ) {
+          // When the platform cost basis changes (supplier cost or wholesale
+          // price), snapshot the last effective platform and pack markup % (from
+          // the pre-change size) so the Final Platform Unit Selling Price and
+          // Pack Unit Price stay proportional at the new cost. The stored
+          // platformMarkupOverridePct is the "% difference between platform cost
+          // and platform selling used when approving" — preserve it only when
+          // none is set yet (legacy / no-override sizes).
+          const incomingCost       = sizeData.costPrice    ?? existingSize.costPrice;
+          const oldCost            = Number(existingSize.costPrice) || 0;
+          const incomingWholesale  = sizeData.wholesalePrice ?? existingSize.wholesalePrice;
+          const oldWholesale       = Number(existingSize.wholesalePrice) || 0;
+          const supplierCostChanged = incomingCost != null && Number(incomingCost) !== oldCost && oldCost > 0;
+          const wholesaleChanged   = incomingWholesale != null &&
+                                     Number(incomingWholesale) !== oldWholesale &&
+                                     (oldWholesale > 0 || Number(incomingWholesale) > 0);
+          if (supplierCostChanged || wholesaleChanged) {
             preserveEffectivePlatformMarkupOnCostChange(
               existingSize,
               pricingProduct,
