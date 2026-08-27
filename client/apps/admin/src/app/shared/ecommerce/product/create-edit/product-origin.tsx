@@ -162,8 +162,9 @@ export default function ProductOrigin({
       if (!session?.user?.token) return;
       setIsLoadingBrands(true);
       try {
-        const fetchedBrands = await brandService.getBrands(session.user.token, { limit: 100 });
-        setBrands(fetchedBrands);
+        // limit 100 silently hid every brand past the 100th (catalog is 360+)
+        const fetchedBrands = await brandService.getBrands(session.user.token, { limit: 500 });
+        setBrands([...fetchedBrands].sort((a, b) => a.name.localeCompare(b.name)));
       } catch (error) {
         console.error('Failed to fetch brands:', error);
         setBrands([]);
@@ -536,6 +537,9 @@ export default function ProductOrigin({
             </label>
 
             <Select
+              searchable
+              clearable
+              searchPlaceHolder="Type to search brands…"
               placeholder={isLoadingBrands ? 'Loading brands...' : 'Search and select brand'}
               options={brands.map((brand) => ({
                 value: brand._id,
@@ -546,14 +550,17 @@ export default function ProductOrigin({
                 label: `${brands.find((b) => b._id === watch('brand'))?.name}${brands.find((b) => b._id === watch('brand'))?.isPremium ? ' ⭐' : ''}${brands.find((b) => b._id === watch('brand'))?.verified ? ' ✓' : ''}`,
               } : ''}
               onChange={(option: SelectOption) => {
-                setValue('brand', option.value as string);
+                setValue('brand', (option?.value ?? '') as string, { shouldDirty: true });
               }}
+              onClear={() => setValue('brand', '', { shouldDirty: true })}
               disabled={isLoadingBrands}
               className="w-full"
             />
 
             <Text className="mt-2 text-xs text-gray-500">
-              The brand under which the product is sold
+              {isLoadingBrands
+                ? 'Loading…'
+                : `The brand under which the product is sold · ${brands.length} available`}
             </Text>
           </div>
         </motion.div>

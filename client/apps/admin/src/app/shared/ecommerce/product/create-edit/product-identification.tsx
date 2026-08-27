@@ -526,6 +526,9 @@ export default function ProductIdentification({ className }: ProductIdentificati
               <AiBtn field="type" generating={generating} onClick={genType} />
             </label>
             <Select
+              searchable
+              clearable
+              searchPlaceHolder="Type to search product types…"
               placeholder="Search and select product type"
               options={productTypes.map((t) => ({
                 value: t.value,
@@ -535,10 +538,14 @@ export default function ProductIdentification({ className }: ProductIdentificati
                 const found = productTypes.find((t) => t.value === productType);
                 return found ? { value: found.value, label: `${found.label} (${found.category})` } : '';
               })()}
-              onChange={(opt: SelectOption) => setValue('type', opt.value as string, { shouldDirty: true })}
+              onChange={(opt: SelectOption) => setValue('type', (opt?.value ?? '') as string, { shouldDirty: true })}
+              onClear={() => setValue('type', '', { shouldDirty: true })}
               error={errors.type?.message as string}
               className="w-full"
             />
+            <Text className="mt-1 text-xs text-gray-500">
+              {`${productTypes.length} product types available`}
+            </Text>
           </div>
 
           {/* Category */}
@@ -551,6 +558,9 @@ export default function ProductIdentification({ className }: ProductIdentificati
               <AiBtn field="category" generating={generating} onClick={genCategory} />
             </label>
             <Select
+              searchable
+              clearable
+              searchPlaceHolder="Type to search categories…"
               placeholder={isLoadingCategories ? 'Loading categories…' : 'Search and select category'}
               options={categories.map((c) => ({ value: c._id, label: c.name }))}
               value={(() => {
@@ -558,7 +568,12 @@ export default function ProductIdentification({ className }: ProductIdentificati
                 return found ? { value: found._id, label: found.name } : '';
               })()}
               onChange={(opt: SelectOption) => {
-                setValue('category', opt.value as string, { shouldDirty: true });
+                setValue('category', (opt?.value ?? '') as string, { shouldDirty: true });
+                setValue('subCategory', '');
+                setSubCategories([]);
+              }}
+              onClear={() => {
+                setValue('category', '', { shouldDirty: true });
                 setValue('subCategory', '');
                 setSubCategories([]);
               }}
@@ -586,6 +601,9 @@ export default function ProductIdentification({ className }: ProductIdentificati
               <AiBtn field="subCategory" generating={generating} onClick={genSubCategory} />
             </label>
             <Select
+              searchable
+              clearable
+              searchPlaceHolder="Type to search sub-categories…"
               placeholder={
                 !selectedCategory
                   ? 'Select category first'
@@ -604,7 +622,8 @@ export default function ProductIdentification({ className }: ProductIdentificati
                 }
                 return '';
               })()}
-              onChange={(opt: SelectOption) => setValue('subCategory', opt.value as string, { shouldDirty: true })}
+              onChange={(opt: SelectOption) => setValue('subCategory', (opt?.value ?? '') as string, { shouldDirty: true })}
+              onClear={() => setValue('subCategory', '', { shouldDirty: true })}
               disabled={!selectedCategory || isLoadingSubCategories}
               error={errors.subCategory?.message as string}
               className="w-full"
@@ -634,6 +653,9 @@ export default function ProductIdentification({ className }: ProductIdentificati
               </Button>
             </div>
             <Select
+              searchable
+              clearable
+              searchPlaceHolder="Type to search brands…"
               placeholder={isLoadingBrands ? 'Loading brands…' : 'Search and select brand'}
               options={brands.map((b) => ({
                 value: b._id,
@@ -645,7 +667,8 @@ export default function ProductIdentification({ className }: ProductIdentificati
                   ? { value: found._id, label: `${found.name}${found.isPremium ? ' ⭐' : ''}${found.verified ? ' ✓' : ''}` }
                   : '';
               })()}
-              onChange={(opt: SelectOption) => setValue('brand', opt.value as string, { shouldDirty: true })}
+              onChange={(opt: SelectOption) => setValue('brand', (opt?.value ?? '') as string, { shouldDirty: true })}
+              onClear={() => setValue('brand', '', { shouldDirty: true })}
               disabled={isLoadingBrands}
               className="w-full"
             />

@@ -122,7 +122,7 @@ const getAllBrands = async (queryParams = {}) => {
   } = queryParams;
 
   const pageNum = Math.max(1, parseInt(page));
-  const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+  const limitNum = Math.min(500, Math.max(1, parseInt(limit)));
   const skip = (pageNum - 1) * limitNum;
 
   // Build filter with advanced options
