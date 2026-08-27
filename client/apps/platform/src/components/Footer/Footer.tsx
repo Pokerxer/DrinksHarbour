@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useTenant } from "@/context/TenantContext";
 import { API_URL } from "@/lib/api";
 import * as Icon from "react-icons/pi";
+import PreferredSourceButton from "@/components/Analytics/PreferredSourceButton";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -346,6 +347,20 @@ export const Footer: React.FC = () => {
             </span>
             <span>Drink responsibly. Not for sale to persons under 18.</span>
           </div>
+        </div>
+      </div>
+
+      {/* ── Preferred sources ────────────────────────────────────────────── */}
+      {/* Lets readers add this site (or the current tenant subdomain) as a
+          Google "preferred source" so our stories surface with a badge in
+          Top Stories, AI Mode and AI Overviews. The button auto-targets the
+          page's own domain — no config needed per tenant. */}
+      <div className="border-t border-white/8">
+        <div className="container mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-3">
+          <span className="text-xs text-white/40 text-center sm:text-left">
+            Enjoy our stories? Make DrinksHarbour a preferred source on Google.
+          </span>
+          <PreferredSourceButton theme="dark" />
         </div>
       </div>
 
