@@ -172,10 +172,13 @@ const bannerSchema = new mongoose.Schema(
     // 'contain' fits the whole image inside the frame and letterboxes with
     // backgroundColor; it also flattens the hero's background parallax, which
     // would otherwise crop ~8% and defeat the point of fitting.
+    // The hero frame is a purpose-built 2:1, so 'contain' is the safe default —
+    // a 2:1 image fills it exactly and anything else letterboxes against
+    // backgroundColor rather than losing content. 'cover' opts into cropping.
     imageFit: {
       type: String,
       enum: ['cover', 'contain'],
-      default: 'cover',
+      default: 'contain',
     },
 
     // Scales the hero's cinematic gradient, vignette and light-wipe. 0 removes

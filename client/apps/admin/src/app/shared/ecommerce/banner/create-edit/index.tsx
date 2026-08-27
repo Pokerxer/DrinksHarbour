@@ -57,7 +57,7 @@ export const EMPTY_BANNER_FORM: BannerFormData = {
   backgroundColor: '#FFFFFF',
   textColor: '#000000',
   overlayOpacity: 0,
-  imageFit: 'cover',
+  imageFit: 'contain',
   gradientIntensity: 100,
   blurIntensity: 100,
   textAlignment: 'center',
@@ -181,7 +181,7 @@ export default function CreateEditBanner({
       backgroundColor: data.backgroundColor || '#FFFFFF',
       textColor: data.textColor || '#000000',
       overlayOpacity: data.overlayOpacity || 0,
-      imageFit: data.imageFit || 'cover',
+      imageFit: data.imageFit || 'contain',
       // `?? 100` not `|| 100` — a deliberate 0 must survive the round-trip.
       gradientIntensity: data.gradientIntensity ?? 100,
       blurIntensity: data.blurIntensity ?? 100,

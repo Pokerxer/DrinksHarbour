@@ -9,7 +9,7 @@ const makeBanner = (overrides = {}) =>
 
 test('display fields default to today\'s appearance', () => {
   const banner = makeBanner();
-  assert.strictEqual(banner.imageFit, 'cover');
+  assert.strictEqual(banner.imageFit, 'contain');
   assert.strictEqual(banner.gradientIntensity, 100);
   assert.strictEqual(banner.blurIntensity, 100);
   assert.strictEqual(banner.overlayOpacity, 0);

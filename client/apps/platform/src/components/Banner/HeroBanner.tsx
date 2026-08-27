@@ -120,10 +120,23 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   // ---- Per-banner display controls --------------------------------------
   // Every hardcoded blur/alpha below is SCALED by these, never replaced. At
   // 100 the emitted CSS is byte-identical to the original design.
-  const clamp01 = (n: number | undefined) => Math.max(0, Math.min(100, n ?? 100)) / 100;
+  const clamp01 = (n: number | undefined, d = 100) => Math.max(0, Math.min(100, n ?? d)) / 100;
   const blurK = clamp01(slide.blurIntensity);
-  const gradK = clamp01(slide.gradientIntensity);
-  const fitContain = slide.imageFit === 'contain';
+  // The frame is a purpose-built 2:1, so 'contain' is the safe default: a 2:1
+  // image fills it exactly, and anything else letterboxes rather than losing
+  // content. Admins can opt into cropping with imageFit: 'cover'.
+  const fitContain = slide.imageFit !== 'cover';
+
+  // A fully designed banner carries its own headline, CTA and feature row in
+  // the artwork. When the admin leaves every copy field empty we treat it as
+  // image-only and render no overlay at all — otherwise the trust pills and
+  // CTA would sit on top of the ones baked into the image.
+  const hasCopy = !!(slide.title || slide.subtitle || slide.description || slide.ctaText);
+
+  // The gradient/vignette exists only to make overlay copy legible, so an
+  // image-only banner defaults to none of it — otherwise a designed artwork
+  // arrives pre-washed. An explicit gradientIntensity always wins.
+  const gradK = clamp01(slide.gradientIntensity, hasCopy ? 100 : 0);
 
   // `+(...).toFixed(2)` drops trailing zeros: 14 * 1 -> "14px", not "14.00px".
   const bpx = (n: number) => `blur(${+(n * blurK).toFixed(2)}px)`;
@@ -251,7 +264,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   if (loading) {
     return (
-      <div className="relative w-full h-[30vh] min-h-[210px] max-h-[300px] sm:h-[49vh] sm:min-h-[350px] sm:max-h-[560px] bg-[#1A1A2E] overflow-hidden">
+      <div className="relative w-full aspect-[2/1] max-h-[80vh] bg-[#1A1A2E] overflow-hidden">
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-10 h-10 border-3 border-red-700/30 border-t-red-600 rounded-full animate-spin" />
         </div>
@@ -261,7 +274,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   return (
     <div
-      className="relative w-full h-[30vh] min-h-[210px] max-h-[300px] sm:h-[49vh] sm:min-h-[350px] sm:max-h-[560px] overflow-hidden"
+      className="relative w-full aspect-[2/1] max-h-[80vh] overflow-hidden"
       role="region"
       aria-roledescription="carousel"
       aria-label="Promotional banners"
@@ -368,7 +381,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               text/CTA layer so the button keeps its own link behaviour. */}
           <BannerClickLayer banner={slide} ariaLabel={slide.title || 'Open promotion'} />
 
-          {/* Content */}
+          {/* Content — omitted entirely for image-only banners */}
+          {hasCopy && (
           <div className={`relative z-10 container mx-auto px-5 md:px-10 h-full flex ${contentPos(slide.contentPosition)}`}>
             <motion.div
               variants={containerVariants}
@@ -454,6 +468,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               </motion.div>
             </motion.div>
           </div>
+          )}
         </motion.div>
       </AnimatePresence>
 

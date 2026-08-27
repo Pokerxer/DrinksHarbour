@@ -647,15 +647,21 @@ export default function ShopHeroBanner({
   return (
     <div className="w-full">
       {/* ── Full-height hero ────────────────────────────────────────────────── */}
+      {/* With artwork: a 2:1 frame (capped), matching the homepage hero so one
+          artwork size serves both, and nothing is ever cropped. Without
+          artwork this is only a gradient panel, so keep the original shorter
+          height rather than leaving a tall empty block. */}
       <div
-        className="relative w-full overflow-hidden"
-        style={{ height: 'clamp(336px, 52vh, 576px)' }}
+        className={`relative w-full overflow-hidden${heroImage ? ' aspect-[2/1] max-h-[80vh]' : ''}`}
+        style={heroImage ? undefined : { height: 'clamp(336px, 52vh, 576px)' }}
       >
         {/* Featured image background */}
         {heroImage && (
           <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url("${heroImage}")` }}
+            className="absolute inset-0 bg-contain bg-center bg-no-repeat"
+            // `contain` so a designed banner is never cropped; the letterbox
+            // takes the theme's dark tone rather than showing through.
+            style={{ backgroundImage: `url("${heroImage}")`, backgroundColor: dark }}
           />
         )}
 
