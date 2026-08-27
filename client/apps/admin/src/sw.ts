@@ -40,6 +40,13 @@ declare class SyncEvent extends Event {
 // across products, banners, categories, brands and warehouses alike, and for
 // plain `<img>` as much as for `next/image`. It only showed on deployed builds
 // because `withSerwist` is disabled in development.
+//
+// Cache version: bump to invalidate all old caches when fixing the broken SW.
+// Old clients with the buggy SW will bypass it entirely once they receive the
+// new SW (skipWaiting + clientsClaim), but this version bump ensures NO stale
+// entries from the old broken SW can be served.
+const CACHE_VERSION = 'v2';
+
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   skipWaiting: true,
@@ -49,7 +56,7 @@ const serwist = new Serwist({
     {
       matcher: /\/_next\/image/,
       handler: new CacheFirst({
-        cacheName: 'pos-images',
+        cacheName: `pos-images-${CACHE_VERSION}`,
         plugins: [
           // Same-origin and always a real response, so only a 200 is worth
           // keeping; caching an error would replay it for the full maxAge.
@@ -76,7 +83,7 @@ const serwist = new Serwist({
       matcher: ({ request }: { request: Request }) =>
         request.destination === 'image',
       handler: new StaleWhileRevalidate({
-        cacheName: 'pos-product-images',
+        cacheName: `pos-product-images-${CACHE_VERSION}`,
         plugins: [
           // 0 is an opaque cross-origin image, 200 a same-origin one. Without
           // 0 the Cloudinary art would never be cached and the POS would have
