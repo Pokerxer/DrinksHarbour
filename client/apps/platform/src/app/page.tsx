@@ -31,6 +31,9 @@ const PlacementBanner = nextDynamic(
 const RecommendedForYou = nextDynamic(
   () => import("@/components/Shop/RecommendedForYou")
 );
+const BlogSection = nextDynamic(() => import("@/components/Home1/BlogSection"), {
+  loading: () => null,
+});
 
 function FlashSaleSkeleton() {
   return (
@@ -94,6 +97,24 @@ async function fetchFeaturedProducts(limit = 8): Promise<any[]> {
   }
 }
 
+// Server-side fetch of the latest blog posts for the homepage "From the Blog"
+// section. Reuses the same API + Post shape as the /blog pages. Returns an
+// empty array on any failure so the section renders nothing rather than error.
+async function fetchHomepageBlogPosts(limit = 6): Promise<any[]> {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+  if (!API_URL) return [];
+  try {
+    const res = await fetch(`${API_URL}/api/blog?limit=${limit}`, {
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.posts) ? data.posts : [];
+  } catch {
+    return [];
+  }
+}
+
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
 // Ties the homepage to the site-wide Organization/WebSite nodes declared in the
@@ -117,10 +138,11 @@ function buildHomeWebPageJsonLd(hasItemList: boolean) {
 
 export default async function Home() {
   // Fetch the SEO-critical product sections on the server, in parallel.
-  const [featuredDeals, recommended, featured] = await Promise.all([
+  const [featuredDeals, recommended, featured, blogPosts] = await Promise.all([
     fetchFeaturedDeals(12),
     fetchInitialRecommendations(12),
     fetchFeaturedProducts(8),
+    fetchHomepageBlogPosts(6),
   ]);
 
   // Product markup for the two grids that are guaranteed to render exactly what
@@ -203,6 +225,13 @@ export default async function Home() {
         <LazySection rootMargin="200px">
           <Benefit className="py-8" />
         </LazySection>
+
+        {/* Blog — latest articles + category filter, server-seeded */}
+        {blogPosts.length > 0 && (
+          <LazySection rootMargin="300px">
+            <BlogSection posts={blogPosts} />
+          </LazySection>
+        )}
 
         {/* Personalized Recommendations — server-seeded (trending) */}
         <RecommendedForYou maxItems={12} initialProducts={recommended} />
