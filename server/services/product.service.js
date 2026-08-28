@@ -9947,7 +9947,9 @@ const getProductBySlug = async (slug) => {
       const websitePrice = platformSellingPrice;
 
       // Quantity-triggered pack pricing: second per-unit price earned at qty >= unitsPerPack.
-      // Runs the same pipeline (incl. sale discount below) at the tenant's pack rates.
+      // Mirrors utils/pricing.js `calculateSizePricing` exactly — the cart and the
+      // review drawer price through that helper, so any divergence here shows up
+      // as the product page advertising a pack rate checkout then refuses to honour.
       const _unitsPerPack = size?.unitsPerPack ?? 1;
       const _packMinUnits = tenant?.packRateMinUnits ?? DEFAULT_PACK_RATE_MIN_UNITS;
       const _packReachable = !size?.maxOrderQuantity || size.maxOrderQuantity >= _unitsPerPack;
@@ -9957,19 +9959,23 @@ const getProductBySlug = async (slug) => {
       let packPlatformCostPrice = null;
       let packMarkupPctUsed = null;
       let packCommissionPctUsed = null;
-      if (_unitsPerPack >= _packMinUnits && _packReachable && websitePrice > 0) {
+      // Do NOT publish a pack rate while the item is on sale. Stacking a sale
+      // discount and a pack discount over-discounts the item; the sale wins.
+      // (calculateSizePricing suppresses packs during a sale for the same reason —
+      // this block used to instead apply the sale ON TOP of the pack price.)
+      if (_unitsPerPack >= _packMinUnits && _packReachable && websitePrice > 0 && !saleActive) {
         const packRates = resolveRevenueRates(tenant, _unitsPerPack);
         packMarkupPctUsed = packRates.markupPct;
         packCommissionPctUsed = packRates.commissionPct;
         packPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, packRates.markupPct, packRates.commissionPct, wholesalePrice);
-        let packSelling = calcPlatformSellingPrice(packPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: size?.packPlatformMarkupOverridePct ?? size?.platformMarkupOverridePct ?? null });
-        if (saleActive && subProduct.saleDiscountValue > 0) {
-          const discountType = subProduct.saleType || 'percentage';
-          packSelling = discountType === 'fixed'
-            ? roundUpTo100(Math.max(0, packSelling - subProduct.saleDiscountValue))
-            : roundUpTo100(packSelling * (1 - subProduct.saleDiscountValue / 100));
-        }
-        if (packSelling > 0) {
+        const packSelling = calcPlatformSellingPrice(packPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: size?.packPlatformMarkupOverridePct ?? size?.platformMarkupOverridePct ?? null });
+        // Only advertise a pack rate that actually BEATS the normal price.
+        // A tenant with no reduced pack rates configured produces
+        // packSelling === websitePrice — publishing that shipped a "0% off"
+        // pack offer, which the storefront's resolvePackPricing then discarded
+        // (it requires packUnitPrice < unitPrice), so the pack card silently
+        // vanished. Mirrors the guard in utils/pricing.js calculateSizePricing.
+        if (packSelling > 0 && packSelling < websitePrice) {
           packUnitPrice = packSelling;
           packThreshold = _unitsPerPack;
           packSavingsPct = Math.round(((websitePrice - packSelling) / websitePrice) * 100);
