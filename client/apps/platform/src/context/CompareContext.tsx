@@ -53,9 +53,23 @@ const CompareReducer = (
   action: CompareAction,
 ): CompareState => {
   switch (action.type) {
-    case "ADD_TO_COMPARE":
-      const newItem: CompareItem = { ...action.payload };
+    case "ADD_TO_COMPARE": {
+      // Normalise the price on the way in. Callers hand us wildly different
+      // shapes: a card passes a flat {price, originPrice}, while the product
+      // detail page passes the raw getProductBySlug payload, which has NO
+      // top-level price at all — only priceRange / availableAt. Resolving here
+      // means every stored entry (and therefore every localStorage snapshot)
+      // carries a real price, instead of surfacing as ₦0 in the compare modal.
+      const incoming = action.payload as any;
+      const resolvedPrice = resolveProductPrice(incoming);
+      const resolvedOrigin = resolveProductOriginPrice(incoming);
+      const newItem: CompareItem = {
+        ...incoming,
+        ...(resolvedPrice > 0 ? { price: resolvedPrice } : {}),
+        ...(resolvedOrigin != null ? { originPrice: resolvedOrigin } : {}),
+      };
       return { ...state, compareArray: [...state.compareArray, newItem] };
+    }
     case "REMOVE_FROM_COMPARE":
       return {
         ...state,

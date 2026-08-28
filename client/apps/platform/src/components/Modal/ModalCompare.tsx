@@ -8,6 +8,19 @@ import * as Icon from "react-icons/pi";
 import { useModalCompareContext } from "@/context/ModalCompareContext";
 import { useCompare } from "@/context/CompareContext";
 import { ProductType } from "@/types/product.types";
+import { resolveProductPrice, resolveProductOriginPrice } from "@/utils/product.utils";
+
+/**
+ * First usable image, falling back to `primaryImage`. The product-detail
+ * endpoint puts the main shot on `primaryImage`, so reading `images[0]` alone
+ * rendered the placeholder icon for anything added from a product page.
+ * Same helper the /compare page uses.
+ */
+const getImageUrl = (p: ProductType): string | null => {
+  const first = p.images?.[0];
+  if (!first) return p.primaryImage?.url || null;
+  return typeof first === 'string' ? first : first.url || null;
+};
 
 const ModalCompare = () => {
   const { isModalOpen, closeModalCompare } = useModalCompareContext();
@@ -50,7 +63,13 @@ const ModalCompare = () => {
 
   // Get product badge (sale, new, featured)
   const getProductBadge = (product: ProductType) => {
-    if (product.sale && product.originPrice && product.originPrice > product.price) {
+    // Resolve rather than reading `product.price` — an item added from the
+    // product detail page carries no top-level price (getProductBySlug returns
+    // only priceRange / availableAt), so the raw read made every such item
+    // look un-discounted here while /compare showed the sale correctly.
+    const price = resolveProductPrice(product);
+    const originPrice = resolveProductOriginPrice(product);
+    if (product.sale && originPrice && originPrice > price) {
       return { text: "Sale", className: "bg-red-500" };
     }
     if (product.badge) {
@@ -267,33 +286,50 @@ const ModalCompare = () => {
 
                           <div className="infor flex items-center gap-4">
                             <div className="bg-img w-[80px] h-[80px] flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
-                              {product.images && product.images.length > 0 ? (
-                                <Image
-                                  src={typeof product.images[0] === 'string' ? product.images[0] : product.images[0]?.url}
-                                  width={300}
-                                  height={300}
-                                  alt={product.name}
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">
-                                  <Icon.PiImage size={24} />
-                                </div>
-                              )}
+                              {(() => {
+                                // Fall back to primaryImage — the detail endpoint puts the
+                                // main shot there, so items added from a product page were
+                                // rendering the placeholder icon. Mirrors /compare.
+                                const imgUrl = getImageUrl(product);
+                                return imgUrl ? (
+                                  <Image
+                                    src={imgUrl}
+                                    width={300}
+                                    height={300}
+                                    alt={product.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">
+                                    <Icon.PiImage size={24} />
+                                  </div>
+                                );
+                              })()}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="name text-title text-sm font-medium line-clamp-2">
                                 {product.name}
                               </div>
                               <div className="flex items-center gap-2 mt-1">
-                                <div className="product-price text-title font-bold text-gray-900">
-                                  {formatPrice(product.price, getCurrencySymbol)}
-                                </div>
-                                {product.originPrice && product.originPrice > product.price && (
-                                  <div className="product-origin-price text-xs text-gray-400 line-through">
-                                    {formatPrice(product.originPrice, getCurrencySymbol)}
-                                  </div>
-                                )}
+                                {(() => {
+                                  // Resolve from priceRange / availableAt.websitePrice so
+                                  // items added from the detail page (no top-level price)
+                                  // don't render ₦0. Mirrors the /compare page.
+                                  const price = resolveProductPrice(product);
+                                  const originPrice = resolveProductOriginPrice(product);
+                                  return (
+                                    <>
+                                      <div className="product-price text-title font-bold text-gray-900">
+                                        {formatPrice(price, getCurrencySymbol)}
+                                      </div>
+                                      {originPrice && originPrice > price && (
+                                        <div className="product-origin-price text-xs text-gray-400 line-through">
+                                          {formatPrice(originPrice, getCurrencySymbol)}
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                               </div>
                               {/* Rating */}
                               {(((product as any).averageRating ?? product.rating) || 0) > 0 && (
