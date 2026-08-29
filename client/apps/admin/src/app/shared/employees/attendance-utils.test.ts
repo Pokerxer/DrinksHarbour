@@ -16,6 +16,7 @@ import {
   canDeleteRecord,
   groupAttendance,
   recordDateKey,
+  entryUtcTimes,
   describeClock,
   normaliseBadgeScan,
   resolveKioskAuth,
@@ -510,5 +511,47 @@ describe('describeClock on an early departure', () => {
       earlyLeave: { code: 'on_time', minutes: 0 },
     });
     expect(out.detail).not.toContain('early');
+  });
+});
+
+describe('entryUtcTimes', () => {
+  const OFFSET = 60; // Africa/Lagos, UTC+1 — matches LAGOS_OFFSET_MINUTES
+
+  it('turns a local day pair into UTC instants at the tenant offset', () => {
+    const t = entryUtcTimes(
+      { date: '2026-08-10', inTime: '08:00', outTime: '16:00' },
+      OFFSET
+    );
+    expect(t.clockIn).toBe('2026-08-10T07:00:00.000Z');
+    expect(t.clockOut).toBe('2026-08-10T15:00:00.000Z');
+  });
+
+  it('rolls an out at or before the in time onto the following day', () => {
+    expect(
+      entryUtcTimes(
+        { date: '2026-08-10', inTime: '22:00', outTime: '16:00' },
+        OFFSET
+      )
+    ).toEqual({
+      clockIn: '2026-08-10T21:00:00.000Z',
+      clockOut: '2026-08-11T15:00:00.000Z',
+    });
+  });
+
+  it('leaves the record open when the out time is blank', () => {
+    const t = entryUtcTimes(
+      { date: '2026-08-10', inTime: '09:00', outTime: '' },
+      OFFSET
+    );
+    expect(t.clockIn).toBe('2026-08-10T08:00:00.000Z');
+    expect(t.clockOut).toBeNull();
+  });
+
+  it('returns an empty instant for an unparseable time, refusing to guess', () => {
+    const t = entryUtcTimes(
+      { date: '2026-08-10', inTime: 'nope', outTime: '16:00' },
+      OFFSET
+    );
+    expect(t.clockIn).toBe('');
   });
 });

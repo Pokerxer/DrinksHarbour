@@ -20,7 +20,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   PiArrowsClockwise,
@@ -29,19 +28,22 @@ import {
   PiClockUserDuotone,
   PiFingerprintDuotone,
   PiPlus,
-  PiX,
 } from 'react-icons/pi';
 import { fraunces } from './employees-fonts';
-import { FIELD, Field } from './org-config-page';
 import AttendanceLogTable from './attendance-log-table';
 import AttendanceLiveBoard from './attendance-live-board';
 import AttendanceDayTimeline from './attendance-day-timeline';
 import AttendanceWeekTimesheet from './attendance-week-timesheet';
 import AttendanceExceptions from './attendance-exceptions';
+import AttendanceCorrectionDrawer, {
+  NEW_ATTENDANCE_DRAFT,
+  type AttendanceDraft,
+} from './attendance-correction-drawer';
 import {
   LAGOS_OFFSET_MINUTES,
   addDays,
   buildWeek,
+  employeeName,
   localToday,
   startOfWeek,
   toLocalDateKey,
@@ -102,38 +104,6 @@ function rangeFor(
   return { from: first, to: addDays(first, 6) };
 }
 
-/** The drawer's draft: local wall clock, because that is what an admin types. */
-interface EntryDraft {
-  id: string | null;
-  employee: string;
-  date: string;
-  inTime: string;
-  /** Empty means the record stays (or becomes) open — a real instruction. */
-  outTime: string;
-  note: string;
-  /** A kiosk punch may be corrected but not deleted. */
-  source: AttendanceRecord['source'];
-}
-
-const NEW_DRAFT = (date: string): EntryDraft => ({
-  id: null,
-  employee: '',
-  date,
-  inTime: '09:00',
-  outTime: '',
-  note: '',
-  source: 'admin',
-});
-
-/** 'YYYY-MM-DD' + 'HH:MM' in the tenant's zone → the absolute instant. */
-function toUtc(date: string, time: string): string {
-  const base = Date.parse(`${date}T00:00:00.000Z`);
-  const [h, m] = String(time).split(':').map(Number);
-  if (Number.isNaN(base) || !Number.isFinite(h) || !Number.isFinite(m))
-    return '';
-  return new Date(base + (h * 60 + m - OFFSET) * 60_000).toISOString();
-}
-
 function dayLabel(dateISO: string): string {
   const ms = Date.parse(`${dateISO}T00:00:00.000Z`);
   if (Number.isNaN(ms)) return dateISO;
@@ -164,8 +134,7 @@ export default function AttendanceLogPage() {
   const [rosterReady, setRosterReady] = useState(true);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [draft, setDraft] = useState<EntryDraft | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<AttendanceDraft | null>(null);
   /** Ticks so open records show a live elapsed. Display only. */
   const [now, setNow] = useState(() => Date.now());
 
@@ -283,57 +252,20 @@ export default function AttendanceLogPage() {
 
   function openCorrection(record: AttendanceRecord) {
     const times = recordTimes(record, OFFSET);
+    const person =
+      record.employee && typeof record.employee !== 'string'
+        ? record.employee
+        : employees.find((e) => e._id === refId(record.employee));
     setDraft({
       id: record._id,
       employee: refId(record.employee),
+      employeeName: employeeName(person),
       date: toLocalDateKey(record.clockIn, OFFSET),
       inTime: times.in,
       outTime: record.clockOut ? times.out : '',
       note: record.note ?? '',
       source: record.source,
     });
-  }
-
-  async function save() {
-    if (!draft) return;
-    if (!draft.employee) return toast.error('Choose whose record this is');
-    const clockIn = toUtc(draft.date, draft.inTime);
-    if (!clockIn) return toast.error('Enter a clock-in time like 09:00');
-
-    // An out time at or before the in time means the shift ran past midnight —
-    // the same rule the roster applies to an overnight template.
-    const clockOut = draft.outTime
-      ? toUtc(
-          draft.outTime <= draft.inTime ? addDays(draft.date, 1) : draft.date,
-          draft.outTime
-        )
-      : null;
-    if (draft.outTime && !clockOut)
-      return toast.error('Enter a clock-out time like 17:00');
-
-    setSaving(true);
-    try {
-      if (draft.id) {
-        await attendanceService.update(
-          draft.id,
-          { clockIn, clockOut, note: draft.note },
-          token
-        );
-        toast.success('Correction saved');
-      } else {
-        await attendanceService.create(
-          { employee: draft.employee, clockIn, clockOut, note: draft.note },
-          token
-        );
-        toast.success('Attendance added');
-      }
-      setDraft(null);
-      await load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save');
-    } finally {
-      setSaving(false);
-    }
   }
 
   async function remove(record: AttendanceRecord) {
@@ -416,7 +348,7 @@ export default function AttendanceLogPage() {
           </Link>
           <button
             type="button"
-            onClick={() => setDraft(NEW_DRAFT(day))}
+            onClick={() => setDraft(NEW_ATTENDANCE_DRAFT(day))}
             className="inline-flex items-center gap-2 rounded-xl bg-[#b20202] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#8f0202]"
           >
             <PiPlus className="h-4 w-4" />
@@ -582,145 +514,17 @@ export default function AttendanceLogPage() {
         />
       )}
 
-      {/* Entry / correction drawer */}
-      <AnimatePresence>
-        {draft && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setDraft(null)}
-              className="fixed inset-0 z-40 bg-gray-900/30"
-            />
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'tween', duration: 0.2 }}
-              className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-xl"
-            >
-              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-                <h2 className="text-base font-bold text-gray-900">
-                  {draft.id ? 'Correct attendance' : 'Add attendance'}
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setDraft(null)}
-                  aria-label="Close"
-                  className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
-                >
-                  <PiX className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
-                {draft.id && draft.source === 'kiosk' && (
-                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    This is a clock-in the employee made. Correcting it records
-                    your name against the change; it cannot be deleted.
-                  </p>
-                )}
-
-                <Field label="Employee">
-                  <select
-                    className={FIELD}
-                    value={draft.employee}
-                    disabled={Boolean(draft.id)}
-                    onChange={(e) =>
-                      setDraft({ ...draft, employee: e.target.value })
-                    }
-                  >
-                    <option value="">Choose someone…</option>
-                    {employees.map((e) => (
-                      <option key={e._id} value={e._id}>
-                        {e.firstName} {e.lastName}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="Date">
-                  <input
-                    type="date"
-                    className={FIELD}
-                    value={draft.date}
-                    onChange={(e) =>
-                      setDraft({ ...draft, date: e.target.value })
-                    }
-                  />
-                </Field>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Clocked in">
-                    <input
-                      type="time"
-                      className={FIELD}
-                      value={draft.inTime}
-                      onChange={(e) =>
-                        setDraft({ ...draft, inTime: e.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field label="Clocked out" hint="(leave blank if still in)">
-                    <input
-                      type="time"
-                      className={FIELD}
-                      value={draft.outTime}
-                      onChange={(e) =>
-                        setDraft({ ...draft, outTime: e.target.value })
-                      }
-                    />
-                  </Field>
-                </div>
-                {draft.outTime !== '' && draft.outTime <= draft.inTime && (
-                  <p className="-mt-2 text-xs text-amber-600">
-                    This runs past midnight and ends the following day.
-                  </p>
-                )}
-                {draft.id && draft.outTime === '' && (
-                  <p className="-mt-2 text-xs text-amber-600">
-                    Clearing the clock-out re-opens this record.
-                  </p>
-                )}
-
-                <Field label="Note" hint="(why it was changed)">
-                  <textarea
-                    className={FIELD}
-                    rows={3}
-                    value={draft.note}
-                    onChange={(e) =>
-                      setDraft({ ...draft, note: e.target.value })
-                    }
-                  />
-                </Field>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4">
-                <button
-                  type="button"
-                  onClick={() => setDraft(null)}
-                  className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void save()}
-                  disabled={saving}
-                  className="rounded-xl bg-[#b20202] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#8f0202] disabled:opacity-60"
-                >
-                  {saving
-                    ? 'Saving…'
-                    : draft.id
-                      ? 'Save correction'
-                      : 'Add record'}
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Entry / correction drawer — one copy, shared with the employee
+          history screen. The save rule lives in the drawer so neither page can
+          drift on the time conversion or the create-vs-update branch. */}
+      <AttendanceCorrectionDrawer
+        draft={draft}
+        employees={employees}
+        token={token}
+        onChange={setDraft}
+        onClose={() => setDraft(null)}
+        onSaved={() => void load()}
+      />
     </div>
   );
 }

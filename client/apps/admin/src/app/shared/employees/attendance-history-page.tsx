@@ -21,6 +21,7 @@ import {
   PiArrowsClockwise,
   PiCalendarBlankDuotone,
   PiClockUserDuotone,
+  PiPencilSimple,
   PiSealCheckDuotone,
   PiWarningDuotone,
 } from 'react-icons/pi';
@@ -31,6 +32,7 @@ import {
   employeeName,
   formatMinutes,
   localToday,
+  toLocalDateKey,
   toLocalTimeLabel,
 } from './shift-roster-utils';
 import { punctualityLabel, punctualityTone, recordTimes } from './attendance-utils';
@@ -45,9 +47,14 @@ import {
   ratePercent,
   type RatingTone,
 } from './attendance-rating-utils';
+import AttendanceCorrectionDrawer, {
+  type AttendanceDraft,
+} from './attendance-correction-drawer';
+import { refId } from '@/services/orgStructure.service';
 import {
   attendanceService,
   type AttendanceHistoryResponse,
+  type AttendanceRecord,
   type AttendanceTimelineEntry,
 } from '@/services/attendance.service';
 import { routes } from '@/config/routes';
@@ -115,6 +122,8 @@ export default function AttendanceHistoryPage({
   );
   const [data, setData] = useState<AttendanceHistoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  /** The correction in flight, or null when the drawer is closed. */
+  const [draft, setDraft] = useState<AttendanceDraft | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -146,6 +155,25 @@ export default function AttendanceHistoryPage({
 
   const name = data ? employeeName(data.employee) : 'Employee';
   const tone = rating ? bandTone(rating.band) : 'neutral';
+
+  /** Seed the drawer from a record. The person is fixed; times, date, note aren't. */
+  function openCorrection(record: AttendanceRecord) {
+    const times = recordTimes(record, OFFSET);
+    const person =
+      record.employee && typeof record.employee !== 'string'
+        ? record.employee
+        : (data?.employee ?? null);
+    setDraft({
+      id: record._id,
+      employee: refId(record.employee),
+      employeeName: employeeName(person),
+      date: toLocalDateKey(record.clockIn, OFFSET),
+      inTime: times.in,
+      outTime: record.clockOut ? times.out : '',
+      note: record.note ?? '',
+      source: record.source,
+    });
+  }
 
   return (
     <div className="px-4 py-6 md:px-5 lg:px-6 3xl:px-8 4xl:px-10">
@@ -349,16 +377,21 @@ export default function AttendanceHistoryPage({
                 <th className="px-4 py-3">Actual</th>
                 <th className="px-4 py-3">Arrival</th>
                 <th className="px-4 py-3">Departure</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {(data?.timeline ?? []).map((entry) => (
-                <TimelineRow key={entry.shift._id} entry={entry} />
+                <TimelineRow
+                  key={entry.shift._id}
+                  entry={entry}
+                  onCorrect={openCorrection}
+                />
               ))}
 
               {!loading && !data?.timeline?.length && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
+                  <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
                     Nothing was rostered in this window.
                   </td>
                 </tr>
@@ -389,8 +422,18 @@ export default function AttendanceHistoryPage({
                   <span className="text-gray-700">
                     {dayLabel(r.clockIn.slice(0, 10))}
                   </span>
-                  <span className="tabular-nums text-gray-500">
-                    {times.in} – {times.out}
+                  <span className="flex items-center gap-1">
+                    <span className="tabular-nums text-gray-500">
+                      {times.in} – {times.out}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openCorrection(r)}
+                      aria-label="Correct this record"
+                      className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
+                    >
+                      <PiPencilSimple className="h-4 w-4" />
+                    </button>
                   </span>
                 </li>
               );
@@ -398,11 +441,28 @@ export default function AttendanceHistoryPage({
           </ul>
         </div>
       )}
+
+      {/* The correction drawer — this page never adds records by hand, so the
+          employee picker stays unused (no create mode). */}
+      <AttendanceCorrectionDrawer
+        draft={draft}
+        employees={[]}
+        token={token}
+        onChange={setDraft}
+        onClose={() => setDraft(null)}
+        onSaved={() => void load()}
+      />
     </div>
   );
 }
 
-function TimelineRow({ entry }: { entry: AttendanceTimelineEntry }) {
+function TimelineRow({
+  entry,
+  onCorrect,
+}: {
+  entry: AttendanceTimelineEntry;
+  onCorrect: (record: AttendanceRecord) => void;
+}) {
   const { shift, record, excused } = entry;
   const rostered = `${toLocalTimeLabel(shift.start, OFFSET)} – ${toLocalTimeLabel(
     shift.end,
@@ -454,6 +514,19 @@ function TimelineRow({ entry }: { entry: AttendanceTimelineEntry }) {
           </span>
         ) : (
           <span className="text-gray-300">—</span>
+        )}
+      </td>
+
+      <td className="px-4 py-3 text-right">
+        {record && (
+          <button
+            type="button"
+            onClick={() => onCorrect(record)}
+            aria-label="Correct this record"
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
+          >
+            <PiPencilSimple className="h-4 w-4" />
+          </button>
         )}
       </td>
     </tr>

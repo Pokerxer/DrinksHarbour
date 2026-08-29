@@ -8,10 +8,12 @@
 
 import {
   LAGOS_OFFSET_MINUTES,
+  addDays,
   employeeName,
   formatMinutes,
   toLocalDateKey,
   toLocalTimeLabel,
+  toUtcIso,
   type LaneEmployee,
 } from './shift-roster-utils';
 import type {
@@ -233,6 +235,31 @@ export function recordDateKey(
   offsetMinutes = LAGOS_OFFSET_MINUTES
 ): string {
   return toLocalDateKey(record.clockIn, offsetMinutes);
+}
+
+/**
+ * A local date + two wall-clock times → the UTC instants an entry or a
+ * correction stores.
+ *
+ * The inverse of `recordTimes`: the form collects wall clock, the API stores
+ * instants, and both ends have to use the tenant's offset or an edit shifts the
+ * record by an hour every time it is saved. An out at or before the in time
+ * means the pair ran past midnight and ends the following day — the same rule
+ * the roster applies to an overnight template.
+ *
+ * A blank `outTime` is a real instruction, not "unchanged": it leaves the
+ * record open (or re-opens a closed one). An unparseable time returns '' for
+ * that end, so the caller can reject it with its own words.
+ */
+export function entryUtcTimes(
+  input: { date: string; inTime: string; outTime: string },
+  offsetMinutes = LAGOS_OFFSET_MINUTES
+): { clockIn: string; clockOut: string | null } {
+  const clockIn = toUtcIso(input.date, input.inTime, offsetMinutes);
+  if (!input.outTime) return { clockIn, clockOut: null };
+  const endDate =
+    input.outTime <= input.inTime ? addDays(input.date, 1) : input.date;
+  return { clockIn, clockOut: toUtcIso(endDate, input.outTime, offsetMinutes) };
 }
 
 // ── The badge scan ───────────────────────────────────────────────────────────
