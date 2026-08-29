@@ -4,18 +4,47 @@ import * as Icon from 'react-icons/pi';
 import { HeroSection } from './components/HeroSection';
 import { BenefitsStrip } from './components/BenefitsStrip';
 import { HowItWorks } from './components/HowItWorks';
+import { ErmTeaser } from './components/ErmTeaser';
 import { PricingTiers } from './components/PricingTiers';
 import { Testimonials } from './components/Testimonials';
 import { TrustBadges } from './components/TrustBadges';
 import { FAQ } from './components/FAQ';
+import { getApiUrl } from '@/lib/api';
 
-export default function RegisterPage() {
+const API_URL = getApiUrl();
+
+async function getStats() {
+  try {
+    const [storesRes, productsRes, brandsRes] = await Promise.all([
+      fetch(`${API_URL}/api/stores?page=1&limit=1`, { next: { revalidate: 300 } }),
+      fetch(`${API_URL}/api/products?page=1&limit=1`, { next: { revalidate: 300 } }),
+      fetch(`${API_URL}/api/brands?page=1&limit=1`, { next: { revalidate: 300 } }),
+    ]);
+
+    const storesData = storesRes.ok ? await storesRes.json() : null;
+    const productsData = productsRes.ok ? await productsRes.json() : null;
+    const brandsData = brandsRes.ok ? await brandsRes.json() : null;
+
+    return {
+      vendorCount: storesData?.data?.pagination?.total ?? 0,
+      productCount: productsData?.data?.pagination?.totalResults ?? 0,
+      brandCount: brandsData?.data?.pagination?.total ?? 0,
+    };
+  } catch {
+    return { vendorCount: 0, productCount: 0, brandCount: 0 };
+  }
+}
+
+export default async function RegisterPage() {
+  const { vendorCount, productCount, brandCount } = await getStats();
+
   return (
     <div className="min-h-screen bg-gray-50">
       <main>
-        <HeroSection />
+        <HeroSection vendorCount={vendorCount} productCount={productCount} brandCount={brandCount} />
         <BenefitsStrip />
         <HowItWorks />
+        <ErmTeaser />
         <PricingTiers />
         <Testimonials />
         <TrustBadges />

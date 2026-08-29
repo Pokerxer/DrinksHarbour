@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { PLAN_TIERS, ADD_ON_PRICES, FEATURE_COMPARISON, type FeatureComparison } from '../data';
 import { RevealOnScroll } from './RevealOnScroll';
@@ -122,14 +123,24 @@ export function PricingTiers() {
         </div>
 
         <RevealOnScroll className="text-center mb-6">
-          <button
-            onClick={() => setShowComparison(!showComparison)}
-            className="inline-flex items-center gap-2 text-sm font-semibold text-red-700 hover:text-red-800 transition-colors"
-          >
-            <Icon.PiListChecks size={16} />
-            {showComparison ? 'Hide' : 'Show'} full feature comparison
-            <Icon.PiCaretDownBold size={14} className={`transition-transform ${showComparison ? 'rotate-180' : ''}`} />
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <button
+              onClick={() => setShowComparison(!showComparison)}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-red-700 hover:text-red-800 transition-colors"
+            >
+              <Icon.PiListChecks size={16} />
+              {showComparison ? 'Hide' : 'Show'} full feature comparison
+              <Icon.PiCaretDownBold size={14} className={`transition-transform ${showComparison ? 'rotate-180' : ''}`} />
+            </button>
+            <Link
+              href="/erm"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-red-700 transition-colors"
+            >
+              <Icon.PiMonitor size={16} />
+              See the ERM in action
+              <Icon.PiArrowRight size={14} />
+            </Link>
+          </div>
         </RevealOnScroll>
 
         {showComparison && (

@@ -137,6 +137,7 @@ export interface Benefit {
   title: string;
   body: string;
   color: string;
+  link?: string;
 }
 
 export const BENEFITS: Benefit[] = [
@@ -163,6 +164,7 @@ export const BENEFITS: Benefit[] = [
     title: 'ERM Tools',
     body: 'Inventory, orders, invoicing, CRM, and analytics — everything you need to run your beverage business in one dashboard.',
     color: 'bg-amber-50 text-amber-700',
+    link: '/erm',
   },
 ];
 
@@ -242,6 +244,14 @@ export const FAQ_SCHEMA = {
         text: 'All payments are processed through Korapay or Stripe in Nigerian Naira. Your earnings are settled to your bank account on a rolling basis, typically within 2 to 5 business days.',
       },
     },
+    {
+      '@type': 'Question',
+      name: 'What ERM tools come with my subscription?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Every subscription includes our full ERM system: inventory management, point of sale, invoicing, CRM, analytics, purchasing, and warehouse management. Higher tiers unlock multi-location, advanced CRM, and API access. See the full feature tour at drinksharbour.com/erm.',
+      },
+    },
   ],
 };
 
@@ -251,10 +261,18 @@ export interface VendorStat {
   icon: IconComp;
 }
 
-export const VENDOR_STATS: VendorStat[] = [
-  { value: '800+', label: 'Products Listed', icon: Icon.PiWineBold },
-  { value: '60+', label: 'Brands Onboard', icon: Icon.PiStorefront },
-  { value: '1,500+', label: 'Active Buyers', icon: Icon.PiUsers },
+export const VENDOR_STATS = ({
+  vendorCount,
+  productCount,
+  brandCount,
+}: {
+  vendorCount: number;
+  productCount: number;
+  brandCount: number;
+}): VendorStat[] => [
+  { value: productCount >= 1000 ? `${(productCount / 1000).toFixed(1)}K` : `${productCount}`, label: 'Products Listed', icon: Icon.PiWineBold },
+  { value: `${brandCount}`, label: 'Brands Onboard', icon: Icon.PiStorefront },
+  { value: `${vendorCount}`, label: 'Active Vendors', icon: Icon.PiUsers },
   { value: '48hrs', label: 'Approval Time', icon: Icon.PiClockBold },
 ];
 

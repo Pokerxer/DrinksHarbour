@@ -1,41 +1,50 @@
+'use client';
+
 import React from 'react';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
+import { RevealOnScroll } from '@/app/vendors/register/components/RevealOnScroll';
 
-interface HeroSectionProps {
+interface ErmHeroProps {
   vendorCount: number;
   productCount: number;
-  brandCount: number;
 }
 
-export function HeroSection({ vendorCount, productCount, brandCount }: HeroSectionProps) {
+export function ErmHero({ vendorCount, productCount }: ErmHeroProps) {
   const stats = [
-    { value: productCount >= 1000 ? `${(productCount / 1000).toFixed(1)}K` : `${productCount}`, label: 'Products Listed', Icon: Icon.PiWineBold },
-    { value: `${brandCount}`, label: 'Brands Onboard', Icon: Icon.PiStorefront },
-    { value: `${vendorCount}`, label: 'Active Vendors', Icon: Icon.PiUsers },
-    { value: '48hrs', label: 'Approval Time', Icon: Icon.PiClockBold },
+    {
+      value: productCount >= 1000 ? `${(productCount / 1000).toFixed(1)}K` : `${productCount}+`,
+      label: 'Products on the platform',
+      Icon: Icon.PiPackageBold,
+    },
+    {
+      value: vendorCount >= 1 ? `${vendorCount}` : '—',
+      label: 'Active vendors',
+      Icon: Icon.PiStorefrontBold,
+    },
+    { value: '10', label: 'Integrated ERM modules', Icon: Icon.PiGridFourBold },
+    { value: '99.9%', label: 'Platform uptime', Icon: Icon.PiShieldCheckBold },
   ];
 
   return (
     <div className="relative bg-gradient-to-br from-gray-900 via-red-950 to-gray-900 text-white overflow-hidden">
-      <style dangerouslySetInnerHTML={{
-        __html: `@keyframes vendorHeroShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}`
-      }} />
-
       {/* Animated gradient background */}
+      <style dangerouslySetInnerHTML={{
+        __html: `@keyframes ermHeroShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}`
+      }} />
       <div
         className="absolute inset-0 bg-gradient-to-br from-gray-900 via-red-950 to-gray-900"
-        style={{ backgroundSize: '200% 200%', animation: 'vendorHeroShift 14s ease infinite' }}
+        style={{ backgroundSize: '200% 200%', animation: 'ermHeroShift 14s ease infinite' }}
       />
 
       {/* Dot-grid texture */}
       <svg className="absolute inset-0 w-full h-full opacity-[0.04] pointer-events-none" aria-hidden="true">
         <defs>
-          <pattern id="dotGrid-vendor-hero" width="32" height="32" patternUnits="userSpaceOnUse">
+          <pattern id="dotGrid-erm-hero" width="32" height="32" patternUnits="userSpaceOnUse">
             <circle cx="2" cy="2" r="1.5" fill="white" />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill="url(#dotGrid-vendor-hero)" />
+        <rect width="100%" height="100%" fill="url(#dotGrid-erm-hero)" />
       </svg>
 
       {/* Decorative blobs */}
@@ -45,43 +54,43 @@ export function HeroSection({ vendorCount, productCount, brandCount }: HeroSecti
       </div>
 
       <div className="container mx-auto max-w-5xl px-4 py-24 relative">
-        <div className="text-center">
+        <RevealOnScroll className="text-center">
           {/* Eyebrow */}
           <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md rounded-full px-4 py-1.5 text-xs font-medium text-red-300 mb-6 border border-white/10">
-            <span className="w-2 h-2 rounded-full bg-gradient-to-r from-green-400 via-white to-green-400" />
-            For Beverage Businesses
+            <Icon.PiGearBold size={14} />
+            Enterprise Resource Management
           </div>
 
           {/* Headline */}
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight mb-5 leading-[1.1]">
-            Sell on <span className="bg-gradient-to-r from-red-400 to-red-600 bg-clip-text text-transparent">DrinksHarbour</span>
+            The operating system for your{' '}
+            <span className="bg-gradient-to-r from-red-400 to-red-600 bg-clip-text text-transparent">
+              beverage business
+            </span>
           </h1>
 
           {/* Subheadline */}
           <p className="text-gray-300 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed mb-8">
-            Get a branded storefront, reach a growing community of buyers, and manage your entire
-            beverage business with our ERM tools — all in one place.
+            Stop juggling spreadsheets, paper receipts, and phone calls. One dashboard
+            for inventory, POS, invoicing, CRM, and analytics — built for how Nigerian
+            beverage businesses actually work.
           </p>
 
           {/* CTAs */}
           <div className="flex flex-wrap items-center justify-center gap-3 mb-4">
-            <a
+            <Link
               href="/vendors/register/apply"
               className="inline-flex items-center gap-2 bg-gradient-to-br from-red-600 to-red-800 text-white px-7 py-3.5 rounded-xl font-bold text-sm hover:from-red-700 hover:to-red-900 hover:scale-105 active:scale-95 transition-all shadow-lg"
             >
-              <Icon.PiPaperPlaneTilt size={16} /> Apply Now — Free
-            </a>
-            <Link
-              href="/erm"
-              className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white px-7 py-3.5 rounded-xl font-bold text-sm transition-all"
-            >
-              <Icon.PiMonitor size={16} /> See the ERM Dashboard
+              <Icon.PiPaperPlaneTilt size={16} />
+              Start Free Trial
             </Link>
             <Link
-              href="/contact?subject=vendor"
+              href="/vendors/register"
               className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white px-7 py-3.5 rounded-xl font-bold text-sm transition-all"
             >
-              <Icon.PiChatCircle size={16} /> Talk to Us
+              <Icon.PiTag size={16} />
+              See Pricing
             </Link>
           </div>
 
@@ -90,16 +99,12 @@ export function HeroSection({ vendorCount, productCount, brandCount }: HeroSecti
             No credit card required &middot; Free plan available &middot; Cancel anytime
           </p>
 
-          {/* Floating stats bar */}
+          {/* Stats bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto">
             {stats.map(({ value, label, Icon: Ic }, i) => (
               <div
                 key={label}
                 className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-4 hover:bg-white/10 transition-colors"
-                style={{
-                  animation: `fadeInUp 0.5s ease-out ${0.2 + i * 0.1}s forwards`,
-                  opacity: 0,
-                }}
               >
                 <Ic size={18} className="text-red-400 mx-auto mb-2" />
                 <p className="text-xl font-black text-white">{value}</p>
@@ -107,7 +112,7 @@ export function HeroSection({ vendorCount, productCount, brandCount }: HeroSecti
               </div>
             ))}
           </div>
-        </div>
+        </RevealOnScroll>
       </div>
 
       {/* Wave divider */}
