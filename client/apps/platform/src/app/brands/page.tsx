@@ -50,18 +50,22 @@ export const metadata: Metadata = {
 
 // Server-side fetch so the page ships a real, crawlable brand grid — and the
 // matching CollectionPage ItemList — in its HTML. <BrandsBrowser/> is seeded
-// with this exact list (same limit, same productCount filter, same default
+// with this exact list (same limit, no productCount filter, same default
 // name-ascending sort) so hydration matches and it skips its own first fetch.
 async function fetchBrands(): Promise<any[]> {
   try {
-    const res = await fetch(`${API_URL}/api/brands?limit=100&status=active`, {
+    const res = await fetch(`${API_URL}/api/brands?limit=500&status=active`, {
       next: { revalidate: 3600 },
     });
     if (!res.ok) return [];
     const data = await res.json();
     const list = data?.data?.brands ?? data?.data ?? data?.brands ?? [];
+    // Show every published brand — the grid intentionally includes houses with
+    // zero products yet ("Coming soon"). Previously the productCount > 0 filter
+    // hid ~200 active brands whose productCount was simply stale (0) even though
+    // they link real products by ObjectId.
     return (Array.isArray(list) ? list : [])
-      .filter((b: any) => b?.slug && b?.name && (b?.productCount ?? 0) > 0)
+      .filter((b: any) => b?.slug && b?.name)
       .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
   } catch {
     return [];

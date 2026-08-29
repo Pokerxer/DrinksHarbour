@@ -392,7 +392,12 @@ export default function BrandsBrowser({
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ limit: '100', status: 'active' });
+      // Fetch the whole storefront brand list in one pass (the API caps at 500).
+      // We deliberately do NOT filter productCount > 0: ~200 active brands carry
+      // a stale productCount of 0 despite linking real products, and houses with
+      // no products yet must still show ("Coming soon"). The grid is meant to
+      // showcase every brand.
+      const params = new URLSearchParams({ limit: '500', status: 'active' });
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (debouncedCountry) params.set('country', debouncedCountry);
 
@@ -402,7 +407,6 @@ export default function BrandsBrowser({
 
       let list: Brand[] = data.data?.brands ?? data.data ?? [];
       if (!Array.isArray(list)) list = [];
-      list = list.filter(b => (b.productCount ?? 0) > 0);
 
       // Client-side sort
       if (sortKey === 'name_asc') list.sort((a, b) => a.name.localeCompare(b.name));
