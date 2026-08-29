@@ -131,11 +131,14 @@ function ImagePicker({
   currentUrl,
   onFile,
   onClear,
+  hint,
 }: {
   label?: string;
   currentUrl?: string;
   onFile: (file: File) => void;
   onClear: () => void;
+  /** Optional size guidance shown in the empty-state dropzone. */
+  hint?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(currentUrl || null);
@@ -188,7 +191,9 @@ function ImagePicker({
             <Text className="text-xs font-medium text-gray-600">
               Click to upload
             </Text>
-            <Text className="text-xs text-gray-400">PNG, JPG or WEBP</Text>
+            <Text className="text-xs text-gray-400">
+              {hint ? `PNG, JPG or WEBP · ${hint}` : 'PNG, JPG or WEBP'}
+            </Text>
           </div>
         </button>
       )}
@@ -418,6 +423,8 @@ export default function CreateCategory({
         metaDescription: data.metaDescription || '',
         metaKeywords: data.metaKeywords || '',
         canonicalUrl: data.canonicalUrl || '',
+        bannerLink: data.bannerLink || '',
+        bannerLinkType: data.bannerLinkType || 'internal',
         thumbnailImageFile,
         featuredImageFile,
         bannerImageFile,
@@ -1130,10 +1137,24 @@ export default function CreateCategory({
                   />
                   <ImagePicker
                     label="Banner Image"
+                    hint="2:1 landscape, e.g. 1600×800"
                     currentUrl={currentImages?.banner}
                     onFile={(f) => setBannerImageFile(f)}
                     onClear={() => setBannerImageFile(null)}
                   />
+                  <div>
+                    <Input
+                      label="Banner Link"
+                      placeholder="/product/hennessy-vs"
+                      {...register('bannerLink')}
+                      error={errors.bannerLink?.message}
+                    />
+                    <Text className="mt-1 text-xs text-gray-400">
+                      Where the shop hero banner goes when clicked. Use a site
+                      path like <code>/shop?category=gin</code> or a full URL.
+                      Leave empty for a non-clickable banner.
+                    </Text>
+                  </div>
                 </div>
               </div>
 

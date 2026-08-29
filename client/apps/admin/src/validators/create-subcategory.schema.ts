@@ -83,6 +83,16 @@ export const subCategoryFormSchema = z.object({
   canonicalUrl: z
     .union([z.string().url('Must be a valid URL'), z.literal('')])
     .optional(),
+  // Storefront hero click-through. Accepts an absolute URL or a site-relative
+  // path (e.g. /shop?category=gin, /product/hennessy-vs).
+  bannerLink: z
+    .union([
+      z.string().url('Must be a valid URL'),
+      z.string().regex(/^\/[^\s]*$/, 'Must start with / or be a full URL'),
+      z.literal(''),
+    ])
+    .optional(),
+  bannerLinkType: z.enum(['internal', 'external']).optional(),
 });
 
 export type SubCategoryFormInput = z.infer<typeof subCategoryFormSchema>;

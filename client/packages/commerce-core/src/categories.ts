@@ -16,6 +16,10 @@ import { getApiBaseUrl } from './config.ts';
 export interface CategoryImage {
   url?: string;
   alt?: string;
+  /** Cloudinary dimensions, when the upload recorded them. Lets the storefront
+   *  hero pick cover vs contain fit without waiting for the image to load. */
+  width?: number;
+  height?: number;
 }
 
 export interface Category {
@@ -28,6 +32,9 @@ export interface Category {
   description?: string;
   featuredImage?: CategoryImage;
   bannerImage?: CategoryImage;
+  /** Click-through target for the storefront hero banner. */
+  bannerLink?: string;
+  bannerLinkType?: 'internal' | 'external';
   productCount?: number;
   isFeatured?: boolean;
   isTrending?: boolean;
@@ -47,6 +54,9 @@ export interface SubCategory {
   description?: string;
   featuredImage?: CategoryImage;
   bannerImage?: CategoryImage;
+  /** Click-through target for the storefront hero banner. */
+  bannerLink?: string;
+  bannerLinkType?: 'internal' | 'external';
   productCount?: number;
   /** Populated by the API — may be an object or a raw ID string */
   parent: string | { _id: string; name: string; slug: string } | null;

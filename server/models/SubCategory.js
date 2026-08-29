@@ -123,6 +123,21 @@ const subCategorySchema = new Schema(
       url: String,
       publicId: String,
       alt: String,
+      width: Number,
+      height: Number,
+      format: String,
+    },
+
+    // Click-through target for the storefront hero banner. See Category.bannerLink.
+    bannerLink: {
+      type: String,
+      trim: true,
+    },
+
+    bannerLinkType: {
+      type: String,
+      enum: ['internal', 'external'],
+      default: 'internal',
     },
 
     // ════════════════════════════════════════════════════════════

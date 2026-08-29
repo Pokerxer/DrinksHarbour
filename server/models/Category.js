@@ -130,7 +130,24 @@ const categorySchema = new Schema(
       height: Number,
       format: String,
     },
-    
+
+    // Click-through target for the storefront hero banner. When set, clicking
+    // anywhere on the /shop hero navigates here — used for paid/ad placements
+    // that should land on a specific product, collection or campaign page.
+    // Left empty the banner renders as plain artwork with no link.
+    bannerLink: {
+      type: String,
+      trim: true,
+    },
+
+    // 'internal' uses client-side routing; 'external' opens a new tab with
+    // rel="noopener noreferrer". Mirrors Banner.linkType.
+    bannerLinkType: {
+      type: String,
+      enum: ['internal', 'external'],
+      default: 'internal',
+    },
+
     thumbnailImage: {
       url: String,
       publicId: String,

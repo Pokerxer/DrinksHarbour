@@ -9,7 +9,16 @@ async function uploadCategoryFile(file, altText) {
     folder: 'categories',
     tags: ['category'],
   });
-  return { url: result.url, publicId: result.publicId, alt: altText };
+  // Persist Cloudinary's dimensions: the storefront hero uses them to decide
+  // cover vs contain fit without waiting for the image to load.
+  return {
+    url: result.url,
+    publicId: result.publicId,
+    alt: altText,
+    width: result.width,
+    height: result.height,
+    format: result.format,
+  };
 }
 
 /**
@@ -23,7 +32,7 @@ const getCategories = asyncHandler(async (req, res) => {
   const query = { status };
 
   const categories = await Category.find(query)
-    .select('name slug displayName type subType alcoholCategory description shortDescription tagline icon color featuredImage bannerImage thumbnailImage isFeatured isTrending isPopular displayOrder parent level metaTitle metaDescription metaKeywords updatedAt')
+    .select('name slug displayName type subType alcoholCategory description shortDescription tagline icon color featuredImage bannerImage bannerLink bannerLinkType thumbnailImage isFeatured isTrending isPopular displayOrder parent level metaTitle metaDescription metaKeywords updatedAt')
     .sort({ order: 1, name: 1 })
     .lean();
 
@@ -227,6 +236,8 @@ const createCategory = asyncHandler(async (req, res) => {
     metaKeywords,
     seoH1,
     canonicalUrl,
+    bannerLink,
+    bannerLinkType,
     notes,
   } = req.body;
 
@@ -265,6 +276,8 @@ const createCategory = asyncHandler(async (req, res) => {
   if (seoH1) categoryData.seoH1 = seoH1;
   if (metaKeywords) categoryData.metaKeywords = String(metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
   if (canonicalUrl) categoryData.canonicalUrl = canonicalUrl;
+  if (bannerLink) categoryData.bannerLink = bannerLink;
+  if (bannerLinkType) categoryData.bannerLinkType = bannerLinkType;
 
   if (status === 'published') {
     categoryData.publishedAt = new Date();
@@ -323,6 +336,8 @@ const updateCategory = asyncHandler(async (req, res) => {
     metaKeywords,
     seoH1,
     canonicalUrl,
+    bannerLink,
+    bannerLinkType,
     notes,
   } = req.body;
 
@@ -346,6 +361,8 @@ const updateCategory = asyncHandler(async (req, res) => {
   if (seoH1 !== undefined) updateData.seoH1 = seoH1;
   if (metaKeywords !== undefined) updateData.metaKeywords = String(metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
   if (canonicalUrl !== undefined) updateData.canonicalUrl = canonicalUrl;
+  if (bannerLink !== undefined) updateData.bannerLink = bannerLink;
+  if (bannerLinkType !== undefined) updateData.bannerLinkType = bannerLinkType;
 
   if (displayOrder !== undefined) {
     const n = Number(displayOrder);

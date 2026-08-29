@@ -63,6 +63,8 @@ export interface CategoryFormData {
   metaDescription?: string;
   metaKeywords?: string;
   canonicalUrl?: string;
+  bannerLink?: string;
+  bannerLinkType?: string;
   thumbnailImageFile?: File | null;
   featuredImageFile?: File | null;
   bannerImageFile?: File | null;

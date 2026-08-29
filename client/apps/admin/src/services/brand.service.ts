@@ -76,6 +76,8 @@ export interface BrandFormData {
   metaDescription?: string;
   metaKeywords?: string;
   canonicalUrl?: string;
+  bannerLink?: string;
+  bannerLinkType?: string;
   notes?: string;
   logoFile?: File | null;
   featuredImageFile?: File | null;

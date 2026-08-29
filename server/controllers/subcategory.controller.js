@@ -17,7 +17,16 @@ async function uploadSubCategoryFile(file, altText) {
     folder: 'subcategories',
     tags: ['subcategory'],
   });
-  return { url: result.url, publicId: result.publicId, alt: altText };
+  // Persist Cloudinary's dimensions: the storefront hero uses them to decide
+  // cover vs contain fit without waiting for the image to load.
+  return {
+    url: result.url,
+    publicId: result.publicId,
+    alt: altText,
+    width: result.width,
+    height: result.height,
+    format: result.format,
+  };
 }
 
 // ─── Public routes ────────────────────────────────────────────────────────────
@@ -53,7 +62,7 @@ const getSubCategories = asyncHandler(async (req, res) => {
   }
 
   const subcategories = await SubCategory.find(query)
-    .select('name slug type parent shortDescription description icon color featuredImage thumbnailImage bannerImage isFeatured isTrending isPopular displayOrder status updatedAt')
+    .select('name slug type parent shortDescription description icon color featuredImage thumbnailImage bannerImage bannerLink bannerLinkType isFeatured isTrending isPopular displayOrder status updatedAt')
     .sort({ displayOrder: 1, name: 1 })
     .populate('parent', 'name slug')
     .lean();
@@ -101,7 +110,7 @@ const getSubCategoriesByCategory = asyncHandler(async (req, res) => {
   };
 
   const subcategories = await SubCategory.find(query)
-    .select('name slug type parent shortDescription description icon color featuredImage thumbnailImage bannerImage isFeatured isTrending isPopular displayOrder status')
+    .select('name slug type parent shortDescription description icon color featuredImage thumbnailImage bannerImage bannerLink bannerLinkType isFeatured isTrending isPopular displayOrder status')
     .sort({ displayOrder: 1, name: 1 })
     .lean();
 
@@ -291,6 +300,8 @@ const createSubCategory = asyncHandler(async (req, res) => {
     metaKeywords,
     seoH1,
     canonicalUrl,
+    bannerLink,
+    bannerLinkType,
     notes,
     typicalFlavors,
     commonPairings,
@@ -338,6 +349,8 @@ const createSubCategory = asyncHandler(async (req, res) => {
   if (seoH1) subcategoryData.seoH1 = seoH1;
   if (metaKeywords) subcategoryData.metaKeywords = String(metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
   if (canonicalUrl) subcategoryData.canonicalUrl = canonicalUrl;
+  if (bannerLink) subcategoryData.bannerLink = bannerLink;
+  if (bannerLinkType) subcategoryData.bannerLinkType = bannerLinkType;
   if (typicalFlavors) subcategoryData.typicalFlavors = String(typicalFlavors).split(',').map((f) => f.trim()).filter(Boolean);
   if (commonPairings) subcategoryData.commonPairings = String(commonPairings).split(',').map((p) => p.trim()).filter(Boolean);
 
@@ -395,6 +408,8 @@ const updateSubCategory = asyncHandler(async (req, res) => {
     metaKeywords,
     seoH1,
     canonicalUrl,
+    bannerLink,
+    bannerLinkType,
     notes,
     typicalFlavors,
     commonPairings,
@@ -423,6 +438,8 @@ const updateSubCategory = asyncHandler(async (req, res) => {
   if (seoH1 !== undefined) updateData.seoH1 = seoH1;
   if (metaKeywords !== undefined) updateData.metaKeywords = String(metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
   if (canonicalUrl !== undefined) updateData.canonicalUrl = canonicalUrl;
+  if (bannerLink !== undefined) updateData.bannerLink = bannerLink;
+  if (bannerLinkType !== undefined) updateData.bannerLinkType = bannerLinkType;
   if (typicalFlavors !== undefined) updateData.typicalFlavors = String(typicalFlavors).split(',').map((f) => f.trim()).filter(Boolean);
   if (commonPairings !== undefined) updateData.commonPairings = String(commonPairings).split(',').map((p) => p.trim()).filter(Boolean);
 

@@ -59,6 +59,8 @@ export interface SubCategoryFormData {
   metaDescription?: string;
   metaKeywords?: string;
   canonicalUrl?: string;
+  bannerLink?: string;
+  bannerLinkType?: string;
   typicalFlavors?: string;
   commonPairings?: string;
   seasonalSpring?: boolean;

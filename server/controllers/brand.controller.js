@@ -20,7 +20,16 @@ async function uploadBrandFile(file, altText) {
     folder: 'brands',
     tags: ['brand'],
   });
-  return { url: result.url, publicId: result.publicId, alt: altText };
+  // Persist Cloudinary's dimensions: the storefront hero uses them to decide
+  // cover vs contain fit without waiting for the image to load.
+  return {
+    url: result.url,
+    publicId: result.publicId,
+    alt: altText,
+    width: result.width,
+    height: result.height,
+    format: result.format,
+  };
 }
 
 /**
@@ -275,6 +284,8 @@ exports.createAdminBrand = asyncHandler(async (req, res) => {
     brandData.headquarters = { city: b.hqCity || '', country: b.hqCountry || '' };
   }
   if (b.website) brandData.website = b.website;
+  if (b.bannerLink) brandData.bannerLink = b.bannerLink;
+  if (b.bannerLinkType) brandData.bannerLinkType = b.bannerLinkType;
   if (b.email) brandData.email = b.email;
   if (b.phone) brandData.phone = b.phone;
 
@@ -360,6 +371,8 @@ exports.updateAdminBrand = asyncHandler(async (req, res) => {
     updateData.headquarters = { city: b.hqCity || '', country: b.hqCountry || '' };
   }
   if (b.website !== undefined) updateData.website = b.website;
+  if (b.bannerLink !== undefined) updateData.bannerLink = b.bannerLink;
+  if (b.bannerLinkType !== undefined) updateData.bannerLinkType = b.bannerLinkType;
   if (b.email !== undefined) updateData.email = b.email;
   if (b.phone !== undefined) updateData.phone = b.phone;
 
