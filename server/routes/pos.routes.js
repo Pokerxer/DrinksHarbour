@@ -9,6 +9,10 @@ const {
 } = require('../middleware/auth.middleware');
 const { protectPOS, requirePOSPermission, protectPOSOrAdmin } = require('../middleware/pos.middleware');
 const rateLimit = require('express-rate-limit');
+// IPv6-safe IP normaliser. express-rate-limit v8 refuses a keyGenerator that
+// uses req.ip verbatim (ERR_ERL_KEY_GEN_IPV6) because a raw IPv6 address lets a
+// single client cycle addresses within its /64 to evade the limit.
+const { ipKeyGenerator } = require('express-rate-limit');
 
 const {
   getSessionReport,
@@ -105,7 +109,7 @@ const posAuthLimiter = rateLimit({
   message: { success: false, message: 'Too many login attempts. Please try again in 15 minutes.' },
   keyGenerator: (req) => {
     const slug = req.body?.tenantSlug || req.body?.staffId || 'unknown';
-    return `${req.ip}:${slug}`;
+    return `${ipKeyGenerator(req.ip)}:${slug}`;
   },
 });
 
