@@ -578,9 +578,7 @@ function StylingCard({ banner }: { banner: any }) {
         />
         <InfoRow
           label="Image Fit"
-          value={
-            banner.imageFit === 'cover' ? 'Cover (crop)' : 'Contain (fit)'
-          }
+          value={banner.imageFit === 'cover' ? 'Cover (crop)' : 'Contain (fit)'}
         />
         <InfoRow
           label="Gradient Intensity"
