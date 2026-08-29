@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { motion, useReducedMotion } from 'framer-motion';
-import * as Icon from 'react-icons/pi';
 import {
   fetchAllCategories,
   fetchAllSubCategories,
@@ -360,38 +359,18 @@ interface ShopHeroBannerProps {
   category?: string | string[] | null;
   subcategory?: string | string[] | null;
   brand?: string | string[] | null;
+  /**
+   * @deprecated No longer rendered. The hero is pure artwork, so the
+   * "N products available" line was removed; the count still shows in the
+   * filter header above the grid. Kept so existing callers don't break.
+   */
   totalProducts?: number;
-  // Server-computed keyword-matching heading/description. Used as the terminal
-  // fallback so the initial (crawlable) <h1> matches the page <title> for filters
-  // this component doesn't statically curate (origin, flavor, DB-only categories)
-  // and for the default shop — instead of the generic "All Drinks".
+  // Server-computed keyword-matching heading. Used as the terminal fallback so
+  // the crawlable <h1> matches the page <title> for filters this component
+  // doesn't statically curate (origin, flavor, DB-only categories) and for the
+  // default shop — instead of the generic "All Drinks".
   seed?: { label: string; description?: string } | null;
 }
-
-// ─── Animation variants ───────────────────────────────────────────────────────
-
-const containerVariants = {
-  initial: { opacity: 1 },
-  animate: { opacity: 1, transition: { staggerChildren: 0.1, delayChildren: 0.15 } },
-};
-
-const textVariants = {
-  initial: { y: 28, opacity: 0, filter: 'blur(8px)' },
-  animate: { y: 0, opacity: 1, filter: 'blur(0px)', transition: { duration: 0.75, ease: [0.16, 1, 0.3, 1] } },
-};
-
-const btnVariants = {
-  initial: { scale: 0.88, opacity: 0, y: 14 },
-  animate: { scale: 1, opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.34, 1.56, 0.64, 1] } },
-};
-
-// When the visitor prefers reduced motion we render everything in its final state
-// (no transforms, no blur, no stagger) — this also lets the LCP <h1>/description
-// paint immediately instead of tweening up from opacity 0.
-const STATIC_VARIANTS = {
-  initial: { opacity: 1 },
-  animate: { opacity: 1, transition: { staggerChildren: 0, delayChildren: 0 } },
-};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -416,23 +395,6 @@ function themeFromColor(color: string) {
   return { dark: darken(color, 0.9), mid: darken(color, 0.8), glow: color, accent: color };
 }
 
-// Strip HTML tags (brand/category descriptions may be rich text).
-function stripHtml(html?: string): string {
-  return String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
-}
-
-// Hero descriptions must stay a single tight paragraph. DB category/subcategory
-// copy is often several hundred words of rich text (e.g. Irish Whiskey), which
-// floods the hero — clamp to a sentence or two at a word boundary. A CSS
-// line-clamp on the element is the final safety net for very narrow viewports.
-function clampText(text: string, max = 240): string {
-  const clean = String(text || '').trim();
-  if (clean.length <= max) return clean;
-  const slice = clean.slice(0, max);
-  const cut = slice.lastIndexOf(' ');
-  return `${(cut > max * 0.6 ? slice.slice(0, cut) : slice).replace(/[.,;:!?\s]+$/, '')}…`;
-}
-
 // ─── Brand details (fetched when a single brand filter is active) ────────────
 
 interface BrandDetails {
@@ -447,8 +409,11 @@ interface BrandDetails {
   countryOfOrigin?: string;
   brandColors?: { primary?: string; secondary?: string; accent?: string };
   logo?: { url?: string };
-  featuredImage?: { url?: string };
-  bannerImage?: { url?: string };
+  featuredImage?: { url?: string; width?: number; height?: number };
+  bannerImage?: { url?: string; width?: number; height?: number };
+  /** Click-through target for the storefront hero banner. */
+  bannerLink?: string;
+  bannerLinkType?: 'internal' | 'external';
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -475,24 +440,68 @@ async function fetchBrandByName(name: string): Promise<BrandDetails | null> {
   }
 }
 
+// ─── Banner frame ─────────────────────────────────────────────────────────────
+
+/**
+ * The 2:1 hero box. Renders a plain <div> normally, or an <a>/<Link> covering
+ * the whole banner when the category/subcategory/brand has a Banner Link set —
+ * so clicking anywhere on an ad opens its product or campaign page.
+ *
+ * External links open in a new tab with rel="noopener noreferrer"; internal
+ * ones use next/link so they navigate client-side.
+ */
+function BannerFrame({
+  href,
+  external,
+  label,
+  dark,
+  children,
+}: {
+  href: string | null;
+  external: boolean;
+  label: string;
+  dark: string;
+  children: React.ReactNode;
+}) {
+  const className = 'relative block w-full aspect-[2/1] max-h-[80vh] overflow-hidden';
+  const style = { backgroundColor: dark };
+
+  if (!href) {
+    return <div className={className} style={style}>{children}</div>;
+  }
+
+  if (external) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={label}
+        className={`${className} cursor-pointer`}
+        style={style}
+      >
+        {children}
+      </a>
+    );
+  }
+
+  return (
+    <Link href={href} aria-label={label} className={`${className} cursor-pointer`} style={style}>
+      {children}
+    </Link>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ShopHeroBanner({
   category,
   subcategory,
   brand,
-  totalProducts,
   seed,
 }: ShopHeroBannerProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const reduceMotion = useReducedMotion();
-
-  // Swap the entrance animation for a static, final-state render when the visitor
-  // has prefers-reduced-motion set.
-  const cVar = reduceMotion ? STATIC_VARIANTS : containerVariants;
-  const tVar = reduceMotion ? STATIC_VARIANTS : textVariants;
-  const bVar = reduceMotion ? STATIC_VARIANTS : btnVariants;
 
   // ── DB-sourced categories/subcategories — the source of truth for chips + slugs ──
   const [allCats, setAllCats] = useState<Category[]>([]);
@@ -578,40 +587,15 @@ export default function ShopHeroBanner({
         ? themeFromColor(dbCat.color)
         : { dark: DEFAULT_CONFIG.dark, mid: DEFAULT_CONFIG.mid, glow: DEFAULT_CONFIG.glow, accent: DEFAULT_CONFIG.accent };
 
-  // ── Count subtitle for multi-select ──
-  const countSubtitle =
-    catList.length > 1 ? `${catList.length} categories selected`
-    : subList.length > 1 ? `${subList.length} styles selected`
-    : brandOnly && brandList.length > 1 ? `${brandList.length} brands selected`
-    : null;
-
-  // ── Brand copy — DB brand details, slug-derived name as fallback ──
+  // ── Brand name — DB brand details, slug-derived name as fallback ──
   const brandLabel = brandOnly && brandList.length === 1
     ? dbBrand?.name ?? brandList[0].replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     : null;
-  const prettify = (s?: string) => (s ? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '');
-  const brandSubtitle = brandLabel
-    ? dbBrand?.tagline ||
-      [prettify(dbBrand?.brandType), dbBrand?.countryOfOrigin].filter(Boolean).join(' · ') ||
-      null
-    : null;
-  const brandDescription = brandLabel
-    ? dbBrand?.shortDescription ||
-      (dbBrand?.description ? stripHtml(dbBrand.description).slice(0, 320) : null)
-    : null;
 
-  // ── Display copy: brand first, then DB category/subcategory, curated fallback, generic last ──
-  const displayLabel       = brandLabel ?? dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? seed?.label ?? DEFAULT_CONFIG.label;
-  const displaySubtitle    = countSubtitle ?? brandSubtitle ?? dbSub?.tagline ?? curatedSub?.subtitle ?? dbCat?.tagline ?? curated?.subtitle ?? DEFAULT_CONFIG.subtitle;
-  const displayDescription = clampText(
-    stripHtml(
-      brandDescription ?? dbSub?.description ?? curatedSub?.description ?? dbCat?.description ?? curated?.description ?? seed?.description ?? DEFAULT_CONFIG.description
-    )
-  );
-
-  const ctaText = brandLabel
-    ? `Explore ${brandLabel}`
-    : curated?.ctaText ?? (dbCat ? `Explore ${dbCat.name}` : DEFAULT_CONFIG.ctaText);
+  // ── Display label ──
+  // The banner itself is pure artwork, so this is used only for the sr-only
+  // <h1>, the banner's aria-label, and the chip rail's accessible name.
+  const displayLabel = brandLabel ?? dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? seed?.label ?? DEFAULT_CONFIG.label;
 
   // Featured image background — brand image first, then a single active
   // subcategory's image, else the category's.
@@ -620,13 +604,37 @@ export default function ShopHeroBanner({
     (subList.length === 1 ? dbSub?.featuredImage?.url ?? dbSub?.bannerImage?.url : null) ??
     dbCat?.featuredImage?.url ?? dbCat?.bannerImage?.url ?? null;
 
-  // Build CTA URL (just clears subcategory, keeps category)
-  const ctaUrl = useMemo(() => {
-    const p = new URLSearchParams(searchParams.toString());
-    p.delete('subcategory');
-    const qs = p.toString();
-    return `${pathname}${qs ? `?${qs}` : ''}`;
-  }, [pathname, searchParams]);
+  // ── Banner click-through ───────────────────────────────────────────────────
+  // Admin-set per category / subcategory / brand (see the "Banner Link" field in
+  // the admin forms). Same source precedence as the artwork above, so the link
+  // always belongs to whichever record supplied the image. Empty = not clickable.
+  const bannerLinkSource = brandOnly
+    ? dbBrand
+    : subList.length === 1 && dbSub?.bannerLink
+      ? dbSub
+      : dbCat;
+  const bannerLink = (bannerLinkSource as any)?.bannerLink?.trim() || null;
+  const bannerLinkExternal = (bannerLinkSource as any)?.bannerLinkType === 'external';
+
+  // ── Image fit ──────────────────────────────────────────────────────────────
+  // Landscape (or unknown) artwork covers the 2:1 frame edge-to-edge like the
+  // homepage HeroBanner in its cover mode — no letterbox bars, ad art fills the
+  // whole hero. Portrait / near-square uploads fall back to contain so a tall
+  // bottle shot isn't decapitated. Newer uploads persist Cloudinary's width and
+  // height, so we use those when present and otherwise sample the loaded <img>
+  // (older records predate that and have no dimensions stored).
+  const heroDims =
+    (brandOnly ? dbBrand?.bannerImage ?? dbBrand?.featuredImage : null) ??
+    (subList.length === 1 ? dbSub?.featuredImage ?? dbSub?.bannerImage : null) ??
+    dbCat?.featuredImage ?? dbCat?.bannerImage ?? null;
+  const knownOrientation =
+    heroDims?.width && heroDims?.height
+      ? heroDims.width / heroDims.height >= 1.2 ? 'landscape' : 'portrait'
+      : null;
+
+  const [imgOrientation, setImgOrientation] = useState<'unknown' | 'landscape' | 'portrait'>('unknown');
+  useEffect(() => { setImgOrientation('unknown'); }, [heroImage]);
+  const usesCover = (knownOrientation ?? imgOrientation) !== 'portrait';
 
   // Subcategory chip URL
   const makeSubUrl = (slug: string | null) => {
@@ -646,173 +654,67 @@ export default function ShopHeroBanner({
 
   return (
     <div className="w-full">
-      {/* ── Full-height hero ────────────────────────────────────────────────── */}
-      {/* With artwork: a 2:1 frame (capped), matching the homepage hero so one
-          artwork size serves both, and nothing is ever cropped. Without
-          artwork this is only a gradient panel, so keep the original shorter
-          height rather than leaving a tall empty block. */}
-      <div
-        className={`relative w-full overflow-hidden${heroImage ? ' aspect-[2/1] max-h-[80vh]' : ''}`}
-        style={heroImage ? undefined : { height: 'clamp(336px, 52vh, 576px)' }}
+      {/* ── Hero frame — same capped 2:1 box as the homepage HeroBanner ──────── */}
+      {/* Pure artwork: no headline, description, pills or CTAs are drawn over the
+          banner, so an uploaded ad reads exactly as designed. The only text is a
+          visually-hidden <h1> (below) that keeps the crawlable heading each
+          category/brand page needs — the same sr-only pattern the homepage uses.
+          aspect-[2/1] matches the homepage hero at every breakpoint; the whole
+          frame becomes a link when the record has a Banner Link set. */}
+      <BannerFrame
+        href={bannerLink}
+        external={bannerLinkExternal}
+        label={`${displayLabel} — view offer`}
+        dark={dark}
       >
-        {/* Featured image background */}
-        {heroImage && (
-          <div
-            className="absolute inset-0 bg-contain bg-center bg-no-repeat"
-            // `contain` so a designed banner is never cropped; the letterbox
-            // takes the theme's dark tone rather than showing through.
-            style={{ backgroundImage: `url("${heroImage}")`, backgroundColor: dark }}
+        {/* Visually hidden heading — invisible to shoppers, read by crawlers and
+            screen readers so the category/brand page keeps its main <h1>. */}
+        <h1 className="sr-only">{displayLabel}</h1>
+
+        {heroImage ? (
+          <Image
+            src={heroImage}
+            alt={displayLabel}
+            fill
+            // Full-viewport hero: on any screen this image occupies 100vw.
+            sizes="100vw"
+            // LCP element on every category/brand shop page — load eagerly.
+            priority
+            // Cover fills the 2:1 frame edge-to-edge for landscape ad artwork;
+            // portrait/near-square uploads are contained so they aren't cropped.
+            // Centred now that no copy occupies one side of the frame.
+            className={usesCover ? 'object-cover object-center' : 'object-contain object-center'}
+            onLoadingComplete={(img) => {
+              const w = img.naturalWidth || 0;
+              const h = img.naturalHeight || 0;
+              if (!w || !h) return;
+              // Wider than 1.2:1 is treated as landscape and covered; anything
+              // squarer than that is contained so it isn't badly cropped.
+              setImgOrientation(w / h >= 1.2 ? 'landscape' : 'portrait');
+            }}
           />
+        ) : (
+          // No artwork — a themed gradient panel so the slot isn't a flat black
+          // rectangle. Nothing is drawn on top of a real banner.
+          <>
+            <div
+              aria-hidden="true"
+              className="absolute inset-0"
+              style={{ background: `linear-gradient(115deg, ${dark} 0%, ${mid} 45%, ${dark} 100%)` }}
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -top-20 -right-20 w-[500px] h-[500px] rounded-full blur-3xl"
+              style={{ background: glow, opacity: 0.18 }}
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -bottom-24 -left-24 w-72 h-72 rounded-full blur-3xl"
+              style={{ background: glow, opacity: 0.08 }}
+            />
+          </>
         )}
-
-        {/* Background gradient — opaque when no image, legibility scrim when an image is present */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: heroImage
-              ? `linear-gradient(90deg, ${dark}f2 0%, ${dark}cc 35%, ${dark}55 65%, ${dark}22 100%)`
-              : `linear-gradient(115deg, ${dark} 0%, ${mid} 45%, ${dark} 100%)`,
-          }}
-        />
-
-        {/* Radial glow — top-right */}
-        <div
-          className="pointer-events-none absolute -top-20 -right-20 w-[500px] h-[500px] rounded-full blur-3xl"
-          style={{ background: glow, opacity: 0.18 }}
-        />
-
-        {/* Secondary glow — bottom-left (warmth) */}
-        <div
-          className="pointer-events-none absolute -bottom-24 -left-24 w-72 h-72 rounded-full blur-3xl"
-          style={{ background: glow, opacity: 0.08 }}
-        />
-
-        {/* Subtle noise-grain overlay */}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.025]"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-            backgroundSize: '200px 200px',
-          }}
-        />
-
-        {/* Bottom gradient fade — leads into chip rail */}
-        <div
-          className="pointer-events-none absolute bottom-0 inset-x-0 h-36"
-          style={{ background: `linear-gradient(to top, ${dark}f0 0%, transparent 100%)` }}
-        />
-
-        {/* Content */}
-        <div className="relative z-10 container mx-auto px-5 md:px-10 h-full flex items-center">
-          <motion.div
-            variants={cVar}
-            initial="initial"
-            animate="animate"
-            className="max-w-2xl"
-          >
-            {/* Badge / subtitle */}
-            <motion.div variants={tVar} className="mb-5">
-              <span
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold border backdrop-blur-md"
-                style={{
-                  background: `${glow}18`,
-                  borderColor: `${glow}35`,
-                  color: accent,
-                }}
-              >
-                <Icon.PiSparkleFill size={12} />
-                {displaySubtitle}
-              </span>
-            </motion.div>
-
-            {/* Headline — with brand logo when a single brand is active */}
-            <motion.div variants={tVar} className="flex items-center gap-4 mb-4">
-              {brandLabel && dbBrand?.logo?.url && (
-                <img
-                  src={dbBrand.logo.url}
-                  alt=""
-                  aria-hidden="true"
-                  loading="eager"
-                  decoding="async"
-                  className="h-14 w-14 sm:h-20 sm:w-20 flex-shrink-0 rounded-2xl bg-white/90 object-contain p-1.5 shadow-lg"
-                />
-              )}
-              <h1
-                className="font-black text-white leading-[1.02] tracking-tight"
-                style={{
-                  fontSize: 'clamp(36px, 6vw, 72px)',
-                  textShadow: '0 2px 24px rgba(0,0,0,0.5)',
-                }}
-              >
-                {displayLabel}
-              </h1>
-            </motion.div>
-
-            {/* Description */}
-            <motion.p
-              variants={tVar}
-              className="text-white/70 mb-8 leading-relaxed max-w-xl line-clamp-3 sm:line-clamp-4"
-              style={{ fontSize: 'clamp(14px, 1.5vw, 18px)' }}
-            >
-              {displayDescription}
-            </motion.p>
-
-            {/* CTAs */}
-            <motion.div variants={bVar} className="flex items-center gap-3 flex-wrap">
-              <Link
-                href={ctaUrl}
-                className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full font-bold text-sm transition-all duration-300 hover:scale-105"
-                style={{
-                  background: `linear-gradient(135deg, ${glow}cc, ${glow}99)`,
-                  color: '#000',
-                  boxShadow: `0 4px 20px ${glow}40`,
-                }}
-              >
-                {ctaText}
-                <Icon.PiArrowRight size={16} />
-              </Link>
-
-              <Link
-                href={`${pathname}?sale=true${category ? `&category=${category}` : ''}`}
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-full font-bold text-sm border transition-all duration-300 hover:scale-105 backdrop-blur-md"
-                style={{
-                  background: 'rgba(255,255,255,0.07)',
-                  borderColor: 'rgba(255,255,255,0.18)',
-                  color: '#fff',
-                }}
-              >
-                <Icon.PiTagFill size={14} />
-                View Deals
-              </Link>
-            </motion.div>
-
-            {/* Trust pills */}
-            <motion.div variants={tVar} className="flex flex-wrap gap-2.5 mt-8">
-              {[
-                { icon: <Icon.PiTruck size={12} />, label: 'Fast Delivery' },
-                { icon: <Icon.PiSealCheck size={12} />, label: 'Authentic Products' },
-                { icon: <Icon.PiLockKey size={12} />, label: 'Secure Checkout' },
-              ].map(({ icon, label }) => (
-                <div
-                  key={label}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs text-white/80 border backdrop-blur-md"
-                  style={{ background: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' }}
-                >
-                  <span style={{ color: accent }}>{icon}</span>
-                  {label}
-                </div>
-              ))}
-            </motion.div>
-
-            {/* Product count */}
-            {typeof totalProducts === 'number' && totalProducts > 0 && (
-              <motion.p variants={tVar} className="mt-4 text-white/40 text-xs font-medium">
-                {totalProducts.toLocaleString()} product{totalProducts !== 1 ? 's' : ''} available
-              </motion.p>
-            )}
-          </motion.div>
-        </div>
-      </div>
+      </BannerFrame>
 
       {/* ── Subcategory chip rail ─────────────────────────────────────────────── */}
       <nav
