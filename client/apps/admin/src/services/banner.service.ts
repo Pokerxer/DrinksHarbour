@@ -189,6 +189,30 @@ export const bannerService = {
     return response.json();
   },
 
+  async getAnalyticsOverview(token: string, params?: Record<string, any>) {
+    const queryString = params ? new URLSearchParams(params).toString() : '';
+    const url = `${API_URL}/api/banners/analytics/overview${queryString ? `?${queryString}` : ''}`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to fetch analytics overview');
+    }
+    return response.json();
+  },
+
+  async getEntityAnalytics(token: string) {
+    const response = await fetch(`${API_URL}/api/banners/analytics/entity`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to fetch entity analytics');
+    }
+    return response.json();
+  },
+
   async trackImpression(id: string) {
     await fetch(`${API_URL}/api/banners/${id}/impression`, {
       method: 'POST',

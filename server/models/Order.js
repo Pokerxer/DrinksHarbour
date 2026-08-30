@@ -352,6 +352,11 @@ const orderSchema = new Schema(
     utmSource: { type: String, default: '' },
     utmMedium: { type: String, default: '' },
     utmCampaign: { type: String, default: '' },
+    bannerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Banner',
+      default: null,
+    },
 
     // ────────────────────────────────────────────────
     // Lifecycle & Status

@@ -16,9 +16,18 @@ const adminOnly = [protect, authorize('super_admin', 'admin', 'tenant_owner', 't
 router.get('/placement/:placement', ctrl.getBannersByPlacement);
 router.post('/:id/impression', ctrl.trackImpression);
 router.post('/:id/click', ctrl.trackClick);
+router.post('/:id/conversion', ctrl.trackConversion);
+
+// ── Entity banner tracking (brand / category / subcategory hero banners) ───
+router.post('/entity/:type/:id/impression', ctrl.trackEntityImpression);
+router.post('/entity/:type/:id/click', ctrl.trackEntityClick);
 
 // ── Admin bulk (two-segment static path, must precede /:id/status) ────────────
 router.patch('/bulk/status', adminOnly, ctrl.bulkUpdateStatus);
+
+// ── Admin analytics (static paths — must precede /:id) ───────────────────────
+router.get('/analytics/overview', adminOnly, ctrl.getAnalyticsOverview);
+router.get('/analytics/entity', adminOnly, ctrl.getEntityAnalytics);
 
 // ── Admin collection ──────────────────────────────────────────────────────────
 router.get('/', adminOnly, ctrl.listBanners);

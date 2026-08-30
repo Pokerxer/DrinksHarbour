@@ -511,6 +511,8 @@ bannerSchema.methods.generateSlug = async function () {
 bannerSchema.methods.incrementImpressions = async function () {
   this.impressions += 1;
   await this.save();
+  // Fire-and-forget daily bucket update — never block the response.
+  bumpDailyStat(this._id, 'impressions').catch(() => {});
 };
 
 // Increment clicks and update CTR
@@ -520,6 +522,7 @@ bannerSchema.methods.incrementClicks = async function () {
     ? (this.clicks / this.impressions) * 100
     : 0;
   await this.save();
+  bumpDailyStat(this._id, 'clicks').catch(() => {});
 };
 
 // Increment conversions and update conversion rate
@@ -529,7 +532,26 @@ bannerSchema.methods.incrementConversions = async function () {
     ? (this.conversionCount / this.clicks) * 100
     : 0;
   await this.save();
+  bumpDailyStat(this._id, 'conversions').catch(() => {});
 };
+
+/**
+ * Atomically bump a daily stat bucket (impressions | clicks | conversions).
+ * Called fire-and-forget from the increment methods above.
+ */
+async function bumpDailyStat(bannerId, field) {
+  // Lazy-require to avoid circular deps at model load time.
+  const BannerDailyStat = require('./BannerDailyStat');
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  await BannerDailyStat.updateOne(
+    { banner: bannerId, date: today },
+    { $inc: { [field]: 1 } },
+    { upsert: true }
+  );
+}
 
 // Update status based on schedule
 bannerSchema.methods.updateStatus = async function () {

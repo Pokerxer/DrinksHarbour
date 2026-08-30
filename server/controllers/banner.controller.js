@@ -196,3 +196,77 @@ exports.trackClick = async (req, res) => {
     return successResponse(res, null, 'Click ignored');
   }
 };
+
+/**
+ * POST /api/banners/:id/conversion
+ * Public — record a conversion (fire-and-forget from checkout/order flow).
+ */
+exports.trackConversion = async (req, res) => {
+  try {
+    await bannerService.trackConversion(req.params.id);
+    return successResponse(res, null, 'Conversion tracked');
+  } catch (err) {
+    return successResponse(res, null, 'Conversion ignored');
+  }
+};
+
+/**
+ * GET /api/banners/analytics/overview
+ * Admin — combined analytics overview: summary, placement/type breakdown,
+ * top performers and daily trends (last N days).
+ */
+exports.getAnalyticsOverview = async (req, res) => {
+  try {
+    const overview = await bannerService.getAnalyticsOverview({
+      ...req.query,
+      days: parseInt(req.query.days, 10) || 30,
+    });
+    return successResponse(res, overview, 'Analytics overview fetched');
+  } catch (err) {
+    return fail(res, err, 'Failed to fetch analytics overview');
+  }
+};
+
+// ── Entity banner tracking ──────────────────────────────────────────────────
+const entityService = require('../services/entity-banner.service');
+
+/**
+ * POST /api/banners/entity/:type/:id/impression
+ * Public — record an impression for a brand/category/subcategory hero banner.
+ */
+exports.trackEntityImpression = async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    await entityService.trackEntityImpression(type, id);
+    return successResponse(res, null, 'Entity impression tracked');
+  } catch (err) {
+    return successResponse(res, null, 'Entity impression ignored');
+  }
+};
+
+/**
+ * POST /api/banners/entity/:type/:id/click
+ * Public — record a click for a brand/category/subcategory hero banner.
+ */
+exports.trackEntityClick = async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    await entityService.trackEntityClick(type, id);
+    return successResponse(res, null, 'Entity click tracked');
+  } catch (err) {
+    return successResponse(res, null, 'Entity click ignored');
+  }
+};
+
+/**
+ * GET /api/banners/analytics/entity
+ * Admin — entity banner analytics breakdown + trends + top performers.
+ */
+exports.getEntityAnalytics = async (req, res) => {
+  try {
+    const analytics = await entityService.getAllEntityAnalytics();
+    return successResponse(res, analytics, 'Entity analytics fetched');
+  } catch (err) {
+    return fail(res, err, 'Failed to fetch entity analytics');
+  }
+};

@@ -91,6 +91,11 @@ export default function BannerMobileCards({
 
             <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
               <PlacementLabel placement={banner.placement} />
+              <div className="flex items-center gap-3 text-xs tabular-nums text-gray-500">
+                <span>{(banner.impressions ?? 0).toLocaleString()} imp</span>
+                <span>{(banner.clicks ?? 0).toLocaleString()} clk</span>
+                <span>{(banner.clickThroughRate ?? 0).toFixed(1)}% CTR</span>
+              </div>
               <div className="flex items-center gap-1">
                 {(isActive || isPaused) && (
                   <ActionIcon

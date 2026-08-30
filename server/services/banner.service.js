@@ -1222,6 +1222,77 @@ async function getBannerStatistics(query) {
   };
 }
 
+/**
+ * Get daily trends from BannerDailyStat — last N days, optionally scoped
+ * to a single banner or a placement.
+ *
+ * Returns: [{ date: '2026-08-28', impressions: 12, clicks: 3, conversions: 1 }, …]
+ */
+const getBannerTrends = async (options = {}) => {
+  const { bannerId, placement, days = 30 } = options;
+  const BannerDailyStat = require('../models/BannerDailyStat');
+
+  const since = new Date();
+  since.setUTCHours(0, 0, 0, 0);
+  since.setUTCDate(since.getUTCDate() - days + 1);
+
+  // Build the match stage — optionally filter by banner or by placement.
+  const match = { date: { $gte: since } };
+
+  if (bannerId) {
+    if (!mongoose.Types.ObjectId.isValid(bannerId)) {
+      throw new ValidationError('Invalid banner ID format');
+    }
+    match.banner = new mongoose.Types.ObjectId(bannerId);
+  } else if (placement) {
+    // Resolve banner IDs for this placement, then filter stats by them.
+    const bannerIds = await Banner.find({ placement }).distinct('_id').lean();
+    if (!bannerIds.length) return [];
+    match.banner = { $in: bannerIds };
+  }
+
+  const rows = await BannerDailyStat.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$date',
+        impressions: { $sum: '$impressions' },
+        clicks: { $sum: '$clicks' },
+        conversions: { $sum: '$conversions' },
+      },
+    },
+    { $sort: { _id: 1 } },
+    {
+      $project: {
+        _id: 0,
+        date: { $dateToString: { format: '%Y-%m-%d', date: '$_id' } },
+        impressions: 1,
+        clicks: 1,
+        conversions: 1,
+      },
+    },
+  ]);
+
+  return rows;
+};
+
+/**
+ * Combined analytics overview — summary + placement/type breakdown +
+ * top performers + daily trends. Serves the admin analytics dashboard
+ * in a single call.
+ */
+const getAnalyticsOverview = async (options = {}) => {
+  const [aggregate, trends] = await Promise.all([
+    getAggregateAnalytics(options),
+    getBannerTrends({ days: options.days || 30 }),
+  ]);
+
+  return {
+    ...aggregate,
+    trends,
+  };
+};
+
 module.exports = {
   createBanner,
   getAllBanners,
@@ -1241,6 +1312,8 @@ module.exports = {
   updateBannerOrder,
   getBannerAnalytics,
   getAggregateAnalytics,
+  getBannerTrends,
+  getAnalyticsOverview,
   cloneBanner,
   updateScheduledBannersStatus,
 };

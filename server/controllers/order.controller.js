@@ -47,7 +47,7 @@ const LOYALTY_POINTS_PER_NGN = 1 / 100; // 1 pt per ₦100 base rate
  * @access  Private/Public (Guest checkout supported)
  */
 exports.createOrder = asyncHandler(async (req, res) => {
-  const { customer, shipping, paymentMethod, paymentDetails, items, subtotal, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus, utmSource, utmMedium, utmCampaign } = req.body;
+  const { customer, shipping, paymentMethod, paymentDetails, items, subtotal, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus, utmSource, utmMedium, utmCampaign, bannerId } = req.body;
 
   // Fold accepted aliases ('bank', 'cod', …) into a storable enum value. The
   // route validator has already rejected anything unrecognisable, so a null here
@@ -334,6 +334,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     utmSource: utmSource || '',
     utmMedium: utmMedium || '',
     utmCampaign: utmCampaign || '',
+    bannerId: bannerId || null,
     status: status || 'pending',
     platformCommissionTotal: calculatedPlatformCommission,
   };
@@ -492,6 +493,14 @@ exports.createOrder = asyncHandler(async (req, res) => {
         } catch (loyaltyErr) {
           console.error('❌ Loyalty credit error:', loyaltyErr.message);
         }
+      }
+
+      // 5. Banner conversion — fire-and-forget when the order came via a banner link.
+      if (bannerId) {
+        const { trackConversion } = require('../services/banner.service');
+        trackConversion(bannerId)
+          .then(() => console.log(`✅ Banner conversion tracked for ${bannerId}`))
+          .catch((e) => console.error('❌ Banner conversion tracking failed:', e.message));
       }
 
     } catch (err) {

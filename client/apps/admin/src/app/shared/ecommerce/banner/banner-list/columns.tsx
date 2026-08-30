@@ -249,6 +249,26 @@ export const bannersListColumns = [
     cell: ({ row }) => <PriorityBadge priority={row.original?.priority} />,
   }),
 
+  columnHelper.accessor('impressions', {
+    header: 'Impressions',
+    size: 100,
+    cell: ({ row }) => (
+      <Text className="tabular-nums text-gray-600">
+        {(row.original?.impressions ?? 0).toLocaleString()}
+      </Text>
+    ),
+  }),
+
+  columnHelper.accessor('clicks', {
+    header: 'Clicks',
+    size: 80,
+    cell: ({ row }) => (
+      <Text className="tabular-nums text-gray-600">
+        {(row.original?.clicks ?? 0).toLocaleString()}
+      </Text>
+    ),
+  }),
+
   columnHelper.accessor('status', {
     header: 'Status',
     size: 110,
