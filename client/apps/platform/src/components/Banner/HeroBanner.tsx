@@ -130,11 +130,20 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   const needsFallback = banners.length === 0 && useFallback;
   const slides = needsFallback ? FALLBACK_SLIDES : banners;
 
-  // No banners and no fallback enabled: render nothing, letting the caller's
-  // empty state show through (e.g. the shop hero's themed gradient frame).
-  // Guarded here (before any slide access) so we never dereference an empty set.
-  if (!loading && banners.length === 0 && !useFallback) {
-    return null;
+  // No slides at all: we must not dereference an empty array. While still
+  // loading we show the spinner (there may be banners coming); once the fetch
+  // settles with nothing we render null so the caller's own empty state (e.g.
+  // the shop hero's themed gradient frame) takes over. Guarded here, before
+  // ANY slide access, because all the per-slide derived values below read from
+  // `slide` — an undefined `slide` would throw further down.
+  if (slides.length === 0) {
+    return loading ? (
+      <div className="relative w-full aspect-[2/1] max-h-[80vh] bg-[#1A1A2E] overflow-hidden">
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-10 h-10 border-3 border-red-700/30 border-t-red-600 rounded-full animate-spin" />
+        </div>
+      </div>
+    ) : null;
   }
 
   // `currentIndex` can outlive a shrinking slide array (fallbacks have 2 entries,
@@ -288,16 +297,6 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     if (style === 'secondary') return 'bg-white/12 border border-amber-300/35 text-white hover:bg-white/22 shadow-[0_2px_18px_rgba(245,176,66,0.18)]';
     return 'bg-transparent text-white hover:underline';
   };
-
-  if (loading) {
-    return (
-      <div className="relative w-full aspect-[2/1] max-h-[80vh] bg-[#1A1A2E] overflow-hidden">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-10 h-10 border-3 border-red-700/30 border-t-red-600 rounded-full animate-spin" />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
