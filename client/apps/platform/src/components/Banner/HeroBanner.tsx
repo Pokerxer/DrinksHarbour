@@ -136,7 +136,12 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   // May be undefined only when slides is empty — guarded by `hasSlides` in the
   // render (after every hook) so we never dereference an empty set.
   const slide = slides[currentIndex] ?? slides[0];
-  const imgSrc = imgErrors[slide?._id as string] ? '/images/images/product/1000x1000.png' : slide?.image?.url;
+  // All the per-slide display controls below read from `slide`, but it is only
+  // undefined when `hasSlides` is false — in which case the render tail returns
+  // early and none of that JSX runs. Use a safe empty object for those derived
+  // values so the (dead in that case) reads can't throw on `undefined`.
+  const cur = slide ?? ({} as BannerData);
+  const imgSrc = imgErrors[cur._id] ? '/images/images/product/1000x1000.png' : slide?.image?.url;
   // Animated GIFs must skip the Next image optimizer so they keep animating.
   const gifSrc = /\.gif(\?|$)/i.test(imgSrc);
 
@@ -144,22 +149,22 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   // Every hardcoded blur/alpha below is SCALED by these, never replaced. At
   // 100 the emitted CSS is byte-identical to the original design.
   const clamp01 = (n: number | undefined, d = 100) => Math.max(0, Math.min(100, n ?? d)) / 100;
-  const blurK = clamp01(slide.blurIntensity);
+  const blurK = clamp01(cur.blurIntensity);
   // The frame is a purpose-built 2:1, so 'contain' is the safe default: a 2:1
   // image fills it exactly, and anything else letterboxes rather than losing
   // content. Admins can opt into cropping with imageFit: 'cover'.
-  const fitContain = slide.imageFit !== 'cover';
+  const fitContain = cur.imageFit !== 'cover';
 
   // A fully designed banner carries its own headline, CTA and feature row in
   // the artwork. When the admin leaves every copy field empty we treat it as
   // image-only and render no overlay at all — otherwise the trust pills and
   // CTA would sit on top of the ones baked into the image.
-  const hasCopy = !!(slide.title || slide.subtitle || slide.description || slide.ctaText);
+  const hasCopy = !!(cur.title || cur.subtitle || cur.description || cur.ctaText);
 
   // The gradient/vignette exists only to make overlay copy legible, so an
   // image-only banner defaults to none of it — otherwise a designed artwork
   // arrives pre-washed. An explicit gradientIntensity always wins.
-  const gradK = clamp01(slide.gradientIntensity, hasCopy ? 100 : 0);
+  const gradK = clamp01(cur.gradientIntensity, hasCopy ? 100 : 0);
 
   // `+(...).toFixed(2)` drops trailing zeros: 14 * 1 -> "14px", not "14.00px".
   const bpx = (n: number) => `blur(${+(n * blurK).toFixed(2)}px)`;
