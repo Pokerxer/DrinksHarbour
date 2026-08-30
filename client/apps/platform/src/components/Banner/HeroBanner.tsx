@@ -130,6 +130,13 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   const needsFallback = banners.length === 0 && useFallback;
   const slides = needsFallback ? FALLBACK_SLIDES : banners;
 
+  // No banners and no fallback enabled: render nothing, letting the caller's
+  // empty state show through (e.g. the shop hero's themed gradient frame).
+  // Guarded here (before any slide access) so we never dereference an empty set.
+  if (!loading && banners.length === 0 && !useFallback) {
+    return null;
+  }
+
   // `currentIndex` can outlive a shrinking slide array (fallbacks have 2 entries,
   // a fetch may return 1), so fall back to the first slide rather than crashing.
   const slide = slides[currentIndex] ?? slides[0];
@@ -281,12 +288,6 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     if (style === 'secondary') return 'bg-white/12 border border-amber-300/35 text-white hover:bg-white/22 shadow-[0_2px_18px_rgba(245,176,66,0.18)]';
     return 'bg-transparent text-white hover:underline';
   };
-
-  // No banners and no fallback enabled: render nothing, letting the caller's
-  // empty state show through (e.g. the shop hero's themed gradient frame).
-  if (!loading && !useFallback && banners.length === 0) {
-    return null;
-  }
 
   if (loading) {
     return (
