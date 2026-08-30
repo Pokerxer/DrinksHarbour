@@ -488,6 +488,8 @@ export default async function BrandPage({
           linkType={brand.bannerLinkType}
           alt={brand.name}
           className="m-4 md:m-6"
+          entityType="brand"
+          entityId={brand._id}
         />
       )}
 

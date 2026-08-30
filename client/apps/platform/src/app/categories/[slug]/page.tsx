@@ -534,6 +534,8 @@ export default async function CategoryPage({
           linkType={category.bannerLinkType}
           alt={name}
           className="m-4 md:m-6"
+          entityType="category"
+          entityId={String(category._id)}
         />
       )}
 

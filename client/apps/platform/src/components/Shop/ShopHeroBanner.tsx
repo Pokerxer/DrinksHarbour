@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -456,29 +456,39 @@ function BannerFrame({
   label,
   dark,
   children,
+  frameRef,
+  onClick,
 }: {
   href: string | null;
   external: boolean;
   label: string;
   dark: string;
   children: React.ReactNode;
+  frameRef?: React.Ref<HTMLElement>;
+  onClick?: () => void;
 }) {
   const className = 'relative block w-full aspect-[2/1] max-h-[80vh] overflow-hidden';
   const style = { backgroundColor: dark };
 
   if (!href) {
-    return <div className={className} style={style}>{children}</div>;
+    return (
+      <div ref={frameRef as React.Ref<HTMLDivElement>} className={className} style={style}>
+        {children}
+      </div>
+    );
   }
 
   if (external) {
     return (
       <a
+        ref={frameRef as React.Ref<HTMLAnchorElement>}
         href={href}
         target="_blank"
         rel="noopener noreferrer"
         aria-label={label}
         className={`${className} cursor-pointer`}
         style={style}
+        onClick={onClick}
       >
         {children}
       </a>
@@ -486,7 +496,14 @@ function BannerFrame({
   }
 
   return (
-    <Link href={href} aria-label={label} className={`${className} cursor-pointer`} style={style}>
+    <Link
+      ref={frameRef as React.Ref<HTMLAnchorElement>}
+      href={href}
+      aria-label={label}
+      className={`${className} cursor-pointer`}
+      style={style}
+      onClick={onClick}
+    >
       {children}
     </Link>
   );
@@ -652,6 +669,47 @@ export default function ShopHeroBanner({
 
   const { dark, mid, glow, accent } = theme;
 
+  // ── Entity banner analytics ─────────────────────────────────────────────────
+  // Track impressions and clicks on the hero banner for the resolved entity
+  // (brand / category / subcategory) so the admin analytics dashboard has data.
+  const heroRef = useRef<HTMLElement | null>(null);
+  const hasTrackedImpression = useRef(false);
+  const ENTITY_API = process.env.NEXT_PUBLIC_API_URL || '';
+
+  const analyticsEntity = useMemo(() => {
+    if (brandOnly && dbBrand?._id) return { entityType: 'brand' as const, entityId: String(dbBrand._id) };
+    if (subList.length === 1 && dbSub?.bannerLink && dbSub?._id) return { entityType: 'subcategory' as const, entityId: String(dbSub._id) };
+    if (dbCat?._id) return { entityType: 'category' as const, entityId: String(dbCat._id) };
+    return null;
+  }, [brandOnly, dbBrand, dbSub, subList, dbCat]);
+
+  // Fire impression beacon once when the hero scrolls into view.
+  useEffect(() => {
+    if (!analyticsEntity || !heroRef.current) return;
+    const el = heroRef.current;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !hasTrackedImpression.current) {
+        hasTrackedImpression.current = true;
+        try {
+          fetch(`${ENTITY_API}/api/banners/entity/${analyticsEntity.entityType}/${analyticsEntity.entityId}/impression`, {
+            method: 'POST', keepalive: true,
+          });
+        } catch { /* fire-and-forget */ }
+      }
+    }, { threshold: 0.3 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [analyticsEntity, ENTITY_API]);
+
+  const trackHeroClick = useCallback(() => {
+    if (!analyticsEntity) return;
+    try {
+      fetch(`${ENTITY_API}/api/banners/entity/${analyticsEntity.entityType}/${analyticsEntity.entityId}/click`, {
+        method: 'POST', keepalive: true,
+      });
+    } catch { /* fire-and-forget */ }
+  }, [analyticsEntity, ENTITY_API]);
+
   return (
     <div className="w-full">
       {/* ── Hero frame — same capped 2:1 box as the homepage HeroBanner ──────── */}
@@ -666,6 +724,8 @@ export default function ShopHeroBanner({
         external={bannerLinkExternal}
         label={`${displayLabel} — view offer`}
         dark={dark}
+        frameRef={heroRef as React.RefObject<HTMLElement>}
+        onClick={trackHeroClick}
       >
         {/* Visually hidden heading — invisible to shoppers, read by crawlers and
             screen readers so the category/brand page keeps its main <h1>. */}

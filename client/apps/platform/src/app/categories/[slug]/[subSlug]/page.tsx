@@ -513,6 +513,8 @@ export default async function SubCategoryPage({
           linkType={sub.bannerLinkType}
           alt={name}
           className="m-4 md:m-6"
+          entityType="subcategory"
+          entityId={String(sub._id)}
         />
       )}
 
