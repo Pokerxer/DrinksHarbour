@@ -442,6 +442,14 @@ function ShopPageContent({
     !maxABVParam &&
     !minRatingParam;
 
+  // Filters that carry their own themed banner in the storefront: category,
+  // subcategory and brand each render an individual hero (their bannerImage /
+  // bannerLink) via ShopHeroBanner. Every other filter (origin, flavor, size,
+  // volume, price, ABV, rating) and any keyword search has no banner of its
+  // own, so it falls back to the main admin `shop` carousel.
+  const hasOwnBanner = !!(categoryParam || subcategoryParam || brandParam);
+  const useShopCarousel = isPlainShop || !hasOwnBanner;
+
   const TABS = useMemo(() => [
     {
       key: 'all' as SaleTab,
@@ -479,7 +487,7 @@ function ShopPageContent({
         {/* Render the hero (and its keyword <h1>) even while the grid loads or
             when a filter returns no products, so indexable filter pages always
             expose their heading to crawlers instead of a bare spinner. */}
-        {!isSalePage && !searchQuery && (isPlainShop ? (
+        {!isSalePage && (useShopCarousel ? (
           <ShopHeroCarousel
             category={categoryParam}
             subcategory={subcategoryParam}
@@ -713,16 +721,20 @@ function ShopPageContent({
         </>
       )}
 
-      {/* ── Category / subcategory hero banner ──────────────────────────── */}
-      {!isSalePage && !searchQuery && (
-        isPlainShop ? (
-          <ShopHeroCarousel
-            category={categoryParam}
-            subcategory={subcategoryParam}
-            brand={brandParam}
-            heroSeed={heroSeed}
-          />
-        ) : (
+      {/* ── Hero banner ────────────────────────────────────────────────────
+          Filters that have their own themed banner (category / subcategory /
+          brand) render an individual hero (ShopHeroBanner + category_top).
+          Everything else — plain/shop, pagination, and any filter or search
+          without its own banner — falls back to the main shop carousel. */}
+      {!isSalePage && (useShopCarousel ? (
+        <ShopHeroCarousel
+          category={categoryParam}
+          subcategory={subcategoryParam}
+          brand={brandParam}
+          heroSeed={heroSeed}
+        />
+      ) : (
+        <>
           <ShopHeroBanner
             category={categoryParam}
             subcategory={subcategoryParam}
@@ -730,19 +742,17 @@ function ShopPageContent({
             totalProducts={totalProducts}
             seed={heroSeed}
           />
-        )
-      )}
-
-
-      {/* ── Category Top — admin-managed banner for category browsing ────── */}
-      {!isSalePage && !searchQuery && (categoryParam || subcategoryParam) && (
-        <PlacementBanner
-          placement="category_top"
-          variant="hero"
-          limit={1}
-          className="container mx-auto px-3 pt-4 sm:px-4"
-        />
-      )}
+          {/* Category Top — admin-managed banner for category browsing */}
+          {(categoryParam || subcategoryParam) && (
+            <PlacementBanner
+              placement="category_top"
+              variant="hero"
+              limit={1}
+              className="container mx-auto px-3 pt-4 sm:px-4"
+            />
+          )}
+        </>
+      ))}
 
       {/* ── Search results header ────────────────────────────────────────── */}
       {searchQuery && (
