@@ -276,8 +276,9 @@ const getAllBrands = async (queryParams = {}) => {
     sortObj.score = { $meta: 'textScore' };
   }
 
-  // Field selection - include all image fields
-  let selectFields = 'name slug logo logoVariants featuredImage bannerImage gallery brandColors tagline description shortDescription productCount isFeatured verified countryOfOrigin primaryCategory brandType founded isPremium popularityScore createdAt updatedAt';
+  // Field selection - include all image fields and the storefront hero CTA
+  // (bannerLink/bannerLinkType) used by the shop hero for brand filter pages.
+  let selectFields = 'name slug logo logoVariants featuredImage bannerImage gallery brandColors tagline description shortDescription productCount isFeatured verified countryOfOrigin primaryCategory brandType founded isPremium popularityScore createdAt updatedAt bannerLink bannerLinkType';
   
   if (fields) {
     const allowedFields = fields.split(',').map(f => f.trim()).filter(f => 
@@ -286,7 +287,8 @@ const getAllBrands = async (queryParams = {}) => {
        'isFeatured', 'verified', 'countryOfOrigin', 'primaryCategory', 'brandType', 
        'founded', 'isPremium', 'popularityScore', 'isPopular', 'isTrending', 
        'isCraft', 'isLocal', 'createdAt', 'updatedAt', 'viewCount', 'followersCount',
-       'website', 'socialMedia', 'headquarters', 'certifications'].includes(f)
+       'website', 'socialMedia', 'headquarters', 'certifications',
+       'bannerLink', 'bannerLinkType'].includes(f)
     );
     if (allowedFields.length > 0) {
       selectFields = allowedFields.join(' ');
