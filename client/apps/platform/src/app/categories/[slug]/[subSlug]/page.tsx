@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
+import LinkableBanner from '@/components/Banner/linkable-banner';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -503,6 +504,17 @@ export default async function SubCategoryPage({
 }`,
         }}
       />
+
+      {/* ── Clickable promo banner (admin-set bannerImage + bannerLink) ──── */}
+      {heroImage && (
+        <LinkableBanner
+          image={heroImage}
+          link={sub.bannerLink}
+          linkType={sub.bannerLinkType}
+          alt={name}
+          className="m-4 md:m-6"
+        />
+      )}
 
       {/* ── Hero — the label ─────────────────────────────────────────────── */}
       <section

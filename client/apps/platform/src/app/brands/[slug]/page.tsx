@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
+import LinkableBanner from '@/components/Banner/linkable-banner';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -478,6 +479,17 @@ export default async function BrandPage({
 }`,
         }}
       />
+
+      {/* ── Clickable promo banner (admin-set bannerImage + bannerLink) ──── */}
+      {brand.bannerImage?.url && (
+        <LinkableBanner
+          image={brand.bannerImage?.url || brand.featuredImage?.url}
+          link={brand.bannerLink}
+          linkType={brand.bannerLinkType}
+          alt={brand.name}
+          className="m-4 md:m-6"
+        />
+      )}
 
       {/* ── Hero — the label ─────────────────────────────────────────────── */}
       <section
