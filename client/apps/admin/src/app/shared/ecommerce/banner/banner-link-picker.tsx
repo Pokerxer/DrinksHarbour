@@ -24,7 +24,7 @@ import {
   BANNER_LINK_TYPE_OPTIONS,
   type BannerLinkType,
 } from '@/types/banner.types';
-import LinkSelector from './link-selector';
+import LinkSelector from './create-edit/link-selector';
 
 function resolveType(linkType: BannerLinkType): 'internal' | 'external' {
   return linkType === 'external' ? 'external' : 'internal';
