@@ -249,16 +249,20 @@ export function CtaSection({
   token,
   targetProduct,
   targetCategory,
+  targetBrand,
   onProductSelect,
   onCategorySelect,
+  onBrandSelect,
   enhancingField,
   onEnhanceField,
 }: SectionBaseProps & {
   token: string;
   targetProduct?: { _id: string; name: string };
   targetCategory?: { _id: string; name: string };
+  targetBrand?: { _id: string; name: string };
   onProductSelect: (p: { _id: string; name: string } | null) => void;
   onCategorySelect: (c: { _id: string; name: string } | null) => void;
+  onBrandSelect: (b: { _id: string; name: string } | null) => void;
   enhancingField: string | null;
   onEnhanceField: (field: 'title' | 'subtitle' | 'ctaText') => void;
 }) {
@@ -281,6 +285,7 @@ export function CtaSection({
             set('linkType', v?.value ?? v);
             onProductSelect(null);
             onCategorySelect(null);
+            onBrandSelect(null);
             set('ctaLink', '');
           }}
         />
@@ -289,21 +294,32 @@ export function CtaSection({
           linkType={formData.linkType}
           targetProduct={targetProduct}
           targetCategory={targetCategory}
+          targetBrand={targetBrand}
           onProductSelect={(product) => {
             onProductSelect(product);
             onCategorySelect(null);
+            onBrandSelect(null);
             if (product) {
-              set(
-                'ctaLink',
-                `/shop?search=${encodeURIComponent(product.name)}`
-              );
+              // Canonical storefront path — `_id` is the slug
+              set('ctaLink', `/product/${product._id}`);
             }
           }}
           onCategorySelect={(category) => {
             onCategorySelect(category);
             onProductSelect(null);
+            onBrandSelect(null);
             if (category) {
-              set('ctaLink', `/shop?category=${category._id}`);
+              // Canonical storefront path — `_id` is the slug
+              set('ctaLink', `/categories/${category._id}`);
+            }
+          }}
+          onBrandSelect={(brand) => {
+            onBrandSelect(brand);
+            onProductSelect(null);
+            onCategorySelect(null);
+            if (brand) {
+              // Canonical storefront path — `_id` is the slug
+              set('ctaLink', `/brands/${brand._id}`);
             }
           }}
           token={token}
@@ -353,9 +369,22 @@ export function CtaSection({
           placeholder="https://example.com/shop"
           value={formData.ctaLink || ''}
           onChange={(e) => set('ctaLink', e.target.value)}
+          hint={
+            formData.linkType === 'internal' || formData.linkType === 'page'
+              ? 'Path relative to storefront, e.g. /shop'
+              : formData.linkType === 'external'
+                ? 'Full URL including https://'
+                : undefined
+          }
         />
         {/* Whole-banner click-through */}
-        <div className="flex items-center justify-between rounded-lg border border-gray-200 p-4">
+        <div
+          className={`flex items-center justify-between rounded-lg border p-4 ${
+            formData.ctaLink
+              ? 'border-gray-200'
+              : 'border-gray-100 bg-gray-50/50'
+          }`}
+        >
           <div>
             <p className="font-medium text-gray-900">Whole Banner Clickable</p>
             <p className="text-sm text-gray-500">
@@ -367,6 +396,7 @@ export function CtaSection({
           <Switch
             checked={formData.imageClickable ?? true}
             onChange={(checked) => set('imageClickable', checked)}
+            disabled={!formData.ctaLink}
           />
         </div>
       </div>

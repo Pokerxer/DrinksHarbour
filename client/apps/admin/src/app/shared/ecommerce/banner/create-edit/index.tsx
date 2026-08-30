@@ -205,26 +205,46 @@ export default function CreateEditBanner({
       data.deviceTargeting || { desktop: true, mobile: true, tablet: true }
     );
 
+    // ── Reconstruct linked-target UI state ────────────────────────────────
+    // The API populates target refs, so prefer them.  When they're absent
+    // (e.g. a brand link that was saved before brand selectors existed)
+    // fall back to parsing the ctaLink canonical path for the slug.
+    const cta = data.ctaLink || '';
+
     if (data.targetProduct) {
       const p = data.targetProduct as any;
       setTargetProduct({
         _id: typeof p === 'object' ? p.slug || p._id : p,
         name: typeof p === 'object' ? p.name || '' : '',
       });
+    } else if (data.linkType === 'product') {
+      // /product/<slug>
+      const slug = cta.replace(/^\//, '').split('/')[1] || '';
+      if (slug) setTargetProduct({ _id: slug, name: slug.replace(/-/g, ' ') });
     }
+
     if (data.targetCategory) {
       const c = data.targetCategory as any;
       setTargetCategory({
         _id: typeof c === 'object' ? c.slug || c._id : c,
         name: typeof c === 'object' ? c.name || '' : '',
       });
+    } else if (data.linkType === 'category') {
+      // /categories/<slug>
+      const slug = cta.replace(/^\//, '').split('/')[1] || '';
+      if (slug) setTargetCategory({ _id: slug, name: slug.replace(/-/g, ' ') });
     }
+
     if ((data as any).targetBrand) {
       const b = (data as any).targetBrand;
       setTargetBrand({
-        _id: typeof b === 'object' ? b._id || b.id : b,
+        _id: typeof b === 'object' ? b.slug || b._id || b.id : b,
         name: typeof b === 'object' ? b.name || '' : '',
       });
+    } else if (data.linkType === 'brand') {
+      // /brands/<slug>
+      const slug = cta.replace(/^\//, '').split('/')[1] || '';
+      if (slug) setTargetBrand({ _id: slug, name: slug.replace(/-/g, ' ') });
     }
   }
 
@@ -394,8 +414,10 @@ export default function CreateEditBanner({
             token={token}
             targetProduct={targetProduct ?? undefined}
             targetCategory={targetCategory ?? undefined}
+            targetBrand={targetBrand ?? undefined}
             onProductSelect={setTargetProduct}
             onCategorySelect={setTargetCategory}
+            onBrandSelect={setTargetBrand}
             enhancingField={ai.enhancingField}
             onEnhanceField={ai.handleEnhanceField}
           />
