@@ -423,9 +423,9 @@ function ShopPageContent({
   const isSalePage = sale === 'true';
 
   // The `shop` placement carousel is the landing banner for /shop itself — it
-  // shows only on the bare page. Any filter, search, sale view or pagination
-  // turns it off so the results stay the focus (the category/brand hero and
-  // `category_top` slot cover those views instead).
+  // shows on the bare page and its paginated siblings (/shop?page=N). Any
+  // filter, search or sale view turns it off so the results stay the focus
+  // (the category/brand hero and `category_top` slot cover those instead).
   const isPlainShop =
     !isSalePage &&
     !searchQuery &&
@@ -440,8 +440,7 @@ function ShopPageContent({
     !maxPriceParam &&
     !minABVParam &&
     !maxABVParam &&
-    !minRatingParam &&
-    currentPage === 1;
+    !minRatingParam;
 
   const TABS = useMemo(() => [
     {
