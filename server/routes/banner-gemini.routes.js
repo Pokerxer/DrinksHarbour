@@ -39,7 +39,7 @@ const generateBannerValidation = [
     .withMessage('Invalid banner type'),
   body('placement')
     .optional()
-    .isIn(['home_hero', 'home_secondary', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'])
+    .isIn(['home_hero', 'home_secondary', 'shop', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'])
     .withMessage('Invalid placement'),
   body('style')
     .optional()
@@ -81,7 +81,7 @@ const generateSuggestionsValidation = [
     .withMessage('Invalid banner type'),
   body('placement')
     .optional()
-    .isIn(['home_hero', 'home_secondary', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'])
+    .isIn(['home_hero', 'home_secondary', 'shop', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'])
     .withMessage('Invalid placement'),
   body('style')
     .optional()

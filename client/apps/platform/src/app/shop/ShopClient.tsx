@@ -12,6 +12,7 @@ const _shopCache = new Map<
 const SHOP_CACHE_TTL = 30_000;
 import Shop from '@/components/Shop';
 import ShopHeroBanner from '@/components/Shop/ShopHeroBanner';
+import ShopHeroCarousel from '@/components/Shop/ShopHeroCarousel';
 import PlacementBanner from '@/components/Banner/PlacementBanner';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
@@ -421,6 +422,27 @@ function ShopPageContent({
   // ── TABS must be defined before any early returns (Rules of Hooks) ─────────
   const isSalePage = sale === 'true';
 
+  // The `shop` placement carousel is the landing banner for /shop itself — it
+  // shows only on the bare page. Any filter, search, sale view or pagination
+  // turns it off so the results stay the focus (the category/brand hero and
+  // `category_top` slot cover those views instead).
+  const isPlainShop =
+    !isSalePage &&
+    !searchQuery &&
+    !categoryParam &&
+    !subcategoryParam &&
+    !brandParam &&
+    !originParam &&
+    !flavorParam &&
+    !volumeParam &&
+    !sizeParam &&
+    !minPriceParam &&
+    !maxPriceParam &&
+    !minABVParam &&
+    !maxABVParam &&
+    !minRatingParam &&
+    currentPage === 1;
+
   const TABS = useMemo(() => [
     {
       key: 'all' as SaleTab,
@@ -458,7 +480,14 @@ function ShopPageContent({
         {/* Render the hero (and its keyword <h1>) even while the grid loads or
             when a filter returns no products, so indexable filter pages always
             expose their heading to crawlers instead of a bare spinner. */}
-        {!isSalePage && !searchQuery && (
+        {!isSalePage && !searchQuery && (isPlainShop ? (
+          <ShopHeroCarousel
+            category={categoryParam}
+            subcategory={subcategoryParam}
+            brand={brandParam}
+            heroSeed={heroSeed}
+          />
+        ) : (
           <ShopHeroBanner
             category={categoryParam}
             subcategory={subcategoryParam}
@@ -466,7 +495,7 @@ function ShopPageContent({
             totalProducts={totalProducts}
             seed={heroSeed}
           />
-        )}
+        ))}
         <div className="min-h-[50vh] flex items-center justify-center">
           <LoadingSpinner variant="bounce" color="rose" size="lg" text={isSalePage ? 'Loading deals…' : 'Finding the best drinks…'} />
         </div>
@@ -687,13 +716,22 @@ function ShopPageContent({
 
       {/* ── Category / subcategory hero banner ──────────────────────────── */}
       {!isSalePage && !searchQuery && (
-        <ShopHeroBanner
-          category={categoryParam}
-          subcategory={subcategoryParam}
-          brand={brandParam}
-          totalProducts={totalProducts}
-          seed={heroSeed}
-        />
+        isPlainShop ? (
+          <ShopHeroCarousel
+            category={categoryParam}
+            subcategory={subcategoryParam}
+            brand={brandParam}
+            heroSeed={heroSeed}
+          />
+        ) : (
+          <ShopHeroBanner
+            category={categoryParam}
+            subcategory={subcategoryParam}
+            brand={brandParam}
+            totalProducts={totalProducts}
+            seed={heroSeed}
+          />
+        )
       )}
 
 

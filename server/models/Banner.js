@@ -62,7 +62,7 @@ const bannerSchema = new mongoose.Schema(
 
     placement: {
       type: String,
-      enum: ['home_hero', 'home_secondary', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'],
+      enum: ['home_hero', 'home_secondary', 'shop', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'],
       default: 'home_hero',
       required: true,
     },

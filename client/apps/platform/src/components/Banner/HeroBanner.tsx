@@ -15,6 +15,16 @@ interface HeroBannerProps {
   autoPlay?: boolean;
   showControls?: boolean;
   showIndicators?: boolean;
+  /**
+   * Show the built-in demo slides when the placement has no banners.
+   * True on the homepage, where an empty hero would leave a hole above the
+   * fold. Placements that have their own empty state (e.g. the shop hero,
+   * which falls back to its themed gradient frame) pass false and use
+   * `onEmpty` to take over.
+   */
+  useFallback?: boolean;
+  /** Called once when the fetch returns no banners and `useFallback` is false. */
+  onEmpty?: () => void;
 }
 
 interface BannerData {
@@ -78,6 +88,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   autoPlay = true,
   showControls = true,
   showIndicators = true,
+  useFallback = true,
+  onEmpty,
 }) => {
   const [banners, setBanners]       = useState<BannerData[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -98,17 +110,25 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
         const data = await res.json();
         if (data.success && Array.isArray(data.data) && data.data.length > 0) {
           setBanners(data.data);
+          return;
         }
+        // No banners for this placement.
+        if (!useFallback) onEmpty?.();
       } catch {
-        // use fallbacks
+        if (!useFallback) onEmpty?.();
+        // otherwise use fallbacks
       } finally {
         setLoading(false);
       }
     };
     fetchBanners();
-  }, [placement, limit]);
+  }, [placement, limit, useFallback, onEmpty]);
 
-  const slides = banners.length > 0 ? banners : FALLBACK_SLIDES;
+  // With useFallback (homepage), an empty fetch shows the demo slides so the
+  // hero never goes blank. Without it (shop hero), empty means "render nothing"
+  // so the placement can fall back to its own empty state.
+  const needsFallback = banners.length === 0 && useFallback;
+  const slides = needsFallback ? FALLBACK_SLIDES : banners;
 
   // `currentIndex` can outlive a shrinking slide array (fallbacks have 2 entries,
   // a fetch may return 1), so fall back to the first slide rather than crashing.
@@ -261,6 +281,12 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     if (style === 'secondary') return 'bg-white/12 border border-amber-300/35 text-white hover:bg-white/22 shadow-[0_2px_18px_rgba(245,176,66,0.18)]';
     return 'bg-transparent text-white hover:underline';
   };
+
+  // No banners and no fallback enabled: render nothing, letting the caller's
+  // empty state show through (e.g. the shop hero's themed gradient frame).
+  if (!loading && !useFallback && banners.length === 0) {
+    return null;
+  }
 
   if (loading) {
     return (

@@ -146,7 +146,7 @@ import { AnnouncementBanner } from '@/components/Banner';
 ### Banner Schema Types
 ```typescript
 type BannerType = 'hero' | 'promotional' | 'category' | 'product' | 'seasonal' | 'announcement' | 'custom';
-type Placement = 'home_hero' | 'home_secondary' | 'category_top' | 'product_page' | 'checkout' | 'sidebar' | 'footer' | 'popup' | 'header';
+type Placement = 'home_hero' | 'home_secondary' | 'shop' | 'category_top' | 'product_page' | 'checkout' | 'sidebar' | 'footer' | 'popup' | 'header';
 ```
 
 ---

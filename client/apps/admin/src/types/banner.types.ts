@@ -78,6 +78,7 @@ export type BannerType =
 export type BannerPlacement =
   | 'home_hero'
   | 'home_secondary'
+  | 'shop'
   | 'category_top'
   | 'product_page'
   | 'checkout'
@@ -290,6 +291,7 @@ export const BANNER_PLACEMENT_OPTIONS: {
 }[] = [
   { value: 'home_hero', label: 'Home Hero' },
   { value: 'home_secondary', label: 'Home Secondary' },
+  { value: 'shop', label: 'Shop Hero' },
   { value: 'category_top', label: 'Category Top' },
   { value: 'product_page', label: 'Product Page' },
   { value: 'checkout', label: 'Checkout' },

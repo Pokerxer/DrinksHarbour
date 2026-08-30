@@ -28,6 +28,11 @@ export const PLACEMENT_PREVIEW: Record<
     label: 'Home Secondary — promotional strip',
     layout: 'hero',
   },
+  shop: {
+    aspect: 'aspect-[21/9]',
+    label: 'Shop Hero — full-width carousel on /shop',
+    layout: 'hero',
+  },
   category_top: {
     aspect: 'aspect-[21/9]',
     label: 'Category Top — wide banner',
@@ -65,6 +70,7 @@ export const PLACEMENT_PREVIEW: Record<
 export const PLACEMENT_TYPE_HINT: Record<string, string> = {
   home_hero: 'hero',
   home_secondary: 'promotional',
+  shop: 'hero',
   category_top: 'category',
   product_page: 'product',
   checkout: 'promotional',
@@ -111,6 +117,24 @@ export function PlacementThumb({
               <div className={g} />
               <div className={g} />
               <div className={g} />
+            </div>
+          </>
+        );
+      case 'shop':
+        return (
+          <>
+            <div className={cn(g, 'h-1.5 flex-none')} />
+            <div className={cn(b, 'h-5 flex-none')} />
+            <div className="flex flex-1 gap-0.5">
+              <div className={cn(g, 'w-1/4')} />
+              <div className="grid flex-1 grid-cols-3 gap-0.5">
+                <div className={g} />
+                <div className={g} />
+                <div className={g} />
+                <div className={g} />
+                <div className={g} />
+                <div className={g} />
+              </div>
             </div>
           </>
         );

@@ -4,7 +4,7 @@
 // Enums mirrored from models/Banner.js so the AI layer can validate/snap without
 // importing the Mongoose model (keeps these helpers dependency-free + testable).
 const BANNER_TYPES = ['hero', 'promotional', 'category', 'product', 'seasonal', 'announcement', 'custom'];
-const BANNER_PLACEMENTS = ['home_hero', 'home_secondary', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'];
+const BANNER_PLACEMENTS = ['home_hero', 'home_secondary', 'shop', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'];
 const BANNER_VISIBLE_TO = ['all', 'guests', 'authenticated', 'new_customers', 'returning_customers', 'vip'];
 const BANNER_AI_STYLES = ['playful', 'elegant', 'urgent', 'calm'];
 const CONTENT_POSITIONS = ['top-left', 'top-center', 'top-right', 'center-left', 'center', 'center-right', 'bottom-left', 'bottom-center', 'bottom-right'];
