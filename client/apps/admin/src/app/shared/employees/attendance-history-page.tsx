@@ -48,6 +48,7 @@ import {
   type RatingTone,
 } from './attendance-rating-utils';
 import AttendanceCorrectionDrawer, {
+  draftFromRecord,
   type AttendanceDraft,
 } from './attendance-correction-drawer';
 import { refId } from '@/services/orgStructure.service';
@@ -156,23 +157,13 @@ export default function AttendanceHistoryPage({
   const name = data ? employeeName(data.employee) : 'Employee';
   const tone = rating ? bandTone(rating.band) : 'neutral';
 
-  /** Seed the drawer from a record. The person is fixed; times, date, note aren't. */
+  /** Seed the drawer from a record. The person is fixed; both ends are not. */
   function openCorrection(record: AttendanceRecord) {
-    const times = recordTimes(record, OFFSET);
     const person =
       record.employee && typeof record.employee !== 'string'
         ? record.employee
         : (data?.employee ?? null);
-    setDraft({
-      id: record._id,
-      employee: refId(record.employee),
-      employeeName: employeeName(person),
-      date: toLocalDateKey(record.clockIn, OFFSET),
-      inTime: times.in,
-      outTime: record.clockOut ? times.out : '',
-      note: record.note ?? '',
-      source: record.source,
-    });
+    setDraft(draftFromRecord(record, employeeName(person), OFFSET));
   }
 
   return (

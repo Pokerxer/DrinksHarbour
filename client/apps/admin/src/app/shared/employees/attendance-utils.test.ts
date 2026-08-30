@@ -17,6 +17,8 @@ import {
   groupAttendance,
   recordDateKey,
   entryUtcTimes,
+  impliedEndDate,
+  isEntryRangeValid,
   describeClock,
   normaliseBadgeScan,
   resolveKioskAuth,
@@ -517,19 +519,29 @@ describe('describeClock on an early departure', () => {
 describe('entryUtcTimes', () => {
   const OFFSET = 60; // Africa/Lagos, UTC+1 — matches LAGOS_OFFSET_MINUTES
 
-  it('turns a local day pair into UTC instants at the tenant offset', () => {
+  it('turns two local dates and times into UTC instants at the tenant offset', () => {
     const t = entryUtcTimes(
-      { date: '2026-08-10', inTime: '08:00', outTime: '16:00' },
+      {
+        startDate: '2026-08-10',
+        inTime: '08:00',
+        endDate: '2026-08-10',
+        outTime: '16:00',
+      },
       OFFSET
     );
     expect(t.clockIn).toBe('2026-08-10T07:00:00.000Z');
     expect(t.clockOut).toBe('2026-08-10T15:00:00.000Z');
   });
 
-  it('rolls an out at or before the in time onto the following day', () => {
+  it('preserves the given end date without guessing — the caller owns the day', () => {
     expect(
       entryUtcTimes(
-        { date: '2026-08-10', inTime: '22:00', outTime: '16:00' },
+        {
+          startDate: '2026-08-10',
+          inTime: '22:00',
+          endDate: '2026-08-11',
+          outTime: '16:00',
+        },
         OFFSET
       )
     ).toEqual({
@@ -538,20 +550,118 @@ describe('entryUtcTimes', () => {
     });
   });
 
-  it('leaves the record open when the out time is blank', () => {
+  it('leaves the record open when the out time is blank, ignoring the end date', () => {
     const t = entryUtcTimes(
-      { date: '2026-08-10', inTime: '09:00', outTime: '' },
+      {
+        startDate: '2026-08-10',
+        inTime: '09:00',
+        endDate: '2026-08-10',
+        outTime: '',
+      },
       OFFSET
     );
     expect(t.clockIn).toBe('2026-08-10T08:00:00.000Z');
     expect(t.clockOut).toBeNull();
   });
 
-  it('returns an empty instant for an unparseable time, refusing to guess', () => {
+  it('returns an empty instant for an unparseable date or time, refusing to guess', () => {
     const t = entryUtcTimes(
-      { date: '2026-08-10', inTime: 'nope', outTime: '16:00' },
+      {
+        startDate: '2026-08-10',
+        inTime: 'nope',
+        endDate: '2026-08-10',
+        outTime: '16:00',
+      },
       OFFSET
     );
     expect(t.clockIn).toBe('');
+  });
+
+  it('round-trips a record spanning several days instead of collapsing it', () => {
+    // The regression the two-date form exists to prevent: a forgotten clock-out
+    // closed two days later must survive being opened and saved untouched. The
+    // old single-date rule moved the end to the 11th and silently deleted a day.
+    expect(
+      entryUtcTimes(
+        {
+          startDate: '2026-08-10',
+          inTime: '22:00',
+          endDate: '2026-08-12',
+          outTime: '06:00',
+        },
+        OFFSET
+      ).clockOut
+    ).toBe('2026-08-12T05:00:00.000Z');
+  });
+});
+
+describe('impliedEndDate', () => {
+  it('keeps the same day when the out time is later than the in time', () => {
+    expect(impliedEndDate('2026-08-10', '09:00', '17:00')).toBe('2026-08-10');
+  });
+
+  it('rolls to the next day when the out time is at or before the in time', () => {
+    expect(impliedEndDate('2026-08-10', '22:00', '06:00')).toBe('2026-08-11');
+    expect(impliedEndDate('2026-08-10', '09:00', '09:00')).toBe('2026-08-11');
+  });
+
+  it('leaves an open record on its start day — there is no end to place', () => {
+    expect(impliedEndDate('2026-08-10', '09:00', '')).toBe('2026-08-10');
+  });
+});
+
+describe('isEntryRangeValid', () => {
+  it('accepts a clock-out after the clock-in', () => {
+    expect(
+      isEntryRangeValid({
+        startDate: '2026-08-10',
+        inTime: '09:00',
+        endDate: '2026-08-10',
+        outTime: '17:00',
+      })
+    ).toBe(true);
+  });
+
+  it('accepts an overnight pair once the end date carries the next day', () => {
+    expect(
+      isEntryRangeValid({
+        startDate: '2026-08-10',
+        inTime: '22:00',
+        endDate: '2026-08-11',
+        outTime: '06:00',
+      })
+    ).toBe(true);
+  });
+
+  it('refuses an end that lands at or before the start', () => {
+    // The server refuses this too ('Clock-out must be after clock-in'); the
+    // drawer says so first rather than spending a round trip to be told.
+    expect(
+      isEntryRangeValid({
+        startDate: '2026-08-10',
+        inTime: '22:00',
+        endDate: '2026-08-10',
+        outTime: '06:00',
+      })
+    ).toBe(false);
+    expect(
+      isEntryRangeValid({
+        startDate: '2026-08-10',
+        inTime: '09:00',
+        endDate: '2026-08-10',
+        outTime: '09:00',
+      })
+    ).toBe(false);
+  });
+
+  it('treats an open record as valid — there is nothing to compare', () => {
+    expect(
+      isEntryRangeValid({
+        startDate: '2026-08-10',
+        inTime: '09:00',
+        endDate: '2026-08-10',
+        outTime: '',
+      })
+    ).toBe(true);
   });
 });

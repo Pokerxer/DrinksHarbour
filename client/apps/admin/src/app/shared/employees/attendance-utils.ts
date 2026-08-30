@@ -238,28 +238,80 @@ export function recordDateKey(
 }
 
 /**
- * A local date + two wall-clock times → the UTC instants an entry or a
+ * Two local dates + two wall-clock times → the UTC instants an entry or a
  * correction stores.
  *
  * The inverse of `recordTimes`: the form collects wall clock, the API stores
  * instants, and both ends have to use the tenant's offset or an edit shifts the
- * record by an hour every time it is saved. An out at or before the in time
- * means the pair ran past midnight and ends the following day — the same rule
- * the roster applies to an overnight template.
+ * record by an hour every time it is saved.
+ *
+ * EACH END CARRIES ITS OWN DATE, and that is the load-bearing part. A single
+ * date plus an "ends the next day if the out is earlier" rule cannot express a
+ * shift that ran more than one night, and — worse — it silently REWRITES one
+ * that did: opening a record clocked in on the 10th and out on the 12th, then
+ * saving it untouched, would move the clock-out to the 11th. An admin correcting
+ * the note would lose a day of somebody's hours without being told.
  *
  * A blank `outTime` is a real instruction, not "unchanged": it leaves the
- * record open (or re-opens a closed one). An unparseable time returns '' for
- * that end, so the caller can reject it with its own words.
+ * record open (or re-opens a closed one). An unparseable date or time returns
+ * '' for that end, so the caller can reject it with its own words.
  */
 export function entryUtcTimes(
-  input: { date: string; inTime: string; outTime: string },
+  input: {
+    startDate: string;
+    inTime: string;
+    /** Ignored when `outTime` is blank — an open record has no end to place. */
+    endDate: string;
+    outTime: string;
+  },
   offsetMinutes = LAGOS_OFFSET_MINUTES
 ): { clockIn: string; clockOut: string | null } {
-  const clockIn = toUtcIso(input.date, input.inTime, offsetMinutes);
+  const clockIn = toUtcIso(input.startDate, input.inTime, offsetMinutes);
   if (!input.outTime) return { clockIn, clockOut: null };
-  const endDate =
-    input.outTime <= input.inTime ? addDays(input.date, 1) : input.date;
-  return { clockIn, clockOut: toUtcIso(endDate, input.outTime, offsetMinutes) };
+  return {
+    clockIn,
+    clockOut: toUtcIso(input.endDate, input.outTime, offsetMinutes),
+  };
+}
+
+/**
+ * Which local day the clock-out fell on, given the day the record started.
+ *
+ * The default an ADD form uses before anybody has typed an end date: an out at
+ * or before the in time means the pair ran past midnight, the same rule the
+ * roster applies to an overnight template. A correction never guesses this —
+ * it reads the stored `clockOut` — which is why the rule lives in its own
+ * function rather than inside `entryUtcTimes`.
+ */
+export function impliedEndDate(
+  startDate: string,
+  inTime: string,
+  outTime: string
+): string {
+  if (!outTime) return startDate;
+  return outTime <= inTime ? addDays(startDate, 1) : startDate;
+}
+
+/**
+ * Whether a pair of local dates and times describes a record the server will
+ * accept: the clock-out must come strictly after the clock-in.
+ *
+ * Mirrors `resolveAttendanceTimes` on the server, which refuses `end <= start`
+ * with "Clock-out must be after clock-in". Checked here too so the drawer can
+ * say so before a round trip, and so the two dates cannot be left in an order
+ * that reads as a typo. An open record (no `outTime`) is always valid.
+ */
+export function isEntryRangeValid(input: {
+  startDate: string;
+  inTime: string;
+  endDate: string;
+  outTime: string;
+}): boolean {
+  if (!input.outTime) return true;
+  const start = Date.parse(`${input.startDate}T${input.inTime}:00.000Z`);
+  const end = Date.parse(`${input.endDate}T${input.outTime}:00.000Z`);
+  if (Number.isNaN(start) || Number.isNaN(end)) return true; // let the caller's own parse guard speak
+  return end > start;
 }
 
 // ── The badge scan ───────────────────────────────────────────────────────────

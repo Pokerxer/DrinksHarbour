@@ -37,6 +37,7 @@ import AttendanceWeekTimesheet from './attendance-week-timesheet';
 import AttendanceExceptions from './attendance-exceptions';
 import AttendanceCorrectionDrawer, {
   NEW_ATTENDANCE_DRAFT,
+  draftFromRecord,
   type AttendanceDraft,
 } from './attendance-correction-drawer';
 import {
@@ -251,21 +252,11 @@ export default function AttendanceLogPage() {
   }, [view, load]);
 
   function openCorrection(record: AttendanceRecord) {
-    const times = recordTimes(record, OFFSET);
     const person =
       record.employee && typeof record.employee !== 'string'
         ? record.employee
         : employees.find((e) => e._id === refId(record.employee));
-    setDraft({
-      id: record._id,
-      employee: refId(record.employee),
-      employeeName: employeeName(person),
-      date: toLocalDateKey(record.clockIn, OFFSET),
-      inTime: times.in,
-      outTime: record.clockOut ? times.out : '',
-      note: record.note ?? '',
-      source: record.source,
-    });
+    setDraft(draftFromRecord(record, employeeName(person), OFFSET));
   }
 
   async function remove(record: AttendanceRecord) {
