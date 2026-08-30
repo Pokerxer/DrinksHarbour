@@ -31,6 +31,8 @@ import { getAdminCategories } from '@/services/category.service';
 import { routes } from '@/config/routes';
 import toast from 'react-hot-toast';
 import { PiTrashBold, PiUploadSimpleBold } from 'react-icons/pi';
+import BannerLinkPicker from '@/app/shared/ecommerce/banner/banner-link-picker';
+import type { BannerLinkType } from '@/types/banner.types';
 
 const QuillEditor = dynamic(() => import('@core/ui/quill-editor'), {
   ssr: false,
@@ -1112,17 +1114,23 @@ export default function CreateSubCategory({
                     onFile={(f) => setBannerImageFile(f)}
                     onClear={() => setBannerImageFile(null)}
                   />
-                  <div>
-                    <Input
-                      label="Banner Link"
-                      placeholder="/product/hennessy-vs"
-                      {...register('bannerLink')}
-                      error={errors.bannerLink?.message}
+                  <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-4">
+                    <BannerLinkPicker
+                      token={token}
+                      value={watch('bannerLink') || ''}
+                      linkType={watch('bannerLinkType') || 'internal'}
+                      onChange={(v) => {
+                        setValue('bannerLink', v.url, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        });
+                        setValue('bannerLinkType', v.type);
+                      }}
                     />
-                    <Text className="mt-1 text-xs text-gray-400">
-                      Where the shop hero banner goes when clicked. Use a site
-                      path like <code>/shop?category=gin</code> or a full URL.
-                      Leave empty for a non-clickable banner.
+                    <Text className="mt-2 text-xs text-gray-400">
+                      Where the shop hero banner goes when clicked. Pick a
+                      product, category or brand — or enter a site path / full
+                      URL directly. Leave empty for a non-clickable banner.
                     </Text>
                   </div>
                 </div>
