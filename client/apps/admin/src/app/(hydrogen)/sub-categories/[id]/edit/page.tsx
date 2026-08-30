@@ -86,6 +86,8 @@ export default async function EditSubCategoryPage({ params }: Props) {
         seasonalSummer: c.seasonal?.summer ?? false,
         seasonalFall: c.seasonal?.fall ?? false,
         seasonalWinter: c.seasonal?.winter ?? false,
+        bannerLink: c.bannerLink || '',
+        bannerLinkType: c.bannerLinkType || 'internal',
       };
       currentImages = {
         thumbnail: c.thumbnailImage?.url,

@@ -89,6 +89,8 @@ export default async function EditBrandPage({ params }: Props) {
           : c.metaKeywords || '',
         canonicalUrl: c.canonicalUrl || '',
         notes: c.notes || '',
+        bannerLink: c.bannerLink || '',
+        bannerLinkType: c.bannerLinkType || 'internal',
       };
       currentImages = {
         logo: c.logo?.url,

@@ -72,6 +72,8 @@ export default async function EditCategoryPage({ params }: Props) {
           ? c.metaKeywords.join(', ')
           : c.metaKeywords || '',
         canonicalUrl: c.canonicalUrl || '',
+        bannerLink: c.bannerLink || '',
+        bannerLinkType: c.bannerLinkType || 'internal',
       };
       currentImages = {
         thumbnail: c.thumbnailImage?.url,
