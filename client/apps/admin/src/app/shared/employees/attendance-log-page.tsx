@@ -35,11 +35,7 @@ import AttendanceLiveBoard from './attendance-live-board';
 import AttendanceDayTimeline from './attendance-day-timeline';
 import AttendanceWeekTimesheet from './attendance-week-timesheet';
 import AttendanceExceptions from './attendance-exceptions';
-import AttendanceCorrectionDrawer, {
-  NEW_ATTENDANCE_DRAFT,
-  draftFromRecord,
-  type AttendanceDraft,
-} from './attendance-correction-drawer';
+import AttendanceCorrectionDrawer from './attendance-correction-drawer';
 import {
   LAGOS_OFFSET_MINUTES,
   addDays,
@@ -51,7 +47,11 @@ import {
   weekRangeLabel,
   formatMinutes,
 } from './shift-roster-utils';
-import { recordTimes } from './attendance-utils';
+import {
+  NEW_ATTENDANCE_DRAFT,
+  draftFromRecord,
+  type AttendanceDraft,
+} from './attendance-utils';
 import { attendanceRate, buildAttendanceBoard } from './attendance-board-utils';
 import {
   attendanceService,

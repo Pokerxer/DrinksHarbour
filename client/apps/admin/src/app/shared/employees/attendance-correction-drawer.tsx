@@ -17,18 +17,14 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { PiX } from 'react-icons/pi';
-import { LAGOS_OFFSET_MINUTES, toLocalDateKey } from './shift-roster-utils';
+import { LAGOS_OFFSET_MINUTES } from './shift-roster-utils';
 import {
   entryUtcTimes,
   impliedEndDate,
   isEntryRangeValid,
-  recordTimes,
+  type AttendanceDraft,
 } from './attendance-utils';
-import {
-  attendanceService,
-  type AttendanceRecord,
-} from '@/services/attendance.service';
-import { refId } from '@/services/orgStructure.service';
+import { attendanceService } from '@/services/attendance.service';
 
 const OFFSET = LAGOS_OFFSET_MINUTES;
 
@@ -39,80 +35,18 @@ export type EmployeeLike = {
   lastName?: string;
 };
 
-/**
- * One manual entry or correction, in the tenant's wall clock.
- *
- * BOTH ENDS CARRY THEIR OWN DATE. A single date with an "ends the next day if
- * the out is earlier" rule cannot express a shift spanning more than one night,
- * and silently rewrites one that does — see `entryUtcTimes`.
- *
- * `outTime` empty means the record stays (or becomes) open — a real
- * instruction, not "unchanged".
- */
-export interface AttendanceDraft {
-  /** Null = a fresh manual entry; set = a correction of an existing record. */
-  id: string | null;
-  employee: string;
-  /** Display only — the person is fixed on a correction, so never re-asked. */
-  employeeName: string;
-  /** 'YYYY-MM-DD' — the day the clock-in falls on. */
-  startDate: string;
-  /** 'HH:MM'. */
-  inTime: string;
-  /** 'YYYY-MM-DD' — the day the clock-out falls on. Unused while open. */
-  endDate: string;
-  /** 'HH:MM', or '' to leave the record open. */
-  outTime: string;
-  note: string;
-  /** A kiosk punch may be corrected but never deleted. */
-  source: AttendanceRecord['source'];
-}
-
-/** The blank form, seeded to today (whichever day is in view). */
-export const NEW_ATTENDANCE_DRAFT = (date: string): AttendanceDraft => ({
-  id: null,
-  employee: '',
-  employeeName: '',
-  startDate: date,
-  inTime: '09:00',
-  endDate: date,
-  outTime: '',
-  note: '',
-  source: 'admin',
-});
-
-/**
- * Seed a draft from an existing record.
- *
- * Each end is read from its OWN stored instant rather than derived from the
- * other, so a record that ran across one night — or three — round-trips
- * unchanged when an admin opens it and saves without touching the times.
- */
-export function draftFromRecord(
-  record: AttendanceRecord,
-  employeeName: string,
-  offsetMinutes = OFFSET
-): AttendanceDraft {
-  const times = recordTimes(record, offsetMinutes);
-  return {
-    id: record._id,
-    employee: refId(record.employee),
-    employeeName,
-    startDate: toLocalDateKey(record.clockIn, offsetMinutes),
-    inTime: times.in,
-    endDate: record.clockOut
-      ? toLocalDateKey(record.clockOut, offsetMinutes)
-      : toLocalDateKey(record.clockIn, offsetMinutes),
-    outTime: record.clockOut ? times.out : '',
-    note: record.note ?? '',
-    source: record.source,
-  };
-}
-
 interface Props {
   draft: AttendanceDraft | null;
   /** Options for the employee picker — only read while ADDING, not correcting. */
   employees: EmployeeLike[];
+  /**
+   * The person is already decided, so never ask — even on an ADD.
+   *
+   * An employee's own history page adds records for one named person and hands
+   * this component no options at all; without the flag that screen would draw
+   * an empty picker over an answer it already has.
+   */
+  lockEmployee?: boolean;
   token: string;
   onChange: (next: AttendanceDraft) => void;
   onClose: () => void;
@@ -163,6 +97,7 @@ function Field({
 export default function AttendanceCorrectionDrawer({
   draft,
   employees,
+  lockEmployee = false,
   token,
   onChange,
   onClose,
@@ -199,8 +134,21 @@ export default function AttendanceCorrectionDrawer({
         );
         toast.success('Correction saved');
       } else {
+        // `shift` is sent on the CREATE only. The history timeline pairs a
+        // record to its rostered row by this id, so a record added to answer an
+        // absence has to carry it or the row it was meant to fix goes on
+        // reading Absent while the punch files itself under "no rostered
+        // shift". A correction deliberately omits the field — the server treats
+        // an absent key as "unchanged", so the stored pairing survives an edit
+        // made from a screen that never knew about it.
         await attendanceService.create(
-          { employee: draft.employee, clockIn, clockOut, note: draft.note },
+          {
+            employee: draft.employee,
+            shift: draft.shift,
+            clockIn,
+            clockOut,
+            note: draft.note,
+          },
           token
         );
         toast.success('Attendance added');
@@ -254,8 +202,16 @@ export default function AttendanceCorrectionDrawer({
                 </p>
               )}
 
+              {!draft.id && draft.shift && (
+                <p className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  This is recorded against the rostered shift, so the day stops
+                  counting as an absence. The times below are the roster’s —
+                  change them to what actually happened.
+                </p>
+              )}
+
               <Field label="Employee">
-                {draft.id ? (
+                {draft.id || lockEmployee ? (
                   <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700">
                     {draft.employeeName || 'This employee'}
                   </p>
@@ -369,8 +325,8 @@ export default function AttendanceCorrectionDrawer({
 
               {draft.outTime !== '' && draft.endDate > draft.startDate && (
                 <p className="-mt-2 text-xs text-gray-500">
-                  This record spans{' '}
-                  {spanNights(draft.startDate, draft.endDate)}.
+                  This record spans {spanNights(draft.startDate, draft.endDate)}
+                  .
                 </p>
               )}
               {draft.outTime !== '' && !isEntryRangeValid(draft) && (
@@ -405,7 +361,9 @@ export default function AttendanceCorrectionDrawer({
               <button
                 type="button"
                 onClick={() => void save()}
-                disabled={saving || (draft.outTime !== '' && !isEntryRangeValid(draft))}
+                disabled={
+                  saving || (draft.outTime !== '' && !isEntryRangeValid(draft))
+                }
                 className="rounded-xl bg-[#b20202] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#8f0202] disabled:opacity-60"
               >
                 {saving

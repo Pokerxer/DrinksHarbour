@@ -28,6 +28,9 @@ import {
   pushScanKey,
   SCAN_BURST_MS,
   isEditableTarget,
+  NEW_ATTENDANCE_DRAFT,
+  draftFromRecord,
+  draftFromShift,
 } from './attendance-utils';
 import type { AttendanceRecord } from '@/services/attendance.service';
 
@@ -113,12 +116,16 @@ describe('the scan cooldown', () => {
     // in front of it clocks the employee in and straight back out.
     const last = { code: 'BADGE-1', at: 1_000 };
     expect(shouldAcceptScan('BADGE-1', last, 1_100)).toBe(false);
-    expect(shouldAcceptScan('BADGE-1', last, 1_000 + SCAN_COOLDOWN_MS - 1)).toBe(false);
+    expect(
+      shouldAcceptScan('BADGE-1', last, 1_000 + SCAN_COOLDOWN_MS - 1)
+    ).toBe(false);
   });
 
   it('accepts the same badge once the cooldown has passed', () => {
     const last = { code: 'BADGE-1', at: 1_000 };
-    expect(shouldAcceptScan('BADGE-1', last, 1_000 + SCAN_COOLDOWN_MS)).toBe(true);
+    expect(shouldAcceptScan('BADGE-1', last, 1_000 + SCAN_COOLDOWN_MS)).toBe(
+      true
+    );
   });
 
   it('accepts a different badge straight away', () => {
@@ -164,7 +171,9 @@ describe('the HID scanner buffer', () => {
   });
 
   it('never submits on a modifier key', () => {
-    expect(pushScanKey({ text: 'AB', at: 100 }, 'Shift', 110).submit).toBeNull();
+    expect(
+      pushScanKey({ text: 'AB', at: 100 }, 'Shift', 110).submit
+    ).toBeNull();
     expect(pushScanKey({ text: 'AB', at: 100 }, 'Tab', 110).submit).toBeNull();
   });
 
@@ -199,9 +208,9 @@ describe('the editable-target guard', () => {
   });
 
   it('ignores non-text inputs, which a badge never needs', () => {
-    expect(
-      isEditableTarget({ tagName: 'INPUT', type: 'checkbox' })
-    ).toBe(false);
+    expect(isEditableTarget({ tagName: 'INPUT', type: 'checkbox' })).toBe(
+      false
+    );
   });
 
   it('treats a contenteditable surface as editable', () => {
@@ -461,7 +470,9 @@ describe('describeEarlyLeavePrompt', () => {
     // The prompt is a decision, so it must not read as a refusal: the employee
     // can go ahead, and the wording has to make that obvious or they will walk
     // away with the record still open.
-    expect(describeEarlyLeavePrompt(details).question).toMatch(/clock out anyway/i);
+    expect(describeEarlyLeavePrompt(details).question).toMatch(
+      /clock out anyway/i
+    );
   });
 
   it('survives a missing name without printing "undefined" on a wall', () => {
@@ -663,5 +674,117 @@ describe('isEntryRangeValid', () => {
         outTime: '',
       })
     ).toBe(true);
+  });
+});
+
+describe('seeding the drawer', () => {
+  it('reads each end of a record from its own stored instant', () => {
+    // 08:00Z is 09:00 in Lagos, 16:00Z is 17:00.
+    const draft = draftFromRecord(record(), 'Alice Okoro');
+    expect(draft).toMatchObject({
+      id: 'a1',
+      employee: 'e1',
+      employeeName: 'Alice Okoro',
+      startDate: '2026-08-10',
+      inTime: '09:00',
+      endDate: '2026-08-10',
+      outTime: '17:00',
+      source: 'kiosk',
+    });
+  });
+
+  it('keeps the two dates a multi-night record actually spans', () => {
+    // The whole reason each end carries its own date: derived from the times
+    // alone this would come back as the 11th and lose a day of hours.
+    const draft = draftFromRecord(
+      record({
+        clockIn: '2026-08-10T22:00:00.000Z',
+        clockOut: '2026-08-12T05:00:00.000Z',
+      }),
+      'Alice Okoro'
+    );
+    expect(draft.startDate).toBe('2026-08-10');
+    expect(draft.endDate).toBe('2026-08-12');
+  });
+
+  it('leaves an open record open, and dates its unknown end to the start day', () => {
+    const draft = draftFromRecord(
+      record({ clockOut: null, status: 'open', minutesWorked: 0 }),
+      'Alice Okoro'
+    );
+    expect(draft.outTime).toBe('');
+    expect(draft.endDate).toBe('2026-08-10');
+  });
+
+  it('carries the record’s shift so a correction is not the thing that drops it', () => {
+    const draft = draftFromRecord(
+      record({ shift: { _id: 's1', start: '', end: '', status: 'published' } }),
+      'Alice Okoro'
+    );
+    expect(draft.shift).toBe('s1');
+    expect(draftFromRecord(record(), 'Alice Okoro').shift).toBeNull();
+  });
+
+  it('seeds an absence from the rostered window, both ends, and binds the shift', () => {
+    // The bind is the load-bearing part: without it the record the admin adds
+    // pairs with no timeline row and the day goes on reading Absent.
+    const draft = draftFromShift(
+      {
+        _id: 's1',
+        start: '2026-09-01T07:40:00.000Z',
+        end: '2026-09-01T08:00:00.000Z',
+      },
+      'e1',
+      'Alice Okoro'
+    );
+    expect(draft).toEqual({
+      id: null,
+      employee: 'e1',
+      employeeName: 'Alice Okoro',
+      shift: 's1',
+      startDate: '2026-09-01',
+      inTime: '08:40',
+      endDate: '2026-09-01',
+      outTime: '09:00',
+      note: '',
+      source: 'admin',
+    });
+  });
+
+  it('gives a night shift the two dates it spans rather than one and a guess', () => {
+    const draft = draftFromShift(
+      {
+        _id: 's2',
+        start: '2026-09-01T21:00:00.000Z',
+        end: '2026-09-02T05:00:00.000Z',
+      },
+      'e1',
+      'Alice Okoro'
+    );
+    expect(draft.startDate).toBe('2026-09-01');
+    expect(draft.inTime).toBe('22:00');
+    expect(draft.endDate).toBe('2026-09-02');
+    expect(draft.outTime).toBe('06:00');
+  });
+
+  it('round-trips a seeded absence through the same conversion the drawer saves with', () => {
+    // The two halves have to agree: what draftFromShift shows must be the
+    // instants entryUtcTimes sends back, or every added record moves by an
+    // hour. Compared against the shift itself, not against another draft.
+    const shift = {
+      _id: 's1',
+      start: '2026-09-01T07:40:00.000Z',
+      end: '2026-09-01T08:00:00.000Z',
+    };
+    const times = entryUtcTimes(draftFromShift(shift, 'e1', 'Alice Okoro'));
+    expect(times.clockIn).toBe(shift.start);
+    expect(times.clockOut).toBe(shift.end);
+  });
+
+  it('starts a blank entry closed-ended and unbound to any shift', () => {
+    const draft = NEW_ATTENDANCE_DRAFT('2026-09-01');
+    expect(draft.id).toBeNull();
+    expect(draft.shift).toBeNull();
+    expect(draft.outTime).toBe('');
   });
 });

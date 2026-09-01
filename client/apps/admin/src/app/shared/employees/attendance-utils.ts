@@ -21,6 +21,7 @@ import type {
   EarlyLeave,
   Punctuality,
   PunctualityCode,
+  TimelineShift,
 } from '@/services/attendance.service';
 import { refId } from '@/services/orgStructure.service';
 
@@ -312,6 +313,134 @@ export function isEntryRangeValid(input: {
   const end = Date.parse(`${input.endDate}T${input.outTime}:00.000Z`);
   if (Number.isNaN(start) || Number.isNaN(end)) return true; // let the caller's own parse guard speak
   return end > start;
+}
+
+// ── The drawer's draft ───────────────────────────────────────────────────────
+//
+// The shape the correction drawer edits, and the three ways it gets seeded.
+// They live out here, beside the conversion they are the input to, because the
+// drawer is a component and the admin's Vitest environment is `node` with no
+// jsdom — anything inside a .tsx cannot be covered by a test.
+
+/**
+ * One manual entry or correction, in the tenant's wall clock.
+ *
+ * BOTH ENDS CARRY THEIR OWN DATE. A single date with an "ends the next day if
+ * the out is earlier" rule cannot express a shift spanning more than one night,
+ * and silently rewrites one that does — see `entryUtcTimes`.
+ *
+ * `outTime` empty means the record stays (or becomes) open — a real
+ * instruction, not "unchanged".
+ */
+export interface AttendanceDraft {
+  /** Null = a fresh manual entry; set = a correction of an existing record. */
+  id: string | null;
+  employee: string;
+  /** Display only — the person is fixed on a correction, so never re-asked. */
+  employeeName: string;
+  /**
+   * The rostered shift this record answers, or null for a punch that answers
+   * none.
+   *
+   * Load-bearing on a CREATE and only there. The history timeline pairs a
+   * record to a shift row by this id (`employeeHistory`, `byShift`), so a
+   * record added for an absence without it would file itself under "punches
+   * with no rostered shift" and leave the row it was meant to fix still
+   * reading Absent. A correction never sends it — the stored value stands.
+   */
+  shift: string | null;
+  /** 'YYYY-MM-DD' — the day the clock-in falls on. */
+  startDate: string;
+  /** 'HH:MM'. */
+  inTime: string;
+  /** 'YYYY-MM-DD' — the day the clock-out falls on. Unused while open. */
+  endDate: string;
+  /** 'HH:MM', or '' to leave the record open. */
+  outTime: string;
+  note: string;
+  /** A kiosk punch may be corrected but never deleted. */
+  source: AttendanceRecord['source'];
+}
+
+/** The blank form, seeded to today (whichever day is in view). */
+export const NEW_ATTENDANCE_DRAFT = (date: string): AttendanceDraft => ({
+  id: null,
+  employee: '',
+  employeeName: '',
+  shift: null,
+  startDate: date,
+  inTime: '09:00',
+  endDate: date,
+  outTime: '',
+  note: '',
+  source: 'admin',
+});
+
+/**
+ * Seed a draft from an existing record.
+ *
+ * Each end is read from its OWN stored instant rather than derived from the
+ * other, so a record that ran across one night — or three — round-trips
+ * unchanged when an admin opens it and saves without touching the times.
+ */
+export function draftFromRecord(
+  record: AttendanceRecord,
+  employeeName: string,
+  offsetMinutes = LAGOS_OFFSET_MINUTES
+): AttendanceDraft {
+  const times = recordTimes(record, offsetMinutes);
+  return {
+    id: record._id,
+    employee: refId(record.employee),
+    employeeName,
+    shift: refId(record.shift) || null,
+    startDate: toLocalDateKey(record.clockIn, offsetMinutes),
+    inTime: times.in,
+    endDate: record.clockOut
+      ? toLocalDateKey(record.clockOut, offsetMinutes)
+      : toLocalDateKey(record.clockIn, offsetMinutes),
+    outTime: record.clockOut ? times.out : '',
+    note: record.note ?? '',
+    source: record.source,
+  };
+}
+
+/**
+ * Seed a draft for a rostered shift that nothing answered — the absence row on
+ * an employee's history.
+ *
+ * SEEDED TO THE ROSTERED WINDOW, both ends, and that is a deliberate default
+ * rather than a blank form. The overwhelmingly common reason a shift shows as
+ * absent is that somebody worked it and the kiosk never saw them — a dead
+ * tablet, a forgotten badge — so "they worked what they were rostered" is the
+ * answer being typed almost every time, and the admin edits from there.
+ *
+ * Both ends are taken from their own instant, so a night shift arrives with the
+ * two dates it actually spans instead of one date and a guess.
+ *
+ * The clock-out is filled rather than left open on purpose: an open record for
+ * a day that has already been and gone is not a person still at work, it is a
+ * row somebody has to come back and close — and the server refuses a second
+ * open record for the same employee (`already_open`) anyway.
+ */
+export function draftFromShift(
+  shift: Pick<TimelineShift, '_id' | 'start' | 'end'>,
+  employeeId: string,
+  employeeName: string,
+  offsetMinutes = LAGOS_OFFSET_MINUTES
+): AttendanceDraft {
+  return {
+    id: null,
+    employee: employeeId,
+    employeeName,
+    shift: shift._id,
+    startDate: toLocalDateKey(shift.start, offsetMinutes),
+    inTime: toLocalTimeLabel(shift.start, offsetMinutes),
+    endDate: toLocalDateKey(shift.end, offsetMinutes),
+    outTime: toLocalTimeLabel(shift.end, offsetMinutes),
+    note: '',
+    source: 'admin',
+  };
 }
 
 // ── The badge scan ───────────────────────────────────────────────────────────

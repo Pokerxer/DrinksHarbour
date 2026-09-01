@@ -22,7 +22,9 @@ import {
   PiCalendarBlankDuotone,
   PiClockUserDuotone,
   PiPencilSimple,
+  PiPlus,
   PiSealCheckDuotone,
+  PiTrash,
   PiWarningDuotone,
 } from 'react-icons/pi';
 import { fraunces } from './employees-fonts';
@@ -32,10 +34,17 @@ import {
   employeeName,
   formatMinutes,
   localToday,
-  toLocalDateKey,
   toLocalTimeLabel,
 } from './shift-roster-utils';
-import { punctualityLabel, punctualityTone, recordTimes } from './attendance-utils';
+import {
+  canDeleteRecord,
+  draftFromRecord,
+  draftFromShift,
+  punctualityLabel,
+  punctualityTone,
+  recordTimes,
+  type AttendanceDraft,
+} from './attendance-utils';
 import {
   bandLabel,
   bandTone,
@@ -47,11 +56,7 @@ import {
   ratePercent,
   type RatingTone,
 } from './attendance-rating-utils';
-import AttendanceCorrectionDrawer, {
-  draftFromRecord,
-  type AttendanceDraft,
-} from './attendance-correction-drawer';
-import { refId } from '@/services/orgStructure.service';
+import AttendanceCorrectionDrawer from './attendance-correction-drawer';
 import {
   attendanceService,
   type AttendanceHistoryResponse,
@@ -164,6 +169,50 @@ export default function AttendanceHistoryPage({
         ? record.employee
         : (data?.employee ?? null);
     setDraft(draftFromRecord(record, employeeName(person), OFFSET));
+  }
+
+  /**
+   * Seed the drawer from a rostered shift nothing answered.
+   *
+   * This is the only screen that can offer it: the log lists punches, and an
+   * absence produced none, so a row for one exists here and nowhere else. The
+   * draft carries the shift id, which is what stops the new record filing
+   * itself under "no rostered shift" and leaves this row still reading Absent.
+   */
+  function openEntry(shift: AttendanceTimelineEntry['shift']) {
+    if (!data?.employee?._id) return;
+    setDraft(
+      draftFromShift(
+        shift,
+        data.employee._id,
+        employeeName(data.employee),
+        OFFSET
+      )
+    );
+  }
+
+  /**
+   * Delete a record added by hand.
+   *
+   * Offered here because this page can now ADD one, and an add with no undo is
+   * a trap: a mistyped entry against the wrong shift would otherwise have to be
+   * hunted down on the log page. The API refuses a kiosk punch with a 409, so
+   * the button is only drawn for the rows it will accept — see canDeleteRecord.
+   */
+  async function removeRecord(record: AttendanceRecord) {
+    if (
+      !window.confirm(
+        'Delete this manually added record? This cannot be undone.'
+      )
+    )
+      return;
+    try {
+      await attendanceService.remove(record._id, token);
+      toast.success('Record deleted');
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete');
+    }
   }
 
   return (
@@ -336,7 +385,10 @@ export default function AttendanceHistoryPage({
                 { label: 'Attended', value: String(rating.counts.attended) },
                 { label: 'Absent', value: String(rating.counts.absent) },
                 { label: 'Late', value: String(rating.counts.late) },
-                { label: 'Left early', value: String(rating.counts.earlyLeave) },
+                {
+                  label: 'Left early',
+                  value: String(rating.counts.earlyLeave),
+                },
                 { label: 'Never closed', value: String(rating.counts.open) },
                 {
                   label: 'Hours',
@@ -377,12 +429,17 @@ export default function AttendanceHistoryPage({
                   key={entry.shift._id}
                   entry={entry}
                   onCorrect={openCorrection}
+                  onAdd={openEntry}
+                  onDelete={removeRecord}
                 />
               ))}
 
               {!loading && !data?.timeline?.length && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
+                  <td
+                    colSpan={6}
+                    className="px-4 py-10 text-center text-gray-400"
+                  >
                     Nothing was rostered in this window.
                   </td>
                 </tr>
@@ -425,6 +482,16 @@ export default function AttendanceHistoryPage({
                     >
                       <PiPencilSimple className="h-4 w-4" />
                     </button>
+                    {canDeleteRecord(r) && (
+                      <button
+                        type="button"
+                        onClick={() => void removeRecord(r)}
+                        aria-label="Delete this record"
+                        className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                      >
+                        <PiTrash className="h-4 w-4" />
+                      </button>
+                    )}
                   </span>
                 </li>
               );
@@ -433,11 +500,13 @@ export default function AttendanceHistoryPage({
         </div>
       )}
 
-      {/* The correction drawer — this page never adds records by hand, so the
-          employee picker stays unused (no create mode). */}
+      {/* The correction drawer. It also ADDS here — an absence row has no
+          record to correct — but always for the one person whose page this is,
+          so the picker is locked rather than fed an option list. */}
       <AttendanceCorrectionDrawer
         draft={draft}
         employees={[]}
+        lockEmployee
         token={token}
         onChange={setDraft}
         onClose={() => setDraft(null)}
@@ -450,9 +519,14 @@ export default function AttendanceHistoryPage({
 function TimelineRow({
   entry,
   onCorrect,
+  onAdd,
+  onDelete,
 }: {
   entry: AttendanceTimelineEntry;
   onCorrect: (record: AttendanceRecord) => void;
+  /** Only ever called for a row with no record — there is nothing to correct. */
+  onAdd: (shift: AttendanceTimelineEntry['shift']) => void;
+  onDelete: (record: AttendanceRecord) => void;
 }) {
   const { shift, record, excused } = entry;
   const rostered = `${toLocalTimeLabel(shift.start, OFFSET)} – ${toLocalTimeLabel(
@@ -490,7 +564,9 @@ function TimelineRow({
 
       <td className="px-4 py-3">
         {record && entry.punctuality ? (
-          <span className={`text-xs font-semibold ${punctualityTone(entry.punctuality.code)}`}>
+          <span
+            className={`text-xs font-semibold ${punctualityTone(entry.punctuality.code)}`}
+          >
             {punctualityLabel(entry.punctuality)}
           </span>
         ) : (
@@ -508,17 +584,50 @@ function TimelineRow({
         )}
       </td>
 
-      <td className="px-4 py-3 text-right">
-        {record && (
-          <button
-            type="button"
-            onClick={() => onCorrect(record)}
-            aria-label="Correct this record"
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
-          >
-            <PiPencilSimple className="h-4 w-4" />
-          </button>
-        )}
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-1">
+          {record ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onCorrect(record)}
+                aria-label="Correct this record"
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
+              >
+                <PiPencilSimple className="h-4 w-4" />
+              </button>
+              {/* Offered only for admin rows: the API refuses a kiosk punch
+                  with a 409, and a button that always fails is worse than no
+                  button. */}
+              {canDeleteRecord(record) && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(record)}
+                  aria-label="Delete this record"
+                  className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                >
+                  <PiTrash className="h-4 w-4" />
+                </button>
+              )}
+            </>
+          ) : (
+            // A row with no record is the one thing this page can fix that no
+            // other screen can: there is no punch to find on the log, so
+            // without this button an absence is uneditable by definition.
+            // Offered on an excused row too — approved leave someone worked
+            // through anyway is a real thing, and the rating excuses the shift
+            // either way.
+            <button
+              type="button"
+              onClick={() => onAdd(shift)}
+              aria-label="Record attendance for this shift"
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-900"
+            >
+              <PiPlus className="h-3.5 w-3.5" />
+              Record
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   );
