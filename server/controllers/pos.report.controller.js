@@ -15,62 +15,20 @@ function endOfDay(date) {
   const d = new Date(date); d.setHours(23, 59, 59, 999); return d;
 }
 
-/**
- * A void is recorded with the `isVoided` flag. 'voided' is not a value in the
- * status enum, so the old `status === 'voided'` checks excluded nothing and
- * voided sales were counted as revenue.
- */
-function isVoided(order) {
-  return order.isVoided === true;
-}
-
-/** Total actually refunded against an order, across its refund records. */
-function refundedTotal(order) {
-  return (order.refunds || []).reduce(
-    (s, r) => s + Math.abs(r.totalRefunded || 0),
-    0
-  );
-}
-
-/**
- * Split a session's orders into the buckets every report needs.
- * Held orders are parked carts, not sales, and must never reach revenue.
- */
-function partitionOrders(orders) {
-  const live = orders.filter(
-    (o) => o.status !== 'cancelled' && o.status !== 'hold'
-  );
-  return {
-    completed: live.filter((o) => !isVoided(o)),
-    voided:    live.filter(isVoided),
-    refunded:  live.filter((o) => refundedTotal(o) > 0),
-  };
-}
-
-/**
- * Per-product sales breakdown.
- *
- * Field names must track orderItemSchema: the price is `priceAtPurchase`
- * (not finalPrice/unitPrice), the reference is `product` (not productId), and
- * `discountAmount` / `itemSubtotal` are already LINE totals — not per-unit —
- * so neither may be multiplied by quantity again.
- */
 function buildProductBreakdown(orders) {
   const map = {};
   for (const order of orders) {
-    if (isVoided(order)) continue;
+    if (order.status === 'voided') continue;
     for (const item of order.items || []) {
-      const key =
-        item.product?.toString() || item.subproduct?.toString() || 'unknown';
-      const name = item.product?.name || item._name || 'Unknown';
-      if (!map[key]) map[key] = { name, qty: 0, gross: 0, discounts: 0, net: 0 };
-      const qty       = item.quantity || 0;
-      const lineGross = (item.priceAtPurchase || 0) * qty;
-      const lineDisc  = item.discountAmount || 0;
+      const key = item.productId?.toString() || item.name || 'unknown';
+      if (!map[key]) map[key] = { name: item.name || 'Unknown', qty: 0, gross: 0, discounts: 0, net: 0 };
+      const qty  = item.quantity || 1;
+      const unit = item.finalPrice ?? item.unitPrice ?? 0;
+      const disc = item.discountAmount || 0;
       map[key].qty       += qty;
-      map[key].gross     += lineGross;
-      map[key].discounts += lineDisc;
-      map[key].net       += item.itemSubtotal ?? lineGross - lineDisc;
+      map[key].gross     += unit * qty;
+      map[key].discounts += disc * qty;
+      map[key].net       += (unit - disc) * qty;
     }
   }
   return Object.values(map).sort((a, b) => b.net - a.net);
@@ -107,19 +65,15 @@ exports.getSessionReport = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Session not found' });
   }
 
-  const orders          = await Order.find({ posSessionId: id, tenant: tenantId }).lean();
-  const {
-    completed: completedOrders,
-    voided: voidedOrders,
-    refunded: refundOrders,
-  } = partitionOrders(orders);
+  const orders          = await Order.find({ posSession: id, tenant: tenantId }).lean();
+  const completedOrders = orders.filter((o) => o.status !== 'voided' && o.status !== 'cancelled');
+  const voidedOrders    = orders.filter((o) => o.status === 'voided');
+  const refundOrders    = orders.filter((o) => o.isRefund === true);
 
   const paymentTotals  = paymentTotalsFrom(completedOrders);
   const grossRevenue   = completedOrders.reduce((s, o) => s + (o.totalAmount  || 0), 0);
-  const totalRefunds   = refundOrders.reduce   ((s, o) => s + refundedTotal(o), 0);
-  const totalDiscounts = completedOrders.reduce((s, o) => s + (o.discountTotal || 0), 0);
-  const totalTips      = completedOrders.reduce((s, o) => s + (o.tipAmount      || 0), 0);
-  const totalRounding  = completedOrders.reduce((s, o) => s + (o.roundingAmount || 0), 0);
+  const totalRefunds   = refundOrders.reduce   ((s, o) => s + Math.abs(o.totalAmount || 0), 0);
+  const totalDiscounts = completedOrders.reduce((s, o) => s + (o.discountAmount || 0), 0);
   const netRevenue     = grossRevenue - totalRefunds;
 
   const cashIn  = (session.cashMovements || []).filter((m) => m.type === 'in' ).reduce((s, m) => s + m.amount, 0);
@@ -167,8 +121,6 @@ exports.getSessionReport = asyncHandler(async (req, res) => {
         grossRevenue,
         totalDiscounts,
         totalRefunds,
-        totalTips,
-        totalRounding,
         netRevenue,
         durationMins,
       },
@@ -213,19 +165,19 @@ exports.getDailyReport = asyncHandler(async (req, res) => {
   }
 
   const sessionIds = sessions.map((s) => s._id);
-  const orders     = await Order.find({ posSessionId: { $in: sessionIds }, tenant: tenantId }).lean();
+  const orders     = await Order.find({ posSession: { $in: sessionIds }, tenant: tenantId }).lean();
 
-  const { completed, voided, refunded: refunds } = partitionOrders(orders);
+  const completed  = orders.filter((o) => o.status !== 'voided' && o.status !== 'cancelled');
+  const voided     = orders.filter((o) => o.status === 'voided');
+  const refunds    = orders.filter((o) => o.isRefund === true);
 
   const paymentTotals  = paymentTotalsFrom(completed);
   const grossRevenue   = completed.reduce((s, o) => s + (o.totalAmount  || 0), 0);
-  const totalRefunds   = refunds.reduce  ((s, o) => s + refundedTotal(o), 0);
-  const totalDiscounts = completed.reduce((s, o) => s + (o.discountTotal || 0), 0);
-  const totalTips      = completed.reduce((s, o) => s + (o.tipAmount      || 0), 0);
-  const totalRounding  = completed.reduce((s, o) => s + (o.roundingAmount || 0), 0);
+  const totalRefunds   = refunds.reduce  ((s, o) => s + Math.abs(o.totalAmount || 0), 0);
+  const totalDiscounts = completed.reduce((s, o) => s + (o.discountAmount || 0), 0);
 
   const sessionSummaries = sessions.map((session) => {
-    const sOrders  = completed.filter((o) => o.posSessionId?.toString() === session._id.toString());
+    const sOrders  = completed.filter((o) => o.posSession?.toString() === session._id.toString());
     return {
       _id:         session._id,
       terminalType:session.terminalType,
@@ -251,8 +203,6 @@ exports.getDailyReport = asyncHandler(async (req, res) => {
         grossRevenue,
         totalDiscounts,
         totalRefunds,
-        totalTips,
-        totalRounding,
         netRevenue:    grossRevenue - totalRefunds,
         paymentTotals,
       },
@@ -289,16 +239,16 @@ exports.getReportSummary = asyncHandler(async (req, res) => {
   }
 
   const sessionIds = sessions.map((s) => s._id);
-  const orders     = await Order.find({ posSessionId: { $in: sessionIds }, tenant: tenantId }).lean();
+  const orders     = await Order.find({ posSession: { $in: sessionIds }, tenant: tenantId }).lean();
 
-  const { completed, voided, refunded: refunds } = partitionOrders(orders);
+  const completed  = orders.filter((o) => o.status !== 'voided' && o.status !== 'cancelled');
+  const voided     = orders.filter((o) => o.status === 'voided');
+  const refunds    = orders.filter((o) => o.isRefund === true);
 
   const paymentTotals  = paymentTotalsFrom(completed);
   const grossRevenue   = completed.reduce((s, o) => s + (o.totalAmount  || 0), 0);
-  const totalRefunds   = refunds.reduce  ((s, o) => s + refundedTotal(o), 0);
-  const totalDiscounts = completed.reduce((s, o) => s + (o.discountTotal || 0), 0);
-  const totalTips      = completed.reduce((s, o) => s + (o.tipAmount      || 0), 0);
-  const totalRounding  = completed.reduce((s, o) => s + (o.roundingAmount || 0), 0);
+  const totalRefunds   = refunds.reduce  ((s, o) => s + Math.abs(o.totalAmount || 0), 0);
+  const totalDiscounts = completed.reduce((s, o) => s + (o.discountAmount || 0), 0);
   const avgOrderValue  = completed.length ? grossRevenue / completed.length : 0;
 
   // Daily breakdown
@@ -326,25 +276,12 @@ exports.getReportSummary = asyncHandler(async (req, res) => {
         grossRevenue,
         totalDiscounts,
         totalRefunds,
-        totalTips,
-        totalRounding,
         netRevenue:    grossRevenue - totalRefunds,
         avgOrderValue,
         paymentTotals,
       },
       dailySales,
-      topProducts: buildProductBreakdown(completed).slice(0, 20),
+      topProducts: buildProductBreakdown(orders).slice(0, 20),
     },
   });
 });
-
-// Internals exposed for unit tests. These encode the money rules (what counts
-// as revenue, what a refund is worth, how a line is priced) and are worth
-// testing directly rather than only through an HTTP handler.
-exports.__test__ = {
-  isVoided,
-  refundedTotal,
-  partitionOrders,
-  buildProductBreakdown,
-  paymentTotalsFrom,
-};

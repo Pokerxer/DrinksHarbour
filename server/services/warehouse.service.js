@@ -491,7 +491,7 @@ async function getAllStock(tenantId, settings = null) {
           populate: { path: 'category', select: 'name' },
         },
       })
-      .populate('size', 'size costPrice sellingPrice')
+.populate('size', 'size costPrice sellingPrice wholesalePrice unitsPerPack')
       .populate('warehouse', 'name code')
       .lean(),
     WarehouseBatch.find({
@@ -549,6 +549,11 @@ async function getAllStock(tenantId, settings = null) {
       reservedQuantity: r.reservedQuantity || 0,
       costPrice: cost,
       sellingPrice: (sz.sellingPrice > 0 ? sz.sellingPrice : null) ?? sp.baseSellingPrice ?? 0,
+      // Bundle markup_on_cost (bundleMarkupBase='wholesale') and formula rules
+      // (markupBase='wholesale') need the size's wholesale price to compute
+      // their price on the customer pricelist print — same basis the POS uses.
+      wholesalePrice: Number(sz.wholesalePrice) || 0,
+      unitsPerPack: Number(sz.unitsPerPack) || 1,
       valuationMethod,
       minStockLevel: r.minStockLevel || 0,
       earliestExpiry,

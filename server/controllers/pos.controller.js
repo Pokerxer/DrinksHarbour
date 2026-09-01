@@ -2441,8 +2441,9 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
       // Fetch subproduct for price resolution and order line data
       const sp = await SubProduct.findById(subProductId)
-        .select('product sku baseSellingPrice costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals defaultSize')
+        .select('product sku baseSellingPrice costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals defaultSize sizes')
         .populate('product', 'name images platformMarkup platformDiscount tracksBatch')
+        .populate('sizes', 'wholesalePrice isDefault unitsPerPack')
         .lean();
 
       // Server-side price: run through same pipeline as the website / cart
@@ -2454,8 +2455,9 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
       // If sized, re-price with size doc for accurate cost
       let sizePricing = pricing;
+      let sizeDoc = null;
       if (sizeId) {
-        const sizeDoc = await Size.findById(sizeId).lean();
+        sizeDoc = await Size.findById(sizeId).lean();
         sizePricing   = computePOSPricing(sp, sizeDoc, req.tenant);
         if (!(hasOverrides && priceOverrides[overrideKey] != null)) {
           finalPrice = sizePricing.sellingPrice;
@@ -2516,7 +2518,16 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       // ── Apply pricelist price rules sequentially (shared with /sales — pricelistPricing.service) ──
       let appliedPlRuleSnapshot = null;
       const sortedPriceRules = findMatchingPriceRules(selectedPricelist?.rules, subProductId, quantity);
-      finalPrice = applyPriceRules(finalPrice, sizePricing.costPrice || 0, sortedPriceRules);
+      // Wholesale markup base: the size's wholesale price (or the subproduct
+      // default size's) when present.
+      const wholesaleBasis = (() => {
+        if (sizeId && sizeDoc?.wholesalePrice > 0) return Number(sizeDoc.wholesalePrice) || 0;
+        const sizes = Array.isArray(sp?.sizes) ? sp.sizes : [];
+        const def = sizes.find((s) => s.isDefault)?.wholesalePrice;
+        if (Number(def) > 0) return Number(def) || 0;
+        return Number(sizes.find((s) => Number(s.wholesalePrice) > 0)?.wholesalePrice) || 0;
+      })();
+      finalPrice = applyPriceRules(finalPrice, sizePricing.costPrice || 0, sortedPriceRules, wholesaleBasis);
       if (sortedPriceRules.length > 0) {
         appliedPlRuleSnapshot = {
           ruleId:    sortedPriceRules[0]._id,
@@ -2526,13 +2537,22 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       }
 
       // ── Bundle deals: find best qualifying deal for this line quantity (shared) ──
+      const sizeUnitsPerPack = (() => {
+        if (sizeDoc?.unitsPerPack > 1) return sizeDoc.unitsPerPack;
+        const sizes = Array.isArray(sp?.sizes) ? sp.sizes : [];
+        const def = sizes.find((s) => s.isDefault)?.unitsPerPack;
+        if (def > 1) return def;
+        return sizes.find((s) => (s.unitsPerPack || 0) > 1)?.unitsPerPack || 1;
+      })();
       const bestBundle = pickBestBundle(sp.bundleDeals, selectedPricelist?.rules, quantity, subProductId, {
         price: finalPrice,
         costPrice: sizePricing.costPrice || 0,
+        wholesalePrice: wholesaleBasis,
+        unitsPerPack: sizeUnitsPerPack,
       });
 
       // ── Effective unit price (some bundle types override finalPrice) ──────────
-      const bundleOverride   = applyBundleOverride(finalPrice, bestBundle, sizePricing.costPrice || 0, sizePricing.originalPrice);
+      const bundleOverride   = applyBundleOverride(finalPrice, bestBundle, sizePricing.costPrice || 0, sizePricing.originalPrice, wholesaleBasis);
       let effectivePrice      = bundleOverride.price;
       let bundleOverridePrice = bundleOverride.overridden;
 
@@ -2602,6 +2622,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
           discountAmount: itemDiscountAmount,
         } : undefined,
         vendorPriceAtPurchase: sizePricing.costPrice,
+        wholesalePriceAtPurchase: wholesaleBasis,
         tenantRevenueShare:    tenantRevShare,
         platformCommission:    parseFloat((lineSubtotal - tenantRevShare).toFixed(2)),
         tenantRevenueModel:    sizePricing.revenueModel,
@@ -2650,6 +2671,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       quantity:     it.quantity,
       price:        it.priceAtPurchase,
       costPrice:    it.vendorPriceAtPurchase,
+      wholesalePrice: it.wholesalePriceAtPurchase || 0,
       originalPrice: it.originalPriceAtPurchase,
     })),
     selectedPricelist?.rules
