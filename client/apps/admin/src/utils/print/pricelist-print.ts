@@ -5,6 +5,7 @@
 // can never disagree.
 
 import {
+  linesHaveBundlePrices,
   priceAndSortLines,
   fmtDay,
   type PricableStockLine,
@@ -49,9 +50,19 @@ export function buildPricelistDoc(
   const columns: DocumentModel['table']['columns'] = [
     { label: 'Product' },
     { label: 'Size' },
-    ...(o.showAvailability ? [{ label: 'Available', align: 'right' as const }] : []),
+    ...(o.showAvailability
+      ? [{ label: 'Available', align: 'right' as const }]
+      : []),
     { label: 'Unit Price', align: 'right' },
+    ...(linesHaveBundlePrices(lines)
+      ? [
+          { label: 'Bundle Price', align: 'right' as const },
+          { label: 'Bundle Qty', align: 'right' as const },
+        ]
+      : []),
   ];
+
+  const showBundle = linesHaveBundlePrices(lines);
 
   const lineCells = (l: (typeof lines)[number]): DocCell[] => {
     const cells: DocCell[] = [
@@ -72,6 +83,22 @@ export function buildPricelistDoc(
         strong: true,
         sub: l.was != null ? `was ${fmtAmt(l.was, currency)}` : undefined,
       },
+      ...(showBundle
+        ? [
+            // Tier total as the headline, per-unit underneath — same hierarchy
+            // as the HTML sheet, so the two outputs cannot read differently.
+            l.bundleTotal != null
+              ? {
+                  text: fmtAmt(l.bundleTotal, currency),
+                  strong: true,
+                  sub: `${fmtAmt(l.bundlePrice ?? 0, currency)} each`,
+                }
+              : { text: '—', color: MUTED },
+            l.bundleQuantity != null
+              ? { text: String(l.bundleQuantity) }
+              : { text: '' },
+          ]
+        : []),
     ];
     return cells;
   };
@@ -88,7 +115,9 @@ export function buildPricelistDoc(
       groups.set(l.categoryName, list);
     }
     const width = columns.length;
-    for (const [cat, catLines] of groups) {
+    // Array.from — `downlevelIteration` is off in this app, so iterating a Map
+    // directly is a TS2802 build error.
+    for (const [cat, catLines] of Array.from(groups.entries())) {
       tableRows.push([
         { text: `${cat.toUpperCase()} — ${catLines.length}`, strong: true },
         ...Array.from({ length: width - 1 }, () => ({ text: '' })),
@@ -108,12 +137,20 @@ export function buildPricelistDoc(
     ['Generated', fmtDay(iso)],
     ['Valid until', o.validUntil ? fmtDay(o.validUntil) : '—'],
     ['Items', String(lines.length)],
-    ['Warehouses', (o.originWarehouseCount ?? 0) > 0 ? String(o.originWarehouseCount) : '—'],
+    [
+      'Warehouses',
+      (o.originWarehouseCount ?? 0) > 0 ? String(o.originWarehouseCount) : '—',
+    ],
   ];
 
   return {
     kind: 'pricelist',
     companyName: issuerName,
+    // The issuing warehouse's own address/contact. Undefined for a mixed or
+    // catalogue-scoped sheet, which then falls through to the platform COMPANY
+    // block in the band and footer — the correct issuer when the lines are not
+    // drawn from one place.
+    head: o.originHead,
     department: 'Customer Pricelist',
     docTitle: o.title,
     number: `PL-${stamp}`,
@@ -131,10 +168,12 @@ export function buildPricelistDoc(
         : undefined,
     sections: [{ title: 'Notes', body: notes.join(' ') }],
     signatures: [],
-    fileName: `${(o.title || 'price-list')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || 'price-list'}-${iso}.pdf`,
+    fileName: `${
+      (o.title || 'price-list')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || 'price-list'
+    }-${iso}.pdf`,
   };
 }
 

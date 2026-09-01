@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { PiX, PiSpinner, PiWarning, PiInfo } from 'react-icons/pi';
 import { BRAND, RULE_TYPE_META } from '@/app/shared/point-of-sale/pricelist-constants';
-import { refName, type PricelistRule, type SubProductLite } from '../types';
+import { refName, subproductWholesalePrice, type PricelistRule, type SubProductLite } from '../types';
 import ModalFooter from './modal-footer';
 import ModalHeader from './modal-header';
 import PickerField from './picker-field';
@@ -180,7 +180,13 @@ export default function CreateRuleModal({
             className="space-y-3 rounded-xl border bg-gray-50 p-4"
             style={{ borderColor: typeMeta.border }}
           >
-            <TypeFields form={form} errors={errors} f={f} />
+            <TypeFields
+              form={form}
+              errors={errors}
+              f={f}
+              selProduct={selProduct}
+              products={products}
+            />
 
             {form.priceType === 'bundle' && (
               <PickerField
@@ -196,7 +202,14 @@ export default function CreateRuleModal({
 
           <ValidityFields form={form} errors={errors} f={f} />
 
-          <PricePreview preview={computeRulePreview(form, basePrice, costPrice)} />
+          <PricePreview
+            preview={computeRulePreview(
+              form,
+              basePrice,
+              costPrice,
+              subproductWholesalePrice(selProduct)
+            )}
+          />
 
           {!form.subProduct && (
             <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-[11px] text-blue-700">

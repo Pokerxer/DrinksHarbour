@@ -263,7 +263,10 @@ function drawBand(doc: jsPDF, m: DocumentModel): void {
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...(mix(BRAND.red, '#ffffff', 0.74) as RGB));
-  const place = [m.head?.address ?? COMPANY.address, m.head?.city ?? COMPANY.city]
+  const place = [
+    m.head?.address ?? COMPANY.address,
+    m.head?.city ?? COMPANY.city,
+  ]
     .filter(Boolean)
     .join(', ');
   doc.text(fitLine(doc, place, leftW, 8), MX, 55);
@@ -346,17 +349,41 @@ function drawFooter(
   const footerContact = [m.head?.email, m.head?.phone]
     .filter(Boolean)
     .join(' · ');
-  doc.text(
-    `${m.companyName || COMPANY.name} · ${footerPlace} · ${footerContact || COMPANY.email}`,
-    MX,
-    ly + 14
-  );
-  doc.text(
-    `${m.number} · Generated ${fmtDate(new Date())} · Page ${page} of ${total}`,
-    PAGE_W - MX,
-    ly + 14,
-    { align: 'right' }
-  );
+  const meta = `${m.number} · Generated ${fmtDate(new Date())} · Page ${page} of ${total}`;
+  doc.text(meta, PAGE_W - MX, ly + 14, { align: 'right' });
+
+  // The two halves are independent text calls on one baseline, so nothing stops
+  // a long issuer line from running underneath the right-hand meta — which is
+  // what happened once documents began carrying their own warehouse letterhead
+  // instead of the short platform constant. Budget the left half against the
+  // width the right half actually occupies.
+  const issuer = `${m.companyName || COMPANY.name} · ${footerPlace} · ${footerContact || COMPANY.email}`;
+  const avail = PAGE_W - MX * 2 - doc.getTextWidth(meta) - 10;
+  doc.text(fitFooterText(doc, issuer, avail), MX, ly + 14);
+  doc.setFontSize(7.3);
+}
+
+/**
+ * `s` narrowed to fit `maxW`: shrink the font a little first (the line stays
+ * whole and legible), then clip on a word boundary as a last resort. Leaves the
+ * font size set — the caller restores it.
+ *
+ * Plain "..." rather than an ellipsis glyph: the built-in Helvetica is
+ * WinAnsi-encoded, and non-ASCII punctuation has silently mis-rendered here
+ * before.
+ */
+function fitFooterText(doc: jsPDF, s: string, maxW: number): string {
+  if (maxW <= 0) return '';
+  for (const size of [7.3, 7, 6.6, 6.2]) {
+    doc.setFontSize(size);
+    if (doc.getTextWidth(s) <= maxW) return s;
+  }
+  let out = s;
+  while (out.length > 1 && doc.getTextWidth(`${out}...`) > maxW) {
+    const cut = out.lastIndexOf(' ', out.length - 2);
+    out = cut > 0 ? out.slice(0, cut) : out.slice(0, -1);
+  }
+  return `${out.trimEnd()}...`;
 }
 
 // ─── Tables ──────────────────────────────────────────────────────────────────

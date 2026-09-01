@@ -10,6 +10,7 @@ export const RULE_EMPTY: RuleFormValues = {
   priceType: 'discount',
   fixedPrice: '',
   markupPercentage: '',
+  markupBase: 'cost',
   discountType: 'percentage',
   discountPercentage: '',
   discountAmount: '',
@@ -19,6 +20,8 @@ export const RULE_EMPTY: RuleFormValues = {
   bundleQuantity: '2',
   bundleDiscount: '',
   bundleDiscountType: 'percentage',
+  bundleMarkupBase: 'cost',
+  bundleUnitsMode: 'manual',
   bundleTargetSubProduct: '',
   bundleTargetName: '',
   thresholdAmount: '',
@@ -48,6 +51,7 @@ function ruleToFormValues(rule: PricelistRule): RuleFormValues {
     priceType: rule.priceType,
     fixedPrice: rule.fixedPrice ? String(rule.fixedPrice) : '',
     markupPercentage: rule.markupPercentage ? String(rule.markupPercentage) : '',
+    markupBase: rule.markupBase || 'cost',
     discountType: rule.discountType || 'percentage',
     discountPercentage: rule.discountPercentage
       ? String(rule.discountPercentage)
@@ -61,6 +65,8 @@ function ruleToFormValues(rule: PricelistRule): RuleFormValues {
     bundleQuantity: rule.bundleQuantity ? String(rule.bundleQuantity) : '2',
     bundleDiscount: rule.bundleDiscount ? String(rule.bundleDiscount) : '',
     bundleDiscountType: rule.bundleDiscountType || 'percentage',
+    bundleMarkupBase: rule.bundleMarkupBase || 'cost',
+    bundleUnitsMode: rule.bundleUnitsMode || 'manual',
     bundleTargetSubProduct: asId(tgt),
     bundleTargetName:
       (tgt && typeof tgt === 'object'
@@ -94,7 +100,8 @@ function validate(form: RuleFormValues): Record<string, string> {
     e.flashSalePercentage = 'Enter a discount %';
 
   if (form.priceType === 'bundle') {
-    if (num(form.bundleQuantity) < 2) e.bundleQuantity = 'Min 2 units';
+    if (form.bundleUnitsMode !== 'pack' && num(form.bundleQuantity) < 2)
+      e.bundleQuantity = 'Min 2 units';
     if (form.bundleDiscountType !== 'no_discount' && !num(form.bundleDiscount))
       e.bundleDiscount =
         form.bundleDiscountType === 'markup_on_cost'
@@ -122,14 +129,23 @@ function buildPayload(form: RuleFormValues) {
   const bundleName =
     form.bundleName ||
     `Buy ${qty}+ · ${
-      form.bundleDiscountType === 'fixed' ? `₦${disc}` : `${disc}%`
-    } off`;
+      form.bundleDiscountType === 'no_discount'
+        ? 'No discount'
+        : form.bundleDiscountType === 'fixed'
+          ? `₦${disc} off`
+          : form.bundleDiscountType === 'markup_on_cost'
+            ? form.bundleMarkupBase === 'wholesale'
+              ? `Wholesale +${disc}% markup`
+              : `Cost +${disc}% markup`
+            : `${disc}% off`
+    }`;
   return {
     subProduct: form.subProduct || undefined,
     appliedOn: form.subProduct ? form.appliedOn : 'All products',
     priceType: form.priceType,
     fixedPrice: num(form.fixedPrice),
     markupPercentage: num(form.markupPercentage),
+    markupBase: form.markupBase || 'cost',
     discountType: form.discountType,
     discountPercentage: num(form.discountPercentage),
     discountAmount: num(form.discountAmount),
@@ -139,6 +155,8 @@ function buildPayload(form: RuleFormValues) {
     bundleQuantity: qty,
     bundleDiscount: form.bundleDiscountType === 'no_discount' ? 0 : disc,
     bundleDiscountType: form.bundleDiscountType,
+    bundleMarkupBase: form.bundleMarkupBase || 'cost',
+    bundleUnitsMode: form.bundleUnitsMode || 'manual',
     bundleTargetSubProduct: form.bundleTargetSubProduct || undefined,
     thresholdAmount: num(form.thresholdAmount),
     minQuantity: num(form.minQuantity),
@@ -171,12 +189,15 @@ export function useRuleForm(initialValues: PricelistRule | null) {
       priceType: type,
       fixedPrice: '',
       markupPercentage: '',
+      markupBase: 'cost',
       discountPercentage: '',
       discountAmount: '',
       flashSalePercentage: '',
       flashSaleQty: '',
       bundleName: '',
       bundleDiscount: '',
+      bundleMarkupBase: 'cost',
+      bundleUnitsMode: 'manual',
     }));
     setErrors({});
   }
@@ -187,6 +208,8 @@ export function useRuleForm(initialValues: PricelistRule | null) {
       priceType: p.priceType,
       discountType: p.discountType,
       bundleDiscountType: p.bundleDiscountType,
+      bundleMarkupBase: p.bundleMarkupBase,
+      bundleUnitsMode: p.bundleUnitsMode,
     }));
     setErrors({});
   }

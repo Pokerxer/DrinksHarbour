@@ -77,6 +77,16 @@ describe('ruleDescription', () => {
       ruleDescription({ ...base, priceType: 'formula', markupPercentage: 25 })
     ).toBe('Price = cost × (1 + 25% markup)');
   });
+  it('formula on wholesale base', () => {
+    expect(
+      ruleDescription({
+        ...base,
+        priceType: 'formula',
+        markupPercentage: 25,
+        markupBase: 'wholesale',
+      })
+    ).toBe('Price = wholesale × (1 + 25% markup)');
+  });
   it('percentage discount', () => {
     expect(
       ruleDescription({
@@ -125,6 +135,17 @@ describe('ruleDescription', () => {
     expect(ruleDescription({ ...b, bundleDiscountType: 'no_discount' })).toBe(
       'Buy 4+ → No discount (base price)'
     );
+  });
+  it('bundle markup_on_cost with wholesale base', () => {
+    const desc = ruleDescription({
+      ...base,
+      priceType: 'bundle',
+      bundleQuantity: 2,
+      bundleDiscountType: 'markup_on_cost',
+      bundleDiscount: 15,
+      bundleMarkupBase: 'wholesale',
+    });
+    expect(desc).toBe('Buy 2+ → Wholesale +15% markup');
   });
   it('bundle cross-product target suffix', () => {
     const desc = ruleDescription({

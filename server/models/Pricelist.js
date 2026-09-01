@@ -17,8 +17,11 @@ const priceRuleSchema = new Schema({
   fixedPrice: { type: Number, min: 0, default: 0 },
 
   // ── formula ───────────────────────────────────────────────────────────────
-  // baseSellingPrice = costPrice * (1 + markupPercentage / 100)
+  // baseSellingPrice = markupBasePrice * (1 + markupPercentage / 100)
+  //   markupBase='cost'      → costPrice
+  //   markupBase='wholesale' → default size's wholesalePrice (skipped when absent)
   markupPercentage: { type: Number, min: 0, default: 0 },
+  markupBase:       { type: String, enum: ['cost', 'wholesale'], default: 'cost' },
 
   // ── discount ──────────────────────────────────────────────────────────────
   // Sets saleDiscountValue + saleType on SubProduct (regular always-on discount).
@@ -38,6 +41,10 @@ const priceRuleSchema = new Schema({
   bundleQuantity:     { type: Number, min: 2, default: 2 },
   bundleDiscount:     { type: Number, min: 0, default: 10 },
   bundleDiscountType: { type: String, enum: ['percentage', 'fixed', 'markup_on_cost', 'no_discount'], default: 'percentage' },
+  // Markup basis when bundleDiscountType is 'markup_on_cost': 'cost' (default) or 'wholesale'.
+  bundleMarkupBase:   { type: String, enum: ['cost', 'wholesale'], default: 'cost' },
+  // 'manual' = use bundleQuantity; 'pack' = use the size's unitsPerPack at runtime.
+  bundleUnitsMode:    { type: String, enum: ['manual', 'pack'], default: 'manual' },
   // Cross-product bundle target: when set, the bundle is "buy N of subProduct
   // (trigger), get discount on bundleTargetSubProduct (target)". Null = same-
   // product bundle (existing behavior).

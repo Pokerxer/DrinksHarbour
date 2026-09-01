@@ -1,15 +1,9 @@
 'use client';
 
 import React from 'react';
-import {
-  PiArrowUp,
-  PiArrowDown,
-  PiPencilSimple,
-  PiTrash,
-  PiSpinner,
-} from 'react-icons/pi';
+import { PiPencilSimple, PiTrash, PiSpinner } from 'react-icons/pi';
 import { RULE_TYPE_META } from '@/app/shared/point-of-sale/pricelist-constants';
-import { refName, type PricelistRule } from './types';
+import { refName, priorityReason, type PricelistRule } from './types';
 import { fmt, fmtDate, ruleStatus, ruleDescription } from './rule-format';
 
 const META = RULE_TYPE_META as unknown as Record<
@@ -31,8 +25,6 @@ interface Props {
   totalRules: number;
   onDelete(): void;
   onEdit(): void;
-  onMoveUp(): void;
-  onMoveDown(): void;
 }
 
 export default function RuleCard({
@@ -42,8 +34,6 @@ export default function RuleCard({
   totalRules,
   onDelete,
   onEdit,
-  onMoveUp,
-  onMoveDown,
 }: Props) {
   const meta = META[rule.priceType] || META.discount;
   const sp = typeof rule.subProduct === 'object' ? rule.subProduct : undefined;
@@ -65,7 +55,8 @@ export default function RuleCard({
 
   // Constraints line
   const constraints: string[] = [];
-  if ((rule.minQuantity ?? 0) > 0) constraints.push(`min qty ${rule.minQuantity}`);
+  if ((rule.minQuantity ?? 0) > 0)
+    constraints.push(`min qty ${rule.minQuantity}`);
   if (rule.startDate || rule.endDate) {
     constraints.push(
       `${rule.startDate ? fmtDate(rule.startDate) : '∞'} → ${
@@ -117,8 +108,14 @@ export default function RuleCard({
       <div className="min-w-0 flex-1 space-y-1">
         {/* Row 1: type badge + product + status */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-500">
+          <span
+            className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-500"
+            title={`Applied ${sequenceIndex + 1} of ${totalRules} — ${priorityReason(rule)}`}
+          >
             #{sequenceIndex + 1}
+          </span>
+          <span className="rounded-full border border-gray-200 px-1.5 py-0.5 text-[9px] font-medium text-gray-400">
+            {priorityReason(rule)}
           </span>
           <span
             className="rounded-md px-1.5 py-0.5 text-[10px] font-bold"
@@ -177,14 +174,16 @@ export default function RuleCard({
                 ⚡ {sp.flashSale.discountPercentage}% flash active
               </span>
             )}
-            {!sp.flashSale?.isActive && sp.isOnSale && (sp.saleDiscountValue ?? 0) > 0 && (
-              <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                {sp.saleType === 'fixed'
-                  ? `-₦${sp.saleDiscountValue}`
-                  : `${sp.saleDiscountValue}% off`}{' '}
-                active
-              </span>
-            )}
+            {!sp.flashSale?.isActive &&
+              sp.isOnSale &&
+              (sp.saleDiscountValue ?? 0) > 0 && (
+                <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                  {sp.saleType === 'fixed'
+                    ? `-₦${sp.saleDiscountValue}`
+                    : `${sp.saleDiscountValue}% off`}{' '}
+                  active
+                </span>
+              )}
             {(sp.bundleDeals?.length ?? 0) > 0 && (
               <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">
                 📦 {sp.bundleDeals!.length} bundle deal
@@ -204,27 +203,7 @@ export default function RuleCard({
       </div>
 
       {/* Hover actions */}
-      <div className="flex shrink-0 items-start gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-        <button
-          type="button"
-          aria-label="Move up (higher priority)"
-          title="Move up (higher priority)"
-          onClick={onMoveUp}
-          disabled={sequenceIndex === 0}
-          className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-20"
-        >
-          <PiArrowUp className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          aria-label="Move down (lower priority)"
-          title="Move down (lower priority)"
-          onClick={onMoveDown}
-          disabled={sequenceIndex === totalRules - 1}
-          className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-20"
-        >
-          <PiArrowDown className="h-3.5 w-3.5" />
-        </button>
+      <div className="flex shrink-0 items-start gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <button
           type="button"
           aria-label="Edit rule"

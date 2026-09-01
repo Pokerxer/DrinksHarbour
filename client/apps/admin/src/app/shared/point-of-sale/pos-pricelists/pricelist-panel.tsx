@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import type { Pricelist, PricelistRule, SubProductLite } from './types';
+import { sortRulesBySequence } from './types';
 import { pricelistService } from '@/services/pricelist.service';
 import PanelModals from './panel-modals';
 import PanelBindings from './panel-bindings';
@@ -15,11 +16,19 @@ import { usePanelActions } from './use-panel-actions';
 interface Props {
   pl: Pricelist;
   token?: string;
+  /** The parent is fetching this pricelist's rules from GET /:id. */
+  rulesLoading?: boolean;
   onClose(): void;
   onRefresh(): void;
 }
 
-export default function PricelistPanel({ pl, token, onClose, onRefresh }: Props) {
+export default function PricelistPanel({
+  pl,
+  token,
+  rulesLoading = false,
+  onClose,
+  onRefresh,
+}: Props) {
   const [tab, setTab] = useState<'rules' | 'ecommerce'>('rules');
   const [name, setName] = useState(pl?.name || '');
   const [currency, setCurrency] = useState(pl?.currency || 'NGN');
@@ -48,12 +57,10 @@ export default function PricelistPanel({ pl, token, onClose, onRefresh }: Props)
     productsError,
     retryProducts,
     applying,
-    reordering,
     applyPrices,
     addRule,
     persistRule,
     removeRule,
-    moveRule,
   } = usePanelActions({ pl, token, onRefresh });
 
   // Sync local meta fields on pricelist switch — never wipe mid-edit state.
@@ -113,7 +120,10 @@ export default function PricelistPanel({ pl, token, onClose, onRefresh }: Props)
     }
   }
 
-  async function handleSaveRule(rule: Record<string, unknown>, keepOpen: boolean) {
+  async function handleSaveRule(
+    rule: Record<string, unknown>,
+    keepOpen: boolean
+  ) {
     const shouldClose = await addRule(rule, keepOpen); // rethrows for modal field errors
     if (shouldClose) setShowModal(false);
     onRefresh();
@@ -133,7 +143,10 @@ export default function PricelistPanel({ pl, token, onClose, onRefresh }: Props)
     setConfirmRuleId(null);
   }
 
-  const rules = pl?.rules || [];
+  // Priority order, not document order — see sortRulesBySequence. The server
+  // derives `sequence` (pricelistPriority.service) and both pricing engines
+  // read it, so sorting here is what makes the #n badge tell the truth.
+  const rules = sortRulesBySequence(pl?.rules);
   const activeCount = rules.filter(
     (r) => !r.endDate || new Date(r.endDate) >= new Date()
   ).length;
@@ -226,17 +239,16 @@ export default function PricelistPanel({ pl, token, onClose, onRefresh }: Props)
       {tab === 'rules' && (
         <PanelRulesTab
           rules={rules}
+          rulesLoading={rulesLoading}
           productsLoading={productsLoading}
           productsError={productsError}
           applying={applying}
-          reordering={reordering}
           deletingId={deleting}
           onRetryProducts={retryProducts}
           onAddRule={() => setShowModal(true)}
           onApply={applyPrices}
           onDeleteRequest={setConfirmRuleId}
           onEdit={setEditRule}
-          onMove={(id, dir) => moveRule(rules, id, dir)}
         >
           {(pageRules, page) => (
             <>
@@ -249,8 +261,6 @@ export default function PricelistPanel({ pl, token, onClose, onRefresh }: Props)
                   totalRules={rules.length}
                   onDelete={() => setConfirmRuleId(r._id)}
                   onEdit={() => setEditRule(r)}
-                  onMoveUp={() => moveRule(rules, r._id, 'up')}
-                  onMoveDown={() => moveRule(rules, r._id, 'down')}
                 />
               ))}
             </>

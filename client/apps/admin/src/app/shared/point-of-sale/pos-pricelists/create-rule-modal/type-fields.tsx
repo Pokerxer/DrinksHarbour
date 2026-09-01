@@ -2,9 +2,16 @@
 
 import { PiInfo } from 'react-icons/pi';
 import { RULE_TYPE_META } from '@/app/shared/point-of-sale/pricelist-constants';
-import type { RuleFormValues } from '../types';
+import {
+  basisCoverage,
+  hasWholesalePrice,
+  subproductWholesalePrice,
+  type RuleFormValues,
+  type SubProductLite,
+} from '../types';
 import { RuleField, RuleInput, Seg, PctChips } from './controls';
 import BundleFields from './bundle-fields';
+import { fmt } from '../rule-format';
 
 const META = RULE_TYPE_META as unknown as Record<
   string,
@@ -22,9 +29,66 @@ interface Props {
   form: RuleFormValues;
   errors: Record<string, string>;
   f(k: keyof RuleFormValues, v: string): void;
+  /** Currently selected product, used to decide markup base options. */
+  selProduct?: SubProductLite;
+  /** Whole catalogue — measures basis coverage for an all-products rule. */
+  products?: SubProductLite[];
 }
 
-export default function TypeFields({ form, errors, f }: Props) {
+/**
+ * Warns that a wholesale-based rule will do nothing on most of the catalogue.
+ * Only shown for an all-products rule: with a product selected the basis
+ * picker already prints that product's actual wholesale price.
+ */
+export function WholesaleCoverageNote({
+  products,
+  selProduct,
+}: {
+  products?: SubProductLite[];
+  selProduct?: SubProductLite;
+}) {
+  if (selProduct) return null;
+  const cov = basisCoverage(products);
+  if (cov.total === 0 || cov.withoutWholesale === 0) return null;
+  const none = cov.withWholesale === 0;
+  return (
+    <div
+      className={`flex items-start gap-2 rounded-lg border px-2.5 py-2 text-[11px] leading-relaxed ${
+        none
+          ? 'border-red-200 bg-red-50 text-red-700'
+          : 'border-amber-200 bg-amber-50 text-amber-700'
+      }`}
+    >
+      <PiInfo className="mt-px h-3.5 w-3.5 shrink-0" />
+      <span>
+        {none ? (
+          <>
+            <b className="font-semibold">
+              None of your {cov.total} products has a wholesale price
+            </b>{' '}
+            — this rule would change no price at all. Pick <b>Cost</b>, or set a
+            wholesale price on the sizes first.
+          </>
+        ) : (
+          <>
+            Only <b className="font-semibold">{cov.withWholesale}</b> of{' '}
+            {cov.total} products has a wholesale price. The other{' '}
+            {cov.withoutWholesale} keep their current price — this rule does
+            nothing for them.
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
+export default function TypeFields({
+  form,
+  errors,
+  f,
+  selProduct,
+  products,
+}: Props) {
   switch (form.priceType) {
     case 'fixed':
       return (
@@ -47,13 +111,30 @@ export default function TypeFields({ form, errors, f }: Props) {
         </RuleField>
       );
 
-    case 'formula':
+    case 'formula': {
+      const wp = subproductWholesalePrice(selProduct);
+      const hasWp = hasWholesalePrice(selProduct);
+      const baseLabel =
+        form.markupBase === 'wholesale' && hasWp
+          ? `wholesale (${fmt(wp)})`
+          : `cost${selProduct?.costPrice ? ` (${fmt(selProduct.costPrice)})` : ''}`;
       return (
         <>
+          <RuleField label="Markup on">
+            <Seg
+              options={[
+                ['cost', 'Cost'],
+                ['wholesale', hasWp ? `Wholesale · ${fmt(wp)}` : 'Wholesale'],
+              ]}
+              value={form.markupBase === 'wholesale' ? 'wholesale' : 'cost'}
+              onChange={(v) => f('markupBase', v)}
+              activeColor={META.formula.color}
+            />
+          </RuleField>
           <RuleField
             label="Markup %"
             error={errors.markupPercentage}
-            hint="New price = cost × (1 + markup%)"
+            hint={`New price = ${baseLabel} × (1 + markup%)`}
           >
             <RuleInput
               hasError={!!errors.markupPercentage}
@@ -69,10 +150,19 @@ export default function TypeFields({ form, errors, f }: Props) {
           </RuleField>
           <div className="flex items-center gap-2 text-[11px] text-amber-700">
             <PiInfo className="h-3.5 w-3.5 shrink-0" />
-            Products without a cost price will be skipped when applied.
+            {form.markupBase === 'wholesale'
+              ? `Products using the wholesale base are skipped when no wholesale price is set`
+              : `Products without a cost price will be skipped when applied.`}
           </div>
+          {form.markupBase === 'wholesale' && (
+            <WholesaleCoverageNote
+              products={products}
+              selProduct={selProduct}
+            />
+          )}
         </>
       );
+    }
 
     case 'discount':
       return (
@@ -127,7 +217,10 @@ export default function TypeFields({ form, errors, f }: Props) {
     case 'flash_sale':
       return (
         <>
-          <RuleField label="Flash Discount %" error={errors.flashSalePercentage}>
+          <RuleField
+            label="Flash Discount %"
+            error={errors.flashSalePercentage}
+          >
             <RuleInput
               hasError={!!errors.flashSalePercentage}
               suffix="%"
@@ -160,7 +253,15 @@ export default function TypeFields({ form, errors, f }: Props) {
       );
 
     case 'bundle':
-      return <BundleFields form={form} errors={errors} f={f} />;
+      return (
+        <BundleFields
+          form={form}
+          errors={errors}
+          f={f}
+          selProduct={selProduct}
+          products={products}
+        />
+      );
 
     case 'cart_threshold':
       return (
@@ -195,7 +296,9 @@ export default function TypeFields({ form, errors, f }: Props) {
 
           <RuleField
             label={
-              form.discountType === 'fixed' ? 'Discount amount' : 'Discount percentage'
+              form.discountType === 'fixed'
+                ? 'Discount amount'
+                : 'Discount percentage'
             }
             error={
               form.discountType === 'fixed'

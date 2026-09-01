@@ -115,6 +115,10 @@ export interface StockRow {
   costPrice: number;
   /** Retail price for the line (size sellingPrice, else subProduct sellingPrice). */
   sellingPrice?: number;
+  /** Wholesale price for the size — used when a formula rule has markupBase='wholesale' or a bundle rule has bundleMarkupBase='wholesale'. */
+  wholesalePrice?: number;
+  /** Units per pack for the size — used when a bundle rule has bundleUnitsMode='pack'. */
+  unitsPerPack?: number;
   /** Valuation method used to derive costPrice (fifo | average | standard). */
   valuationMethod?: string;
   minStockLevel: number;

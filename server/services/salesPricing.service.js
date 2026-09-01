@@ -27,8 +27,9 @@ const {
  */
 async function computeLinePricing({ subProductId, sizeId, quantity, pricelist, tenant }) {
   const sp = await SubProduct.findById(subProductId)
-    .select('product sku baseSellingPrice basePriceBeforePricelist costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals')
+    .select('product sku baseSellingPrice basePriceBeforePricelist costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals sizes')
     .populate('product', 'platformMarkup platformDiscount')
+    .populate('sizes', 'wholesalePrice isDefault unitsPerPack')
     .lean();
   if (!sp) return null;
 
@@ -39,11 +40,35 @@ async function computeLinePricing({ subProductId, sizeId, quantity, pricelist, t
     return { unitPrice: pricing.sellingPrice, costPrice: cost, originalPrice: pricing.originalPrice };
   }
 
-  const sortedPriceRules = findMatchingPriceRules(pricelist?.rules, subProductId, quantity);
-  let price = applyPriceRules(pricing.sellingPrice, cost, sortedPriceRules);
+  // Wholesale markup base: the size's wholesale price (or the subproduct
+  // default size's) when present.
+  const wholesaleBasis = (() => {
+    if (sizeDoc?.wholesalePrice > 0) return Number(sizeDoc.wholesalePrice) || 0;
+    const sizes = Array.isArray(sp.sizes) ? sp.sizes : [];
+    const def = sizes.find((s) => s.isDefault)?.wholesalePrice;
+    if (Number(def) > 0) return Number(def) || 0;
+    return Number(sizes.find((s) => Number(s.wholesalePrice) > 0)?.wholesalePrice) || 0;
+  })();
 
-  const bestBundle = pickBestBundle(sp.bundleDeals, pricelist?.rules, quantity, subProductId, { price, costPrice: cost });
-  const bundleOverride = applyBundleOverride(price, bestBundle, cost, pricing.originalPrice);
+  const sortedPriceRules = findMatchingPriceRules(pricelist?.rules, subProductId, quantity);
+  let price = applyPriceRules(pricing.sellingPrice, cost, sortedPriceRules, wholesaleBasis);
+
+  // Resolve the size's unitsPerPack for pack-mode bundles
+  const sizeUnitsPerPack = (() => {
+    if (sizeDoc?.unitsPerPack > 1) return sizeDoc.unitsPerPack;
+    const sizes = Array.isArray(sp.sizes) ? sp.sizes : [];
+    const def = sizes.find((s) => s.isDefault)?.unitsPerPack;
+    if (def > 1) return def;
+    return sizes.find((s) => (s.unitsPerPack || 0) > 1)?.unitsPerPack || 1;
+  })();
+
+  const bestBundle = pickBestBundle(sp.bundleDeals, pricelist?.rules, quantity, subProductId, {
+    price,
+    costPrice: cost,
+    wholesalePrice: wholesaleBasis,
+    unitsPerPack: sizeUnitsPerPack,
+  });
+  const bundleOverride = applyBundleOverride(price, bestBundle, cost, pricing.originalPrice, wholesaleBasis);
   if (bundleOverride.overridden) {
     price = bundleOverride.price;
   } else if (bestBundle) {
@@ -55,6 +80,7 @@ async function computeLinePricing({ subProductId, sizeId, quantity, pricelist, t
   return {
     unitPrice: Math.round(price * 100) / 100,
     costPrice: cost,
+    wholesalePrice: wholesaleBasis,
     originalPrice: pricing.originalPrice,
   };
 }
@@ -121,6 +147,7 @@ async function computeAuthoritativeLinePrices(items, { tenantId, pricelistId }) 
       quantity: Number(it.quantity) || 0,
       price: Number(it.unitPrice) || 0,
       costPrice: lineMeta[i]?.costPrice || 0,
+      wholesalePrice: lineMeta[i]?.wholesalePrice || 0,
       originalPrice: lineMeta[i]?.originalPrice || 0,
     }));
     for (const adj of applyCartBundles(cartLines, pricelist.rules)) {

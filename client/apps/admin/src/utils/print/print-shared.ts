@@ -1,7 +1,6 @@
 // Shared data helpers for the printed purchase documents. Layout lives in
 // pdf-render.ts; each *-print builder turns a server record into a
 // DocumentModel using the helpers below.
-import type { POWarehouseRef } from '@/services/purchaseOrder.service';
 import type { DocHead } from './doc-model';
 
 export const COMPANY = {
@@ -11,20 +10,36 @@ export const COMPANY = {
   email: 'accounts@drinksharbour.com',
 };
 
+/**
+ * The address/contact facts a printed letterhead is built from — the only
+ * fields the helpers below read. Deliberately narrower than any one service
+ * type so both a PO's `POWarehouseRef` and the `warehouse.service`
+ * `Warehouse` satisfy it without either module importing the other.
+ */
+export interface WarehouseHeadSource {
+  address?: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    postalCode?: string;
+  };
+  contact?: { name?: string; phone?: string; email?: string };
+}
+
 /** The warehouse ref carries full details only when freshly populated. */
-type PopulatedWarehouse = POWarehouseRef;
+type PopulatedWarehouse = WarehouseHeadSource;
 
 function isPopulatedWarehouse(
-  wh: string | POWarehouseRef | null | undefined
+  wh: string | WarehouseHeadSource | null | undefined
 ): wh is PopulatedWarehouse {
   return !!wh && typeof wh === 'object';
 }
 
 /** Street line(s) of a warehouse, e.g. "39 Gana Street, Off Aminu Kano Crescent". */
 export function warehouseStreetLine(wh: PopulatedWarehouse | null): string {
-  return [wh?.address?.line1, wh?.address?.line2]
-    .filter(Boolean)
-    .join(', ');
+  return [wh?.address?.line1, wh?.address?.line2].filter(Boolean).join(', ');
 }
 
 /** Locality line of a warehouse, e.g. "Abuja, FCT, Nigeria". */
@@ -40,7 +55,7 @@ export function warehouseLocalityLine(wh: PopulatedWarehouse | null): string {
  * back to the platform defaults instead of printing an empty band.
  */
 export function warehouseHeadOf(
-  wh: string | POWarehouseRef | null | undefined
+  wh: string | WarehouseHeadSource | null | undefined
 ): DocHead | undefined {
   if (!isPopulatedWarehouse(wh)) return undefined;
   const head: DocHead = {
@@ -54,9 +69,7 @@ export function warehouseHeadOf(
 
 /** Buyer contact line, e.g. "+234 803 555 0100 · maitama@drinksharbour.com". */
 export function warehouseContactLine(wh: PopulatedWarehouse | null): string {
-  return [wh?.contact?.phone, wh?.contact?.email]
-    .filter(Boolean)
-    .join(' · ');
+  return [wh?.contact?.phone, wh?.contact?.email].filter(Boolean).join(' · ');
 }
 
 export function fmtDate(d?: string | Date | null): string {
@@ -76,14 +89,39 @@ export function fmtAmt(n: number | undefined | null, currency: string): string {
 // ─── Amount in words ─────────────────────────────────────────────────────────
 
 const ONES = [
-  '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+  '',
+  'One',
+  'Two',
+  'Three',
+  'Four',
+  'Five',
+  'Six',
+  'Seven',
+  'Eight',
+  'Nine',
 ];
 const TEENS = [
-  'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
-  'Seventeen', 'Eighteen', 'Nineteen',
+  'Ten',
+  'Eleven',
+  'Twelve',
+  'Thirteen',
+  'Fourteen',
+  'Fifteen',
+  'Sixteen',
+  'Seventeen',
+  'Eighteen',
+  'Nineteen',
 ];
 const TENS = [
-  '', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty',
+  '',
+  '',
+  'Twenty',
+  'Thirty',
+  'Forty',
+  'Fifty',
+  'Sixty',
+  'Seventy',
+  'Eighty',
   'Ninety',
 ];
 const SCALES = ['', 'Thousand', 'Million', 'Billion', 'Trillion'];
@@ -96,7 +134,9 @@ function threeDigits(n: number): string {
   if (r < 10 && r > 0) parts.push(ONES[r]);
   else if (r >= 10 && r < 20) parts.push(TEENS[r - 10]);
   else if (r >= 20)
-    parts.push(`${TENS[Math.floor(r / 10)]}${r % 10 ? `-${ONES[r % 10]}` : ''}`);
+    parts.push(
+      `${TENS[Math.floor(r / 10)]}${r % 10 ? `-${ONES[r % 10]}` : ''}`
+    );
   return parts.join(' ');
 }
 

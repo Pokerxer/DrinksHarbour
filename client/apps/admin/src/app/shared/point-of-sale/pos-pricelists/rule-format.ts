@@ -56,7 +56,9 @@ export function ruleDescription(rule: PricelistRule): string {
     case 'fixed':
       return `Sets selling price → ${fmt(rule.fixedPrice || 0)}`;
     case 'formula':
-      return `Price = cost × (1 + ${rule.markupPercentage || 0}% markup)`;
+      return `Price = ${
+        rule.markupBase === 'wholesale' ? 'wholesale' : 'cost'
+      } × (1 + ${rule.markupPercentage || 0}% markup)`;
     case 'discount':
       return rule.discountType === 'fixed'
         ? `-₦${Number(rule.discountAmount || 0).toFixed(2)} off selling price`
@@ -67,11 +69,14 @@ export function ruleDescription(rule: PricelistRule): string {
       return `⚡ ${rule.flashSalePercentage || 0}% flash sale${qty}`;
     }
     case 'bundle': {
-      const qty = rule.bundleQuantity || 2;
+      const qty = rule.bundleUnitsMode === 'pack'
+        ? (rule.bundleQuantity ? `pack(${rule.bundleQuantity})` : 'pack')
+        : rule.bundleQuantity || 2;
       let desc: string;
-      if (rule.bundleDiscountType === 'markup_on_cost')
-        desc = `Buy ${qty}+ → Cost +${rule.bundleDiscount || 0}% markup`;
-      else if (rule.bundleDiscountType === 'no_discount')
+      if (rule.bundleDiscountType === 'markup_on_cost') {
+        const base = rule.bundleMarkupBase === 'wholesale' ? 'Wholesale' : 'Cost';
+        desc = `Buy ${qty}+ → ${base} +${rule.bundleDiscount || 0}% markup`;
+      } else if (rule.bundleDiscountType === 'no_discount')
         desc = `Buy ${qty}+ → No discount (base price)`;
       else if (rule.bundleDiscountType === 'fixed')
         desc = `Buy ${qty}+ → -₦${Number(rule.bundleDiscount || 0).toFixed(0)} per unit`;

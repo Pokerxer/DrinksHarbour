@@ -252,7 +252,11 @@ test('update-rule ignores client-sent sequence, ruleCategory, _id, __v', async (
 
   assert.strictEqual(res.statusCode, 200);
   const rule = plA.rules.id(ruleId);
-  assert.strictEqual(rule.sequence, 2, 'client-sent sequence must be ignored');
+  // Sequence is server-derived (pricelistPriority.service re-ranks on every
+  // mutation), so the client's 999 cannot survive. The only rule on this
+  // pricelist ranks first; the stored 2 was a gap the re-rank closes.
+  assert.notStrictEqual(rule.sequence, 999, 'client-sent sequence must be ignored');
+  assert.strictEqual(rule.sequence, 0, 'the only rule ranks first');
   assert.strictEqual(rule.ruleCategory, 'dynamic', 'client-sent ruleCategory must be ignored');
   assert.strictEqual(rule.discountPercentage, 15, 'whitelisted field applied');
 });
@@ -476,4 +480,309 @@ test('add-rule 400s on garbage numeric input (not silently zeroed)', async (t) =
 
   assert.strictEqual(res.statusCode, 400, 'garbage numeric must 400, not silently become 0');
   assert.ok(res.body?.success === false);
+});
+
+test('GET list computes ruleCount and strips the full rules payload', async (t) => {
+  bypassAuth(t);
+  const Pricelist = require('../models/Pricelist');
+  const tenantA = oid();
+  const row = {
+    _id: oid(),
+    name: 'Trade Q3',
+    tenant: tenantA,
+    currency: 'NGN',
+    createdAt: new Date(Date.now() - 1000),
+  };
+
+  let pipelineSeen = null;
+  t.mock.method(Pricelist, 'aggregate', (pipeline) => {
+    pipelineSeen = pipeline;
+    const p = Promise.resolve([row]);
+    return { then: p.then.bind(p), catch: p.catch.bind(p) };
+  });
+  t.mock.method(Pricelist, 'countDocuments', async () => 1);
+
+  const res = await dispatch(getRouter(), {
+    method: 'GET',
+    url: '/',
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+  });
+
+  assert.strictEqual(res.statusCode, 200);
+  const list = res.body?.data?.pricelists;
+  assert.ok(Array.isArray(list), 'list must be an array');
+  assert.strictEqual(list.length, 1);
+
+  // The list must expose a lightweight ruleCount (so pickers can show "3 rules")
+  // without shipping the full rules payload that the print modal then has to
+  // apply. Assert the pipeline the route builds, not MongoDB's own transform.
+  assert.ok(
+    pipelineSeen.some((s) => s.$addFields && Object.prototype.hasOwnProperty.call(s.$addFields, 'ruleCount')),
+    'pipeline must add a computed ruleCount'
+  );
+  assert.ok(
+    pipelineSeen.some((s) => s.$project && s.$project.rules === 0),
+    'pipeline must strip the full rules payload'
+  );
+});
+// ── Rule priority: sequence is the order, the stored array is not ────────────
+// Both pricing engines (findMatchingPriceRules here, findMatchingPricelistRules
+// on the client) stack rules by ascending `sequence`. Two gaps let the stored
+// array order drift away from it, and the panel rendered the stored order:
+//   - add-rule assigned `sequence = rules.length`, which duplicates a live
+//     sequence on any pricelist that has ever had a rule deleted;
+//   - the reorder endpoint rewrites `sequence` without touching the array, so
+//     GET /:id replayed the pre-move order and the move looked like a no-op.
+
+test('add-rule sequences above every existing rule, not at rules.length', async (t) => {
+  bypassAuth(t);
+  const Pricelist = require('../models/Pricelist');
+  const tenantA = oid();
+  // Exactly the shape left behind by deleting the sequence-0 rule of a
+  // three-rule pricelist: two rules remain, holding sequences 1 and 2.
+  const plA = makePricelistDoc({
+    _id: oid(),
+    tenant: tenantA,
+    rules: [
+      { _id: oid(), priceType: 'fixed', fixedPrice: 100, sequence: 1 },
+      { _id: oid(), priceType: 'discount', discountPercentage: 5, sequence: 2 },
+    ],
+  });
+
+  t.mock.method(Pricelist, 'findOne', async (filter) => {
+    if (filter.tenant && String(filter.tenant) !== String(tenantA)) return null;
+    return plA;
+  });
+
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'flash_sale', flashSalePercentage: 20 },
+  });
+
+  assert.strictEqual(res.statusCode, 201);
+  // Priority is now derived (pricelistPriority.service), so the exact number a
+  // new rule lands on is the ranking's business. What must never regress is the
+  // invariant the old `sequence = rules.length` broke: after a delete had left
+  // survivors holding 1 and 2, the next add also got 2 and tied with a live rule.
+  const seqs = plA.rules.map((r) => r.sequence).sort((a, b) => a - b);
+  assert.strictEqual(new Set(seqs).size, seqs.length, 'sequences must stay unique');
+  assert.deepStrictEqual(seqs, [0, 1, 2], 'and stay contiguous from 0');
+});
+
+test('add-rule on an empty pricelist starts at sequence 0', async (t) => {
+  bypassAuth(t);
+  const Pricelist = require('../models/Pricelist');
+  const tenantA = oid();
+  const plA = makePricelistDoc({ _id: oid(), tenant: tenantA, rules: [] });
+
+  t.mock.method(Pricelist, 'findOne', async (filter) => {
+    if (filter.tenant && String(filter.tenant) !== String(tenantA)) return null;
+    return plA;
+  });
+
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'fixed', fixedPrice: 500 },
+  });
+
+  assert.strictEqual(res.statusCode, 201);
+  assert.strictEqual(plA.rules[0].sequence, 0, 'first rule must be sequence 0');
+});
+
+test('get-one returns rules in ascending sequence order, not stored order', async (t) => {
+  bypassAuth(t);
+  const Pricelist = require('../models/Pricelist');
+  const tenantA = oid();
+  const [idA, idB, idC] = [oid(), oid(), oid()];
+  // What the reorder endpoint leaves behind: sequences rewritten in place,
+  // array order untouched.
+  const stored = {
+    _id: oid(),
+    tenant: tenantA,
+    name: 'Trade Q3',
+    rules: [
+      { _id: idA, priceType: 'fixed', sequence: 2 },
+      { _id: idB, priceType: 'discount', sequence: 0 },
+      { _id: idC, priceType: 'flash_sale', sequence: 1 },
+    ],
+  };
+
+  const chainable = (result) => {
+    const c = { populate: () => c, lean: async () => result };
+    const p = Promise.resolve(result);
+    c.then = p.then.bind(p);
+    c.catch = p.catch.bind(p);
+    return c;
+  };
+  t.mock.method(Pricelist, 'findOne', () => chainable(stored));
+
+  const res = await dispatch(getRouter(), {
+    method: 'GET',
+    url: `/${String(stored._id)}`,
+    params: { id: String(stored._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+  });
+
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual(
+    res.body.data.rules.map((r) => String(r._id)),
+    [String(idB), String(idC), String(idA)],
+    'rules must arrive in the order they are actually applied'
+  );
+});
+
+test('reorder assigns sequences from orderedIds and leaves unlisted rules alone', async (t) => {
+  bypassAuth(t);
+  const Pricelist = require('../models/Pricelist');
+  const tenantA = oid();
+  const [idA, idB, idC] = [oid(), oid(), oid()];
+  const plA = makePricelistDoc({
+    _id: oid(),
+    tenant: tenantA,
+    rules: [
+      { _id: idA, priceType: 'fixed', sequence: 0 },
+      { _id: idB, priceType: 'discount', sequence: 1 },
+      { _id: idC, priceType: 'flash_sale', sequence: 2 },
+    ],
+  });
+
+  t.mock.method(Pricelist, 'findOne', async (filter) => {
+    if (filter.tenant && String(filter.tenant) !== String(tenantA)) return null;
+    return plA;
+  });
+
+  const res = await dispatch(getRouter(), {
+    method: 'PATCH',
+    url: `/${String(plA._id)}/rules/reorder`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { orderedIds: [String(idC), String(idA), String(idB)] },
+  });
+
+  assert.strictEqual(res.statusCode, 200);
+  const byId = (id) => plA.rules.find((r) => String(r._id) === String(id));
+  assert.strictEqual(byId(idC).sequence, 0);
+  assert.strictEqual(byId(idA).sequence, 1);
+  assert.strictEqual(byId(idB).sequence, 2);
+  assert.strictEqual(plA.saveCount, 1, 'one atomic save, not one per rule');
+});
+
+// ── Automatic priority: every rule mutation re-ranks the list ────────────────
+// `sequence` is derived, not dragged (see pricelistPriority.service). It must be
+// reassigned on add, update and delete: a rule's priceType/minQuantity/
+// subProduct decide where it belongs, and deleting one leaves a gap.
+
+test('add-rule re-ranks: a base-setter added last still sequences first', async (t) => {
+  bypassAuth(t);
+  const Pricelist = require('../models/Pricelist');
+  const tenantA = oid();
+  const discountId = oid();
+  const plA = makePricelistDoc({
+    _id: oid(),
+    tenant: tenantA,
+    rules: [{ _id: discountId, priceType: 'discount', discountPercentage: 10, sequence: 0 }],
+  });
+
+  t.mock.method(Pricelist, 'findOne', async (filter) => {
+    if (filter.tenant && String(filter.tenant) !== String(tenantA)) return null;
+    return plA;
+  });
+
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'fixed', fixedPrice: 4500 },
+  });
+
+  assert.strictEqual(res.statusCode, 201);
+  const byId = (id) => plA.rules.find((r) => String(r._id) === String(id));
+  const fixed = plA.rules.find((r) => r.priceType === 'fixed');
+  assert.strictEqual(
+    fixed.sequence, 0,
+    'a fixed rule assigns result= and would discard the discount if it ran second'
+  );
+  assert.strictEqual(byId(discountId).sequence, 1);
+});
+
+test('update-rule re-ranks when priceType changes discount → fixed', async (t) => {
+  bypassAuth(t);
+  const Pricelist = require('../models/Pricelist');
+  const tenantA = oid();
+  const [aId, bId] = [oid(), oid()];
+  const plA = makePricelistDoc({
+    _id: oid(),
+    tenant: tenantA,
+    rules: [
+      { _id: aId, priceType: 'discount', discountPercentage: 5, sequence: 0 },
+      { _id: bId, priceType: 'discount', discountPercentage: 10, sequence: 1 },
+    ],
+  });
+
+  t.mock.method(Pricelist, 'findOne', async (filter) => {
+    if (filter.tenant && String(filter.tenant) !== String(tenantA)) return null;
+    return plA;
+  });
+
+  const res = await dispatch(getRouter(), {
+    method: 'PATCH',
+    url: `/${String(plA._id)}/rules/${String(bId)}`,
+    params: { id: String(plA._id), ruleId: String(bId) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'fixed', fixedPrice: 9000 },
+  });
+
+  assert.strictEqual(res.statusCode, 200);
+  const byId = (id) => plA.rules.find((r) => String(r._id) === String(id));
+  assert.strictEqual(byId(bId).sequence, 0, 'now a base-setter, so it must run first');
+  assert.strictEqual(byId(aId).sequence, 1);
+});
+
+test('delete-rule re-ranks, leaving no gap in the sequence', async (t) => {
+  bypassAuth(t);
+  const Pricelist = require('../models/Pricelist');
+  const SubProductModel = require('../models/SubProduct');
+  const tenantA = oid();
+  const [aId, bId, cId] = [oid(), oid(), oid()];
+  const plA = makePricelistDoc({
+    _id: oid(),
+    tenant: tenantA,
+    rules: [
+      { _id: aId, priceType: 'formula', markupPercentage: 50, sequence: 0 },
+      { _id: bId, priceType: 'discount', discountPercentage: 5, sequence: 1 },
+      { _id: cId, priceType: 'bundle', bundleQuantity: 6, sequence: 2 },
+    ],
+  });
+
+  t.mock.method(Pricelist, 'findOne', async (filter) => {
+    if (filter.tenant && String(filter.tenant) !== String(tenantA)) return null;
+    return plA;
+  });
+  t.mock.method(SubProductModel, 'updateMany', async () => ({ modifiedCount: 0 }));
+
+  const res = await dispatch(getRouter(), {
+    method: 'DELETE',
+    url: `/${String(plA._id)}/rules/${String(aId)}`,
+    params: { id: String(plA._id), ruleId: String(aId) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+  });
+
+  assert.strictEqual(res.statusCode, 200);
+  const seqs = plA.rules.map((r) => r.sequence).sort((x, y) => x - y);
+  assert.deepStrictEqual(seqs, [0, 1], 'survivors must renumber contiguously');
 });

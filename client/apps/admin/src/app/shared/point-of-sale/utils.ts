@@ -80,7 +80,8 @@ export const PER_LINE_PRICE_TYPES = [
 export function applyRuleTransform(
   price: number,
   rule: any,
-  costPrice = 0
+  costPrice = 0,
+  wholesalePrice = 0
 ): number {
   if (price <= 0) return price;
   switch (rule.priceType) {
@@ -89,12 +90,18 @@ export function applyRuleTransform(
       return fp > 0 ? fp : price;
     }
     case 'formula': {
-      // Mirrors the server engine exactly (pricelistPricing.service): a
-      // formula rule applies whenever cost is known, regardless of markup.
-      const cost = Number(costPrice);
+      // Mirrors the server engine (pricelistPricing.service): a formula rule
+      // applies its markup to the chosen base — cost (default) or wholesale.
       const markup = Number(rule.markupPercentage || 0);
-      if (cost <= 0) return price;
-      return Math.round(cost * (1 + markup / 100) * 100) / 100;
+      if (rule.markupBase === 'wholesale') {
+        if (wholesalePrice > 0)
+          return Math.round(wholesalePrice * (1 + markup / 100) * 100) / 100;
+      } else {
+        const cost = Number(costPrice);
+        if (cost > 0)
+          return Math.round(cost * (1 + markup / 100) * 100) / 100;
+      }
+      return price;
     }
     case 'discount': {
       if (rule.discountType === 'fixed') {

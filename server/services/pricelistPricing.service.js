@@ -11,6 +11,11 @@
 // and the appliedPricelistRule snapshot).
 const PER_LINE_PRICE_TYPES = ['fixed', 'formula', 'discount', 'flash_sale'];
 
+// Priority order is derived and stored on `sequence`; the stored array order is
+// not it. findMatchingPriceRules sorts its own pool, but pickBestBundle ranks
+// by savings and needs the input already in priority order to break ties.
+const { rulesInSequenceOrder } = require('./pricelistPriority.service');
+
 /**
  * Eligible price rules (fixed/formula/discount/flash_sale — excludes bundle
  * and cart_threshold), filtered by date window + minQuantity, then sorted:
@@ -49,7 +54,7 @@ function findMatchingPriceRules(rules, subProductId, quantity) {
 }
 
 /** Sequentially applies already-sorted price rules to a base price. */
-function applyPriceRules(price, costPrice, sortedRules) {
+function applyPriceRules(price, costPrice, sortedRules, wholesalePrice = 0) {
   let result = price;
   for (const rule of sortedRules || []) {
     if (rule.priceType === 'fixed') {
@@ -57,7 +62,12 @@ function applyPriceRules(price, costPrice, sortedRules) {
       if (fp > 0) result = fp;
     } else if (rule.priceType === 'formula') {
       const markup = Number(rule.markupPercentage || 0);
-      if (costPrice > 0) result = Math.round(costPrice * (1 + markup / 100) * 100) / 100;
+      if (rule.markupBase === 'wholesale') {
+        // Markup applied on the size's wholesale price (skip when absent).
+        if (wholesalePrice > 0) result = Math.round(wholesalePrice * (1 + markup / 100) * 100) / 100;
+      } else if (costPrice > 0) {
+        result = Math.round(costPrice * (1 + markup / 100) * 100) / 100;
+      }
     } else if (rule.priceType === 'discount') {
       if (rule.discountType === 'fixed') {
         const amt = Number(rule.discountAmount || 0);
@@ -78,12 +88,22 @@ function applyPriceRules(price, costPrice, sortedRules) {
  * Merges DB bundleDeals with pricelist `priceType:'bundle'` rules scoped to
  * subProductId, filters to qualifying (active, not expired, quantity met),
  * and returns the single best-savings candidate (or null).
+ *
+ * @param {number} wholesalePrice - the product/size's wholesale price, used when bundleMarkupBase=wholesale
+ * @param {number} unitsPerPack   - the size's unitsPerPack, used when bundleUnitsMode=pack
  */
-function pickBestBundle(dbBundles, pricelistRules, quantity, subProductId, { price, costPrice }) {
+function pickBestBundle(dbBundles, pricelistRules, quantity, subProductId, { price, costPrice, wholesalePrice = 0, unitsPerPack = 1 }) {
   const now = new Date();
-  const candidates = [...(dbBundles || [])];
 
-  for (const r of pricelistRules || []) {
+  // Pricelist bundle candidates, split by how specifically they target this
+  // line. Sequence order, so the pools come out in applied order: callers hand
+  // us the rules straight off the stored document, whose array order is not
+  // priority order (resequenceRules rewrites `sequence` and leaves the array
+  // alone).
+  const specific = [];
+  const allProducts = [];
+
+  for (const r of rulesInSequenceOrder(pricelistRules || [])) {
     if (r.priceType !== 'bundle' || !r.bundleQuantity) continue;
     // Cross-product rules (buy X of trigger → discount target) are cart-scoped
     // and handled by applyCartBundles. Without this guard a cross-product rule
@@ -95,17 +115,41 @@ function pickBestBundle(dbBundles, pricelistRules, quantity, subProductId, { pri
     if ((Number(r.minQuantity) || 0) > quantity) continue;
     const rid = r.subProduct?._id ? String(r.subProduct._id) : r.subProduct ? String(r.subProduct) : null;
     if (rid && rid !== String(subProductId)) continue;
-    candidates.push({
-      name: r.bundleName || `Buy ${r.bundleQuantity}+`,
-      quantity: r.bundleQuantity,
+
+    // Resolve the effective bundle quantity: 'pack' mode uses the size's unitsPerPack
+    const effectiveQty = r.bundleUnitsMode === 'pack' ? (unitsPerPack || 1) : r.bundleQuantity;
+    // Qualify BEFORE the pool split: a product-specific rule the customer has
+    // not bought enough for must not shadow an all-products rule they have.
+    if (quantity < (effectiveQty || 1)) continue;
+
+    (rid ? specific : allProducts).push({
+      name: r.bundleName || `Buy ${effectiveQty}+`,
+      quantity: effectiveQty,
       discount: r.bundleDiscount || 0,
       discountType: r.bundleDiscountType || 'percentage',
+      bundleMarkupBase: r.bundleMarkupBase || 'cost',
       active: true,
       validUntil: r.endDate || null,
+      fromPricelist: true,
     });
   }
 
-  const qualifying = candidates.filter((bd) =>
+  // ── Specificity, not savings ────────────────────────────────────────────────
+  // A rule aimed at THIS product outranks one aimed at everything, exactly as
+  // findMatchingPriceRules already shadows whole pools for per-line rules.
+  // Ranking bundles on savings instead meant a broad "all products" rule could
+  // beat the deliberate per-product price a tenant had set — the narrower rule
+  // is the more considered one, whether or not it is the cheaper one.
+  // Within a pool the tie goes to `sequence`, i.e. the derived priority the
+  // panel displays, so the list you see is the order that is charged.
+  const pricelistPool = specific.length > 0 ? specific : allProducts;
+  if (pricelistPool.length) return pricelistPool[0];
+
+  // ── DB bundleDeals — unchanged ──────────────────────────────────────────────
+  // These live on the SubProduct, not the pricelist, and are only reached when
+  // the pricelist offers no bundle for this line. Ranking among them stays
+  // best-savings so a tenant with no pricelist prices exactly as before.
+  const qualifying = (dbBundles || []).filter((bd) =>
     bd.active !== false &&
     (!bd.validUntil || new Date(bd.validUntil) >= now) &&
     quantity >= (bd.quantity || 1)
@@ -115,7 +159,12 @@ function pickBestBundle(dbBundles, pricelistRules, quantity, subProductId, { pri
   const savings = (bd) => {
     const d = bd.discountType || 'percentage';
     if (d === 'fixed') return (bd.discount || 0) * quantity;
-    if (d === 'markup_on_cost') return Math.max(0, price - costPrice * (1 + (bd.discount || 0) / 100)) * quantity;
+    if (d === 'markup_on_cost') {
+      const basis = bd.bundleMarkupBase === 'wholesale' ? wholesalePrice : costPrice;
+      return basis > 0
+        ? Math.max(0, price - basis * (1 + (bd.discount || 0) / 100)) * quantity
+        : 0;
+    }
     if (d === 'no_discount') return 0;
     return (price * quantity * Math.min(100, bd.discount || 0)) / 100;
   };
@@ -128,16 +177,17 @@ function pickBestBundle(dbBundles, pricelistRules, quantity, subProductId, { pri
  * outright. percentage/fixed types do NOT change price here — the caller
  * applies those as a separate line-level discount via computeBundleLineDiscount.
  */
-function applyBundleOverride(price, bestBundle, costPrice, originalPrice) {
+function applyBundleOverride(price, bestBundle, costPrice, originalPrice, wholesalePrice = 0) {
   if (!bestBundle) return { price, overridden: false };
   const dt = bestBundle.discountType || 'percentage';
 
   if (dt === 'markup_on_cost') {
     const markup = bestBundle.discount || 0;
-    if (costPrice > 0) {
+    const basis = bestBundle.bundleMarkupBase === 'wholesale' ? wholesalePrice : costPrice;
+    if (basis > 0) {
       // Platform selling prices always round UP to the nearest ₦100
       const { roundUpTo100 } = require('../utils/pricing');
-      return { price: roundUpTo100(costPrice * (1 + markup / 100)), overridden: true };
+      return { price: roundUpTo100(basis * (1 + markup / 100)), overridden: true };
     }
   } else if (dt === 'no_discount') {
     if (originalPrice && originalPrice > price) {
@@ -170,7 +220,7 @@ function computeBundleLineDiscount(bestBundle, lineGross, quantity, itemDiscAmt,
  * Same-product bundles (no bundleTargetSubProduct) are NOT handled here —
  * those run through the existing per-line pickBestBundle path.
  *
- * @param {Array<{subProductId, quantity, price, costPrice, originalPrice?}>} lines
+ * @param {Array<{subProductId, quantity, price, costPrice, originalPrice?, wholesalePrice?}>} lines
  * @param {Array} pricelistRules
  * @returns {Array<{subProductId, lineIndex, ruleName?, discountAmount?, overridePrice?}>}
  *   per-target adjustments. lineIndex points at the exact line in `lines` (size
@@ -207,6 +257,7 @@ function applyCartBundles(lines, pricelistRules) {
     const dt = r.bundleDiscountType || 'percentage';
     const disc = Number(r.bundleDiscount) || 0;
     if (dt !== 'no_discount' && disc <= 0) continue;
+    const bmb = r.bundleMarkupBase || 'cost';
 
     for (let i = 0; i < lines.length; i++) {
       const tl = lines[i];
@@ -214,6 +265,7 @@ function applyCartBundles(lines, pricelistRules) {
       const qty = Number(tl.quantity) || 0;
       const lineGross = (Number(tl.price) || 0) * qty;
       const cost = Number(tl.costPrice) || 0;
+      const wPrice = Number(tl.wholesalePrice) || 0;
       const ruleName = r.bundleName || `Buy ${r.bundleQuantity} get target deal`;
 
       if (dt === 'percentage') {
@@ -222,9 +274,12 @@ function applyCartBundles(lines, pricelistRules) {
       } else if (dt === 'fixed') {
         const amt = Math.min(disc * qty, lineGross);
         adjustments.push({ subProductId: targetId, lineIndex: i, ruleName, discountAmount: Math.max(0, amt) });
-      } else if (dt === 'markup_on_cost' && cost > 0) {
-        const overridePrice = Math.round(cost * (1 + disc / 100) * 100) / 100;
-        adjustments.push({ subProductId: targetId, lineIndex: i, ruleName, overridePrice });
+      } else if (dt === 'markup_on_cost') {
+        const basis = bmb === 'wholesale' ? wPrice : cost;
+        if (basis > 0) {
+          const overridePrice = Math.round(basis * (1 + disc / 100) * 100) / 100;
+          adjustments.push({ subProductId: targetId, lineIndex: i, ruleName, overridePrice });
+        }
       } else if (dt === 'no_discount') {
         // Restore the target's pre-sale price when the caller supplies one;
         // otherwise keep the line's own price (it IS the original).

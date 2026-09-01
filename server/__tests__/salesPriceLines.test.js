@@ -103,9 +103,14 @@ test('computeLineUnitPrice re-bases on the platform pipeline (Carlo Rossi ₦8,6
   };
   const sizeDoc = { _id: sizeId, sellingPrice: 9300, costPrice: 7437.97 };
 
-  t.mock.method(SubProduct, 'findById', () => ({
-    select: () => ({ populate: () => ({ lean: async () => spDoc }) }),
-  }));
+  t.mock.method(SubProduct, 'findById', () => {
+    const chain = {
+      select: () => chain,
+      populate: () => chain,
+      lean: async () => spDoc,
+    };
+    return chain;
+  });
   t.mock.method(Size, 'findById', () => ({ lean: async () => sizeDoc }));
 
   const websitePricelist = {

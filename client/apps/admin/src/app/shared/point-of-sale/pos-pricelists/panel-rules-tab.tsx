@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { PiSpinner, PiLightning, PiPlus, PiTag, PiCaretLeft, PiCaretRight } from 'react-icons/pi';
+import {
+  PiSpinner,
+  PiLightning,
+  PiPlus,
+  PiTag,
+  PiCaretLeft,
+  PiCaretRight,
+} from 'react-icons/pi';
 import { BRAND } from '@/app/shared/point-of-sale/pricelist-constants';
 import type { PricelistRule } from './types';
 
@@ -9,37 +16,39 @@ export const RULES_PAGE_SIZE = 40;
 
 interface Props {
   rules: PricelistRule[];
+  /** The pricelist's rules are still being fetched — don't claim it's empty. */
+  rulesLoading?: boolean;
   productsLoading: boolean;
   productsError: string;
   applying: boolean;
-  reordering: boolean;
   deletingId: string | null;
   onRetryProducts(): void;
   onAddRule(): void;
   onApply(): void;
   onDeleteRequest(ruleId: string): void;
   onEdit(rule: PricelistRule): void;
-  onMove(ruleId: string, direction: 'up' | 'down'): void;
   children: (pageRules: PricelistRule[], page: number) => React.ReactNode;
 }
 
 export default function PanelRulesTab({
   rules,
+  rulesLoading = false,
   productsLoading,
   productsError,
   applying,
-  reordering,
   deletingId,
   onRetryProducts,
   onAddRule,
   onApply,
   onDeleteRequest,
   onEdit,
-  onMove,
   children,
 }: Props) {
   const [page, setPage] = useState(1);
-  const pageRules = rules.slice((page - 1) * RULES_PAGE_SIZE, page * RULES_PAGE_SIZE);
+  const pageRules = rules.slice(
+    (page - 1) * RULES_PAGE_SIZE,
+    page * RULES_PAGE_SIZE
+  );
   const totalPages = Math.max(1, Math.ceil(rules.length / RULES_PAGE_SIZE));
   const now = new Date();
   const expiredCount = rules.filter(
@@ -68,8 +77,11 @@ export default function PanelRulesTab({
         <span className="text-[10px] text-gray-400">
           fixed &amp; formula only · discount/bundle rules are session-dynamic
         </span>
-        <div className="ml-auto flex items-center gap-1 text-[10px] text-gray-400">
-          <span>↑↓ reorder priority</span>
+        <div
+          className="ml-auto flex items-center gap-1 text-[10px] text-gray-400"
+          title="Rules that set a price (fixed, formula) always run before rules that adjust one (discount, flash sale) — otherwise the price they set would discard the adjustment."
+        >
+          <span>priority is automatic · most specific first</span>
         </div>
         <button
           type="button"
@@ -83,7 +95,11 @@ export default function PanelRulesTab({
 
       {/* List */}
       <div className="flex-1 overflow-y-auto">
-        {productsLoading && rules.length === 0 ? (
+        {rulesLoading && rules.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 py-10 text-xs text-gray-400">
+            <PiSpinner className="h-4 w-4 animate-spin" /> Loading rules…
+          </div>
+        ) : productsLoading && rules.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-10 text-xs text-gray-400">
             <PiSpinner className="h-4 w-4 animate-spin" /> Loading products…
           </div>
@@ -112,16 +128,11 @@ export default function PanelRulesTab({
             )}
             <div>
               {children(pageRules, page)}
-              {reordering && (
-                <p className="px-4 py-1.5 text-center text-[10px] text-gray-400">
-                  Saving order…
-                </p>
-              )}
             </div>
             {expiredCount > 0 && (
               <p className="px-4 py-2 text-center text-[10px] text-gray-400">
-                {expiredCount} expired rule{expiredCount !== 1 ? 's' : ''} above — they
-                are skipped when applying
+                {expiredCount} expired rule{expiredCount !== 1 ? 's' : ''} above
+                — they are skipped when applying
               </p>
             )}
           </>
@@ -138,7 +149,9 @@ function EmptyRules({ onCreate }: { onCreate(): void }) {
         <PiTag className="h-6 w-6 text-gray-300" />
       </div>
       <div>
-        <p className="text-sm font-semibold text-gray-500">No price rules yet</p>
+        <p className="text-sm font-semibold text-gray-500">
+          No price rules yet
+        </p>
         <p className="mt-0.5 text-[11px] text-gray-400">
           Click &quot;Add rule&quot; to create your first rule
         </p>
@@ -169,7 +182,8 @@ function Pager({
   return (
     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-1.5 text-[10px] text-gray-400">
       <span>
-        {(page - 1) * RULES_PAGE_SIZE + 1}–{Math.min(page * RULES_PAGE_SIZE, total)} of {total}
+        {(page - 1) * RULES_PAGE_SIZE + 1}–
+        {Math.min(page * RULES_PAGE_SIZE, total)} of {total}
       </span>
       <div className="flex gap-0.5">
         <button

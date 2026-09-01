@@ -353,3 +353,30 @@ test('computeCartThresholdDiscount: multiple rules stack sequentially', () => {
   // 100000 → -5% = 95000 → -10% = 85500; total discount = 14500
   assert.strictEqual(computeCartThresholdDiscount(rules, 100000), 14500);
 });
+
+// Priority order is derived and stored on `sequence`; the stored array order is
+// NOT it (resequenceRules rewrites `sequence` and leaves the array alone), and
+// callers hand pickBestBundle the rules straight off the document. Since the
+// winner is a STABLE descending sort on savings, an equal-savings tie is
+// decided purely by input order — so it must be sequence order, or the charged
+// bundle would disagree with the printed price list and the POS panel.
+test('pickBestBundle gives an equal-savings tie to the lower-sequence rule, not the earlier array slot', () => {
+  // Both save exactly 800 on a 1000 unit price at qty 4:
+  //   A: fixed ₦200 off × 4 = 800     B: 20% of 1000 × 4 = 800
+  const A = { _id: 'a', priceType: 'bundle', bundleQuantity: 4, bundleDiscount: 200, bundleDiscountType: 'fixed', bundleName: 'A' };
+  const B = { _id: 'b', priceType: 'bundle', bundleQuantity: 4, bundleDiscount: 20, bundleDiscountType: 'percentage', bundleName: 'B' };
+  const pick = (aSeq, bSeq) =>
+    // Stored B-first in BOTH cases: only `sequence` may decide the winner.
+    pickBestBundle([], [{ ...B, sequence: bSeq }, { ...A, sequence: aSeq }], 4, 'sp1', {
+      price: 1000,
+      costPrice: 600,
+    }).name;
+
+  assert.strictEqual(pick(0, 1), 'A');
+  assert.strictEqual(pick(1, 0), 'B');
+});
+
+test('pickBestBundle still accepts a missing/absent rules argument', () => {
+  assert.strictEqual(pickBestBundle([], null, 4, 'sp1', { price: 1000, costPrice: 600 }), null);
+  assert.strictEqual(pickBestBundle([], undefined, 4, 'sp1', { price: 1000, costPrice: 600 }), null);
+});

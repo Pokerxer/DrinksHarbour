@@ -5,6 +5,7 @@ const Pricelist  = require('../models/Pricelist');
 const SubProduct = require('../models/SubProduct');
 const { authenticate, attachTenant, tenantAdminOrSuperAdmin, requireOwnTenant } = require('../middleware/auth.middleware');
 const { enforceSingleDefault } = require('../services/pricelist.service');
+const { resequenceRules, rulesInSequenceOrder } = require('../services/pricelistPriority.service');
 
 router.use(authenticate);
 router.use(attachTenant);
@@ -52,10 +53,11 @@ async function loadTenantPricelist(req, id, opts = {}) {
  */
 const RULE_FIELDS = [
   'subProduct', 'appliedOn', 'priceType',
-  'fixedPrice', 'markupPercentage',
+  'fixedPrice', 'markupPercentage', 'markupBase',
   'discountType', 'discountPercentage', 'discountAmount',
   'flashSalePercentage', 'flashSaleQty',
   'bundleName', 'bundleQuantity', 'bundleDiscount', 'bundleDiscountType',
+  'bundleMarkupBase', 'bundleUnitsMode',
   'bundleTargetSubProduct',
   'thresholdAmount',
   'minQuantity', 'startDate', 'endDate',
@@ -65,6 +67,25 @@ const RULE_FIELDS = [
 function deriveRuleCategory(priceType) {
   return ['fixed', 'formula'].includes(priceType) ? 'permanent' : 'dynamic';
 }
+
+/**
+ * Sequence for a rule appended to the end of `rules`: one past the highest
+ * sequence in use, 0 when there are none.
+ *
+ * Not `rules.length` — deleting a rule shrinks the array without renumbering
+ * the survivors, so on a pricelist that has ever had a rule deleted the length
+ * lands on a sequence that is still in use (delete sequence 0 of [0,1,2] and
+ * the next add gets 2, tying with a live rule). Rules stack in sequence order,
+ * so a tie makes the applied price depend on stored array order.
+ */
+function nextRuleSequence(rules) {
+  const seqs = (rules || []).map(r => Number(r.sequence) || 0);
+  return seqs.length ? Math.max(...seqs) + 1 : 0;
+}
+
+// `rulesInSequenceOrder` now lives in pricelistPriority.service — the pricing
+// engine's bundle picker needs the same ordering, and two copies of a
+// price-deciding comparator is exactly how the panel drifted from the engines.
 
 /**
  * Strict numeric parse — returns NaN on garbage (not 0). Replaces Number(x) || 0
@@ -92,6 +113,8 @@ function validateRuleFields(body) {
   } else if (pt === 'formula') {
     const mp = parseFloatStrict(body.markupPercentage);
     if (Number.isNaN(mp) || mp <= 0) errors.markupPercentage = 'Enter a markup %';
+    if (body.markupBase && !['cost', 'wholesale'].includes(body.markupBase))
+      errors.markupBase = 'Invalid markup base';
   } else if (pt === 'discount') {
     if (body.discountType === 'fixed') {
       const amt = parseFloatStrict(body.discountAmount);
@@ -104,8 +127,10 @@ function validateRuleFields(body) {
     const pct = parseFloatStrict(body.flashSalePercentage);
     if (Number.isNaN(pct) || pct <= 0) errors.flashSalePercentage = 'Enter a discount %';
   } else if (pt === 'bundle') {
-    const qty = parseFloatStrict(body.bundleQuantity);
-    if (Number.isNaN(qty) || qty < 2) errors.bundleQuantity = 'Min 2 units';
+    if (body.bundleUnitsMode !== 'pack') {
+      const qty = parseFloatStrict(body.bundleQuantity);
+      if (Number.isNaN(qty) || qty < 2) errors.bundleQuantity = 'Min 2 units';
+    }
     if (body.bundleDiscountType !== 'no_discount') {
       const disc = parseFloatStrict(body.bundleDiscount);
       if (Number.isNaN(disc) || disc <= 0) {
@@ -113,6 +138,10 @@ function validateRuleFields(body) {
           ? 'Enter a markup %' : 'Enter a discount';
       }
     }
+    if (body.bundleMarkupBase && !['cost', 'wholesale'].includes(body.bundleMarkupBase))
+      errors.bundleMarkupBase = 'Invalid markup base';
+    if (body.bundleUnitsMode && !['manual', 'pack'].includes(body.bundleUnitsMode))
+      errors.bundleUnitsMode = 'Invalid units mode';
     // A cross-product bundle needs a specific trigger product — "buy N of
     // (all products) → discount target" can never fire in the cart engine.
     if (body.bundleTargetSubProduct && !body.subProduct) {
@@ -150,13 +179,22 @@ router.get('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
     const filter = tenantId ? { tenant: tenantId } : {};
     if (search.trim()) filter.name = { $regex: search.trim(), $options: 'i' };
 
+    const pageN = parseInt(page) || 1;
+    const limitN = parseInt(limit) || 100;
+
     const [items, total] = await Promise.all([
-      Pricelist.find(filter)
-        .select('-rules')
-        .sort({ createdAt: -1 })
-        .skip((parseInt(page) - 1) * parseInt(limit))
-        .limit(parseInt(limit))
-        .lean(),
+      // Aggregation (instead of .select('-rules')) so list consumers can show
+      // an accurate "N rules" label via a lightweight ruleCount — while still
+      // never shipping the full rules payload to the list screen. The print
+      // picker fetches a pricelist's actual rules through GET /:id on select.
+      Pricelist.aggregate([
+        { $match: filter },
+        { $addFields: { ruleCount: { $size: { $ifNull: ['$rules', []] } } } },
+        { $sort: { createdAt: -1 } },
+        { $skip: (pageN - 1) * limitN },
+        { $limit: limitN },
+        { $project: { rules: 0 } },
+      ]),
       Pricelist.countDocuments(filter),
     ]);
     res.json({ success: true, data: { pricelists: items, total } });
@@ -213,7 +251,10 @@ router.get('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
       })
       .lean();
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
-    res.json({ success: true, data: pl });
+    // The reorder endpoint rewrites `sequence` in place and never reorders the
+    // stored array, so the raw document order is not the priority order. Ship
+    // the order the pricing engines actually apply, so no consumer has to know.
+    res.json({ success: true, data: { ...pl, rules: rulesInSequenceOrder(pl.rules) } });
   } catch (err) { next(err); }
 });
 
@@ -283,10 +324,11 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
 
     const {
       subProduct, appliedOn, priceType,
-      fixedPrice, markupPercentage,
+      fixedPrice, markupPercentage, markupBase,
       discountType, discountPercentage, discountAmount,
       flashSalePercentage, flashSaleQty,
       bundleName, bundleQuantity, bundleDiscount, bundleDiscountType,
+      bundleMarkupBase, bundleUnitsMode,
       bundleTargetSubProduct,
       thresholdAmount,
       minQuantity, startDate, endDate,
@@ -300,10 +342,11 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
 
     pl.rules.push({
       subProduct, appliedOn, priceType,
-      sequence: pl.rules.length, // append to end; lower = higher priority
+      sequence: nextRuleSequence(pl.rules), // append to end; lower = higher priority
       ruleCategory: deriveRuleCategory(priceType),
       fixedPrice:          parseFloatStrict(fixedPrice)          || 0,
       markupPercentage:    parseFloatStrict(markupPercentage)    || 0,
+      markupBase:          markupBase === 'wholesale' ? 'wholesale' : 'cost',
       discountType:        discountType                          || 'percentage',
       discountPercentage:  parseFloatStrict(discountPercentage)  || 0,
       discountAmount:      parseFloatStrict(discountAmount)      || 0,
@@ -313,13 +356,43 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
       bundleQuantity:      parseFloatStrict(bundleQuantity)      || 2,
       bundleDiscount:      effectiveBundleDiscount,
       bundleDiscountType:  bundleDiscountType                    || 'percentage',
+      bundleMarkupBase:    bundleMarkupBase === 'wholesale' ? 'wholesale' : 'cost',
+      bundleUnitsMode:     bundleUnitsMode === 'pack' ? 'pack' : 'manual',
       bundleTargetSubProduct: bundleTargetSubProduct || undefined,
       thresholdAmount:        parseFloatStrict(thresholdAmount)        || 0,
       minQuantity:         parseFloatStrict(minQuantity)         || 0,
       startDate, endDate,
     });
+    resequenceRules(pl.rules); // priority is derived — see pricelistPriority.service
     await pl.save();
     res.status(201).json({ success: true, data: pl.rules[pl.rules.length - 1] });
+  } catch (err) { next(err); }
+});
+
+// ── Reorder rules (drag-to-sequence) ─────────────────────────────────────────
+// MUST stay above PATCH /:id/rules/:ruleId. Express matches in declaration
+// order and both patterns are three segments, so a reorder declared after the
+// update-rule route is matched as ruleId='reorder' → pl.rules.id('reorder') →
+// null → 404 "Rule not found". Declared last, this endpoint was unreachable:
+// every ↑/↓ press in the panel 404'd, which is why no pricelist in the
+// database has ever had a non-default sequence order.
+router.patch('/:id/rules/reorder', tenantAdminOrSuperAdmin, async (req, res, next) => {
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) return res.status(400).json({ success: false, message: 'orderedIds array required' });
+
+    const pl = await loadTenantPricelist(req, req.params.id);
+    if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
+
+    // Atomic batch: assign all sequences in one save to prevent duplicate sequences
+    const sequenceMap = new Map(orderedIds.map((id, i) => [String(id), i]));
+    pl.rules.forEach(rule => {
+      const seq = sequenceMap.get(String(rule._id));
+      if (seq !== undefined) rule.sequence = seq;
+    });
+
+    await pl.save();
+    res.json({ success: true });
   } catch (err) { next(err); }
 });
 
@@ -361,6 +434,9 @@ router.patch('/:id/rules/:ruleId', tenantAdminOrSuperAdmin, async (req, res, nex
       rule.bundleDiscount = 0;
     }
 
+    // priceType / minQuantity / subProduct all decide where a rule ranks, so a
+    // successful edit can move it — re-rank rather than leave a stale sequence.
+    resequenceRules(pl.rules);
     await pl.save();
     res.json({ success: true, data: rule });
   } catch (err) { next(err); }
@@ -406,6 +482,7 @@ router.delete('/:id/rules/:ruleId', tenantAdminOrSuperAdmin, async (req, res, ne
     }
 
     pl.rules.pull({ _id: req.params.ruleId });
+    resequenceRules(pl.rules); // close the gap the removed rule left
     await pl.save();
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -437,27 +514,6 @@ router.get('/coverage/:subProductId', tenantAdminOrSuperAdmin, async (req, res, 
       }));
 
     res.json({ success: true, data: { pricelists: coverage } });
-  } catch (err) { next(err); }
-});
-
-// ── Reorder rules (drag-to-sequence) ─────────────────────────────────────────
-router.patch('/:id/rules/reorder', tenantAdminOrSuperAdmin, async (req, res, next) => {
-  try {
-    const { orderedIds } = req.body;
-    if (!Array.isArray(orderedIds)) return res.status(400).json({ success: false, message: 'orderedIds array required' });
-
-    const pl = await loadTenantPricelist(req, req.params.id);
-    if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
-
-    // Atomic batch: assign all sequences in one save to prevent duplicate sequences
-    const sequenceMap = new Map(orderedIds.map((id, i) => [String(id), i]));
-    pl.rules.forEach(rule => {
-      const seq = sequenceMap.get(String(rule._id));
-      if (seq !== undefined) rule.sequence = seq;
-    });
-
-    await pl.save();
-    res.json({ success: true });
   } catch (err) { next(err); }
 });
 
@@ -523,11 +579,22 @@ router.post('/:id/apply', tenantAdminOrSuperAdmin, async (req, res, next) => {
         // Clears discount state — the price change IS the promotion.
         } else if (rule.priceType === 'formula') {
           if (!rule.markupPercentage || rule.markupPercentage <= 0) { results.skipped++; continue; }
+          const useWholesale = rule.markupBase === 'wholesale';
 
-          const products = await SubProduct.find(spFilter).select('_id costPrice baseSellingPrice basePriceBeforePricelist').lean();
+          const products = await SubProduct.find(spFilter)
+            .select('_id costPrice baseSellingPrice basePriceBeforePricelist defaultSize sizes')
+            .populate('sizes', 'wholesalePrice costPrice isDefault')
+            .lean();
           let changed = 0;
           for (const sp of products) {
-            if (!sp.costPrice || sp.costPrice <= 0) continue;
+            // Resolve the markup base: cost, or the default size's wholesale price.
+            let basis = useWholesale ? 0 : (Number(sp.costPrice) || 0);
+            if (useWholesale) {
+              const sizes = Array.isArray(sp.sizes) ? sp.sizes : [];
+              basis = Number(sizes.find((s) => s.isDefault)?.wholesalePrice) || 0;
+              if (basis <= 0) basis = Number(sizes.find((s) => Number(s.wholesalePrice) > 0)?.wholesalePrice) || 0;
+            }
+            if (!basis || basis <= 0) continue;
             // Save original price on first apply
             if (!sp.basePriceBeforePricelist && sp.baseSellingPrice > 0) {
               await SubProduct.findByIdAndUpdate(sp._id, {
@@ -536,7 +603,7 @@ router.post('/:id/apply', tenantAdminOrSuperAdmin, async (req, res, next) => {
             }
             await SubProduct.findByIdAndUpdate(sp._id, {
               $set: {
-                baseSellingPrice: Math.round(sp.costPrice * (1 + rule.markupPercentage / 100) * 100) / 100,
+                baseSellingPrice: Math.round(basis * (1 + rule.markupPercentage / 100) * 100) / 100,
                 isOnSale: false,
                 saleDiscountValue: 0,
                 'flashSale.isActive': false,

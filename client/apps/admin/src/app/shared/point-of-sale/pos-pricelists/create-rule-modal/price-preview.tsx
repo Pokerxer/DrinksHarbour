@@ -15,6 +15,7 @@ export interface PreviewInput {
   priceType: string;
   fixedPrice: string;
   markupPercentage: string;
+  markupBase?: string;
   discountType: string;
   discountPercentage: string;
   discountAmount: string;
@@ -22,6 +23,7 @@ export interface PreviewInput {
   bundleQuantity: string;
   bundleDiscount: string;
   bundleDiscountType: string;
+  bundleMarkupBase?: string;
 }
 
 export interface RulePreview {
@@ -41,7 +43,8 @@ function metaKeyByColor(color: string): MetaEntry | undefined {
 export function computeRulePreview(
   f: PreviewInput,
   basePrice: number,
-  costPrice: number
+  costPrice: number,
+  wholesalePrice = 0
 ): RulePreview | null {
   const pt = f.priceType;
 
@@ -60,21 +63,24 @@ export function computeRulePreview(
   if (pt === 'formula') {
     const mp = parseFloat(f.markupPercentage) || 0;
     if (!mp) return null;
-    if (!costPrice)
+    const useWholesale = f.markupBase === 'wholesale';
+    const basis = useWholesale ? wholesalePrice : costPrice;
+    const basisName = useWholesale ? 'wholesale' : 'cost';
+    if (!basis)
       return {
         label: 'Formula',
         value: 0,
         delta: 0,
-        sub: 'select a product with a cost price to preview',
+        sub: `select a product with a ${basisName} price to preview`,
         color: META.formula.color,
         noValue: true,
       };
-    const computed = Math.round(costPrice * (1 + mp / 100) * 100) / 100;
+    const computed = Math.round(basis * (1 + mp / 100) * 100) / 100;
     return {
       label: 'Computed price',
       value: computed,
       delta: basePrice > 0 ? computed - basePrice : 0,
-      sub: `${fmt(costPrice)} cost + ${mp}% markup`,
+      sub: `${fmt(basis)} ${basisName} + ${mp}% markup`,
       color: META.formula.color,
     };
   }
@@ -134,6 +140,10 @@ export function computeRulePreview(
     const qty = parseFloat(f.bundleQuantity) || 2;
     const disc = parseFloat(f.bundleDiscount) || 0;
     const dt = f.bundleDiscountType;
+    const bmb = f.bundleMarkupBase || 'cost';
+    const useWholesaleBundle = dt === 'markup_on_cost' && bmb === 'wholesale';
+    const bundleBasis = useWholesaleBundle ? wholesalePrice : costPrice;
+    const bundleBasisName = useWholesaleBundle ? 'wholesale' : 'cost';
 
     if (dt === 'no_discount') {
       if (!basePrice)
@@ -155,21 +165,21 @@ export function computeRulePreview(
     }
     if (dt === 'markup_on_cost') {
       if (!disc) return null;
-      if (!costPrice)
+      if (!bundleBasis)
         return {
           label: 'Bundle',
           value: 0,
           delta: 0,
-          sub: 'select a product with a cost price to preview',
+          sub: `select a product with a ${bundleBasisName} price to preview`,
           color: META.bundle.color,
           noValue: true,
         };
-      const unitPrice = Math.round(costPrice * (1 + disc / 100) * 100) / 100;
+      const unitPrice = Math.round(bundleBasis * (1 + disc / 100) * 100) / 100;
       return {
-        label: `Buy ${qty}+ · Cost markup`,
+        label: `Buy ${qty}+ · ${bundleBasisName} markup`,
         value: unitPrice * qty,
         delta: basePrice > 0 ? (unitPrice - basePrice) * qty : 0,
-        sub: `${fmt(unitPrice)} each (cost ${fmt(costPrice)} + ${disc}% markup)`,
+        sub: `${fmt(unitPrice)} each (${bundleBasisName} ${fmt(bundleBasis)} + ${disc}% markup)`,
         color: META.bundle.color,
       };
     }

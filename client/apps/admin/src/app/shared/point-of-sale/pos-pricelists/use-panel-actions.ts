@@ -14,16 +14,26 @@ interface Args {
   onRefresh(): void;
 }
 
-/** Product catalogue loading + rule CRUD/apply/reorder actions for PricelistPanel. */
+/**
+ * Product catalogue loading + rule CRUD/apply actions for PricelistPanel.
+ *
+ * There is deliberately no reorder action: priority is derived server-side
+ * (services/pricelistPriority.service) and reassigned on every rule mutation.
+ * `PATCH /:id/rules/reorder` still exists as a manual escape hatch if the
+ * ranking ever gets a case wrong — it is simply not wired to the UI.
+ */
 export function usePanelActions({ pl, token, onRefresh }: Args) {
   const [products, setProducts] = useState<SubProductLite[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState('');
   const [productsRetry, setProductsRetry] = useState(0);
   const [applying, setApplying] = useState(false);
-  const [reordering, setReordering] = useState(false);
-  const [shopOptions, setShopOptions] = useState<{ _id: string; name: string }[]>([]);
-  const [whOptions, setWhOptions] = useState<{ _id: string; name: string }[]>([]);
+  const [shopOptions, setShopOptions] = useState<
+    { _id: string; name: string }[]
+  >([]);
+  const [whOptions, setWhOptions] = useState<{ _id: string; name: string }[]>(
+    []
+  );
 
   // Shop + warehouse options for binding selectors
   useEffect(() => {
@@ -105,7 +115,8 @@ export function usePanelActions({ pl, token, onRefresh }: Args) {
         errors?: unknown[];
       };
       toast.success(
-        d.message || `${d.modified} product${d.modified === 1 ? '' : 's'} updated`
+        d.message ||
+          `${d.modified} product${d.modified === 1 ? '' : 's'} updated`
       );
       if (d.skipped > 0)
         toast(`${d.skipped} rule${d.skipped === 1 ? '' : 's'} skipped`, {
@@ -148,32 +159,6 @@ export function usePanelActions({ pl, token, onRefresh }: Args) {
     }
   }
 
-  async function moveRule(rule: PricelistRule[], ruleId: string, direction: 'up' | 'down') {
-    const currentRules = [...rule];
-    const idx = currentRules.findIndex((r) => r._id === ruleId);
-    if (idx < 0) return;
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= currentRules.length) return;
-
-    [currentRules[idx], currentRules[swapIdx]] = [
-      currentRules[swapIdx],
-      currentRules[idx],
-    ];
-    setReordering(true);
-    try {
-      await pricelistService.reorderRules(
-        pl._id,
-        currentRules.map((r) => r._id),
-        token!
-      );
-      onRefresh();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setReordering(false);
-    }
-  }
-
   return {
     products,
     shopOptions,
@@ -182,11 +167,9 @@ export function usePanelActions({ pl, token, onRefresh }: Args) {
     productsError,
     retryProducts: () => setProductsRetry((n) => n + 1),
     applying,
-    reordering,
     applyPrices,
     addRule,
     persistRule,
     removeRule,
-    moveRule,
   };
 }

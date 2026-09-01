@@ -8,7 +8,7 @@ import { BRAND } from '@/app/shared/point-of-sale/pricelist-constants';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
 import { pricelistService } from '@/services/pricelist.service';
 import ConfirmDialog from '@/app/shared/purchases/pricelists/confirm-dialog';
-import type { Pricelist } from './types';
+import { needsRuleHydration, type Pricelist } from './types';
 import { useDebouncedValue } from './use-debounced-value';
 import ListToolbar from './list-toolbar';
 import ListDialogs, { EmptyPanel } from './list-dialogs';
@@ -37,6 +37,7 @@ export default function POSPricelists() {
   const [deleteTarget, setDeleteTarget] = useState<Pricelist | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [rulesLoading, setRulesLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -64,6 +65,38 @@ export default function POSPricelists() {
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch]);
+
+  // Selecting a row only gives us the list payload, which the API strips of
+  // `rules` — so hydrate the selection from GET /:id (rules + populated
+  // sub-products) before the panel renders its rules tab.
+  const selectedId = selected?._id ?? null;
+  const selectionNeedsRules = needsRuleHydration(selected);
+  useEffect(() => {
+    if (!token || !selectedId || !selectionNeedsRules) {
+      // Also clears the flag when a cancelled fetch never reached its finally.
+      setRulesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setRulesLoading(true);
+    pricelistService
+      .get(selectedId, token)
+      .then((res) => {
+        // A slow response must not overwrite a selection made since.
+        if (!cancelled) {
+          setSelected((cur) => (cur?._id === selectedId ? res.data : cur));
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) toast.error((e as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setRulesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, selectedId, selectionNeedsRules]);
 
   const filtered = rows.filter((pl) => {
     if (status === 'selectable') return !!pl.isSelectable;
@@ -93,7 +126,10 @@ export default function POSPricelists() {
       return;
     }
     try {
-      const res = await pricelistService.create({ name: newName.trim() }, token!);
+      const res = await pricelistService.create(
+        { name: newName.trim() },
+        token!
+      );
       toast.success('Pricelist created');
       setNewName('');
       setCreating(false);
@@ -239,9 +275,7 @@ export default function POSPricelists() {
               setCreating(false);
               setNewName('');
             }}
-            onSelect={(pl) =>
-              setSelected(selected?._id === pl._id ? null : pl)
-            }
+            onSelect={(pl) => setSelected(selected?._id === pl._id ? null : pl)}
             onToggleOne={toggleOne}
             onToggleAll={toggleAll}
             onDeleteRequest={setDeleteTarget}
@@ -261,6 +295,7 @@ export default function POSPricelists() {
           {selected ? (
             <PricelistPanel
               pl={selected}
+              rulesLoading={rulesLoading}
               token={token}
               onClose={() => setSelected(null)}
               onRefresh={refreshSelected}
@@ -285,4 +320,3 @@ export default function POSPricelists() {
     </div>
   );
 }
-
