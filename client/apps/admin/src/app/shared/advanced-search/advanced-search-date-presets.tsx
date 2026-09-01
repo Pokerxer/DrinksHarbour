@@ -10,9 +10,17 @@ interface Props {
   dateTo: string;
   onDateFrom: (v: string) => void;
   onDateTo: (v: string) => void;
+  /**
+   * Label/id pairs to offer. Defaults to the SalesOrder creation-date presets.
+   * The inventory stock browser passes expiry presets instead, because StockRow
+   * has no createdAt — its only date is earliestExpiry.
+   */
+  presets?: { id: string; label: string }[];
+  /** How to bucket the presets under sub-headings. One flat group by default. */
+  presetGroups?: { label: string; ids: string[] }[];
 }
 
-const PRESET_GROUPS: { label: string; ids: string[] }[] = [
+const SALES_PRESET_GROUPS: { label: string; ids: string[] }[] = [
   { label: 'Quick', ids: ['today', 'yesterday', 'last7'] },
   { label: 'Week', ids: ['this-week'] },
   { label: 'Month', ids: ['this-month', 'last-month'] },
@@ -23,19 +31,27 @@ const PRESET_GROUPS: { label: string; ids: string[] }[] = [
 export default function AdvancedSearchDatePresets({
   activeDatePreset, onSetDatePreset,
   dateFrom, dateTo, onDateFrom, onDateTo,
+  presets = DATE_PRESETS,
+  presetGroups,
 }: Props) {
   const isCustom = activeDatePreset === 'custom';
+  // 'custom' has its own control below the groups; listing it twice would give
+  // the user two switches for one piece of state.
+  const groups = presetGroups
+    ?? (presets === DATE_PRESETS
+      ? SALES_PRESET_GROUPS
+      : [{ label: 'Range', ids: presets.filter((p) => p.id !== 'custom').map((p) => p.id) }]);
 
   return (
     <div>
-      {PRESET_GROUPS.map((group) => (
+      {groups.map((group) => (
         <div key={group.label} className="mb-2">
           <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
             {group.label}
           </p>
           <div className="flex flex-wrap gap-1 px-1">
             {group.ids.map((id) => {
-              const preset = DATE_PRESETS.find((p) => p.id === id);
+              const preset = presets.find((p) => p.id === id);
               if (!preset) return null;
               const isActive = activeDatePreset === id;
               return (

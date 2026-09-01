@@ -13,6 +13,14 @@ interface Props {
   activeFilters: FilterValue[];
   onAddFilter: (filter: FilterValue) => void;
   onRemoveFilter: (fieldId: string) => void;
+  /**
+   * The filters this list offers. Defaults to the SalesOrder set, which is what
+   * every caller wanted while /sales was the only one. The inventory stock
+   * browser passes STOCK_FILTER_CONFIGS — before this prop existed the list
+   * imported FILTER_CONFIGS directly, so any second consumer would have been
+   * offered sales filters over its own rows.
+   */
+  configs?: FilterConfig[];
 }
 
 function FilterValueEditor({
@@ -280,16 +288,17 @@ export default function AdvancedSearchFilterList({
   activeFilters,
   onAddFilter,
   onRemoveFilter,
+  configs = FILTER_CONFIGS,
 }: Props) {
   const [search, setSearch] = useState('');
   const [editingFilter, setEditingFilter] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
-    if (!search) return FILTER_CONFIGS;
-    return FILTER_CONFIGS.filter((f) =>
+    if (!search) return configs;
+    return configs.filter((f) =>
       f.label.toLowerCase().includes(search.toLowerCase())
     );
-  }, [search]);
+  }, [search, configs]);
 
   const isActive = (id: string) => activeFilters.some((f) => f.fieldId === id);
 
@@ -306,7 +315,7 @@ export default function AdvancedSearchFilterList({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={`Search ${FILTER_CONFIGS.length} filters...`}
+          placeholder={`Search ${configs.length} filters...`}
           className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-7 pr-3 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-brand focus:bg-white focus:ring-1 focus:ring-brand/20"
         />
       </div>

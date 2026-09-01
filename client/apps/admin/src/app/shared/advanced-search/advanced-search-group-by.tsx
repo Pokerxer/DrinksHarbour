@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { PiCheck, PiPlus, PiCaretRight, PiX, PiFolder } from 'react-icons/pi';
-import type { CustomGroup } from './advanced-search-types';
+import type { CustomGroup, GroupByOption } from './advanced-search-types';
 import { GROUP_BY_OPTIONS, FILTER_CATEGORIES } from './filter-config-data';
 
 interface Props {
@@ -12,6 +12,8 @@ interface Props {
   customGroups: CustomGroup[];
   onAddCustomGroup: (group: CustomGroup) => void;
   onRemoveCustomGroup: (id: string) => void;
+  /** Defaults to the SalesOrder groupings; stock passes STOCK_GROUP_OPTIONS. */
+  groupOptions?: GroupByOption[];
 }
 
 export default function AdvancedSearchGroupBy({
@@ -21,6 +23,7 @@ export default function AdvancedSearchGroupBy({
   customGroups,
   onAddCustomGroup,
   onRemoveCustomGroup,
+  groupOptions = GROUP_BY_OPTIONS,
 }: Props) {
   const [expandedOption, setExpandedOption] = useState<string | null>(null);
   const [customName, setCustomName] = useState('');
@@ -51,7 +54,7 @@ export default function AdvancedSearchGroupBy({
       <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
         Group By
       </p>
-      {GROUP_BY_OPTIONS.map((opt) => {
+      {groupOptions.map((opt) => {
         const isActive = groupBy === opt.id;
         const hasSub = opt.subOptions && opt.subOptions.length > 0;
         const isExpanded = expandedOption === opt.id;
@@ -72,7 +75,9 @@ export default function AdvancedSearchGroupBy({
             >
               <span
                 className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                  isActive ? 'border-brand bg-brand' : 'border-gray-300 bg-white'
+                  isActive
+                    ? 'border-brand bg-brand'
+                    : 'border-gray-300 bg-white'
                 }`}
               >
                 {isActive && <PiCheck className="h-3 w-3 text-white" />}
@@ -96,15 +101,21 @@ export default function AdvancedSearchGroupBy({
                       type="button"
                       onClick={() => handleSelect(opt.id, sub.id)}
                       className={`flex w-full items-center gap-2 px-2 py-1 text-sm hover:bg-gray-50 ${
-                        isSubActive ? 'font-semibold text-brand' : 'text-gray-600'
+                        isSubActive
+                          ? 'font-semibold text-brand'
+                          : 'text-gray-600'
                       }`}
                     >
                       <span
                         className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
-                          isSubActive ? 'border-brand bg-brand' : 'border-gray-300 bg-white'
+                          isSubActive
+                            ? 'border-brand bg-brand'
+                            : 'border-gray-300 bg-white'
                         }`}
                       >
-                        {isSubActive && <PiCheck className="h-2.5 w-2.5 text-white" />}
+                        {isSubActive && (
+                          <PiCheck className="h-2.5 w-2.5 text-white" />
+                        )}
                       </span>
                       {sub.label}
                     </button>
@@ -135,7 +146,9 @@ export default function AdvancedSearchGroupBy({
           >
             <span
               className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                groupBy === cat.id ? 'border-brand bg-brand' : 'border-gray-300 bg-white'
+                groupBy === cat.id
+                  ? 'border-brand bg-brand'
+                  : 'border-gray-300 bg-white'
               }`}
             >
               {groupBy === cat.id && <PiCheck className="h-3 w-3 text-white" />}
@@ -170,7 +183,9 @@ export default function AdvancedSearchGroupBy({
             type="text"
             value={customName}
             onChange={(e) => setCustomName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') addCustom(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') addCustom();
+            }}
             placeholder="Group name..."
             className="min-w-0 flex-1 rounded-md border border-gray-200 px-2 py-1 text-xs outline-none focus:border-brand"
           />

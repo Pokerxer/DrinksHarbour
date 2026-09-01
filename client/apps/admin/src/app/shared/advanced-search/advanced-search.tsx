@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { PiCheck, PiCaretDown, PiCaretRight, PiCalendar } from 'react-icons/pi';
-import type { FilterValue, CustomGroup, SavedSearch } from './advanced-search-types';
+import type {
+  FilterValue,
+  CustomGroup,
+  SavedSearch,
+  FilterConfig,
+  GroupByOption,
+} from './advanced-search-types';
 import { DOC_TYPE_FILTERS } from './filter-config-data';
 import AdvancedSearchFilterList from './advanced-search-filter-list';
 import AdvancedSearchDatePresets from './advanced-search-date-presets';
@@ -36,6 +42,23 @@ interface AdvancedSearchProps {
   onDateFrom: (v: string) => void;
   onDateTo: (v: string) => void;
   triggerRef: React.RefObject<HTMLDivElement | null>;
+  // ── Per-module configuration ─────────────────────────────────────────────
+  // These default to the SalesOrder set so /sales keeps the exact behaviour it
+  // had when it was the only consumer. A second module (inventory stock) passes
+  // its own; without these props the panel would offer sales filters, sales
+  // groupings and a "Create Date" control over rows that have none of them.
+  /** Filters offered in the "Add filter" list. */
+  filterConfigs?: FilterConfig[];
+  /** Options offered in the Group By column. */
+  groupOptions?: GroupByOption[];
+  /** Heading on the date section — e.g. "Expiry" for stock lines. */
+  dateSectionLabel?: string;
+  /** Presets offered inside the date section. */
+  datePresets?: { id: string; label: string }[];
+  /** Hide the date section entirely, for a row type with no meaningful date. */
+  showDateSection?: boolean;
+  /** Heading above the top checkbox group. */
+  docTypeLabel?: string;
 }
 
 export default function AdvancedSearch({
@@ -65,6 +88,12 @@ export default function AdvancedSearch({
   onDateFrom,
   onDateTo,
   triggerRef,
+  filterConfigs,
+  groupOptions,
+  dateSectionLabel = 'Create Date',
+  datePresets,
+  showDateSection = true,
+  docTypeLabel,
 }: AdvancedSearchProps) {
   const [createDateOpen, setCreateDateOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -113,6 +142,11 @@ export default function AdvancedSearch({
             )}
           </div>
 
+          {docTypeLabel && docTypeFilters.length > 0 && (
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400">
+              {docTypeLabel}
+            </p>
+          )}
           <div className="mb-3 space-y-0.5">
             {docTypeFilters.map((item) => {
               const active = isDocActive(item.id);
@@ -139,33 +173,36 @@ export default function AdvancedSearch({
             })}
           </div>
 
-          <div className="mb-3">
-            <button
-              type="button"
-              onClick={() => setCreateDateOpen((v) => !v)}
-              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors hover:bg-gray-50 ${
-                createDateOpen || activeDatePreset ? 'text-brand bg-brand/5' : 'text-gray-500'
-              }`}
-            >
-              <PiCalendar className="h-4 w-4" />
-              Create Date
-              <PiCaretRight
-                className={`ml-auto h-3.5 w-3.5 transition-transform ${createDateOpen ? 'rotate-90' : ''}`}
-              />
-            </button>
-            {createDateOpen && (
-              <div className="ml-3 mt-1.5 border-l-2 border-gray-100 pl-3">
-                <AdvancedSearchDatePresets
-                  activeDatePreset={activeDatePreset}
-                  onSetDatePreset={onSetDatePreset}
-                  dateFrom={dateFrom}
-                  dateTo={dateTo}
-                  onDateFrom={onDateFrom}
-                  onDateTo={onDateTo}
+          {showDateSection && (
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={() => setCreateDateOpen((v) => !v)}
+                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors hover:bg-gray-50 ${
+                  createDateOpen || activeDatePreset ? 'text-brand bg-brand/5' : 'text-gray-500'
+                }`}
+              >
+                <PiCalendar className="h-4 w-4" />
+                {dateSectionLabel}
+                <PiCaretRight
+                  className={`ml-auto h-3.5 w-3.5 transition-transform ${createDateOpen ? 'rotate-90' : ''}`}
                 />
-              </div>
-            )}
-          </div>
+              </button>
+              {createDateOpen && (
+                <div className="ml-3 mt-1.5 border-l-2 border-gray-100 pl-3">
+                  <AdvancedSearchDatePresets
+                    activeDatePreset={activeDatePreset}
+                    onSetDatePreset={onSetDatePreset}
+                    dateFrom={dateFrom}
+                    dateTo={dateTo}
+                    onDateFrom={onDateFrom}
+                    onDateTo={onDateTo}
+                    presets={datePresets}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-gray-400">
@@ -175,6 +212,7 @@ export default function AdvancedSearch({
               activeFilters={activeFilters}
               onAddFilter={onAddFilter}
               onRemoveFilter={onRemoveFilter}
+              configs={filterConfigs}
             />
           </div>
         </div>
@@ -187,6 +225,7 @@ export default function AdvancedSearch({
             customGroups={customGroups}
             onAddCustomGroup={onAddCustomGroup}
             onRemoveCustomGroup={onRemoveCustomGroup}
+            groupOptions={groupOptions}
           />
         </div>
 
