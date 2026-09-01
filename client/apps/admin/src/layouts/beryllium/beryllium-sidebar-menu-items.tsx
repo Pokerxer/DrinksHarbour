@@ -208,10 +208,6 @@ export const berylliumSidebarMenuItems = [
         href: routes.eCommerce.shop,
       },
       {
-        name: 'Cart',
-        href: routes.eCommerce.cart,
-      },
-      {
         name: 'Checkout & Payment',
         href: routes.eCommerce.checkout,
       },

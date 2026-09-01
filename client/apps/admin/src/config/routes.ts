@@ -161,16 +161,20 @@ export const routes = {
     editTenant: (id: string) => `/tenants/${id}/edit`,
     orders: '/ecommerce/orders',
     orderDetails: (id: string) => `/ecommerce/orders/${id}`,
+    // Marketplace carts that haven't converted to orders yet. There is
+    // deliberately no singular '/ecommerce/cart' — that was unwired Hydrogen
+    // template code and was deleted along with its route key.
+    carts: '/ecommerce/carts',
     reviews: '/ecommerce/reviews',
     promotions: '/ecommerce/promotions',
     createPromotion: '/ecommerce/promotions/create',
     editPromotion: (id: string) => `/ecommerce/promotions/${id}/edit`,
     banners: '/banners',
     createBanner: '/banners/create',
+    bannerAnalytics: '/banners/analytics',
     editBanner: (id: string) => `/banners/${id}/edit`,
     bannerDetails: (id: string) => `/banners/${id}`,
     shop: '/ecommerce/shop',
-    cart: '/ecommerce/cart',
     checkout: '/ecommerce/checkout',
     trackingId: (id: string) => `/ecommerce/tracking/${id}`,
   },

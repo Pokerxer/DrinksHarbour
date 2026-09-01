@@ -10,7 +10,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { PiGaugeDuotone, PiPlusCircleDuotone } from 'react-icons/pi';
+import { PiGaugeDuotone, PiPlusCircleDuotone, PiChartLineUpDuotone } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
 
@@ -21,6 +21,11 @@ const TABS = [
     href: routes.eCommerce.createBanner,
     icon: <PiPlusCircleDuotone />,
   },
+  {
+    label: 'Analytics',
+    href: routes.eCommerce.bannerAnalytics,
+    icon: <PiChartLineUpDuotone />,
+  },
 ];
 
 export default function BannerNavHeader() {
@@ -28,7 +33,14 @@ export default function BannerNavHeader() {
 
   const isActive = (href: string) => {
     if (href === routes.eCommerce.banners)
-      return pathname === href || /^\/banners\/[^/]+$/.test(pathname || '');
+      // list, create & detail routes are all "Banners"; analytics is its own tab
+      return (
+        pathname === href ||
+        (/^\/banners\/[^/]+$/.test(pathname || '') &&
+          !pathname?.startsWith(routes.eCommerce.bannerAnalytics))
+      );
+    if (href === routes.eCommerce.bannerAnalytics)
+      return pathname?.startsWith(routes.eCommerce.bannerAnalytics);
     return pathname?.startsWith(href.replace(/\/create$/, '')) && pathname?.includes('/create');
   };
 

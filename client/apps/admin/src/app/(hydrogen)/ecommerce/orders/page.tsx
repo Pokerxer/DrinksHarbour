@@ -36,6 +36,8 @@ export default function OrdersPage() {
       */}
       <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb} />
 
+      {/* The other half of this funnel — carts that haven't converted yet —
+          lives at /ecommerce/carts. */}
       <OrdersTable />
     </>
   );

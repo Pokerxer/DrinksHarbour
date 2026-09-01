@@ -164,6 +164,48 @@ function PlacementBreakdown({ rows }: { rows: any[] }) {
   );
 }
 
+/* ── Top performers table ────────────────────────────────────────────── */
+function TopPerformers({ rows }: { rows: any[] }) {
+  if (!rows?.length) return null;
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+      <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
+        Top Performing Banners
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100">
+              <th className="px-3 py-2 text-left font-semibold text-gray-600">Title</th>
+              <th className="px-3 py-2 text-right font-semibold text-gray-600">Impressions</th>
+              <th className="px-3 py-2 text-right font-semibold text-gray-600">Clicks</th>
+              <th className="px-3 py-2 text-right font-semibold text-gray-600">CTR</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((b, i) => (
+              <tr key={b._id || i} className="border-b border-gray-50 last:border-0">
+                <td className="max-w-[200px] truncate px-3 py-2 font-medium text-gray-900">
+                  {b.title || 'Untitled'}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                  {(b.impressions ?? 0).toLocaleString()}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                  {(b.clicks ?? 0).toLocaleString()}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                  {(b.clickThroughRate ?? 0).toFixed(2)}%
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* ── Entity banner top performers table ───────────────────────────────── */
 function EntityTopPerformers({ rows }: { rows: any[] }) {
   if (!rows?.length) return null;

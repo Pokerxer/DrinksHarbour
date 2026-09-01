@@ -39,7 +39,6 @@ import StatsHeader from './stats-header';
 import ServerPagination from './server-pagination';
 import BannerMobileCards from './mobile-cards';
 import BannerHero from '../banner-hero';
-import BannerAnalyticsDashboard from './analytics-dashboard';
 
 const SEARCH_DEBOUNCE_MS = 400;
 
@@ -363,9 +362,6 @@ export default function BannersTable({
         activeFilter={statusFilter}
         onFilterChange={handleStatusFilterChange}
       />
-
-      {/* Analytics trends dashboard */}
-      <BannerAnalyticsDashboard />
 
       {/* Toolbar */}
       <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">

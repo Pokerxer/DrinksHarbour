@@ -4,6 +4,12 @@ const mongoose = require('mongoose');
 const EntityBannerStat = require('../models/EntityBannerStat');
 const BannerDailyStat = require('../models/BannerDailyStat');
 
+// Ensure the models referenced by .populate({ model: ... }) are registered.
+// They may not be imported yet when this service file is first required.
+require('../models/Brand');
+require('../models/Category');
+require('../models/SubCategory');
+
 const VALID_TYPES = ['brand', 'category', 'subcategory'];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -108,7 +114,7 @@ async function getAllEntityAnalytics() {
   ]);
 
   // Top entities by clicks
-  const topPerformers = await EntityBannerStat.find()
+  const topPerformers = await EntityBannerStat.find({ entityType: 'brand' })
     .sort({ clicks: -1 })
     .limit(10)
     .populate({ path: 'entity', select: 'name slug', model: mongoose.model('Brand') })
@@ -126,8 +132,15 @@ async function getAllEntityAnalytics() {
     .populate({ path: 'entity', select: 'name slug', model: mongoose.model('SubCategory') })
     .lean().catch(() => []);
 
-  // Merge and sort by clicks
+  // Merge and sort by clicks (dedupe by stat _id so an entity is never listed twice)
+  const seen = new Set();
   const allTop = [...topPerformers, ...topCat, ...topSub]
+    .filter((s) => {
+      const key = String(s._id || s.entity || '');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .sort((a, b) => (b.clicks || 0) - (a.clicks || 0))
     .slice(0, 10);
 

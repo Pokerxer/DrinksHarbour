@@ -229,6 +229,11 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     icon: <PiReceiptDuotone />,
   },
   {
+    name: 'Live Carts',
+    href: routes.eCommerce.carts,
+    icon: <PiShoppingCartDuotone />,
+  },
+  {
     name: 'Reviews',
     href: routes.eCommerce.reviews,
     icon: <PiStarDuotone />,
