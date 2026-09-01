@@ -8,16 +8,19 @@ export default function TablePagination({
   pages,
   total,
   onPageChange,
+  label = 'orders',
 }: {
   page: number;
   pages: number;
   total: number;
   onPageChange: (p: number) => void;
+  /** Noun for the total count — the carts page reuses this table. */
+  label?: string;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-muted px-5 py-4">
       <span className="text-sm text-gray-500">
-        Page {page} of {pages} · {total} orders
+        Page {page} of {pages} · {total} {label}
       </span>
       <div className="flex items-center gap-2">
         <button
