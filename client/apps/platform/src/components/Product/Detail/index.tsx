@@ -1093,20 +1093,18 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
         </div>
       </section>
 
-      {/* Related Products */}
-      {relatedProducts.length > 0 && (
-        <section className="py-12">
-          <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold text-gray-900">You May Also Like</h2>
-              <a href="/shop" className="text-sm font-medium text-gray-600 hover:text-gray-900 flex items-center gap-1">
-                View All <Icon.PiArrowRight size={16} />
-              </a>
-            </div>
-            <RelatedProducts products={relatedProducts} title="" />
-          </div>
-        </section>
-      )}
+      {/* Related Products — RelatedProducts owns the whole section (heading,
+          "View All", arrows and slider). Wrapping it in another section with a
+          duplicate heading nested two <section>s, doubled the padding, and left
+          a second, inert pair of arrows on the page. */}
+      <RelatedProducts
+        products={relatedProducts}
+        viewAllHref={
+          productData?.category?.slug
+            ? `/shop?category=${encodeURIComponent(productData.category.slug)}`
+            : '/shop'
+        }
+      />
 
       {/* Image Modal */}
       {showImageModal && (

@@ -5163,14 +5163,24 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
           const unitsPerPack = sizeDoc.unitsPerPack ?? 1;
           const minUnits = tenant?.packRateMinUnits ?? 2;
           if (unitsPerPack >= minUnits) {
+            // Divide by the SAME pack cost calculateSizePricing will multiply
+            // the stored % by, or the published pack price will not be the
+            // price the admin typed. Prefer the computed value outright — a
+            // second local formula drifted from it once already, dropping the
+            // size's wholesale price from the cost basis.
             const packRates = resolveRevenueRates(tenant, unitsPerPack);
-            const packCost = calcPlatformCostPrice(
-              currentSize.costPrice,
-              currentSize.tenantSellingPrice,
-              tenant?.revenueModel ?? 'markup',
-              packRates.markupPct,
-              packRates.commissionPct
-            );
+            const packCost =
+              currentSize.packPlatformCostPrice > 0
+                ? currentSize.packPlatformCostPrice
+                : calcPlatformCostPrice(
+                    sizeDoc.wholesalePrice > 0
+                      ? sizeDoc.wholesalePrice
+                      : currentSize.costPrice,
+                    currentSize.tenantSellingPrice,
+                    tenant?.revenueModel ?? 'markup',
+                    packRates.markupPct,
+                    packRates.commissionPct
+                  );
             const packPct = toEffectivePct(adminPackPrice, packCost);
             if (packPct != null) {
               sizeDoc.packPlatformMarkupOverridePct = packPct;

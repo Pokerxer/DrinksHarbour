@@ -199,7 +199,10 @@ const ModalQuickview: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/products/slug/${slug}`);
+        // no-store: pricing/discounts recompute per request; no server-side
+        // revalidation hook fires when tenants edit prices, so any cache here
+        // shows the previous price until the window expires.
+        const res = await fetch(`${API_URL}/api/products/slug/${slug}`, { cache: 'no-store' });
         if (!res.ok) return;
         const json = await res.json();
         const full = json?.data?.product ?? json?.data ?? null;

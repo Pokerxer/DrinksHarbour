@@ -19,9 +19,13 @@ import ProductDetail from "@/components/Product/Detail";
 // Below the fold and not indexable content — still deferred.
 const RecentlyViewed    = dynamic(() => import("@/components/Shop/RecentlyViewed"));
 
-// ─── In-memory cache: product data keyed by slug, 5 min TTL ─────────────────
-const _productCache = new Map<string, { product: any; related: ProductType[]; ts: number }>();
-const PRODUCT_CACHE_TTL = 5 * 60_000;
+// Prices, discounts and stock are all computed server-side per request off the
+// current SubProduct rows, so any client-side cache stales the moment a tenant
+// edits a price. A 5-minute in-memory cache used to keep the old price visible
+// on every navigation back to a product until it expired — the exact bug the
+// details page had. The initial payload from the server already renders the
+// full detail page; the only remaining fetch is the background related-
+// products top-up, which we still keep uncached below.
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -34,22 +38,22 @@ interface ApiResponse {
 
 /** Background top-up when the product response carried no related products. */
 function fetchRelated(
-  slug: string,
+  _slug: string,
   product: any,
   onLoaded: (related: ProductType[]) => void,
 ) {
-  fetch(`${API_URL}/api/products/${product._id}/related?limit=8`)
+  // no-store: the related endpoint recomputes each card's priceRange per
+  // request off live SubProduct rows, same as the detail payload. A cached
+  // response would show pre-edit prices in the "You May Also Like" carousel
+  // even after the details price above had refreshed.
+  fetch(`${API_URL}/api/products/${product._id}/related?limit=8`, { cache: 'no-store' })
     .then(r => r.ok ? r.json() : null)
     .then(d => {
       if (!d) return;
       let fetchedRelated: ProductType[] = [];
       if (d.success && d.data?.products?.products) fetchedRelated = d.data.products.products;
       else if (d.success && d.data?.products) fetchedRelated = d.data.products;
-      if (fetchedRelated.length > 0) {
-        onLoaded(fetchedRelated);
-        // Update cache with related products
-        _productCache.set(slug, { product, related: fetchedRelated, ts: Date.now() });
-      }
+      if (fetchedRelated.length > 0) onLoaded(fetchedRelated);
     })
     .catch(() => {/* non-critical */});
 }
@@ -79,32 +83,24 @@ export default function ProductClient({
 
     // Already server-rendered — don't refetch the product on mount. Related
     // products are still topped up below when the server response lacked them.
+    // The server render is a fresh, uncached fetch (see page.tsx), so the
+    // price/discount/stock we already hold is always current for this request.
     if (initialProduct) {
-      _productCache.set(slug, {
-        product: initialProduct,
-        related: initialRelated,
-        ts: Date.now(),
-      });
       if (initialRelated.length === 0 && initialProduct?._id) {
         fetchRelated(slug, initialProduct, setRelatedProducts);
       }
       return;
     }
 
-    // Serve from cache if fresh
-    const cached = _productCache.get(slug);
-    if (cached && Date.now() - cached.ts < PRODUCT_CACHE_TTL) {
-      setProductData(cached.product);
-      setRelatedProducts(cached.related);
-      setLoading(false);
-      return;
-    }
-
     try {
       setLoading(true);
       setError(null);
+      // No `next.revalidate` — prices, discounts and stock all recompute
+      // server-side per request off live SubProduct rows, and no
+      // revalidatePath/revalidateTag hook fires when they change. A cached
+      // response here served the pre-edit price until the window rolled over.
       const response = await fetch(`${API_URL}/api/products/slug/${slug}`, {
-        next: { revalidate: 300 },
+        cache: 'no-store',
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data: ApiResponse = await response.json();
@@ -130,9 +126,6 @@ export default function ProductClient({
       setProductData(product);
       setRelatedProducts(related);
       setLoading(false);
-
-      // Cache with what we have so far
-      _productCache.set(slug, { product, related, ts: Date.now() });
 
       // If the main response didn't include related products, fetch them in the background
       // without blocking the UI

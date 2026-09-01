@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { capSeoTitle } from "@/lib/seoTitle";
@@ -10,10 +11,23 @@ const SITE_NAME = "DrinksHarbour";
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
-async function fetchProduct(slug: string): Promise<{ product: any; related: any[] } | null> {
+// One-hour cache dropped: with no admin-side revalidatePath/revalidateTag hook
+// on price/sale/discount edits, the detail page kept serving a computed
+// priceRange / availableAt payload for up to an hour after tenants changed
+// selling price — so the price shown here disagreed with the cart, the size
+// tiles, and every other surface. Fetch on every render so the price is always
+// current; the server response is already fast (indexed by slug, one Product
+// + SubProduct aggregation). Once revalidation is wired up (server-side
+// `revalidatePath('/product/${slug}')` in the price/discount write paths, or
+// tag-based revalidation), the revalidate window can come back.
+//
+// `cache()` dedupes the fetch across generateMetadata and the page render
+// within a single request — replaces what the fetch cache used to do for
+// free when we still opted into it.
+const fetchProduct = cache(async (slug: string): Promise<{ product: any; related: any[] } | null> => {
   try {
     const res = await fetch(`${API_URL}/api/products/slug/${slug}`, {
-      next: { revalidate: 3600 },
+      cache: 'no-store',
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -31,11 +45,10 @@ async function fetchProduct(slug: string): Promise<{ product: any; related: any[
   } catch {
     return null;
   }
-}
+});
 
 // Force dynamic rendering — root layout uses headers() for tenant resolution,
-// which makes static pre-generation incompatible. Data is still cached via
-// Next.js fetch cache (revalidate: 3600 per fetch call).
+// which makes static pre-generation incompatible.
 export const dynamic = 'force-dynamic';
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────

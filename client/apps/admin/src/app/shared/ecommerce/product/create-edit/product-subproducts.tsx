@@ -31,6 +31,13 @@ import {
 } from 'react-icons/pi';
 import { subproductService } from '@/services/subproduct.service';
 import cn from '@core/utils/class-names';
+import {
+  effectivePlatformMarkupPct,
+  isPackEligible,
+  packSavingsPct,
+  resolvePackThreshold,
+  suggestPackUnitPrice,
+} from './pack-price-utils';
 
 interface SubProductItem {
   _id: string;
@@ -941,8 +948,6 @@ function ReviewDrawer({
                                 const sizeUnitsPerPack = s.unitsPerPack || 1;
                                 const sizePackUnitPrice =
                                   sizePricing.packUnitPrice ?? null;
-                                const sizePackThreshold =
-                                  sizePricing.packThreshold ?? null;
                                 const sizePackSavingsPct =
                                   sizePricing.packSavingsPct ?? null;
                                 const sizePackPlatformCost =
@@ -951,9 +956,52 @@ function ReviewDrawer({
                                   sizePricing.packMarkupPct ?? null;
                                 const sizePackCommissionPct =
                                   sizePricing.packCommissionPct ?? null;
-                                const sizeIsPack =
-                                  sizePackUnitPrice != null &&
-                                  sizePackThreshold != null;
+                                // Show the pack card for every pack-ELIGIBLE
+                                // size, not only for sizes whose pack offer the
+                                // server managed to publish. When the tenant's
+                                // own store price sits close to the platform's
+                                // cost basis, the undercut clamp pins the pack
+                                // price onto the normal price and packUnitPrice
+                                // comes back null — yet the pack cost is real
+                                // and the approve endpoint accepts a pack
+                                // override, so this is exactly the case the
+                                // admin has to be able to act on.
+                                const sizeIsPack = isPackEligible(sizePricing);
+                                const sizePackSuggestion =
+                                  sizePackUnitPrice == null
+                                    ? suggestPackUnitPrice(sizePricing)
+                                    : null;
+                                const sizePackDisplayThreshold =
+                                  resolvePackThreshold(
+                                    sizePricing,
+                                    sizeUnitsPerPack
+                                  );
+                                // The pack price the cards reflect: what the
+                                // admin typed, else what the server published.
+                                // A suggestion is never adopted silently — an
+                                // unrequested value here would be posted as an
+                                // override on every approval.
+                                const typedPackPrice = parseFloat(
+                                  sizePackPrices[sizeId] ?? ''
+                                );
+                                const effectivePackPrice =
+                                  typedPackPrice > 0
+                                    ? typedPackPrice
+                                    : sizePackUnitPrice;
+                                // The pack card draws packCost ×(1+x%) → the
+                                // price below it, so x must come FROM that
+                                // price. The product default is only right when
+                                // neither the undercut clamp nor an admin edit
+                                // moved it.
+                                const shownPackPrice =
+                                  effectivePackPrice ?? sizePackSuggestion;
+                                const shownPackMarkupPct =
+                                  effectivePlatformMarkupPct(
+                                    shownPackPrice,
+                                    sizePackPlatformCost
+                                  ) ??
+                                  sizePricing.platformMarkupPct ??
+                                  platformMarkupPct;
 
                                 const defaultWebsite = sizePlatformSelling;
                                 const currentVal =
@@ -1097,11 +1145,20 @@ function ReviewDrawer({
                                             Pack Pricing
                                           </div>
                                           <span className="text-[9px] text-amber-500">
-                                            Threshold: {sizePackThreshold}+
-                                            units
-                                            {sizePackSavingsPct != null
-                                              ? ` · ${sizePackSavingsPct}% off`
-                                              : ''}
+                                            Threshold:{' '}
+                                            {sizePackDisplayThreshold ??
+                                              sizeUnitsPerPack}
+                                            + units
+                                            {(() => {
+                                              const pct =
+                                                packSavingsPct(
+                                                  effectivePackPrice,
+                                                  sizePlatformSelling
+                                                ) ?? sizePackSavingsPct;
+                                              return pct != null
+                                                ? ` · ${pct}% off`
+                                                : '';
+                                            })()}
                                           </span>
                                         </div>
 
@@ -1137,27 +1194,26 @@ function ReviewDrawer({
                                             </div>
                                             <div className="flex-shrink-0 px-0.5 text-center text-amber-500">
                                               ×(1+
-                                              {sizePricing.platformMarkupPct ??
-                                                platformMarkupPct}
-                                              % )
+                                              {shownPackMarkupPct}% )
                                             </div>
                                             <div className="flex-1 rounded-lg border border-amber-300 bg-amber-200/60 px-2 py-1.5 text-center">
                                               <div className="mb-0.5 text-amber-700">
                                                 Pack Selling
                                               </div>
                                               <div className="font-bold text-amber-900">
-                                                {(() => {
-                                                  const pp = parseFloat(
-                                                    sizePackPrices[sizeId] ?? ''
-                                                  );
-                                                  if (pp && !isNaN(pp))
-                                                    return `₦${pp.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-                                                  return sizePackUnitPrice !=
-                                                    null
-                                                    ? `₦${sizePackUnitPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                                                    : '—';
-                                                })()}
+                                                {effectivePackPrice
+                                                  ? `₦${effectivePackPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                                  : sizePackSuggestion != null
+                                                    ? `₦${sizePackSuggestion.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                                    : '—'}
                                               </div>
+                                              {effectivePackPrice == null && (
+                                                <div className="text-[8px] font-medium uppercase text-amber-500">
+                                                  {sizePackSuggestion != null
+                                                    ? 'suggested'
+                                                    : 'not set'}
+                                                </div>
+                                              )}
                                             </div>
                                           </div>
                                           <p className="text-center text-[9px] text-amber-600">
@@ -1166,9 +1222,7 @@ function ReviewDrawer({
                                               ? `${sizePackMarkupPct ?? sizeMarkupPct}%`
                                               : `${sizePackCommissionPct ?? sizeCommissionPct}%`}
                                             ) · packSelling = packCost × (1+
-                                            {sizePricing.platformMarkupPct ??
-                                              platformMarkupPct}
-                                            %)
+                                            {shownPackMarkupPct}%)
                                           </p>
                                         </div>
 
@@ -1200,12 +1254,10 @@ function ReviewDrawer({
                                             </div>
                                             <div className="font-bold text-amber-800">
                                               {(() => {
-                                                const typed = parseFloat(
-                                                  sizePackPrices[sizeId] ?? ''
-                                                );
-                                                const pp = !isNaN(typed)
-                                                  ? typed
-                                                  : (sizePackUnitPrice ?? NaN);
+                                                const pp =
+                                                  effectivePackPrice ??
+                                                  sizePackSuggestion ??
+                                                  NaN;
                                                 if (
                                                   !pp ||
                                                   isNaN(pp) ||
@@ -1260,6 +1312,30 @@ function ReviewDrawer({
                                                   )
                                                 );
                                               })()}
+                                            {sizePackUnitPrice == null &&
+                                              sizePackSuggestion != null &&
+                                              parseFloat(
+                                                sizePackPrices[sizeId] ?? ''
+                                              ) !== sizePackSuggestion && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setSizePackPrices(
+                                                      (prev) => ({
+                                                        ...prev,
+                                                        [sizeId]:
+                                                          String(
+                                                            sizePackSuggestion
+                                                          ),
+                                                      })
+                                                    )
+                                                  }
+                                                  className="text-[10px] text-amber-600 underline"
+                                                >
+                                                  Use ₦
+                                                  {sizePackSuggestion.toLocaleString()}
+                                                </button>
+                                              )}
                                           </div>
                                           <div className="flex items-center gap-1.5">
                                             <span className="text-xs font-semibold text-amber-700">
@@ -1278,22 +1354,42 @@ function ReviewDrawer({
                                                   [sizeId]: e.target.value,
                                                 }))
                                               }
-                                              placeholder={
-                                                sizePackUnitPrice != null
-                                                  ? String(sizePackUnitPrice)
-                                                  : ''
-                                              }
+                                              placeholder={String(
+                                                sizePackUnitPrice ??
+                                                  sizePackSuggestion ??
+                                                  ''
+                                              )}
                                               className="flex-1 rounded-lg border border-amber-200 bg-white px-2 py-1 text-sm font-bold text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-300"
                                             />
                                           </div>
                                         </div>
+                                        {sizePackUnitPrice == null && (
+                                          <p className="mt-1.5 rounded-lg bg-amber-100/70 px-2 py-1.5 text-[9px] text-amber-700">
+                                            <span className="font-semibold">
+                                              No pack offer published.
+                                            </span>{' '}
+                                            The tenant sells this size at ₦
+                                            {sizeSellingPrice.toLocaleString(
+                                              undefined,
+                                              { maximumFractionDigits: 0 }
+                                            )}
+                                            , so the platform price is already
+                                            pinned just under it and the
+                                            auto-computed pack price lands on
+                                            the same ₦100 step. The pack cost is
+                                            genuinely lower — set a pack price
+                                            here to publish the offer.
+                                          </p>
+                                        )}
                                         <p className="mt-1.5 text-[9px] text-amber-600">
-                                          Buy {sizePackThreshold}+ → per-unit
-                                          price drops to the pack price. Uses
-                                          tenant pack{' '}
+                                          Buy{' '}
+                                          {sizePackDisplayThreshold ??
+                                            sizeUnitsPerPack}
+                                          + → per-unit price drops to the pack
+                                          price. Uses tenant pack{' '}
                                           {revenueModel === 'markup'
-                                            ? `markup ${sizeMarkupPct}%`
-                                            : `commission ${sizeCommissionPct}%`}
+                                            ? `markup ${sizePackMarkupPct ?? sizeMarkupPct}%`
+                                            : `commission ${sizePackCommissionPct ?? sizeCommissionPct}%`}
                                           .
                                         </p>
                                       </div>

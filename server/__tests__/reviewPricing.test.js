@@ -228,3 +228,75 @@ test('wholesale price feeds into the pack cost via tenant pack rates (not wholes
   // Pack cost = wholesale × (1 + packMarkup%) = 1500 × 1.10 = 1650
   assert.strictEqual(pricing.packPlatformCostPrice, 1650);
 });
+
+// ── Admin pack-price override round-trip ──────────────────────────────────────
+// The review drawer sends a per-size `packUnitPrice`; approval back-calculates
+// it into `packPlatformMarkupOverridePct` — a markup over the PACK COST — so
+// later tenant cost changes keep the admin's margin relationship. That only
+// holds if the back-calc divides by the SAME pack cost `calculateSizePricing`
+// will later multiply by. For a size carrying a wholesale price the two used to
+// disagree (the back-calc ignored wholesale), so the published pack price came
+// out well below the price the admin actually typed.
+const toEffectivePct = (adminPrice, packCost) =>
+  parseFloat(((adminPrice / packCost - 1) * 100).toFixed(4));
+
+test('admin pack price is published verbatim — wholesale size', () => {
+  const product = { platformMarkup: 15 };
+  const tenant = {
+    revenueModel: 'markup',
+    markupPercentage: 15,
+    packMarkupPercentage: 10,
+    packRateMinUnits: 3,
+  };
+  const size = {
+    costPrice: 16030,
+    sellingPrice: 20100,
+    wholesalePrice: 14000,
+    unitsPerPack: 6,
+  };
+
+  const current = calculateSizePricing(size, product, tenant, 0, 0);
+  assert.strictEqual(current.packPlatformCostPrice, 15400); // 14000 × 1.10
+
+  // Admin types a pack price in the review drawer
+  const adminPackPrice = 17000;
+  size.packPlatformMarkupOverridePct = toEffectivePct(
+    adminPackPrice,
+    current.packPlatformCostPrice
+  );
+
+  const after = calculateSizePricing(size, product, tenant, 0, 0);
+  assert.strictEqual(after.packUnitPrice, adminPackPrice);
+  assert.ok(after.packUnitPrice < after.platformSellingPrice);
+});
+
+test('admin pack price is published verbatim — no wholesale price', () => {
+  const product = { platformMarkup: 15 };
+  const tenant = {
+    revenueModel: 'markup',
+    markupPercentage: 15,
+    packMarkupPercentage: 10,
+    packRateMinUnits: 3,
+  };
+  const size = { costPrice: 16030, sellingPrice: 20100, unitsPerPack: 6 };
+
+  const current = calculateSizePricing(size, product, tenant, 0, 0);
+  // The reported bug: a brand-new listing whose tenant price sits just above
+  // the platform cost basis publishes NO pack offer, because the undercut clamp
+  // pins the pack price onto the normal price.
+  assert.strictEqual(current.packUnitPrice, null);
+  assert.strictEqual(current.packPlatformCostPrice, 17633); // 16030 × 1.10
+  assert.strictEqual(current.platformSellingPrice, 20000);
+
+  // ...but the admin can still set one, and it must publish verbatim.
+  const adminPackPrice = 19200;
+  size.packPlatformMarkupOverridePct = toEffectivePct(
+    adminPackPrice,
+    current.packPlatformCostPrice
+  );
+
+  const after = calculateSizePricing(size, product, tenant, 0, 0);
+  assert.strictEqual(after.packUnitPrice, adminPackPrice);
+  assert.strictEqual(after.packThreshold, 6);
+  assert.strictEqual(after.packSavingsPct, 4);
+});
