@@ -20,12 +20,15 @@ import { useTenant } from '@/context/TenantContext';
 import type { StockRow } from '@/services/warehouseStock.service';
 import { pricelistService } from '@/services/pricelist.service';
 import { subproductService } from '@/services/subproduct.service';
+import { warehouseService, type Warehouse } from '@/services/warehouse.service';
 import ScopePicker from './inventory-pricelist-scope-picker';
 import { downloadPricelistPdf } from '@/utils/print/pricelist-print';
 import {
   downloadPricelistCsv,
+  explainPricelistCoverage,
   printCustomerPricelist,
   priceAndSortLines,
+  pricelistRuleCount,
   resolveCatalogLines,
   resolvePricelistOrigin,
   applyAvailabilityFromStock,
@@ -74,7 +77,10 @@ function loadStored(): StoredSettings {
     const s = JSON.parse(raw) as Partial<StoredSettings>;
     return {
       plId: typeof s.plId === 'string' ? s.plId : '',
-      title: typeof s.title === 'string' && s.title.trim() ? s.title : DEFAULTS.title,
+      title:
+        typeof s.title === 'string' && s.title.trim()
+          ? s.title
+          : DEFAULTS.title,
       validUntil:
         typeof s.validUntil === 'string' && s.validUntil
           ? s.validUntil
@@ -114,11 +120,18 @@ export default function PricelistPrintModal({
 
   const [pricelists, setPricelists] = useState<PricelistLite[]>([]);
   const [loadingLists, setLoadingLists] = useState(false);
+  // The full pricelist document (with its rules) for the currently selected
+  // pricelist. The list endpoint strips rules for size, so this is fetched via
+  // GET /pricelists/:id on selection — the pricing source for Print/PDF/CSV.
+  const [plDetail, setPlDetail] = useState<PricelistLite | null>(null);
+  const [plDetailLoading, setPlDetailLoading] = useState(false);
 
   const [plId, setPlId] = useState(DEFAULTS.plId);
   const [title, setTitle] = useState(DEFAULTS.title);
   const [validUntil, setValidUntil] = useState(DEFAULTS.validUntil);
-  const [groupByCategory, setGroupByCategory] = useState(DEFAULTS.groupByCategory);
+  const [groupByCategory, setGroupByCategory] = useState(
+    DEFAULTS.groupByCategory
+  );
   const [showSku, setShowSku] = useState(DEFAULTS.showSku);
   const [showAvailability, setShowAvailability] = useState(
     DEFAULTS.showAvailability
@@ -139,6 +152,13 @@ export default function PricelistPrintModal({
   const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const catalogRequestedRef = useRef(false);
+
+  // The tenant's warehouses, for the letterhead only: the stock rows carry a
+  // warehouse *name* and nothing else, so the issuing warehouse's own address
+  // and contact have to be looked up here. Without it the sheet named the
+  // warehouse and then printed the platform's address underneath it.
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const warehousesRequestedRef = useRef(false);
 
   // Restore last-used settings once per mount.
   useEffect(() => {
@@ -221,6 +241,42 @@ export default function PricelistPrintModal({
     }
   }, [loadingLists, pricelists, plId]);
 
+  // Fetch the full pricelist (rules included) whenever one is selected. The
+  // list endpoint strips `rules`, so pricing from the list row alone would
+  // silently fall back to retail — the print/PDF/CSV sheets must price from
+  // the full document, exactly as the POS does. Once a pricelist's detail is
+  // cached, subsequent opens of the same modal don't refetch it.
+  useEffect(() => {
+    if (!open || !plId || !token) {
+      setPlDetail(null);
+      setPlDetailLoading(false);
+      return;
+    }
+    if (plDetail?._id === plId) {
+      setPlDetailLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPlDetailLoading(true);
+    pricelistService
+      .get(plId, token)
+      .then((res: unknown) => {
+        if (cancelled) return;
+        const d = (res as { data?: PricelistLite }).data;
+        setPlDetail(Array.isArray(d?.rules) ? d : (d ?? null));
+      })
+      .catch(() => {
+        // Keep name/currency from the list row; pricing just stays retail.
+        if (!cancelled) setPlDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPlDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, plId, token, plDetail]);
+
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -234,6 +290,13 @@ export default function PricelistPrintModal({
     () => pricelists.find((p) => p._id === plId) ?? null,
     [pricelists, plId]
   );
+
+  // Actual pricing source: the full document (with rules) once fetched, else
+  // the lean list row (name/currency only) while it loads or on failure.
+  const pricingSource = useMemo<PricelistLite | null>(() => {
+    if (!plId) return null;
+    return plDetail ?? selectedPl;
+  }, [plId, plDetail, selectedPl]);
 
   // Catalog loads lazily, once, when the user switches to product selection.
   useEffect(() => {
@@ -254,11 +317,41 @@ export default function PricelistPrintModal({
       .finally(() => setCatalogLoading(false));
   }, [scopeMode, token]);
 
+  // Warehouse directory loads lazily, once per mount, when the modal opens.
+  // A failure is silent by design: the letterhead simply keeps the platform
+  // contact block it has always used — no export is blocked over a letterhead.
+  useEffect(() => {
+    if (!open || warehousesRequestedRef.current || !token) return;
+    warehousesRequestedRef.current = true;
+    warehouseService
+      .getWarehouses(token)
+      .then((res: unknown) => {
+        // API shape: { success, data: [...] }. Normalised defensively, as the
+        // pricelist fetch above is, so a changed envelope cannot crash print.
+        const payload = (res as { data?: unknown }).data;
+        setWarehouses(
+          Array.isArray(payload)
+            ? (payload as Warehouse[])
+            : Array.isArray(
+                  (payload as { warehouses?: Warehouse[] })?.warehouses
+                )
+              ? (payload as { warehouses: Warehouse[] }).warehouses
+              : []
+        );
+      })
+      .catch(() => {
+        /* letterhead falls back to the platform block */
+      });
+  }, [open, token]);
+
   // Lines to print: passed-in stock rows (current view) or scope-resolved
   // catalogue lines joined against stock for availability.
   const effectiveRows = useMemo(() => {
     if (scopeMode === 'current' || scopeIsEmpty(scope)) return rows;
-    return applyAvailabilityFromStock(resolveCatalogLines(catalog, scope), rows);
+    return applyAvailabilityFromStock(
+      resolveCatalogLines(catalog, scope),
+      rows
+    );
   }, [scopeMode, scope, catalog, rows]);
 
   const effectiveDiscount =
@@ -269,20 +362,30 @@ export default function PricelistPrintModal({
   // Letterhead issuer: source warehouse, or the tenant when lines mix
   // warehouses (or none carry one — catalogue-resolved lists).
   const origin = useMemo(
-    () => resolvePricelistOrigin(effectiveRows, tenant?.name),
-    [effectiveRows, tenant?.name]
+    () => resolvePricelistOrigin(effectiveRows, tenant?.name, warehouses),
+    [effectiveRows, tenant?.name, warehouses]
   );
 
   const summary = useMemo(() => {
     if (!open || effectiveRows.length === 0)
-      return { products: 0, lines: 0, changed: 0 };
-    const lines = priceAndSortLines(effectiveRows, selectedPl, effectiveDiscount);
+      return { products: 0, lines: 0, changed: 0, bundled: 0, inert: [] };
+    const lines = priceAndSortLines(
+      effectiveRows,
+      pricingSource,
+      effectiveDiscount
+    );
+    // A rule can match every line and still move no price — most often because
+    // it marks up a wholesale basis the lines don't carry. Without this the
+    // sheet is indistinguishable from "no pricelist selected".
+    const coverage = explainPricelistCoverage(lines, pricingSource);
     return {
       products: new Set(lines.map((l) => l.subProductId)).size,
       lines: lines.length,
-      changed: lines.filter((l) => l.changed).length,
+      changed: coverage.repriced,
+      bundled: coverage.bundled,
+      inert: coverage.inert,
     };
-  }, [open, effectiveRows, selectedPl, effectiveDiscount]);
+  }, [open, effectiveRows, pricingSource, effectiveDiscount]);
 
   const buildOptions = useCallback(
     () => ({
@@ -295,7 +398,10 @@ export default function PricelistPrintModal({
       businessName: businessName.trim() || undefined,
       originName: origin.name,
       originWarehouseCount: origin.warehouseCount,
+      originHead: origin.head,
     }),
+    // Every value read above is listed: an omitted one leaves the callback
+    // holding a stale letterhead while the sheet shows the new one.
     [
       title,
       validUntil,
@@ -305,24 +411,29 @@ export default function PricelistPrintModal({
       effectiveDiscount,
       businessName,
       origin.name,
+      origin.warehouseCount,
+      origin.head,
     ]
   );
+
+  // Hold exports until the selected pricelist's rules have loaded, so a
+  // quick click can't silently produce a retail-priced sheet instead.
+  const rulesBusy = !!plId && plDetailLoading;
 
   if (!open) return null;
 
   function handlePrint() {
     const ok = printCustomerPricelist(
       effectiveRows,
-      selectedPl,
+      pricingSource,
       buildOptions()
     );
-    if (!ok)
-      toast.error('Nothing to print — pick at least one line first');
+    if (!ok) toast.error('Nothing to print — pick at least one line first');
   }
 
   function handlePdf() {
     try {
-      downloadPricelistPdf(effectiveRows, selectedPl, buildOptions());
+      downloadPricelistPdf(effectiveRows, pricingSource, buildOptions());
       toast.success('PDF downloaded');
     } catch {
       toast.error('Could not generate the PDF');
@@ -331,7 +442,7 @@ export default function PricelistPrintModal({
 
   function handleCsv() {
     try {
-      downloadPricelistCsv(effectiveRows, selectedPl, buildOptions());
+      downloadPricelistCsv(effectiveRows, pricingSource, buildOptions());
     } catch {
       toast.error('Could not generate the CSV');
     }
@@ -381,6 +492,12 @@ export default function PricelistPrintModal({
                     · {summary.changed} repriced
                   </span>
                 )}
+                {summary.bundled > 0 && (
+                  <span className="text-blue-600">
+                    {' '}
+                    · {summary.bundled} bundled
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -401,18 +518,16 @@ export default function PricelistPrintModal({
               What&apos;s on the list
             </p>
             <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-gray-50 p-1">
-              {(
-                [
-                  {
-                    key: 'current' as const,
-                    label:
-                      rows.length > 0
-                        ? `Current view (${rows.length} line${rows.length === 1 ? '' : 's'})`
-                        : 'Current view',
-                  },
-                  { key: 'select' as const, label: 'Choose products…' },
-                ]
-              ).map((m) => (
+              {[
+                {
+                  key: 'current' as const,
+                  label:
+                    rows.length > 0
+                      ? `Current view (${rows.length} line${rows.length === 1 ? '' : 's'})`
+                      : 'Current view',
+                },
+                { key: 'select' as const, label: 'Choose products…' },
+              ].map((m) => (
                 <button
                   key={m.key}
                   type="button"
@@ -454,7 +569,9 @@ export default function PricelistPrintModal({
           {/* Price source — selectable cards */}
           <div>
             <div className="mb-1.5 flex items-baseline justify-between">
-              <p className="text-xs font-semibold text-gray-600">Price source</p>
+              <p className="text-xs font-semibold text-gray-600">
+                Price source
+              </p>
               <Link
                 href={routes.pos.pricelists}
                 className="text-[11px] font-medium text-[#b20202] hover:underline"
@@ -496,6 +613,7 @@ export default function PricelistPrintModal({
                 </button>
                 {pricelists.map((p) => {
                   const active = p._id === plId;
+                  const ruleCount = pricelistRuleCount(p);
                   return (
                     <button
                       key={p._id}
@@ -516,8 +634,8 @@ export default function PricelistPrintModal({
                           {p.name}
                         </span>
                         <span className="block text-[10px] text-gray-400">
-                          {(p.rules?.length ?? 0) > 0
-                            ? `${p.rules!.length} rule${p.rules!.length === 1 ? '' : 's'}`
+                          {ruleCount > 0
+                            ? `${ruleCount} rule${ruleCount === 1 ? '' : 's'}`
                             : 'No rules'}
                           {p.currency && p.currency !== 'NGN'
                             ? ` · ${p.currency}`
@@ -530,6 +648,41 @@ export default function PricelistPrintModal({
                     </button>
                   );
                 })}
+              </div>
+            )}
+            {plId && plDetailLoading && (
+              <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600">
+                <PiSpinner className="h-3 w-3 animate-spin" />
+                <span>
+                  Loading rules for{' '}
+                  <b>{selectedPl?.name || 'this pricelist'}</b>…
+                </span>
+              </div>
+            )}
+            {/* Why a selected pricelist changed nothing. The sheet matches POS
+                checkout exactly — including when that means no change at all —
+                so the only honest thing to do is say why. */}
+            {!plDetailLoading && summary.inert.length > 0 && (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                <p className="text-[11px] font-semibold text-amber-800">
+                  {summary.changed === 0 && summary.bundled === 0
+                    ? 'This pricelist changes no price on this list'
+                    : 'Some rules did not apply to this list'}
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {summary.inert.map((i) => (
+                    <li
+                      key={`${i.label}-${i.reason}`}
+                      className="text-[11px] leading-relaxed text-amber-700"
+                    >
+                      <b className="font-semibold">{i.label}</b> — {i.reason}.
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-amber-600">
+                  These prices still match POS checkout exactly. Set the missing
+                  price on the size, or edit the rule, to change what prints.
+                </p>
               </div>
             )}
             <p className="mt-1 text-[11px] text-gray-400">
@@ -606,7 +759,11 @@ export default function PricelistPrintModal({
               />
             </div>
             <div className="flex flex-wrap items-end gap-x-4 gap-y-2 pb-1.5">
-              {toggleRow('Group by category', groupByCategory, setGroupByCategory)}
+              {toggleRow(
+                'Group by category',
+                groupByCategory,
+                setGroupByCategory
+              )}
               {toggleRow('Show SKU codes', showSku, setShowSku)}
               {toggleRow(
                 'Show availability',
@@ -624,9 +781,9 @@ export default function PricelistPrintModal({
             {origin.warehouseCount > 1 && (
               <> — products drawn from {origin.warehouseCount} warehouses</>
             )}
-            . Selected lines merge per product and size across warehouses.
-            Print opens the browser dialog; Download PDF saves the branded
-            file directly.
+            . Selected lines merge per product and size across warehouses. Print
+            opens the browser dialog; Download PDF saves the branded file
+            directly.
           </p>
         </div>
 
@@ -636,7 +793,10 @@ export default function PricelistPrintModal({
             <button
               type="button"
               onClick={handleCsv}
-              disabled={effectiveRows.length === 0}
+              disabled={effectiveRows.length === 0 || rulesBusy}
+              title={
+                rulesBusy ? 'Applying the selected pricelist rules…' : undefined
+              }
               className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
             >
               <PiDownloadSimple className="h-3.5 w-3.5" /> CSV
@@ -644,7 +804,10 @@ export default function PricelistPrintModal({
             <button
               type="button"
               onClick={handlePdf}
-              disabled={effectiveRows.length === 0}
+              disabled={effectiveRows.length === 0 || rulesBusy}
+              title={
+                rulesBusy ? 'Applying the selected pricelist rules…' : undefined
+              }
               className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
             >
               <PiFilePdf className="h-3.5 w-3.5" /> PDF
@@ -661,7 +824,10 @@ export default function PricelistPrintModal({
             <button
               type="button"
               onClick={handlePrint}
-              disabled={effectiveRows.length === 0}
+              disabled={effectiveRows.length === 0 || rulesBusy}
+              title={
+                rulesBusy ? 'Applying the selected pricelist rules…' : undefined
+              }
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#9a0101] disabled:opacity-50"
             >
               <PiPrinter className="h-4 w-4" /> Print

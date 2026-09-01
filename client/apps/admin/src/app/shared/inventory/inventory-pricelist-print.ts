@@ -3,6 +3,13 @@ import {
   findMatchingPricelistRules,
   applyRuleTransform,
 } from '@/app/shared/point-of-sale/utils';
+// One head builder for every printed document. `print-shared` is a leaf (it
+// imports only doc-model), so this does not close a cycle with
+// `utils/print/pricelist-print`, which imports this module.
+import {
+  warehouseHeadOf,
+  type WarehouseHeadSource,
+} from '@/utils/print/print-shared';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,16 +21,74 @@ export interface PricelistPrintRow {
   categoryName: string;
   sellingPrice: number;
   costPrice: number;
+  /** Wholesale price for the size — needed when a formula rule has markupBase='wholesale'. */
+  wholesalePrice: number;
+  /** Units per pack for the size — needed when a bundle rule has bundleUnitsMode='pack'. */
+  unitsPerPack: number;
   subProductId: string;
   sizeId: string;
   currentQuantity: number;
+  /** Source warehouse, when the row came from stock. Catalogue-resolved rows
+   *  carry none — which is what makes the letterhead fall back to the tenant.
+   *  Declared here so `resolvePricelistOrigin` can accept either row shape:
+   *  its parameter is a weak type (all-optional), and a row type sharing no
+   *  property with it is rejected outright. */
+  warehouseName?: string | null;
 }
+
+/**
+ * One pricelist rule as this module reads it — deliberately loose except for
+ * `sequence`, which is named because this module *depends* on it. Priority is
+ * derived server-side (`services/pricelistPriority.service`) and written to
+ * `sequence`; both pricing engines stack rules in that order, and the stored
+ * array order is NOT it.
+ */
+export type PrintableRule = Record<string, unknown> & { sequence?: number };
 
 export interface PricelistLite {
   _id: string;
   name: string;
   currency?: string;
-  rules?: Array<Record<string, unknown>>;
+  rules?: PrintableRule[];
+  /** Count of rules from a list response that strips the full rules payload. */
+  ruleCount?: number;
+}
+
+/**
+ * The pricelist's rules in the order they are actually applied: ascending
+ * `sequence`, ties broken on `_id`. Identical to `rulesInSequenceOrder` on the
+ * server and `sortRulesBySequence` in the POS panel.
+ *
+ * Every path in this module that reads `pricelist.rules` goes through here.
+ * `GET /api/pricelists/:id` happens to ship rules pre-sorted today, so the raw
+ * loops below used to see priority order *by luck of the endpoint* — nothing in
+ * this file asserted it, and `sequence` was not even in the rule type. Drop the
+ * server sort, or hand this module a document read straight from Mongo (the
+ * stored array is never reordered — `resequenceRules` only rewrites `sequence`),
+ * and printed prices would shift with no type error and no failing test.
+ * Sorting here makes the dependency this module's own.
+ */
+export function rulesInPriorityOrder(
+  pricelist: PricelistLite | null | undefined
+): PrintableRule[] {
+  const rules = pricelist?.rules;
+  if (!Array.isArray(rules)) return [];
+  return [...rules].sort((a, b) => {
+    const seqDiff = (Number(a.sequence) || 0) - (Number(b.sequence) || 0);
+    if (seqDiff !== 0) return seqDiff;
+    return String(a._id ?? '').localeCompare(String(b._id ?? ''));
+  });
+}
+
+/**
+ * Number of rules a pricelist applies, normalising the two payload shapes:
+ * full documents carry `rules`; the list endpoint strips `rules` in favour of
+ * a lightweight `ruleCount`. Falls back to 0 when neither is present.
+ */
+export function pricelistRuleCount(p: PricelistLite): number {
+  const n = Number(p?.ruleCount);
+  if (Number.isFinite(n) && n >= 0) return n;
+  return p?.rules?.length ?? 0;
 }
 
 export interface PricelistPrintOptions {
@@ -45,6 +110,12 @@ export interface PricelistPrintOptions {
    * >1 renders a "{n} warehouses" provenance stamp on the letterhead.
    */
   originWarehouseCount?: number;
+  /**
+   * The issuing warehouse's own address/contact (from `resolvePricelistOrigin`).
+   * Replaces the platform contact block on both sheets. Absent for mixed or
+   * catalogue-scoped lists, which correctly keep the platform defaults.
+   */
+  originHead?: PricelistOriginHead;
   /** Ad-hoc wholesale discount % applied after the chosen price source. */
   discountPercent?: number;
 }
@@ -53,6 +124,18 @@ export interface PricedLine extends PricelistPrintRow {
   price: number;
   changed: boolean;
   was: number | null;
+  /** Best same-product bundle price per unit (stacked on top of `price`), null when no bundle applies. */
+  bundlePrice: number | null;
+  /** Minimum quantity for the bundle price, null when no bundle applies. */
+  bundleQuantity: number | null;
+  /**
+   * What the whole pack/bundle costs: `bundlePrice × bundleQuantity`. This is
+   * the figure the sheet leads with — a customer buying the tier pays this, not
+   * the per-unit price. Null when no bundle applies.
+   */
+  bundleTotal: number | null;
+  /** Human-readable bundle label, e.g. "6+". Empty string when no bundle applies. */
+  bundleLabel: string;
 }
 
 /** Structural input — satisfied by both StockRow and PricelistPrintRow. */
@@ -67,7 +150,8 @@ export type PricableStockLine = Pick<
   | 'subProductId'
   | 'sizeId'
   | 'currentQuantity'
->;
+> &
+  Partial<Pick<StockRow, 'wholesalePrice' | 'unitsPerPack'>>;
 
 // ── Pricing (same engine the POS uses) ────────────────────────────────────────
 
@@ -85,16 +169,22 @@ export function effectivePriceForRow(
   if (base <= 0) return { price: base, changed: false, was: null };
 
   let price = base;
-  if (pricelist?.rules?.length) {
+  const ordered = rulesInPriorityOrder(pricelist);
+  if (ordered.length) {
     // qty=1 → base-tier pricing, matching POS product-card display.
     const rules = findMatchingPricelistRules(
-      pricelist.rules as never,
+      ordered as never,
       r.subProductId,
       1,
       'price'
     );
     for (const rule of rules) {
-      price = applyRuleTransform(price, rule, Number(r.costPrice) || 0);
+      price = applyRuleTransform(
+        price,
+        rule,
+        Number(r.costPrice) || 0,
+        Number(r.wholesalePrice) || 0
+      );
     }
   }
   const pct = Number(discountPercent) || 0;
@@ -105,8 +195,180 @@ export function effectivePriceForRow(
   return { price, changed, was: changed ? base : null };
 }
 
+// ── Bundle pricing ──────────────────────────────────────────────────────────
+
+/**
+ * Best same-product bundle price for a line, stacked on top of the
+ * already-discounted per-line price. `perLinePrice` is the price after all
+ * per-line rules (fixed/discount/formula/flash_sale) have been applied — the
+ * bundle discount stacks on top of this, not the raw retail price.
+ * Returns null when no eligible same-product bundle rule exists.
+ *
+ * Two figures come back, and the sheet needs both: `bundlePrice` is the PER
+ * UNIT price (what checkout charges each bottle at, and the only figure that
+ * can be compared against the Unit Price column), while `bundleTotal` is what
+ * the customer actually hands over for the tier. The tier is a THRESHOLD, not
+ * a fixed pack — `pickBestBundle` qualifies at `quantity >= bundleQuantity` —
+ * so someone buying 7 of a "6+" tier pays 7 × `bundlePrice`, not
+ * `bundleTotal` + one unit at retail.
+ */
+export function resolveBundlePriceForRow(
+  r: PricelistPrintRow,
+  pricelist: PricelistLite | null,
+  perLinePrice: number
+): {
+  bundlePrice: number | null;
+  bundleQuantity: number | null;
+  bundleTotal: number | null;
+  bundleLabel: string;
+} {
+  const ordered = rulesInPriorityOrder(pricelist);
+  if (!ordered.length || perLinePrice <= 0)
+    return {
+      bundlePrice: null,
+      bundleQuantity: null,
+      bundleTotal: null,
+      bundleLabel: '',
+    };
+
+  const pid = String(r.subProductId);
+  const costPrice = Number(r.costPrice) || 0;
+  const wholesalePrice = Number(r.wholesalePrice) || 0;
+  const unitsPerPack = Number(r.unitsPerPack) || 1;
+  const now = new Date();
+
+  // Split by how specifically each rule targets this line. Mirrors the server's
+  // pickBestBundle: a rule aimed at THIS product shadows one aimed at
+  // everything, and savings never enter the choice.
+  const specific: Array<{ price: number; qty: number }> = [];
+  const allProducts: Array<{ price: number; qty: number }> = [];
+
+  for (const rule of ordered) {
+    if (rule.priceType !== 'bundle') continue;
+    // The server skips any bundle rule without a bundleQuantity — including in
+    // 'pack' mode — so a rule it ignores must never reach a printed sheet.
+    if (!rule.bundleQuantity) continue;
+    // Cross-product bundles are cart-scoped: they discount a DIFFERENT product
+    // once this one triggers them, so they have no per-unit price to quote.
+    if (rule.bundleTargetSubProduct) continue;
+    if (rule.endDate && new Date(rule.endDate as string) < now) continue;
+    if (rule.startDate && new Date(rule.startDate as string) > now) continue;
+
+    const dt = (rule.bundleDiscountType as string) || 'percentage';
+    const disc = Number(rule.bundleDiscount) || 0;
+    if (dt === 'no_discount' || !disc) continue;
+
+    // Product-specific or all-products — which pool this rule lands in.
+    const subRef = rule.subProduct as
+      | Record<string, unknown>
+      | string
+      | undefined;
+    const ruleSp =
+      subRef && typeof subRef === 'object' && subRef._id
+        ? String(subRef._id)
+        : subRef
+          ? String(subRef)
+          : null;
+    if (ruleSp && ruleSp !== pid) continue;
+
+    // 'pack' mode takes the trigger quantity from the size's unitsPerPack.
+    const qty = Math.max(
+      1,
+      rule.bundleUnitsMode === 'pack'
+        ? unitsPerPack
+        : Number(rule.bundleQuantity) || 0
+    );
+    // A one-unit tier is not a bundle — it would print the unit price again
+    // under a "1+" label. Happens when a 'pack' rule meets a size with no
+    // real pack size.
+    if (qty < 2) continue;
+    // minQuantity gates on the quantity the customer actually buys to earn the
+    // bundle — the sheet quotes that tier, not a single unit.
+    if ((Number(rule.minQuantity) || 0) > qty) continue;
+
+    let unitPrice: number;
+    if (dt === 'markup_on_cost') {
+      const basis =
+        rule.bundleMarkupBase === 'wholesale' ? wholesalePrice : costPrice;
+      // No basis = the server leaves the price alone, so there is nothing to quote.
+      if (basis <= 0) continue;
+      // roundUpTo100 — the server rounds a markup override UP to the nearest
+      // ₦100, so quoting the unrounded figure would undercut checkout.
+      unitPrice = Math.ceil((basis * (1 + disc / 100)) / 100) * 100;
+    } else if (dt === 'fixed') {
+      unitPrice = Math.max(0, perLinePrice - disc);
+    } else {
+      unitPrice = Math.max(0, perLinePrice * (1 - Math.min(100, disc) / 100));
+    }
+    unitPrice = Math.round(unitPrice * 100) / 100;
+
+    // NO savings filter here, deliberately. `pickBestBundle` has none either:
+    // once a rule qualifies on quantity it is applied, whether or not it beats
+    // the per-line price. Dropping an "unprofitable" rule here used to let a
+    // product-specific rule fall through to the all-products pool — the sheet
+    // then quoted a bundle the customer would never be charged. A
+    // markup_on_cost rule can legitimately price ABOVE the per-line price (its
+    // basis is cost/wholesale, not the retail path), and that is exactly the
+    // case this used to get wrong.
+    (ruleSp ? specific : allProducts).push({ price: unitPrice, qty });
+  }
+
+  // Specificity, not savings — a rule aimed at THIS product outranks one aimed
+  // at everything, exactly as `findMatchingPricelistRules` already shadows
+  // whole pools for per-line rules. `ordered` is sequence order, so within a
+  // pool the winner is the highest-priority rule: the same tie-break the panel
+  // shows and the server's `pickBestBundle` applies.
+  const pool = specific.length > 0 ? specific : allProducts;
+  const best = pool[0] ?? null;
+
+  if (!best)
+    return {
+      bundlePrice: null,
+      bundleQuantity: null,
+      bundleTotal: null,
+      bundleLabel: '',
+    };
+  return {
+    bundlePrice: best.price,
+    bundleQuantity: best.qty,
+    bundleTotal: Math.round(best.price * best.qty * 100) / 100,
+    bundleLabel: `${best.qty}+`,
+  };
+}
+
+/**
+ * True when a pricelist carries at least one same-product bundle rule
+ * (cross-product bundles are cart-scoped and never shown on a price list).
+ *
+ * Coarse pre-check only — it cannot know a row's pack size, cost or wholesale
+ * basis. Whether the Bundle column actually renders is decided by
+ * `linesHaveBundlePrices`, which reads the resolved prices.
+ */
+export function hasBundleRules(pricelist: PricelistLite | null): boolean {
+  return rulesInPriorityOrder(pricelist).some(
+    (r) =>
+      r.priceType === 'bundle' &&
+      !r.bundleTargetSubProduct &&
+      r.bundleDiscountType !== 'no_discount' &&
+      // Truthy, not >= 2: a 'pack' rule carries its tier in the size's
+      // unitsPerPack, so its own bundleQuantity may legitimately be 1.
+      Number(r.bundleQuantity) > 0
+  );
+}
+
+/**
+ * Whether a rendered sheet shows the Bundle column. The resolved lines are the
+ * only honest signal: a pricelist can carry bundle rules that no printed row
+ * qualifies for (wrong product, no pack size, no cost basis).
+ */
+export function linesHaveBundlePrices(lines: PricedLine[]): boolean {
+  return lines.some((l) => l.bundlePrice != null);
+}
+
 /** Collapse warehouse-duplicated lines to one row per subProduct+size. */
-export function dedupeRowsForPricelist(rows: PricableStockLine[]): PricelistPrintRow[] {
+export function dedupeRowsForPricelist(
+  rows: PricableStockLine[]
+): PricelistPrintRow[] {
   const map = new Map<string, PricelistPrintRow>();
   for (const r of rows) {
     const key = `${r.subProductId}|${r.sizeId}`;
@@ -119,6 +381,8 @@ export function dedupeRowsForPricelist(rows: PricableStockLine[]): PricelistPrin
         categoryName: r.categoryName || 'Uncategorized',
         sellingPrice: Number(r.sellingPrice) || 0,
         costPrice: Number(r.costPrice) || 0,
+        wholesalePrice: Number(r.wholesalePrice) || 0,
+        unitsPerPack: Number(r.unitsPerPack) || 1,
         subProductId: r.subProductId,
         sizeId: r.sizeId,
         currentQuantity: Math.max(0, r.currentQuantity),
@@ -130,9 +394,213 @@ export function dedupeRowsForPricelist(rows: PricableStockLine[]): PricelistPrin
       if (sp > cur.sellingPrice) cur.sellingPrice = sp;
       const cp = Number(r.costPrice) || 0;
       if (cp > cur.costPrice) cur.costPrice = cp;
+      const wp = Number(r.wholesalePrice) || 0;
+      if (wp > cur.wholesalePrice) cur.wholesalePrice = wp;
+      const up = Number(r.unitsPerPack) || 1;
+      if (up > cur.unitsPerPack) cur.unitsPerPack = up;
     }
   }
   return Array.from(map.values());
+}
+
+// ── Coverage diagnostics ──────────────────────────────────────────────────────
+
+/** One rule that could not move a single price on this sheet, and why. */
+export interface InertRule {
+  /** The rule's own name when it has one, else a type-derived label. */
+  label: string;
+  /** Plain-English reason, written for the person printing the sheet. */
+  reason: string;
+}
+
+export interface PricelistCoverage {
+  lines: number;
+  /** Lines whose unit price the rules actually moved. */
+  repriced: number;
+  /** Lines that earned a bundle tier. */
+  bundled: number;
+  /** Rules that fired on nothing, each with the reason it could not. */
+  inert: InertRule[];
+}
+
+function ruleLabel(rule: Record<string, unknown>): string {
+  // `bundleName` only names a bundle rule. Non-bundle rules keep vestigial
+  // bundle fields from the shared rule form, so a formula rule would otherwise
+  // be labelled with a leftover name like "Buy 2+ · 0% off".
+  const name =
+    rule.priceType === 'bundle' ? String(rule.bundleName || '').trim() : '';
+  if (name) return name;
+  const t = String(rule.priceType || 'rule');
+  return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ') + ' rule';
+}
+
+/**
+ * Explains what a pricelist actually did to a sheet.
+ *
+ * A rule can be perfectly valid, match every line, and still change nothing —
+ * most often because it prices off a basis the lines do not carry. A formula
+ * rule with `markupBase: 'wholesale'` is inert on any line whose size has no
+ * wholesale price, and so is a `markup_on_cost` bundle with
+ * `bundleMarkupBase: 'wholesale'`. Both engines (this one and the server's)
+ * correctly leave such a line at retail — but the sheet then looks identical
+ * to "no pricelist selected", which reads as a bug.
+ *
+ * This reports that silence so the modal can show it. It never changes a price.
+ */
+export function explainPricelistCoverage(
+  lines: PricedLine[],
+  pricelist: PricelistLite | null
+): PricelistCoverage {
+  const repriced = lines.filter((l) => l.changed).length;
+  const bundled = lines.filter((l) => l.bundlePrice != null).length;
+  const base: PricelistCoverage = {
+    lines: lines.length,
+    repriced,
+    bundled,
+    inert: [],
+  };
+  // Priority order, so the reasons list reads in the same order the sheet
+  // prices in — an explanation that disagrees with the sheet about which rule
+  // comes first is worse than no explanation.
+  const rules = rulesInPriorityOrder(pricelist);
+  // No rules loaded, or nothing to price — there is no silence to explain.
+  if (!rules.length || !lines.length) return base;
+
+  const withWholesale = lines.filter(
+    (l) => Number(l.wholesalePrice) > 0
+  ).length;
+  const withCost = lines.filter((l) => Number(l.costPrice) > 0).length;
+  const withPack = lines.filter((l) => Number(l.unitsPerPack) > 1).length;
+  const onSheet = new Set(lines.map((l) => String(l.subProductId)));
+  const missingWholesale = lines.length - withWholesale;
+
+  const inert: InertRule[] = [];
+  for (const rule of rules) {
+    const label = ruleLabel(rule);
+    const type = String(rule.priceType || '');
+
+    // Product-specific rules that target nothing on this sheet.
+    const subRef = rule.subProduct as
+      | Record<string, unknown>
+      | string
+      | undefined;
+    const ruleSp =
+      subRef && typeof subRef === 'object' && subRef._id
+        ? String(subRef._id)
+        : subRef
+          ? String(subRef)
+          : null;
+    if (ruleSp && !onSheet.has(ruleSp)) {
+      inert.push({
+        label,
+        reason: 'targets a product that is not on this list',
+      });
+      continue;
+    }
+
+    if (type === 'cart_threshold') {
+      inert.push({
+        label,
+        reason:
+          'applies to a whole cart at checkout, so it has no unit price to print',
+      });
+      continue;
+    }
+
+    if (type === 'bundle') {
+      if (rule.bundleTargetSubProduct) {
+        inert.push({
+          label,
+          reason:
+            'discounts a different product once this one is bought — a cart rule, not a unit price',
+        });
+        continue;
+      }
+      const dt = String(rule.bundleDiscountType || 'percentage');
+      if (dt === 'no_discount' || !Number(rule.bundleDiscount)) {
+        inert.push({ label, reason: 'carries no bundle discount' });
+        continue;
+      }
+      if (!Number(rule.bundleQuantity)) {
+        inert.push({ label, reason: 'has no bundle quantity set' });
+        continue;
+      }
+      if (rule.bundleUnitsMode === 'pack' && withPack === 0) {
+        inert.push({
+          label,
+          reason: 'prices per pack, but no line on this list has a pack size',
+        });
+        continue;
+      }
+      if (dt === 'markup_on_cost') {
+        const wholesaleBased = rule.bundleMarkupBase === 'wholesale';
+        if (wholesaleBased && withWholesale === 0) {
+          inert.push({
+            label,
+            reason: `marks up the wholesale price, but none of these ${lines.length} lines has one`,
+          });
+          continue;
+        }
+        if (!wholesaleBased && withCost === 0) {
+          inert.push({
+            label,
+            reason: 'marks up the cost price, but no line on this list has one',
+          });
+          continue;
+        }
+      }
+      if (bundled === 0)
+        inert.push({ label, reason: 'no line on this list qualifies for it' });
+      continue;
+    }
+
+    if (type === 'formula') {
+      const wholesaleBased = rule.markupBase === 'wholesale';
+      if (wholesaleBased && withWholesale === 0) {
+        inert.push({
+          label,
+          reason: `marks up the wholesale price, but none of these ${lines.length} lines has one`,
+        });
+        continue;
+      }
+      if (!wholesaleBased && withCost === 0) {
+        inert.push({
+          label,
+          reason: 'marks up the cost price, but no line on this list has one',
+        });
+        continue;
+      }
+    }
+
+    // Volume tiers quote a price the sheet's unit column never reaches.
+    if (Number(rule.minQuantity) > 1) {
+      inert.push({
+        label,
+        reason: `only applies from ${Number(rule.minQuantity)} units, so it does not change the unit price`,
+      });
+    }
+  }
+
+  // A wholesale-based rule that IS live on some lines but dead on most is the
+  // single most confusing case — call the gap out explicitly.
+  const wholesaleRuleLive =
+    withWholesale > 0 &&
+    missingWholesale > 0 &&
+    rules.some(
+      (r) =>
+        (r.priceType === 'formula' && r.markupBase === 'wholesale') ||
+        (r.priceType === 'bundle' &&
+          r.bundleDiscountType === 'markup_on_cost' &&
+          r.bundleMarkupBase === 'wholesale')
+    );
+  if (wholesaleRuleLive) {
+    inert.push({
+      label: 'Wholesale pricing',
+      reason: `${missingWholesale} of ${lines.length} lines have no wholesale price, so they print at retail`,
+    });
+  }
+
+  return { ...base, inert };
 }
 
 export function priceAndSortLines(
@@ -141,10 +609,15 @@ export function priceAndSortLines(
   discountPercent = 0
 ): PricedLine[] {
   return dedupeRowsForPricelist(rows)
-    .map((r) => ({
-      ...r,
-      ...effectivePriceForRow(r, pricelist, discountPercent),
-    }))
+    .map((r) => {
+      const base = effectivePriceForRow(r, pricelist, discountPercent);
+      const bundle = resolveBundlePriceForRow(r, pricelist, base.price);
+      return {
+        ...r,
+        ...base,
+        ...bundle,
+      };
+    })
     .sort(
       (a, b) =>
         a.categoryName.localeCompare(b.categoryName) ||
@@ -179,8 +652,18 @@ function fmtMoney(v: number, currency: string): string {
 }
 
 const MONTHS_ABBR = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 /** Deterministic short date — bare YYYY-MM-DD parsed as a local calendar day. */
@@ -197,7 +680,12 @@ export function fmtDay(iso?: string): string {
   return `${String(d.getDate()).padStart(2, '0')} ${MONTHS_ABBR[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function lineHtml(l: PricedLine, o: PricelistPrintOptions, currency: string) {
+function lineHtml(
+  l: PricedLine,
+  o: PricelistPrintOptions,
+  currency: string,
+  showBundle: boolean
+) {
   const skuCell = o.showSku
     ? `<span class="sku">${escapeHtml(l.sku)}</span>`
     : '';
@@ -210,10 +698,18 @@ function lineHtml(l: PricedLine, o: PricelistPrintOptions, currency: string) {
     l.was != null
       ? `<span class="was">${fmtMoney(l.was, currency)}</span>`
       : '';
+  const bundleCell = !showBundle
+    ? ''
+    : l.bundleTotal != null
+      ? // Lead with what the customer pays for the tier; keep the per-unit
+        // price underneath, since that is the figure the Unit Price column can
+        // be compared against — and the one that applies past the threshold.
+        `<td class="num"><span class="price bundle">${fmtMoney(l.bundleTotal, currency)}</span><span class="bundle-label">${escapeHtml(l.bundleLabel)} · ${fmtMoney(l.bundlePrice ?? 0, currency)} each</span></td>`
+      : '<td class="num muted">\u2014</td>';
   return `<tr>
     <td><strong>${escapeHtml(l.productName)}</strong>${skuCell}</td>
     <td class="muted">${escapeHtml(l.sizeName)}</td>${availCell}
-    <td class="num"><span class="price">${fmtMoney(l.price, currency)}</span>${wasCell}</td>
+    <td class="num"><span class="price">${fmtMoney(l.price, currency)}</span>${wasCell}</td>${bundleCell}
   </tr>`;
 }
 
@@ -239,6 +735,14 @@ export function buildCustomerPricelistHtml(
   );
   const o = options;
 
+  // Bundle column: only when the pricelist carries same-product bundle rules
+  const showBundle = linesHaveBundlePrices(lines);
+  const bundleTh = showBundle
+    ? // No tier suffix on the header: it used to be read off whichever line
+      // happened to sort first, which is wrong the moment two lines carry
+      // different tiers. Each cell now states its own quantity.
+      `<th class="num">Bundle Price</th>`
+    : '';
   const availTh = o.showAvailability ? '<th class="num">Available</th>' : '';
 
   const body = o.groupByCategory
@@ -252,13 +756,13 @@ export function buildCustomerPricelistHtml(
         ([category, catLines]) => `
       <h2><span class="cat">${escapeHtml(category)}</span><span class="rule"></span><span class="count">${catLines.length}</span></h2>
       <table>
-        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th></tr></thead>
-        <tbody>${catLines.map((l) => lineHtml(l, o, currency)).join('')}</tbody>
+        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th>${bundleTh}</tr></thead>
+        <tbody>${catLines.map((l) => lineHtml(l, o, currency, showBundle)).join('')}</tbody>
       </table>`
       ).join('')
     : `<table>
-        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th></tr></thead>
-        <tbody>${lines.map((l) => lineHtml(l, o, currency)).join('')}</tbody>
+        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th>${bundleTh}</tr></thead>
+        <tbody>${lines.map((l) => lineHtml(l, o, currency, showBundle)).join('')}</tbody>
       </table>`;
 
   // ── Letterhead identity ──
@@ -271,6 +775,21 @@ export function buildCustomerPricelistHtml(
     stampText = o.originName!.trim();
   const stamp = stampText
     ? `<span class="stamp">${escapeHtml(stampText)}</span>`
+    : '';
+
+  // Issuer contact band, directly under the issuer name. Present only when the
+  // origin resolved to a single warehouse that carries details — the same
+  // condition under which the PDF swaps its COMPANY block for `head`, so the
+  // two sheets state the same facts. When it is absent the PDF falls back to
+  // the platform block and this sheet keeps DrinksHarbour in its footer mark;
+  // both still identify the platform, each in its own idiom.
+  const headLines = [
+    o.originHead?.address,
+    o.originHead?.city,
+    [o.originHead?.email, o.originHead?.phone].filter(Boolean).join(' · '),
+  ].filter((s): s is string => !!s && !!s.trim());
+  const issuerContact = headLines.length
+    ? `<p class="issuer-contact">${headLines.map(escapeHtml).join(' · ')}</p>`
     : '';
 
   // ── Meta strip ──
@@ -300,6 +819,7 @@ export function buildCustomerPricelistHtml(
     .issuer-row { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:18px; }
     .eyebrow { margin:0 0 6px; font-size:10px; font-weight:700; letter-spacing:.24em; text-transform:uppercase; color:var(--red); }
     .issuer { margin:0; font-size:30px; line-height:1.05; font-weight:500; letter-spacing:.01em; color:var(--ink); }
+    .issuer-contact { margin:7px 0 0; font-size:10.5px; color:var(--muted); letter-spacing:.02em; }
     .stamp { flex-shrink:0; border:1.5px solid var(--red); color:var(--red); border-radius:3px; padding:5px 12px; font-size:9px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; transform:rotate(-2deg); transform-origin:center; max-width:200px; text-align:center; }
 
     /* Labelled stat strip */
@@ -331,6 +851,12 @@ export function buildCustomerPricelistHtml(
     .muted { color:var(--muted); }
     td.zero { color:var(--muted); }
 
+    /* Bundle price column */
+    .bundle { color:#166534; }
+    /* Tier + per-unit price. Not tracked caps: it carries a currency figure,
+       which uppercasing and .12em letter-spacing render unreadable. */
+    .bundle-label { display:block; font-size:9.5px; font-weight:600; color:#166534; margin-top:2px; opacity:.85; }
+
     /* Footer */
     .foot { margin-top:34px; padding-top:12px; border-top:2px solid var(--ink); position:relative; display:flex; justify-content:space-between; gap:16px; font-size:10px; color:var(--muted); }
     .foot::before { content:''; position:absolute; top:-2px; left:0; width:64px; border-top:2px solid var(--red); }
@@ -344,6 +870,7 @@ export function buildCustomerPricelistHtml(
         <div>
           <p class="eyebrow">${escapeHtml(o.title)}</p>
           <p class="issuer">${escapeHtml(issuerName)}</p>
+          ${issuerContact}
         </div>
         ${stamp}
       </div>
@@ -364,21 +891,57 @@ export function buildCustomerPricelistHtml(
 
 // ── Letterhead origin (warehouse vs tenant) ───────────────────────────────────
 
+/**
+ * The four contact facts a letterhead prints. Structurally identical to
+ * `DocHead` in `utils/print/doc-model`, declared here rather than imported
+ * because `utils/print/pricelist-print` imports *from* this module — the
+ * option type must not point back at its own consumer.
+ */
+export interface PricelistOriginHead {
+  /** Street line(s), e.g. "9 Close C Sungold Estate, Galadimawa". */
+  address?: string;
+  /** Locality line, e.g. "Abuja, FCT, Nigeria". */
+  city?: string;
+  email?: string;
+  phone?: string;
+}
+
+/** One entry of the warehouse directory `resolvePricelistOrigin` looks into. */
+export type PricelistOriginWarehouse = WarehouseHeadSource & {
+  name?: string | null;
+};
+
 export interface PricelistOrigin {
   /** Display name: the single source warehouse, else the tenant name. */
   name?: string;
   /** Distinct warehouses represented in the rows (0 when unknown). */
   warehouseCount: number;
+  /**
+   * The single source warehouse's own address/contact, when a directory was
+   * supplied and the warehouse carries details. Undefined for a mixed or
+   * catalogue-scoped sheet — a sheet drawn from several places must not claim
+   * one warehouse's contact details — and undefined for a detail-less record,
+   * which correctly leaves the platform defaults on the page.
+   */
+  head?: PricelistOriginHead;
 }
 
 /**
  * Who the pricelist is issued from: when every line sits in one warehouse the
  * invoice carries that warehouse's name; once lines mix warehouses (or carry
  * none, e.g. catalogue-resolved lines) it falls back to the tenant name.
+ *
+ * `warehouses` is an optional directory (the tenant's warehouse records). When
+ * a single origin resolves and that name matches exactly one record, the
+ * record's own address/contact come back as `head` — this is what puts the
+ * warehouse's letterhead on the sheet instead of the platform's. Name matching
+ * is case-insensitive on trimmed names because the rows carry a denormalised
+ * label, not an id; an ambiguous name yields no head rather than a guess.
  */
 export function resolvePricelistOrigin(
   rows: Array<{ warehouseName?: string | null }>,
-  tenantName?: string | null
+  tenantName?: string | null,
+  warehouses?: readonly PricelistOriginWarehouse[] | null
 ): PricelistOrigin {
   const names = new Set<string>();
   for (const r of rows) {
@@ -386,10 +949,34 @@ export function resolvePricelistOrigin(
     if (n) names.add(n);
   }
   if (names.size === 1) {
-    return { name: names.values().next().value, warehouseCount: 1 };
+    const name = names.values().next().value as string;
+    return {
+      name,
+      warehouseCount: 1,
+      head: headForWarehouse(name, warehouses),
+    };
   }
   const tenant = tenantName?.trim();
   return { name: tenant || undefined, warehouseCount: names.size };
+}
+
+/** The head of the one directory record called `name`, else undefined. */
+function headForWarehouse(
+  name: string,
+  warehouses?: readonly PricelistOriginWarehouse[] | null
+): PricelistOriginHead | undefined {
+  if (!Array.isArray(warehouses)) return undefined;
+  const key = name.trim().toLowerCase();
+  const matches = warehouses.filter(
+    (w) =>
+      String(w?.name ?? '')
+        .trim()
+        .toLowerCase() === key
+  );
+  // Warehouse names are not uniquely indexed — only `code` is. Printing one
+  // namesake's address on the other's stock would be worse than falling back.
+  if (matches.length !== 1) return undefined;
+  return warehouseHeadOf(matches[0]);
 }
 
 // ── Catalog-driven scope resolution ───────────────────────────────────────────
@@ -420,6 +1007,8 @@ export interface CatalogProduct {
     size?: string;
     sellingPrice?: number;
     costPrice?: number;
+    wholesalePrice?: number;
+    unitsPerPack?: number;
   }>;
   sellWithoutSizeVariants?: boolean;
 }
@@ -491,7 +1080,10 @@ export function catalogFacets(catalog: CatalogProduct[]): {
   const brands = new Map<string, number>();
   for (const p of catalog) {
     count(categories, catalogFacetLabel(p, 'category') || 'Uncategorized');
-    count(subCategories, catalogFacetLabel(p, 'subCategory') || 'Uncategorized');
+    count(
+      subCategories,
+      catalogFacetLabel(p, 'subCategory') || 'Uncategorized'
+    );
     count(brands, catalogFacetLabel(p, 'brand') || 'No brand');
   }
   return { categories, subCategories, brands };
@@ -537,6 +1129,8 @@ export function resolveCatalogLines(
           categoryName: cat,
           sellingPrice: Number(s.sellingPrice ?? p.sellingPrice) || 0,
           costPrice: Number(s.costPrice) || productCost,
+          wholesalePrice: Number(s.wholesalePrice) || 0,
+          unitsPerPack: Number(s.unitsPerPack) || 1,
           subProductId: String(p._id),
           sizeId: String(s._id),
           currentQuantity: 0,
@@ -550,6 +1144,8 @@ export function resolveCatalogLines(
         categoryName: cat,
         sellingPrice: Number(p.baseSellingPrice ?? p.sellingPrice) || 0,
         costPrice: productCost,
+        wholesalePrice: 0,
+        unitsPerPack: 1,
         subProductId: String(p._id),
         sizeId: `base-${p._id}`,
         currentQuantity: 0,
@@ -633,7 +1229,12 @@ export function buildPricelistCsv(
   options: PricelistPrintOptions
 ): string {
   const currency = pricelist?.currency || 'NGN';
-  const lines = priceAndSortLines(rows, pricelist, options.discountPercent ?? 0);
+  const lines = priceAndSortLines(
+    rows,
+    pricelist,
+    options.discountPercent ?? 0
+  );
+  const showBundle = linesHaveBundlePrices(lines);
   const headers = [
     'Category',
     'Product',
@@ -642,6 +1243,9 @@ export function buildPricelistCsv(
     ...(options.showAvailability ? ['Available'] : []),
     'Unit Price',
     'Was Price',
+    // Explicit headers: "Bundle Price" alone is ambiguous now that the sheet
+    // leads with the tier total.
+    ...(showBundle ? ['Bundle Unit Price', 'Bundle Qty', 'Bundle Total'] : []),
     'Currency',
   ];
   const body = lines.map((l) =>
@@ -653,6 +1257,13 @@ export function buildPricelistCsv(
       ...(options.showAvailability ? [l.currentQuantity] : []),
       l.price.toFixed(2),
       l.was != null ? l.was.toFixed(2) : '',
+      ...(showBundle
+        ? [
+            l.bundlePrice?.toFixed(2) ?? '',
+            l.bundleQuantity ?? '',
+            l.bundleTotal?.toFixed(2) ?? '',
+          ]
+        : []),
       currency,
     ].join(',')
   );

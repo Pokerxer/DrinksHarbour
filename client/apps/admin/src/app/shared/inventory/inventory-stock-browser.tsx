@@ -31,12 +31,18 @@ import {
   PiWarningCircle,
   PiX,
 } from 'react-icons/pi';
-import { GroupItem, SortIcon } from '@/components/list-controls';
+import { SortIcon } from '@/components/list-controls';
 import {
   warehouseStockService,
   type StockRow,
 } from '@/services/warehouseStock.service';
+import type {
+  CustomGroup,
+  FilterValue,
+  SavedSearch as AdvSavedSearch,
+} from '../advanced-search/advanced-search-types';
 import InventoryStockImport from './inventory-stock-import';
+import InventoryStockFilterPanel from './inventory-stock-filter-panel';
 import PricelistPrintModal from './inventory-pricelist-print-modal';
 import {
   PAGE_SIZE,
@@ -44,6 +50,31 @@ import {
   fmtDateTime,
   fmtNgn,
 } from './inventory-receipts-support';
+// Every search / filter / sort / group decision lives in this module, as pure
+// functions with tests. It used to live inline here, where the admin's
+// `environment: 'node'` vitest could not reach it — and four wrong answers were
+// hiding in that blind spot.
+import {
+  STATUS_BADGE,
+  STOCK_GROUP_OPTIONS,
+  applyStockFilters,
+  availableOf,
+  categoryOf,
+  expiryRange,
+  groupStockRows,
+  lineRetail,
+  lineValue,
+  matchesExpiryRange,
+  matchesStatusSet,
+  parseStockQuerySet,
+  resolveStockFilters,
+  searchStockRowSet,
+  sortStockRows,
+  statusOf,
+  type SortCol,
+  type SortDir,
+  type StatusKey,
+} from './inventory-stock-search';
 
 // ── Modes / presets ───────────────────────────────────────────────────────────
 
@@ -82,9 +113,16 @@ const MODE_META: Record<
   },
 };
 
-type StatusKey = 'all' | 'ok' | 'low' | 'out' | 'expiry' | 'over';
-const STATUS_TABS: { key: StatusKey; label: string }[] = [
-  { key: 'all', label: 'All' },
+/**
+ * The exclusive tab row. `null` is "All".
+ *
+ * Status is held in ONE `Set<StatusKey>` shared with the advanced-search
+ * panel's checkboxes, so the two controls cannot disagree: empty set = All,
+ * exactly one member = that tab is lit, two or more = All is lit and the
+ * selection shows as chips in the search bar.
+ */
+const STATUS_TABS: { key: StatusKey | null; label: string }[] = [
+  { key: null, label: 'All' },
   { key: 'ok', label: 'In stock' },
   { key: 'low', label: 'Low' },
   { key: 'out', label: 'Out' },
@@ -92,64 +130,41 @@ const STATUS_TABS: { key: StatusKey; label: string }[] = [
   { key: 'over', label: 'Overstocked' },
 ];
 
-function statusOf(r: StockRow): Exclude<StatusKey, 'all'> {
-  const f = r.flags;
-  if (f?.outOfStock || r.currentQuantity <= 0) return 'out';
-  if (f?.lowStock) return 'low';
-  if (f?.nearExpiry) return 'expiry';
-  if (f?.overstocked) return 'over';
-  return 'ok';
-}
-const STATUS_BADGE: Record<
-  Exclude<StatusKey, 'all'>,
-  { label: string; cls: string }
-> = {
-  ok: { label: 'In stock', cls: 'bg-emerald-50 text-emerald-600' },
-  low: { label: 'Low stock', cls: 'bg-amber-50 text-amber-600' },
-  out: { label: 'Out of stock', cls: 'bg-red-50 text-red-600' },
-  expiry: { label: 'Near expiry', cls: 'bg-orange-50 text-orange-600' },
-  over: { label: 'Overstocked', cls: 'bg-blue-50 text-blue-600' },
-};
-
-type SortCol =
-  | 'product'
-  | 'size'
-  | 'warehouse'
-  | 'onhand'
-  | 'reserved'
-  | 'available'
-  | 'cost'
-  | 'value'
-  | 'status';
-type SortDir = 'asc' | 'desc';
-type GroupKey = 'warehouse' | 'product' | 'status';
-interface SavedSearch {
-  id: string;
-  name: string;
-  query: string;
-  groupBy: GroupKey | null;
+/**
+ * A saved search restores the whole view, not just the text. The previous
+ * version stored only the query and the grouping, so loading one left the
+ * status tab, warehouse and category wherever the user happened to have them —
+ * a "saved search" that returned different rows each time it was applied.
+ */
+interface StockSavedSearch extends AdvSavedSearch {
+  /** Committed search chips — the multi-item part of the query. */
+  searchTerms?: string[];
+  statuses?: StatusKey[];
+  warehouseId?: string;
+  category?: string;
+  expiryPreset?: string | null;
 }
 
-const GROUP_LABELS: Record<GroupKey, string> = {
-  warehouse: 'Warehouse',
-  product: 'Product',
-  status: 'Status',
-};
-
-function lineValue(r: StockRow) {
-  return r.currentQuantity * (r.costPrice || 0);
-}
-function lineRetail(r: StockRow) {
-  return r.currentQuantity * (r.sellingPrice || 0);
-}
-
-function loadSavedFor(key: string): SavedSearch[] {
+function loadSavedFor(key: string): StockSavedSearch[] {
   try {
-    return JSON.parse(localStorage.getItem(key) || '[]') as SavedSearch[];
+    const parsed = JSON.parse(
+      localStorage.getItem(key) || '[]'
+    ) as StockSavedSearch[];
+    if (!Array.isArray(parsed)) return [];
+    // Entries written before this shape existed carry `query` instead of
+    // `search` and no filters; normalise rather than dropping the user's work.
+    return parsed.map((s) => ({
+      ...s,
+      search: s.search ?? (s as unknown as { query?: string }).query ?? '',
+      filters: Array.isArray(s.filters) ? s.filters : [],
+      groupBy: typeof s.groupBy === 'string' ? s.groupBy : '',
+    }));
   } catch {
     return [];
   }
 }
+
+const CUSTOM_GROUP_KEY = 'dh-inventory-stock-custom-groups';
 
 // ── Print (stock report) ──────────────────────────────────────────────────────
 
@@ -228,7 +243,7 @@ function exportStockCsv(rows: StockRow[], prefix: string) {
       `"${r.warehouseName}"`,
       r.currentQuantity,
       r.reservedQuantity,
-      r.currentQuantity - r.reservedQuantity,
+      availableOf(r),
       `"${r.categoryName ?? 'Uncategorized'}"`,
       (r.costPrice || 0).toFixed(2),
       (r.sellingPrice || 0).toFixed(2),
@@ -246,125 +261,6 @@ function exportStockCsv(rows: StockRow[], prefix: string) {
   a.download = `${prefix}-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-// ── Group panel ───────────────────────────────────────────────────────────────
-
-function StockGroupPanel({
-  groupBy,
-  savedSearches,
-  onSetGroupBy,
-  onSave,
-  onLoadSaved,
-  onDeleteSaved,
-  onClose,
-}: {
-  groupBy: GroupKey | null;
-  savedSearches: SavedSearch[];
-  onSetGroupBy: (g: GroupKey | null) => void;
-  onSave: (name: string) => void;
-  onLoadSaved: (s: SavedSearch) => void;
-  onDeleteSaved: (id: string) => void;
-  onClose: () => void;
-}) {
-  const [saveName, setSaveName] = useState('');
-  const [showSaveInput, setShowSaveInput] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    function onOut(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    document.addEventListener('mousedown', onOut);
-    return () => document.removeEventListener('mousedown', onOut);
-  }, [onClose]);
-  return (
-    <div
-      ref={ref}
-      className="ring-gray-900/8 absolute right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl bg-white shadow-2xl ring-1"
-      style={{ minWidth: 420 }}
-    >
-      <div className="flex divide-x divide-gray-100">
-        <div className="flex-1 p-4">
-          <p className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-            <PiStack className="h-3.5 w-3.5" /> Group By
-          </p>
-          <div className="space-y-0.5">
-            <GroupItem
-              gkey="warehouse"
-              label="Warehouse"
-              active={groupBy === 'warehouse'}
-              onToggle={onSetGroupBy}
-            />
-            <GroupItem
-              gkey="product"
-              label="Product"
-              active={groupBy === 'product'}
-              onToggle={onSetGroupBy}
-            />
-            <GroupItem
-              gkey="status"
-              label="Status"
-              active={groupBy === 'status'}
-              onToggle={onSetGroupBy}
-            />
-          </div>
-        </div>
-        <div className="flex-1 p-4">
-          <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-            Saved Searches
-          </p>
-          {!showSaveInput ? (
-            <button
-              type="button"
-              onClick={() => setShowSaveInput(true)}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-gray-600 hover:bg-gray-50"
-            >
-              Save current search
-            </button>
-          ) : (
-            <div className="space-y-2 px-1 py-1">
-              <input
-                autoFocus
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && saveName.trim()) {
-                    onSave(saveName.trim());
-                    setSaveName('');
-                    setShowSaveInput(false);
-                  }
-                  if (e.key === 'Escape') setShowSaveInput(false);
-                }}
-                placeholder="Name this search…"
-                className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs outline-none focus:border-[#b20202]"
-              />
-            </div>
-          )}
-          {savedSearches.map((s) => (
-            <div key={s.id} className="group flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  onLoadSaved(s);
-                  onClose();
-                }}
-                className="flex flex-1 items-center gap-2 truncate rounded-lg px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                <span className="truncate">{s.name}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onDeleteSaved(s.id)}
-                className="hidden h-6 w-6 shrink-0 items-center justify-center rounded text-gray-300 hover:text-red-500 group-hover:flex"
-              >
-                <PiX className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
@@ -547,12 +443,25 @@ export default function InventoryStockBrowser({
   const [rows, setRows] = useState<StockRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusTab, setStatusTab] = useState<StatusKey>('all');
+  // Filtering runs over every loaded row, so it keys off the debounced value —
+  // the previous version re-filtered, re-scored and re-sorted on every
+  // keystroke, and re-parsed the query a third time inside the JSX.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  // Committed search chips — one per Enter. They OR, so several products can be
+  // looked up at once; terms inside one chip still AND, so a chip can narrow.
+  const [searchTerms, setSearchTerms] = useState<string[]>([]);
+  const [statusSel, setStatusSel] = useState<Set<StatusKey>>(new Set());
   const [warehouseFilter, setWarehouseFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [showPanel, setShowPanel] = useState(false);
-  const [groupBy, setGroupBy] = useState<GroupKey | null>(null);
-  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+  const [groupBy, setGroupBy] = useState<string>('');
+  const [rawFilters, setRawFilters] = useState<FilterValue[]>([]);
+  const [expiryPreset, setExpiryPreset] = useState<string | null>(null);
+  const [expiryFrom, setExpiryFrom] = useState('');
+  const [expiryTo, setExpiryTo] = useState('');
+  const [savedSearches, setSavedSearches] = useState<StockSavedSearch[]>([]);
+  const [customGroups, setCustomGroups] = useState<CustomGroup[]>([]);
+  const searchRef = useRef<HTMLDivElement>(null);
   const [sortCol, setSortCol] = useState<SortCol>('product');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(1);
@@ -567,6 +476,12 @@ export default function InventoryStockBrowser({
 
   useEffect(() => {
     setSavedSearches(loadSavedFor(meta.savedKey));
+    try {
+      const raw = localStorage.getItem(CUSTOM_GROUP_KEY);
+      setCustomGroups(raw ? (JSON.parse(raw) as CustomGroup[]) : []);
+    } catch {
+      setCustomGroups([]);
+    }
   }, [meta.savedKey]);
 
   const load = useCallback(async () => {
@@ -591,11 +506,45 @@ export default function InventoryStockBrowser({
     load();
   }, [load]);
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => {
     setExpandedGroups(new Set());
   }, [groupBy]);
   useEffect(() => {
     setPage(1);
-  }, [search, statusTab, warehouseFilter, categoryFilter, sortCol, sortDir]);
+  }, [
+    debouncedSearch,
+    searchTerms,
+    statusSel,
+    warehouseFilter,
+    categoryFilter,
+    rawFilters,
+    expiryPreset,
+    expiryFrom,
+    expiryTo,
+    sortCol,
+    sortDir,
+  ]);
+
+  // Parsed exactly once per change and reused by the ranking, the sort and the
+  // hint line. The half-typed input is included as a pending chip, so what the
+  // table shows before Enter is exactly what committing it will keep.
+  const querySet = useMemo(
+    () => parseStockQuerySet([...searchTerms, debouncedSearch]),
+    [searchTerms, debouncedSearch]
+  );
+
+  // A new query ranks by relevance ("best match"); the user can still pin a
+  // column afterwards, because this only fires when the query itself changes.
+  // Clearing the query MUST release the pin: `relevance` with nothing to rank
+  // used to leave the comparator returning 0 for every pair, so the table went
+  // silently unsorted.
+  useEffect(() => {
+    if (querySet.hasQuery) setSortCol('relevance');
+    else setSortCol((c) => (c === 'relevance' ? 'product' : c));
+  }, [querySet]);
 
   const warehouses = useMemo(() => {
     const map = new Map<string, string>();
@@ -619,21 +568,84 @@ export default function InventoryStockBrowser({
     );
   }, [rows]);
 
+  function persistSaved(next: StockSavedSearch[]) {
+    setSavedSearches(next);
+    localStorage.setItem(meta.savedKey, JSON.stringify(next));
+  }
+  /** Saves the whole view — text, filters, grouping, status, warehouse, category. */
   function saveSearch(name: string) {
-    const entry: SavedSearch = {
-      id: Date.now().toString(),
-      name,
-      query: search,
-      groupBy,
-    };
-    const updated = [...savedSearches, entry];
-    setSavedSearches(updated);
-    localStorage.setItem(meta.savedKey, JSON.stringify(updated));
+    persistSaved([
+      ...savedSearches,
+      {
+        id: Date.now().toString(),
+        name,
+        search,
+        searchTerms,
+        filters: rawFilters,
+        groupBy,
+        statuses: Array.from(statusSel),
+        warehouseId: warehouseFilter,
+        category: categoryFilter,
+        expiryPreset,
+      },
+    ]);
+  }
+  function applySaved(s: AdvSavedSearch) {
+    const saved = savedSearches.find((x) => x.id === s.id);
+    setSearch(s.search ?? '');
+    setDebouncedSearch(s.search ?? '');
+    setSearchTerms(saved?.searchTerms ?? []);
+    setRawFilters(s.filters ?? []);
+    setGroupBy(s.groupBy ?? '');
+    setStatusSel(new Set(saved?.statuses ?? []));
+    setWarehouseFilter(saved?.warehouseId ?? '');
+    setCategoryFilter(saved?.category ?? 'all');
+    setExpiryPreset(saved?.expiryPreset ?? null);
+    setExpiryFrom('');
+    setExpiryTo('');
+    setPage(1);
+    setShowPanel(false);
   }
   function deleteSaved(id: string) {
-    const updated = savedSearches.filter((s) => s.id !== id);
-    setSavedSearches(updated);
-    localStorage.setItem(meta.savedKey, JSON.stringify(updated));
+    persistSaved(savedSearches.filter((s) => s.id !== id));
+  }
+
+  function persistCustomGroups(next: CustomGroup[]) {
+    setCustomGroups(next);
+    localStorage.setItem(CUSTOM_GROUP_KEY, JSON.stringify(next));
+  }
+
+  /**
+   * Enter commits what was typed as a chip. Committing is a no-op for blank
+   * input or a duplicate — an "everything" chip would OR the whole table back
+   * in, and a repeated chip would just widen the bar without widening the result.
+   */
+  function commitSearchTerm() {
+    const t = search.trim();
+    if (!t) return;
+    if (!searchTerms.includes(t)) setSearchTerms((p) => [...p, t]);
+    setSearch('');
+    setDebouncedSearch('');
+    setSelectedId(null);
+  }
+
+  function toggleStatus(key: StatusKey) {
+    setStatusSel((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
+    setSelectedId(null);
+  }
+  /** The tab row is exclusive: it replaces the selection rather than adding. */
+  function pickStatusTab(key: StatusKey | null) {
+    setStatusSel((prev) =>
+      key === null || (prev.size === 1 && prev.has(key))
+        ? new Set()
+        : new Set([key])
+    );
+    setSelectedId(null);
   }
 
   async function applyCount(rowId: string, counted: number) {
@@ -678,80 +690,68 @@ export default function InventoryStockBrowser({
 
   function clearAllFilters() {
     setSearch('');
-    setStatusTab('all');
+    setDebouncedSearch('');
+    setSearchTerms([]);
+    setStatusSel(new Set());
     setWarehouseFilter('');
     setCategoryFilter('all');
-    setGroupBy(null);
+    setGroupBy('');
+    setRawFilters([]);
+    setExpiryPreset(null);
+    setExpiryFrom('');
+    setExpiryTo('');
   }
 
-  const filtered = useMemo(() => {
-    let list = [...rows];
-    if (statusTab !== 'all')
-      list = list.filter((r) => statusOf(r) === statusTab);
+  // A filter naming a field this build no longer knows is dropped and named —
+  // a saved search that silently returned zero rows would look like an honest
+  // empty result.
+  const { valid: activeFilters, dropped: droppedFilters } = useMemo(
+    () => resolveStockFilters(rawFilters),
+    [rawFilters]
+  );
+
+  /** The expiry window, from a preset or from an explicit custom range. */
+  const expiryWindow = useMemo((): [Date, Date] | null => {
+    if (expiryPreset && expiryPreset !== 'custom')
+      return expiryRange(expiryPreset);
+    if (!expiryFrom && !expiryTo) return null;
+    return [
+      expiryFrom ? new Date(`${expiryFrom}T00:00:00`) : new Date(0),
+      expiryTo
+        ? new Date(`${expiryTo}T23:59:59.999`)
+        : new Date(8_640_000_000_000_000),
+    ];
+  }, [expiryPreset, expiryFrom, expiryTo]);
+
+  // Narrow first, rank second: scoring is the expensive step, so it runs over
+  // the smallest set the cheap predicates can produce.
+  const searchResult = useMemo(() => {
+    let list = rows;
+    if (statusSel.size > 0)
+      list = list.filter((r) => matchesStatusSet(r, statusSel));
     if (warehouseFilter)
       list = list.filter((r) => r.warehouseId === warehouseFilter);
     if (categoryFilter !== 'all')
-      list = list.filter(
-        (r) => (r.categoryName || 'Uncategorized') === categoryFilter
-      );
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter((r) =>
-        [
-          r.productName,
-          r.sku,
-          r.sizeName,
-          r.warehouseName,
-          r.categoryName,
-        ].some((v) => v?.toLowerCase().includes(q))
-      );
-    }
-    list.sort((a, b) => {
-      let cmp = 0;
-      switch (sortCol) {
-        case 'product':
-          cmp = a.productName.localeCompare(b.productName);
-          break;
-        case 'size':
-          cmp = a.sizeName.localeCompare(b.sizeName);
-          break;
-        case 'warehouse':
-          cmp = a.warehouseName.localeCompare(b.warehouseName);
-          break;
-        case 'onhand':
-          cmp = a.currentQuantity - b.currentQuantity;
-          break;
-        case 'reserved':
-          cmp = a.reservedQuantity - b.reservedQuantity;
-          break;
-        case 'available':
-          cmp =
-            a.currentQuantity -
-            a.reservedQuantity -
-            (b.currentQuantity - b.reservedQuantity);
-          break;
-        case 'cost':
-          cmp = (a.costPrice || 0) - (b.costPrice || 0);
-          break;
-        case 'value':
-          cmp = lineValue(a) - lineValue(b);
-          break;
-        case 'status':
-          cmp = statusOf(a).localeCompare(statusOf(b));
-          break;
-      }
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return list;
+      list = list.filter((r) => categoryOf(r) === categoryFilter);
+    if (expiryWindow)
+      list = list.filter((r) => matchesExpiryRange(r, expiryWindow));
+    if (activeFilters.length > 0) list = applyStockFilters(list, activeFilters);
+    return searchStockRowSet(list, querySet);
   }, [
     rows,
-    statusTab,
+    statusSel,
     warehouseFilter,
     categoryFilter,
-    search,
-    sortCol,
-    sortDir,
+    expiryWindow,
+    activeFilters,
+    querySet,
   ]);
+
+  const filtered = useMemo(
+    () =>
+      sortStockRows(searchResult.rows, sortCol, sortDir, searchResult.scores),
+    [searchResult, sortCol, sortDir]
+  );
 
   const stats = useMemo(() => {
     const units = filtered.reduce((s, r) => s + r.currentQuantity, 0);
@@ -775,18 +775,7 @@ export default function InventoryStockBrowser({
 
   const grouped = useMemo((): [string, StockRow[]][] | null => {
     if (!groupBy) return null;
-    const map = new Map<string, StockRow[]>();
-    filtered.forEach((r) => {
-      const key =
-        groupBy === 'warehouse'
-          ? r.warehouseName
-          : groupBy === 'product'
-            ? r.productName
-            : STATUS_BADGE[statusOf(r)].label;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(r);
-    });
-    return Array.from(map.entries());
+    return groupStockRows(filtered, groupBy);
   }, [filtered, groupBy]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -831,10 +820,17 @@ export default function InventoryStockBrowser({
 
   const hasAnyFilter =
     !!search ||
+    searchTerms.length > 0 ||
     !!warehouseFilter ||
-    statusTab !== 'all' ||
+    statusSel.size > 0 ||
     categoryFilter !== 'all' ||
-    !!groupBy;
+    !!groupBy ||
+    rawFilters.length > 0 ||
+    !!expiryPreset ||
+    !!expiryFrom ||
+    !!expiryTo;
+
+  const groupLabel = STOCK_GROUP_OPTIONS.find((g) => g.id === groupBy)?.label;
 
   const HEADERS: { col: SortCol; label: string; right?: boolean }[] = [
     { col: 'product', label: 'Product' },
@@ -954,7 +950,7 @@ export default function InventoryStockBrowser({
               className={`px-3 py-2.5 text-right text-xs font-semibold tabular-nums ${isSel ? 'text-white' : 'text-gray-700'}`}
               onClick={() => setSelectedId(isSel ? null : r._id)}
             >
-              {r.currentQuantity - r.reservedQuantity}
+              {availableOf(r)}
             </td>
             {mode === 'stock' && (
               <>
@@ -1079,61 +1075,36 @@ export default function InventoryStockBrowser({
 
           {/* Status tabs */}
           <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-0.5">
-            {STATUS_TABS.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => {
-                  setStatusTab(t.key);
-                  setSelectedId(null);
-                }}
-                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
-                  statusTab === t.key
-                    ? 'bg-[#b20202] text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+            {STATUS_TABS.map((t) => {
+              // "All" is lit whenever the selection is not exactly one status —
+              // so a multi-status selection made in the panel reads as All here
+              // and shows itself as chips, rather than lighting an arbitrary tab.
+              const active =
+                t.key === null
+                  ? statusSel.size !== 1
+                  : statusSel.size === 1 && statusSel.has(t.key);
+              return (
+                <button
+                  key={t.key ?? 'all'}
+                  type="button"
+                  onClick={() => pickStatusTab(t.key)}
+                  aria-pressed={active}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
+                    active
+                      ? 'bg-[#b20202] text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowPanel((v) => !v)}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  showPanel || groupBy
-                    ? 'border-[#b20202] bg-[#b20202]/5 text-[#b20202]'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <PiStack className="h-3.5 w-3.5" />
-                {groupBy ? `Group: ${GROUP_LABELS[groupBy]}` : 'Group By'}
-                {showPanel ? (
-                  <PiCaretUp className="h-3 w-3" />
-                ) : (
-                  <PiCaretDown className="h-3 w-3" />
-                )}
-              </button>
-              {showPanel && (
-                <StockGroupPanel
-                  groupBy={groupBy}
-                  savedSearches={savedSearches}
-                  onSetGroupBy={setGroupBy}
-                  onSave={saveSearch}
-                  onLoadSaved={(s) => {
-                    setSearch(s.query);
-                    setGroupBy(s.groupBy);
-                    setPage(1);
-                  }}
-                  onDeleteSaved={deleteSaved}
-                  onClose={() => setShowPanel(false)}
-                />
-              )}
-            </div>
+            {/* Group-by and saved searches now live in the advanced-search
+                panel below, opened from the search bar itself. */}
             <button
               type="button"
               onClick={load}
@@ -1213,32 +1184,237 @@ export default function InventoryStockBrowser({
 
           <div className="mx-1 mt-5 w-px self-stretch bg-gray-100" />
 
-          <div className="flex min-w-[200px] flex-1 flex-col gap-0.5">
+          <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
               Search
             </span>
-            <div className="relative">
-              <PiMagnifyingGlass className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setSelectedId(null);
-                }}
-                placeholder="Product, SKU, size, warehouse…"
-                className="h-[34px] w-full rounded-lg border border-gray-200 bg-white pl-8 pr-7 text-xs text-gray-800 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
-              />
-              {search && (
+            <div ref={searchRef} className="relative">
+              <div
+                className={`flex items-center rounded-lg border bg-white ${
+                  showPanel
+                    ? 'border-[#b20202] ring-1 ring-[#b20202]/20'
+                    : 'border-gray-200'
+                }`}
+              >
+                <PiMagnifyingGlass className="ml-2.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
+                <div className="flex min-h-[32px] flex-1 flex-wrap items-center gap-1 px-2 py-1">
+                  {/* One chip per Enter. Chips OR, so this is how you look up
+                      several products at once. */}
+                  {searchTerms.map((t, i) => (
+                    <span
+                      key={`${t}-${i}`}
+                      className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
+                    >
+                      {t}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSearchTerms((p) => p.filter((_, j) => j !== i))
+                        }
+                        aria-label={`Remove search term ${t}`}
+                      >
+                        <PiX className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {activeFilters.map((f) => (
+                    <span
+                      key={f.fieldId}
+                      className="inline-flex items-center gap-1 rounded-full bg-[#b20202]/10 px-2 py-0.5 text-[11px] font-medium text-[#b20202]"
+                    >
+                      {f.label}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRawFilters((p) =>
+                            p.filter((x) => x.fieldId !== f.fieldId)
+                          )
+                        }
+                        aria-label={`Remove ${f.label} filter`}
+                      >
+                        <PiX className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {/* Only shown when the tab row cannot represent the selection. */}
+                  {statusSel.size > 1 &&
+                    Array.from(statusSel).map((s) => (
+                      <span
+                        key={s}
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                      >
+                        {STATUS_BADGE[s].label}
+                        <button
+                          type="button"
+                          onClick={() => toggleStatus(s)}
+                          aria-label={`Remove ${STATUS_BADGE[s].label} filter`}
+                        >
+                          <PiX className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  {expiryWindow && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                      Expiry
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpiryPreset(null);
+                          setExpiryFrom('');
+                          setExpiryTo('');
+                        }}
+                        aria-label="Clear expiry filter"
+                      >
+                        <PiX className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+                  {groupBy && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                      Group: {groupLabel}
+                      <button
+                        type="button"
+                        onClick={() => setGroupBy('')}
+                        aria-label="Clear grouping"
+                      >
+                        <PiX className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setSelectedId(null);
+                    }}
+                    onFocus={() => setShowPanel(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        commitSearchTerm();
+                      } else if (
+                        e.key === 'Backspace' &&
+                        search === '' &&
+                        searchTerms.length > 0
+                      ) {
+                        // The usual token-input affordance: backspace on an
+                        // empty box takes back the last thing you committed.
+                        setSearchTerms((p) => p.slice(0, -1));
+                      }
+                    }}
+                    placeholder={
+                      searchTerms.length > 0
+                        ? 'Add another…'
+                        : activeFilters.length || groupBy || statusSel.size > 1
+                          ? ''
+                          : 'Product, SKU, size…  Enter to add another item'
+                    }
+                    aria-label="Search stock lines"
+                    className="min-w-[110px] flex-1 bg-transparent py-0.5 text-xs text-gray-800 outline-none placeholder:text-gray-400"
+                  />
+                </div>
                 <button
                   type="button"
-                  onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  onClick={() => setShowPanel((v) => !v)}
+                  className="border-l border-gray-200 px-2 py-1.5 text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+                  aria-label="Toggle filter panel"
                 >
-                  <PiX className="h-3.5 w-3.5" />
+                  {showPanel ? (
+                    <PiCaretUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <PiCaretDown className="h-3.5 w-3.5" />
+                  )}
                 </button>
-              )}
+              </div>
+
+              <InventoryStockFilterPanel
+                open={showPanel}
+                onClose={() => setShowPanel(false)}
+                activeFilters={activeFilters}
+                onAddFilter={(f) =>
+                  setRawFilters((p) => [
+                    ...p.filter((x) => x.fieldId !== f.fieldId),
+                    f,
+                  ])
+                }
+                onRemoveFilter={(fieldId) =>
+                  setRawFilters((p) => p.filter((x) => x.fieldId !== fieldId))
+                }
+                onClearFilters={() => setRawFilters([])}
+                groupBy={groupBy}
+                onSetGroupBy={(id) => setGroupBy(id === 'none' ? '' : id)}
+                statusSel={statusSel}
+                onToggleStatus={toggleStatus}
+                expiryPreset={expiryPreset}
+                onSetExpiryPreset={(id) => {
+                  setExpiryPreset(id);
+                  if (id !== 'custom') {
+                    setExpiryFrom('');
+                    setExpiryTo('');
+                  }
+                }}
+                expiryFrom={expiryFrom}
+                expiryTo={expiryTo}
+                onExpiryFrom={setExpiryFrom}
+                onExpiryTo={setExpiryTo}
+                favorites={savedSearches}
+                onApplyFavorite={applySaved}
+                onSaveFavorite={saveSearch}
+                onDeleteFavorite={deleteSaved}
+                customGroups={customGroups}
+                onAddCustomGroup={(g) =>
+                  persistCustomGroups([...customGroups, g])
+                }
+                onRemoveCustomGroup={(id) =>
+                  persistCustomGroups(customGroups.filter((g) => g.id !== id))
+                }
+                triggerRef={searchRef as React.RefObject<HTMLDivElement | null>}
+              />
             </div>
+            {(search ||
+              searchTerms.length > 0 ||
+              searchResult.approximate ||
+              droppedFilters.length > 0) && (
+              <p className="flex min-h-[14px] flex-wrap items-center gap-1 text-[10px] text-gray-400">
+                {searchResult.approximate ? (
+                  <span className="font-semibold text-amber-600">
+                    No exact match — showing closest
+                  </span>
+                ) : (
+                  sortCol === 'relevance' && (
+                    <span className="font-semibold text-[#b20202]">
+                      Best match
+                    </span>
+                  )
+                )}
+                {querySet.queries.length > 1 ? (
+                  <span>· any of {querySet.queries.length} items</span>
+                ) : (
+                  search && <span>· matching all terms</span>
+                )}
+                {querySet.hasFilters && (
+                  <span className="text-gray-500">· field filters active</span>
+                )}
+                {/* Defect: an unrecognised prefix used to become a term that
+                    could never match, so the query returned nothing in silence. */}
+                {querySet.unknownFields.length > 0 && (
+                  <span className="text-amber-600">
+                    · unknown field
+                    {querySet.unknownFields.length > 1 ? 's' : ''}{' '}
+                    {querySet.unknownFields.map((f) => `${f}:`).join(' ')} —
+                    searched as text (try sku:, wh:, cat:, size:)
+                  </span>
+                )}
+                {droppedFilters.length > 0 && (
+                  <span className="text-amber-600">
+                    · ignored unknown filter
+                    {droppedFilters.length > 1 ? 's' : ''}:{' '}
+                    {droppedFilters.join(', ')}
+                  </span>
+                )}
+              </p>
+            )}
           </div>
 
           {hasAnyFilter && (
@@ -1472,8 +1648,11 @@ export default function InventoryStockBrowser({
               </div>
               <div>
                 <p className="text-sm font-semibold text-gray-600">
-                  {search
-                    ? `No stock lines matching "${search}"`
+                  {searchTerms.length > 0 || search
+                    ? `No stock lines matching ${[...searchTerms, search]
+                        .filter(Boolean)
+                        .map((t) => `"${t}"`)
+                        .join(' or ')}`
                     : 'No stock lines match the filters'}
                 </p>
                 <p className="mt-1 text-xs text-gray-400">
