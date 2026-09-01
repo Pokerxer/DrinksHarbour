@@ -7,6 +7,7 @@ import type {
   SalesLineItem,
   SalesOrder,
   SalesOrderAddress,
+  CartQuoteItem,
 } from '@/services/salesOrder.service';
 import type { POSCustomer } from '@/app/shared/point-of-sale/types';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -703,6 +704,70 @@ export function useSalesCreateForm({
     );
   }, []);
 
+  /**
+   * Pull a customer's marketplace cart into the current quotation as line
+   * items. Each CartQuoteItem is converted to a ProductLineSelection and fed
+   * through the same add-product-as-catalog path that the catalog modal and
+   * scan drawer use — so quantity merging and the debounced `pricingSig`
+   * re-price (which overwrites the seeded marketplace price with the tenant's
+   * engine price) work identically.
+   *
+   * Unlike the catalog modal and the scan drawer, the marketplace cart carries
+   * no catalog metadata — no cost price, no per-warehouse stock, no pack size,
+   * no bundle deals. Without the hydrate below, imported lines show a ₦0 cost,
+   * no out-of-stock badge, and a pack size of 1 even for pack-rated sizes.
+   */
+  const importCustomerCart = useCallback(
+    (cartItems: CartQuoteItem[]) => {
+      if (!cartItems.length) return;
+      for (const it of cartItems) {
+        addProductFromCatalog(
+          {
+            name: it.name,
+            sku: it.sku,
+            subProductId: it.subProductId,
+            productId: it.productId,
+            // Seed from the marketplace price; the pricelist engine + server
+            // repricing will overwrite with the tenant's price.
+            sellingPrice: it.marketplaceUnitPrice,
+            costPrice: 0,
+            taxRate: it.taxRate ?? 0,
+            sizeId: it.sizeId,
+            sizeName: it.sizeName,
+            availableStock: undefined,
+            bundleDeals: undefined,
+          },
+          it.quantity
+        );
+      }
+      // hydrateLineMeta only reads subProductId/sizeId/name off the list it is
+      // given; it patches whatever is in `lines` by then, so the synthetic
+      // draft lines below are enough to drive the catalog lookup.
+      void (async () => {
+        const unavailable = await hydrateLineMeta(
+          cartItems.map((it) => ({
+            ...blankLine('product'),
+            subProductId: it.subProductId,
+            product: it.productId,
+            name: it.name,
+            sku: it.sku,
+            sizeId: it.sizeId,
+            sizeName: it.sizeName,
+            quantity: it.quantity,
+          })),
+          warehouseIdStr || undefined
+        );
+        if (unavailable && unavailable.length) {
+          toast.error(
+            `Imported but not available in the selected warehouse: ${unavailable.join(', ')}.`,
+            { duration: 6000 }
+          );
+        }
+      })();
+    },
+    [addProductFromCatalog, hydrateLineMeta, warehouseIdStr]
+  );
+
   return {
     customer,
     setCustomer,
@@ -763,6 +828,7 @@ export function useSalesCreateForm({
     removeLine,
     reorderLines,
     addProductFromCatalog,
+    importCustomerCart,
     applyServerItems,
     setCatalogLineQty,
     removeCatalogLine,

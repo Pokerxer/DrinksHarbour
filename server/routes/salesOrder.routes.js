@@ -13,6 +13,7 @@ const {
   sendOrderEmail, requestSignature,
   bulkMarkSent, bulkDuplicate, bulkDelete, bulkCancel,
   bulkCreateInvoice, bulkAccruedRevenue, bulkFollowers, bulkSendEmail,
+  getCustomerCartForQuote,
 } = require('../controllers/salesOrder.controller');
 const { protect, attachTenant, tenantUserOnly, requireOwnTenant } = require('../middleware/auth.middleware');
 
@@ -31,6 +32,10 @@ router.route('/').get(getSalesOrders).post(createSalesOrder);
 // Price draft lines through the authoritative engine (no document involved) —
 // must be registered before /:id so "price-lines" isn't captured as an id.
 router.post('/price-lines', priceLines);
+
+// A customer's marketplace cart, filtered to this tenant's sellable lines — must
+// be registered before /:id so "customer-cart" isn't captured as an id.
+router.get('/customer-cart', getCustomerCartForQuote);
 
 router.route('/:id').get(getSalesOrder).put(updateSalesOrder).delete(deleteSalesOrder);
 

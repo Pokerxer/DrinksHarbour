@@ -999,12 +999,237 @@ async function getGroupedOrders({ matchQuery, groupBy, groupBySubOption, sort })
   return { groups, truncated, fetched: docs.length, total };
 }
 
+/**
+ * Read a tenant's customer's marketplace cart, filtered to the lines this
+ * tenant can actually sell, so staff can pull it into a quotation.
+ *
+ * The marketplace `Cart` is owned by a platform `User`; the sales order
+ * references a tenant-scoped `POSCustomer`. The two have no link field, so we
+ * bridge by email (fallback: phone). Only cart lines whose `SubProduct.tenant`
+ * is the current tenant are returned — the rest are counted as skipped. Prices
+ * are the customer's marketplace snapshot (display only); the quotation is
+ * re-priced through the tenant pricelist engine on import.
+ */
+async function getCustomerCartForQuote({ tenantId, posCustomerId, email }) {
+  let mongoose, POSCustomer, User, Cart, SubProduct, Size;
+  try {
+    mongoose = require('mongoose');
+    POSCustomer = require('../models/POSCustomer');
+    User = require('../models/User');
+    Cart = require('../models/Cart');
+    SubProduct = require('../models/SubProduct');
+    Size = require('../models/Size');
+  } catch {
+    // No DB wiring available (offline unit tests) — surface as not-found.
+    return emptyCartQuoteResult();
+  }
+
+  const notFound = (matchBy = 'not-found') => ({
+    found: false,
+    matchBy,
+    user: null,
+    posCustomer: null,
+    cartCount: 0,
+    items: [],
+    skippedCount: 0,
+  });
+
+  // 1. Resolve the tenant's POSCustomer (when an id was supplied). A malformed
+  //    id is a miss, not a 500 — findOne would otherwise throw a CastError
+  //    straight through asyncHandler.
+  let customer = null;
+  if (posCustomerId) {
+    if (!mongoose.Types.ObjectId.isValid(posCustomerId)) return notFound();
+    customer = await POSCustomer.findOne({
+      _id: posCustomerId,
+      tenant: tenantId,
+    }).lean();
+    if (!customer) return notFound();
+  }
+
+  // 2. Match the marketplace User. An explicit `email` param wins (the caller
+  //    named the marketplace account); otherwise bridge from the POSCustomer
+  //    by email, then phone, then an exact-and-unique first+last name.
+  let user = null;
+  let matchBy = 'not-found';
+
+  const directEmail = email ? String(email).trim().toLowerCase() : '';
+  if (directEmail) {
+    user = await User.findOne({ email: directEmail }).lean();
+    if (user) matchBy = 'email';
+  }
+  if (!user && customer?.email) {
+    user = await User.findOne({
+      email: String(customer.email).toLowerCase(),
+    }).lean();
+    if (user) matchBy = 'email';
+  }
+  if (!user && customer?.phone) {
+    user = await User.findOne({ phone: customer.phone }).lean();
+    if (user) matchBy = 'phone';
+  }
+  if (!user && customer?.firstName && customer?.lastName) {
+    const candidates = await User.find({
+      firstName: new RegExp(`^${customer.firstName.trim()}$`, 'i'),
+      lastName: new RegExp(`^${customer.lastName.trim()}$`, 'i'),
+      role: 'customer',
+    }).lean();
+    // Only accept an unambiguous hit — common names are too risky to guess.
+    if (candidates.length === 1) {
+      user = candidates[0];
+      matchBy = 'name';
+    }
+  }
+  if (!user) return notFound(matchBy);
+
+  // 3. Make sure this tenant has a POSCustomer for the marketplace account, so
+  //    the quotation has something to reference. Marketplace registration does
+  //    NOT create POSCustomers (they are only minted by the POS/contacts
+  //    screens), which is why an existing cart could not be reached from Sales.
+  if (!customer && user.email) {
+    customer = await POSCustomer.findOne({
+      tenant: tenantId,
+      email: String(user.email).toLowerCase(),
+    }).lean();
+    if (!customer) {
+      try {
+        const created = await POSCustomer.create({
+          tenant: tenantId,
+          firstName: user.firstName || user.email.split('@')[0],
+          lastName: user.lastName || '',
+          email: String(user.email).toLowerCase(),
+          phone: user.phone || '',
+        });
+        customer = created.toObject ? created.toObject() : created;
+      } catch {
+        // Best-effort: the cart is still returned, just without a linked
+        // POSCustomer for the caller to attach to the quotation.
+      }
+    }
+  } else if (customer && !customer.email && user.email) {
+    // Self-heal: backfill the email we matched on (phone/name) so the next
+    // lookup takes the fast email path.
+    try {
+      await POSCustomer.updateOne(
+        { _id: customer._id, tenant: tenantId },
+        { $set: { email: String(user.email).toLowerCase() } }
+      );
+    } catch {
+      // Best-effort — never fail the request over a backfill.
+    }
+  }
+
+  const userView = {
+    email: user.email,
+    name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+  };
+  const posCustomerView = customer
+    ? {
+        _id: String(customer._id),
+        firstName: customer.firstName,
+        lastName: customer.lastName || '',
+        email: customer.email || user.email,
+        phone: customer.phone || '',
+      }
+    : null;
+
+  // 3. Read the user's cart. Deliberately NOT scoped to status:'active' — the
+  // schema is `user: { unique: true }` (one cart per user) and cart.service.js
+  // reads it as `Cart.findOne({ user })` with no status filter. Scoping here
+  // would make this endpoint report "cart is empty" for a cart the storefront
+  // still shows, the moment anything starts marking carts abandoned/expired.
+  const cart = await Cart.findOne({ user: user._id }).lean();
+  const cartItems = cart && Array.isArray(cart.items) ? cart.items : [];
+  if (cartItems.length === 0) {
+    return {
+      found: true,
+      matchBy,
+      user: userView,
+      posCustomer: posCustomerView,
+      cartCount: 0,
+      items: [],
+      skippedCount: 0,
+    };
+  }
+
+  // 4. Resolve subproducts + sizes once; keep only lines this tenant sells.
+  const subIds = [...new Set(cartItems.map((i) => i.subproduct).filter(Boolean))];
+  const [subs, sizes] = await Promise.all([
+    subIds.length
+      ? SubProduct.find({ _id: { $in: subIds } })
+          // taxRate travels with the line: the catalog and scan paths seed it
+          // from the subproduct, so an imported line must too or the same
+          // product quotes VAT-free depending on how it was added.
+          .select('_id tenant product sku taxRate')
+          .populate('product', 'name')
+          .lean()
+      : [],
+    // Collect all size refs across cart lines for a single Size lookup.
+    Size.find({
+      _id: {
+        $in: [
+          ...new Set(cartItems.map((i) => i.size).filter(Boolean)),
+        ],
+      },
+    })
+      .select('_id size')
+      .lean(),
+  ]);
+
+  const subById = new Map(subs.map((s) => [String(s._id), s]));
+  const sizeNameById = new Map(sizes.map((s) => [String(s._id), s.size]));
+
+  const items = [];
+  let skippedCount = 0;
+  for (const it of cartItems) {
+    const sp = it.subproduct ? subById.get(String(it.subproduct)) : null;
+    if (!sp || String(sp.tenant) !== String(tenantId)) {
+      skippedCount++;
+      continue;
+    }
+    items.push({
+      productId: sp.product && sp.product._id ? sp.product._id : it.product,
+      subProductId: sp._id,
+      sizeId: it.size || undefined,
+      name: (sp.product && sp.product.name) || it.name || '',
+      sku: sp.sku || it.sku || '',
+      sizeName: it.size ? sizeNameById.get(String(it.size)) || '' : '',
+      quantity: it.quantity,
+      taxRate: Number(sp.taxRate) || 0,
+      marketplaceUnitPrice: it.priceAtAddition || 0,
+    });
+  }
+
+  return {
+    found: true,
+    matchBy,
+    user: userView,
+    posCustomer: posCustomerView,
+    cartCount: cartItems.length,
+    items,
+    skippedCount,
+  };
+}
+
+function emptyCartQuoteResult() {
+  return {
+    found: false,
+    matchBy: 'not-found',
+    user: null,
+    posCustomer: null,
+    cartCount: 0,
+    items: [],
+    skippedCount: 0,
+  };
+}
+
 module.exports = {
   lineTotalOf, lineTaxOf, mapLine, computeTotals, refreshOrderTotal,
   resolveCartThresholdDiscount,
   applyCouponToOrder, createSalesOrderDoc, withSoNumber,
   canEdit, canCancel, applyEdit, recomputeOrderPricing, updatePricesForOrder,
   convertQuotationToOrder, duplicateSalesOrderDoc,
+  getCustomerCartForQuote,
   PAYMENT_TERMS, computeDueDate, normalizePaymentTerms, normalizeAddress,
   resolveLinePromotions, resolveLinePricing,
   buildFilterQuery, isFilterablePath, groupByExtractor, getGroupedOrders,

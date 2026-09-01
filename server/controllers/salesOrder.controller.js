@@ -125,6 +125,33 @@ exports.getSalesOrders = asyncHandler(async (req, res) => {
   paginatedResponse(res, data, buildPaginationMeta(pageNum, pageLimit, total));
 });
 
+/**
+ * Read a customer's marketplace cart, filtered to the lines this tenant sells,
+ * so staff can pull it into a quotation. Query params:
+ *   - `customer`: a tenant-scoped POSCustomer id (recommended when the sales
+ *     screen already has one — the customer picker resolves it).
+ *   - `email` (alternative): a marketplace User's email. When no matching
+ *     POSCustomer exists for this tenant, one is auto-created and returned as
+ *     `data.posCustomer` so the quotation can reference it.
+ * The controller is behind requireOwnTenant + tenantUserOnly (see routes).
+ */
+exports.getCustomerCartForQuote = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  if (!requireResolvedTenant(tenantId, res)) return;
+  const { customer, email } = req.query;
+  if (!customer && !email) {
+    return res
+      .status(400)
+      .json({ success: false, message: 'customer (POSCustomer id) or email is required' });
+  }
+  const data = await svc.getCustomerCartForQuote({
+    tenantId,
+    posCustomerId: customer || undefined,
+    email: email || undefined,
+  });
+  res.json({ success: true, data });
+});
+
 exports.getSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   if (!requireResolvedTenant(tenantId, res)) return;

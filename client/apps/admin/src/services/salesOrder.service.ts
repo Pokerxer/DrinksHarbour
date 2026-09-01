@@ -35,6 +35,29 @@ export interface SalesOrderCustomerSnapshot {
   customerId?: string;
 }
 
+export interface CartQuoteItem {
+  productId?: string;
+  subProductId: string;
+  sizeId?: string;
+  name: string;
+  sku: string;
+  sizeName: string;
+  quantity: number;
+  /** The subproduct's tax rate — seeded onto the line like the catalog path does. */
+  taxRate: number;
+  marketplaceUnitPrice: number;
+}
+
+export interface CartQuoteResult {
+  found: boolean;
+  matchBy: 'email' | 'phone' | 'name' | 'not-found';
+  user?: { email: string; name: string };
+  posCustomer?: { _id: string; firstName: string; lastName: string; email: string; phone: string };
+  cartCount: number;
+  items: CartQuoteItem[];
+  skippedCount: number;
+}
+
 export interface SalesOrderAddress {
   name?: string;
   phone?: string;
@@ -602,6 +625,21 @@ export const salesOrderService = {
       success: boolean;
       data: { items: Array<{ key?: string; unitPrice: number }> };
     };
+  },
+
+  async getCustomerCart(
+    token: string,
+    params: { posCustomerId?: string; email?: string }
+  ): Promise<{ success: boolean; data: CartQuoteResult }> {
+    const qs = new URLSearchParams();
+    if (params.posCustomerId) qs.set('customer', params.posCustomerId);
+    if (params.email) qs.set('email', params.email);
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/customer-cart?${qs}`,
+      { headers: authHeaders(token) }
+    );
+    await parseErrorOrThrow(response, 'Failed to load customer cart');
+    return response.json();
   },
 
   async updatePrices(id: string, token: string): Promise<SalesOrderResponse> {

@@ -1,8 +1,8 @@
 // client/apps/admin/src/app/shared/sales/sales-create.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -21,11 +21,10 @@ import SalesCatalogModal from './sales-catalog-modal';
 import SalesScanDrawer from './sales-scan-drawer';
 import SalesActivityPanel from './sales-activity-panel';
 import SalesConfirmModal from './sales-confirm-modal';
+import SalesCartImportModal from './sales-cart-import-modal';
+import { posApi } from '@/app/shared/point-of-sale/api';
 import { useTenant } from '@/context/TenantContext';
-import {
-  printProformaInvoice,
-  printQuotation,
-} from '@/utils/salesInvoice';
+import { printProformaInvoice, printQuotation } from '@/utils/salesInvoice';
 import type { SalesDocVariant } from '@/utils/print/so-print';
 import type { CreateTab } from './sales-stage-pill';
 
@@ -65,9 +64,60 @@ export default function SalesCreate({
   const [confirmPrices, setConfirmPrices] = useState(false);
   const [pricesBusy, setPricesBusy] = useState(false);
   const [couponBusy, setCouponBusy] = useState(false);
+  const [cartModalOpen, setCartModalOpen] = useState(false);
   useEffect(() => {
     if (autoSaveStatus === 'saved') setHistoryKey((k) => k + 1);
   }, [autoSaveStatus]);
+
+  /**
+   * `?customer=<email|phone>` prefill. The Live Carts tab on the Orders page
+   * knows the shopper's marketplace email but not their tenant-scoped
+   * POSCustomer id, so the handoff is by contact string and the lookup happens
+   * here.
+   *
+   * Only an exact email/phone match is auto-selected: a fuzzy hit would put a
+   * *different* customer's name and address on a quotation without the operator
+   * having chosen anyone. On no match the search box is simply left empty.
+   */
+  const prefillCustomer = useSearchParams()?.get('customer') ?? '';
+  const prefillDoneRef = useRef(false);
+  useEffect(() => {
+    if (mode !== 'create' || !token || !prefillCustomer) return;
+    if (prefillDoneRef.current || form.customer) return;
+    prefillDoneRef.current = true;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await posApi.searchCustomers(token, prefillCustomer, 10);
+        if (cancelled) return;
+        const needle = prefillCustomer.trim().toLowerCase();
+        const exact = (res?.customers ?? []).find(
+          (c) =>
+            (c.email || '').toLowerCase() === needle ||
+            (c.phone || '').replace(/\s/g, '') === needle.replace(/\s/g, '')
+        );
+        if (exact) {
+          form.handleSelectCustomer(exact);
+          toast.success(
+            `Customer ${`${exact.firstName} ${exact.lastName}`.trim()} selected`
+          );
+        } else {
+          toast(`No saved customer matches ${prefillCustomer}`, { icon: 'ℹ️' });
+        }
+      } catch {
+        // A failed prefill must never block the page — the operator can always
+        // pick the customer by hand.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // form.customer/handleSelectCustomer are intentionally omitted: this must
+    // run once per mount, and the ref already guards re-entry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, token, prefillCustomer]);
 
   async function handleUpdatePrices() {
     setPricesBusy(true);
@@ -253,6 +303,7 @@ export default function SalesCreate({
             warehouses={form.warehouses}
             warehouseId={form.warehouseId as string}
             onWarehouseChange={form.setWarehouseId}
+            onImportCart={() => setCartModalOpen(true)}
           />
 
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.04]">
@@ -387,6 +438,20 @@ export default function SalesCreate({
         busy={pricesBusy}
         onClose={() => setConfirmPrices(false)}
         onConfirm={handleUpdatePrices}
+      />
+
+      <SalesCartImportModal
+        open={cartModalOpen}
+        token={token}
+        customer={form.customer}
+        onClose={() => setCartModalOpen(false)}
+        onConfirm={(items) => {
+          form.importCustomerCart(items);
+          setCartModalOpen(false);
+          toast.success(
+            `${items.length} line${items.length !== 1 ? 's' : ''} added from marketplace cart`
+          );
+        }}
       />
     </div>
   );

@@ -2,7 +2,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { PiArrowsClockwise } from 'react-icons/pi';
+import { PiArrowsClockwise, PiShoppingCart } from 'react-icons/pi';
 import CustomerSearch from './customer-search';
 import { INPUT_CLS } from './sales-address-block';
 import type { POSCustomer } from '@/app/shared/point-of-sale/types';
@@ -24,6 +24,8 @@ export interface SalesCustomerBarProps {
   warehouses: { _id: string; name: string; isDefault?: boolean }[];
   warehouseId: string;
   onWarehouseChange: (id: string) => void;
+  /** Open the marketplace cart import modal. Only meaningful once a customer with an email is selected. */
+  onImportCart?: () => void;
 }
 
 /**
@@ -45,6 +47,7 @@ export default function SalesCustomerBar({
   warehouses,
   warehouseId,
   onWarehouseChange,
+  onImportCart,
 }: SalesCustomerBarProps) {
   const today = useMemo(
     () => new Date().toLocaleDateString(undefined, { dateStyle: 'medium' }),
@@ -52,6 +55,7 @@ export default function SalesCustomerBar({
   );
 
   const activePricelist = pricelists.find((p) => p._id === pricelistId) ?? null;
+  const hasEmail = !!customer?.email;
 
   return (
     <div className="mb-6 grid grid-cols-1 gap-x-10 gap-y-5 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-black/[0.04] sm:grid-cols-2">
@@ -65,6 +69,29 @@ export default function SalesCustomerBar({
           onSelect={onSelectCustomer}
           onClear={onClearCustomer}
         />
+
+        {/* Marketplace cart import. Shown for any selected customer — when the
+            POSCustomer has no email on file the modal prompts for the
+            drinksharbour.com address (marketplace signup does not create
+            POSCustomers, so the email is often missing). */}
+        {customer && onImportCart && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={onImportCart}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#b20202]/20 bg-[#b20202]/5 px-3 py-1.5 text-xs font-semibold text-[#b20202] transition-colors hover:bg-[#b20202]/10"
+            >
+              <PiShoppingCart className="h-3.5 w-3.5" />
+              Import from marketplace cart
+            </button>
+            {!hasEmail && (
+              <p className="mt-1 px-0.5 text-[11px] text-gray-400">
+                No email on file — you&#39;ll be asked for it.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="mt-4">
           <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">
             Pricelist
