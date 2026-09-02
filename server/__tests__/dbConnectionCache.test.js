@@ -105,6 +105,36 @@ test('concurrent cold-start requests share a single connection attempt', async (
   assert.equal(b, c);
 });
 
+// Regression origin: Atlas alerted that connections were "nearing the connection
+// limit" for the M0 cluster Cluster0. M0 caps at 500 concurrent connections. The
+// config had minPoolSize:1 and no maxIdleTimeMS, so every warm-but-idle Vercel
+// container pinned at least one socket permanently — connections grew with
+// container count and were never returned. These assertions pin the two settings
+// that actually release them; a future edit reinstating minPoolSize>0 or dropping
+// maxIdleTimeMS reintroduces the exhaustion.
+test('the pool is configured to release connections back to an M0 cluster', async () => {
+  resetCache();
+  let opts;
+  mongoose.connect = async (_uri, options) => {
+    opts = options;
+    return fakeInstance(1);
+  };
+
+  await connectDB();
+
+  assert.equal(opts.minPoolSize, 0, 'an idle container must not pin a pool socket');
+  assert.equal(
+    opts.maxIdleTimeMS,
+    60000,
+    'without an idle timeout a warm container never gives a socket back',
+  );
+  assert.ok(
+    opts.maxPoolSize <= 5,
+    `maxPoolSize ${opts.maxPoolSize} is too large a share of the 500-connection M0 ceiling`,
+  );
+  assert.equal(opts.appName, 'drinksharbour-api', 'connections must be identifiable in Atlas');
+});
+
 test('concurrent requests all reject, then a later request still recovers', async () => {
   resetCache();
   let calls = 0;

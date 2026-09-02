@@ -18,6 +18,34 @@ if (!cached) {
 const SERVER_SELECTION_TIMEOUT_MS =
   Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS) || 10000;
 
+// Connection budget for an M0 (free-tier) Atlas cluster, whose hard ceiling is
+// 500 concurrent connections. Exceeding it is what produced the intermittent
+// `MongooseServerSelectionError` / transient `tlsv1 alert internal error`
+// blips: Atlas refuses new connections at the limit, so healthy-looking nodes
+// fail selection and then recover once connections drain.
+//
+// The arithmetic that matters is PER WARM CONTAINER, not per request. Each
+// container holds one MongoClient, and that client costs:
+//   pool        up to maxPoolSize sockets to the primary
+//   monitoring  ~2 per replica-set node (SDAM heartbeat + RTT) = ~6 fixed
+// so a container costs roughly maxPoolSize + 6. Vercel keeps many containers
+// warm simultaneously, and they all draw on the same 500.
+//
+// `minPoolSize: 0` and `maxIdleTimeMS` are the load-bearing settings here, not
+// `maxPoolSize`. The previous config had `minPoolSize: 1` and NO idle timeout,
+// which meant every warm-but-idle container pinned at least one pool socket
+// FOREVER — connections accumulated with container count and were never
+// released, which is exactly the "nearing the connection limit" shape. With
+// these values an idle container decays to its ~6 monitoring connections and
+// the pool sockets go back to the cluster after a minute.
+//
+// Note the ~6 monitoring connections per container are a floor the driver
+// imposes and no setting here can tune away. If sustained concurrency grows
+// past roughly 80 warm containers, the answer is a paid tier, not smaller pools.
+const MAX_POOL_SIZE = Number(process.env.MONGO_MAX_POOL_SIZE) || 5;
+const MIN_POOL_SIZE = Number(process.env.MONGO_MIN_POOL_SIZE) || 0;
+const MAX_IDLE_TIME_MS = Number(process.env.MONGO_MAX_IDLE_TIME_MS) || 60000;
+
 // `mongoose.connect()` resolves to the mongoose instance; the live socket state
 // lives on its default connection. 1 = connected, 2 = connecting — anything else
 // (disconnected / disconnecting / uninitialized) is a dead handle, and because
@@ -78,8 +106,10 @@ async function connectDB() {
       serverSelectionTimeoutMS: SERVER_SELECTION_TIMEOUT_MS,
       socketTimeoutMS: 45000, // Socket timeout
       family: 4, // Prefer IPv4
-      maxPoolSize: 10, // Limit connection pool for serverless efficiency
-      minPoolSize: 1,
+      maxPoolSize: MAX_POOL_SIZE, // Cap sockets per warm container — see the M0 budget above
+      minPoolSize: MIN_POOL_SIZE, // 0: never pin a socket in an idle container
+      maxIdleTimeMS: MAX_IDLE_TIME_MS, // Reap idle sockets so containers give them back
+      appName: 'drinksharbour-api', // Names the connection in Atlas metrics/profiler
       retryWrites: true, // Enable retryable writes for better reliability
       retryReads: true, // Enable retryable reads
       w: 'majority', // Write concern for data durability
