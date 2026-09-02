@@ -4081,7 +4081,26 @@ const searchProducts = async (searchParams = {}) => {
   // ============================================================
   let semanticBoost = {};
   
-  if (useEmbeddings && query && query.trim() && (searchMode === 'semantic' || searchMode === 'hybrid')) {
+  // Semantic scoring is OFF unless explicitly enabled. Two independent reasons,
+  // both measured rather than assumed:
+  //
+  //  1. Nothing to compare against. 0 of 567 published products carry an
+  //     `embedding` — product create/update generate one inside a try/catch that
+  //     logs and continues, and the local provider has never once initialised,
+  //     so every product was written without one. With an absent field the
+  //     $addFields below reduces over `$ifNull: ['$embedding', []]` — an empty
+  //     $range — scoring a flat 0 for every document. It cannot affect ranking.
+  //  2. It is not free. Reaching the embedder cost a failed model load plus the
+  //     retry backoff on every single query — the bulk of a 5-6s warm search.
+  //
+  // buildRelevanceScore already reads `$ifNull: ['$vectorSimilarity', 0]` and
+  // takes an explicit hasSemanticBoost flag, so skipping the stage changes no
+  // ordering. To turn this back on: configure a provider that actually loads
+  // (EMBEDDING_PROVIDER, or fix env.useBrowserCache for 'local'), backfill
+  // product embeddings, then set ENABLE_SEMANTIC_SEARCH=true.
+  const semanticEnabled = process.env.ENABLE_SEMANTIC_SEARCH === 'true';
+
+  if (semanticEnabled && useEmbeddings && query && query.trim() && (searchMode === 'semantic' || searchMode === 'hybrid')) {
     try {
       // Generate embedding for search query
       const queryEmbedding = await generateEmbedding(query.trim());

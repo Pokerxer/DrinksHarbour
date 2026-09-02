@@ -77,6 +77,39 @@ let localPipeline = null;
 let localModelLoading = false;
 let localModelPromise = null;
 
+// ── Provider availability latch ──────────────────────────────────────────────
+// A provider that fails to INITIALISE is misconfigured, not having a bad
+// minute, and re-attempting it per request buys nothing but latency. The local
+// pipeline used to null its own memo on failure, so nothing remembered the
+// outcome: every /api/products/search re-tried the model download and then sat
+// through the retry loop's 1000ms + 2000ms sleeps before falling back to text
+// search. That was the bulk of a 5-6s warm search.
+//
+// The latch is time-boxed rather than permanent so a genuinely transient
+// failure (a provider API having a bad minute) still recovers on its own.
+const PROVIDER_COOLDOWN_MS = Number(process.env.EMBEDDING_COOLDOWN_MS) || 10 * 60 * 1000;
+let providerUnavailableUntil = 0;
+let providerUnavailableReason = '';
+
+function markProviderUnavailable(reason, cooldownMs = PROVIDER_COOLDOWN_MS) {
+  providerUnavailableUntil = Date.now() + cooldownMs;
+  providerUnavailableReason = reason || 'unknown';
+  console.warn(
+    `⚠️  Embedding provider '${EMBEDDING_CONFIG.provider}' marked unavailable for ` +
+    `${Math.round(cooldownMs / 1000)}s: ${providerUnavailableReason}`
+  );
+}
+
+function isEmbeddingAvailable() {
+  return Date.now() >= providerUnavailableUntil;
+}
+
+// Test seam, and a hook for an operator who has just fixed the configuration.
+function resetProviderAvailability() {
+  providerUnavailableUntil = 0;
+  providerUnavailableReason = '';
+}
+
 async function getLocalPipeline() {
   // If already loaded, return it
   if (localPipeline) {
@@ -117,7 +150,10 @@ async function getLocalPipeline() {
     } catch (error) {
       console.error('❌ Failed to load local embedding model:', error.message);
       localPipeline = null;
+      // Still cleared, so a later attempt after the cooldown can genuinely
+      // re-try — but the latch now stops that happening once per request.
       localModelPromise = null;
+      markProviderUnavailable(error.message);
       throw error;
     }
   })();
@@ -428,6 +464,14 @@ async function generateEmbeddingWithRetry(text, options = {}) {
         throw error;
       }
       
+      // Retries exist for a provider having a bad moment. If the attempt just
+      // latched the provider as unavailable, the remaining attempts are
+      // guaranteed to fail the same way — and the backoff sleeps (1000ms then
+      // 2000ms) would be spent for nothing while a user waits on a search.
+      if (!isEmbeddingAvailable()) {
+        throw error;
+      }
+
       console.warn(`Embedding attempt ${attempt} failed, retrying...`);
       await sleep(EMBEDDING_CONFIG.retryDelay * attempt);
     }
@@ -453,7 +497,15 @@ async function generateEmbedding(text, options = {}) {
     console.warn('Embeddings disabled, returning null');
     return null;
   }
-  
+
+  // Short-circuit a provider already known to be down. Returning null rather
+  // than throwing matches the isEmbeddingsEnabled() branch above: every caller
+  // (search, product create, product update) already treats a missing embedding
+  // as "carry on without one", and a throw here would only be caught and logged.
+  if (!isEmbeddingAvailable()) {
+    return null;
+  }
+
   // Check cache
   const cacheKey = getCacheKey(text);
   if (options.useCache !== false && embeddingCache.has(cacheKey)) {
@@ -891,6 +943,9 @@ module.exports = {
   averageEmbeddings,
   truncateText,
   isEmbeddingsEnabled,
+  isEmbeddingAvailable,
+  markProviderUnavailable,
+  resetProviderAvailability,
   
   // Config
   EMBEDDING_CONFIG,
