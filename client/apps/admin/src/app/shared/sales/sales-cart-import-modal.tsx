@@ -154,7 +154,8 @@ export default function SalesCartImportModal({
           {needsEmail && !hasQueried && (
             <div className="space-y-3 pb-4">
               <p className="text-sm text-gray-600">
-                This customer has no email on file. Enter their <strong>drinksharbour.com</strong> email to find their cart.
+                This customer has no email on file. Enter their{' '}
+                <strong>drinksharbour.com</strong> email to find their cart.
               </p>
               <div className="flex gap-2">
                 <input
@@ -221,7 +222,11 @@ export default function SalesCartImportModal({
                   (with an empty item list at worst). */}
               <p className="text-xs text-gray-400">
                 No marketplace user matches{' '}
-                {emailInput || customer?.email || customer?.phone || 'this customer'}.
+                {emailInput ||
+                  customer?.email ||
+                  customer?.phone ||
+                  'this customer'}
+                .
               </p>
               <button
                 type="button"
