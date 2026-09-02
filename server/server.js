@@ -9,6 +9,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const { connectDB, disconnectDB } = require('./config/db');
+const { AppError } = require('./utils/errors');
 // resolveTenantContext is now mounted per-router after protect(), not globally.
 // See route files for: router.use(protect); router.use(resolveTenantContext);
 
@@ -174,7 +175,22 @@ app.use('/api', async (req, res, next) => {
     await connectDB();
     next();
   } catch (err) {
-    next(err);
+    // The database being unreachable is an upstream outage, not a fault in the
+    // request — it was reported as an opaque 500 "Internal server error", which
+    // tells neither the caller nor the operator anything, and invites clients
+    // and CDNs to treat a retryable blip as a permanent failure. `expose=true`
+    // is the narrow opt-out in the global handler for exactly this shape: a 5xx
+    // that names the upstream it depends on. Retry-After makes the retry
+    // explicit; connectDB no longer caches the rejection, so the next attempt
+    // really does redial.
+    //
+    // The driver error is logged here rather than handed to the global handler,
+    // which would only ever see the wrapper: the original name and stack are
+    // what distinguishes an Atlas outage from an IP-allowlist rejection or a
+    // bad URI, and losing them would trade one opaque failure for another.
+    console.error(`❌ DB unavailable for ${req.method} ${req.originalUrl}:`, err);
+    res.set('Retry-After', '5');
+    next(new AppError('Database temporarily unavailable. Please retry.', 503, true));
   }
 });
 

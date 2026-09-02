@@ -68,6 +68,13 @@ const PUBLIC_ALLOWLIST = new Set([
   'POST analytics.routes.js /track/conversion',
   'POST banner.routes.js /:id/impression',
   'POST banner.routes.js /:id/click',
+  // Same class, added later under banner.routes.js's "Public storefront
+  // endpoints" heading without the allowlist being updated: write-only counters
+  // on a banner the storefront just showed an anonymous visitor. The /entity
+  // pair is the brand/category/subcategory hero equivalent.
+  'POST banner.routes.js /:id/conversion',
+  'POST banner.routes.js /entity/:type/:id/impression',
+  'POST banner.routes.js /entity/:type/:id/click',
   'POST sale.routes.js /:id/view',
   'POST product.routes.js /cart/:id',
 
