@@ -36,6 +36,7 @@ import {
   NewProductFormData,
 } from './components';
 import { fieldStaggerVariants, containerVariants } from './animations';
+import { LatestRequest, isAbortError } from './latest-request';
 import { productService } from '@/services/product.service';
 import { inheritedProductImages } from '../image-utils';
 
@@ -99,6 +100,8 @@ export default function SubProductBasicInfo({
   const [newProductData, setNewProductData] =
     useState<NewProductFormData | null>(null);
   const [isSelectingProduct, setIsSelectingProduct] = useState(false);
+  // Guards the type-ahead against its own overlapping requests.
+  const searchRequestRef = useRef(new LatestRequest());
   const [fetchedProduct, setFetchedProduct] = useState<Product | null>(null);
   const [isLoadingProduct, setIsLoadingProduct] = useState(false);
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
@@ -285,15 +288,31 @@ export default function SubProductBasicInfo({
       if (searchQuery.length >= 2 && !isCreateMode) {
         searchProducts(searchQuery);
       } else if (searchQuery.length < 2) {
+        // Cancel too, or a request still in flight from a longer query lands
+        // afterwards and repopulates the list the user just cleared.
+        searchRequestRef.current.cancel();
         setProducts([]);
+        setIsLoading(false);
       }
     }, 300);
 
     return () => clearTimeout(timer);
   }, [searchQuery, isCreateMode, isSelectingProduct, selectedProductId]);
 
+  // Drop anything in flight when the field goes away.
+  useEffect(() => {
+    const request = searchRequestRef.current;
+    return () => request.cancel();
+  }, []);
+
   const searchProducts = async (query: string) => {
     if (!session?.user?.token) return;
+
+    // Latest-wins. Without this, typing "monte" showed the results for "mo" —
+    // the earlier request answered later and overwrote the current one, so the
+    // product being searched for looked absent and the operator created a
+    // duplicate. See ./latest-request.ts.
+    const { ticket, signal } = searchRequestRef.current.begin();
 
     setIsLoading(true);
     try {
@@ -310,24 +329,44 @@ export default function SubProductBasicInfo({
       if (selectedTypeFilter) {
         params.set('type', selectedTypeFilter);
       }
-      const response = await fetch(`${API_URL}/api/products/search?${params}`, {
-        headers: {
-          Authorization: `Bearer ${session.user.token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      // Staff catalogue search, NOT the public /api/products/search. The public
+      // one is approved-and-published only, which hid every tenant-created
+      // product still awaiting approval — so the operator saw nothing, clicked
+      // "Create new product", and the catalogue gained a duplicate. See the
+      // route comment in server/routes/product.routes.js.
+      const response = await fetch(
+        `${API_URL}/api/products/catalogue-search?${params}`,
+        {
+          signal,
+          headers: {
+            Authorization: `Bearer ${session.user.token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
       if (!response.ok) throw new Error('Failed to fetch products');
 
       const data = await response.json();
       const productList = data.data?.products || data.data || [];
+
+      // A response that is no longer the current query must be discarded, not
+      // rendered — aborting narrows this window but does not close it.
+      if (!searchRequestRef.current.isCurrent(ticket)) return;
+
       setProducts(productList);
       setSelectedIndex(-1);
     } catch (error) {
+      // An abort is us cancelling a superseded keystroke, not a failure.
+      // Clearing the list here would blank the dropdown on every character.
+      if (isAbortError(error)) return;
+      if (!searchRequestRef.current.isCurrent(ticket)) return;
       console.error('Error searching products:', error);
       setProducts([]);
     } finally {
-      setIsLoading(false);
+      // Only the newest attempt owns the spinner; a superseded one turning it
+      // off would claim the still-running search had finished.
+      if (searchRequestRef.current.isCurrent(ticket)) setIsLoading(false);
     }
   };
 
