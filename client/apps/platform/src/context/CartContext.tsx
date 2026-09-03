@@ -80,7 +80,33 @@ export interface CartItemValidation {
   packUnitPrice?: number | null;
   packThreshold?: number | null;
   packApplied?: boolean;
+  /**
+   * Discount provenance, server-side. A cart line stores one `price` and cannot
+   * tell whether that number is already a sale price, so the cart has to be
+   * told — otherwise it is the only surface that shows a discounted drink with
+   * no sign it is discounted.
+   */
+  saleActive?: boolean;
+  /** Pre-sale unit price. Equals currentPrice when nothing is discounted. */
+  priceBeforeSale?: number;
 }
+
+/**
+ * The struck-through "was" price for a cart line, or null when the line isn't
+ * discounted. Prefers the server's answer — the client's own `originPrice` is
+ * only present when whichever component added the item happened to pass it.
+ */
+export const getLineOriginPrice = (
+  item: { originPrice?: number },
+  validation?: { saleActive?: boolean; priceBeforeSale?: number } | null,
+): number | null => {
+  const unit = getEffectiveUnitPrice(item as any);
+  if (validation?.saleActive && (validation.priceBeforeSale ?? 0) > unit) {
+    return validation.priceBeforeSale!;
+  }
+  if (typeof item.originPrice === 'number' && item.originPrice > unit) return item.originPrice;
+  return null;
+};
 
 interface CartContextProps {
   cartState: CartState;

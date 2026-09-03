@@ -10,7 +10,7 @@ const Product = require('../models/Product');
 const Size = require('../models/Size');
 const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber, resolveOrderRecipient } = require('../utils/orderUtils');
-const { calcPlatformCostPrice, resolveRevenueRates, resolveLineRates, resolveEffectiveUnitPrice, calculateSizePricing, roundUpTo100, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { calcPlatformCostPrice, resolveRevenueRates, resolveLineRates, resolveEffectiveUnitPrice, calculateSizePricing, applySubProductSale, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const inventoryService = require('../services/inventory.service');
 const { applyOrderStatus, APPLICABLE_STATUSES } = require('../services/orderStatus.service');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
@@ -165,11 +165,20 @@ exports.createOrder = asyncHandler(async (req, res) => {
     const tenant        = tenantMap.get(tenantId);
     const revenueModel  = tenant?.revenueModel ?? 'markup';
     const qty = item.quantity;
-    // Server-authoritative unit price — same authority as cart validateCartItems
-    // (calculateSizePricing), plus the SubProduct sale discount the product page applies.
+    // Server-authoritative unit price — the SAME two steps, in the same order,
+    // that cart validateCartItems runs: calculateSizePricing, then the
+    // sub-product sale. It used to apply the sale inline here instead, which
+    // left two copies of the arithmetic free to diverge — and they had: the
+    // inline copy discounted an unrecognised saleType as a percentage, and it
+    // ran AFTER resolveEffectiveUnitPrice had already picked the pack rate, so
+    // a sale item bought by the pack was charged pack × sale. Stacking the two
+    // is what pricing.js and product.service.js both say must never happen.
     const productDoc = productMap.get(sp?.product?.toString());
     const sizePricing = (sz && tenant)
-      ? calculateSizePricing(sz, productDoc, tenant, sp?.costPrice ?? 0, sp?.baseSellingPrice ?? 0)
+      ? applySubProductSale(
+          calculateSizePricing(sz, productDoc, tenant, sp?.costPrice ?? 0, sp?.baseSellingPrice ?? 0),
+          sp,
+        )
       : null;
     // Pack pricing applies only when the size actually publishes a cheaper pack
     // price AND the line quantity reached the threshold — payout rates and the
@@ -180,22 +189,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
       ? resolveLineRates(tenant, sz, qty)
       : resolveRevenueRates(tenant, 1);
 
-    let serverUnitPrice = 0;
-    if (sizePricing) {
-      serverUnitPrice = resolveEffectiveUnitPrice(sizePricing, qty);
-      if (serverUnitPrice > 0 && sp) {
-        const now = new Date();
-        const saleStart = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
-        const saleEnd   = sp.saleEndDate   ? new Date(sp.saleEndDate)   : null;
-        const saleActive = sp.isOnSale && (sp.saleDiscountValue ?? 0) > 0 &&
-          (!saleStart || now >= saleStart) && (!saleEnd || now <= saleEnd);
-        if (saleActive) {
-          serverUnitPrice = (sp.saleType || 'percentage') === 'fixed'
-            ? roundUpTo100(Math.max(0, serverUnitPrice - sp.saleDiscountValue))
-            : roundUpTo100(serverUnitPrice * (1 - sp.saleDiscountValue / 100));
-        }
-      }
-    }
+    // sizePricing already carries the sale (and has withdrawn the pack rate for
+    // its duration), so this is just the quantity choice.
+    const serverUnitPrice = sizePricing ? resolveEffectiveUnitPrice(sizePricing, qty) : 0;
     // Fall back to the client price only when the line can't be priced (no size data)
     const customerPrice = serverUnitPrice > 0 ? serverUnitPrice : item.price;
     const itemSubtotal  = customerPrice * qty;

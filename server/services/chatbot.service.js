@@ -458,7 +458,7 @@ const loadCatalog = async (tenantId = null) => {
     return cached.value;
   }
 
-  const { calculateSizePricing, calculateSubProductPricing, isDiscountActive } = require('../utils/pricing');
+  const { calculateSizePricing, calculateSubProductPricing, isDiscountActive, applySubProductSale } = require('../utils/pricing');
 
   try {
     const ProductModel = mongoose.models.Product || mongoose.model('Product');
@@ -531,21 +531,24 @@ const loadCatalog = async (tenantId = null) => {
       const sizeMap = new Map(); // key → { label, price, originalPrice, onSale, stock }
       let anyOnSale = false;
 
-      // Helper: apply SubProduct sale discount to a platform price (mirrors product.service.js)
-      const applySaleDiscount = (platformPrice, sp) => {
-        const now = new Date();
-        const start = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
-        const end = sp.saleEndDate ? new Date(sp.saleEndDate) : null;
-        const saleActive = sp.isOnSale && sp.saleDiscountValue > 0 &&
-          (!start || now >= start) && (!end || now <= end);
-        if (!saleActive) return { price: platformPrice, onSale: false };
-        let salePrice = platformPrice;
-        if (sp.saleType === 'percentage' || sp.saleType === 'flash_sale') {
-          salePrice = parseFloat((platformPrice * (1 - sp.saleDiscountValue / 100)).toFixed(2));
-        } else if (sp.saleType === 'fixed') {
-          salePrice = Math.max(0, parseFloat((platformPrice - sp.saleDiscountValue).toFixed(2)));
-        }
-        return { price: salePrice, originalPrice: platformPrice, onSale: true };
+      // The sub-product sale is applied through utils/pricing.js, the same way
+      // the cart and checkout apply it. This used to be a hand-written copy
+      // here — the fourth in the codebase — and it disagreed with the shop
+      // twice over: it rounded with `parseFloat(toFixed(2))` where everything
+      // else uses `roundUpTo100`, so the bot quoted a few naira UNDER the real
+      // price; and it matched saleType with no default, so a sale saved without
+      // an explicit type was quoted at full price while the product page
+      // discounted it. A chatbot that misquotes is worse than one that stays
+      // quiet, so it reads the shared definition rather than its own.
+      const applySaleDiscount = (pricing, sp) => {
+        const sale = applySubProductSale(pricing, sp);
+        return {
+          price: sale.finalPrice,
+          // Only carry a "was" price when there is genuinely something to strike
+          // through — the catalogue line renders `[was ₦…]` off its presence.
+          originalPrice: sale.saleActive ? sale.priceBeforeSale : undefined,
+          onSale: sale.saleActive,
+        };
       };
 
       for (const sp of sps) {
@@ -558,7 +561,7 @@ const loadCatalog = async (tenantId = null) => {
             if (!sz) continue;
             const pricing = calculateSizePricing(sz, p, tenant, sp.costPrice, sp.baseSellingPrice);
             if (!pricing.finalPrice || pricing.finalPrice <= 0) continue;
-            const { price: finalPrice, originalPrice, onSale } = applySaleDiscount(pricing.finalPrice, sp);
+            const { price: finalPrice, originalPrice, onSale } = applySaleDiscount(pricing, sp);
             if (onSale) anyOnSale = true;
             computedPrices.push(finalPrice);
             const key = sz.size || (sz.volumeMl + 'ml');
@@ -570,7 +573,7 @@ const loadCatalog = async (tenantId = null) => {
         } else {
           const pricing = calculateSubProductPricing(sp, p, tenant);
           if (!pricing.finalPrice || pricing.finalPrice <= 0) continue;
-          const { price: finalPrice, onSale } = applySaleDiscount(pricing.finalPrice, sp);
+          const { price: finalPrice, onSale } = applySaleDiscount(pricing, sp);
           if (onSale) anyOnSale = true;
           computedPrices.push(finalPrice);
         }

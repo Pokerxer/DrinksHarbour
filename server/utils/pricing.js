@@ -481,9 +481,101 @@ const backCalcStoredPrice = (
   return parseFloat((platformCostPrice / divisor).toFixed(2));
 };
 
+// ────────────────────────────────────────────────────────────────────────────
+// SUB-PRODUCT SALE
+//
+// `calculateSizePricing` above applies the PRODUCT-level discount
+// (`product.platformDiscount`). It does not — and cannot, it never receives the
+// sub-product — apply the SUB-PRODUCT sale (`isOnSale` / `saleType` /
+// `saleDiscountValue`). That second discount is what the storefront's
+// `websitePrice` actually carries, so anything pricing a line for a customer
+// has to apply it on top, or it quotes a price the shop never advertised.
+//
+// This is that step, in one place. It exists because it had been copied by hand
+// into product.service.js, order.controller.js and chatbot.service.js, and
+// omitted from cart.service.js — which is exactly how every sale item on the
+// site became unbuyable: the cart held the sale price, /cart/validate returned
+// the pre-sale price, and the drawer called it a price rise and blocked
+// checkout.
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Is this sub-product's sale live right now?
+ *
+ * A date that isn't set doesn't constrain — an open-ended sale is running.
+ * A flagged sale with no value is not a sale.
+ */
+const isSubProductSaleActive = (subProduct, now = new Date()) => {
+  if (!subProduct || !subProduct.isOnSale) return false;
+  if (!((subProduct.saleDiscountValue ?? 0) > 0)) return false;
+  const start = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
+  const end = subProduct.saleEndDate ? new Date(subProduct.saleEndDate) : null;
+  if (start && now < start) return false;
+  if (end && now > end) return false;
+  return true;
+};
+
+/**
+ * Apply a sub-product's sale to a `calculateSizePricing` result.
+ *
+ * Returns a NEW object — callers hold the pricing result and reuse it.
+ *
+ * Two rules, both inherited from the storefront rather than invented here:
+ *
+ *  1. Only `percentage`, `flash_sale` and `fixed` discount anything. Any other
+ *     `saleType` leaves the price alone, because product.service.js's
+ *     `if/else if` falls through for it. Treating an unknown type as a
+ *     percentage would charge a discount the customer was never shown.
+ *  2. **A sale withdraws the pack rate.** Stacking a sale on a pack
+ *     over-discounts the item, so the sale wins and `packUnitPrice` goes null —
+ *     the same rule `calculateSizePricing` already enforces for the
+ *     product-level discount, and that getProductBySlug enforces for this one.
+ *
+ * @returns {object} `{ ...pricing, finalPrice, packUnitPrice, packThreshold,
+ *   packSavingsPct, saleActive, priceBeforeSale }`
+ */
+const applySubProductSale = (pricing, subProduct, now = new Date()) => {
+  const base = pricing || {};
+  const priceBeforeSale = base.finalPrice ?? 0;
+
+  if (!isSubProductSaleActive(subProduct, now)) {
+    return { ...base, saleActive: false, priceBeforeSale };
+  }
+
+  const type = subProduct.saleType || 'percentage';
+  const value = subProduct.saleDiscountValue;
+
+  let finalPrice = priceBeforeSale;
+  if (type === 'percentage' || type === 'flash_sale') {
+    finalPrice = roundUpTo100(priceBeforeSale * (1 - value / 100));
+  } else if (type === 'fixed') {
+    finalPrice = roundUpTo100(Math.max(0, priceBeforeSale - value));
+  } else {
+    // Unrecognised type — the product page discounted nothing, so neither do
+    // we. The pack rate stays withdrawn regardless: the item is flagged on
+    // sale, and the storefront suppresses packs on that flag alone.
+    return {
+      ...base, finalPrice: priceBeforeSale, saleActive: true, priceBeforeSale,
+      packUnitPrice: null, packThreshold: null, packSavingsPct: null,
+    };
+  }
+
+  return {
+    ...base,
+    finalPrice,
+    saleActive: true,
+    priceBeforeSale,
+    packUnitPrice: null,
+    packThreshold: null,
+    packSavingsPct: null,
+  };
+};
+
 module.exports = {
   DEFAULT_PLATFORM_MARKUP,
   DEFAULT_PACK_RATE_MIN_UNITS,
+  isSubProductSaleActive,
+  applySubProductSale,
   resolveRevenueRates,
   resolveLineRates,
   resolveEffectiveUnitPrice,

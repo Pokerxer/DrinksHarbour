@@ -6,7 +6,8 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useCart, getEffectiveUnitPrice } from '@/context/CartContext';
+import { useCart, getEffectiveUnitPrice, getLineOriginPrice } from '@/context/CartContext';
+import { calculateDiscountPercentage } from '@/utils/product.utils';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import { viewItemListEvent, type GTagItem } from '@/lib/gtag';
@@ -86,6 +87,16 @@ const CartPage = () => {
       updateQuantity(cartItemId, newQuantity);
     }
   };
+
+  // Kept identical to the cart drawer's — the two views must not disagree
+  // about what the customer is saving.
+  const totalSavings = useMemo(() => {
+    return cartState.cartArray.reduce((sum, item) => {
+      const origin = getLineOriginPrice(item, getValidation(item));
+      if (!origin) return sum;
+      return sum + (origin - getEffectiveUnitPrice(item)) * (item.quantity || 1);
+    }, 0);
+  }, [cartState.cartArray, validationMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRemove = async (cartItemId: string) => {
     setRemovingId(cartItemId);
@@ -289,6 +300,12 @@ const CartPage = () => {
                   const isQtyReduced = validation?.status === 'quantity_reduced';
                   const isLowStock = !isOutOfStock && (validation?.isLowStock ?? false);
                   const maxQty = validation?.maxQuantity ?? 99;
+                  // Pre-discount unit price, or null when the line isn't
+                  // discounted. Same rule the drawer uses.
+                  const lineOrigin = isPriceChanged ? null : getLineOriginPrice(item, validation);
+                  const lineDiscountPct = lineOrigin
+                    ? calculateDiscountPercentage(getEffectiveUnitPrice(item), lineOrigin)
+                    : 0;
 
                   return (
                     <motion.div
@@ -382,6 +399,12 @@ const CartPage = () => {
                                 Almost gone — only {validation.maxQuantity} left
                               </span>
                             )}
+                            {lineDiscountPct > 0 && (
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-white bg-green-600 px-2 py-0.5 rounded">
+                                <Icon.PiTagFill size={10} />
+                                {lineDiscountPct}% OFF
+                              </span>
+                            )}
                           </div>
 
                           {/* Price & Quantity */}
@@ -413,9 +436,16 @@ const CartPage = () => {
                             )}
 
                             {/* Price */}
-                            <span className="font-bold text-gray-900 text-sm sm:text-base">
-                              {formatPrice(getEffectiveUnitPrice(item) * (item.quantity || 1))}
-                            </span>
+                            <div className="text-right">
+                              {lineOrigin && (
+                                <p className="text-xs text-gray-400 line-through">
+                                  {formatPrice(lineOrigin * (item.quantity || 1))}
+                                </p>
+                              )}
+                              <span className="font-bold text-gray-900 text-sm sm:text-base">
+                                {formatPrice(getEffectiveUnitPrice(item) * (item.quantity || 1))}
+                              </span>
+                            </div>
                           </div>
 
                           {/* Pack price tag / nudge — suppressed when the seller
@@ -469,6 +499,15 @@ const CartPage = () => {
                   <span className="text-gray-500">Subtotal ({cartCount} items)</span>
                   <span className="font-medium">{formatPrice(cartTotal)}</span>
                 </div>
+                {totalSavings > 0 && (
+                  <div className="flex justify-between">
+                    <span className="inline-flex items-center gap-1.5 text-green-700 font-semibold">
+                      <Icon.PiTagFill size={14} />
+                      Discount savings
+                    </span>
+                    <span className="font-semibold text-green-700">−{formatPrice(totalSavings)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-500">Shipping</span>
                   <span className="font-medium">

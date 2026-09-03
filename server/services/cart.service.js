@@ -6,7 +6,7 @@ const Size = require('../models/Size');
 const SubProduct = require('../models/SubProduct');
 const Tenant = require('../models/Tenant');
 const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
-const { calculateSizePricing } = require('../utils/pricing');
+const { calculateSizePricing, applySubProductSale } = require('../utils/pricing');
 const { buildCartItemId, buildCartLine, mergeCartLines } = require('../helpers/cart.helpers');
 
 /**
@@ -573,6 +573,10 @@ const validateCartItems = async (items) => {
     const subProduct = await SubProduct.findOne({ _id: subProductId, status: 'active' })
       .populate({ path: 'tenant', select: 'status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits' })
       .populate({ path: 'product', select: 'platformMarkup platformDiscount' });
+    // NOTE: the sale fields (isOnSale/saleType/saleDiscountValue/sale dates) are
+    // read off `subProduct` below. They are on the document itself, so no select
+    // narrows them away here — but a projection added to this findOne must keep
+    // them, or every sale item silently reverts to its pre-sale price.
 
     if (!subProduct || !subProduct.tenant ||
         subProduct.tenant.status !== 'approved' ||
@@ -586,19 +590,36 @@ const validateCartItems = async (items) => {
     // Platform selling price (markup/commission + product discount) — same pipeline
     // the storefront product page uses, NOT the raw tenant-facing Size.sellingPrice.
     // Quantity-aware: at quantity >= packThreshold the whole line pays packUnitPrice.
-    const sizePricing = calculateSizePricing(
-      size, subProduct.product, subProduct.tenant,
-      subProduct.costPrice, subProduct.baseSellingPrice
+    // …then the sub-product sale, which is the other half of what `websitePrice`
+    // carries. Without it the cart quotes the pre-sale price back at a customer
+    // holding the advertised one, calls the difference a price rise, and blocks
+    // checkout on every discounted item in the shop. applySubProductSale also
+    // withdraws the pack rate for the duration of the sale, so the drawer stops
+    // advertising a pack offer the product page hides.
+    const sizePricing = applySubProductSale(
+      calculateSizePricing(
+        size, subProduct.product, subProduct.tenant,
+        subProduct.costPrice, subProduct.baseSellingPrice
+      ),
+      subProduct
     );
     const packApplied = sizePricing.packUnitPrice != null &&
       sizePricing.packThreshold != null && quantity >= sizePricing.packThreshold;
     const currentPrice = packApplied ? sizePricing.packUnitPrice : sizePricing.finalPrice;
     const packInfo = {
+      // Post-sale. This is what "Accept prices" writes into the cart, so it
+      // must be the price the customer was actually shown.
       baseUnitPrice: sizePricing.finalPrice,
       packUnitPrice: sizePricing.packUnitPrice,
       packThreshold: sizePricing.packThreshold,
       packSavingsPct: sizePricing.packSavingsPct,
       packApplied,
+      // Discount provenance for the cart drawer. The client can't derive this:
+      // it stores one `price` and has no idea whether that number is already
+      // discounted, so without these the cart is the only surface on the site
+      // that shows a sale item at its sale price with no sign it's on sale.
+      saleActive: sizePricing.saleActive === true,
+      priceBeforeSale: sizePricing.priceBeforeSale ?? sizePricing.finalPrice,
     };
     const stock         = size.availableStock || size.stock || 0;
 

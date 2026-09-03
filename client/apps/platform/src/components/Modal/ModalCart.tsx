@@ -7,7 +7,8 @@ import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModalCartContext } from '@/context/ModalCartContext';
-import { useCart, getEffectiveUnitPrice } from '@/context/CartContext';
+import { useCart, getEffectiveUnitPrice, getLineOriginPrice } from '@/context/CartContext';
+import { calculateDiscountPercentage } from '@/utils/product.utils';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 
@@ -72,6 +73,17 @@ const ModalCart = () => {
     const key = `${item.selectedSubProductId}-${item.selectedSizeId ?? ''}`;
     return validationMap[key] ?? null;
   };
+
+  // What the cart is saving the customer against the pre-discount prices. Only
+  // counts lines the server confirms are discounted, so it can never advertise
+  // a saving the checkout won't honour.
+  const totalSavings = useMemo(() => {
+    return cartState.cartArray.reduce((sum, item) => {
+      const origin = getLineOriginPrice(item, getValidation(item));
+      if (!origin) return sum;
+      return sum + (origin - getEffectiveUnitPrice(item)) * (item.quantity || 1);
+    }, 0);
+  }, [cartState.cartArray, validationMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleQuantityChange = (cartItemId: string, newQuantity: number) => {
     if (newQuantity <= 0) {
@@ -315,6 +327,16 @@ const ModalCart = () => {
                       const isQtyReduced   = validation?.status === 'quantity_reduced';
                       const isLowStock     = !isOutOfStock && (validation?.isLowStock ?? false);
                       const maxQty = validation?.maxQuantity ?? 99;
+                      // Pre-discount unit price, or null when this line isn't
+                      // discounted. Suppressed while a price change is pending:
+                      // that banner is already showing a before/after pair, and
+                      // two struck-through numbers on one line read as noise.
+                      const lineOrigin = (isPriceChanged && !appliedUpdates)
+                        ? null
+                        : getLineOriginPrice(item, validation);
+                      const lineDiscountPct = lineOrigin
+                        ? calculateDiscountPercentage(getEffectiveUnitPrice(item), lineOrigin)
+                        : 0;
 
                       return (
                         <motion.div
@@ -371,6 +393,12 @@ const ModalCart = () => {
                                   {item.selectedSize && (
                                     <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
                                       {item.selectedSize}
+                                    </span>
+                                  )}
+                                  {lineDiscountPct > 0 && (
+                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-white bg-green-600 px-2 py-0.5 rounded">
+                                      <Icon.PiTagFill size={10} />
+                                      {lineDiscountPct}% OFF
                                     </span>
                                   )}
                                 </div>
@@ -453,6 +481,11 @@ const ModalCart = () => {
                                           {formatPrice((validation!.oldPrice || 0) * (item.quantity || 1))}
                                         </p>
                                       )}
+                                      {lineOrigin && (
+                                        <p className="text-xs text-gray-400 line-through">
+                                          {formatPrice(lineOrigin * (item.quantity || 1))}
+                                        </p>
+                                      )}
                                       <span className={`font-bold ${isPriceChanged && !appliedUpdates ? (validation!.currentPrice > validation!.oldPrice ? 'text-red-600' : 'text-green-600') : 'text-gray-900'}`}>
                                         {formatPrice((isPriceChanged && !appliedUpdates ? validation!.currentPrice : getEffectiveUnitPrice(item)) * (item.quantity || 1))}
                                       </span>
@@ -531,6 +564,15 @@ const ModalCart = () => {
                     <span>Subtotal ({cartCount} {cartCount === 1 ? 'item' : 'items'})</span>
                     <span className="font-semibold text-gray-900">{formatPrice(cartTotal)}</span>
                   </div>
+                  {totalSavings > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="inline-flex items-center gap-1.5 text-green-700 font-semibold">
+                        <Icon.PiTagFill size={14} />
+                        Discount savings
+                      </span>
+                      <span className="font-semibold text-green-700">−{formatPrice(totalSavings)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm text-gray-600">
                     <span>Shipping</span>
                     <span className="font-semibold">
