@@ -6834,7 +6834,7 @@ const getFrequentlyBoughtTogether = async (productId, limit = 5) => {
 
   if (ordersWithProduct.length === 0) {
     // Fallback to related products if no co-purchase data
-    return getRelatedProducts(productId, limit);
+    return getRelatedProducts(productId, { limit });
   }
 
   const productIds = ordersWithProduct.map((item) => item._id);

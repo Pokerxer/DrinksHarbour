@@ -1423,12 +1423,21 @@ const getProductAvailability = asyncHandler(async (req, res) => {
  * @route   GET /api/products/:id/related
  * @access  Public
  */
+// The service takes an options object, and feeds `limit` to `$limit: limit * 3`
+// on a public route — so the query value is parsed and bounded, never passed
+// through raw.
+const RELATED_LIMIT_DEFAULT = 6;
+const RELATED_LIMIT_MAX = 50;
+
 const getRelatedProducts = asyncHandler(async (req, res) => {
-  const { limit = 6 } = req.query;
-  
+  const parsedLimit = parseInt(req.query.limit, 10);
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0
+    ? Math.min(parsedLimit, RELATED_LIMIT_MAX)
+    : RELATED_LIMIT_DEFAULT;
+
   const products = await productService.getRelatedProducts(
     req.params.id,
-    parseInt(limit)
+    { limit }
   );
 
   res.status(200).json({
