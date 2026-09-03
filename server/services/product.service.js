@@ -7736,6 +7736,7 @@ const getAllProducts = async (queryParams) => {
                     discount: 1,
                     sku: 1,
                     isDefault: 1,
+                    platformMarkupOverridePct: 1,
                   },
                 },
               ],
@@ -11407,12 +11408,18 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
                   },
                 },
                 {
+                  // Must stay a superset of what the pricing math below reads.
+                  // `wholesalePrice` and `platformMarkupOverridePct` were both
+                  // missing here while being read a hundred lines down, so the
+                  // carousel priced every listing off the wrong basis and at
+                  // the wrong markup — see relatedProductsPricing.test.js.
                   $project: {
                     size: 1,
                     displayName: 1,
                     volumeMl: 1,
                     sellingPrice: 1,
                     costPrice: 1,
+                    wholesalePrice: 1,
                     compareAtPrice: 1,
                     currency: 1,
                     stock: 1,
@@ -11421,6 +11428,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
                     discount: 1,
                     sku: 1,
                     isDefault: 1,
+                    platformMarkupOverridePct: 1,
                   },
                 },
               ],
@@ -12653,6 +12661,9 @@ module.exports = {
   getSearchSuggestions,
   getProductAvailability,
   getRelatedProducts,
+  // Exported so the carousel's own pricing pipeline can be tested directly —
+  // it is a second copy of the platform price math and has drifted before.
+  enrichRelatedProducts,
   getAvailableFilters,
 
 
