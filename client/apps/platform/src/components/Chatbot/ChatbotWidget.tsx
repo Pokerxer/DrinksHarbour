@@ -310,8 +310,12 @@ export default function ChatbotWidget() {
   useEffect(() => {
     if (messages.length === 0) return;
     try {
-      // Blob preview URLs don't survive reloads — persist messages without them
-      const persistable = messages.map(({ images, ...m }) => m);
+      // Blob preview URLs (the customer's own uploads) don't survive a reload;
+      // saved product photos are durable https URLs, so keep those.
+      const persistable = messages.map(({ images, ...m }) => {
+        const durable = images?.filter(src => /^https?:\/\//.test(src));
+        return durable?.length ? { ...m, images: durable } : m;
+      });
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ messages: persistable, quickReplies, pendingCart }));
     } catch { /* storage full/unavailable — non-fatal */ }
   }, [messages, quickReplies, pendingCart]);
@@ -526,6 +530,9 @@ export default function ChatbotWidget() {
           role: 'assistant',
           content: data.data.response,
           timestamp: Date.now(),
+          // Saved product photos, resolved server-side from the names the bot
+          // asked for — only present when the customer asked to see the drink.
+          images: data.data.images?.length ? data.data.images : undefined,
         };
         setMessages(prev => [...prev, assistantMsg]);
         setQuickReplies(data.data.quickReplies || []);

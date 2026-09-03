@@ -182,6 +182,41 @@ CART_JSON: [{"name":"<product name EXACTLY as written in CATALOG DATA>","size":"
 - CRITICAL: You CANNOT add items to the cart yourself — the app adds them only after the customer taps the confirm button. NEVER say or imply that you have already added anything to the cart.
 - If the customer agrees to your cart offer (says yes/okay/go ahead), briefly restate the item(s) and quantities, tell them to tap the "Yes, add to cart" button below to confirm, and output the CART_JSON line again with the final agreed items.`;
 
+// Ask the model to flag a product whose picture the customer wants to see. It
+// emits NAMES only — the catalog text it reads carries no image URLs, so the
+// server resolves the name to the saved URL (see extractProductImages).
+const IMAGE_REQUEST_INSTRUCTIONS = `
+SHOW-THE-PRODUCT-IMAGE:
+- ONLY when the customer actually asks to SEE the product (e.g. "what does it look like", "show me", "send a pic", "any photo of it?"), output on its own line, after your reply:
+IMAGE_JSON: ["<product name EXACTLY as written in CATALOG DATA>"]
+- ONLY include products that appear in the CATALOG DATA. Maximum 4 names, and only the ones they asked to see.
+- Names only — NEVER a URL, a file name, or a made-up link. The app looks up the saved photo itself.
+- Do NOT output an IMAGE_JSON line on ordinary recommendations, comparisons or price answers — only when they asked to see it.
+- Never mention IMAGE_JSON or JSON to the customer. Just answer naturally ("Here it is! 🥃") — the photo appears under your message.`;
+
+// One place for "what image does this product have?". Three shapes reach these
+// resolvers: a flat `image` string (catalog entries), `images[]` of `{ url }`
+// objects, and `images[]` of bare strings.
+const productImageUrl = (p) => {
+  if (!p) return null;
+  if (typeof p.image === 'string' && p.image) return p.image;
+  const first = p.images?.[0];
+  if (typeof first === 'string' && first) return first;
+  if (first?.url) return first.url;
+  return null;
+};
+
+// Resolve a name the model emitted against the products it was allowed to see:
+// exact match first, then a two-way partial. Same rule as the cart proposal, so
+// a name that can be added to the cart can also be pictured.
+const findByName = (name, validProducts) => {
+  const lower = (name || '').trim().toLowerCase();
+  if (!lower) return null;
+  return validProducts.find(p => (p.name || '').toLowerCase() === lower)
+    || validProducts.find(p => (p.name || '').toLowerCase().includes(lower) || lower.includes((p.name || '').toLowerCase()))
+    || null;
+};
+
 // Parse + strip the CART_JSON line and resolve item names against the products
 // found for this query. Returns { text, proposal } — proposal only contains
 // items that matched a real product (with slug) so the client can add them.
@@ -205,9 +240,7 @@ const extractCartProposal = (responseText, validProducts = []) => {
   for (const item of items.slice(0, 10)) {
     const name = (item?.name || '').trim();
     if (!name) continue;
-    const lower = name.toLowerCase();
-    const product = validProducts.find(p => (p.name || '').toLowerCase() === lower)
-      || validProducts.find(p => (p.name || '').toLowerCase().includes(lower) || lower.includes((p.name || '').toLowerCase()));
+    const product = findByName(name, validProducts);
     if (!product || !product.slug) continue;
     const qty = Math.max(1, Math.min(99, parseInt(item.qty, 10) || 1));
     proposal.push({
@@ -217,10 +250,45 @@ const extractCartProposal = (responseText, validProducts = []) => {
       size: typeof item.size === 'string' && item.size.trim() ? item.size.trim() : null,
       qty,
       price: product.minPrice || 0,
-      image: product.image || (product.images?.[0]?.url || product.images?.[0]) || null,
+      image: productImageUrl(product),
     });
   }
   return { text, proposal };
+};
+
+// Maximum pictures attached to one reply. The chat bubble renders a single
+// image full-width and anything more in a 2-column grid — a dozen bottle shots
+// is a wall, four is a glance.
+const MAX_CHAT_IMAGES = 4;
+
+// Parse + strip the IMAGE_JSON line and resolve the names against the products
+// this turn was allowed to see. Returns { text, images } — `images` holds only
+// URLs already saved on a real catalogue product, never anything the model
+// wrote, so a hallucinated name yields no picture rather than a broken <img>.
+const extractProductImages = (responseText, validProducts = []) => {
+  if (!responseText) return { text: responseText, images: [] };
+  // Tolerate code fences and trailing text after the JSON block
+  const match = responseText.match(/IMAGE_JSON:\s*(\[[\s\S]*?\])/);
+  const text = match
+    ? (responseText.slice(0, match.index) + responseText.slice(match.index + match[0].length))
+        .replace(/```(json)?\s*```/g, '')
+        .replace(/```(json)?\s*$/g, '')
+        .trim()
+    : responseText.trim();
+  if (!match) return { text, images: [] };
+
+  let names = [];
+  try { names = JSON.parse(match[1]); } catch { return { text, images: [] }; }
+  if (!Array.isArray(names)) return { text, images: [] };
+
+  const images = [];
+  for (const entry of names.slice(0, 10)) {
+    if (images.length >= MAX_CHAT_IMAGES) break;
+    if (typeof entry !== 'string') continue;
+    const url = productImageUrl(findByName(entry, validProducts));
+    if (url && !images.includes(url)) images.push(url);
+  }
+  return { text, images };
 };
 
 // Analyze image using Claude Haiku vision
@@ -1282,7 +1350,8 @@ ${intent.type === 'product_info' ? `- Give a RICH, EXPERT-LEVEL breakdown. Use y
   **Fun Fact**: One surprising or memorable detail about this product
   End with the catalog price and availability.` : ''}
 
-${catalogContext ? CART_OFFER_INSTRUCTIONS : ''}`.trim();
+${catalogContext ? CART_OFFER_INSTRUCTIONS : ''}
+${catalogContext ? IMAGE_REQUEST_INSTRUCTIONS : ''}`.trim();
 
     let response = await callClaude(query, systemPrompt, conversationHistory);
 
@@ -1304,12 +1373,18 @@ ${catalogContext ? CART_OFFER_INSTRUCTIONS : ''}`.trim();
     // Match against this query's products first, then the whole catalog — on a
     // confirmation turn ("yes please") the product search finds nothing, but the
     // re-emitted CART_JSON names still resolve via catalog entries.
-    const { text: cleanResponse, proposal: cartProposal } = extractCartProposal(response, [...validProducts, ...catalogEntries]);
-    response = cleanResponse;
+    const resolvable = [...validProducts, ...catalogEntries];
+    const { text: cleanResponse, proposal: cartProposal } = extractCartProposal(response, resolvable);
+    // Then the picture request, on the already-stripped text. Names resolve
+    // against the same lists — catalogEntries is already filtered to published
+    // products, so no unpublished drink can be pictured.
+    const { text: imagelessResponse, images: productImages } = extractProductImages(cleanResponse, resolvable);
+    response = imagelessResponse;
 
     return {
       response,
       cartProposal,
+      images: productImages,
       products: shouldShowProducts(intent, validProducts.length, validProducts, query) ? validProducts.slice(0, 4).map(p => ({
         id: p._id, 
         name: p.name, 
@@ -1827,5 +1902,6 @@ module.exports = {
   findSubstitutes,
   getGreetingResponse,
   extractCartProposal,
+  extractProductImages,
   anthropic
 };
