@@ -28,6 +28,22 @@ if (!process.env.ANTHROPIC_API_KEY) {
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
 const CLAUDE_MODEL = 'claude-haiku-4-5';
 
+// ── Catalogue visibility ─────────────────────────────────────────────────────
+// The chatbot is an unauthenticated storefront surface, so it may see exactly
+// what /shop sees and nothing more: approved AND published.
+//
+// The two gates are independent — product.service.js's
+// buildCatalogueVisibilityQuery exists because widening one does not widen the
+// other — so `{ status: 'approved' }` alone is NOT the storefront rule. It
+// admits approved-but-unpublished products, which have no product page:
+// /api/products/slug/:slug enforces SELLABLE_PRODUCT_MATCH and 404s for them.
+// A chatbot that names and prices such a drink is advertising something the
+// customer cannot open, let alone buy.
+//
+// Derived from product.service rather than restated here so the two cannot
+// drift. Returns a fresh object on every call — callers mutate it.
+const publicProductMatch = () => productService.buildCatalogueVisibilityQuery();
+
 // ── Web Search via Serper.dev ────────────────────────────────────────────────
 const searchWeb = async (query) => {
   const apiKey = process.env.SERPER_API_KEY;
@@ -476,8 +492,9 @@ const loadCatalog = async (tenantId = null) => {
     activeTenants.forEach(t => { tenantById[t._id.toString()] = t; });
     const tenantFilter = tenantId ? [tenantId] : activeTenantIds;
 
-    // Step 2: All approved products — include platformMarkup & platformDiscount
-    const products = await ProductModel.find({ status: 'approved' })
+    // Step 2: Every product the storefront shows — include platformMarkup &
+    // platformDiscount. Same visibility rule as /shop; see publicProductMatch.
+    const products = await ProductModel.find(publicProductMatch())
       .select('name slug type subType category subCategory images platformMarkup platformDiscount abv brand')
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')
@@ -778,7 +795,10 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
       const SubProduct = mongoose.models.SubProduct || mongoose.model('SubProduct');
       const Tenant = mongoose.models.Tenant || mongoose.model('Tenant');
       
-      const baseQuery = { status: 'approved' };
+      // This path bypasses searchProducts, which applies the visibility rule
+      // itself, so it has to carry it. `$or` is added below and must never be
+      // able to widen past this.
+      const baseQuery = publicProductMatch();
 
       // Spirit subtypes searched via name/subType since DB stores all spirits as type:'spirit'
       const spiritSubtypeKeywords = {
@@ -1757,7 +1777,10 @@ const buildQuickReplies = (intent, products) => {
 // Generate product details
 const generateProductDetails = async (productId) => {
   try {
-    const product = await Product.findById(productId)
+    // Visibility pinned AFTER the id so no caller-supplied value can displace
+    // it. An id is not an authorisation: without this, any Product _id — draft,
+    // pending, rejected, archived — describes itself in full, with prices.
+    const product = await Product.findOne({ _id: productId, ...publicProductMatch() })
       .populate('brand', 'name')
       .populate({ path: 'subProducts', populate: [{ path: 'tenant' }, { path: 'sizes' }] })
       .lean();
