@@ -607,14 +607,54 @@ const searchProducts = asyncHandler(async (req, res) => {
     maxAbv: req.query.maxAbv,
     isAlcoholic: req.query.isAlcoholic,
     originCountry: req.query.country,
+    // Default FALSE, and deliberately so: false means "no stock filter" (see the
+    // `inStock ? { stock: { $gt: 0 } } : {}` branch in the service), and a
+    // picker looking for an existing catalogue entry must find it whether or
+    // not anyone currently holds stock. The storefront passes nothing and keeps
+    // the service's `true` default.
     inStock: req.query.inStock === 'true',
     tenantId: req.query.tenant,
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 20,
-    sort: req.query.sort || 'relevance',
+    // `sortBy`, not `sort`. The service destructures `sortBy`; this handler
+    // spent its whole life as dead code (mounted on no route until
+    // /catalogue-search), so the mismatch never surfaced — the param was
+    // silently dropped and every search fell back to 'relevance'.
+    sortBy: req.query.sort || 'relevance',
     order: req.query.order || 'desc',
-    includePending: isSuperAdmin,
-    status: statusParam === '' ? undefined : (statusParam || 'approved'),
+    // Forwarded explicitly, and parsed as booleans. A query string carries
+    // 'false' as a NON-EMPTY STRING, which is truthy — passing it straight
+    // through would turn `?useEmbeddings=false` into "yes, use embeddings".
+    // The picker sends exactly that.
+    ...(req.query.searchMode ? { searchMode: req.query.searchMode } : {}),
+    ...(req.query.useEmbeddings !== undefined
+      ? { useEmbeddings: req.query.useEmbeddings === 'true' }
+      : {}),
+    // Catalogue visibility for an authenticated staff caller.
+    //
+    // The default is deliberately wider than the storefront's: this endpoint
+    // backs the sub-product picker, whose job is to stop the same product being
+    // entered twice. AGENTS.md: "the central Product catalog is the single
+    // source of truth — no duplicates, ever", and "new Products created by
+    // tenants are always pending approval until a super-admin publishes them".
+    // Hiding pending products here would guarantee they get recreated — before
+    // this endpoint existed, 405 pending and 13 approved-but-unpublished
+    // products (42% of the catalogue) were unreachable from the picker, and not
+    // one product in the database was listed by two tenants.
+    //
+    // `archived` is NOT included: an archived entry is one someone retired on
+    // purpose, and relinking to it would resurrect it by the back door.
+    // `?status=` overrides, and `?status=` empty means every state including
+    // archived — super_admin only, since that is a catalogue-audit view rather
+    // than a picker one.
+    status:
+      statusParam === ''
+        ? (isSuperAdmin ? 'any' : ['approved', 'pending'])
+        : (statusParam ? String(statusParam).split(',') : ['approved', 'pending']),
+    // Pending products are unpublished by definition, so the picker has to see
+    // past isPublished as well as past status — filtering on either alone still
+    // hides them.
+    includeUnpublished: true,
     // Sale / discount filters
     onSale: req.query.onSale === 'true' ? true : undefined,
     saleType: req.query.saleType || undefined,
@@ -1176,7 +1216,10 @@ const getAllProducts = asyncHandler(async (req, res) => {
     ...filters,
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),
+    // Public listing. Both pinned after the spread for the same reason as the
+    // public search endpoint — `filters` carries the raw query string.
     status: 'approved',
+    includeUnpublished: false,
   });
 
   res.status(200).json({
@@ -1218,8 +1261,13 @@ const searchProductsPublic = asyncHandler(async (req, res) => {
     ...(flavor      && { flavors: Array.isArray(flavor) ? flavor : flavor.split(',') }),
     ...(minABV      && { minAbv: parseFloat(minABV) }),
     ...(maxABV      && { maxAbv: parseFloat(maxABV) }),
-    // Public shop always shows only approved/published products — not overridable via query param
+    // Public shop always shows only approved/published products — not overridable
+    // via query param. Both keys are set AFTER the `...filters` spread above so a
+    // crafted query string cannot reach past them: `?status=pending` and
+    // `?includeUnpublished=true` both arrive inside `filters` and are overwritten
+    // here. Keep them last.
     status: 'approved',
+    includeUnpublished: false,
   };
 
   const result = await productService.searchProducts(searchParams);

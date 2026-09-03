@@ -5,7 +5,7 @@ const router = express.Router();
 const productController = require('../controllers/product.controller');
 const productService = require('../services/product.service');
 const asyncHandler = require('../utils/asyncHandler');
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { protect, authorize, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { uploadReviewImages } = require('../middleware/imageUpload.middleware');
 const { body, param, query } = require('express-validator');
@@ -112,6 +112,31 @@ router.get(
 router.get(
   '/search',
   productController.searchProductsPublic
+);
+
+/**
+ * Catalogue search for staff — includes PENDING and unpublished products.
+ *
+ * Separate from `/search` on purpose. The public route guarantees
+ * approved-and-published and that guarantee is load-bearing for the storefront
+ * and for SEO; widening it behind a role check would turn a flat invariant into
+ * a conditional one. This route carries the wider visibility instead, so the
+ * public one can keep saying no.
+ *
+ * Declared beside `/search` and before any single-segment param route, so it is
+ * matched literally rather than swallowed as an `:id`.
+ *
+ * Exposes Product identity only. SubProduct data — price, cost, stock — is
+ * tenant-owned and must never be surfaced across tenants from here.
+ *
+ * @route GET /api/products/catalogue-search
+ * @access Private (tenant admin / super admin)
+ */
+router.get(
+  '/catalogue-search',
+  protect,
+  tenantAdminOrSuperAdmin,
+  productController.searchProducts
 );
 
 /**

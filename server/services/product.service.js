@@ -3797,6 +3797,35 @@ const buildTaxonomyQueryClauses = async (rawQuery) => {
  * @param {Object} searchParams - Search parameters
  * @returns {Promise<Object>} Search results with complete product data
  */
+/**
+ * Which slice of the catalogue a search may see.
+ *
+ * Extracted so it can be tested without a database — the decision it encodes is
+ * the one that hid 42% of the catalogue from the sub-product picker, and it is
+ * worth pinning independently of the 500-line aggregation it feeds.
+ *
+ * Defaults reproduce the storefront contract exactly (approved AND published),
+ * so a caller that passes neither param is unaffected.
+ *
+ * @param {string|string[]} status  a state, a list of states, or 'any' for no
+ *   status constraint at all
+ * @param {boolean} includeUnpublished  drop the isPublished requirement. Needed
+ *   independently of status: pending products are unpublished by definition, so
+ *   widening status alone still hides them.
+ */
+function buildCatalogueVisibilityQuery({ status = 'approved', includeUnpublished = false } = {}) {
+  const query = {};
+
+  if (status !== 'any') {
+    query.status = Array.isArray(status) ? { $in: status } : status;
+  }
+  if (!includeUnpublished) {
+    query.isPublished = true;
+  }
+
+  return query;
+}
+
 const searchProducts = async (searchParams = {}) => {
   const {
     query = '',
@@ -3843,6 +3872,25 @@ const searchProducts = async (searchParams = {}) => {
     // Search mode - using semantic search with local embeddings
     searchMode = 'semantic', // 'text', 'semantic', 'hybrid'
     useEmbeddings = true, // Enabled - using local transformers.js model
+
+    // ── Catalogue visibility ────────────────────────────────────────────────
+    // Both default to the storefront contract (approved AND published), so
+    // every existing caller keeps its current behaviour untouched.
+    //
+    // The admin sub-product picker overrides them, and must: its whole job is
+    // to stop the same product being entered twice, and AGENTS.md states "the
+    // central Product catalog is the single source of truth — no duplicates,
+    // ever" alongside "new Products created by tenants are always pending
+    // approval". A picker that cannot see pending products cannot enforce the
+    // first rule against products in the second state — it just recreates them.
+    // Measured before this change: 405 pending + 13 approved-but-unpublished
+    // products were unreachable, 42% of the catalogue, and not one product in
+    // the database was listed by two tenants.
+    //
+    // `status: 'any'` drops the status constraint entirely; an array matches
+    // any of the listed states.
+    status: statusFilter = 'approved',
+    includeUnpublished = false,
   } = searchParams;
 
   const currentDate = new Date();
@@ -3853,10 +3901,10 @@ const searchProducts = async (searchParams = {}) => {
   // STEP 1: Build Base Query
   // NOTE: Always returns only approved (published) products
   // ==============================================1==============
-  const baseQuery = {
-    status: 'approved',
-    isPublished: true,
-  };
+  const baseQuery = buildCatalogueVisibilityQuery({
+    status: statusFilter,
+    includeUnpublished,
+  });
 
   // Resolve and build category filter. An unresolvable slug must match
   // NOTHING (empty $in), not everything — otherwise unknown ?category= URLs
@@ -4100,7 +4148,14 @@ const searchProducts = async (searchParams = {}) => {
   // product embeddings, then set ENABLE_SEMANTIC_SEARCH=true.
   const semanticEnabled = process.env.ENABLE_SEMANTIC_SEARCH === 'true';
 
-  if (semanticEnabled && useEmbeddings && query && query.trim() && (searchMode === 'semantic' || searchMode === 'hybrid')) {
+  // Coerced, not trusted. Every caller here reaches the service through a query
+  // string, where `?useEmbeddings=false` arrives as the STRING 'false' — which
+  // is truthy, so a bare `useEmbeddings &&` reads an explicit opt-out as an
+  // opt-in. Normalising at the service covers all callers at once rather than
+  // relying on each controller to remember.
+  const wantsEmbeddings = useEmbeddings === true || useEmbeddings === 'true';
+
+  if (semanticEnabled && wantsEmbeddings && query && query.trim() && (searchMode === 'semantic' || searchMode === 'hybrid')) {
     try {
       // Generate embedding for search query
       const queryEmbedding = await generateEmbedding(query.trim());
@@ -12594,6 +12649,7 @@ module.exports = {
   getProductSales,
   getReviewsPreview,
   searchProducts,
+  buildCatalogueVisibilityQuery,
   getSearchSuggestions,
   getProductAvailability,
   getRelatedProducts,
