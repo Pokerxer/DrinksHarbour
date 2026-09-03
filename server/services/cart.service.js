@@ -26,7 +26,11 @@ const addToCart = async (data) => {
     throw new NotFoundError('Product not found or not available');
   }
 
-  // Verify SubProduct exists and is active
+  // Verify SubProduct exists and is active.
+  // The sale fields (isOnSale / saleType / saleDiscountValue / sale dates) are
+  // read below by applySubProductSale — they live on the document itself, so no
+  // select narrows them away here, but a projection added to this findOne MUST
+  // keep them or every sale item snapshots its pre-sale price.
   const subProduct = await SubProduct.findOne({
     _id: subProductId,
     product: productId,
@@ -129,12 +133,32 @@ const addToCart = async (data) => {
     cart.items[existingItemIndex].quantity = newQuantity;
     addedItem = cart.items[existingItemIndex];
   } else {
-    // Store the PLATFORM price, not the raw tenant-facing size.sellingPrice.
-    // getCart reprices on read anyway, but a correct value here keeps
-    // Cart.subtotal and any consumer reading the raw document honest.
-    const addPricing = calculateSizePricing(
-      size, product, subProduct.tenant, subProduct.costPrice, subProduct.baseSellingPrice,
+    // Snapshot the price the customer was actually shown — the PLATFORM price
+    // AFTER the sub-product sale, not the raw tenant-facing size.sellingPrice
+    // and not the pre-sale platform price. calculateSizePricing applies only the
+    // product-level discount; the sub-product sale is applied by every other
+    // caller (validate, checkout, chatbot) by hand via applySubProductSale, and
+    // omitting it here is what made priceAtAddition, Cart.subtotal and the admin
+    // live-carts view quote a pre-sale price the shop never advertised — and
+    // /cart/validate then call the (correct, post-sale) price a "price change".
+    //
+    // The pack rate is deliberately NOT baked in: it is quantity-dependent and
+    // quantity changes after this line is written without re-pricing. getCart's
+    // subtotal, validate and checkout all apply the pack rate live from the
+    // current quantity, so the snapshot stays the single-unit post-sale price.
+    const addPricing = applySubProductSale(
+      calculateSizePricing(
+        size, product, subProduct.tenant, subProduct.costPrice, subProduct.baseSellingPrice,
+      ),
+      subProduct,
     );
+
+    // Record the sale delta so a sale ENDING is distinguishable from a genuine
+    // price rise, and so the previously-dead discountApplied field carries
+    // provenance for anything reading the raw document.
+    const saleDiscount = addPricing.saleActive
+      ? Math.max(0, (addPricing.priceBeforeSale ?? addPricing.finalPrice) - addPricing.finalPrice)
+      : 0;
 
     // Add new item
     const newItem = {
@@ -145,7 +169,7 @@ const addToCart = async (data) => {
       priceAtAddition: addPricing.finalPrice,
       quantity,
       maxAvailableAtAddition: size.stock,
-      discountApplied: 0,
+      discountApplied: saleDiscount,
       addedAt: new Date(),
     };
 
@@ -406,8 +430,12 @@ const getCart = async (userId) => {
       select: 'name slug images type isAlcoholic abv status platformMarkup platformDiscount',
     })
     .populate({
+      // The sale fields are REQUIRED here: applySubProductSale below reads them,
+      // and a lean() projection that omits them silently serves every sale line
+      // at its pre-sale price — the exact drawer-vs-checkout mismatch this path
+      // exists to prevent.
       path: 'items.subproduct',
-      select: 'sku costPrice baseSellingPrice status',
+      select: 'sku costPrice baseSellingPrice status isOnSale saleType saleDiscountValue saleStartDate saleEndDate',
       populate: {
         path: 'tenant',
         select: 'name slug logo status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits',
@@ -425,15 +453,25 @@ const getCart = async (userId) => {
 
   // Reprice every line through the platform pipeline. A cart loaded a week
   // later must show today's price, not the price snapshotted at add time.
+  // The sub-product sale is applied on top — the same two steps, in the same
+  // order, that /cart/validate and checkout run (calculateSizePricing, then
+  // applySubProductSale). Without the second step the drawer serves the
+  // pre-sale price while validate returns the post-sale one and flags a
+  // phantom "price change"; applySubProductSale also withdraws the pack rate
+  // for the sale's duration, so the drawer stops advertising a pack offer the
+  // product page hides.
   const items = (cart.items || [])
     .map((item) => {
       if (!item.product || !item.subproduct || !item.subproduct.tenant || !item.size) return null;
-      const pricing = calculateSizePricing(
-        item.size,
-        item.product,
-        item.subproduct.tenant,
-        item.subproduct.costPrice,
-        item.subproduct.baseSellingPrice,
+      const pricing = applySubProductSale(
+        calculateSizePricing(
+          item.size,
+          item.product,
+          item.subproduct.tenant,
+          item.subproduct.costPrice,
+          item.subproduct.baseSellingPrice,
+        ),
+        item.subproduct,
       );
       return buildCartLine(item, pricing);
     })

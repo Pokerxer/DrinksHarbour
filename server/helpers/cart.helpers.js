@@ -52,10 +52,18 @@ const buildCartLine = (item, pricing) => {
     selectedSize: sizeLabel,
     selectedColor: '',
 
-    // Pricing — platform price, never size.sellingPrice
+    // Pricing — platform price AFTER any sub-product sale, never size.sellingPrice.
+    // The caller passes the applySubProductSale() output, so finalPrice already
+    // carries the sale and packUnitPrice is null while a sale runs.
     price: pricing?.finalPrice ?? 0,
     packUnitPrice: pricing?.packUnitPrice ?? null,
     packThreshold: pricing?.packThreshold ?? null,
+
+    // Sale provenance for the drawer — without this the cart is the only surface
+    // on the site that shows a sale item at its sale price with no sign it's on
+    // sale. Mirrors the packInfo contract validateCartItems returns.
+    saleActive: pricing?.saleActive === true,
+    priceBeforeSale: pricing?.priceBeforeSale ?? pricing?.finalPrice ?? 0,
 
     quantity: item.quantity || 1,
     addedAt: item.addedAt ? new Date(item.addedAt).getTime() : Date.now(),
