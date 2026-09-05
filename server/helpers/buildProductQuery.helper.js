@@ -133,15 +133,27 @@ const getProductsSales = async (productIds) => {
  */
 const getSortStage = (sort, order) => {
     const orderVal = order === 'desc' ? -1 : 1;
-    
+
+    // These keys must match what the caller's pipeline actually computes.
+    //
+    // `stats.*` and `computed.*` never existed as aggregation fields — the
+    // cartesian product of "sort must rank" and "field must exist" was never
+    // checked, so `sort=popularity` (the DEFAULT for the category/brand/tags/
+    // flavors endpoints) sorted on `stats.totalSold`, which no pipeline emits.
+    // Mongo sorts a missing field as null, so every product TIED and the whole
+    // list was an arbitrary `$natural`/`_id` mess.
+    //
+    // All four callers build `totalSold` by summing `SubProduct.totalSold`, and
+    // `averageRating` lives flat on the product doc.
     const sortMap = {
         'createdAt': { createdAt: orderVal },
         'updatedAt': { updatedAt: orderVal },
-        'price': { 'computed.minPrice': orderVal },
+        'price': { minBaseSellingPrice: orderVal, name: 1 },
         'name': { name: orderVal },
         'abv': { abv: orderVal },
-        'popularity': { 'stats.totalSold': orderVal },
-        'rating': { 'stats.averageRating': orderVal }
+        'popularity': { totalSold: -1, averageRating: -1 },
+        'bestselling': { totalSold: -1, averageRating: -1 },
+        'rating': { averageRating: orderVal, reviewCount: -1 }
     };
     
     return sortMap[sort] || { createdAt: -1 };

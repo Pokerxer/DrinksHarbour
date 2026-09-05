@@ -31,6 +31,11 @@ interface SectionConfig {
   icon: React.ReactNode;
   iconBgColor: string;
   iconColor: string;
+  // Shown when the section loaded fine but has nothing to show. Distinct from
+  // the fetch-failure copy: "no best sellers yet" is a true statement about a
+  // young catalogue, "we couldn't load this" is a bug worth retrying.
+  emptyTitle: string;
+  emptyBody: string;
 }
 
 type SectionKey = 'recommended' | 'trending' | 'bestsellers' | 'newArrivals';
@@ -42,6 +47,8 @@ const SECTION_MAP: Record<SectionKey, SectionConfig> = {
     icon: <PiSparkle size={20} />,
     iconBgColor: 'bg-rose-100',
     iconColor: 'text-rose-600',
+    emptyTitle: 'No recommendations yet',
+    emptyBody: 'Browse a few drinks and we\u2019ll start suggesting bottles you\u2019ll like.',
   },
   trending: {
     title: 'Trending Now',
@@ -49,6 +56,8 @@ const SECTION_MAP: Record<SectionKey, SectionConfig> = {
     icon: <PiTrendUp size={20} />,
     iconBgColor: 'bg-emerald-100',
     iconColor: 'text-emerald-600',
+    emptyTitle: 'Nothing trending right now',
+    emptyBody: 'Check back soon \u2014 this updates as shoppers buy.',
   },
   bestsellers: {
     title: 'Best Sellers',
@@ -56,6 +65,8 @@ const SECTION_MAP: Record<SectionKey, SectionConfig> = {
     icon: <PiFire size={20} />,
     iconBgColor: 'bg-orange-100',
     iconColor: 'text-orange-600',
+    emptyTitle: 'No best sellers yet',
+    emptyBody: 'Once orders start coming in, the most-purchased bottles land here.',
   },
   newArrivals: {
     title: 'New Arrivals',
@@ -63,6 +74,8 @@ const SECTION_MAP: Record<SectionKey, SectionConfig> = {
     icon: <PiSparkle size={20} />,
     iconBgColor: 'bg-violet-100',
     iconColor: 'text-violet-600',
+    emptyTitle: 'No new arrivals',
+    emptyBody: 'Nothing has been added to the catalog in the last few weeks.',
   },
 };
 
@@ -99,14 +112,21 @@ async function fetchWithTimeout(
   }
 }
 
+// A section that legitimately has no products is NOT a failure. Collapsing the
+// two hid a hard 500 on /api/products/bestsellers behind the "nothing here yet"
+// copy for as long as that endpoint was broken, so the two are reported apart.
+type SectionResult = { products: any[]; failed: boolean };
+
 async function loadSectionData(
   section: SectionKey,
   auth: boolean,
   maxItems: number
-): Promise<any[]> {
+): Promise<SectionResult> {
   const cacheKey = `${section}:${auth ? 'auth' : 'anon'}:${maxItems}`;
   const cached = _recCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < REC_CACHE_TTL) return cached.data;
+  if (cached && Date.now() - cached.ts < REC_CACHE_TTL) {
+    return { products: cached.data, failed: false };
+  }
 
   const endpoints =
     section === 'recommended'
@@ -115,22 +135,32 @@ async function loadSectionData(
         : [API_ENDPOINTS.trending]
       : [API_ENDPOINTS[section]];
 
+  // Only a response we actually understood counts as "reached the server".
+  let reachedServer = false;
+
   for (const endpoint of endpoints) {
     try {
       const response = await fetchWithTimeout(`${endpoint}?limit=${maxItems}`);
-      if (response.ok) {
-        const data = await response.json();
-        const prods = normalizeProducts(data).map(normalizeProduct);
-        if (data.success !== false && prods.length > 0) {
-          _recCache.set(cacheKey, { data: prods, ts: Date.now() });
-          return prods;
-        }
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      if (data?.success === false) continue;
+
+      reachedServer = true;
+      const prods = normalizeProducts(data).map(normalizeProduct);
+      if (prods.length > 0) {
+        _recCache.set(cacheKey, { data: prods, ts: Date.now() });
+        return { products: prods, failed: false };
       }
     } catch {
       continue;
     }
   }
-  return [];
+
+  // Cache a genuine empty so an empty tab doesn't refetch on every switch.
+  if (reachedServer) _recCache.set(cacheKey, { data: [], ts: Date.now() });
+
+  return { products: [], failed: !reachedServer };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -172,13 +202,13 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
   const fetchSection = useCallback(
     async (section: SectionKey, auth: boolean) => {
       setHasError(false);
-      const prods = await loadSectionData(section, auth, maxItems);
-      if (prods.length > 0) {
-        setProducts(prods);
-        setFadeKey(k => k + 1);
-      } else {
-        setHasError(true);
-      }
+      const { products: prods, failed } = await loadSectionData(section, auth, maxItems);
+      // An empty section still replaces the previous tab's products — otherwise
+      // switching to an empty tab leaves the old tab's cards on screen under
+      // the new tab's heading.
+      setProducts(prods);
+      setFadeKey(k => k + 1);
+      setHasError(failed);
     },
     [maxItems]
   );
@@ -217,7 +247,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
           .catch(() => false);
         setIsAuthenticated(isAuth);
         if (isAuth) {
-          const personalized = await loadSectionData('recommended', true, maxItems);
+          const { products: personalized } = await loadSectionData('recommended', true, maxItems);
           if (personalized.length > 0) {
             setProducts(personalized);
             setFadeKey(k => k + 1);
@@ -226,7 +256,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
         return;
       }
 
-      const [trendingProducts, isAuth] = await Promise.all([
+      const [initial, isAuth] = await Promise.all([
         loadSectionData('recommended', false, maxItems),
         fetchWithTimeout(`${API_BASE}/api/auth/me`, {}, 3000)
           .then(r => (r.ok ? r.json() : null))
@@ -236,19 +266,19 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
 
       setIsAuthenticated(isAuth);
 
-      if (trendingProducts.length > 0) {
-        setProducts(trendingProducts);
+      if (initial.products.length > 0) {
+        setProducts(initial.products);
         setLoading(false);
 
         if (isAuth) {
-          const personalized = await loadSectionData('recommended', true, maxItems);
+          const { products: personalized } = await loadSectionData('recommended', true, maxItems);
           if (personalized.length > 0) {
             setProducts(personalized);
             setFadeKey(k => k + 1);
           }
         }
       } else {
-        setHasError(true);
+        setHasError(initial.failed);
         setLoading(false);
       }
     };
@@ -346,22 +376,30 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
               <PiPackage size={32} className="text-gray-400" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Nothing here yet
+              {hasError ? 'Couldn\u2019t load this section' : sectionConfig.emptyTitle}
             </h3>
             <p className="text-gray-500 max-w-sm mx-auto mb-6">
-              We couldn&apos;t load recommendations right now. Try refreshing or browse our full catalog.
+              {hasError
+                ? 'Something went wrong on our end. Try again, or browse the full catalog.'
+                : sectionConfig.emptyBody}
             </p>
             <div className="flex items-center justify-center gap-3">
-              <button
-                onClick={handleRefresh}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors font-medium"
-              >
-                <PiArrowClockwise size={16} />
-                Try Again
-              </button>
+              {hasError && (
+                <button
+                  onClick={handleRefresh}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors font-medium"
+                >
+                  <PiArrowClockwise size={16} />
+                  Try Again
+                </button>
+              )}
               <a
                 href="/shop"
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium"
+                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl transition-colors font-medium ${
+                  hasError
+                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-900 text-white hover:bg-gray-800'
+                }`}
               >
                 Browse Shop
               </a>

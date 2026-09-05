@@ -20,6 +20,7 @@ const Tag = require('../models/Tag');
 const Flavor = require('../models/Flavor');
 const Order = require('../models/Order');
 const cloudinaryService = require('./cloudinary.service');
+const { getOrderDemandMap, buildDemandExpr } = require('./orderDemand.helper');
 const { generateDynamicPriceRanges, buildPagination, applyPostFilters, processProductForDisplay, getSortStage, buildProductQuery, getProductsRatings, getProductsSales } = require('../helpers/buildProductQuery.helper');
 const { createSlug, generateUniqueSlug } = require('../utils/slugify');
 const { parseCSV, generateCSV } = require('../utils/csvParser');
@@ -4191,6 +4192,17 @@ const searchProducts = async (searchParams = {}) => {
     }
   }
 
+  // Marketplace units sold, folded into `totalSold` below so popularity-style
+  // sorts rank on real demand rather than POS-only counters. Only fetched for
+  // the sorts that read it — every other request pays nothing.
+  const SORTS_USING_DEMAND = new Set([
+    'relevance', 'popular', 'bestselling', 'discount',
+  ]);
+  const orderDemandMap = SORTS_USING_DEMAND.has(effectiveSortBy)
+    ? await getOrderDemandMap(Order)
+    : {};
+  const orderDemandExpr = buildDemandExpr(orderDemandMap);
+
   // ============================================================
   // STEP 3: Build Aggregation Pipeline
   // ============================================================
@@ -4485,14 +4497,26 @@ const searchProducts = async (searchParams = {}) => {
             },
           },
         },
+        // Units sold across BOTH channels.
+        //
+        // `SubProduct.totalSold` is incremented only by the POS controller, so
+        // on its own it counts in-store sales and ignores every marketplace
+        // order — 612 of 621 live products tied at 0, which made
+        // `?sort=popularity` fall through to its `_id` tiebreaker and rank by
+        // insertion order. `orderDemand` supplies the marketplace half.
         totalSold: {
-          $sum: {
-            $map: {
-              input: '$subProducts',
-              as: 'sub',
-              in: { $ifNull: ['$$sub.totalSold', 0] },
+          $add: [
+            {
+              $sum: {
+                $map: {
+                  input: '$subProducts',
+                  as: 'sub',
+                  in: { $ifNull: ['$$sub.totalSold', 0] },
+                },
+              },
             },
-          },
+            orderDemandExpr,
+          ],
         },
         // Min base selling price across all subProducts × sizes — used for price sort BEFORE pagination
         minBaseSellingPrice: {
@@ -7985,6 +8009,27 @@ const getAllProducts = async (queryParams) => {
             },
           },
         },
+        // Min base selling price across all subProducts × sizes — used by the
+        // `price` key in getSortStage. Without it the sort key referenced a
+        // field that exists nowhere and every product tied (see
+        // buildProductQuery.helper.js getSortStage note).
+        minBaseSellingPrice: {
+          $min: {
+            $map: {
+              input: { $ifNull: ['$subProducts', []] },
+              as: 'sub',
+              in: {
+                $min: {
+                  $map: {
+                    input: { $ifNull: ['$$sub.sizes', []] },
+                    as: 'size',
+                    in: { $ifNull: ['$$size.sellingPrice', Number.MAX_SAFE_INTEGER] },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
 
@@ -9386,13 +9431,48 @@ const getBestsellers = async (page = 1, limit = 12) => {
   const limitNum = Math.min(Math.max(1, limit), 50);
   const skip = (pageNum - 1) * limitNum;
 
-  // Get top-selling product IDs
+  // Rank by units sold across BOTH channels that actually record a purchase.
+  //
+  // `sales` only ever receives rows from tenant sales-order fulfillment
+  // (services/salesFulfill.service.js). Marketplace checkout on
+  // drinksharbour.com writes an Order and nothing else — Sales.channel declares
+  // a 'main_website' value that nothing in the repo writes. Ranking off `sales`
+  // alone therefore returned an empty Best Sellers tab even with hundreds of
+  // delivered marketplace orders on file.
   const topSellers = await Sales.aggregate([
     {
       $match: {
         fulfillmentStatus: { $in: ['fulfilled', 'delivered'] },
       },
     },
+    { $project: { product: 1, quantity: 1 } },
+
+    // Marketplace orders: one row per line item, same shape as a Sales row.
+    // Only a paid order that actually reached the customer counts — a pending
+    // or cancelled one is not a purchase.
+    {
+      $unionWith: {
+        coll: 'orders',
+        pipeline: [
+          {
+            $match: {
+              status: { $in: ['delivered', 'shipped'] },
+              paymentStatus: 'paid',
+            },
+          },
+          { $unwind: '$items' },
+          {
+            $project: {
+              product: '$items.product',
+              quantity: '$items.quantity',
+            },
+          },
+        ],
+      },
+    },
+
+    // Combine the two channels so a product sold both in-store and online ranks
+    // on its true total rather than appearing twice.
     {
       $group: {
         _id: '$product',
@@ -9494,7 +9574,10 @@ const getBestsellers = async (page = 1, limit = 12) => {
       },
     },
 
-    // Populate relations
+    // Populate relations.
+    // The card builder below projects brand, category, subCategory, tags and
+    // flavors — every one of them needs a $lookup here. A missing $lookup is
+    // silent: the field just reads as null/[] on every bestseller card.
     {
       $lookup: {
         from: 'brands',
@@ -9504,9 +9587,47 @@ const getBestsellers = async (page = 1, limit = 12) => {
       },
     },
     { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: 'categories',
+        localField: 'category',
+        foreignField: '_id',
+        as: 'category',
+      },
+    },
+    { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
+    {
+      // Product.subCategory refs the SubCategory model — its own collection,
+      // not `categories`.
+      $lookup: {
+        from: 'subcategories',
+        localField: 'subCategory',
+        foreignField: '_id',
+        as: 'subCategory',
+      },
+    },
+    { $unwind: { path: '$subCategory', preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: 'tags',
+        localField: 'tags',
+        foreignField: '_id',
+        as: 'tags',
+      },
+    },
+    {
+      $lookup: {
+        from: 'flavors',
+        localField: 'flavors',
+        foreignField: '_id',
+        as: 'flavors',
+      },
+    },
   ]);
 
-  // Sort products by sales count
+  // Rank by units sold. `topSellers` already computed the exact figure used to
+  // pick these products, so it is also the figure the card must display —
+  // re-querying it would let the ranking and the label disagree.
   const salesMap = topSellers.reduce((map, ts) => {
     map[ts._id.toString()] = ts.totalSold;
     return map;
@@ -9514,7 +9635,7 @@ const getBestsellers = async (page = 1, limit = 12) => {
 
   products.sort(
     (a, b) =>
-      salesMap[b._id.toString()] - salesMap[a._id.toString()]
+      (salesMap[b._id.toString()] || 0) - (salesMap[a._id.toString()] || 0)
   );
 
   // Process products
@@ -9543,6 +9664,15 @@ const getBestsellers = async (page = 1, limit = 12) => {
   const processedProducts = products.map((product) => {
     // Rename subProducts to activeSubProducts for compatibility
     product.activeSubProducts = product.subProducts || [];
+
+    // assignProductBadge reads these three off the product doc, so they have to
+    // be on it BEFORE the card is built — otherwise the one section that exists
+    // to show best sellers can never award the BEST SELLER badge.
+    const productRating = ratings[product._id.toString()] || { average: 0, count: 0 };
+    const totalSold = salesMap[product._id.toString()] || 0;
+    product.totalSold = totalSold;
+    product.averageRating = productRating.average;
+    product.reviewCount = productRating.count;
     
     // Process SubProducts with Website Pricing (same logic as getAllProducts)
     const processedSubProducts = (product.activeSubProducts || []).map((subProduct) => {
@@ -9805,9 +9935,9 @@ const getBestsellers = async (page = 1, limit = 12) => {
       badge: assignProductBadge(product, stockInfo, highestDiscount.value > 0 ? highestDiscount : null),
       sizeVariants: [...new Set(processedSubProducts.flatMap((sp) => sp.sizes.map((size) => size.size)))],
       tenantCount: stockInfo.tenants,
-      averageRating: ratings[product._id.toString()]?.average || 0,
-      reviewCount: ratings[product._id.toString()]?.count || 0,
-      totalSold: sales[product._id.toString()] || 0,
+      averageRating: productRating.average,
+      reviewCount: productRating.count,
+      totalSold,
       isFeatured: product.isFeatured || false,
       requiresAgeVerification: product.requiresAgeVerification || product.isAlcoholic,
       status: product.status,
@@ -9825,11 +9955,28 @@ const getBestsellers = async (page = 1, limit = 12) => {
     };
   });
 
-  // Get total count of bestsellers
+  // Total distinct products sold — must count over the same two channels as the
+  // ranking above, or the page count contradicts the rows.
   const totalCount = await Sales.aggregate([
     {
       $match: {
         fulfillmentStatus: { $in: ['fulfilled', 'delivered'] },
+      },
+    },
+    { $project: { product: 1 } },
+    {
+      $unionWith: {
+        coll: 'orders',
+        pipeline: [
+          {
+            $match: {
+              status: { $in: ['delivered', 'shipped'] },
+              paymentStatus: 'paid',
+            },
+          },
+          { $unwind: '$items' },
+          { $project: { product: '$items.product' } },
+        ],
       },
     },
     {
