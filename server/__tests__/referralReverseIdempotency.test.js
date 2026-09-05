@@ -27,10 +27,9 @@ const path = require('node:path');
 
 const { decideReversal } = require('../services/referral.helpers');
 
-const COUPON = 'c1';
 const base = (over = {}) => ({
-  _id: 'r1', status: 'paid', coupon: COUPON, qualifyingOrder: 'o1',
-  terms: { referrerCreditNgn: 2000, refereeDiscountNgn: 2000, minSpendNgn: 15000 },
+  _id: 'r1', status: 'paid', coupon: null, qualifyingOrder: 'o1',
+  terms: { referrerCreditNgn: 2000, refereeLoyaltyPoints: 2000, minSpendNgn: 50000 },
   ...over,
 });
 const refundedOrder = (over = {}) => ({

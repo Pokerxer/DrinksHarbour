@@ -9,17 +9,16 @@ const assert = require('node:assert');
 const { decideSettlement, decideReversal, REFERRAL_CONFIG } =
   require('../services/referral.helpers');
 
-const COUPON = 'c1';
 const base = (over = {}) => ({
-  _id: 'r1', status: 'qualified', coupon: COUPON,
-  terms: { referrerCreditNgn: 2000, refereeDiscountNgn: 2000, minSpendNgn: 15000 },
+  _id: 'r1', status: 'qualified', coupon: null,
+  terms: { referrerCreditNgn: 2000, refereeLoyaltyPoints: 2000, minSpendNgn: 50000 },
   ...over,
 });
 const paidOrder = (over = {}) => ({
-  _id: 'o1', paymentStatus: 'paid', coupon: COUPON, totalAmount: 20000, ...over,
+  _id: 'o1', paymentStatus: 'paid', coupon: null, totalAmount: 60000, ...over,
 });
 
-test('a qualified referral on a paid order using the coupon pays out', () => {
+test('a qualified referral on a paid order above the minimum spend pays out', () => {
   const d = decideSettlement({ referral: base(), order: paidOrder(), paidCountThisMonth: 0 });
   assert.strictEqual(d.action, 'pay');
 });
@@ -36,17 +35,17 @@ test('an unpaid order never pays out', () => {
   assert.strictEqual(d.action, 'skip');
 });
 
-test('an order that did not use the referral coupon never pays out', () => {
+test('an order below the minimum spend does not pay out', () => {
   const d = decideSettlement({
-    referral: base(), order: paidOrder({ coupon: 'someOtherCoupon' }), paidCountThisMonth: 0 });
+    referral: base(), order: paidOrder({ totalAmount: 49999 }), paidCountThisMonth: 0 });
   assert.strictEqual(d.action, 'skip');
-  assert.match(d.reason, /coupon/i);
+  assert.strictEqual(d.reason, 'below_min_spend');
 });
 
-test('an order with no coupon at all never pays out', () => {
+test('an order at exactly the minimum spend pays out', () => {
   const d = decideSettlement({
-    referral: base(), order: paidOrder({ coupon: null }), paidCountThisMonth: 0 });
-  assert.strictEqual(d.action, 'skip');
+    referral: base(), order: paidOrder({ totalAmount: 50000 }), paidCountThisMonth: 0 });
+  assert.strictEqual(d.action, 'pay');
 });
 
 test('over the monthly cap rejects without paying', () => {
@@ -83,17 +82,17 @@ test('a fully refunded qualifying order reverses', () => {
 test('a partial refund still above the minimum spend does NOT reverse', () => {
   const d = decideReversal({
     referral: base({ status: 'paid', qualifyingOrder: 'o1' }),
-    order: paidOrder({ paymentStatus: 'partially_refunded', totalAmount: 20000,
-                       refundDetails: { amount: 2000 } }) });
-  assert.strictEqual(d.action, 'skip', '₦18,000 still clears the ₦15,000 floor');
+    order: paidOrder({ paymentStatus: 'partially_refunded', totalAmount: 60000,
+                       refundDetails: { amount: 5000 } }) });
+  assert.strictEqual(d.action, 'skip', '₦55,000 still clears the ₦50,000 floor');
 });
 
 test('a partial refund that drops below the minimum spend DOES reverse', () => {
   const d = decideReversal({
     referral: base({ status: 'paid', qualifyingOrder: 'o1' }),
-    order: paidOrder({ paymentStatus: 'partially_refunded', totalAmount: 20000,
-                       refundDetails: { amount: 8000 } }) });
-  assert.strictEqual(d.action, 'reverse', '₦12,000 is below the ₦15,000 floor');
+    order: paidOrder({ paymentStatus: 'partially_refunded', totalAmount: 60000,
+                       refundDetails: { amount: 15000 } }) });
+  assert.strictEqual(d.action, 'reverse', '₦45,000 is below the ₦50,000 floor');
 });
 
 test('reversing a referral that was never paid is a no-op', () => {

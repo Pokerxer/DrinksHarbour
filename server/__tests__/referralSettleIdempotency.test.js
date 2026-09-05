@@ -23,14 +23,13 @@ const path = require('node:path');
 
 const { decideSettlement } = require('../services/referral.helpers');
 
-const COUPON = 'c1';
 const base = (over = {}) => ({
-  _id: 'r1', status: 'qualified', coupon: COUPON,
-  terms: { referrerCreditNgn: 2000, refereeDiscountNgn: 2000, minSpendNgn: 15000 },
+  _id: 'r1', status: 'qualified', coupon: null,
+  terms: { referrerCreditNgn: 2000, refereeLoyaltyPoints: 2000, minSpendNgn: 50000 },
   ...over,
 });
 const paidOrder = (over = {}) => ({
-  _id: 'o1', paymentStatus: 'paid', coupon: COUPON, totalAmount: 20000, ...over,
+  _id: 'o1', paymentStatus: 'paid', coupon: null, totalAmount: 60000, ...over,
 });
 
 test('two concurrent settle calls seeing the same qualified referral BOTH decide pay — the status check alone does not serialize them', async () => {
