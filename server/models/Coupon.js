@@ -351,8 +351,11 @@ couponSchema.methods.calculateDiscount = function(cartTotal, items = []) {
   // A missing/garbage cartTotal (undefined, NaN, a bad coercion) must never
   // propagate into a NaN discount — that NaN would flow into recordUsage's
   // totalDiscountGiven += discountApplied and permanently corrupt the coupon's
-  // analytics field. Treat anything non-finite as an unpriced cart: 0.
-  const safeTotal = Number.isFinite(cartTotal) ? cartTotal : 0;
+  // analytics field. Coerce numeric strings exactly as the previous arithmetic
+  // did ("15000" → 15000, which coupon.service.js validateCoupon passes through);
+  // only a genuinely non-finite value is treated as an unpriced cart: 0.
+  const n = Number(cartTotal);
+  const safeTotal = Number.isFinite(n) ? n : 0;
   let discount = 0;
   switch (this.discountType) {
     case 'percentage':

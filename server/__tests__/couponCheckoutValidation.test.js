@@ -109,12 +109,22 @@ test('9. calculateDiscount never returns NaN for a missing/garbage cart total', 
   const fixed = makeCoupon({ discountType: 'fixed_amount', discountValue: 2000 });
   assert.strictEqual(fixed.calculateDiscount(undefined), 0);
   assert.strictEqual(fixed.calculateDiscount(NaN), 0);
+
+  // A numeric string must keep coercing (coupon.service.js validateCoupon passes
+  // subtotal through as-is and the old arithmetic coerced it) — only genuinely
+  // non-finite values may be treated as an unpriced cart.
+  const pctString = makeCoupon({ discountType: 'percentage', discountValue: 10 });
+  assert.strictEqual(pctString.calculateDiscount('15000'), 1500);
+  assert.strictEqual(fixed.calculateDiscount('15000'), 2000);
 });
 
 test('10. canBeUsedBy rejects below the ₦15,000 floor, accepts at and above it', async () => {
-  // firstPurchaseOnly: false and empty allowedUsers/excludedUsers/minimumAccountAge
-  // keep this call inside canBeUsedBy's DB-free branches — see report for what the
-  // method touches when those are non-empty.
+  // firstPurchaseOnly: false and empty allowedUsers/excludedUsers keep this call
+  // inside canBeUsedBy's DB-free branches (Coupon.js:322-347): allowedUsers and
+  // excludedUsers are empty so neither guard fires, usedBy defaults to [] so
+  // userUsageCount 0 < usageLimitPerUser, and firstPurchaseOnly=false /
+  // minimumAccountAge=0 skip the two await-points (Order.countDocuments and
+  // User.findById) that would otherwise need a database.
   const userId = new mongoose.Types.ObjectId();
   const coupon = makeCoupon({
     minimumPurchaseAmount: 15000,
