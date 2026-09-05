@@ -219,3 +219,29 @@ export interface LoyaltyData {
   summary: LoyaltySummary;
   recent: LoyaltyTransaction[];
 }
+
+// ── Referrals ─────────────────────────────────────────────────────────────────
+export interface ReferralItem {
+  _id: string;
+  name: string;
+  status: 'pending' | 'qualified' | 'paid' | 'rejected' | 'reversed';
+  statusLabel: string;
+  creditNgn: number;
+  rejectedReason: string;
+  signupAt: string;
+  paidAt: string | null;
+}
+
+export interface ReferralsPayload {
+  code: string;
+  link: string;
+  terms: {
+    refereeDiscountNgn: number;
+    referrerCreditNgn: number;
+    minSpendNgn: number;
+    couponValidDays: number;
+  };
+  summary: { joined: number; ordered: number; earnedNgn: number; pendingNgn: number };
+  referrals: ReferralItem[];
+  listTruncatedAt: number | null;
+}

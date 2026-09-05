@@ -27,6 +27,7 @@ export const NAV_ITEMS = [
   { icon: Icon.PiWalletBold,      label: 'Wallet',          href: '/my-account/wallet' },
   { icon: Icon.PiGiftBold,        label: 'Gift Cards',      href: '/my-account/gift-cards' },
   { icon: Icon.PiStarBold,        label: 'Corks & Points',  href: '/my-account/loyalty' },
+  { icon: Icon.PiShareNetworkBold,label: 'Referrals',       href: '/my-account/referrals' },
   { icon: Icon.PiHeartBold,       label: 'Wishlist',        href: '/wishlist' },
   { icon: Icon.PiMapPinBold,      label: 'Addresses',       href: '/my-account/addresses' },
   { icon: Icon.PiCreditCardBold,  label: 'Payment Methods', href: '/my-account/payment-methods' },

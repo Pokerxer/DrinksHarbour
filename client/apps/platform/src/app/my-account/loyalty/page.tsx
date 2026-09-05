@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { useAccount } from '../AccountShell';
 import { useLoyalty } from '../_hooks/useLoyalty';
@@ -272,88 +273,26 @@ function WaysToEarn({ multiplier, rate, minRedeem, step }: { multiplier: number;
 
 // ── Referral card ─────────────────────────────────────────────────────────────
 
-function ReferralCard({ code, link, bonusEarned, onGetCode, onApply }:
-  { code: string | null; link?: string; bonusEarned: number; onGetCode: () => void; onApply: (code: string) => Promise<{ ok: boolean; message?: string }> }) {
-  const [copied, setCopied] = useState(false);
-  const [applyCode, setApplyCode] = useState('');
-  const [applyMsg, setApplyMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [applying, setApplying] = useState(false);
-
-  const copy = () => {
-    if (!code) return;
-    navigator.clipboard.writeText(link || code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
-  };
-
-  const handleApply = async () => {
-    if (!applyCode.trim()) return;
-    setApplying(true);
-    const res = await onApply(applyCode.trim());
-    setApplying(false);
-    setApplyMsg({ ok: res.ok, text: res.ok ? 'Referral applied — bonus awarded!' : (res.message || 'Invalid code') });
-    if (res.ok) setApplyCode('');
-    setTimeout(() => setApplyMsg(null), 5000);
-  };
-
+function ReferralCard({ bonusEarned }: { bonusEarned: number }) {
   return (
-    <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
-        <h3 className="font-black text-stone-900 text-sm flex items-center gap-2">
+    <Link href="/my-account/referrals" className="group block bg-white rounded-xl border border-stone-200 shadow-sm p-5 transition-all hover:border-red-200 hover:shadow-md">
+      <div className="flex items-center justify-between">
+        <h2 className="font-black text-stone-900 text-sm flex items-center gap-2">
           <Icon.PiShareNetworkBold size={15} className="text-red-700" /> Refer &amp; Earn
-        </h3>
+        </h2>
         {bonusEarned > 0 && (
           <span className="text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-1 rounded-full">
             +{bonusEarned.toLocaleString()} earned
           </span>
         )}
       </div>
-      <div className="p-5 space-y-4">
-        <p className="text-sm text-stone-500 leading-relaxed">
-          Share your referral link — your friend gets <strong className="text-stone-700">500 pts</strong> on signup and you earn <strong className="text-stone-700">500 pts</strong> when they place their first order.
-        </p>
-
-        {code ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-xl p-3">
-              <Icon.PiLinkBold size={14} className="text-stone-400 flex-shrink-0" />
-              <code className="flex-1 font-mono text-xs text-stone-700 truncate">{link || code}</code>
-              <button onClick={copy}
-                className="flex items-center gap-1.5 text-xs font-bold text-stone-600 hover:text-red-700 bg-white px-3 py-1.5 rounded-lg border border-stone-200 flex-shrink-0 transition-colors">
-                {copied ? <Icon.PiCheckBold size={11} className="text-green-600" /> : <Icon.PiCopyBold size={11} />}
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-            <div className="flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-xl px-3 py-2">
-              <Icon.PiTagBold size={12} className="text-purple-500" />
-              <span className="text-xs text-purple-700">Your code: <strong className="font-mono tracking-widest">{code}</strong></span>
-            </div>
-          </div>
-        ) : (
-          <button onClick={onGetCode}
-            className="flex items-center gap-2 bg-stone-900 text-white px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-stone-800 transition-all">
-            <Icon.PiSparkleBold size={14} /> Generate my referral code
-          </button>
-        )}
-
-        <div className="border-t border-stone-100 pt-4">
-          <p className="text-xs font-semibold text-stone-600 mb-2">Have a referral code? Apply it here:</p>
-          <div className="flex gap-2">
-            <input value={applyCode} onChange={e => setApplyCode(e.target.value.toUpperCase())}
-              placeholder="DH-XXXXXX"
-              className="flex-1 px-3 py-2.5 border border-stone-200 rounded-xl text-sm bg-stone-50 focus:bg-white focus:border-red-400 outline-none font-mono uppercase tracking-widest" />
-            <button onClick={handleApply} disabled={applying || !applyCode.trim()}
-              className="bg-red-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-red-800 disabled:opacity-50 transition-all">
-              {applying ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" /> : 'Apply'}
-            </button>
-          </div>
-          {applyMsg && (
-            <p className={`text-xs mt-2 font-semibold ${applyMsg.ok ? 'text-green-600' : 'text-red-600'}`}>
-              {applyMsg.ok ? <Icon.PiCheckCircleBold className="inline mr-1" size={12} /> : <Icon.PiWarningBold className="inline mr-1" size={12} />}
-              {applyMsg.text}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
+      <p className="text-xs text-stone-500 mt-2 leading-relaxed">
+        Share your referral link and get paid when friends place their first order.
+      </p>
+      <span className="inline-flex items-center gap-1 text-xs font-bold text-red-700 mt-3 group-hover:gap-1.5 transition-all">
+        Manage referrals <Icon.PiArrowRightBold size={11} />
+      </span>
+    </Link>
   );
 }
 
@@ -556,7 +495,7 @@ function TransactionList({ transactions, loading, page, totalPages, onPage }:
 
 export default function LoyaltyPage() {
   const { token } = useAccount();
-  const { loyalty, loading, transactions, txLoading, txPage, txTotalPages, fetchTransactions, redeem, getReferralCode, applyReferral } = useLoyalty(token);
+  const { loyalty, loading, transactions, txLoading, txPage, txTotalPages, fetchTransactions, redeem } = useLoyalty(token);
   const [redeemOpen, setRedeemOpen] = useState(false);
 
   // Load first page of transactions alongside the summary
@@ -570,10 +509,6 @@ export default function LoyaltyPage() {
     );
   }
   if (!loyalty) return null;
-
-  const referralLink = loyalty.referralCode
-    ? `${typeof window !== 'undefined' ? window.location.origin : 'https://drinksharbour.com'}/register?ref=${loyalty.referralCode}`
-    : undefined;
 
   const canRedeem = loyalty.points >= loyalty.minRedeemPoints;
 
@@ -618,13 +553,7 @@ export default function LoyaltyPage() {
       />
 
       {/* Referral */}
-      <ReferralCard
-        code={loyalty.referralCode}
-        link={referralLink}
-        bonusEarned={loyalty.referralBonusEarned}
-        onGetCode={getReferralCode}
-        onApply={applyReferral}
-      />
+      <ReferralCard bonusEarned={loyalty.referralBonusEarned} />
 
       {/* Activity */}
       <TransactionList
