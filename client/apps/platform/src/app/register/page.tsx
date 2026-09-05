@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { useAuth } from '@/context/AuthContext';
 import { gtagEvent } from '@/lib/gtag';
@@ -27,9 +27,11 @@ interface FormData {
   agreeAge: boolean;
 }
 
-const Register = () => {
+const RegisterPageContent = () => {
   const router = useRouter();
   const { register } = useAuth();
+  const searchParams = useSearchParams();
+  const [referralCode, setReferralCode] = useState('');
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
     lastName: '',
@@ -47,6 +49,18 @@ const Register = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [generalError, setGeneralError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  useEffect(() => {
+    // Mirror to sessionStorage so a detour to /login and back does not lose it.
+    const fromUrl = searchParams.get('ref');
+    if (fromUrl) {
+      sessionStorage.setItem('dh_referral_code', fromUrl.toUpperCase());
+      setReferralCode(fromUrl.toUpperCase());
+      return;
+    }
+    const stored = sessionStorage.getItem('dh_referral_code');
+    if (stored) setReferralCode(stored);
+  }, [searchParams]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -134,6 +148,7 @@ const Register = () => {
       password:    formData.password,
       agreeTerms:  formData.agreeTerms,
       agreeAge:    formData.agreeAge,
+      ...(referralCode && { referralCode }),
       ...(formData.phoneNumber && { phoneNumber: normalizePhone(formData.phoneNumber) }),
       ...(formData.dateOfBirth && { dateOfBirth: formData.dateOfBirth }),
     });
@@ -147,6 +162,8 @@ const Register = () => {
     }
 
     gtagEvent('sign_up', { method: 'email' });
+
+    sessionStorage.removeItem('dh_referral_code');
 
     if (result.requiresEmailVerification) {
       setSuccessMessage(
@@ -232,6 +249,17 @@ const Register = () => {
                 <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
                   <Icon.PiWarningCircle size={20} className="text-red-500 mt-0.5 flex-shrink-0" />
                   <p className="text-red-700 text-sm">{generalError}</p>
+                </div>
+              )}
+
+              {referralCode && (
+                <div className="mb-5 rounded-lg border border-[#b20202]/20 bg-[#b20202]/5 p-4">
+                  <p className="text-sm font-semibold text-stone-800">
+                    A friend gave you ₦2,000 off your first order
+                  </p>
+                  <p className="mt-1 text-xs text-stone-600">
+                    Applied after you verify your email. Minimum spend ₦15,000, valid 30 days.
+                  </p>
                 </div>
               )}
 
@@ -753,4 +781,10 @@ const Register = () => {
   );
 };
 
-export default Register;
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-stone-50" />}>
+      <RegisterPageContent />
+    </Suspense>
+  );
+}
