@@ -1,22 +1,21 @@
 // server/services/referral.helpers.js
 //
-// Pure, DB-less rules for the referral reward program ("give ₦2,000, get
-// ₦2,000"). Kept Mongo-free and clock-free so every guard and boundary is unit
-// testable; the DB layer (referral.service.js) pairs these with atomic writes.
-// Mirrors the platformLoyalty.helpers.js / platformLoyalty.service.js split.
+// Pure, DB-less rules for the referral reward program. Kept Mongo-free and
+// clock-free so every guard and boundary is unit testable; the DB layer
+// (referral.service.js) pairs these with atomic writes. Mirrors the
+// platformLoyalty.helpers.js / platformLoyalty.service.js split.
 //
-// The referee gets a first-order discount coupon; the referrer is paid wallet
-// credit ONLY once that order is paid. Nothing pays out on a signup — that was
-// the defect this program replaces.
+// The referee gets loyalty points on email verify; the referrer is paid wallet
+// credit on the referee's first paid order ≥ minSpendNgn. Nothing pays out on
+// a signup — that was the defect this program replaces.
 
 const { normalizePhone } = require('./contact.helpers');
 
 const REFERRAL_CONFIG = {
-  refereeDiscountNgn: 2000,   // ₦ off the referee's first order
-  referrerCreditNgn:  2000,   // ₦ wallet credit to the referrer, on payment
-  minSpendNgn:       15000,   // order floor for the coupon to apply
-  couponValidDays:      30,   // referee's coupon lifetime from signup
-  maxPayoutsPerMonth:   10,   // per referrer, counted on paidAt
+  refereeLoyaltyPoints: 2000, // loyalty points awarded to the buyer on email verify
+  referrerCreditNgn:    2000, // ₦ wallet credit to the referrer, on payment
+  minSpendNgn:          50000, // order floor for the referrer to be credited
+  maxPayoutsPerMonth:     10,  // per referrer, counted on paidAt
 };
 
 /** Uppercase/trim a referral code. Non-strings and blanks are null. */
@@ -77,11 +76,6 @@ function isOverMonthlyCap(paidCountThisMonth, config = REFERRAL_CONFIG) {
   return (Number(paidCountThisMonth) || 0) >= config.maxPayoutsPerMonth;
 }
 
-function couponExpiryFrom(signupAt, config = REFERRAL_CONFIG) {
-  const base = new Date(signupAt);
-  return new Date(base.getTime() + config.couponValidDays * 24 * 60 * 60 * 1000);
-}
-
 /**
  * Freeze the money terms at creation time. Payouts read the stored snapshot,
  * never the live constant — editing REFERRAL_CONFIG must not retroactively
@@ -89,9 +83,9 @@ function couponExpiryFrom(signupAt, config = REFERRAL_CONFIG) {
  */
 function snapshotTerms(config = REFERRAL_CONFIG) {
   return {
-    refereeDiscountNgn: config.refereeDiscountNgn,
-    referrerCreditNgn:  config.referrerCreditNgn,
-    minSpendNgn:        config.minSpendNgn,
+    refereeLoyaltyPoints: config.refereeLoyaltyPoints,
+    referrerCreditNgn:    config.referrerCreditNgn,
+    minSpendNgn:          config.minSpendNgn,
   };
 }
 
@@ -106,8 +100,6 @@ function summarizeReferrals(referrals = []) {
   }
   return { joined, ordered, earnedNgn, pendingNgn };
 }
-
-const sameId = (a, b) => a != null && b != null && String(a) === String(b);
 
 /**
  * Should this paid order trigger a referral payout?
@@ -128,10 +120,8 @@ function decideSettlement({ referral, order, paidCountThisMonth = 0, config = RE
 
   if (!order || order.paymentStatus !== 'paid') return { action: 'skip', reason: 'order_not_paid' };
 
-  // The payout is contingent on a SALE that used the referee's coupon. The
-  // ₦15,000 floor is enforced by the coupon itself at checkout (Task 1).
-  if (!sameId(order.coupon, referral.coupon)) {
-    return { action: 'skip', reason: 'order_did_not_use_referral_coupon' };
+  if ((Number(order.totalAmount) || 0) < (referral.terms?.minSpendNgn || 0)) {
+    return { action: 'skip', reason: 'below_min_spend' };
   }
 
   if (isOverMonthlyCap(paidCountThisMonth, config)) {
@@ -168,6 +158,6 @@ function decideReversal({ referral, order }) {
 
 module.exports = {
   REFERRAL_CONFIG, normalizeCode, selfReferralReason, monthWindow,
-  isOverMonthlyCap, couponExpiryFrom, snapshotTerms, summarizeReferrals,
+  isOverMonthlyCap, snapshotTerms, summarizeReferrals,
   decideSettlement, decideReversal,
 };

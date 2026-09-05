@@ -6,16 +6,15 @@ const assert = require('node:assert');
 
 const {
   REFERRAL_CONFIG, normalizeCode, selfReferralReason, monthWindow,
-  isOverMonthlyCap, couponExpiryFrom, snapshotTerms, summarizeReferrals,
+  isOverMonthlyCap, snapshotTerms, summarizeReferrals,
 } = require('../services/referral.helpers');
 
 const oid = (s) => ({ toString: () => s, equals: (o) => String(o) === s });
 
 test('config carries the agreed terms', () => {
-  assert.strictEqual(REFERRAL_CONFIG.refereeDiscountNgn, 2000);
+  assert.strictEqual(REFERRAL_CONFIG.refereeLoyaltyPoints, 2000);
   assert.strictEqual(REFERRAL_CONFIG.referrerCreditNgn, 2000);
-  assert.strictEqual(REFERRAL_CONFIG.minSpendNgn, 15000);
-  assert.strictEqual(REFERRAL_CONFIG.couponValidDays, 30);
+  assert.strictEqual(REFERRAL_CONFIG.minSpendNgn, 50000);
   assert.strictEqual(REFERRAL_CONFIG.maxPayoutsPerMonth, 10);
 });
 
@@ -84,18 +83,13 @@ test('cap boundary: 9 under, 10 over, 11 over', () => {
   assert.strictEqual(isOverMonthlyCap(11, REFERRAL_CONFIG), true);
 });
 
-test('coupon expiry is signup + couponValidDays', () => {
-  const exp = couponExpiryFrom(new Date('2026-09-05T00:00:00Z'), REFERRAL_CONFIG);
-  assert.strictEqual(exp.toISOString(), '2026-10-05T00:00:00.000Z');
-});
-
 test('snapshotTerms copies by value — a later config edit cannot mutate it', () => {
   const cfg = { ...REFERRAL_CONFIG };
   const terms = snapshotTerms(cfg);
   cfg.referrerCreditNgn = 999999;
   assert.strictEqual(terms.referrerCreditNgn, 2000);
   assert.deepStrictEqual(Object.keys(terms).sort(),
-    ['minSpendNgn', 'refereeDiscountNgn', 'referrerCreditNgn']);
+    ['minSpendNgn', 'refereeLoyaltyPoints', 'referrerCreditNgn']);
 });
 
 test('summarizeReferrals counts statuses and money correctly', () => {
