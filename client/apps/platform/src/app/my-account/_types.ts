@@ -221,6 +221,20 @@ export interface LoyaltyData {
 }
 
 // ── Referrals ─────────────────────────────────────────────────────────────────
+export interface ReferralMonthly {
+  thisMonthReferrals: number;
+  thisMonthEarnedNgn: number;
+}
+
+export interface ReferralEarning {
+  _id: string;
+  amount: number;
+  type: 'credit' | 'debit';
+  reason: string;
+  relatedOrder: string | null;
+  createdAt: string;
+}
+
 export interface ReferralItem {
   _id: string;
   name: string;
@@ -241,6 +255,8 @@ export interface ReferralsPayload {
     minSpendNgn: number;
   };
   summary: { joined: number; ordered: number; earnedNgn: number; pendingNgn: number };
+  monthly: ReferralMonthly;
+  earnings: ReferralEarning[];
   referrals: ReferralItem[];
   listTruncatedAt: number | null;
 }

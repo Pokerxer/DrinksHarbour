@@ -4,7 +4,7 @@ import { useState } from 'react';
 import * as Icon from 'react-icons/pi';
 import { useAccount } from '../AccountShell';
 import { useReferrals } from '../_hooks/useReferrals';
-import type { ReferralItem, ReferralsPayload } from '../_types';
+import type { ReferralEarning, ReferralItem, ReferralsPayload } from '../_types';
 import { fmtNgn } from '../_components/format';
 
 // ── Static status styling (no dynamic Tailwind classes) ───────────────────────
@@ -69,9 +69,9 @@ function ShareCard({ data }: { data: ReferralsPayload }) {
 
 // ── Totals row ────────────────────────────────────────────────────────────────
 
-function TotalsRow({ summary }: { summary: ReferralsPayload['summary'] }) {
+function TotalsRow({ summary, monthly }: { summary: ReferralsPayload['summary']; monthly: ReferralsPayload['monthly'] }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-3 gap-3">
       <div className="bg-green-50 border border-green-200 rounded-xl p-4">
         <div className="w-9 h-9 bg-green-100 rounded-xl flex items-center justify-center mb-3">
           <Icon.PiWalletBold size={17} className="text-green-600" />
@@ -85,6 +85,14 @@ function TotalsRow({ summary }: { summary: ReferralsPayload['summary'] }) {
         </div>
         <p className="text-xs text-amber-700 font-medium">Pending</p>
         <p className="text-xl font-black text-amber-700 mt-0.5">{fmtNgn(summary.pendingNgn)}</p>
+      </div>
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center mb-3">
+          <Icon.PiCalendarBold size={17} className="text-blue-600" />
+        </div>
+        <p className="text-xs text-blue-700 font-medium">This Month</p>
+        <p className="text-xl font-black text-blue-700 mt-0.5">{fmtNgn(monthly.thisMonthEarnedNgn)}</p>
+        <p className="text-xs text-blue-500 mt-0.5">{monthly.thisMonthReferrals} referral{monthly.thisMonthReferrals !== 1 ? 's' : ''}</p>
       </div>
     </div>
   );
@@ -119,6 +127,37 @@ function ReferralList({ referrals }: { referrals: ReferralItem[] }) {
             </li>
           );
         })}
+      </ul>
+    </div>
+  );
+}
+
+// ── Earnings history ────────────────────────────────────────────────────────────────
+
+function EarningsHistory({ earnings }: { earnings: ReferralEarning[] }) {
+  if (earnings.length === 0) return null;
+  return (
+    <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-stone-100">
+        <h2 className="font-black text-stone-900 text-sm flex items-center gap-2">
+          <Icon.PiListBold size={15} className="text-red-700" /> Earnings History
+        </h2>
+      </div>
+      <ul className="divide-y divide-stone-100">
+        {earnings.map(e => (
+          <li key={e._id} className="px-5 py-3 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-stone-700 truncate">{e.reason}</p>
+              <p className="text-xs text-stone-400 mt-0.5">
+                {new Date(e.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                {e.relatedOrder && <span className="ml-2">· Order {e.relatedOrder}</span>}
+              </p>
+            </div>
+            <p className={`text-sm font-black flex-shrink-0 ${e.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>
+              {e.type === 'credit' ? '+' : '-'}{fmtNgn(Math.abs(e.amount))}
+            </p>
+          </li>
+        ))}
       </ul>
     </div>
   );
@@ -188,13 +227,15 @@ export default function ReferralsPage() {
       </div>
 
       <ShareCard data={data} />
-      <TotalsRow summary={data.summary} />
+      <TotalsRow summary={data.summary} monthly={data.monthly} />
 
       {data.referrals.length > 0 ? (
         <ReferralList referrals={data.referrals} />
       ) : (
         <EmptyState data={data} />
       )}
+
+      <EarningsHistory earnings={data.earnings} />
 
       <TermsNote terms={data.terms} />
     </div>
