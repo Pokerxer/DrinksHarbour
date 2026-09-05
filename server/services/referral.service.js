@@ -12,11 +12,10 @@
 
 const crypto = require('crypto');
 const Referral = require('../models/Referral');
-const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const {
   REFERRAL_CONFIG, normalizeCode, selfReferralReason,
-  couponExpiryFrom, snapshotTerms, monthWindow, decideSettlement, decideReversal,
+  snapshotTerms, monthWindow, decideSettlement, decideReversal,
 } = require('./referral.helpers');
 
 // Base32 without the ambiguous 0/O/1/I — these codes get read off screens and
@@ -81,7 +80,7 @@ async function safeCreate(doc) {
 }
 
 /**
- * On email verification: mint the referee's welcome coupon and move the
+ * On email verification: award the referee their loyalty points and move the
  * referral to `qualified`. Idempotent — a second call finds no pending
  * referral and no-ops.
  */
@@ -89,37 +88,38 @@ async function qualifyReferral({ refereeId }) {
   const referral = await Referral.findOne({ referee: refereeId, status: 'pending' });
   if (!referral) return { ok: false, reason: 'no_pending_referral' };
 
-  const coupon = await Coupon.create({
-    code: `WELCOME-${randomSuffix()}`,
-    name: `Referral welcome — ₦${referral.terms.refereeDiscountNgn.toLocaleString()} off`,
-    description: `A friend referred you. ₦${referral.terms.refereeDiscountNgn.toLocaleString()} off your first order over ₦${referral.terms.minSpendNgn.toLocaleString()}.`,
-    discountType: 'fixed_amount',
-    discountValue: referral.terms.refereeDiscountNgn,
-    currency: 'NGN',
-    minimumPurchaseAmount: referral.terms.minSpendNgn,
-    allowedUsers: [referral.referee],
-    firstPurchaseOnly: true,
-    usageLimit: 1,
-    usageLimitPerUser: 1,
-    isReferralCoupon: true,
-    referredBy: referral.referrer,
-    referralReward: referral.terms.referrerCreditNgn,
-    startDate: new Date(),
-    endDate: couponExpiryFrom(referral.signupAt, REFERRAL_CONFIG),
-    status: 'active',
-    isActive: true,
-    isGlobal: true,                    // platform-wide, i.e. not tenant-scoped;
-    canCombineWithOtherCoupons: false, // allowedUsers is what restricts it
-  });
+  // Claim atomically — only one concurrent caller can win the race.
+  const claimed = await Referral.findOneAndUpdate(
+    { _id: referral._id, status: 'pending' },
+    { $set: { status: 'qualified', qualifiedAt: new Date() } },
+    { new: true },
+  );
+  if (!claimed) return { ok: false, reason: 'already_qualified' };
 
-  referral.coupon = coupon._id;
-  referral.status = 'qualified';
-  referral.qualifiedAt = new Date();
-  await referral.save();
+  // Award loyalty points to the referee (best-effort — a points failure must
+  // not strand the referral in a half-qualified state; log for manual fix).
+  let pointsAwarded = false;
+  try {
+    const { mutatePlatformLoyalty } = require('./platformLoyalty.service');
+    const pts = await mutatePlatformLoyalty({
+      userId: claimed.referee,
+      value: {
+        type: 'referral',
+        points: claimed.terms.refereeLoyaltyPoints,
+        reason: 'Referral bonus for verifying your email',
+      },
+      reference: `referral-loyalty-${claimed._id}`,
+      createdBy: claimed.referee,
+    });
+    pointsAwarded = pts.ok;
+    if (!pts.ok) console.warn(`⚠️ Referral ${claimed._id}: loyalty points award failed — ${pts.message}`);
+  } catch (err) {
+    console.error('❌ Referral loyalty points error:', err.message);
+  }
 
-  await User.updateOne({ _id: referral.referee }, { $set: { referredBy: referral.referrer } });
+  await User.updateOne({ _id: claimed.referee }, { $set: { referredBy: claimed.referrer } });
 
-  return { ok: true, referral, coupon };
+  return { ok: true, referral: claimed, pointsAwarded };
 }
 
 /**
@@ -364,8 +364,8 @@ async function applyReferralForExistingUser({ refereeId, code }) {
   return {
     ok: true,
     referral: qualified.referral || created.referral,
-    coupon: qualified.coupon || null,
-    message: 'Referral applied — your discount is ready',
+    pointsAwarded: qualified.pointsAwarded || false,
+    message: 'Referral applied — your loyalty points have been credited',
   };
 }
 

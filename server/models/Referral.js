@@ -35,7 +35,7 @@ const ReferralSchema = new mongoose.Schema(
     payoutTxn:       { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformWalletTransaction', default: null },
 
     terms: {
-      refereeDiscountNgn: { type: Number, required: true, min: 0 },
+      refereeLoyaltyPoints: { type: Number, required: true, min: 0 },
       referrerCreditNgn:  { type: Number, required: true, min: 0 },
       minSpendNgn:        { type: Number, required: true, min: 0 },
     },

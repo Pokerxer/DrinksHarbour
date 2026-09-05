@@ -19,7 +19,7 @@ test('status enum covers the whole lifecycle', () => {
 });
 
 test('terms are stored on the referral, not read from config at payout', () => {
-  for (const p of ['terms.refereeDiscountNgn', 'terms.referrerCreditNgn', 'terms.minSpendNgn']) {
+  for (const p of ['terms.refereeLoyaltyPoints', 'terms.referrerCreditNgn', 'terms.minSpendNgn']) {
     assert.ok(Referral.schema.path(p), `${p} must be snapshotted on the referral`);
   }
 });
