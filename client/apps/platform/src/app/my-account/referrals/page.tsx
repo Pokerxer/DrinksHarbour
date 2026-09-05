@@ -18,7 +18,7 @@ const STATUS_DOT: Record<ReferralItem['status'], { dotBg: string; text: string }
 };
 
 function waShareUrl(link: string, terms: ReferralsPayload['terms']): string {
-  const headline = `Give ${fmtNgn(terms.refereeDiscountNgn)} — get ${fmtNgn(terms.referrerCreditNgn)}`;
+  const headline = `Give ${terms.refereeLoyaltyPoints} points — get ${fmtNgn(terms.referrerCreditNgn)}`;
   const message = `${headline} on DrinksHarbour. Use my link: ${link}`;
   return `https://wa.me/?text=${encodeURIComponent(message)}`;
 }
@@ -28,7 +28,7 @@ function waShareUrl(link: string, terms: ReferralsPayload['terms']): string {
 function ShareCard({ data }: { data: ReferralsPayload }) {
   const [copied, setCopied] = useState(false);
   const t = data.terms;
-  const headline = `Give ${fmtNgn(t.refereeDiscountNgn)} — get ${fmtNgn(t.referrerCreditNgn)}`;
+  const headline = `Give ${t.refereeLoyaltyPoints} points — get ${fmtNgn(t.referrerCreditNgn)}`;
 
   const copy = () => {
     navigator.clipboard.writeText(data.link).then(() => {
@@ -45,7 +45,7 @@ function ShareCard({ data }: { data: ReferralsPayload }) {
         </h2>
         <p className="text-2xl font-black text-stone-900 mt-2">{headline}</p>
         <p className="text-sm text-stone-500 mt-1 leading-relaxed">
-          Share your link — your friend gets <strong className="text-stone-700">{fmtNgn(t.refereeDiscountNgn)}</strong> off their first order, and you earn <strong className="text-stone-700">{fmtNgn(t.referrerCreditNgn)}</strong> when they pay.
+          Share your link — your friend gets <strong className="text-stone-700">{t.refereeLoyaltyPoints} loyalty points</strong> after verifying their email, and you earn <strong className="text-stone-700">{fmtNgn(t.referrerCreditNgn)}</strong> when their first paid order is at least <strong className="text-stone-700">{fmtNgn(t.minSpendNgn)}</strong>.
         </p>
       </div>
       <div className="p-5 space-y-3">
@@ -133,7 +133,7 @@ function EmptyState({ data }: { data: ReferralsPayload }) {
       <Icon.PiShareNetworkBold size={36} className="mx-auto text-stone-200 mb-3" />
       <p className="font-semibold text-stone-600 mb-1">No referrals yet</p>
       <p className="text-sm text-stone-400 max-w-sm mx-auto leading-relaxed">
-        Share your link — friends save <strong className="text-stone-600">{fmtNgn(t.refereeDiscountNgn)}</strong> on their first order, and you earn <strong className="text-stone-600">{fmtNgn(t.referrerCreditNgn)}</strong> when they pay.
+        Share your link — friends earn <strong className="text-stone-600">{t.refereeLoyaltyPoints} loyalty points</strong> after verifying their email, and you earn <strong className="text-stone-600">{fmtNgn(t.referrerCreditNgn)}</strong> when their first paid order is at least <strong className="text-stone-600">{fmtNgn(t.minSpendNgn)}</strong>.
       </p>
       <a href={waShareUrl(data.link, t)} target="_blank" rel="noopener noreferrer"
         className="inline-flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-green-700 transition-all mt-4">
@@ -148,8 +148,7 @@ function EmptyState({ data }: { data: ReferralsPayload }) {
 function TermsNote({ terms }: { terms: ReferralsPayload['terms'] }) {
   return (
     <p className="text-xs text-stone-400 leading-relaxed">
-      Your friend gets <strong className="text-stone-600">{fmtNgn(terms.refereeDiscountNgn)}</strong> off their first order over{' '}
-      <strong className="text-stone-600">{fmtNgn(terms.minSpendNgn)}</strong>, valid for {terms.couponValidDays} days. You're paid when their order is paid.
+      Your friend gets <strong className="text-stone-600">{terms.refereeLoyaltyPoints} loyalty points</strong> after verifying their email. You earn <strong className="text-stone-600">{fmtNgn(terms.referrerCreditNgn)}</strong> when their first paid order is at least <strong className="text-stone-600">{fmtNgn(terms.minSpendNgn)}</strong>.
     </p>
   );
 }
@@ -184,7 +183,7 @@ export default function ReferralsPage() {
       <div>
         <h1 className="text-2xl font-black text-stone-900">Referrals</h1>
         <p className="text-sm text-stone-500 mt-0.5">
-          Give {fmtNgn(data.terms.refereeDiscountNgn)} — get {fmtNgn(data.terms.referrerCreditNgn)} when friends place their first order.
+          Give {data.terms.refereeLoyaltyPoints} points — get {fmtNgn(data.terms.referrerCreditNgn)} when friends place their first paid order.
         </p>
       </div>
 

@@ -255,10 +255,10 @@ const RegisterPageContent = () => {
               {referralCode && (
                 <div className="mb-5 rounded-lg border border-[#b20202]/20 bg-[#b20202]/5 p-4">
                   <p className="text-sm font-semibold text-stone-800">
-                    A friend gave you ₦2,000 off your first order
+                    A friend gave you 2,000 loyalty points
                   </p>
                   <p className="mt-1 text-xs text-stone-600">
-                    Applied after you verify your email. Minimum spend ₦15,000, valid 30 days.
+                    Awarded after you verify your email.
                   </p>
                 </div>
               )}

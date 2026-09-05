@@ -236,10 +236,9 @@ export interface ReferralsPayload {
   code: string;
   link: string;
   terms: {
-    refereeDiscountNgn: number;
+    refereeLoyaltyPoints: number;
     referrerCreditNgn: number;
     minSpendNgn: number;
-    couponValidDays: number;
   };
   summary: { joined: number; ordered: number; earnedNgn: number; pendingNgn: number };
   referrals: ReferralItem[];
