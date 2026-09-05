@@ -252,9 +252,8 @@ const applyReferralCode = asyncHandler(async (req, res) => {
   }
 
   successResponse(res, {
-    discountNgn: result.referral.terms.refereeDiscountNgn,
-    minSpendNgn: result.referral.terms.minSpendNgn,
-    couponCode: result.coupon?.code || null,
+    loyaltyPoints: result.pointsAwarded ? result.referral.terms.refereeLoyaltyPoints : 0,
+    message: result.message,
   }, result.message);
 });
 

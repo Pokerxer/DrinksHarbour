@@ -63,10 +63,9 @@ const getReferrals = asyncHandler(async (req, res) => {
     code: user.referralCode,
     link: `${frontendBaseUrl(process.env.PLATFORM_URL)}/register?ref=${user.referralCode}`,
     terms: {
-      refereeDiscountNgn: REFERRAL_CONFIG.refereeDiscountNgn,
-      referrerCreditNgn:  REFERRAL_CONFIG.referrerCreditNgn,
-      minSpendNgn:        REFERRAL_CONFIG.minSpendNgn,
-      couponValidDays:    REFERRAL_CONFIG.couponValidDays,
+      refereeLoyaltyPoints: REFERRAL_CONFIG.refereeLoyaltyPoints,
+      referrerCreditNgn:    REFERRAL_CONFIG.referrerCreditNgn,
+      minSpendNgn:          REFERRAL_CONFIG.minSpendNgn,
     },
     summary: summarizeReferrals(all),
     referrals: recent.map(r => ({
