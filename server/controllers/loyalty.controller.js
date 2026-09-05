@@ -14,12 +14,12 @@ const { frontendBaseUrl } = require('../utils/frontendUrl');
 const User = require('../models/User');
 const PlatformLoyaltyTransaction = require('../models/PlatformLoyaltyTransaction');
 const { mutatePlatformLoyalty } = require('../services/platformLoyalty.service');
+const { REFERRAL_CONFIG } = require('../services/referral.helpers');
 const {
   TIER_THRESHOLDS,
   TIER_ORDER,
   TIER_EARN_MULTIPLIER,
   POINTS_TO_NGN_RATE,
-  REFERRAL_BONUS_POINTS,
   validatePlatformLoyaltyTx,
   pointsToNgn,
   tierFromLifetimePoints,
@@ -224,15 +224,17 @@ const getOrCreateReferralCode = asyncHandler(async (req, res) => {
   successResponse(res, {
     code: user.referralCode,
     link: referralLink,
-    bonusPoints: REFERRAL_BONUS_POINTS,
+    discountNgn: REFERRAL_CONFIG.refereeDiscountNgn,
+    creditNgn: REFERRAL_CONFIG.referrerCreditNgn,
     displayName: user.firstName,
   }, 'Referral code ready');
 });
 
 /**
- * @desc    Apply a referral code at signup (called by the register flow, but also
- *          exposed for an already-logged-in customer who hasn't applied one yet).
- *          Awards both the referrer and the new customer a one-time bonus.
+ * @desc    Apply a referral code for an already-registered customer who missed
+ *          the link. Delegates to the referral service, which runs the same
+ *          guards and awards nothing until a real order is paid — the old
+ *          behavior of crediting points to both sides on entry is gone.
  * @route   POST /api/loyalty/apply-referral
  * @access  Private (customer)
  */
@@ -242,50 +244,18 @@ const applyReferralCode = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Referral code is required' });
   }
 
-  const user = await User.findById(req.user._id).select('referredBy referralCode');
-  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-  if (user.referredBy) {
-    return res.status(400).json({ success: false, message: 'A referral has already been applied to this account' });
+  const { applyReferralForExistingUser } = require('../services/referral.service');
+  const result = await applyReferralForExistingUser({ refereeId: req.user._id, code });
+
+  if (!result.ok) {
+    return res.status(result.status || 400).json({ success: false, message: result.message });
   }
-
-  const normalized = String(code).toUpperCase().trim();
-  if (user.referralCode && user.referralCode === normalized) {
-    return res.status(400).json({ success: false, message: 'You cannot refer yourself' });
-  }
-
-  const referrer = await User.findOne({ referralCode: normalized }).select('_id loyaltyPoints loyaltyLifetimePoints loyaltyTier');
-  if (!referrer) return res.status(400).json({ success: false, message: 'Invalid referral code' });
-
-  // Award the referee (the logged-in customer).
-  const refereeResult = await mutatePlatformLoyalty({
-    userId: user._id,
-    value: { type: 'referral', points: REFERRAL_BONUS_POINTS, reason: `Referral bonus for using code ${normalized}` },
-    reference: `referral-${referrer._id}-${user._id}`,
-    createdBy: user._id,
-  });
-  if (!refereeResult.ok) return res.status(refereeResult.status).json({ success: false, message: refereeResult.message });
-
-  // Award the referrer.
-  const referrerResult = await mutatePlatformLoyalty({
-    userId: referrer._id,
-    value: { type: 'referral', points: REFERRAL_BONUS_POINTS, reason: `Referral bonus — ${user.email || 'a friend'} joined` },
-    reference: `referral-${referrer._id}-${user._id}`,
-    createdBy: user._id,
-  });
-  if (!referrerResult.ok) {
-    // Best-effort: don't penalize the referee for a referrer-side failure.
-    console.warn('Referrer bonus failed:', referrerResult.message);
-  }
-
-  user.referredBy = referrer._id;
-  user.referralBonusEarned = (user.referralBonusEarned || 0) + REFERRAL_BONUS_POINTS;
-  await user.save();
 
   successResponse(res, {
-    bonusPoints: REFERRAL_BONUS_POINTS,
-    pointsBalance: refereeResult.balance,
-    tier: refereeResult.tier,
-  }, 'Referral applied — bonus awarded!');
+    discountNgn: result.referral.terms.refereeDiscountNgn,
+    minSpendNgn: result.referral.terms.minSpendNgn,
+    couponCode: result.coupon?.code || null,
+  }, result.message);
 });
 
 module.exports = {

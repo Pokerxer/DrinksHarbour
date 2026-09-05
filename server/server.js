@@ -274,6 +274,7 @@ app.use('/api/wallet',             walletRoutes);
 app.use('/api/gift-cards/claim',   giftCardClaimRoutes);
 app.use('/api/gift-cards',         giftCardRoutes);
 app.use('/api/loyalty',            loyaltyRoutes);
+app.use('/api/referrals',          require('./routes/referral.routes'));
 app.use('/api/tts',                ttsRoutes);
 
 // ────────────────────────────────────────────────

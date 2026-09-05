@@ -324,4 +324,45 @@ async function reverseReferralForOrder(order, now = new Date()) {
   return { ok: true, reason: 'reversed', reversalFailed: false };
 }
 
-module.exports = { createReferralOnSignup, qualifyReferral, settleReferralOnPaidOrder, reverseReferralForOrder, randomSuffix };
+/**
+ * Apply a referral code for an ALREADY REGISTERED user who missed the link.
+ * Runs the same guards, then immediately qualifies (their email is already
+ * verified if they can reach this endpoint). Awards no points to anybody —
+ * removing that was the point of this rewrite.
+ */
+async function applyReferralForExistingUser({ refereeId, code }) {
+  const existing = await Referral.findOne({ referee: refereeId });
+  if (existing) return { ok: false, status: 400, message: 'A referral has already been applied to this account' };
+
+  const Order = require('../models/Order');
+  const priorPaid = await Order.countDocuments({
+    $or: [{ user: refereeId }, { customer: refereeId }], paymentStatus: 'paid',
+  });
+  if (priorPaid > 0) {
+    return { ok: false, status: 400, message: 'Referral offers are for first-time customers' };
+  }
+
+  const created = await createReferralOnSignup({ refereeId, code });
+  if (!created.ok) {
+    const message = created.reason === 'unknown_code' ? 'Invalid referral code'
+      : created.reason?.startsWith('self_') ? 'You cannot refer yourself'
+      : created.reason === 'already_referred' ? 'A referral has already been applied to this account'
+      : 'Referral code could not be applied';
+    return { ok: false, status: 400, message };
+  }
+
+  const user = await User.findById(refereeId).select('isEmailVerified');
+  if (!user?.isEmailVerified) {
+    return { ok: true, referral: created.referral, message: 'Referral applied — verify your email to unlock your discount' };
+  }
+
+  const qualified = await qualifyReferral({ refereeId });
+  return {
+    ok: true,
+    referral: qualified.referral || created.referral,
+    coupon: qualified.coupon || null,
+    message: 'Referral applied — your discount is ready',
+  };
+}
+
+module.exports = { createReferralOnSignup, qualifyReferral, settleReferralOnPaidOrder, reverseReferralForOrder, applyReferralForExistingUser, randomSuffix };
