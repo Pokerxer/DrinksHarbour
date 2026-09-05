@@ -66,25 +66,33 @@ exports.createOrder = asyncHandler(async (req, res) => {
   let discountTotal = 0;
 
   if (couponCode) {
-    appliedCoupon = await Coupon.findOne({ code: couponCode.toUpperCase(), isActive: true });
+    appliedCoupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
     if (!appliedCoupon) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or expired coupon code',
-      });
+      return res.status(400).json({ success: false, message: 'Invalid or expired coupon code' });
     }
-    if (appliedCoupon.expiryDate && new Date() > appliedCoupon.expiryDate) {
-      return res.status(400).json({
-        success: false,
-        message: 'Coupon has expired',
-      });
-    }
-    discountTotal = appliedCoupon.discountType === 'percentage'
-      ? subtotal * (appliedCoupon.discountValue / 100)
-      : appliedCoupon.discountValue;
 
-    appliedCoupon.usedCount += 1;
-    await appliedCoupon.save();
+    // A coupon restricted to specific users, or to first purchases, cannot be
+    // validated for a guest. Reject rather than silently granting the discount.
+    const couponUserId = req.user?._id || null;
+    if (!couponUserId && (appliedCoupon.allowedUsers.length > 0 || appliedCoupon.firstPurchaseOnly)) {
+      return res.status(400).json({ success: false, message: 'Please sign in to use this coupon' });
+    }
+
+    // canBeUsedBy owns the whole rule set: the isValid virtual (isActive,
+    // status, startDate, endDate, usageLimit), allowedUsers, excludedUsers,
+    // usageLimitPerUser, firstPurchaseOnly, minimumAccountAge, and the
+    // minimum/maximum spend added in this task.
+    const eligibility = couponUserId
+      ? await appliedCoupon.canBeUsedBy(couponUserId, { subtotal })
+      : (appliedCoupon.isValid
+          ? { canUse: true }
+          : { canUse: false, reason: 'Invalid or expired coupon code' });
+
+    if (!eligibility.canUse) {
+      return res.status(400).json({ success: false, message: eligibility.reason });
+    }
+
+    discountTotal = appliedCoupon.calculateDiscount(subtotal);
   }
 
   const userId = req.user?._id || null;
@@ -365,6 +373,19 @@ exports.createOrder = asyncHandler(async (req, res) => {
       await inventoryService.releaseReserve(stockItems, null, userId).catch(() => {});
     }
     throw saveErr;
+  }
+
+  // Record coupon usage only once the order actually exists, so usedBy[] carries
+  // a real orderId. recordUsage increments timesUsed, accumulates the analytics
+  // the admin coupon UI renders, and flips status to 'depleted' at the limit.
+  if (appliedCoupon) {
+    try {
+      await appliedCoupon.recordUsage(
+        userId, order.totalAmount || 0, discountTotal, order._id
+      );
+    } catch (couponErr) {
+      console.error('❌ Coupon usage record failed:', couponErr.message);
+    }
   }
 
   // Attribute the waiver to the FIRSTDELIVERY coupon when one exists, so uptake

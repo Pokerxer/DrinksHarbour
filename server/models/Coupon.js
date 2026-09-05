@@ -296,11 +296,25 @@ couponSchema.virtual('remainingUses').get(function() {
 });
 
 // Methods
-couponSchema.methods.canBeUsedBy = async function(userId) {
+couponSchema.methods.canBeUsedBy = async function(userId, { subtotal = null } = {}) {
   if (!this.isValid) return { canUse: false, reason: 'Coupon is not valid' };
-  if (this.allowedUsers.length > 0 && !this.allowedUsers.includes(userId)) return { canUse: false, reason: 'Coupon is not available for this user' };
-  if (this.excludedUsers.includes(userId)) return { canUse: false, reason: 'You are not eligible for this coupon' };
-  
+
+  if (subtotal !== null && this.minimumPurchaseAmount && subtotal < this.minimumPurchaseAmount) {
+    return {
+      canUse: false,
+      reason: `This coupon needs a minimum spend of ₦${this.minimumPurchaseAmount.toLocaleString()}`,
+    };
+  }
+  if (subtotal !== null && this.maximumPurchaseAmount && subtotal > this.maximumPurchaseAmount) {
+    return { canUse: false, reason: 'Order total is above this coupon\'s maximum' };
+  }
+  if (this.allowedUsers.length > 0 && !this.allowedUsers.some(id => id.equals(userId))) {
+    return { canUse: false, reason: 'Coupon is not available for this user' };
+  }
+  if (this.excludedUsers.some(id => id.equals(userId))) {
+    return { canUse: false, reason: 'You are not eligible for this coupon' };
+  }
+
   const userUsageCount = this.usedBy.filter(u => u.user.toString() === userId.toString()).length;
   if (userUsageCount >= this.usageLimitPerUser) return { canUse: false, reason: `You have already used this coupon ${this.usageLimitPerUser} times` };
   
