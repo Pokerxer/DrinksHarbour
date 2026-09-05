@@ -299,14 +299,25 @@ couponSchema.virtual('remainingUses').get(function() {
 couponSchema.methods.canBeUsedBy = async function(userId, { subtotal = null } = {}) {
   if (!this.isValid) return { canUse: false, reason: 'Coupon is not valid' };
 
-  if (subtotal !== null && this.minimumPurchaseAmount && subtotal < this.minimumPurchaseAmount) {
-    return {
-      canUse: false,
-      reason: `This coupon needs a minimum spend of ₦${this.minimumPurchaseAmount.toLocaleString()}`,
-    };
-  }
-  if (subtotal !== null && this.maximumPurchaseAmount && subtotal > this.maximumPurchaseAmount) {
-    return { canUse: false, reason: 'Order total is above this coupon\'s maximum' };
+  // A caller that omits subtotal entirely (findValidCoupon, getActiveCouponsForCustomer,
+  // canUseCoupon) is asking for eligibility outside of a priced cart and deliberately
+  // skips the spend check — that's unchanged. But a caller that DOES pass subtotal and
+  // it comes back non-finite (NaN, Infinity, a bad coercion) must fail the check rather
+  // than silently pass it — the min/max comparisons below are false either way, which
+  // is exactly how the ₦15,000 referral floor could be skipped by a malformed value.
+  if (subtotal !== null) {
+    if (!Number.isFinite(subtotal)) {
+      return { canUse: false, reason: 'Unable to verify order amount for this coupon' };
+    }
+    if (this.minimumPurchaseAmount && subtotal < this.minimumPurchaseAmount) {
+      return {
+        canUse: false,
+        reason: `This coupon needs a minimum spend of ₦${this.minimumPurchaseAmount.toLocaleString()}`,
+      };
+    }
+    if (this.maximumPurchaseAmount && subtotal > this.maximumPurchaseAmount) {
+      return { canUse: false, reason: 'Order total is above this coupon\'s maximum' };
+    }
   }
   if (this.allowedUsers.length > 0 && !this.allowedUsers.some(id => id.equals(userId))) {
     return { canUse: false, reason: 'Coupon is not available for this user' };
@@ -337,14 +348,19 @@ couponSchema.methods.canBeUsedBy = async function(userId, { subtotal = null } = 
 };
 
 couponSchema.methods.calculateDiscount = function(cartTotal, items = []) {
+  // A missing/garbage cartTotal (undefined, NaN, a bad coercion) must never
+  // propagate into a NaN discount — that NaN would flow into recordUsage's
+  // totalDiscountGiven += discountApplied and permanently corrupt the coupon's
+  // analytics field. Treat anything non-finite as an unpriced cart: 0.
+  const safeTotal = Number.isFinite(cartTotal) ? cartTotal : 0;
   let discount = 0;
   switch (this.discountType) {
     case 'percentage':
-      discount = (cartTotal * this.discountValue) / 100;
+      discount = (safeTotal * this.discountValue) / 100;
       if (this.maxDiscountAmount && discount > this.maxDiscountAmount) discount = this.maxDiscountAmount;
       break;
     case 'fixed_amount':
-      discount = Math.min(this.discountValue, cartTotal);
+      discount = Math.min(this.discountValue, safeTotal);
       break;
     case 'free_shipping':
       discount = 0;

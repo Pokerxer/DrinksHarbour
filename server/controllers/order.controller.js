@@ -47,7 +47,7 @@ const LOYALTY_POINTS_PER_NGN = 1 / 100; // 1 pt per ₦100 base rate
  * @access  Private/Public (Guest checkout supported)
  */
 exports.createOrder = asyncHandler(async (req, res) => {
-  const { customer, shipping, paymentMethod, paymentDetails, items, subtotal, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus, utmSource, utmMedium, utmCampaign, bannerId } = req.body;
+  const { customer, shipping, paymentMethod, paymentDetails, items, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus, utmSource, utmMedium, utmCampaign, bannerId } = req.body;
 
   // Fold accepted aliases ('bank', 'cod', …) into a storable enum value. The
   // route validator has already rejected anything unrecognisable, so a null here
@@ -64,36 +64,6 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   let appliedCoupon = null;
   let discountTotal = 0;
-
-  if (couponCode) {
-    appliedCoupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
-    if (!appliedCoupon) {
-      return res.status(400).json({ success: false, message: 'Invalid or expired coupon code' });
-    }
-
-    // A coupon restricted to specific users, or to first purchases, cannot be
-    // validated for a guest. Reject rather than silently granting the discount.
-    const couponUserId = req.user?._id || null;
-    if (!couponUserId && (appliedCoupon.allowedUsers.length > 0 || appliedCoupon.firstPurchaseOnly)) {
-      return res.status(400).json({ success: false, message: 'Please sign in to use this coupon' });
-    }
-
-    // canBeUsedBy owns the whole rule set: the isValid virtual (isActive,
-    // status, startDate, endDate, usageLimit), allowedUsers, excludedUsers,
-    // usageLimitPerUser, firstPurchaseOnly, minimumAccountAge, and the
-    // minimum/maximum spend added in this task.
-    const eligibility = couponUserId
-      ? await appliedCoupon.canBeUsedBy(couponUserId, { subtotal })
-      : (appliedCoupon.isValid
-          ? { canUse: true }
-          : { canUse: false, reason: 'Invalid or expired coupon code' });
-
-    if (!eligibility.canUse) {
-      return res.status(400).json({ success: false, message: eligibility.reason });
-    }
-
-    discountTotal = appliedCoupon.calculateDiscount(subtotal);
-  }
 
   const userId = req.user?._id || null;
 
@@ -240,6 +210,43 @@ exports.createOrder = asyncHandler(async (req, res) => {
    // Calculate order totals from items
   const calculatedSubtotal = orderItems.reduce((sum, item) => sum + item.itemSubtotal, 0);
   const calculatedPlatformCommission = orderItems.reduce((sum, item) => sum + (item.platformCommission || 0), 0);
+
+  // ── Coupon: server-authoritative ────────────────────────────────────────
+  //
+  // Runs against calculatedSubtotal (the sum of server-priced order items),
+  // never the client-supplied req.body.subtotal — a crafted request could
+  // otherwise post an inflated subtotal to clear a coupon's minimum spend,
+  // or a deflated one to under-charge a percentage discount.
+  if (couponCode) {
+    appliedCoupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+    if (!appliedCoupon) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired coupon code' });
+    }
+
+    // A coupon restricted to specific users, or to first purchases, cannot be
+    // validated for a guest. Reject rather than silently granting the discount.
+    const couponUserId = req.user?._id || null;
+    if (!couponUserId && (appliedCoupon.allowedUsers.length > 0 || appliedCoupon.firstPurchaseOnly)) {
+      return res.status(400).json({ success: false, message: 'Please sign in to use this coupon' });
+    }
+
+    // canBeUsedBy owns the whole rule set: the isValid virtual (isActive,
+    // status, startDate, endDate, usageLimit), allowedUsers, excludedUsers,
+    // usageLimitPerUser, firstPurchaseOnly, minimumAccountAge, and the
+    // minimum/maximum spend added in this task.
+    const eligibility = couponUserId
+      ? await appliedCoupon.canBeUsedBy(couponUserId, { subtotal: calculatedSubtotal })
+      : (appliedCoupon.isValid
+          ? { canUse: true }
+          : { canUse: false, reason: 'Invalid or expired coupon code' });
+
+    if (!eligibility.canUse) {
+      return res.status(400).json({ success: false, message: eligibility.reason });
+    }
+
+    discountTotal = appliedCoupon.calculateDiscount(calculatedSubtotal);
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   // ── Delivery fee: server-authoritative ────────────────────────────────────
   //
