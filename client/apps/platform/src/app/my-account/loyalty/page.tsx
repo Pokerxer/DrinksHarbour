@@ -5,7 +5,8 @@ import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { useAccount } from '../AccountShell';
 import { useLoyalty } from '../_hooks/useLoyalty';
-import type { LoyaltyTier, LoyaltyTransaction } from '../_types';
+import { useReferrals } from '../_hooks/useReferrals';
+import type { LoyaltyTier, LoyaltyTransaction, ReferralEarning, ReferralMonthly, ReferralsPayload } from '../_types';
 import { fmtNgn, fmtDateTime, fmtDate } from '../_components/format';
 
 // ── Tier config ───────────────────────────────────────────────────────────────
@@ -271,28 +272,76 @@ function WaysToEarn({ multiplier, rate, minRedeem, step }: { multiplier: number;
   );
 }
 
-// ── Referral card ─────────────────────────────────────────────────────────────
+// ── Referral earnings ─────────────────────────────────────────────────────────
 
-function ReferralCard({ bonusEarned }: { bonusEarned: number }) {
-  return (
-    <Link href="/my-account/referrals" className="group block bg-white rounded-xl border border-stone-200 shadow-sm p-5 transition-all hover:border-red-200 hover:shadow-md">
-      <div className="flex items-center justify-between">
-        <h2 className="font-black text-stone-900 text-sm flex items-center gap-2">
-          <Icon.PiShareNetworkBold size={15} className="text-red-700" /> Refer &amp; Earn
-        </h2>
-        {bonusEarned > 0 && (
-          <span className="text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-1 rounded-full">
-            +{bonusEarned.toLocaleString()} earned
-          </span>
-        )}
+function ReferralEarnings({ data, loading }: { data: ReferralsPayload | null; loading: boolean }) {
+  if (loading && !data) {
+    return (
+      <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-5">
+        <div className="h-4 bg-stone-100 rounded w-32 mb-3 animate-pulse" />
+        <div className="h-3 bg-stone-50 rounded w-full animate-pulse" />
       </div>
-      <p className="text-xs text-stone-500 mt-2 leading-relaxed">
-        Share your referral link and get paid when friends place their first order.
-      </p>
-      <span className="inline-flex items-center gap-1 text-xs font-bold text-red-700 mt-3 group-hover:gap-1.5 transition-all">
-        Manage referrals <Icon.PiArrowRightBold size={11} />
-      </span>
-    </Link>
+    );
+  }
+  if (!data) return null;
+
+  const { summary, monthly, earnings } = data;
+
+  return (
+    <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-stone-100">
+        <h2 className="font-black text-stone-900 text-sm flex items-center gap-2">
+          <Icon.PiShareNetworkBold size={15} className="text-red-700" /> Referral Earnings
+        </h2>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-3 px-5 pt-4">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+          <p className="text-xs text-green-700 font-medium">Earned</p>
+          <p className="text-lg font-black text-green-700 mt-0.5">{fmtNgn(summary.earnedNgn)}</p>
+        </div>
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+          <p className="text-xs text-blue-700 font-medium">This Month</p>
+          <p className="text-lg font-black text-blue-700 mt-0.5">{fmtNgn(monthly.thisMonthEarnedNgn)}</p>
+          <p className="text-xs text-blue-500">{monthly.thisMonthReferrals} referral{monthly.thisMonthReferrals !== 1 ? 's' : ''}</p>
+        </div>
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center">
+          <p className="text-xs text-amber-700 font-medium">Pending</p>
+          <p className="text-lg font-black text-amber-700 mt-0.5">{fmtNgn(summary.pendingNgn)}</p>
+        </div>
+      </div>
+
+      {/* Earnings history */}
+      {earnings.length > 0 && (
+        <div className="px-5 pt-4 pb-2">
+          <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">Recent Transactions</p>
+          <ul className="divide-y divide-stone-100">
+            {earnings.slice(0, 10).map(e => (
+              <li key={e._id} className="py-2.5 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-stone-700 truncate">{e.reason}</p>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    {new Date(e.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+                <p className={`text-sm font-black flex-shrink-0 ${e.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>
+                  {e.type === 'credit' ? '+' : '-'}{fmtNgn(Math.abs(e.amount))}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Link to full referrals page */}
+      <div className="px-5 py-3 border-t border-stone-100">
+        <Link href="/my-account/referrals"
+          className="text-sm font-semibold text-red-700 hover:text-red-800 transition-colors">
+          View all referrals →
+        </Link>
+      </div>
+    </div>
   );
 }
 
@@ -496,6 +545,7 @@ function TransactionList({ transactions, loading, page, totalPages, onPage }:
 export default function LoyaltyPage() {
   const { token } = useAccount();
   const { loyalty, loading, transactions, txLoading, txPage, txTotalPages, fetchTransactions, redeem } = useLoyalty(token);
+  const { data: referralData, loading: referralLoading } = useReferrals(token);
   const [redeemOpen, setRedeemOpen] = useState(false);
 
   // Load first page of transactions alongside the summary
@@ -553,7 +603,7 @@ export default function LoyaltyPage() {
       />
 
       {/* Referral */}
-      <ReferralCard bonusEarned={loyalty.referralBonusEarned} />
+      <ReferralEarnings data={referralData} loading={referralLoading} />
 
       {/* Activity */}
       <TransactionList
