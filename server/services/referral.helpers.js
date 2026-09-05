@@ -104,7 +104,67 @@ function summarizeReferrals(referrals = []) {
   return { joined, ordered, earnedNgn, pendingNgn };
 }
 
+const sameId = (a, b) => a != null && b != null && String(a) === String(b);
+
+/**
+ * Should this paid order trigger a referral payout?
+ *
+ * Pure and total — callers pass the referral, the order, and how many payouts
+ * the referrer has already had this month. Every "no" is a `skip` except the
+ * cap, which is a `reject` because it must be recorded and shown to the user.
+ *
+ * The status check is the idempotency guard: an order reaches `paid` in three
+ * separate code paths and at least two can fire for the same order.
+ */
+function decideSettlement({ referral, order, paidCountThisMonth = 0, config = REFERRAL_CONFIG }) {
+  if (!referral) return { action: 'skip', reason: 'no_referral' };
+  if (referral.status === 'paid')     return { action: 'skip', reason: 'already_paid' };
+  if (referral.status === 'reversed') return { action: 'skip', reason: 'already_reversed' };
+  if (referral.status === 'rejected') return { action: 'skip', reason: 'rejected' };
+  if (referral.status !== 'qualified') return { action: 'skip', reason: 'not_qualified' };
+
+  if (!order || order.paymentStatus !== 'paid') return { action: 'skip', reason: 'order_not_paid' };
+
+  // The payout is contingent on a SALE that used the referee's coupon. The
+  // ₦15,000 floor is enforced by the coupon itself at checkout (Task 1).
+  if (!sameId(order.coupon, referral.coupon)) {
+    return { action: 'skip', reason: 'order_did_not_use_referral_coupon' };
+  }
+
+  if (isOverMonthlyCap(paidCountThisMonth, config)) {
+    return { action: 'reject', reason: 'monthly_cap' };
+  }
+
+  return { action: 'pay', reason: 'ok' };
+}
+
+/**
+ * Should a refund claw the referrer's credit back?
+ * A partial refund only reverses if the remaining paid amount falls below the
+ * minimum spend the referral was snapshotted with — otherwise the sale still
+ * qualifies and the referrer keeps the credit.
+ */
+function decideReversal({ referral, order }) {
+  if (!referral) return { action: 'skip', reason: 'no_referral' };
+  if (referral.status !== 'paid') return { action: 'skip', reason: 'not_paid' };
+  if (!order) return { action: 'skip', reason: 'no_order' };
+
+  if (order.paymentStatus === 'refunded') return { action: 'reverse', reason: 'refunded' };
+
+  if (order.paymentStatus === 'partially_refunded') {
+    const refunded  = Number(order.refundDetails?.amount) || 0;
+    const remaining = (Number(order.totalAmount) || 0) - refunded;
+    if (remaining < (referral.terms?.minSpendNgn || 0)) {
+      return { action: 'reverse', reason: 'below_minimum_after_partial_refund' };
+    }
+    return { action: 'skip', reason: 'still_above_minimum' };
+  }
+
+  return { action: 'skip', reason: 'not_refunded' };
+}
+
 module.exports = {
   REFERRAL_CONFIG, normalizeCode, selfReferralReason, monthWindow,
   isOverMonthlyCap, couponExpiryFrom, snapshotTerms, summarizeReferrals,
+  decideSettlement, decideReversal,
 };
