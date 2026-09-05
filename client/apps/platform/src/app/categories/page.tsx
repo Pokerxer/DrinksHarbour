@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
+import Image from 'next/image';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -114,55 +115,56 @@ function LabelRule({ tone = 'rgba(255,255,255,0.35)' }: { tone?: string }) {
 function CategoryCard({ c }: { c: any }) {
   const name = c.displayName || c.name;
   const color = c.color || '#7C1D1D';
+  const hasImage = Boolean(c.thumbnailImage?.url);
   return (
     <Link
       href={`/categories/${c.slug}`}
-      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition-all hover:-translate-y-1.5 hover:border-stone-300 hover:shadow-xl motion-reduce:transition-none motion-reduce:hover:translate-y-0"
     >
-      {/* Label header — the category's color band with its emblem */}
-      <div
-        className="relative flex h-24 items-center justify-center overflow-hidden"
-        style={{
-          background: `linear-gradient(150deg, ${color} 0%, #1A1A2E 100%)`,
-        }}
-      >
-        <span
-          aria-hidden="true"
-          className={`${fraunces.className} pointer-events-none absolute -right-2 -top-8 select-none text-8xl font-semibold leading-none text-transparent`}
-          style={{ WebkitTextStroke: '1px rgba(255,255,255,0.16)' }}
-        >
-          {(name || '?').charAt(0).toUpperCase()}
-        </span>
-        <span className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-white p-2 shadow-xl ring-2 ring-white/20">
-          {c.thumbnailImage?.url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+      {/* Hero — full-bleed product photo, or the gradient band when none */}
+      <div className="relative h-32 overflow-hidden" style={{ background: hasImage ? color : undefined }}>
+        {hasImage ? (
+          <>
+            <Image
               src={c.thumbnailImage.url}
-              alt=""
-              loading="lazy"
-              className="h-full w-full object-contain"
+              alt={name}
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              className="object-cover transition-transform duration-500 group-hover:scale-105"
             />
-          ) : c.icon ? (
-            <span aria-hidden="true" className="text-2xl leading-none">
-              {c.icon}
-            </span>
-          ) : (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/30 to-transparent" />
+          </>
+        ) : (
+          <>
             <span
-              className={`${fraunces.className} text-2xl font-semibold`}
-              style={{ color }}
+              aria-hidden="true"
+              className={`${fraunces.className} pointer-events-none absolute -right-2 -top-8 select-none text-8xl font-semibold leading-none text-transparent`}
+              style={{ WebkitTextStroke: '1px rgba(255,255,255,0.16)' }}
             >
               {(name || '?').charAt(0).toUpperCase()}
             </span>
-          )}
-        </span>
-        {(c.productCount ?? 0) > 0 && (
-          <span className="absolute bottom-2 right-2 rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white">
-            {c.productCount} products
-          </span>
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-white p-2 shadow-xl ring-2 ring-white/20">
+                {c.icon ? (
+                  <span aria-hidden="true" className="text-2xl leading-none">
+                    {c.icon}
+                  </span>
+                ) : (
+                  <span className={`${fraunces.className} text-2xl font-semibold`} style={{ color }}>
+                    {(name || '?').charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </span>
+            </span>
+          </>
         )}
+        <span className="absolute right-2 top-2 rounded-full bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-white ring-1 ring-white/30 backdrop-blur-md">
+          {c.productCount} products
+        </span>
       </div>
 
-      <div className="flex flex-1 flex-col p-4 text-center">
+      {/* Body — left-aligned editorial */}
+      <div className="flex flex-1 flex-col p-4 text-left">
         {c.type && (
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
             {label(c.type)}
@@ -178,13 +180,15 @@ function CategoryCard({ c }: { c: any }) {
             {c.tagline || c.shortDescription}
           </p>
         )}
-        <span
-          className="mt-auto inline-flex items-center justify-center gap-1 pt-3 text-xs font-semibold"
-          style={{ color }}
-        >
-          Explore {name}
-          <Icon.PiArrowRightBold className="h-3 w-3" />
-        </span>
+        <div className="mt-auto flex items-center justify-between border-t border-stone-100 pt-3">
+          <span className="text-xs font-semibold" style={{ color }}>
+            Explore
+          </span>
+          <Icon.PiArrowRightBold
+            className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+            style={{ color }}
+          />
+        </div>
       </div>
     </Link>
   );
