@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Fraunces } from 'next/font/google';
@@ -384,6 +385,80 @@ function LabelRule({ tone = 'rgba(255,255,255,0.35)' }: { tone?: string }) {
   );
 }
 
+function SubCategoryCard({
+  s,
+  categorySlug,
+  primaryColor,
+}: { s: any; categorySlug: string; primaryColor: string }) {
+  const name = s.displayName || s.name;
+  const color = s.color || primaryColor;
+  const hasImage = Boolean(s.thumbnailImage?.url);
+  return (
+    <Link
+      href={`/categories/${categorySlug}/${s.slug}`}
+      className="group flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition-all hover:-translate-y-1.5 hover:border-stone-300 hover:shadow-xl motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+    >
+      {/* Hero — smaller than category cards */}
+      <div className="relative h-24 overflow-hidden" style={{ background: hasImage ? color : undefined }}>
+        {hasImage ? (
+          <>
+            <Image
+              src={s.thumbnailImage.url}
+              alt={name}
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              className="object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-black/30 to-transparent" />
+          </>
+        ) : (
+          <>
+            <span
+              aria-hidden="true"
+              className={`${fraunces.className} pointer-events-none absolute -right-2 -top-6 select-none text-6xl font-semibold leading-none text-transparent`}
+              style={{ WebkitTextStroke: '1px rgba(255,255,255,0.16)' }}
+            >
+              {(name || '?').charAt(0).toUpperCase()}
+            </span>
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-white p-1.5 shadow-xl ring-2 ring-white/20">
+                {s.icon ? (
+                  <span aria-hidden="true" className="text-xl leading-none">
+                    {s.icon}
+                  </span>
+                ) : (
+                  <span className={`${fraunces.className} text-xl font-semibold`} style={{ color }}>
+                    {(name || '?').charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </span>
+            </span>
+          </>
+        )}
+        <span className="absolute right-2 top-2 rounded-full bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-white ring-1 ring-white/30 backdrop-blur-md">
+          {s.productCount} products
+        </span>
+      </div>
+
+      {/* Body */}
+      <div className="flex flex-1 flex-col p-3 text-left">
+        <h3 className={`${fraunces.className} text-base text-gray-900 line-clamp-1 transition-colors group-hover:underline`}>
+          {name}
+        </h3>
+        <div className="mt-auto flex items-center justify-between border-t border-stone-100 pt-2.5">
+          <span className="text-xs font-semibold" style={{ color }}>
+            Explore
+          </span>
+          <Icon.PiArrowRightBold
+            className="h-3 w-3 transition-transform group-hover:translate-x-0.5"
+            style={{ color }}
+          />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function CategoryPage({
@@ -748,51 +823,10 @@ export default async function CategoryPage({
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-6">
-              {subcategories.map((s: any) => {
-                const sColor = s.color || primary;
-                const sName = s.displayName || s.name;
-                return (
-                  <Link
-                    key={s.slug}
-                    href={`/categories/${category.slug}/${s.slug}`}
-                    className="group flex flex-col items-center rounded-2xl border border-gray-200 bg-white p-5 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg motion-reduce:transition-none motion-reduce:hover:translate-y-0"
-                  >
-                    <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-gray-100 bg-gray-50 p-2">
-                      {s.thumbnailImage?.url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={s.thumbnailImage.url}
-                          alt=""
-                          loading="lazy"
-                          className="h-full w-full object-contain"
-                        />
-                      ) : s.icon ? (
-                        <span aria-hidden="true" className="text-2xl">
-                          {s.icon}
-                        </span>
-                      ) : (
-                        <span
-                          className={`${fraunces.className} text-2xl font-semibold`}
-                          style={{ color: sColor }}
-                        >
-                          {(sName || '?').charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                    </span>
-                    <span
-                      className={`${fraunces.className} mt-3 line-clamp-1 text-base capitalize text-gray-900`}
-                    >
-                      {sName}
-                    </span>
-                    {(s.productCount ?? 0) > 0 && (
-                      <span className="mt-1 line-clamp-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">
-                        {s.productCount} products
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+              {subcategories.map((s: any) => (
+                <SubCategoryCard key={s.slug} s={s} categorySlug={category.slug} primaryColor={primary} />
+              ))}
             </div>
           </section>
         )}
