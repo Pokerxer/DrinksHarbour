@@ -1095,6 +1095,18 @@ exports.updatePaymentStatus = asyncHandler(async (req, res) => {
     }
   }
 
+  // Referral reversal — admin REFUNDED the order, so the referrer's credit is
+  // clawed back. Wrapped: a referral failure must never fail an admin payment
+  // update.
+  if (action === 'mark_refunded') {
+    try {
+      const { reverseReferralForOrder } = require('../services/referral.service');
+      await reverseReferralForOrder(order);
+    } catch (refErr) {
+      console.error('❌ Referral reversal error:', refErr.message);
+    }
+  }
+
   // ── Inventory adjustments for payment actions ────────────────────────────
   const stockItems = order.items.filter(i => i.subproduct);
   if (stockItems.length) {

@@ -229,4 +229,99 @@ async function settleReferralOnPaidOrder(order, now = new Date()) {
   return { ok: true, balance: credited.balance, referral: claimed };
 }
 
-module.exports = { createReferralOnSignup, qualifyReferral, settleReferralOnPaidOrder, randomSuffix };
+/**
+ * Claw the referrer's credit back when the qualifying order is refunded.
+ *
+ * Same claim-then-write discipline as settleReferralOnPaidOrder. Two concurrent
+ * mark_refunded calls can race as separate processes: decideReversal's
+ * `status === 'paid'` check only stops the SEQUENTIAL double-fire. The atomic
+ * layer is a findOneAndUpdate that transitions the referral `paid → reversed`
+ * so exactly ONE caller can win — the loser finds a non-`paid` row and returns
+ * `already_reversed`. The wallet reference (`referral-reversal-<referralId>`)
+ * is deterministic but NOT a backstop (the ledger `reference` column is sparse,
+ * no unique index), so winning the claim is the serialization point.
+ *
+ * mutatePlatformWallet's overdraw guard is deliberate and load-bearing — every
+ * other wallet caller relies on the balance never going negative. If the
+ * referrer already spent the credit the debit fails and we record
+ * `reversalFailed`. Because the wallet was NOT debited in that case, the claim
+ * is torn back down to `paid` (NOT left `reversed`, as if the money had been
+ * clawed back) so the shortfall stays visible and a later successful reversal
+ * can retry it — the balance is never driven negative and the reversal is
+ * recoverable.
+ */
+async function reverseReferralForOrder(order, now = new Date()) {
+  if (!order) return { ok: false, reason: 'no_order' };
+
+  const referral = await Referral.findOne({ qualifyingOrder: order._id, status: 'paid' });
+  const decision = decideReversal({ referral, order });
+  if (decision.action !== 'reverse') return { ok: false, reason: decision.reason };
+
+  // CLAIM FIRST — the atomic serialization point. Only ONE concurrent caller
+  // can transition this row out of `paid`; the second findOneAndUpdate's filter
+  // ({ _id, status: 'paid' }) no longer matches and sees a null doc.
+  const claimed = await Referral.findOneAndUpdate(
+    { _id: referral._id, status: 'paid' },
+    { $set: { status: 'reversed', reversedAt: now } },
+    { new: true },
+  );
+  if (!claimed) return { ok: false, reason: 'already_reversed' };
+
+  const { mutatePlatformWallet } = require('./platformWallet.service');
+  let debited;
+  try {
+    debited = await mutatePlatformWallet({
+      owner: { userId: referral.referrer },
+      value: {
+        type: 'debit',
+        amount: referral.terms.referrerCreditNgn,
+        source: 'referral',
+        reason: `Referral reversed — order ${order.orderNumber || order._id} refunded`,
+      },
+      reference: `referral-reversal-${referral._id}`,
+      relatedOrder: order._id,
+      createdBy: referral.referrer,
+    });
+  } catch (walletErr) {
+    // Wallet DB hiccup — the money was never debited. Tear the claim back to
+    // `paid` so the reversal can be retried; never leave it `reversed` as if it
+    // were collected.
+    await Referral.updateOne(
+      { _id: referral._id },
+      { $set: { status: 'paid', reversedAt: null, reversalFailed: true } },
+    );
+    console.warn(`⚠️ Referral ${referral._id} reversal retriable — wallet threw (${walletErr.message})`);
+    return { ok: true, reason: 'debit_failed_or_overdrawn', reversalFailed: true };
+  }
+
+  if (!debited.ok) {
+    // Debit declined (e.g. overdraw / owner spent the credit). The wallet was
+    // NOT debited, so remove the clawed-back `reversed` claim and restore `paid`
+    // — otherwise settle could RE-pay on a future mark_paid. `reversalFailed`
+    // keeps the shortfall visible and recoverable by hand or a later retry.
+    await Referral.updateOne(
+      { _id: referral._id },
+      { $set: { status: 'paid', reversedAt: null, reversalFailed: true } },
+    );
+    console.warn(
+      `⚠️ Referral ${referral._id} NOT collected - debit failed (${debited.message}) — ` +
+      `referrer ${referral.referrer} owes ₦${referral.terms.referrerCreditNgn}`
+    );
+    return { ok: true, reversalFailed: true, reason: 'debit_failed_or_overdrawn' };
+  }
+
+  // Debit succeeded — the claim is already `reversed`. Clear the failure flag
+  // and backfill the ledger id best-effort (must not fail the reversal).
+  try {
+    await Referral.updateOne(
+      { _id: referral._id },
+      { $set: { reversalFailed: false, reversalTxn: debited.tx?._id || null } },
+    );
+  } catch (txnErr) {
+    console.error('❌ Referral reversalTxn backfill failed:', txnErr.message);
+  }
+
+  return { ok: true, reason: 'reversed', reversalFailed: false };
+}
+
+module.exports = { createReferralOnSignup, qualifyReferral, settleReferralOnPaidOrder, reverseReferralForOrder, randomSuffix };
