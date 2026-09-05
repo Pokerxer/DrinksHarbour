@@ -13,7 +13,7 @@ const PlatformWalletTransactionSchema = new mongoose.Schema(
     balanceAfter: { type: Number, required: true },
     // Set on debits spent at a tenant — drives platform→tenant settlement. Null otherwise.
     redeemedAtTenant: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null },
-    source:       { type: String, enum: ['purchase', 'pos', 'online_checkout', 'refund', 'adjustment'], required: true },
+    source:       { type: String, enum: ['purchase', 'pos', 'online_checkout', 'refund', 'adjustment', 'referral'], required: true },
     reason:       { type: String, default: '', trim: true, maxlength: 280 },
     reference:    { type: String, trim: true, sparse: true },
     relatedOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
