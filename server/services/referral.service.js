@@ -335,8 +335,12 @@ async function applyReferralForExistingUser({ refereeId, code }) {
   if (existing) return { ok: false, status: 400, message: 'A referral has already been applied to this account' };
 
   const Order = require('../models/Order');
+  // Order.customer is an embedded snapshot object (firstName/lastName/phone),
+  // never a User ObjectId — the only order field that references a User is
+  // `user`. A guest order (user: null) can't be attributed to this referee, so
+  // the gate is `user` only.
   const priorPaid = await Order.countDocuments({
-    $or: [{ user: refereeId }, { customer: refereeId }], paymentStatus: 'paid',
+    user: refereeId, paymentStatus: 'paid',
   });
   if (priorPaid > 0) {
     return { ok: false, status: 400, message: 'Referral offers are for first-time customers' };
