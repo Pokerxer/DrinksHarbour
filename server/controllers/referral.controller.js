@@ -9,7 +9,8 @@ const { successResponse } = require('../utils/response');
 const { frontendBaseUrl } = require('../utils/frontendUrl');
 const User = require('../models/User');
 const Referral = require('../models/Referral');
-const { REFERRAL_CONFIG, summarizeReferrals } = require('../services/referral.helpers');
+const PlatformWalletTransaction = require('../models/PlatformWalletTransaction');
+const { REFERRAL_CONFIG, summarizeReferrals, monthWindow } = require('../services/referral.helpers');
 
 const LIST_LIMIT = 50;
 
@@ -59,6 +60,28 @@ const getReferrals = asyncHandler(async (req, res) => {
       .lean(),
   ]);
 
+  const { start: monthStart, end: monthEnd } = monthWindow(new Date());
+
+  const monthlyPaid = await Referral.find({
+    referrer: user._id,
+    status: 'paid',
+    paidAt: { $gte: monthStart, $lt: monthEnd },
+  }).select('terms.referrerCreditNgn').lean();
+
+  const monthly = {
+    thisMonthReferrals: monthlyPaid.length,
+    thisMonthEarnedNgn: monthlyPaid.reduce((sum, r) => sum + (r.terms?.referrerCreditNgn || 0), 0),
+  };
+
+  const earnings = await PlatformWalletTransaction.find({
+    userId: user._id,
+    source: 'referral',
+  })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .select('amount type reason relatedOrder createdAt')
+    .lean();
+
   successResponse(res, {
     code: user.referralCode,
     link: `${frontendBaseUrl(process.env.PLATFORM_URL)}/register?ref=${user.referralCode}`,
@@ -79,6 +102,8 @@ const getReferrals = asyncHandler(async (req, res) => {
       paidAt: r.paidAt,
     })),
     listTruncatedAt: all.length > LIST_LIMIT ? LIST_LIMIT : null,
+    monthly,
+    earnings,
   }, 'Referrals retrieved');
 });
 
