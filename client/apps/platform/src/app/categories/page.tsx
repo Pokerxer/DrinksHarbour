@@ -195,12 +195,13 @@ function CategoryCard({ c }: { c: any }) {
 export default async function CategoriesPage() {
   const categories = await fetchCategories();
 
-  const sorted = [...categories].sort(
+  const withProducts = categories.filter((c) => (c.productCount ?? 0) > 0);
+  const sorted = [...withProducts].sort(
     (a, b) =>
       (b.productCount ?? 0) - (a.productCount ?? 0) ||
       String(a.name).localeCompare(String(b.name))
   );
-  const totalProducts = sorted.reduce(
+  const totalProducts = withProducts.reduce(
     (sum, c) => sum + (c.productCount ?? 0),
     0
   );
