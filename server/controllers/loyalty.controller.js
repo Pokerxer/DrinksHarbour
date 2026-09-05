@@ -224,7 +224,7 @@ const getOrCreateReferralCode = asyncHandler(async (req, res) => {
   successResponse(res, {
     code: user.referralCode,
     link: referralLink,
-    discountNgn: REFERRAL_CONFIG.refereeDiscountNgn,
+    loyaltyPoints: REFERRAL_CONFIG.refereeLoyaltyPoints,
     creditNgn: REFERRAL_CONFIG.referrerCreditNgn,
     displayName: user.firstName,
   }, 'Referral code ready');
