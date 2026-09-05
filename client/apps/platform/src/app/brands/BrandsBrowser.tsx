@@ -213,120 +213,65 @@ function SkeletonCard() {
 
 function BrandCard({ brand }: { brand: Brand }) {
   const brandImage = getBrandImage(brand);
-  const gradient = nameToGradient(brand.name);
   const color = getBrandColor(brand);
+  const hasImage = Boolean(brandImage);
+  const initialsStr = brand.name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
   return (
-    <Link href={brand.slug ? `/brands/${brand.slug}` : `/shop?brand=${encodeURIComponent(brand.name)}`} className="block h-full">
-      <motion.div
-        whileHover={{ y: -6 }}
-        transition={{ duration: 0.3 }}
-        className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-lg hover:border-red-100 transition-all duration-200 overflow-hidden h-full flex flex-col"
-      >
-        {/* Banner */}
-        <div className={`relative h-28 bg-gradient-to-br ${gradient} flex items-center justify-center overflow-hidden`}>
-          <motion.div
-            animate={{ opacity: [0.3, 0.5, 0.3] }}
-            transition={{ duration: 3, repeat: Infinity }}
-            className="absolute -top-8 -left-8 w-40 h-40 rounded-full"
-            style={{ backgroundColor: color, filter: 'blur(25px)' }}
-          />
-          <motion.div
-            animate={{ opacity: [0.2, 0.4, 0.2] }}
-            transition={{ duration: 2.5, repeat: Infinity, delay: 0.5 }}
-            className="absolute -bottom-6 -right-6 w-32 h-32 rounded-full"
-            style={{ backgroundColor: color, filter: 'blur(20px)' }}
-          />
-
-          {/* Badges */}
-          <div className="absolute top-3 left-3 right-3 flex items-center gap-1.5 z-10">
-            {brand.isPremium && (
-              <span className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-amber-500 rounded-full text-[9px] font-bold text-white shadow">
-                <Icon.PiCrownFill size={9} /> Premium
-              </span>
-            )}
-            {brand.verified && (
-              <span className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full text-[9px] font-bold text-white shadow">
-                <Icon.PiSealCheckFill size={9} /> Verified
-              </span>
-            )}
-          </div>
-
-          {/* Logo */}
-          <motion.div
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ duration: 4, repeat: Infinity }}
-            className="w-16 h-16 rounded-2xl bg-white shadow-xl border-2 border-white flex items-center justify-center overflow-hidden z-20"
-          >
-            {brandImage ? (
-              <Image
-                src={brandImage}
-                alt={brand.name}
-                width={56}
-                height={56}
-                className="object-contain p-1.5"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-lg font-black text-white"
-                style={{ backgroundColor: color }}
-              >
-                {initials(brand.name)}
-              </div>
-            )}
-          </motion.div>
-
-          {/* Product count chip */}
-          {(brand.productCount ?? 0) > 0 && (
-            <div className="absolute bottom-3 right-3 bg-black/50 backdrop-blur-sm text-white text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 z-10">
-              <Icon.PiPackage size={10} />
-              {brand.productCount}
-            </div>
-          )}
-
-          {/* Hover arrow */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.5 }}
-            whileHover={{ opacity: 1, scale: 1 }}
-            className="absolute top-3 right-3 w-7 h-7 rounded-full flex items-center justify-center z-10 opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ backgroundColor: color }}
-          >
-            <Icon.PiArrowRight size={14} className="text-white" />
-          </motion.div>
-        </div>
-
-        {/* Body */}
-        <div className="p-4 flex flex-col items-center text-center flex-1">
-          <h3 className="font-bold text-gray-900 group-hover:text-red-700 transition-colors text-sm mb-1">
-            {brand.name}
-          </h3>
-
-          <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
-            <span>{getCountryEmoji(brand.countryOfOrigin)}</span>
-            <span>{brand.countryOfOrigin || 'Worldwide'}</span>
-            {brand.founded && (
-              <>
-                <span className="text-gray-300">&bull;</span>
-                <span>Est. {brand.founded}</span>
-              </>
-            )}
-          </div>
-
-          {brand.shortDescription && (
-            <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-3">
-              {brand.shortDescription}
-            </p>
-          )}
-
-          <div className="mt-auto flex items-center justify-center gap-2 pt-2 border-t border-gray-50 w-full">
-            <span className="flex items-center gap-1 text-[11px] text-gray-400">
-              <Icon.PiWine size={11} />
-              {brand.productCount
-                ? `${brand.productCount} product${brand.productCount !== 1 ? 's' : ''}`
-                : 'Coming soon'}
+    <Link
+      href={brand.slug ? `/brands/${brand.slug}` : `/shop?brand=${encodeURIComponent(brand.name)}`}
+      className="group flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition-all hover:-translate-y-1.5 hover:border-stone-300 hover:shadow-xl motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+    >
+      {/* Hero — full-bleed logo/photo or gradient band */}
+      <div className="relative h-28 overflow-hidden" style={{ background: hasImage ? color : undefined }}>
+        {hasImage ? (
+          <>
+            <Image
+              src={brandImage}
+              alt={brand.name}
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              className="object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-black/30 to-transparent" />
+          </>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ background: nameToGradient(brand.name) }}>
+            <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-white p-2 shadow-xl ring-2 ring-white/20">
+              {initialsStr}
             </span>
           </div>
+        )}
+        <span className="absolute right-2 top-2 rounded-full bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-white ring-1 ring-white/30 backdrop-blur-md">
+          {brand.productCount} products
+        </span>
+      </div>
+
+      {/* Body — left-aligned */}
+      <div className="flex flex-1 flex-col p-4 text-left">
+        {brand.countryOfOrigin && (
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 flex items-center gap-1">
+            {COUNTRY_EMOJI[brand.countryOfOrigin] || ''} {brand.countryOfOrigin}
+          </p>
+        )}
+        <h3 className="mt-1 text-lg font-black text-gray-900 transition-colors group-hover:underline">
+          {brand.name}
+        </h3>
+        {(brand.shortDescription || brand.description) && (
+          <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-gray-500">
+            {brand.shortDescription || brand.description}
+          </p>
+        )}
+        <div className="mt-auto flex items-center justify-between border-t border-stone-100 pt-3">
+          <span className="text-xs font-semibold" style={{ color }}>
+            Explore
+          </span>
+          <Icon.PiArrowRightBold
+            className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+            style={{ color }}
+          />
         </div>
-      </motion.div>
+      </div>
     </Link>
   );
 }
@@ -645,7 +590,7 @@ export default function BrandsBrowser({
             className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
           >
             <AnimatePresence mode="popLayout">
-              {brands.map((brand, i) => (
+              {brands.filter(b => (b.productCount ?? 0) > 0).map((brand, i) => (
                 <motion.div
                   key={brand._id}
                   layout
