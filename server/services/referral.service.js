@@ -40,8 +40,8 @@ async function createReferralOnSignup({ refereeId, code }) {
   if (!normalized) return { ok: false, reason: 'no_code' };
 
   const [referrer, referee] = await Promise.all([
-    User.findOne({ referralCode: normalized }).select('_id email phoneNumber'),
-    User.findById(refereeId).select('_id email phoneNumber'),
+    User.findOne({ referralCode: normalized }).select('_id email phone'),
+    User.findById(refereeId).select('_id email phone'),
   ]);
 
   // A typo'd code must never block a signup.

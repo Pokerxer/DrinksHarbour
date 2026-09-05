@@ -45,6 +45,15 @@ test('self-referral is caught by phone across formats', () => {
   assert.strictEqual(selfReferralReason(referrer, referee), 'self_phone');
 });
 
+test('self-referral is caught by the REAL User field (`phone`), not just the legacy alias', () => {
+  // The User schema field is `phone` (User.js); registration formerly wrote the
+  // stripped `phoneNumber`, so this guard must read the field a DB query actually
+  // returns. Pins the review finding that self_phone never fired from DB docs.
+  const referrer = { _id: oid('a1'), email: 'a@x.com', phone: '08030000001' };
+  const referee  = { _id: oid('b2'), email: 'b@x.com', phone: '+2348030000001' };
+  assert.strictEqual(selfReferralReason(referrer, referee), 'self_phone');
+});
+
 test('distinct people are not self-referrals', () => {
   const referrer = { _id: oid('a1'), email: 'a@x.com', phoneNumber: '08030000001' };
   const referee  = { _id: oid('b2'), email: 'b@x.com', phoneNumber: '08030000002' };

@@ -56,7 +56,10 @@ function selfReferralReason(referrer, referee) {
   const re = normEmail(referrer.email), ee = normEmail(referee.email);
   if (re && ee && re === ee) return 'self_email';
 
-  const rp = normPhone(referrer.phoneNumber), ep = normPhone(referee.phoneNumber);
+  // User's real schema field is `phone` (User.js); `phoneNumber` is the legacy
+  // alias some callers still write and the pure unit tests feed. Read both.
+  const phoneOf = (u) => (u && (u.phoneNumber || u.phone)) || null;
+  const rp = normPhone(phoneOf(referrer)), ep = normPhone(phoneOf(referee));
   if (rp && ep && rp === ep) return 'self_phone';
 
   return null;
