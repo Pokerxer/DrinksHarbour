@@ -79,7 +79,7 @@ const registerUser = async (userData, options = {}) => {
     firstName: firstName.trim(),
     lastName: lastName.trim(),
     displayName: `${firstName.trim()} ${lastName.trim()}`,
-    phoneNumber,
+    phone: phoneNumber,
     role,
     status: 'active',
     isEmailVerified: false,
@@ -98,6 +98,23 @@ const registerUser = async (userData, options = {}) => {
 
   // Create user
   const user = await User.create(newUserData);
+
+  // Referral (best-effort). A referral problem must NEVER fail a registration —
+  // every branch here swallows into a log line.
+  if (userData.referralCode) {
+    try {
+      const { createReferralOnSignup } = require('./referral.service');
+      const r = await createReferralOnSignup({
+        refereeId: user._id,
+        code: userData.referralCode,
+      });
+      console.log(r.ok
+        ? `✅ Referral recorded for ${user.email} (code ${userData.referralCode})`
+        : `ℹ️ Referral not recorded for ${user.email}: ${r.reason}`);
+    } catch (refErr) {
+      console.error('❌ Referral signup hook failed:', refErr.message);
+    }
+  }
 
   // Generate a 6-digit verification code and email it to the user.
   // The code is stored in the verification service (in-memory; TODO: Redis)
@@ -1023,6 +1040,16 @@ const verifyEmail = async (email, code) => {
   user.isEmailVerified = true;
   user.emailVerifiedAt = new Date();
   await user.save();
+
+  // The referee's coupon is minted HERE, not at signup: holding it until the
+  // email is verified means farming costs a working inbox per fake account.
+  try {
+    const { qualifyReferral } = require('./referral.service');
+    const q = await qualifyReferral({ refereeId: user._id });
+    if (q.ok) console.log(`✅ Referral qualified — coupon ${q.coupon.code} for ${user.email}`);
+  } catch (refErr) {
+    console.error('❌ Referral qualify hook failed:', refErr.message);
+  }
 
   return {
     message: 'Email verified successfully. You can now access all features.',

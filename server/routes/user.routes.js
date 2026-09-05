@@ -91,6 +91,11 @@ const registerValidation = [
     .optional()
     .matches(/^(\+?234|0)[7-9][01]\d{8}$/)
     .withMessage('Please provide a valid Nigerian phone number (e.g. 07035609301 or +2347035609301)'),
+  body('referralCode')
+    .optional({ values: 'falsy' })
+    .isString().withMessage('Referral code must be text')
+    .isLength({ max: 32 }).withMessage('Referral code is too long')
+    .trim(),
   // No `role` validator: this endpoint is public and always creates a customer.
   // Accepting a role here previously let an anonymous caller request
   // 'super_admin' and be granted it. Elevated roles go through the
