@@ -16,7 +16,7 @@ const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const {
   REFERRAL_CONFIG, normalizeCode, selfReferralReason,
-  couponExpiryFrom, snapshotTerms, monthWindow, decideSettlement,
+  couponExpiryFrom, snapshotTerms, monthWindow, decideSettlement, decideReversal,
 } = require('./referral.helpers');
 
 // Base32 without the ambiguous 0/O/1/I — these codes get read off screens and

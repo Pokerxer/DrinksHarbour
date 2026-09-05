@@ -51,6 +51,30 @@ test('decideReversal skips a referral that is already reversed', () => {
   assert.strictEqual(d.action, 'skip');
 });
 
+test('reverseReferralForOrder binds decideReversal from the helpers import', () => {
+  // Live smoke-test regression (2026-09-05): the service destructured only
+  // `decideSettlement` from referral.helpers; `decideReversal` was a free
+  // variable resolved at CALL time, so the module loaded and every test
+  // passed, but `reverseReferralForOrder(order)` threw ReferenceError the
+  // moment a real refund ran. Pin BOTH the import presence and the binding.
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'services', 'referral.service.js'),
+    'utf8',
+  );
+
+  const requireMatch = src.match(/require\('\.\/referral\.helpers'\)/);
+  assert.ok(requireMatch, 'must import referral.helpers');
+  const requireSrc = src.slice(0, requireMatch.index);
+  assert.match(requireSrc, /\bdecideReversal\b/,
+    'decideReversal must be destructured from referral.helpers, or reverseReferralForOrder throws ReferenceError at runtime');
+
+  const start = src.indexOf('async function reverseReferralForOrder');
+  assert.notStrictEqual(start, -1, 'reverseReferralForOrder must exist');
+  const reverseSrc = src.slice(start);
+  assert.match(reverseSrc, /\bdecideReversal\s*\(/,
+    'the reverse path must call decideReversal, not a rolled-from-scratch decision');
+});
+
 test('reverseReferralForOrder claims the row with findOneAndUpdate, not a bare findById + save', () => {
   const src = fs.readFileSync(
     path.join(__dirname, '..', 'services', 'referral.service.js'),
