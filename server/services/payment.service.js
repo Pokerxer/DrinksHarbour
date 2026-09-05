@@ -111,6 +111,15 @@ const attachPaymentToOrder = async (orderId, paymentData) => {
 
     await order.save();
 
+    // The "user closed the browser after paying" path. Real traffic reaches
+    // `paid` only here — settle the referral or it never pays out for them.
+    try {
+      const { settleReferralOnPaidOrder } = require('./referral.service');
+      await settleReferralOnPaidOrder(order);
+    } catch (refErr) {
+      console.error('❌ Referral settle (webhook) error:', refErr.message);
+    }
+
     return order;
   } catch (error) {
     console.error('Attach payment to order error:', error);

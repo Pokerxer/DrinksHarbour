@@ -519,6 +519,16 @@ exports.createOrder = asyncHandler(async (req, res) => {
         }
       }
 
+      // 4b. Referral payout — the referee's first PAID order credits the referrer.
+      // Wrapped: a referral failure must never fail an order already paid for.
+      try {
+        const { settleReferralOnPaidOrder } = require('../services/referral.service');
+        const settled = await settleReferralOnPaidOrder(order);
+        if (settled.ok) console.log(`✅ Referral paid out for order ${order.orderNumber}`);
+      } catch (refErr) {
+        console.error('❌ Referral settle error:', refErr.message);
+      }
+
       // 5. Banner conversion — fire-and-forget when the order came via a banner link.
       if (bannerId) {
         const { trackConversion } = require('../services/banner.service');
@@ -1073,6 +1083,17 @@ exports.updatePaymentStatus = asyncHandler(async (req, res) => {
   }
 
   await order.save();
+
+  // Referral payout — admin marked the order PAID, so the referrer is paid.
+  // Wrapped: a referral failure must never fail an admin payment update.
+  if (action === 'mark_paid') {
+    try {
+      const { settleReferralOnPaidOrder } = require('../services/referral.service');
+      await settleReferralOnPaidOrder(order);
+    } catch (refErr) {
+      console.error('❌ Referral settle (admin mark_paid) error:', refErr.message);
+    }
+  }
 
   // ── Inventory adjustments for payment actions ────────────────────────────
   const stockItems = order.items.filter(i => i.subproduct);

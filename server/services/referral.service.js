@@ -16,7 +16,7 @@ const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const {
   REFERRAL_CONFIG, normalizeCode, selfReferralReason,
-  couponExpiryFrom, snapshotTerms,
+  couponExpiryFrom, snapshotTerms, monthWindow, decideSettlement,
 } = require('./referral.helpers');
 
 // Base32 without the ambiguous 0/O/1/I — these codes get read off screens and
@@ -122,4 +122,111 @@ async function qualifyReferral({ refereeId }) {
   return { ok: true, referral, coupon };
 }
 
-module.exports = { createReferralOnSignup, qualifyReferral, randomSuffix };
+/**
+ * Pay the referrer when their referee's first order is PAID.
+ *
+ * Called from ALL THREE paid transitions — the storefront create path, the
+ * Korapay webhook fallback, and the admin mark_paid action. At least two can
+ * fire for the same order, so this must be idempotent. Two layers guarantee
+ * that: the `status === 'paid'` check in decideSettlement, and — the atomic
+ * layer — a claim-then-write findOneAndUpdate that only ONE concurrent caller
+ * can win.
+ *
+ * The wallet reference (`referral-payout-<referralId>`) is deterministic, but
+ * mutatePlatformWallet does NOT enforce reference uniqueness (the ledger
+ * `reference` column is only sparse, no unique index), so it cannot be the
+ * only backstop. Winning the claim IS the serialization point: exactly one
+ * caller transitions the referral from `qualified`, and only the winner pays.
+ */
+async function settleReferralOnPaidOrder(order, now = new Date()) {
+  if (!order || order.paymentStatus !== 'paid') return { ok: false, reason: 'order_not_paid' };
+
+  const refereeId = order.user || order.customer;
+  if (!refereeId) return { ok: false, reason: 'guest_order' };
+
+  const referral = await Referral.findOne({ referee: refereeId, status: 'qualified' });
+  if (!referral) return { ok: false, reason: 'no_qualified_referral' };
+
+  const { start, end } = monthWindow(now);
+  const paidCountThisMonth = await Referral.countDocuments({
+    referrer: referral.referrer, status: 'paid', paidAt: { $gte: start, $lt: end },
+  });
+
+  const decision = decideSettlement({ referral, order, paidCountThisMonth });
+
+  if (decision.action === 'reject') {
+    await Referral.updateOne(
+      { _id: referral._id },
+      { $set: { status: 'rejected', rejectedReason: decision.reason } },
+    );
+    // The referee KEEPS their discount — they did nothing wrong, and clawing
+    // back a new customer's coupon to punish someone else is the wrong trade.
+    return { ok: false, reason: decision.reason };
+  }
+  if (decision.action !== 'pay') return { ok: false, reason: decision.reason };
+
+  const amount = referral.terms.referrerCreditNgn;
+
+  // CLAIM FIRST — the atomic serialization point. Two concurrent callers both
+  // pass decideSettlement's `pay` check; only ONE can transition this row out
+  // of `qualified`, because the second findOneAndUpdate's filter
+  // ({ _id, status: 'qualified' }) no longer matches. The loser sees a null
+  // doc and returns `already_paid` — exactly one wallet credit ever happens,
+  // no matter how many paid call sites race.
+  const claimed = await Referral.findOneAndUpdate(
+    { _id: referral._id, status: 'qualified' },
+    { $set: { status: 'paid', paidAt: now, qualifyingOrder: order._id } },
+    { new: true },
+  );
+  if (!claimed) return { ok: false, reason: 'already_paid' };
+
+  const { mutatePlatformWallet } = require('./platformWallet.service');
+  let credited;
+  try {
+    credited = await mutatePlatformWallet({
+      owner: { userId: referral.referrer },
+      value: {
+        type: 'credit',
+        amount,
+        source: 'referral',
+        reason: `Referral bonus — order ${order.orderNumber || order._id}`,
+      },
+      reference: `referral-payout-${referral._id}`,
+      relatedOrder: order._id,
+      createdBy: referral.referrer,
+    });
+  } catch (walletErr) {
+    // Wallet DB hiccup — release the claim so the payout can be retried.
+    // $set (NOT unset): a transient error must not strand the referral in a
+    // half-paid state with no row to latch onto.
+    await Referral.updateOne(
+      { _id: referral._id },
+      { $set: { status: 'qualified', qualifyingOrder: null, paidAt: null } },
+    );
+    return { ok: false, reason: walletErr.message };
+  }
+
+  if (!credited.ok) {
+    // Declined but not thrown (e.g. wallet owner missing) — release the claim.
+    await Referral.updateOne(
+      { _id: referral._id },
+      { $set: { status: 'qualified', qualifyingOrder: null, paidAt: null } },
+    );
+    return { ok: false, reason: credited.message };
+  }
+
+  // Best-effort payoutTxn backfill — a failure to persist the ledger id must
+  // NOT fail a payout that already happened.
+  try {
+    await Referral.updateOne(
+      { _id: referral._id },
+      { $set: { payoutTxn: credited.tx?._id || null } },
+    );
+  } catch (txnErr) {
+    console.error('❌ Referral payoutTxn backfill failed:', txnErr.message);
+  }
+
+  return { ok: true, balance: credited.balance, referral: claimed };
+}
+
+module.exports = { createReferralOnSignup, qualifyReferral, settleReferralOnPaidOrder, randomSuffix };
