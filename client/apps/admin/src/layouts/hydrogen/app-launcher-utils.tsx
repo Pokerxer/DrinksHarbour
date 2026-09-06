@@ -6,6 +6,7 @@ import {
   planAllows,
   roleAllows,
 } from '@/layouts/hydrogen/tenant-menu-items';
+import { checkPlanAccess } from '@/config/plan-capabilities';
 
 // ── Tile model ──────────────────────────────────────────────────────────────────
 // Shared by the full-screen AppLauncher overlay and the home page so both render
@@ -84,9 +85,26 @@ export function buildPlatformGroups(isPlatformAdmin: boolean): Group[] {
 }
 
 /**
+ * Would the route gate let this user reach `href`? Mirrors `linkAllowed` in
+ * sidebar-menu.tsx — both ask config/plan-capabilities rather than restating
+ * the rules, so a tile can never be offered for a route the middleware bounces.
+ */
+function launcherLinkAllowed(
+  href: string | undefined,
+  role: string | undefined,
+  plan: string | undefined
+) {
+  if (!href || href === '#') return true;
+  const path = href.split('#')[0];
+  if (!path) return true;
+  return checkPlanAccess({ path, role, plan }).allowed;
+}
+
+/**
  * Build the tenant groups. Applies the same plan AND role gating the sidebar
- * uses (requiredPlan / minRole), so users are never offered links that end in
- * access-denied. Section grouping from the tenant menu config is preserved.
+ * uses (requiredPlan / minRole / the route gate), so users are never offered
+ * links that end in access-denied or the upgrade screen. Section grouping from
+ * the tenant menu config is preserved.
  */
 export function buildTenantGroups(
   plan: string | undefined,
@@ -105,6 +123,7 @@ export function buildTenantGroups(
       continue;
     }
     if (entry.requiredPlan && !planAllows(plan, entry.requiredPlan)) continue;
+    if (!launcherLinkAllowed(entry.href, role, plan)) continue;
     if (entry.minRole && !roleAllows(role, entry.minRole)) continue;
     // See buildPlatformGroups: keep every child when the tile href is a
     // fallback to the first child, dedupe only against the parent's own href.
@@ -119,6 +138,8 @@ export function buildTenantGroups(
       badge: entry.badge,
       children: entry.dropdownItems
         ?.filter((d) => !d.minRole || roleAllows(role, d.minRole))
+        .filter((d) => !d.requiredPlan || planAllows(plan, d.requiredPlan))
+        .filter((d) => launcherLinkAllowed(d.href, role, plan))
         .filter((d) => d.href && (!ownHref || d.href !== ownHref))
         .map((d) => ({
           name: d.name,

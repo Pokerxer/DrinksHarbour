@@ -7,6 +7,7 @@ import {
   type TenantPlan,
 } from '@/layouts/hydrogen/tenant-menu-items';
 import { TENANT_ROLES, type UserRole } from '@/types/authorization';
+import { checkPlanAccess } from '@/config/plan-capabilities';
 import {
   PiGaugeDuotone,
   PiReceiptDuotone,
@@ -246,6 +247,23 @@ const adminNavItems: EcommerceNavItem[] = [
 export { tenantNavItems, adminNavItems };
 
 /**
+ * Would the route gate let this user reach `href`? Mirrors `linkAllowed` in
+ * sidebar-menu.tsx and `launcherLinkAllowed` in app-launcher-utils.tsx: all
+ * three ask config/plan-capabilities instead of restating its rules, so no
+ * surface can offer a link the middleware then bounces.
+ */
+function navLinkAllowed(
+  href: string | undefined,
+  role: string | undefined,
+  plan: string | undefined
+) {
+  if (!href || href === '#') return true;
+  const path = href.split('#')[0];
+  if (!path) return true;
+  return checkPlanAccess({ path, role, plan }).allowed;
+}
+
+/**
  * Pick the nav set for the signed-in user and drop every entry (and dropdown
  * child) their role or plan can't use. Platform roles get the full admin nav;
  * tenant roles get the tenant nav filtered by plan and minRole — the same
@@ -266,6 +284,7 @@ export function getEcommerceNavItems(opts: {
         const kids = item.items.filter(
           (sub) =>
             (!sub.requiredPlan || planAllows(opts.plan, sub.requiredPlan)) &&
+            navLinkAllowed(sub.href, opts.role, opts.plan) &&
             (!sub.minRole || roleAllows(opts.role, sub.minRole))
         );
         // A dropdown whose children were all gated out has nothing to link to.
@@ -273,6 +292,7 @@ export function getEcommerceNavItems(opts: {
       }
       const allowed =
         (!item.requiredPlan || planAllows(opts.plan, item.requiredPlan)) &&
+        navLinkAllowed(item.href, opts.role, opts.plan) &&
         (!item.minRole || roleAllows(opts.role, item.minRole));
       return allowed ? item : null;
     })

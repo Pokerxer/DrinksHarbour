@@ -24,7 +24,14 @@ interface AuthenticatedUser {
   firstName: string;
   lastName: string;
   role: UserRole;
-  tenant?: string | { _id: string; slug?: string };
+  tenant?:
+    | string
+    | {
+        _id: string;
+        slug?: string;
+        plan?: string;
+        subscriptionStatus?: string;
+      };
   tenantId?: string;
   avatar?: { url: string };
 }
@@ -47,7 +54,9 @@ interface LoginResponse {
 
 interface TenantSlugResponse {
   success: boolean;
-  data?: { tenant?: { slug?: string } };
+  data?: {
+    tenant?: { slug?: string; plan?: string; subscriptionStatus?: string };
+  };
 }
 
 interface RefreshTokenResponse {
@@ -85,25 +94,43 @@ async function toSessionUser(
       ? tenantValue._id
       : tenantValue || user.tenantId || null;
 
-  // Resolve tenant slug from populated tenant object or via API
+  // Resolve tenant slug — and the plan, which the edge middleware gates on.
+  //
+  // The plan rides the JWT because src/middleware.ts runs on the edge with no
+  // database and no way to look a tenant up. That makes it a CACHED SNAPSHOT:
+  // see the `plan` note on the jwt callback for how stale it is allowed to get
+  // and what re-reads it. The authoritative check is the layout guard, which
+  // uses the live tenant document.
   let tenantSlug: string | null = null;
+  let plan: string | null = null;
+  let subscriptionStatus: string | null = null;
   if (
     typeof tenantValue === 'object' &&
     tenantValue !== null &&
     tenantValue.slug
   ) {
     tenantSlug = tenantValue.slug;
-  } else if (tenantId) {
+    plan = tenantValue.plan ?? null;
+    subscriptionStatus = tenantValue.subscriptionStatus ?? null;
+  }
+  // A populated tenant can carry the slug without the plan, so this is `!plan`
+  // rather than an `else` — otherwise a populated-but-planless tenant would
+  // skip the fetch and gate as if it had no plan at all.
+  if (tenantId && (!tenantSlug || !plan)) {
     try {
       const tenantRes = await fetch(`${API_URL}/api/tenants/${tenantId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (tenantRes.ok) {
         const tenantJson = (await tenantRes.json()) as TenantSlugResponse;
-        tenantSlug = tenantJson?.data?.tenant?.slug ?? null;
+        const fetched = tenantJson?.data?.tenant;
+        tenantSlug = tenantSlug ?? fetched?.slug ?? null;
+        plan = plan ?? fetched?.plan ?? null;
+        subscriptionStatus =
+          subscriptionStatus ?? fetched?.subscriptionStatus ?? null;
       }
     } catch {
-      /* non-blocking — slug stays null */
+      /* non-blocking — slug/plan stay null */
     }
   }
 
@@ -116,11 +143,56 @@ async function toSessionUser(
     role: user.role,
     tenantId,
     tenantSlug,
+    plan,
+    subscriptionStatus,
     image: user.avatar?.url || null,
     token,
     refreshToken,
     remember,
   };
+}
+
+/**
+ * Re-read the tenant's plan into the JWT.
+ *
+ * The plan is on the token because src/middleware.ts gates on it at the edge,
+ * where there is no database — which makes the token a CACHED SNAPSHOT of a
+ * value that billing can change at any moment. Two callers keep it honest: the
+ * `update()` trigger (an upgrade takes effect immediately) and the access-token
+ * refresh (an unattended session converges within one token lifetime).
+ *
+ * Failure is deliberately silent and non-destructive: on a network error the
+ * previous plan stays on the token rather than being cleared, because clearing
+ * it would read as "no plan" and bounce a paying tenant to the upgrade screen
+ * over a blip. The layout guard checks the live tenant regardless, so a stale
+ * token can only ever be too permissive at the edge for one refresh window,
+ * never wrongly restrictive for longer than the API is down.
+ */
+async function refreshTenantPlan(token: {
+  tenantId?: unknown;
+  accessToken?: unknown;
+  plan?: unknown;
+  subscriptionStatus?: unknown;
+}): Promise<void> {
+  const tenantId = token.tenantId;
+  if (!tenantId || typeof tenantId !== 'string') return;
+
+  try {
+    const res = await fetch(`${API_URL}/api/tenants/${tenantId}`, {
+      headers: { Authorization: `Bearer ${token.accessToken as string}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return;
+    const json = (await res.json()) as TenantSlugResponse;
+    const tenant = json?.data?.tenant;
+    if (!tenant) return;
+    if (tenant.plan) token.plan = tenant.plan;
+    if (tenant.subscriptionStatus) {
+      token.subscriptionStatus = tenant.subscriptionStatus;
+    }
+  } catch {
+    /* keep the previous plan — see the docstring */
+  }
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -223,6 +295,8 @@ export const authOptions: NextAuthOptions = {
           role: token.role as string,
           tenantId: token.tenantId as string | null,
           tenantSlug: token.tenantSlug as string | null,
+          plan: token.plan as string | null,
+          subscriptionStatus: token.subscriptionStatus as string | null,
           token: token.accessToken as string,
           mfaToken: token.mfaToken as string | undefined,
         },
@@ -236,6 +310,12 @@ export const authOptions: NextAuthOptions = {
         token.tenantId = user.tenantId;
         token.tenantSlug =
           (user as { tenantSlug?: string | null }).tenantSlug ?? null;
+        // Gated on by src/middleware.ts, which has no database. See
+        // refreshTenantPlan below for how long this is allowed to go stale.
+        token.plan = (user as { plan?: string | null }).plan ?? null;
+        token.subscriptionStatus =
+          (user as { subscriptionStatus?: string | null }).subscriptionStatus ??
+          null;
         token.accessToken = user.token;
         token.refreshToken = (user as { refreshToken?: string }).refreshToken;
         // Carry the per-login "remember me" choice so `jwt.encode` can pick the
@@ -252,6 +332,12 @@ export const authOptions: NextAuthOptions = {
         const updated = (session as { mfaToken?: string } | undefined)
           ?.mfaToken;
         if (updated) token.mfaToken = updated;
+
+        // An in-session plan change (the tenant just upgraded) has to reach the
+        // cookie the same way: the JWT is re-encoded from this return value and
+        // nowhere else. Without this, an upgrade would not take effect until
+        // the access token happened to expire.
+        await refreshTenantPlan(token);
       }
 
       // Refresh here, where the return value is re-encoded into the session
@@ -269,6 +355,11 @@ export const authOptions: NextAuthOptions = {
             token.accessToken = refreshedTokens.token;
             token.refreshToken = refreshedTokens.refreshToken;
             delete token.error;
+            // Piggyback the plan re-read on the token refresh, which is the
+            // only regular server round-trip this callback makes. That caps how
+            // stale the edge middleware's copy of the plan can get at one
+            // access-token lifetime.
+            await refreshTenantPlan(token);
           } else {
             token.error = 'RefreshAccessTokenError';
           }

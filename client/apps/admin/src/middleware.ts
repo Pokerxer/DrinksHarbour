@@ -9,6 +9,7 @@ import {
   type UserRole,
 } from '@/types/authorization';
 import { hasAdminSession } from '@/app/api/auth/[...nextauth]/session-guard';
+import { checkPlanAccess } from '@/config/plan-capabilities';
 
 interface NextAuthRequest extends NextRequest {
   nextauth?: {
@@ -16,6 +17,9 @@ interface NextAuthRequest extends NextRequest {
       role?: string;
       tenantId?: string;
       tenantSlug?: string;
+      /** Cached snapshot — see refreshTenantPlan in auth-options.ts. */
+      plan?: string;
+      subscriptionStatus?: string;
     } | null;
   };
 }
@@ -212,6 +216,44 @@ const authMiddleware = withAuth(
       }
     }
 
+    // ── Plan-based access control ────────────────────────────────────────────
+    //
+    // LAST, and deliberately so. The checks above answer "may this person be
+    // here at all"; this one answers "does their business pay for this". Run in
+    // the other order, a tenant_staff hitting an HR route would be told to
+    // upgrade their subscription instead of that they lack the role — the
+    // wrong answer, and one that sends them to sales rather than to their
+    // manager. Specific-refusal-first is the rule; see also the ordering note
+    // on canAdministerAppraisals in types/authorization.ts.
+    //
+    // The plan here is the JWT's cached copy, so this gate is a fast redirect,
+    // not the authority. The authority is the layout guard in app/layout.tsx,
+    // which reads the live tenant document; the API is the actual boundary.
+    // checkPlanAccess exempts platform roles itself — they have no tenant and
+    // so no plan, and would otherwise rank as free_trial and be locked out of
+    // the modules they administer.
+    const planAccess = checkPlanAccess({
+      path,
+      role,
+      plan: token?.plan,
+    });
+    if (!planAccess.allowed && planAccess.requirement) {
+      const upgradeUrl = new URL('/upgrade-required', req.url);
+      upgradeUrl.searchParams.set('feature', planAccess.requirement.label);
+      upgradeUrl.searchParams.set('from', path);
+      if (token?.plan) upgradeUrl.searchParams.set('current', token.plan);
+      if (planAccess.upgradeTo) {
+        upgradeUrl.searchParams.set('plan', planAccess.upgradeTo);
+      }
+      return NextResponse.redirect(upgradeUrl);
+    }
+
+    // The pathname a server component is rendering for. Server components get
+    // no access to the URL, and app/layout.tsx needs it to run the
+    // authoritative plan check against the live tenant. Same mechanism as
+    // x-tenant-slug above.
+    requestHeaders.set('x-pathname', path);
+
     return NextResponse.next({
       request: { headers: requestHeaders },
     });
@@ -301,5 +343,20 @@ export const config = {
     '/pos/sell',
     '/pos/orders',
     '/pos/sessions',
+    // Added 2026-09-06. /accounting was the ONE (hydrogen) route group missing
+    // from this list, so it got no middleware at all: its UI shell rendered for
+    // signed-out visitors and merely failed its data loads, even though
+    // accounting.routes.js gates the API behind Pro. /pos/pricelists was absent
+    // for the same reason while its three siblings above were listed.
+    '/accounting/:path*',
+    '/pos/pricelists',
+    // Ordinary POS screens, not kiosks: they render a shop's live orders and
+    // price lists to whoever loads the URL. `/kiosk/:token` below is the only
+    // screen that legitimately has no session, and it is not one of these.
+    '/pos/kitchen',
+    // The plan gate redirects here, so it must carry a session check of its own
+    // — otherwise the one page a gated tenant is sent to is the one page that
+    // does not know who they are.
+    '/upgrade-required',
   ],
 };

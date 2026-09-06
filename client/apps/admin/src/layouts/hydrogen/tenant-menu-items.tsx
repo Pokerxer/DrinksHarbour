@@ -29,37 +29,34 @@ import {
 } from 'react-icons/pi';
 
 // ─── Plan hierarchy ──────────────────────────────────────────────────────────
-// Keys mirror server/config/erm-plans.js — Tenant.plan enum. Keep the two in
-// sync: a plan missing here ranks as free_trial (0) and silently locks the
-// tenant out of every gated item, which is how growth (₦35K) and venue (₦150K)
-// tenants were being treated before growth/venue were added.
+//
+// The ordinal rank USED to be declared here, with `custom: 6` — the highest.
+// The server's PLAN_ORDER omitted `custom` entirely, so isPlanAtLeast('custom')
+// was false for every threshold: the menu offered a custom tenant everything
+// and the API refused all of it. Both sides now resolve through
+// @/config/plan-capabilities, which is pinned to server/config/erm-plans.js by
+// server/__tests__/planCapabilities.test.js.
+//
+// `requiredPlan` markers below are kept only for entries whose href is the `#`
+// dropdown placeholder, where there is no route to derive a gate from. Every
+// entry that HAS an href is filtered by running the real route gate over that
+// href (see sidebar-menu.tsx) — chrome and middleware cannot drift apart when
+// the chrome asks the gate rather than restating it.
 
-export type TenantPlan =
-  | 'free_trial'
-  | 'starter'
-  | 'growth'
-  | 'pro'
-  | 'enterprise'
-  | 'venue'
-  | 'custom';
+import { planAtLeast, type TenantPlan } from '@/config/plan-capabilities';
 
-const PLAN_RANK: Record<TenantPlan, number> = {
-  free_trial: 0,
-  starter: 1,
-  growth: 2,
-  pro: 3,
-  enterprise: 4,
-  venue: 5,
-  custom: 6,
-};
+export type { TenantPlan };
 
-/** Returns true if the tenant's plan meets or exceeds the required plan. */
+/**
+ * Ordinal plan comparison. Retained for the `#`-href entries above and for the
+ * ecommerce sub-nav; prefer letting the route gate answer where an href exists,
+ * because the feature matrix is not a ladder (see config/plan-capabilities.ts).
+ */
 export function planAllows(
   tenantPlan: string | undefined,
   required: TenantPlan
 ): boolean {
-  const rank = PLAN_RANK[tenantPlan as TenantPlan] ?? 0;
-  return rank >= PLAN_RANK[required];
+  return planAtLeast(tenantPlan, required);
 }
 
 // ─── Role hierarchy ───────────────────────────────────────────────────────────
@@ -110,6 +107,14 @@ export type TenantMenuItem = {
     href: string;
     badge?: string;
     minRole?: TenantMenuRole;
+    /**
+     * Children were filtered on minRole but never on plan, and the type had no
+     * field for it — so a plan-gated child under an ungated parent could not be
+     * expressed at all ("Purchase Analytics" under "Purchase Orders" is exactly
+     * that shape). Children are now also filtered by the route gate on their
+     * href, which covers most cases; this is the escape hatch for the rest.
+     */
+    requiredPlan?: TenantPlan;
   }[];
 };
 

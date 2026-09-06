@@ -18,6 +18,7 @@ import {
 } from '@/layouts/hydrogen/tenant-menu-items';
 import StatusBadge from '@core/components/get-status-badge';
 import MailUnreadBadge from '@/layouts/hydrogen/mail-unread-badge';
+import { checkPlanAccess } from '@/config/plan-capabilities';
 import { useTenant } from '@/context/TenantContext';
 import { useSession } from 'next-auth/react';
 import { TENANT_ROLES } from '@/types/authorization';
@@ -49,6 +50,26 @@ function LiveBadge({ name }: { name?: string }) {
  * /inventory/transfers/123 still light up (and expand) their menu entry.
  * `#` is a dropdown placeholder and never matches.
  */
+/**
+ * Would the route gate let this user reach `href`?
+ *
+ * The nav asks the gate rather than restating it. When the two are written out
+ * separately they drift, and the failure mode is a link that renders, is
+ * clicked, and lands on the upgrade screen — the same asymmetry the
+ * canAdministerAppraisals comment in types/authorization.ts exists to prevent.
+ *
+ * `#` is the dropdown-parent placeholder and is not a destination, so it is
+ * always allowed; those entries are pruned anyway once all their children are
+ * filtered out.
+ */
+function linkAllowed(href: string | undefined, role?: string, plan?: string) {
+  if (!href || href === '#') return true;
+  // Strip any fragment — /settings#warehouses gates as /settings.
+  const path = href.split('#')[0];
+  if (!path) return true;
+  return checkPlanAccess({ path, role, plan }).allowed;
+}
+
 function matchesPath(pathname: string, href?: string) {
   if (!href || href === '#') return false;
   const base = href.split('#')[0];
@@ -279,14 +300,18 @@ function TenantSidebarMenu({
       .filter((entry) => {
         if (isSection(entry)) return true; // keep sections for now, prune below
         const planOk =
-          !entry.requiredPlan || planAllows(plan, entry.requiredPlan);
+          (!entry.requiredPlan || planAllows(plan, entry.requiredPlan)) &&
+          linkAllowed(entry.href, role, plan);
         const roleOk = !entry.minRole || roleAllows(role, entry.minRole);
         return planOk && roleOk;
       })
       .map((entry) => {
         if (isSection(entry) || !entry.dropdownItems) return entry;
         const dropdownItems = entry.dropdownItems.filter(
-          (d) => !d.minRole || roleAllows(role, d.minRole)
+          (d) =>
+            (!d.minRole || roleAllows(role, d.minRole)) &&
+            (!d.requiredPlan || planAllows(plan, d.requiredPlan)) &&
+            linkAllowed(d.href, role, plan)
         );
         return { ...entry, dropdownItems };
       })
