@@ -14,14 +14,19 @@ const {
   tenantAdminOrSuperAdmin,
   requireOwnTenant,
 } = require('../middleware/auth.middleware');
-const { requirePlan } = require('../middleware/plan.middleware');
+const { requireCapability } = require('../middleware/plan.middleware');
 
 router.use(protect);
 router.use(attachTenant);
 // Tenant-owned financial data: JWT tenant only, no admin pivot.
 router.use(requireOwnTenant);
 router.use(tenantAdminOrSuperAdmin);
-router.use(requirePlan('pro'));
+// Was requirePlan('pro'). Same audience — advanced_reports is Pro/Enterprise/
+// Venue/Custom — but expressed as the capability so it tracks the pricing table
+// rather than a hard-coded rung, and so `custom` tenants stop being refused
+// (PLAN_ORDER never contained 'custom', so isPlanAtLeast('custom','pro') was
+// false and every custom tenant got a 403 here).
+router.use(requireCapability('advanced_reports'));
 
 // Static segments before :id
 router.get('/journal-entries', ctrl.getJournalEntries);

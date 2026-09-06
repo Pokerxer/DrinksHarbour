@@ -17,7 +17,7 @@ const {
 } = require('../middleware/validation.middleware');
 const { body, param } = require('express-validator');
 const SubProduct = require('../models/SubProduct');
-const { checkSkuLimit } = require('../middleware/plan.middleware');
+const { checkSkuLimit, checkSkuLimitFor } = require('../middleware/plan.middleware');
 const { logPrivilegedAction } = require('../utils/auditLog');
 // All SubProduct routes require authentication
 router.use(authenticate);
@@ -100,7 +100,9 @@ router.delete('/:id', tenantAdminOrSuperAdmin, subProductController.deleteSubPro
  * @desc    Duplicate a SubProduct (and its sizes)
  * @access  Private (Tenant admin or Super admin)
  */
-router.post('/:id/duplicate', tenantAdminOrSuperAdmin, subProductController.duplicate);
+// A duplicate is a new SubProduct on the target tenant like any other, and was
+// the second unguarded creation door.
+router.post('/:id/duplicate', tenantAdminOrSuperAdmin, checkSkuLimit, subProductController.duplicate);
 
 /**
  * @route   PATCH /api/subproducts/:id/archive
@@ -271,11 +273,15 @@ const removeDiscountValidation = [
 // subproductGuardConsistency.test.js fails if the seam reopens.
 
 // Bulk operations
+// Creates one SubProduct per id, so the gate has to know how many — a
+// "room for one more?" check would let a tenant one SKU under their cap create
+// the whole array. This door had no gate at all until 2026-09-06.
 router.post(
   '/bulk',
   tenantAdminOrSuperAdmin,
   bulkCreateValidation,
   validate,
+  checkSkuLimitFor((req) => (Array.isArray(req.body?.productIds) ? req.body.productIds.length : 1)),
   subProductController.bulkCreate
 );
 

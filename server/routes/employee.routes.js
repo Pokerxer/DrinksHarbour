@@ -3,13 +3,17 @@ const express = require('express');
 const router = express.Router();
 const c = require('../controllers/employee.controller');
 const { protect, attachTenant, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
+const { checkStaffLimit } = require('../middleware/plan.middleware');
 
 router.use(protect);
 router.use(attachTenant);
 
 router.route('/')
   .get(tenantAdminOrSuperAdmin, c.listEmployees)
-  .post(tenantAdminOrSuperAdmin, c.createEmployee);
+  // staffLimit (1/1/3/10/unlimited) was sold on every pricing card and enforced
+  // nowhere — checkStaffLimit existed but was imported by no route file. This
+  // is the main way a tenant adds one.
+  .post(tenantAdminOrSuperAdmin, checkStaffLimit, c.createEmployee);
 
 router.route('/:id')
   .get(tenantAdminOrSuperAdmin, c.getEmployee)

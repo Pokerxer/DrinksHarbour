@@ -27,6 +27,8 @@ router.use(attachTenant);
 // single tenant. requireOwnTenant takes the tenant from the JWT claim only —
 // no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
 router.use(requireOwnTenant);
+// RFQs/agreements are part of the purchasing module — Growth and above.
+router.use(require('../middleware/plan.middleware').requireCapability('purchase_orders'));
 
 router
   .route('/')

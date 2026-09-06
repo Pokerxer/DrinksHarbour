@@ -38,6 +38,8 @@ router.use(attachTenant);
 // single tenant. requireOwnTenant takes the tenant from the JWT claim only —
 // no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
 router.use(requireOwnTenant);
+// Purchase orders are Growth and above on the pricing page.
+router.use(require('../middleware/plan.middleware').requireCapability('purchase_orders'));
 
 // Analytics routes MUST be before /:id to avoid Express treating "analytics" as an id param
 router.get("/analytics/summary", tenantAdminOrSuperAdmin, getPurchaseAnalyticsSummary);

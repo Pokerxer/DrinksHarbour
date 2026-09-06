@@ -108,4 +108,12 @@ router.put('/admin/:id', protect, authorize(...adminRoles), uploadBrandImages, t
 // Tenant deletion — super_admin only (most destructive operation)
 router.delete('/admin/:id', protect, authorize('super_admin'), superAdminOnly, tenantController.deleteAdminTenant);
 
+// ── Own-tenant read (AFTER the /admin and /slug literals, or it shadows them) ──
+// The admin client has always called this; it was never routed, so every
+// session-refresh fetch 404'd and a webhook plan change never reached the gates
+// without a re-login. `protect` only — the handler compares the JWT claim, and
+// there is deliberately no requireTenant here: a tenant whose subscription
+// lapsed still needs to read its own status to be told so.
+router.get('/:id', protect, tenantController.getOwnTenantById);
+
 module.exports = router;

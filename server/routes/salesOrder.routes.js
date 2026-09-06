@@ -26,6 +26,9 @@ const { protect, attachTenant, tenantUserOnly, requireOwnTenant } = require('../
 // single tenant. requireOwnTenant takes the tenant from the JWT claim only —
 // no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
 router.use(protect, attachTenant, requireOwnTenant, tenantUserOnly);
+// Sales invoicing is Starter and above on the pricing page. Platform roles are
+// exempt inside requireCapability — they have no tenant and so no plan.
+router.use(require('../middleware/plan.middleware').requireCapability('sales_invoicing'));
 
 router.route('/').get(getSalesOrders).post(createSalesOrder);
 

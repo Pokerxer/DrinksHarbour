@@ -26,6 +26,12 @@ router.use(attachTenant);
 // single tenant. requireOwnTenant takes the tenant from the JWT claim only —
 // no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
 router.use(requireOwnTenant);
+// The purchases module is Growth and above on the pricing page, and
+// purchaseOrder/purchaseAgreement have carried this gate since it was written —
+// but the rest of the module did not, so a Starter tenant refused /purchases in
+// the admin UI could still reach this router's API directly. A module gated at
+// two of its seven doors is not gated.
+router.use(require('../middleware/plan.middleware').requireCapability('purchase_orders'));
 
 router
   .route('/')

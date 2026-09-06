@@ -389,9 +389,20 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
   const mode = opts?.mode === 'update' ? 'update' : 'create';
   // Preview-confirmed enrichments, keyed by group key (see validateImport).
   const enrichments = (opts?.enrichments && typeof opts.enrichments === 'object') ? opts.enrichments : {};
+  // How many NEW SubProducts the tenant's plan still allows. `null`/undefined =
+  // unlimited, which is also what a caller that does not pass one gets, so the
+  // existing tests and any internal caller keep their behaviour.
+  //
+  // Spent as we go rather than checked up front: the row count is known but the
+  // number of CREATES is not, since a row matching an existing SubProduct is an
+  // update. See subProductImport.controller.js.
+  let skuBudget =
+    typeof opts?.skuBudget === 'number' && Number.isFinite(opts.skuBudget)
+      ? Math.max(0, opts.skuBudget)
+      : null;
   const rows = normalizeRows(rawRows);
   const groups = groupRows(rows);
-  const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, updatedSizes: 0, stockApplied: 0, stockUpdated: 0, skipped: 0, skippedNoMatch: 0, errors: [] };
+  const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, updatedSizes: 0, stockApplied: 0, stockUpdated: 0, skipped: 0, skippedNoMatch: 0, skippedOverLimit: 0, errors: [] };
 
   // Existing category hierarchy, fetched once, so Haiku enrichment picks real
   // categories that createSubProductCore can resolve by name. Best-effort.
@@ -563,6 +574,17 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
           createdSizeDocs.push({ _id: sizeDoc._id, size: r.size, _row: r });
         }
       } else {
+        // This branch is the only one that CREATES a SubProduct, so it is where
+        // the plan's SKU budget is spent. Reported, never silent: an import that
+        // quietly stopped creating halfway would read as "imported fine".
+        if (skuBudget !== null && skuBudget <= 0) {
+          out.skippedOverLimit += 1;
+          out.errors.push({
+            group: g.key,
+            message: 'SKU limit reached for your plan — not created. Upgrade to add more products.',
+          });
+          continue;
+        }
         const base = goodRows[0];
         const baseCost = base.costPrice ?? base.sizeCostPrice ?? null;
         const data = {
@@ -604,6 +626,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         productId = sub.product || productId;
         if (!existingProduct) out.createdProducts += 1;
         out.createdSubProducts += 1;
+        if (skuBudget !== null) skuBudget -= 1;
         // Map returned size docs back to their source rows by size value.
         const bySize = new Map((sub.sizes || []).map((s) => [s.size, s._id]));
         createdSizeDocs = goodRows

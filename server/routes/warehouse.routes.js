@@ -29,7 +29,14 @@ router.route('/settings')
 
 router.route('/')
   .get(tenantAdminOrSuperAdmin, c.getWarehouses)
-  .post(tenantAdminOrSuperAdmin, c.createWarehouse);
+  // One warehouse is included on every plan; further ones are the
+  // "extra warehouse +₦20,000/mo" add-on the pricing page sells. Nothing
+  // counted against that before — warehouses were unbounded.
+  .post(
+    tenantAdminOrSuperAdmin,
+    require('../middleware/plan.middleware').checkWarehouseLimit,
+    c.createWarehouse
+  );
 
 router.route('/:id')
   .get(tenantAdminOrSuperAdmin, c.getWarehouseById)

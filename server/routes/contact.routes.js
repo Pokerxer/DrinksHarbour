@@ -6,6 +6,13 @@ const { protect, attachTenant, tenantAdminOrSuperAdmin } = require('../middlewar
 
 router.use(protect);
 router.use(attachTenant);
+// Contacts are the CRM surface: Basic CRM is Growth+, Advanced CRM is
+// Enterprise/Venue. ANY tier suffices — gating on crm_basic alone would refuse
+// Enterprise and Venue tenants, whose comparison row says Basic CRM is false
+// only because they hold the advanced one instead.
+router.use(
+  require('../middleware/plan.middleware').requireCapability('crm_basic', 'crm_advanced')
+);
 
 router.route('/')
   .get(tenantAdminOrSuperAdmin, c.listContacts)

@@ -8,6 +8,7 @@ const {
   tenantUserOnly,
 } = require('../middleware/auth.middleware');
 const { protectPOS, requirePOSPermission, protectPOSOrAdmin } = require('../middleware/pos.middleware');
+const { checkStaffLimit, checkShopLimit } = require('../middleware/plan.middleware');
 const rateLimit = require('express-rate-limit');
 // IPv6-safe IP normaliser. express-rate-limit v8 refuses a keyGenerator that
 // uses req.ip verbatim (ERR_ERL_KEY_GEN_IPV6) because a raw IPv6 address lets a
@@ -301,7 +302,10 @@ router.use(rejectPOSTokens, protect, attachTenant, tenantUserOnly);
 
 // ── Tenant admins only ────────────────────────────────────────────────────────
 router.get('/cashiers',              tenantAdminOrSuperAdmin, listCashiers);
-router.post('/cashiers',             tenantAdminOrSuperAdmin, createCashier);
+// A cashier is a tenant_staff User, so it counts against staffLimit exactly as
+// an employee does — adding staff through the POS screen instead of the HR one
+// must not be a way around the plan.
+router.post('/cashiers',             tenantAdminOrSuperAdmin, checkStaffLimit, createCashier);
 router.patch('/cashiers/:id',        tenantAdminOrSuperAdmin, updateCashier);
 router.delete('/cashiers/:id',       tenantAdminOrSuperAdmin, deleteCashier);
 router.get('/tenant/bank-accounts',  tenantAdminOrSuperAdmin, getTenantBankAccounts);
@@ -309,7 +313,10 @@ router.patch('/tenant/bank-accounts',tenantAdminOrSuperAdmin, updateTenantBankAc
 router.get('/tenant/settings',       tenantAdminOrSuperAdmin, getPOSSettings);
 router.patch('/tenant/settings',     tenantAdminOrSuperAdmin, updatePOSSettings);
 router.get('/shops',                 tenantAdminOrSuperAdmin, listPOSShops);
-router.post('/shops',                tenantAdminOrSuperAdmin, createPOSShop);
+// One shop is included on every plan; further ones are the "extra shop
+// +₦12,000/mo" add-on. checkShopLimit was written for this and wired nowhere,
+// so shops were unbounded on every plan.
+router.post('/shops',                tenantAdminOrSuperAdmin, checkShopLimit, createPOSShop);
 router.patch('/shops/:shopId',       tenantAdminOrSuperAdmin, updatePOSShop);
 router.delete('/shops/:shopId',      tenantAdminOrSuperAdmin, deletePOSShop);
 
