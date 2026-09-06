@@ -106,7 +106,22 @@ app.use(
 
 app.use(compression());
 
-app.use(express.json({ limit: '10mb' }));
+// `verify` is the ONLY place a raw body can be captured, because this parser
+// runs before every router: once it sets `req._body`, a later
+// `express.raw()` on an individual route is a no-op and yields no Buffer.
+// The Paystack webhook signs the bytes it sent, so verifying against a
+// re-serialised `req.body` is verifying the wrong thing — see
+// verifyPaystackSignature in controllers/erm.controller.js.
+//
+// Scoped to that one path so a Buffer per request is not retained site-wide.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    if (req.originalUrl && req.originalUrl.startsWith('/api/erm/webhook')) {
+      req.rawBody = buf;
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
@@ -404,6 +419,20 @@ app.use((err, req, res, next) => {
       !exposeDiagnostics && statusCode >= 500 && !err.expose
         ? 'Internal server error'
         : err.message,
+    // A machine-readable label for errors the client must BRANCH on rather than
+    // merely display: SUBSCRIPTION_READ_ONLY, PLAN_UPGRADE_REQUIRED,
+    // ADD_ON_LIMIT_REACHED. The middleware has always set `err.code`, but it
+    // was never serialised, so every one of those arrived at the browser as an
+    // anonymous 403 and the admin app could not tell a billing problem from a
+    // permissions problem — which is exactly the support incident the read-only
+    // state (config/README-plan-entitlements.md §4) exists to avoid.
+    //
+    // Gated on `isOperational` and on the code being a string, so that the code
+    // property Node and the Mongo driver put on THEIR errors — 'ECONNREFUSED',
+    // 11000, 'ERR_UNHANDLED_REJECTION' — is not handed to a public caller as
+    // though it were part of this API. Only errors this codebase raised
+    // deliberately carry one out.
+    ...(err.isOperational && typeof err.code === 'string' ? { code: err.code } : {}),
     // Operational errors may attach structured `details` (e.g. the id of an
     // existing record a conflict points to) so the client can act on it.
     ...(err.details ? { details: err.details } : {}),
@@ -437,6 +466,10 @@ async function startServer() {
       startBannerScheduleCron();
       const { startBlogLinkCheckCron } = require('./jobs/blogLinkCheck.job');
       startBlogLinkCheckCron();
+      // Trial-ending warnings and the dunning follow-up. The FIRST
+      // payment-failed email is sent from the webhook, not here.
+      const { startBillingNoticesCron } = require('./jobs/billingNotices.job');
+      startBillingNoticesCron();
     }
 
     console.log('\n┌──────────────────────────────────────────────────────┐');
