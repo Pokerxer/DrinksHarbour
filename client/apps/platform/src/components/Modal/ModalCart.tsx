@@ -24,6 +24,7 @@ const ModalCart = () => {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [note, setNote] = useState('');
+  const [noteOpen, setNoteOpen] = useState(false);
   const [appliedUpdates, setAppliedUpdates] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -553,12 +554,17 @@ const ModalCart = () => {
               >
                 {/* Order Note */}
                 <div className="px-6 py-3 border-b border-gray-200">
-                  <button className="flex items-center gap-2 text-sm text-gray-500 hover:text-red-700 transition-colors">
+                  <button
+                    onClick={() => setNoteOpen((o) => !o)}
+                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-red-700 transition-colors"
+                    aria-expanded={noteOpen}
+                  >
                     <Icon.PiNotePencil size={16} />
                     <span>Add Order Note</span>
+                    <Icon.PiCaretDown className={`transition-transform ${noteOpen ? 'rotate-180' : ''}`} size={14} />
                   </button>
-                  <AnimatePresence>
-                    {note !== undefined && (
+                  <AnimatePresence initial={false}>
+                    {noteOpen && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
