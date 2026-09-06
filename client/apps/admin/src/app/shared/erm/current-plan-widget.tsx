@@ -3,6 +3,8 @@ import {
   PiCalendarDuotone,
   PiPackageDuotone,
   PiUsersDuotone,
+  PiWarehouseDuotone,
+  PiStorefrontDuotone,
 } from 'react-icons/pi';
 import type { ErmStatus } from '@/services/erm.service';
 
@@ -105,6 +107,21 @@ export default function CurrentPlanWidget({ status }: { status: ErmStatus }) {
           used={status.usage.staff.used}
           limit={status.usage.staff.limit}
           Icon={PiUsersDuotone}
+        />
+        {/* Warehouse and shop limits are the add-on quotas: one free unit plus
+            whatever was bought. Both were enforced server-side with nothing on
+            screen to explain a refusal. */}
+        <UsageMeter
+          label="Warehouses"
+          used={status.usage.warehouses.used}
+          limit={status.usage.warehouses.limit}
+          Icon={PiWarehouseDuotone}
+        />
+        <UsageMeter
+          label="POS shops"
+          used={status.usage.shops.used}
+          limit={status.usage.shops.limit}
+          Icon={PiStorefrontDuotone}
         />
       </div>
 
