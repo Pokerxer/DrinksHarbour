@@ -202,6 +202,34 @@ Still to carry forward:
   no subscription period, worth recognising rather than mistaking for a normal
   customer. It is unaffected by the write gate either way.
 
+#### DECISION — `ufg-legacy-limited` lapses on 2026-09-20 and is observed, not extended
+
+**Resolved 2026-09-06.** Re-ran `scripts/auditTrialState.js --all`
+(read-only): confirmed `ufg-legacy-limited` is `free_trial` / `trialing` /
+`trialEndsAt: 2026-09-20T10:20:52Z`, with empty `contactEmail` — so
+`billingContactFor` falls back to the tenant_owner, **`admin@ufglegacy.com`**
+(active, verified by direct read on 2026-09-06), and the billing notices are not
+dead letter. Nothing is mutated.
+
+What will happen, and what to watch:
+
+- **~2026-09-17** (3 days out, `TRIAL_WARNING_DAYS`) the daily 09:00 sweep
+  (`jobs/billingNotices.job.js`, running in production via the
+  `NODE_ENV === 'production'` gate at `server.js:460`) sends the trial-ending
+  warning to `admin@ufglegacy.com`. If the tenant subscribes before the 20th,
+  this is the email that got them to.
+- **2026-09-20** `trialEndsAt` passes → `writesAllowed` flips to `false` across
+  the admin; the standing banner, the toast and the `trial_ended` notice are the
+  first live exercise of the read-only surface on a real tenant.
+- The sweep's `trial_ended` notice also fires once `pastDueSentAt` key is free;
+  the dunning follow-up is a separate `past_due` + 3-day state this tenant is
+  not expected to reach without paying.
+
+This is deliberately the cheapest option: no data write, matches the
+survivable-read-only design (README §4), and it produces the first real
+entitlement lifecycle. Revisit only if goal A (Paystack plans + webhook) lands
+before the 20th and the tenant tries to convert.
+
 ### 4b. Billing configuration is environment state, not code
 
 `node scripts/checkErmBillingConfig.js` reports, for the environment it is run
