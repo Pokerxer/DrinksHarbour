@@ -145,7 +145,7 @@ app.use('/api', csrfProtection);
 // ────────────────────────────────────────────────
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isProduction ? 100 : 1000,
+  max: isProduction ? 100 : (parseInt(process.env.API_RATE_LIMIT_MAX, 10) || 1000),
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, forwardedHeader: false },

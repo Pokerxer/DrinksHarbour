@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
-import LinkableBanner from '@/components/Banner/linkable-banner';
+import EntityBannerOverlay from '@/components/Banner/entity-banner-overlay';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -480,20 +480,11 @@ export default async function BrandPage({
         }}
       />
 
-      {/* ── Clickable promo banner (admin-set bannerImage + bannerLink) ──── */}
-      {brand.bannerImage?.url && (
-        <LinkableBanner
-          image={brand.bannerImage?.url || brand.featuredImage?.url}
-          link={brand.bannerLink}
-          linkType={brand.bannerLinkType}
-          alt={brand.name}
-          className="m-4 md:m-6"
-          entityType="brand"
-          entityId={brand._id}
-        />
-      )}
-
-      {/* ── Hero — the label ─────────────────────────────────────────────── */}
+      {/* ── Hero — the label, and the promo banner ───────────────────────── */}
+      {/* The admin-set `bannerImage` IS this hero's backdrop, so there is no
+          separate banner above it — a standalone <LinkableBanner/> here showed
+          the identical artwork twice. <EntityBannerOverlay/> below carries the
+          `bannerLink` click-through and the impression/click beacons instead. */}
       <section
         className="relative overflow-hidden"
         style={{
@@ -522,89 +513,105 @@ export default async function BrandPage({
         </span>
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/10" />
 
-        <div className="container relative mx-auto px-4 pb-16 pt-8 sm:pb-20 sm:pt-10">
-          {/* Breadcrumb */}
-          <nav aria-label="Breadcrumb" className="mb-10">
-            <ol className="flex flex-wrap items-center gap-1.5 text-xs text-white/60">
-              <li>
-                <Link href="/" className="transition hover:text-white">
-                  Home
-                </Link>
-              </li>
-              <li aria-hidden="true">/</li>
-              <li>
-                <Link href="/brands" className="transition hover:text-white">
-                  Brands
-                </Link>
-              </li>
-              <li aria-hidden="true">/</li>
-              <li aria-current="page" className="font-semibold text-white/90">
-                {brand.name}
-              </li>
-            </ol>
-          </nav>
+        {/* `relative` so the banner overlay stretches over the hero body only,
+            stopping short of the fine-print strip below. */}
+        <div className="relative">
+          <div className="container relative mx-auto px-4 pb-16 pt-8 sm:pb-20 sm:pt-10">
+            {/* Breadcrumb — z-30 keeps it above the banner overlay */}
+            <nav aria-label="Breadcrumb" className="relative z-30 mb-10">
+              <ol className="flex flex-wrap items-center gap-1.5 text-xs text-white/60">
+                <li>
+                  <Link href="/" className="transition hover:text-white">
+                    Home
+                  </Link>
+                </li>
+                <li aria-hidden="true">/</li>
+                <li>
+                  <Link href="/brands" className="transition hover:text-white">
+                    Brands
+                  </Link>
+                </li>
+                <li aria-hidden="true">/</li>
+                <li aria-current="page" className="font-semibold text-white/90">
+                  {brand.name}
+                </li>
+              </ol>
+            </nav>
 
-          <div className="mx-auto max-w-2xl text-center">
-            {/* Logo tile */}
-            <div className="bp-rise mx-auto mb-6 flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-white p-3 shadow-2xl ring-4 ring-white/10 sm:h-28 sm:w-28">
-              {brand.logo?.url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={brand.logo.url}
-                  alt={brand.logo.alt || `${brand.name} logo`}
-                  className="h-full w-full object-contain"
-                />
-              ) : (
-                <span
-                  className={`${fraunces.className} text-5xl font-semibold`}
+            <div className="mx-auto max-w-2xl text-center">
+              {/* Logo tile */}
+              <div className="bp-rise mx-auto mb-6 flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-white p-3 shadow-2xl ring-4 ring-white/10 sm:h-28 sm:w-28">
+                {brand.logo?.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={brand.logo.url}
+                    alt={brand.logo.alt || `${brand.name} logo`}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <span
+                    className={`${fraunces.className} text-5xl font-semibold`}
+                    style={{ color: primary }}
+                  >
+                    {monogram}
+                  </span>
+                )}
+              </div>
+
+              {eyebrow && (
+                <p className="bp-rise bp-rise-2 mb-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-white/70">
+                  {eyebrow}
+                </p>
+              )}
+
+              <h1
+                className={`${fraunces.className} bp-rise bp-rise-2 text-5xl font-semibold text-white drop-shadow-sm sm:text-6xl`}
+              >
+                {heading}
+              </h1>
+
+              <div className="bp-rise bp-rise-3 mx-auto mt-5 max-w-xs">
+                <LabelRule />
+              </div>
+
+              {brand.tagline && (
+                <p
+                  className={`${fraunces.className} bp-rise bp-rise-3 mt-4 text-lg italic text-white/85 sm:text-xl`}
+                >
+                  {brand.tagline}
+                </p>
+              )}
+
+              {seoLede && (
+                <p className="bp-rise bp-rise-3 mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-white/80">
+                  {seoLede}
+                </p>
+              )}
+
+              {/* z-30 keeps the CTA clickable through the banner overlay */}
+              <div className="bp-rise bp-rise-3 relative z-30 mt-8">
+                <Link
+                  href={shopHref}
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-7 py-3 text-sm font-bold shadow-xl transition hover:-translate-y-0.5 hover:shadow-2xl motion-reduce:transition-none motion-reduce:hover:translate-y-0"
                   style={{ color: primary }}
                 >
-                  {monogram}
-                </span>
-              )}
-            </div>
-
-            {eyebrow && (
-              <p className="bp-rise bp-rise-2 mb-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-white/70">
-                {eyebrow}
-              </p>
-            )}
-
-            <h1
-              className={`${fraunces.className} bp-rise bp-rise-2 text-5xl font-semibold text-white drop-shadow-sm sm:text-6xl`}
-            >
-              {heading}
-            </h1>
-
-            <div className="bp-rise bp-rise-3 mx-auto mt-5 max-w-xs">
-              <LabelRule />
-            </div>
-
-            {brand.tagline && (
-              <p
-                className={`${fraunces.className} bp-rise bp-rise-3 mt-4 text-lg italic text-white/85 sm:text-xl`}
-              >
-                {brand.tagline}
-              </p>
-            )}
-
-            {seoLede && (
-              <p className="bp-rise bp-rise-3 mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-white/80">
-                {seoLede}
-              </p>
-            )}
-
-            <div className="bp-rise bp-rise-3 mt-8">
-              <Link
-                href={shopHref}
-                className="inline-flex items-center gap-2 rounded-full bg-white px-7 py-3 text-sm font-bold shadow-xl transition hover:-translate-y-0.5 hover:shadow-2xl motion-reduce:transition-none motion-reduce:hover:translate-y-0"
-                style={{ color: primary }}
-              >
-                <Icon.PiShoppingCartBold className="h-4 w-4" />
-                Shop {brand.name}
-              </Link>
+                  <Icon.PiShoppingCartBold className="h-4 w-4" />
+                  Shop {brand.name}
+                </Link>
+              </div>
             </div>
           </div>
+
+          {/* The banner: the hero surface itself carries `bannerLink`. */}
+          {brand.bannerImage?.url && (
+            <EntityBannerOverlay
+              link={brand.bannerLink}
+              linkType={brand.bannerLinkType}
+              label={brand.name}
+              entityType="brand"
+              entityId={brand._id}
+            />
+          )}
         </div>
 
         {/* Fine print — the strip at the foot of every label */}

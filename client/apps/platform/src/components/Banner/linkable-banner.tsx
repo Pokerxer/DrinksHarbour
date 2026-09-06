@@ -16,10 +16,13 @@
  * clicks via onClick, both fire-and-forget to the banner analytics endpoint.
  */
 
-import { useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { PiArrowUpRight } from 'react-icons/pi';
+import {
+  useEntityBannerTracking,
+  type EntityBannerType,
+} from './entity-banner-analytics';
 
 export interface LinkableBannerProps {
   /** Full storefront hero image URL (bannerImage, usually 2:1). */
@@ -32,27 +35,9 @@ export interface LinkableBannerProps {
   alt?: string;
   className?: string;
   /** Entity type for analytics (brand | category | subcategory). */
-  entityType?: 'brand' | 'category' | 'subcategory';
+  entityType?: EntityBannerType;
   /** Entity document _id for analytics. */
   entityId?: string;
-}
-
-const API = process.env.NEXT_PUBLIC_API_URL || '';
-
-function fireEntityBeacon(
-  entityType: string | undefined,
-  entityId: string | undefined,
-  event: 'impression' | 'click'
-) {
-  if (!entityType || !entityId || !API) return;
-  try {
-    fetch(`${API}/api/banners/entity/${entityType}/${entityId}/${event}`, {
-      method: 'POST',
-      keepalive: true,
-    });
-  } catch {
-    // fire-and-forget
-  }
 }
 
 export default function LinkableBanner({
@@ -64,29 +49,8 @@ export default function LinkableBanner({
   entityType,
   entityId,
 }: LinkableBannerProps) {
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const hasTrackedImpression = useRef(false);
-
-  // Track impression once when the banner scrolls into view.
-  useEffect(() => {
-    if (!entityType || !entityId || !wrapperRef.current) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !hasTrackedImpression.current) {
-          hasTrackedImpression.current = true;
-          fireEntityBeacon(entityType, entityId, 'impression');
-        }
-      },
-      { threshold: 0.3 }
-    );
-    observer.observe(wrapperRef.current);
-    return () => observer.disconnect();
-  }, [entityType, entityId]);
-
-  const handleClick = useCallback(() => {
-    fireEntityBeacon(entityType, entityId, 'click');
-  }, [entityType, entityId]);
+  const { ref: wrapperRef, trackClick: handleClick } =
+    useEntityBannerTracking<HTMLDivElement>(entityType, entityId);
 
   // Nothing to show without an image.
   if (!image) return null;

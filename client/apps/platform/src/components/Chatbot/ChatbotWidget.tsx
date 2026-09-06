@@ -385,6 +385,15 @@ export default function ChatbotWidget() {
     return () => document.removeEventListener('toggle-chatbot', handler);
   }, []);
 
+  // Broadcast open/unread state so the mobile bottom nav can animate attention
+  useEffect(() => {
+    document.dispatchEvent(
+      new CustomEvent('chat-widget-state', {
+        detail: { open: isOpen, unread },
+      })
+    );
+  }, [isOpen, unread]);
+
   // Scroll the messages container (never the page — scrollIntoView can drag the
   // whole document on mobile, especially with the keyboard open)
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
@@ -522,6 +531,18 @@ export default function ChatbotWidget() {
       formData.append('conversationHistory', JSON.stringify(history));
 
       const res  = await fetch(`${API_URL}/api/chatbot/query`, { method: 'POST', body: formData });
+
+      // Being asked to slow down is not a failure, and it is the one case where
+      // offering "Retry" is actively wrong — the next attempt spends itself on
+      // the same refusal. The server's own message says what the limit was, so
+      // it is shown verbatim and no retry is offered.
+      if (res.status === 429 || res.status === 503) {
+        const payload = await res.json().catch(() => null);
+        setError(payload?.message || 'You are sending messages too quickly. Please wait a moment.');
+        setRetryFn(null);
+        return;
+      }
+
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
 

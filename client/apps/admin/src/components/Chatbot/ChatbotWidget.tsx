@@ -508,6 +508,24 @@ export default function ChatbotWidget() {
 
       const data = await res.json();
 
+      // A rate-limit refusal carries a message that explains itself ("give me a
+      // moment to catch up"). Replacing it with "something went wrong. Try
+      // again!" both hides the reason and invites the retry that will be
+      // refused for the same reason.
+      if (!res.ok) {
+        const refusal = (data as { message?: string } | null)?.message;
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: refusal || 'Sorry, something went wrong. Try again!',
+            products: [],
+            timestamp: Date.now(),
+          },
+        ]);
+        return;
+      }
+
       if (data.success) {
         const responseData = data.data;
 

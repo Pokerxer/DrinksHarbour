@@ -10,8 +10,41 @@
 // nothing here may report success for a message the server did not accept.
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const nodemailer = require('nodemailer');
 const imap = require('./imap.service');
+
+// Shared with services/email.service.js — addresses belonging to seeded,
+// fabricated customers. See scripts/buildEmailSuppressionList.js.
+let _suppressed = null;
+function suppressionSet() {
+  if (_suppressed) return _suppressed;
+  _suppressed = new Set();
+  try {
+    const file = path.join(__dirname, '..', 'config', 'email-suppression.json');
+    if (fs.existsSync(file)) {
+      for (const a of (JSON.parse(fs.readFileSync(file, 'utf8')).addresses || [])) {
+        _suppressed.add(String(a).toLowerCase());
+      }
+    }
+  } catch {
+    // Treated as "suppress nobody"; email.service.js logs the parse failure.
+  }
+  return _suppressed;
+}
+
+/** Which of these recipients are on the suppression list. */
+function suppressedRecipients(list) {
+  const set = suppressionSet();
+  if (set.size === 0) return [];
+  return (list || [])
+    .map((s) => {
+      const m = /<([^>]+)>/.exec(String(s));
+      return (m ? m[1] : String(s)).trim().toLowerCase();
+    })
+    .filter((a) => a && set.has(a));
+}
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 
@@ -217,6 +250,35 @@ async function appendToSpecial(account, specialUse, raw, flags) {
  * and only one of them is a problem to chase.
  */
 async function send(account, input) {
+  // Same kill switch as services/email.service.js. This is the staff mail
+  // client rather than transactional mail, but it reaches the same SMTP server,
+  // so a dataset-seeding session with OUTBOUND_EMAIL=off must not be able to
+  // deliver from here either.
+  if (
+    String(process.env.OUTBOUND_EMAIL || '').toLowerCase() === 'off' ||
+    ['true', '1', 'yes'].includes(String(process.env.DISABLE_OUTBOUND_EMAIL || '').toLowerCase())
+  ) {
+    const err = taggedError('EOUTBOUNDDISABLED', 'Outbound email is disabled (OUTBOUND_EMAIL=off)');
+    throw err;
+  }
+
+  // Suppressed recipients are seeded/fabricated customers (see
+  // config/email-suppression.json). Staff composing to one is almost certainly a
+  // mistake, so this fails loudly rather than dropping the message silently —
+  // unlike the transactional path, there is a human here to see the error.
+  const suppressedHit = suppressedRecipients([
+    ...normalizeRecipients(input.to),
+    ...normalizeRecipients(input.cc),
+    ...normalizeRecipients(input.bcc),
+  ]);
+  if (suppressedHit.length) {
+    throw taggedError(
+      'ESUPPRESSEDRECIPIENT',
+      `Refusing to send: ${suppressedHit.length} recipient(s) are seeded/fabricated ` +
+      `accounts — ${suppressedHit.slice(0, 3).join(', ')}`,
+    );
+  }
+
   const messageId = generateMessageId(account.address);
   const message = buildMessage(account, {
     ...input,

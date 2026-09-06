@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as Icon from "react-icons/pi";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useCart } from "@/context/CartContext";
 import { useModalSearchUIContext } from "@/context/ModalSearchContext";
 import { useModalCartContext } from "@/context/ModalCartContext";
@@ -32,10 +32,12 @@ function NavItemContent({
   item,
   active,
   cartCount,
+  attention,
 }: {
   item: (typeof navItems)[0];
   active: boolean;
   cartCount: number;
+  attention?: { key?: string; motion?: Record<string, unknown>; unreadPing?: boolean };
 }) {
   const IconComponent = active ? item.activeIcon : item.icon;
   const isCart = item.id === "cart";
@@ -45,7 +47,20 @@ function NavItemContent({
       active ? "text-orange-500" : "text-gray-500"
     }`}>
       <div className="relative">
-        <IconComponent size={20} />
+        {attention ? (
+          <motion.span
+            key={attention.key}
+            {...attention.motion}
+            className="relative inline-flex items-center justify-center"
+          >
+            {attention.unreadPing && (
+              <span className="pointer-events-none absolute -inset-1.5 rounded-full bg-orange-400/50 animate-ping" />
+            )}
+            <IconComponent size={20} />
+          </motion.span>
+        ) : (
+          <IconComponent size={20} />
+        )}
         {isCart && cartCount > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[13px] h-[13px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
             {cartCount > 99 ? "99+" : cartCount}
@@ -97,6 +112,73 @@ const MobileBottomNav: React.FC = () => {
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Chat tab attention — driven by the widget's open/unread state
+  const prefersReducedMotion = useReducedMotion();
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
+  const [burstDone, setBurstDone] = useState(false);
+  const [nudgeKey, setNudgeKey] = useState(0);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ open: boolean; unread: number }>).detail;
+      setChatOpen(detail.open);
+      setChatUnread(detail.unread);
+    };
+    document.addEventListener("chat-widget-state", handler);
+    return () => document.removeEventListener("chat-widget-state", handler);
+  }, []);
+
+  // One-time intro burst ~1.8s after mount (skipped once chat is opened)
+  useEffect(() => {
+    if (prefersReducedMotion || chatOpen) {
+      setBurstDone(true);
+      return;
+    }
+    const t = setTimeout(() => setBurstDone(true), 1800);
+    return () => clearTimeout(t);
+  }, [prefersReducedMotion, chatOpen]);
+
+  // Periodic gentle nudge every 30s while the chat is closed with no unread
+  useEffect(() => {
+    if (prefersReducedMotion || chatOpen || chatUnread > 0 || !burstDone) return;
+    const id = setInterval(() => setNudgeKey((k) => k + 1), 30000);
+    return () => clearInterval(id);
+  }, [prefersReducedMotion, chatOpen, chatUnread, burstDone]);
+
+  // Priority: unread pulse > intro burst > periodic nudge. Silent when open.
+  const chatAttention = (() => {
+    if (prefersReducedMotion || chatOpen) return undefined;
+    if (chatUnread > 0) {
+      return {
+        unreadPing: true,
+        motion: {
+          animate: { scale: [1, 1.22, 1] },
+          transition: { repeat: Infinity, duration: 1.5, ease: "easeInOut" as const },
+        },
+      };
+    }
+    if (!burstDone) {
+      return {
+        motion: {
+          initial: { scale: 0.7, opacity: 0.5 },
+          animate: { scale: [1, 1.2, 1], opacity: 1 },
+          transition: { duration: 0.9, ease: "easeOut" as const },
+        },
+      };
+    }
+    if (nudgeKey > 0) {
+      return {
+        key: `chat-nudge-${nudgeKey}`,
+        motion: {
+          animate: { x: [0, -3, 3, -3, 3, 0] },
+          transition: { duration: 0.55, ease: "easeInOut" as const },
+        },
+      };
+    }
+    return undefined;
+  })();
 
   useEffect(() => {
     if (!showCategories) return;
@@ -442,11 +524,11 @@ const MobileBottomNav: React.FC = () => {
               <div key={item.id} className="flex-1 flex justify-center">
                 {item.href ? (
                   <Link href={item.href}>
-                    <NavItemContent item={item} active={active} cartCount={cartCount} />
+                    <NavItemContent item={item} active={active} cartCount={cartCount} attention={item.id === "chatbot" ? chatAttention : undefined} />
                   </Link>
                 ) : (
                   <button onClick={() => handleAction(item.id)}>
-                    <NavItemContent item={item} active={active} cartCount={cartCount} />
+                    <NavItemContent item={item} active={active} cartCount={cartCount} attention={item.id === "chatbot" ? chatAttention : undefined} />
                   </button>
                 )}
               </div>

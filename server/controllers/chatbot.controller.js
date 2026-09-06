@@ -3,6 +3,7 @@
 const chatbotService = require('../services/chatbot.service');
 const escalationService = require('../services/chatEscalation.service');
 const { successResponse, errorResponse } = require('../utils/response');
+const { clampQuery, parseConversationHistory } = require('../utils/chatbotInputLimits');
 
 /**
  * Extract readable text from an uploaded document buffer.
@@ -74,10 +75,17 @@ exports.greeting = async (req, res) => {
  */
 exports.query = async (req, res) => {
   try {
-    const { query, tenantId } = req.body;
-    const conversationHistory = req.body.conversationHistory
-      ? JSON.parse(req.body.conversationHistory)
-      : [];
+    const { tenantId } = req.body;
+
+    // Both fields are forwarded to a paid model on an unauthenticated route, so
+    // both are bounded before anything reads them. The history in particular
+    // used to be JSON.parse'd with no size check: one request could carry
+    // megabytes and be billed as input tokens, and a stranger's malformed JSON
+    // threw here and left as an opaque 500 rather than the 400 it is.
+    const query = clampQuery(req.body.query);
+    const { history: conversationHistory, error: historyError } =
+      parseConversationHistory(req.body.conversationHistory);
+    if (historyError) return errorResponse(res, historyError, 400);
 
     const imageFiles = req.files?.images || [];
     const imageUrls = imageFiles.map(

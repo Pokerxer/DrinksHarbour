@@ -316,8 +316,84 @@ const calculateOrderBreakdown = (order) => {
 
 // ─── Email sender ─────────────────────────────────────────────────────────────
 
+// Kill switch for outbound mail. Set OUTBOUND_EMAIL=off (or DISABLE_OUTBOUND_EMAIL=true)
+// and nothing leaves this process, regardless of NODE_ENV or SMTP credentials.
+//
+// This exists because the seed dataset carries consumer-looking addresses
+// (@gmail.com / @yahoo.com). Seeding places hundreds of orders, and
+// order.controller.js fires sendOrderConfirmationToCustomer() on each one.
+// NODE_ENV is NOT consulted on the send path below — the dev-mode branch is
+// only reached when the transport fails to build — so with working MAIL_*
+// credentials a seed run would deliver real mail about fictitious orders to
+// real strangers, from the production domain. Guard first, addresses second.
+const outboundEmailDisabled = () => (
+  String(process.env.OUTBOUND_EMAIL || '').toLowerCase() === 'off' ||
+  ['true', '1', 'yes'].includes(String(process.env.DISABLE_OUTBOUND_EMAIL || '').toLowerCase())
+);
+
+// ── Per-recipient suppression ───────────────────────────────────────────────
+//
+// Production carries 400 seeded customers whose addresses are real consumer
+// inboxes (gmail/yahoo) but whose orders are fabricated. Mailing them would send
+// order news to people who never bought anything.
+//
+// The global switch above solves that by silencing everything — including
+// password resets for the 133 real users — so it is not a resting state. This
+// list is the targeted replacement: those 400 addresses are dropped, everyone
+// else is delivered normally.
+//
+// Regenerate with scripts/buildEmailSuppressionList.js after seeding or
+// migrating. A missing file means "suppress nobody", which is the correct
+// default for a clean database.
+let suppressedAddresses = null;
+const loadSuppressionList = () => {
+  if (suppressedAddresses) return suppressedAddresses;
+  suppressedAddresses = new Set();
+  try {
+    const file = path.join(__dirname, '..', 'config', 'email-suppression.json');
+    if (fs.existsSync(file)) {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      for (const a of parsed.addresses || []) suppressedAddresses.add(String(a).toLowerCase());
+      if (suppressedAddresses.size) {
+        console.log(`📭 email suppression list loaded: ${suppressedAddresses.size} address(es)`);
+      }
+    }
+  } catch (err) {
+    // A malformed list must not take the mail service down, but silently
+    // ignoring it would start mailing the very people it exists to protect.
+    console.error(`⚠️  email suppression list unreadable (${err.message}) — ` +
+      'no addresses suppressed');
+  }
+  return suppressedAddresses;
+};
+
+/** True when every recipient of this message is suppressed. */
+const isSuppressed = (to) => {
+  const list = loadSuppressionList();
+  if (list.size === 0) return false;
+  const recipients = String(to || '')
+    .split(',')
+    .map((s) => {
+      const m = /<([^>]+)>/.exec(s);          // "Name <addr@x>" → addr@x
+      return (m ? m[1] : s).trim().toLowerCase();
+    })
+    .filter(Boolean);
+  if (recipients.length === 0) return false;
+  return recipients.every((r) => list.has(r));
+};
+
 const sendEmail = async (options) => {
   try {
+    if (outboundEmailDisabled()) {
+      console.log(`🚫 outbound email disabled — not sending to=${options.to} subject="${options.subject}"`);
+      return { success: true, message: 'Email suppressed (outbound disabled)', messageId: 'suppressed' };
+    }
+
+    if (isSuppressed(options.to)) {
+      console.log(`📭 suppressed recipient — not sending to=${options.to} subject="${options.subject}"`);
+      return { success: true, message: 'Email suppressed (recipient on suppression list)', messageId: 'suppressed' };
+    }
+
     if (!(await ensureEmailService())) {
       if (isProduction()) {
         console.error(
