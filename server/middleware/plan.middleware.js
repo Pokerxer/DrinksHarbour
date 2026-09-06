@@ -199,6 +199,11 @@ async function checkStaffLimit(req, res, next) {
     const count = await User.countDocuments({
       tenant: tenant._id,
       role: { $in: ['tenant_owner', 'tenant_admin', 'tenant_staff'] },
+      // Staff seat rule (README §5): a DELETED member returns their seat, so a
+      // starter tenant who removes their one staff member can replace them. This
+      // is the only limit with a status filter — SKUs and warehouses still count
+      // every row, because (unlike a user) there is no way to flag one as gone.
+      status: { $ne: 'deleted' },
     });
     if (count >= plan.staffLimit) {
       const err = new ForbiddenError(

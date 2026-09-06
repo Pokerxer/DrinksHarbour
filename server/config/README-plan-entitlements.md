@@ -230,6 +230,18 @@ survivable-read-only design (README §4), and it produces the first real
 entitlement lifecycle. Revisit only if goal A (Paystack plans + webhook) lands
 before the 20th and the tenant tries to convert.
 
+#### DECISION — `wyncity` is a comped/demo tenant (2026-09-06)
+
+The commission audit (`scripts/auditCommissionRates.js`) re-ran on 2026-09-06
+and isolated the real finding: `wyncity` is `enterprise` / `active` with **no
+`currentPeriodEnd`** — a paid-config tenant providing ₦0 subscription revenue.
+It carries `commissionPercentage: 0`, which is harmless (markup revenue model —
+`commissionPercentage` is only spent in the commission model), so **no
+commission sync action was taken**. Decision recorded: leave `wyncity` exactly
+as-is, **comped an enterprise tenant for now** (demo). Revisit when goal A
+(Paystack) is live and it tries to convert; do not "fix" it by syncing
+commissions — that changes nothing about the subscription leak.
+
 ### 4b. Billing configuration is environment state, not code
 
 `node scripts/checkErmBillingConfig.js` reports, for the environment it is run
@@ -292,19 +304,26 @@ rule livable:
 #### The exception, and it is a real one: staff have no hard delete
 
 `DELETE /api/employees/:id` is a **soft** delete — `user.status = 'deleted'`,
-the row stays. There is no route that removes a tenant-scoped `User`. Under the
-rule above that row keeps occupying a seat forever, so:
+the row stays. There is no route that removes a tenant-scoped `User`.
 
-> **A Starter tenant (`staffLimit: 1`) who removes their one staff member can
-> never add a replacement.** The gate counts the `deleted` row, the tenant has
-> no way to remove it, and their only exits are upgrading or a support ticket.
+**DECISION (2026-09-06): deleting a staff member returns their seat.**
+`checkStaffLimit` and the usage count now exclude `status: 'deleted'`, so
+**a Starter tenant (`staffLimit: 1`) who removes their one staff member can add
+a replacement.** This is the only limit with a status filter, and deliberately
+so: a `deleted` user is not a state a tenant can leave (unlike `suspended` /
+`inactive`, which still occupy the seat — deactivating is not removing), but a
+hard-delete-less row would otherwise hold a seat forever. SKU and warehouse
+limits keep counting every row, because those rows can genuinely be deleted.
+Pinned by `limitCountingAndUsageCache.test.js`.
 
-This is recorded rather than quietly patched because the counting rule was a
-product decision and this is its cost. If it is to be fixed, fix it where the
-dead end is — either exclude `status: 'deleted'` from `checkStaffLimit` alone
-(deleted is not a state a tenant can leave, unlike `suspended`), or give
-employees a real delete. Do **not** re-split the rule across all four gates;
-that is the state this decision replaced.
+Not chosen: a real `DELETE /api/employees/:id` hard delete. The soft delete
+keeps the user's audit trail and order/appraisal history intact; freeing the
+seat without destroying the row achieves the fix with none of the referential
+risk. Revisit only if tenants ever need to *remove* (not just replace) a seat.
+
+The counting rule was a product decision and this is the cost of keeping every
+other row counted. Do **not** re-split the rule across all four gates; that is
+the state this decision replaced.
 
 No index work was needed: counting every row uses the existing `{ tenant: 1 }`
 indexes on `SubProduct`, `User` and `Warehouse`, and shops are a subdocument

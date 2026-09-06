@@ -61,15 +61,20 @@ function keyOf(tenantId) {
  * Live counts, no cache. Exported so a caller that genuinely needs the truth
  * can ask for it without going near the cache.
  *
- * Every row counts — archived SKUs, deleted staff, inactive warehouses — which
- * is the rule in README §5 and the same set the gates count. A filter here that
- * the gates did not apply would make the billing screen disagree with the
- * middleware, which is the failure this whole file is arranged to avoid.
+ * Every row counts — archived SKUs, inactive warehouses — EXCEPT staff whose
+ * account is `deleted` (README §5, "staff seats": deleting a member returns
+ * their seat; deactivating them does not). The billing screen and the gates
+ * count the same set, which is the failure this whole file is arranged to
+ * avoid.
  */
 async function countUsage(tenantId) {
   const [skus, staff, warehouses] = await Promise.all([
     SubProduct.countDocuments({ tenant: tenantId }),
-    User.countDocuments({ tenant: tenantId, role: { $in: STAFF_ROLES } }),
+    User.countDocuments({
+      tenant: tenantId,
+      role: { $in: STAFF_ROLES },
+      status: { $ne: 'deleted' },
+    }),
     Warehouse.countDocuments({ tenant: tenantId }),
   ]);
   return { skus, staff, warehouses };

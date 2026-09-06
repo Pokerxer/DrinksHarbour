@@ -1,11 +1,13 @@
 // Two rules that only exist because the same number is read in two places.
 //
 //   1. THE COUNTING RULE (README §5). Every row counts against a sold limit —
-//      archived SKUs, deleted staff, inactive warehouses, deactivated shops.
-//      The four gates used to disagree: `checkShopLimit` filtered on
-//      `active !== false` and the other three did not, so the same tenant could
-//      free a shop slot by toggling a flag but not a warehouse slot. The way to
-//      free a slot is to DELETE the row.
+//      archived SKUs, inactive warehouses, deactivated shops — EXCEPT staff:
+//      a tenant whose staff member was DELETED (status 'deleted') gets the
+//      seat back (README §5, "staff seats", the 2026-09-06 decision). The four
+//      gates used to disagree: `checkShopLimit` filtered on `active !== false`
+//      and the other three did not, so the same tenant could free a shop slot
+//      by toggling a flag but not a warehouse slot. The way to free any other
+//      slot is to DELETE the row.
 //
 //   2. THE USAGE CACHE (README §5b). `GET /api/erm/status` is fetched by the
 //      admin's root layout on EVERY page render, and its three countDocuments
@@ -25,7 +27,7 @@ const path = require('node:path');
 const mongoose = require('mongoose');
 
 const { countedShops, addOnAllowance } = require('../config/erm-plans');
-const { checkShopLimit, checkSkuLimit } = require('../middleware/plan.middleware');
+const { checkShopLimit, checkSkuLimit, checkStaffLimit } = require('../middleware/plan.middleware');
 const {
   getUsage,
   countUsage,
@@ -221,7 +223,7 @@ test('running a limit gate invalidates the reported usage', async () => {
   clearUsageCache();
 });
 
-test('countUsage counts every row — no status or isActive filter', async () => {
+test('countUsage excludes deleted staff but counts every other row', async () => {
   // Pins the counting rule at the query, not just at the gate: a filter added
   // here would make the billing screen disagree with the middleware again.
   const filters = [];
@@ -242,8 +244,45 @@ test('countUsage counts every row — no status or isActive filter', async () =>
   assert.deepStrictEqual(filters[0], { tenant: TENANT_ID }, 'SKUs: no status filter');
   assert.deepStrictEqual(
     filters[1],
-    { tenant: TENANT_ID, role: { $in: ['tenant_owner', 'tenant_admin', 'tenant_staff'] } },
-    'staff: role only, no status filter'
+    {
+      tenant: TENANT_ID,
+      role: { $in: ['tenant_owner', 'tenant_admin', 'tenant_staff'] },
+      status: { $ne: 'deleted' },
+    },
+    'staff: deleted rows no longer hold a seat'
   );
   assert.deepStrictEqual(filters[2], { tenant: TENANT_ID }, 'warehouses: no isActive filter');
+});
+
+test('checkStaffLimit lets a starter seat be reused once the incumbent is deleted', async () => {
+  // The trap README §5 recorded: deactivate (inactive/suspended) a member and
+  // the seat stays, but a DELETED staff member must not hold it forever.
+  const run = async (count, given) => {
+    const original = User.countDocuments;
+    User.countDocuments = async (query) => {
+      given(query);
+      return count;
+    };
+    let passed = false;
+    let error = null;
+    try {
+      await checkStaffLimit({ tenant: { _id: 't1', plan: 'starter' } }, {}, (err) => {
+        if (err) error = err;
+        else passed = true;
+      });
+    } finally {
+      User.countDocuments = original;
+    }
+    return { passed, error };
+  };
+
+  const ok = await run(0, (q) =>
+    assert.ok(q.status && q.status.$ne === 'deleted', 'must exclude deleted staff')
+  );
+  assert.strictEqual(ok.passed, true, 'deleted member must not consume the only seat');
+
+  const full = await run(1, () => {});
+  assert.strictEqual(full.passed, false, 'a live member fills the only seat');
+  assert.strictEqual(full.error.code, 'STAFF_LIMIT_REACHED');
+  assert.deepStrictEqual(full.error.details, { used: 1, limit: 1, currentPlan: 'starter' });
 });
