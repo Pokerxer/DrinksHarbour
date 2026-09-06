@@ -125,7 +125,7 @@ test('unresolved tenant fails closed rather than running unscoped', () => {
   assert.match(error.message, /tenant context required/i);
 });
 
-test('unapproved tenant and lapsed subscription are refused', () => {
+test('unapproved tenant and cancelled subscription are refused', () => {
   const pending = run({
     user: { role: 'tenant_owner', tenant: TENANT_A },
     tenant: { _id: TENANT_A, status: 'pending', subscriptionStatus: 'active' },
@@ -134,13 +134,80 @@ test('unapproved tenant and lapsed subscription are refused', () => {
   assert.strictEqual(pending.passed, false);
   assert.match(pending.error.message, /not approved/i);
 
-  const lapsed = run({
+  const canceled = run({
+    user: { role: 'tenant_owner', tenant: TENANT_A },
+    tenant: { _id: TENANT_A, status: 'approved', subscriptionStatus: 'canceled' },
+    query: {},
+  });
+  assert.strictEqual(canceled.passed, false);
+  assert.match(canceled.error.message, /subscription is not active/i);
+});
+
+// `past_due` used to land in the block above — a total lockout, which also shut
+// the billing page a tenant needs in order to pay. It is now a READ-ONLY state:
+// see config/README-plan-entitlements.md §4.
+test('a past_due tenant may read', () => {
+  const { passed } = run({
+    method: 'GET',
     user: { role: 'tenant_owner', tenant: TENANT_A },
     tenant: { _id: TENANT_A, status: 'approved', subscriptionStatus: 'past_due' },
     query: {},
   });
-  assert.strictEqual(lapsed.passed, false);
-  assert.match(lapsed.error.message, /subscription is not active/i);
+  assert.strictEqual(passed, true);
+});
+
+test('a past_due tenant may not write', () => {
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+    const { passed, error } = run({
+      method,
+      user: { role: 'tenant_owner', tenant: TENANT_A },
+      tenant: { _id: TENANT_A, status: 'approved', subscriptionStatus: 'past_due' },
+      query: {},
+    });
+    assert.strictEqual(passed, false, `${method} should be refused`);
+    assert.strictEqual(error.code, 'SUBSCRIPTION_READ_ONLY');
+  }
+});
+
+// The whole point of relaxing the status list: a tenant in dunning has to be
+// able to POST its way back to paying, or read-only has no exit.
+test('the billing exemption lets a past_due tenant still pay', () => {
+  const { passed } = run({
+    method: 'POST',
+    billingWriteExempt: true,
+    user: { role: 'tenant_owner', tenant: TENANT_A },
+    tenant: { _id: TENANT_A, status: 'approved', subscriptionStatus: 'past_due' },
+    query: {},
+  });
+  assert.strictEqual(passed, true);
+});
+
+test('an elapsed trial is read-only too, an unexpired one is not', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const trialing = (endsAt) => ({
+    _id: TENANT_A,
+    status: 'approved',
+    subscriptionStatus: 'trialing',
+    trialEndsAt: endsAt,
+  });
+
+  const expired = run({
+    method: 'POST',
+    user: { role: 'tenant_owner', tenant: TENANT_A },
+    tenant: trialing(new Date(Date.now() - day)),
+    query: {},
+  });
+  assert.strictEqual(expired.passed, false);
+  assert.strictEqual(expired.error.code, 'SUBSCRIPTION_READ_ONLY');
+  assert.strictEqual(expired.error.details.reason, 'trial_expired');
+
+  const live = run({
+    method: 'POST',
+    user: { role: 'tenant_owner', tenant: TENANT_A },
+    tenant: trialing(new Date(Date.now() + day)),
+    query: {},
+  });
+  assert.strictEqual(live.passed, true);
 });
 
 test('a populated tenant object on the JWT user resolves the same as an id', () => {

@@ -3,6 +3,13 @@
 // VendorPricelist controller hardening: tenant-scoped get-one (Workstream B),
 // update field allowlist, and embedded-item validation. Same mocking approach
 // as pricelistRoutesValidation.test.js.
+//
+// The req.tenant fixtures carry `plan: 'growth'` because this router is part of
+// the purchases module and now sits behind requireCapability('purchase_orders')
+// — a tenant with no plan resolves to free_trial, which does not have it. The
+// plan gate is deliberately NOT stubbed out with the auth middleware below:
+// these tests dispatch through the real router, and a fixture that would be
+// refused in production should be refused here too.
 const test = require('node:test');
 const assert = require('node:assert');
 const mongoose = require('mongoose');
@@ -131,7 +138,7 @@ test('get-one vendor pricelist is tenant-scoped: cross-tenant _id returns 404', 
     method: 'GET',
     url: `/${String(plB._id)}`,
     params: { id: String(plB._id) },
-    tenant: { _id: tenantA },
+    tenant: { _id: tenantA, plan: 'growth' },
     user: { role: 'tenant_admin', tenant: tenantA },
   });
 
@@ -153,7 +160,7 @@ test('own-tenant get-one returns the document', async (t) => {
     method: 'GET',
     url: `/${String(plA._id)}`,
     params: { id: String(plA._id) },
-    tenant: { _id: tenantA },
+    tenant: { _id: tenantA, plan: 'growth' },
     user: { role: 'tenant_admin', tenant: tenantA },
   });
 
@@ -191,7 +198,7 @@ test('update ignores client-sent tenant, createdBy and lastSyncedAt', async (t) 
     method: 'PATCH',
     url: `/${String(plA._id)}`,
     params: { id: String(plA._id) },
-    tenant: { _id: tenantA },
+    tenant: { _id: tenantA, plan: 'growth' },
     user: { role: 'tenant_admin', tenant: tenantA, _id: oid() },
     body: {
       name: 'New',
@@ -218,7 +225,7 @@ test('create rejects items without subProductId with a 400', async (t) => {
   const res = await dispatch(getRouter(), {
     method: 'POST',
     url: '/',
-    tenant: { _id: oid() },
+    tenant: { _id: oid(), plan: 'growth' },
     user: { role: 'tenant_admin', tenant: oid(), _id: oid() },
     body: { name: 'L', vendorName: 'V', items: [{ subProductId: '', unitPrice: 10 }] },
   });
@@ -236,7 +243,7 @@ test('create rejects items with unitPrice <= 0 with a 400', async (t) => {
   const res = await dispatch(getRouter(), {
     method: 'POST',
     url: '/',
-    tenant: { _id: oid() },
+    tenant: { _id: oid(), plan: 'growth' },
     user: { role: 'tenant_admin', tenant: oid(), _id: oid() },
     body: { name: 'L', vendorName: 'V', items: [{ subProductId: String(subId), unitPrice: 0 }] },
   });
@@ -259,7 +266,7 @@ test('create happy path sets tenant + createdBy and returns 201', async (t) => {
   const res = await dispatch(getRouter(), {
     method: 'POST',
     url: '/',
-    tenant: { _id: tenantId },
+    tenant: { _id: tenantId, plan: 'growth' },
     user: { role: 'tenant_admin', tenant: tenantId, _id: userId },
     body: {
       name: 'Q3',
@@ -290,7 +297,7 @@ test('update rejects invalid items with a 400', async (t) => {
     method: 'PATCH',
     url: `/${String(plA._id)}`,
     params: { id: String(plA._id) },
-    tenant: { _id: tenantA },
+    tenant: { _id: tenantA, plan: 'growth' },
     user: { role: 'tenant_admin', tenant: tenantA, _id: oid() },
     body: { items: [{ subProductId: String(oid()), unitPrice: -5 }] },
   });
@@ -314,7 +321,7 @@ test('matrix query embeds $and date-window (start-only lists are not excluded)',
     method: 'GET',
     url: '/matrix',
     params: {},
-    tenant: { _id: tenantA },
+    tenant: { _id: tenantA, plan: 'growth' },
     user: { role: 'tenant_admin', tenant: tenantA },
   });
 
