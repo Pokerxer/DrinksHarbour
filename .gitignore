@@ -8,6 +8,19 @@ node_modules/
 !**/.env.local.example
 server/.env
 
+# ...and every VARIANT of it. The rules above match the literal name `.env` and
+# nothing else, so `server/.env.backup-preseed` and `server/.env.seedmode-backup`
+# — byte-for-byte copies of .env, complete with the live Korapay keys, the Atlas
+# URI and every API secret — sat untracked-but-committable in the working tree.
+# A single `git add -A` would have published them.
+#
+# Anything named `.env.<something>` is now ignored by default; the two files that
+# genuinely belong in the repo are re-admitted below. Add an exception rather
+# than loosening the rule.
+**/.env.*
+!**/.env.example
+!**/.env.local.example
+
 # AI assistant instructions, config and scratch — local tooling, not part of the
 # codebase. Matched at any depth, so nested copies are covered too.
 AGENTS.md
