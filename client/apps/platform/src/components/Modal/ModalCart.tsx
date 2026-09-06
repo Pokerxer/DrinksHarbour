@@ -26,6 +26,16 @@ const ModalCart = () => {
   const [note, setNote] = useState('');
   const [appliedUpdates, setAppliedUpdates] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Mobile detection — kept in sync with the lg breakpoint the MobileBottomNav uses.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   const FREE_DELIVERY_THRESHOLD = 2_000_000;
   const shipping = useMemo(() => cartTotal >= FREE_DELIVERY_THRESHOLD ? 0 : 2500, [cartTotal]);
@@ -166,12 +176,21 @@ const ModalCart = () => {
           {/* Drawer */}
           <motion.div
             ref={modalRef}
-            initial={{ x: '100%', opacity: 0.5 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: '100%', opacity: 0.5 }}
+            initial={isMobile ? { y: '100%' } : { x: '100%', opacity: 0.5 }}
+            animate={isMobile ? { y: 0 } : { x: 0, opacity: 1 }}
+            exit={isMobile ? { y: '100%' } : { x: '100%', opacity: 0.5 }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-2xl z-50 flex flex-col"
+            className={isMobile
+              ? "fixed bottom-0 inset-x-0 h-[92dvh] max-h-[92dvh] bg-white shadow-2xl z-50 flex flex-col rounded-t-[28px] overflow-hidden"
+              : "fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-2xl z-50 flex flex-col"}
           >
+            {/* Drag handle (mobile only) */}
+            {isMobile && (
+              <div className="flex justify-center pt-2.5 pb-1 shrink-0">
+                <div className="w-10 h-1.5 rounded-full bg-gray-300" />
+              </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-red-700 to-red-900">
               <div className="flex items-center gap-3">
@@ -290,7 +309,7 @@ const ModalCart = () => {
             )}
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto min-h-0">
               {cartCount === 0 ? (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -530,7 +549,7 @@ const ModalCart = () => {
               <motion.div
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                className="border-t border-gray-100 bg-gray-50"
+                className="border-t border-gray-100 bg-gray-50 shrink-0 pb-[env(safe-area-inset-bottom)]"
               >
                 {/* Order Note */}
                 <div className="px-6 py-3 border-b border-gray-200">
