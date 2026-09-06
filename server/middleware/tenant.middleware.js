@@ -2,11 +2,74 @@
 
 const Tenant = require('../models/Tenant');
 const { ForbiddenError, NotFoundError } = require('../utils/errors');
+const { resolveEntitlements, readOnlyMessage } = require('../services/entitlements.service');
 
+// A field omitted here is SILENTLY undefined at every consumer, not an error.
+// `trialEndsAt`, `addOns`, `customCapabilities` and `posSettings.shops` are on
+// this list for the plan-entitlement gates (middleware/plan.middleware.js,
+// services/entitlements.service.js): without them a trial never expires, a
+// custom tenant silently falls back to the default set, and the add-on quota
+// reads as "one, free" for everyone regardless of what they bought.
 const TENANT_SELECT_FIELDS =
-  '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan';
+  '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan trialEndsAt addOns customCapabilities posSettings.shops';
 const ADMIN_ROLES = ['super_admin', 'admin'];
 const RESERVED_SUBDOMAINS = ['www', 'drinksharbour', 'localhost', 'admin', 'platform', 'api'];
+
+// ─── Dunning: which statuses get a tenant context, and who may write ─────────
+//
+// `past_due` is on this list DELIBERATELY, and it did not used to be. The old
+// rule ("active or trialing, else no req.tenant at all") was a total lockout:
+// the instant the invoice.payment_failed webhook wrote 'past_due', that tenant
+// lost the entire admin dashboard — INCLUDING /settings/billing, because
+// /api/erm sits behind requireTenant. Dunning that makes it impossible to pay
+// is not dunning; it is an outage with a support ticket attached.
+//
+// So the EXISTENCE gate is relaxed for past_due and the WRITE gate is enforced
+// here instead, next to it, rather than only inside requireCapability. That
+// placement matters: most tenant-owned routers carry requireOwnTenant and no
+// capability gate at all, so relaxing the status list without this would have
+// handed a non-paying tenant full write access to exactly those routes.
+//
+// The full rule, and why lapsed tenants keep read access, is in
+// server/config/README-plan-entitlements.md §4.
+const TENANT_CONTEXT_STATUSES = ['active', 'trialing', 'past_due'];
+
+const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+/**
+ * Let a route accept writes from a tenant who is otherwise read-only.
+ *
+ * Exactly one caller is legitimate: the billing router. A past_due tenant has
+ * to be able to POST /api/erm/subscribe, or the read-only state it is in has
+ * no exit. Mount it BEFORE the tenant guard on that router.
+ */
+const allowBillingWrites = (req, res, next) => {
+  req.billingWriteExempt = true;
+  next();
+};
+
+/**
+ * Throw unless this request may change data. Reads always pass.
+ *
+ * resolveEntitlements owns the policy — past_due and an elapsed trial are both
+ * read-only, and it is the same function the admin client uses, so the two
+ * sides cannot disagree about what "read-only" means.
+ */
+function assertWritesAllowed(req) {
+  if (!WRITE_METHODS.includes(req.method)) return;
+  if (req.billingWriteExempt) return;
+
+  const { writesAllowed, reason, plan } = resolveEntitlements(req.tenant);
+  if (writesAllowed) return;
+
+  // The sentence lives in entitlements.service.js so this gate, the capability
+  // gate and the billing screen cannot tell the tenant three different things.
+  const err = new ForbiddenError(readOnlyMessage(reason));
+  // Same code requireCapability raises, so the client has one branch to handle.
+  err.code = 'SUBSCRIPTION_READ_ONLY';
+  err.details = { reason, currentPlan: plan };
+  throw err;
+}
 
 /**
  * Single source of truth for req.tenant.
@@ -27,7 +90,7 @@ const resolveTenantContext = async (req, res, next) => {
       const tenant = await Tenant.findById(req.user.tenant)
         .select(TENANT_SELECT_FIELDS)
         .lean();
-      if (tenant && tenant.status === 'approved' && ['active', 'trialing'].includes(tenant.subscriptionStatus)) {
+      if (tenant && tenant.status === 'approved' && TENANT_CONTEXT_STATUSES.includes(tenant.subscriptionStatus)) {
         req.tenant = tenant;
       }
     } catch (_) {
@@ -45,7 +108,7 @@ const resolveTenantContext = async (req, res, next) => {
         const tenant = await Tenant.findOne({ slug: tenantSlug, status: 'approved' })
           .select(TENANT_SELECT_FIELDS)
           .lean();
-        if (tenant && ['active', 'trialing'].includes(tenant.subscriptionStatus)) {
+        if (tenant && TENANT_CONTEXT_STATUSES.includes(tenant.subscriptionStatus)) {
           req.tenant = tenant;
         }
       } catch (_) {
@@ -64,10 +127,17 @@ const resolveTenantContext = async (req, res, next) => {
     const subdomain = host.split('.')[0].toLowerCase();
     if (subdomain && !RESERVED_SUBDOMAINS.includes(subdomain)) {
       try {
+        // Same silent-projection hazard as TENANT_SELECT_FIELDS: anything that
+        // resolves entitlements from this document reads an absent trialEndsAt
+        // or customCapabilities as "no trial, default set" without error.
         const tenant = await Tenant.findOne({ slug: subdomain, status: 'approved' })
-          .select('_id name slug status subscriptionStatus defaultCurrency enforceAgeVerification primaryColor logo plan')
+          .select('_id name slug status subscriptionStatus defaultCurrency enforceAgeVerification primaryColor logo plan trialEndsAt customCapabilities')
           .lean();
-        if (tenant && ['active', 'trialing'].includes(tenant.subscriptionStatus)) {
+        // A past_due storefront stays up on purpose. Taking a merchant's shop
+        // offline over one failed card punishes their customers, and the
+        // platform still earns commission on what sells; what dunning stops is
+        // the tenant's own writes, enforced by the guards below.
+        if (tenant && TENANT_CONTEXT_STATUSES.includes(tenant.subscriptionStatus)) {
           req.tenant = tenant;
         }
       } catch (_) {
@@ -80,7 +150,10 @@ const resolveTenantContext = async (req, res, next) => {
 };
 
 /**
- * Require tenant context (use after resolveTenantContext)
+ * Require tenant context (use after resolveTenantContext).
+ *
+ * A past_due tenant gets through and is read-only — see the dunning note above
+ * TENANT_CONTEXT_STATUSES.
  */
 const requireTenant = (req, res, next) => {
   if (!req.tenant) {
@@ -91,9 +164,11 @@ const requireTenant = (req, res, next) => {
     throw new ForbiddenError('Tenant account is not approved');
   }
 
-  if (!['active', 'trialing'].includes(req.tenant.subscriptionStatus)) {
+  if (!TENANT_CONTEXT_STATUSES.includes(req.tenant.subscriptionStatus)) {
     throw new ForbiddenError('Tenant subscription is not active');
   }
+
+  assertWritesAllowed(req);
 
   next();
 };
@@ -128,9 +203,11 @@ const verifyActiveSubscription = (req, res, next) => {
     throw new ForbiddenError('Tenant context required');
   }
 
-  if (!['active', 'trialing'].includes(req.tenant.subscriptionStatus)) {
+  if (!TENANT_CONTEXT_STATUSES.includes(req.tenant.subscriptionStatus)) {
     throw new ForbiddenError('Tenant subscription is not active');
   }
+
+  assertWritesAllowed(req);
 
   next();
 };
@@ -185,9 +262,14 @@ const requireOwnTenant = (req, res, next) => {
     throw new ForbiddenError('Tenant account is not approved');
   }
 
-  if (!['active', 'trialing'].includes(req.tenant.subscriptionStatus)) {
+  if (!TENANT_CONTEXT_STATUSES.includes(req.tenant.subscriptionStatus)) {
     throw new ForbiddenError('Tenant subscription is not active');
   }
+
+  // Relaxing the status list above without this would hand a non-paying tenant
+  // full write access to every requireOwnTenant router — most of which carry
+  // no capability gate, so requireCapability's read-only branch never runs.
+  assertWritesAllowed(req);
 
   next();
 };
@@ -210,4 +292,7 @@ module.exports = {
   notFoundOrForeign,
   verifyTenantOwnership,
   verifyActiveSubscription,
+  allowBillingWrites,
+  assertWritesAllowed,
+  TENANT_CONTEXT_STATUSES,
 };

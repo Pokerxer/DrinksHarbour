@@ -2,6 +2,7 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
+const { applyTrialWindow } = require("../config/erm-plans");
 
 const tenantSchema = new Schema(
   {
@@ -49,6 +50,16 @@ const tenantSchema = new Schema(
       default: "free_trial",
     },
 
+    // Negotiated capability set for `plan: 'custom'` only. Empty (the default)
+    // means "use the custom entry in config/erm-plans.js", which mirrors
+    // enterprise. Ignored for every other plan — a starter tenant cannot be
+    // handed pro features by writing to this array.
+    // See services/entitlements.service.js and config/README-plan-entitlements.md.
+    customCapabilities: {
+      type: [String],
+      default: [],
+    },
+
     subscriptionStatus: {
       type: String,
       enum: [
@@ -80,6 +91,36 @@ const tenantSchema = new Schema(
 
     currentPeriodStart: Date,
     currentPeriodEnd: Date,
+
+    // ────────────────────────────────────────────────
+    // Billing notices — what we have already told this tenant
+    // ────────────────────────────────────────────────
+    //
+    // Without this the trial-ending sweep would mail every trialing tenant
+    // every night, and the dunning reminder would mail every past_due tenant
+    // every night. A subscription email that arrives daily is not a reminder,
+    // it is a reason to filter the sender.
+    //
+    // See services/billingNotifications.service.js. Deliberately a small flat
+    // subdocument of dates rather than a notification log: the only question
+    // ever asked is "have we already said this, about this?".
+    billingNotices: {
+      /** When the "your trial ends soon" warning went out. */
+      trialEndingSentAt: Date,
+      /**
+       * The `trialEndsAt` value that warning was ABOUT — the idempotency key.
+       *
+       * A bare "already sent" boolean would silence the warning forever, so a
+       * tenant whose trial is extended (or who starts a second one) would never
+       * be told again. Keying on the date means a NEW end date is a new thing
+       * to warn about, and the same one is not.
+       */
+      trialEndingSentFor: Date,
+      /** When the first "your payment failed" email went out. */
+      pastDueSentAt: Date,
+      /** When the follow-up "still read-only" reminder went out. */
+      pastDueFollowUpSentAt: Date,
+    },
 
     // ────────────────────────────────────────────────
     // Revenue / Commission Model (core to DrinksHarbour)
@@ -803,6 +844,15 @@ async function geocodeAddress(tenant) {
 // ── Pre-save: normalise state + geocode if address changed ───────────────────
 
 tenantSchema.pre('save', async function () {
+  // Every tenant starts `trialing` (the schema default), but only the vendor
+  // self-registration controller ever set an end date — a tenant created from
+  // the platform admin form, a seed script or a test got an OPEN-ENDED trial,
+  // and entitlements.service.js reads a missing trialEndsAt as "never
+  // expires". So the free tier was permanent for anyone who did not come in
+  // through the public form. Stamped here because this is the one place every
+  // creation path passes through.
+  applyTrialWindow(this);
+
   // Always keep normalizedState in sync with address.state
   if (this.address?.state) {
     this.normalizedState = normaliseState(this.address.state);

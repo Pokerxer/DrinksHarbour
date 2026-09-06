@@ -4,7 +4,12 @@ const jwt = require('jsonwebtoken');
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User');
 const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
-const { resolveTenantContext, requireOwnTenant } = require('./tenant.middleware');
+const {
+  resolveTenantContext,
+  requireOwnTenant,
+  requireTenant: requireTenantContext,
+  allowBillingWrites,
+} = require('./tenant.middleware');
 
 /**
  * Protect routes - verifies JWT and attaches user to req
@@ -130,23 +135,14 @@ const optionalProtect = asyncHandler(async (req, res, next) => {
 const attachTenant = resolveTenantContext;
 
 /**
- * Require tenant context (use after attachTenant)
+ * Require tenant context (use after attachTenant).
+ *
+ * Was a byte-for-byte copy of the one in tenant.middleware.js, which meant the
+ * dunning rule existed twice and every route file picked a copy at random by
+ * where it imported from. Delegated now, so relaxing the status list for
+ * past_due (and enforcing read-only in its place) applies to both.
  */
-const requireTenant = (req, res, next) => {
-  if (!req.tenant) {
-    throw new ForbiddenError('Tenant context required for this operation');
-  }
-
-  if (req.tenant.status !== 'approved') {
-    throw new ForbiddenError('Tenant account is not approved');
-  }
-
-  if (!['active', 'trialing'].includes(req.tenant.subscriptionStatus)) {
-    throw new ForbiddenError('Tenant subscription is not active');
-  }
-
-  next();
-};
+const requireTenant = requireTenantContext;
 
 /**
  * Super-admin only
@@ -255,6 +251,9 @@ module.exports = {
   // inventory). Re-exported so routers keep importing auth middleware from one
   // place; the implementation lives in tenant.middleware.js.
   requireOwnTenant,
+  // Billing routes only: lets a read-only (past_due / expired-trial) tenant
+  // still POST its way back to paying.
+  allowBillingWrites,
   superAdminOnly,
   tenantAdminOnly,
   tenantAdminOrSuperAdmin,
