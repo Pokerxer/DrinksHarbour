@@ -1,0 +1,10 @@
+ROLLBACK — DrinksHarbour seed migration
+Backup: /var/folders/6r/48j62g153yngdnhfnh9jzz940000gn/T/opencode/dh-backup/20260905-140539/drinksharbour   (verified restorable: 133 users / 20 orders / 3 reviews)
+
+Fast path (remove migrated rows only):
+  db.orders.deleteMany({ seedSource: "seed-script" })
+  db.reviews.deleteMany({ seedSource: "seed-script" })
+  db.users.deleteMany({ role: "customer", createdBy: ObjectId("6a9b17cc52ac39a73d004774") })
+
+Full restore (overwrites the 3 collections):
+  mongorestore --uri="<PROD_URI>" --drop --dir="/var/folders/6r/48j62g153yngdnhfnh9jzz940000gn/T/opencode/dh-backup/20260905-140539/drinksharbour"

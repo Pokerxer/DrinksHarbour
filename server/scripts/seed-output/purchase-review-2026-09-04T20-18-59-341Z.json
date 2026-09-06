@@ -1,0 +1,116 @@
+{
+  "startedAt": "2026-09-04T19:37:37.645Z",
+  "finishedAt": "2026-09-04T20:18:59.340Z",
+  "apiUrl": "http://localhost:5001",
+  "options": {
+    "customers": 4,
+    "ordersPerCustomer": [
+      1,
+      2
+    ],
+    "itemsPerOrder": [
+      1,
+      3
+    ],
+    "ratingRange": [
+      4,
+      5
+    ],
+    "reviewRate": 0.55,
+    "apiUrl": "http://localhost:5001",
+    "emailDomain": "drinksharbour.test",
+    "customersFile": "/Users/mac/Downloads/Nigerian_Names_Directory_200.xlsx",
+    "productsFile": null,
+    "adminEmail": "seed-admin@drinksharbour.test",
+    "adminPassword": "SeedAdmin1!",
+    "approveReviews": true,
+    "persistCart": false,
+    "dryRun": false
+  },
+  "customers": [
+    {
+      "email": "abimbola.nasiru84@drinksharbour.test",
+      "userId": null,
+      "ordersPlaced": 0,
+      "itemsPurchased": 0,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 0,
+      "ordersDelivered": 0,
+      "ordersPaid": 0,
+      "errors": [
+        {
+          "stage": "register",
+          "message": "Invalid email or password",
+          "status": 400
+        }
+      ]
+    },
+    {
+      "email": "uche.farouk44@drinksharbour.test",
+      "userId": null,
+      "ordersPlaced": 0,
+      "itemsPurchased": 0,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 0,
+      "ordersDelivered": 0,
+      "ordersPaid": 0,
+      "errors": [
+        {
+          "stage": "register",
+          "message": "Invalid email or password",
+          "status": 400
+        }
+      ]
+    },
+    {
+      "email": "chiamaka.ogunmola52@drinksharbour.test",
+      "userId": null,
+      "ordersPlaced": 0,
+      "itemsPurchased": 0,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 0,
+      "ordersDelivered": 0,
+      "ordersPaid": 0,
+      "errors": [
+        {
+          "stage": "register",
+          "message": "Invalid email or password",
+          "status": 400
+        }
+      ]
+    },
+    {
+      "email": "olumide.ezenwa56@drinksharbour.test",
+      "userId": null,
+      "ordersPlaced": 0,
+      "itemsPurchased": 0,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 0,
+      "ordersDelivered": 0,
+      "ordersPaid": 0,
+      "errors": [
+        {
+          "stage": "register",
+          "message": "Invalid email or password",
+          "status": 400
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "summary": {
+    "customers": 4,
+    "orders": 0,
+    "delivered": 0,
+    "paid": 0,
+    "items": 0,
+    "reviews": 0,
+    "reviewsApproved": 0,
+    "gmv": 0,
+    "errorCount": 0
+  }
+}

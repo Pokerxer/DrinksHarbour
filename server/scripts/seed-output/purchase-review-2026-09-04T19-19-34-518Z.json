@@ -1,0 +1,80 @@
+{
+  "startedAt": "2026-09-04T19:18:54.309Z",
+  "finishedAt": "2026-09-04T19:19:34.518Z",
+  "apiUrl": "http://localhost:5001",
+  "options": {
+    "customers": 2,
+    "ordersPerCustomer": [
+      1,
+      2
+    ],
+    "itemsPerOrder": [
+      1,
+      2
+    ],
+    "ratingRange": [
+      4,
+      5
+    ],
+    "reviewRate": 0.55,
+    "apiUrl": "http://localhost:5001",
+    "emailDomain": "drinksharbour.test",
+    "customersFile": "/Users/mac/Downloads/Nigerian_Names_Directory_200.xlsx",
+    "productsFile": null,
+    "adminEmail": "seed-admin@drinksharbour.test",
+    "adminPassword": "SeedAdmin1!",
+    "approveReviews": true,
+    "persistCart": false,
+    "dryRun": false
+  },
+  "customers": [
+    {
+      "email": "abimbola.nasiru84@drinksharbour.test",
+      "userId": "6a9b19a0411b1e54a66bfc68",
+      "ordersPlaced": 1,
+      "itemsPurchased": 4,
+      "reviewsLeft": 1,
+      "reviewsApproved": 1,
+      "totalSpent": 89600,
+      "ordersDelivered": 1,
+      "ordersPaid": 1,
+      "errors": [
+        {
+          "stage": "order",
+          "message": "E11000 duplicate key error collection: drinksharbour_seed.orders index: orderNumber_1 dup key: { orderNumber: \"DH2609040001\" }",
+          "status": 500
+        }
+      ]
+    },
+    {
+      "email": "uche.farouk44@drinksharbour.test",
+      "userId": "6a9b19bb411b1e54a66bfd31",
+      "ordersPlaced": 0,
+      "itemsPurchased": 0,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 0,
+      "ordersDelivered": 0,
+      "ordersPaid": 0,
+      "errors": [
+        {
+          "stage": "order",
+          "message": "E11000 duplicate key error collection: drinksharbour_seed.orders index: orderNumber_1 dup key: { orderNumber: \"DH2609040001\" }",
+          "status": 500
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "summary": {
+    "customers": 2,
+    "orders": 1,
+    "delivered": 1,
+    "paid": 1,
+    "items": 4,
+    "reviews": 1,
+    "reviewsApproved": 1,
+    "gmv": 89600,
+    "errorCount": 0
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "startedAt": "2026-09-04T19:44:27.902Z",
+  "finishedAt": "2026-09-04T19:45:03.954Z",
+  "apiUrl": "http://localhost:5001",
+  "options": {
+    "customers": 4,
+    "ordersPerCustomer": [
+      1,
+      2
+    ],
+    "itemsPerOrder": [
+      1,
+      3
+    ],
+    "ratingRange": [
+      4,
+      5
+    ],
+    "reviewRate": 0.55,
+    "apiUrl": "http://localhost:5001",
+    "emailDomain": "drinksharbour.test",
+    "customersFile": "/Users/mac/Downloads/Nigerian_Names_Directory_200.xlsx",
+    "productsFile": null,
+    "adminEmail": "seed-admin@drinksharbour.test",
+    "adminPassword": "SeedAdmin1!",
+    "approveReviews": true,
+    "persistCart": false,
+    "dryRun": false
+  },
+  "customers": [
+    {
+      "email": "abimbola.nasiru84@drinksharbour.test",
+      "userId": "6a9b1f9d411b1e54a66bff57",
+      "ordersPlaced": 1,
+      "itemsPurchased": 2,
+      "reviewsLeft": 1,
+      "reviewsApproved": 1,
+      "totalSpent": 94000,
+      "ordersDelivered": 1,
+      "ordersPaid": 1,
+      "errors": []
+    },
+    {
+      "email": "uche.farouk44@drinksharbour.test",
+      "userId": "6a9b1f9d411b1e54a66bff5d",
+      "ordersPlaced": 1,
+      "itemsPurchased": 4,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 1527300,
+      "ordersDelivered": 1,
+      "ordersPaid": 1,
+      "errors": []
+    },
+    {
+      "email": "chiamaka.ogunmola52@drinksharbour.test",
+      "userId": "6a9b1f9e411b1e54a66bff63",
+      "ordersPlaced": 1,
+      "itemsPurchased": 8,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 1365400,
+      "ordersDelivered": 1,
+      "ordersPaid": 1,
+      "errors": []
+    },
+    {
+      "email": "olumide.ezenwa56@drinksharbour.test",
+      "userId": "6a9b1f9f411b1e54a66bff69",
+      "ordersPlaced": 2,
+      "itemsPurchased": 8,
+      "reviewsLeft": 2,
+      "reviewsApproved": 2,
+      "totalSpent": 337200,
+      "ordersDelivered": 2,
+      "ordersPaid": 2,
+      "errors": []
+    }
+  ],
+  "errors": [],
+  "summary": {
+    "customers": 4,
+    "orders": 5,
+    "delivered": 5,
+    "paid": 5,
+    "items": 22,
+    "reviews": 3,
+    "reviewsApproved": 3,
+    "gmv": 3323900,
+    "errorCount": 0
+  }
+}

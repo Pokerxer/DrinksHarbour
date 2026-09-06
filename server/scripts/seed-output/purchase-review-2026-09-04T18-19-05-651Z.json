@@ -1,0 +1,100 @@
+{
+  "startedAt": "2026-09-04T18:18:46.692Z",
+  "finishedAt": "2026-09-04T18:19:05.651Z",
+  "apiUrl": "http://localhost:5001",
+  "options": {
+    "customers": 3,
+    "ordersPerCustomer": [
+      1,
+      2
+    ],
+    "itemsPerOrder": [
+      1,
+      3
+    ],
+    "ratingRange": [
+      4,
+      5
+    ],
+    "sampleProducts": 12,
+    "apiUrl": "http://localhost:5001",
+    "adminEmail": null,
+    "adminPassword": null,
+    "superAdminEmail": null,
+    "superAdminPassword": null,
+    "approveReviews": false,
+    "skipRegister": false,
+    "reuseEmails": [],
+    "persistCart": false,
+    "dryRun": false,
+    "catalogSource": "admin"
+  },
+  "customers": [
+    {
+      "email": "seed+ba3f3727@drinksharbour.test",
+      "userId": "6a9b0b8825fb4e54df944ec2",
+      "ordersPlaced": 0,
+      "itemsPurchased": 0,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 0,
+      "ordersDelivered": 0,
+      "ordersPaid": 0,
+      "errors": [
+        {
+          "stage": "catalog",
+          "message": "catalog: source 'admin' requires an admin API client. Pass --admin-email/--admin-password, or use --catalog-source public once the getProductById activeSubProducts bug is fixed.",
+          "status": null
+        }
+      ]
+    },
+    {
+      "email": "seed+b80ffbd2@drinksharbour.test",
+      "userId": "6a9b0b9325fb4e54df944ec7",
+      "ordersPlaced": 0,
+      "itemsPurchased": 0,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 0,
+      "ordersDelivered": 0,
+      "ordersPaid": 0,
+      "errors": [
+        {
+          "stage": "catalog",
+          "message": "catalog: source 'admin' requires an admin API client. Pass --admin-email/--admin-password, or use --catalog-source public once the getProductById activeSubProducts bug is fixed.",
+          "status": null
+        }
+      ]
+    },
+    {
+      "email": "seed+68a57f1d@drinksharbour.test",
+      "userId": "6a9b0b9725fb4e54df944ecc",
+      "ordersPlaced": 0,
+      "itemsPurchased": 0,
+      "reviewsLeft": 0,
+      "reviewsApproved": 0,
+      "totalSpent": 0,
+      "ordersDelivered": 0,
+      "ordersPaid": 0,
+      "errors": [
+        {
+          "stage": "catalog",
+          "message": "catalog: source 'admin' requires an admin API client. Pass --admin-email/--admin-password, or use --catalog-source public once the getProductById activeSubProducts bug is fixed.",
+          "status": null
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "summary": {
+    "customers": 3,
+    "orders": 0,
+    "delivered": 0,
+    "paid": 0,
+    "items": 0,
+    "reviews": 0,
+    "reviewsApproved": 0,
+    "gmv": 0,
+    "errorCount": 0
+  }
+}
