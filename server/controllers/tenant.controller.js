@@ -10,6 +10,7 @@ const cloudinaryService = require('../services/cloudinary.service');
 const emailService = require('../services/email.service');
 const { logPrivilegedAction } = require('../utils/auditLog');
 const { isVenueBusinessType } = require('../services/posVenue.service');
+const { TRIAL_DAYS } = require('../config/erm-plans');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -239,6 +240,46 @@ function isDuplicateSlugError(err) {
 // Pure helpers, exported for unit tests
 exports.buildTenantData = buildTenantData;
 exports.flattenForUpdate = flattenForUpdate;
+
+/**
+ * A tenant user reading their OWN tenant.
+ *
+ * @route GET /api/tenants/:id
+ * @access Private (that tenant's users, or platform admins)
+ *
+ * The admin client has always called this — `auth-options.ts` fetches it at
+ * login and again from `refreshTenantPlan` — and it did not exist. Only
+ * `/admin/:id` (platform roles) and `/slug/:slug` (public) were routed, so for
+ * a tenant user the call 404'd and both call sites swallowed it with
+ * `if (!res.ok) return`. The visible symptom was that a plan change never
+ * reached the admin gates until the user signed out and back in, because the
+ * refresh that was supposed to carry it silently fetched nothing.
+ *
+ * Deliberately narrow: the projection is what the session needs to gate on,
+ * not the tenant record. KYC fields, bank details and the application blob are
+ * `/admin/:id`'s business.
+ */
+exports.getOwnTenantById = asyncHandler(async (req, res) => {
+  const claim = req.user?.tenant;
+  const claimedId = claim?._id ? claim._id.toString() : claim?.toString();
+  const isPlatformUser = ['super_admin', 'admin'].includes(req.user?.role);
+
+  if (!isPlatformUser && claimedId !== req.params.id) {
+    // Same 404 for "no such tenant" and "not yours", so the response cannot be
+    // used to confirm another tenant's id exists.
+    return res.status(404).json({ success: false, message: 'Tenant not found' });
+  }
+
+  const tenant = await Tenant.findById(req.params.id)
+    .select('name slug status plan subscriptionStatus trialEndsAt currentPeriodEnd logo primaryColor defaultCurrency')
+    .lean();
+
+  if (!tenant) {
+    return res.status(404).json({ success: false, message: 'Tenant not found' });
+  }
+
+  res.status(200).json({ success: true, data: { tenant } });
+});
 
 // ─── Admin CRUD handlers ──────────────────────────────────────────────────────
 
@@ -582,8 +623,10 @@ exports.applyTenant = asyncHandler(async (req, res) => {
   const plan = validPlans.includes(b.plan) ? b.plan : 'free_trial';
 
   // ── 4. Create Tenant (status: pending) ─────────────────────────────────────
+  // Length comes from config/erm-plans.js, which the Tenant pre-save hook also
+  // reads — this used to be the ONLY path that stamped an end date at all.
   const trialEndsAt = new Date();
-  trialEndsAt.setDate(trialEndsAt.getDate() + 14); // 14-day trial
+  trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
 
   const tenant = new Tenant({
     name: b.businessName,

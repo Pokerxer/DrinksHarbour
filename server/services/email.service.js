@@ -1568,6 +1568,144 @@ const sendAppraisalNudgeEmail = async ({ to, name, cycleName, reason, deadline, 
   });
 };
 
+// ─── Subscription billing notices ─────────────────────────────────────────────
+//
+// THE BODY COPY IS NOT WRITTEN HERE. Both of these take `message` from the
+// server's `readOnlyMessage` (services/entitlements.service.js) — the same
+// sentence the write gates put in their 403, the toast shows on every admin
+// screen, and the billing page prints. That function exists precisely because
+// the sentence had already been written out three times and drifted; a fourth
+// copy in an email template would undo it. These templates own the subject,
+// the layout and the button, and nothing else.
+
+/** Absolute link to the tenant's billing screen. */
+const BILLING_URL = () => `${ADMIN_URL()}/settings/billing`;
+
+/**
+ * "Your free trial ends in N days."
+ *
+ * Sent BEFORE the trial lapses, which is the entire point: `trialEndsAt`
+ * passing silently turns a tenant read-only with no warning, and the first they
+ * hear of it is a save that fails.
+ */
+const sendTrialEndingEmail = async ({ to, shopName, daysLeft, endsAt, planLabel }) => {
+  if (!to) {
+    // Never swallowed: a caller told this succeeded would stamp the tenant as
+    // warned and never try again.
+    return { success: false, error: 'No billing contact address for this tenant' };
+  }
+
+  const when =
+    daysLeft <= 0
+      ? 'today'
+      : daysLeft === 1
+        ? 'tomorrow'
+        : `in ${daysLeft} days`;
+  const endsLabel = endsAt
+    ? new Date(endsAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null;
+
+  const html = emailShell({
+    accentColor: '#b45309',
+    accentLabel: `&#9200; Your free trial ends ${when}`,
+    accentSubtitle: shopName || 'DrinksHarbour',
+    body: `
+      <p style="font-size:16px;color:#374151;margin:0 0 16px 0;">Hi${shopName ? ` ${shopName}` : ''},</p>
+      <p style="font-size:16px;color:#111827;font-weight:600;margin:0 0 8px 0;">
+        Your DrinksHarbour free trial ends ${when}${endsLabel ? ` (${endsLabel})` : ''}.
+      </p>
+      <p style="font-size:15px;color:#374151;margin:0 0 20px 0;">
+        When it ends your account becomes <strong>read-only</strong> — your shop stays
+        open and your customers can still order, but you will not be able to add
+        products, take stock in or change settings until you choose a plan.
+      </p>
+      ${planLabel ? `
+      <p style="font-size:14px;color:#6b7280;margin:0 0 20px 0;">
+        You are currently on the <strong>${planLabel}</strong> trial.
+      </p>` : ''}
+      <p style="margin:0 0 24px 0;">
+        <a href="${BILLING_URL()}" style="display:inline-block;background:${GOLD};color:#1f1300;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px;">Choose a plan</a>
+      </p>
+      <p style="font-size:13px;color:#9ca3af;margin:0;">
+        Already subscribed? You can ignore this — it can take a few minutes for a new
+        subscription to show up here.
+      </p>
+    `,
+    footerNote: 'Subscription & Billing — DrinksHarbour',
+  });
+
+  return sendEmail({
+    to,
+    subject: `Your DrinksHarbour trial ends ${when}`,
+    html,
+  });
+};
+
+/**
+ * "Your account is read-only" — in one of three framings.
+ *
+ * `message` is the server's own read-only sentence, always. The variant only
+ * changes the subject line and the one-line framing above it; the explanation
+ * and the way out are the same string in all three cases, because it is the
+ * same state. That is the point — see the block comment above.
+ */
+const READ_ONLY_NOTICE_VARIANTS = {
+  payment_failed: {
+    subject: 'Action needed: your DrinksHarbour payment failed',
+    accentLabel: '&#9888;&#65039; Your last payment failed',
+    lead: () => 'We could not take your subscription payment.',
+  },
+  still_read_only: {
+    subject: 'Your DrinksHarbour account is still read-only',
+    accentLabel: '&#9888;&#65039; Your account is still read-only',
+    lead: (days) =>
+      `Your DrinksHarbour account is still read-only${
+        days ? ` after ${days} day${days === 1 ? '' : 's'}` : ''
+      }.`,
+  },
+  trial_ended: {
+    subject: 'Your DrinksHarbour free trial has ended',
+    accentLabel: '&#9888;&#65039; Your free trial has ended',
+    lead: () => 'Your free trial has ended and your account is now read-only.',
+  },
+};
+
+const sendReadOnlyNoticeEmail = async ({ to, shopName, message, variant = 'payment_failed', daysPastDue }) => {
+  if (!to) {
+    // Never swallowed: a caller told this succeeded would stamp the tenant as
+    // notified and never try again.
+    return { success: false, error: 'No billing contact address for this tenant' };
+  }
+
+  const copy = READ_ONLY_NOTICE_VARIANTS[variant] || READ_ONLY_NOTICE_VARIANTS.payment_failed;
+
+  const html = emailShell({
+    accentColor: '#b91c1c',
+    accentLabel: copy.accentLabel,
+    accentSubtitle: shopName || 'DrinksHarbour',
+    body: `
+      <p style="font-size:16px;color:#374151;margin:0 0 16px 0;">Hi${shopName ? ` ${shopName}` : ''},</p>
+      <p style="font-size:16px;color:#111827;font-weight:600;margin:0 0 8px 0;">
+        ${copy.lead(daysPastDue)}
+      </p>
+      <p style="font-size:15px;color:#374151;margin:0 0 20px 0;">${message}</p>
+      <p style="font-size:15px;color:#374151;margin:0 0 20px 0;">
+        Your shop stays open and your customers can still order throughout — this
+        affects your own changes only.
+      </p>
+      <p style="margin:0 0 24px 0;">
+        <a href="${BILLING_URL()}" style="display:inline-block;background:${GOLD};color:#1f1300;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px;">Update payment &amp; restore access</a>
+      </p>
+      <p style="font-size:13px;color:#9ca3af;margin:0;">
+        If you have just paid, you can ignore this — it can take a few minutes to clear.
+      </p>
+    `,
+    footerNote: 'Subscription & Billing — DrinksHarbour',
+  });
+
+  return sendEmail({ to, subject: copy.subject, html });
+};
+
 module.exports = {
   sendEmail,
   initializeEmailService,
@@ -1587,4 +1725,7 @@ module.exports = {
   sendTenantApplicationReceivedEmail,
   sendTenantApplicationNotificationToAdmin,
   sendAppraisalNudgeEmail,
+  sendTrialEndingEmail,
+  sendReadOnlyNoticeEmail,
+  READ_ONLY_NOTICE_VARIANTS,
 };
