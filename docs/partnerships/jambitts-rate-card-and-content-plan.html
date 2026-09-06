@@ -1,0 +1,488 @@
+<title>Drinks Harbour — Brand Partnership Rate Card &amp; Content Plan</title>
+
+<style>
+  :root {
+    --paper:      #FBFAF9;
+    --paper-sunk: #F3EFEE;
+    --ink:        #1A1416;
+    --ink-soft:   #4A3F42;
+    --muted:      #6E6165;
+    --rule:       #E4DEDD;
+    --accent:     #7B2233;
+    --accent-sunk:#F6ECEE;
+    --amber:      #B5761F;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:      #171314;
+      --paper-sunk: #201A1C;
+      --ink:        #F2EDEC;
+      --ink-soft:   #D3C8C9;
+      --muted:      #9C8D90;
+      --rule:       #342C2E;
+      --accent:     #E0899A;
+      --accent-sunk:#2A1D21;
+      --amber:      #D9A24A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #171314;
+    --paper-sunk: #201A1C;
+    --ink:        #F2EDEC;
+    --ink-soft:   #D3C8C9;
+    --muted:      #9C8D90;
+    --rule:       #342C2E;
+    --accent:     #E0899A;
+    --accent-sunk:#2A1D21;
+    --amber:      #D9A24A;
+  }
+  :root[data-theme="light"] {
+    --paper:      #FBFAF9;
+    --paper-sunk: #F3EFEE;
+    --ink:        #1A1416;
+    --ink-soft:   #4A3F42;
+    --muted:      #6E6165;
+    --rule:       #E4DEDD;
+    --accent:     #7B2233;
+    --accent-sunk:#F6ECEE;
+    --amber:      #B5761F;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 3.5rem 1.5rem 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+  }
+
+  /* ---- masthead ---- */
+  .masthead { display: flex; flex-direction: column; gap: 1.25rem; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .masthead h1 {
+    font-family: var(--serif);
+    font-size: clamp(2rem, 6vw, 2.9rem);
+    line-height: 1.1;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .meta b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ---- generic blocks ---- */
+  section { display: flex; flex-direction: column; gap: 1rem; }
+  h2 {
+    font-family: var(--serif);
+    font-size: 1.55rem;
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 0.78rem;
+    font-family: var(--mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+    font-weight: 500;
+  }
+  p { margin: 0; max-width: 65ch; color: var(--ink-soft); }
+  strong { color: var(--ink); font-weight: 600; }
+
+  .lede { font-size: 1.06rem; color: var(--ink); }
+
+  .note {
+    background: var(--accent-sunk);
+    border-left: 2px solid var(--accent);
+    padding: 1.1rem 1.25rem;
+    font-size: 0.94rem;
+  }
+  .note p { color: var(--ink-soft); }
+
+  ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.45rem; color: var(--ink-soft); }
+  li::marker { color: var(--accent); }
+
+  /* ---- tables ---- */
+  .scroller { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+    min-width: 30rem;
+  }
+  caption {
+    text-align: left;
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding-bottom: 0.6rem;
+  }
+  th, td { text-align: left; padding: 0.7rem 0.9rem 0.7rem 0; border-bottom: 1px solid var(--rule); }
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    border-bottom-color: var(--ink-soft);
+  }
+  td.num, th.num {
+    text-align: right;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    padding-right: 0;
+    white-space: nowrap;
+  }
+  td.founding { color: var(--amber); font-weight: 600; }
+  td.was { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* ---- bundle cards ---- */
+  .bundles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem; }
+  .bundle {
+    background: var(--paper-sunk);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    border-top: 2px solid var(--rule);
+  }
+  .bundle.pick { border-top-color: var(--accent); background: var(--accent-sunk); }
+  .bundle-name { font-family: var(--serif); font-size: 1.15rem; font-weight: 600; }
+  .bundle-price {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.35rem;
+    color: var(--ink);
+  }
+  .bundle-was { font-size: 0.78rem; color: var(--muted); }
+  .bundle ul { font-size: 0.86rem; gap: 0.3rem; }
+  .tag {
+    align-self: flex-start;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  /* ---- content plan ---- */
+  .pieces { display: flex; flex-direction: column; gap: 1.4rem; }
+  .piece {
+    display: grid;
+    grid-template-columns: 2.2rem 1fr;
+    gap: 0 1rem;
+    padding-bottom: 1.4rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .pieces .piece:last-child { border-bottom: none; padding-bottom: 0; }
+  .piece-n {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    padding-top: 0.25rem;
+  }
+  .piece-body { display: flex; flex-direction: column; gap: 0.4rem; }
+  .piece-title { font-family: var(--serif); font-size: 1.1rem; font-weight: 600; line-height: 1.3; }
+  .piece-why { font-size: 0.9rem; color: var(--ink-soft); max-width: 62ch; }
+  .terms-row { font-family: var(--mono); font-size: 0.76rem; color: var(--muted); }
+  .terms-row span { color: var(--ink-soft); }
+
+  /* ---- schedule ---- */
+  .weeks { display: flex; flex-direction: column; gap: 0; }
+  .week { display: grid; grid-template-columns: 6rem 1fr; gap: 1rem; padding: 0.8rem 0; border-bottom: 1px solid var(--rule); font-size: 0.92rem; }
+  .week:last-child { border-bottom: none; }
+  .week-label { font-family: var(--mono); font-size: 0.75rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; }
+  .week-body { color: var(--ink-soft); }
+
+  /* ---- sign-off ---- */
+  .signoff {
+    border-top: 2px solid var(--ink);
+    padding-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+  }
+  .signoff .who { font-family: var(--serif); font-size: 1.2rem; color: var(--ink); font-weight: 600; }
+
+  .fill { color: var(--accent); border-bottom: 1px dotted currentColor; }
+
+  @media print {
+    :root {
+      --paper: #fff; --paper-sunk: #F4F1F0; --ink: #000; --ink-soft: #262022;
+      --muted: #5A5053; --rule: #CFC8C7; --accent: #7B2233; --accent-sunk: #F7EEF0; --amber: #8A5A15;
+    }
+    .sheet { padding: 0; max-width: none; gap: 2rem; }
+    section { break-inside: avoid; }
+    .piece, .bundle, .week { break-inside: avoid; }
+  }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="eyebrow">Brand Partnership Proposal</div>
+    <h1>Rate Card &amp; Content Plan</h1>
+    <p class="lede">Prepared for Jambitts Limited — covering Bold&nbsp;'98 Irish Whiskey, Santa Alba and Patagon.</p>
+    <div class="meta">
+      <div><b>From</b> Drinks Harbour, Abuja</div>
+      <div><b>For</b> Eneanya Kamsi, Jambitts Limited</div>
+      <div><b>Date</b> 27 August 2026</div>
+      <div><b>Valid</b> 30 days from issue</div>
+    </div>
+  </header>
+
+  <section>
+    <h2>Where we are, plainly</h2>
+    <p>Drinks Harbour is live and trading — the site is up, the catalogue is stocked and orders are being fulfilled in Abuja. We are early, though, and order volume is still building. Our numbers today are those of a young business, not an established one.</p>
+    <p>We would rather state that up front than sell you an impressions figure we cannot stand behind. What is on offer here is <strong>early ownership of a category while it is still available</strong>, and <strong>permanent content assets</strong> that accumulate search value from the day they publish — independent of what our traffic looks like this month.</p>
+    <div class="note">
+      <p><strong>Listing is free. Visibility is paid.</strong> Stocking and selling your products costs you nothing. This document prices only the promotional placement and editorial work that sits on top of it.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Placements &amp; rates</h2>
+    <div class="scroller">
+      <table>
+        <caption>Founding rates are held for 12 months from signature, and are open to brands joining us in this first trading year. Standard rates apply thereafter.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Placement</th>
+            <th scope="col" class="num">Founding</th>
+            <th scope="col" class="num">Standard</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Homepage hero slide — per month</td>
+            <td class="num founding">₦75,000</td>
+            <td class="num was">₦200,000</td>
+          </tr>
+          <tr>
+            <td>Category banner, Whiskey or Wine — per month</td>
+            <td class="num founding">₦40,000</td>
+            <td class="num was">₦100,000</td>
+          </tr>
+          <tr>
+            <td>Commissioned article — one-off, stays published</td>
+            <td class="num founding">₦80,000</td>
+            <td class="num was">₦150,000</td>
+          </tr>
+          <tr>
+            <td>Social set — 3 posts, Instagram + X</td>
+            <td class="num founding">₦50,000</td>
+            <td class="num was">₦100,000</td>
+          </tr>
+          <tr>
+            <td>Email newsletter feature</td>
+            <td class="num founding">₦30,000</td>
+            <td class="num was">₦75,000</td>
+          </tr>
+          <tr>
+            <td>Product photography — per SKU, stills + short video</td>
+            <td class="num founding">₦45,000</td>
+            <td class="num was">₦90,000</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Packages</h2>
+    <p>Placement alone is a bet on traffic. Placement plus content is a campaign that keeps working — we recommend the middle option.</p>
+    <div class="bundles">
+
+      <article class="bundle">
+        <div class="bundle-name">Launch Feature</div>
+        <div class="bundle-price">₦150,000</div>
+        <div class="bundle-was">₦205,000 à la carte</div>
+        <ul>
+          <li>1 month homepage hero</li>
+          <li>1 commissioned article</li>
+          <li>1 social set</li>
+        </ul>
+      </article>
+
+      <article class="bundle pick">
+        <div class="tag">Recommended</div>
+        <div class="bundle-name">Category Partner</div>
+        <div class="bundle-price">₦300,000</div>
+        <div class="bundle-was">₦645,000 à la carte</div>
+        <ul>
+          <li>3 months homepage hero</li>
+          <li>3 commissioned articles</li>
+          <li>3 social sets</li>
+          <li>1 newsletter feature</li>
+        </ul>
+      </article>
+
+      <article class="bundle">
+        <div class="bundle-name">Founding Brand</div>
+        <div class="bundle-price">₦550,000</div>
+        <div class="bundle-was">₦1,560,000 à la carte</div>
+        <ul>
+          <li>6 months homepage hero</li>
+          <li>6 commissioned articles</li>
+          <li>Monthly social sets</li>
+          <li>2 newsletter features</li>
+          <li>Photography, up to 6 SKUs</li>
+          <li>First position in Whiskey and Wine</li>
+        </ul>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>The content plan</h2>
+    <p>Seven pieces, written by us, published in this order. Each one targets a search phrase nobody in this market currently owns — which is the whole point of publishing now rather than later.</p>
+
+    <div class="pieces">
+
+      <article class="piece">
+        <div class="piece-n">01</div>
+        <div class="piece-body">
+          <div class="piece-title">Irish Whiskey vs Scotch: Which One Should You Actually Start With?</div>
+          <p class="piece-why">Most Nigerian drinkers who avoid whiskey avoid it because Scotch bit them first. Irish whiskey's smoothness is the honest answer to that, and Bold&nbsp;'98 is the bottle the piece lands on.</p>
+          <div class="terms-row">Brand <span>Bold '98</span> · Intent <span>Category, top of funnel</span></div>
+        </div>
+      </article>
+
+      <article class="piece">
+        <div class="piece-n">02</div>
+        <div class="piece-body">
+          <div class="piece-title">Wine with Jollof, Suya and Pepper Soup: A Pairing Guide That Works</div>
+          <p class="piece-why">Every pairing guide online assumes European food. This is the piece we expect to travel furthest — it is genuinely useful, highly shareable, and no one is competing for it. Santa Alba and Patagon carry the recommendations.</p>
+          <div class="terms-row">Brand <span>Santa Alba, Patagon</span> · Intent <span>Shareable, link-earning</span></div>
+        </div>
+      </article>
+
+      <article class="piece">
+        <div class="piece-n">03</div>
+        <div class="piece-body">
+          <div class="piece-title">Bold '98 Irish Whiskey: Tasting Notes, Price and Where to Buy in Abuja</div>
+          <p class="piece-why">Claims the brand's own name in search before anyone else does. Anyone who sees a bottle, a bar list or an advert and looks it up should land on us.</p>
+          <div class="terms-row">Brand <span>Bold '98</span> · Intent <span>Brand + transactional</span></div>
+        </div>
+      </article>
+
+      <article class="piece">
+        <div class="piece-n">04</div>
+        <div class="piece-body">
+          <div class="piece-title">Why Chilean Wine Is the Best Value on the Shelf Right Now</div>
+          <p class="piece-why">Positions the whole Santa Alba range against French and Italian bottles at twice the price — the argument that actually converts a wine buyer in this market.</p>
+          <div class="terms-row">Brand <span>Santa Alba</span> · Intent <span>Category, top of funnel</span></div>
+        </div>
+      </article>
+
+      <article class="piece">
+        <div class="piece-n">05</div>
+        <div class="piece-body">
+          <div class="piece-title">Five Irish Whiskey Cocktails You Can Make at Home Tonight</div>
+          <p class="piece-why">Irish coffee, whiskey sour, hot toddy, ginger highball and a house serve built on Bold&nbsp;'98. Long-tail traffic with a seasonal lift every December.</p>
+          <div class="terms-row">Brand <span>Bold '98</span> · Intent <span>Long tail, recurring</span></div>
+        </div>
+      </article>
+
+      <article class="piece">
+        <div class="piece-n">06</div>
+        <div class="piece-body">
+          <div class="piece-title">Santa Alba and Patagon: Which Bottle for Which Occasion</div>
+          <p class="piece-why">A range guide that does the choosing for the customer. Every bottle links straight to its product page, so the piece sells as well as it informs.</p>
+          <div class="terms-row">Brand <span>Santa Alba, Patagon</span> · Intent <span>Transactional</span></div>
+        </div>
+      </article>
+
+      <article class="piece">
+        <div class="piece-n">07</div>
+        <div class="piece-body">
+          <div class="piece-title">What to Put on the Table: A Host's Guide to Nigerian Celebrations</div>
+          <p class="piece-why">Timed for wedding and December season, when spend concentrates and people buy by the case rather than the bottle. All three brands feature.</p>
+          <div class="terms-row">Brand <span>All three</span> · Intent <span>Seasonal, high basket value</span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>How it runs</h2>
+    <div class="weeks">
+      <div class="week">
+        <div class="week-label">Week 1</div>
+        <div class="week-body">Agreement signed. Catalogue, price list, NAFDAC and company documents received. Samples delivered. SKUs loaded to the platform.</div>
+      </div>
+      <div class="week">
+        <div class="week-label">Week 2</div>
+        <div class="week-body">Product photography shot from samples. Tasting notes written. First two articles drafted and sent to you for factual review.</div>
+      </div>
+      <div class="week">
+        <div class="week-label">Week 3</div>
+        <div class="week-body">Homepage hero goes live. Articles 01 and 02 publish. First social set runs.</div>
+      </div>
+      <div class="week">
+        <div class="week-label">Week 4+</div>
+        <div class="week-body">One article per fortnight thereafter. Monthly report to you: sessions, article performance, units sold.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Terms</h2>
+    <ul>
+      <li><strong>Payment.</strong> 50% on signature, 50% on go-live. Founding rates held for 12 months.</li>
+      <li><strong>Make-good.</strong> If the site does not reach <span class="fill">[agreed sessions floor]</span> monthly sessions during a paid placement window, we extend that placement month-for-month at no cost until it does.</li>
+      <li><strong>Editorial control.</strong> We write the articles and retain editorial judgement. You get factual review — spelling of the brand, ABV, provenance, price — not copy approval. Content that reads like an advert does not rank and does not get trusted, which serves neither of us.</li>
+      <li><strong>Disclosure.</strong> Commissioned pieces carry a brand-partnership note.</li>
+      <li><strong>Assets.</strong> Your supplied images and marks remain yours. Photography we shoot from samples is licensed to both parties, unrestricted.</li>
+      <li><strong>Compliance.</strong> All placements are age-gated to 18+, carry responsible-consumption messaging, and are never targeted to under-age audiences.</li>
+      <li><strong>Listing is separate.</strong> Consignment or wholesale terms are agreed in a supply agreement and are not conditional on any spend in this document.</li>
+    </ul>
+  </section>
+
+  <section class="signoff">
+    <div class="who"><span class="fill">[Your name]</span></div>
+    <div><span class="fill">[Title]</span> · Drinks Harbour</div>
+    <div>39 Gana Street, Maitama, Abuja</div>
+    <div><span class="fill">[phone]</span> · <span class="fill">[email]</span> · drinksharbour.com</div>
+  </section>
+
+</div>
