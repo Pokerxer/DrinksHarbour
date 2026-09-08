@@ -28,11 +28,10 @@ export const canAccessTenant = (
   userTenantId: string | null | undefined,
   targetTenantId: string
 ): boolean => {
-  if (!userTenantId) return false;
-  
-  if (userRole === 'super_admin') return true;
-  
-  return userTenantId === targetTenantId;
+  if (!targetTenantId) return false;
+  if (isPlatformAdmin(userRole)) return true;
+  if (!['tenant_owner', 'tenant_admin', 'tenant_staff'].includes(userRole)) return false;
+  return Boolean(userTenantId) && userTenantId === targetTenantId;
 };
 
 export const isPlatformAdmin = (role: UserRole): boolean => {

@@ -3,18 +3,17 @@ import { pagesOptions } from '@/app/api/auth/[...nextauth]/pages-options';
 import withAuth from 'next-auth/middleware';
 import { getToken } from 'next-auth/jwt';
 import {
-  PLATFORM_ROLES,
   TENANT_ROLES,
-  canAdministerAppraisals,
   type UserRole,
 } from '@/types/authorization';
 import { hasAdminSession } from '@/app/api/auth/[...nextauth]/session-guard';
-import { checkPlanAccess } from '@/config/plan-capabilities';
+import { roleCanAccessRoute } from '@/config/route-roles';
 
 interface NextAuthRequest extends NextRequest {
   nextauth?: {
     token: {
       role?: string;
+      accessToken?: string;
       tenantId?: string;
       tenantSlug?: string;
       /** Cached snapshot — see refreshTenantPlan in auth-options.ts. */
@@ -28,7 +27,7 @@ interface NextAuthRequest extends NextRequest {
 function extractTenantSlug(req: NextRequest): string | null {
   // Local dev fallback: ?_tenant=acme
   const devSlug = req.nextUrl.searchParams.get('_tenant');
-  if (devSlug) return devSlug;
+  if (devSlug && process.env.NODE_ENV === 'development') return devSlug.toLowerCase();
 
   const hostname = req.headers.get('host') || req.nextUrl.hostname;
   // Strip port for local dev
@@ -45,21 +44,6 @@ function extractTenantSlug(req: NextRequest): string | null {
   }
 
   return null;
-}
-
-/**
- * `path` is `prefix` or sits underneath it, matching on whole URL segments.
- *
- * A bare `path.startsWith('/users')` also matches `/users-guide` and
- * `/usersettings`, so every route whose name merely begins with a gated one
- * inherited that gate. Today those gates all redirect to /access-denied, so
- * the over-match fails closed and nothing is exposed — but it silently
- * reserves a whole namespace of URLs, and the same helper is what keeps a
- * future `/appraisals/templates-help` from being read as HR-only (or, if a
- * gate is ever inverted into an allow, from being read as public).
- */
-function isUnder(path: string, prefix: string): boolean {
-  return path === prefix || path.startsWith(`${prefix}/`);
 }
 
 // Cookie names NextAuth uses (vary by HTTPS/HTTP)
@@ -89,14 +73,14 @@ async function clearStaleCookieIfNeeded(
 
   // Cookie exists but can't be decrypted — wipe it and redirect to sign-in
   const signInUrl = new URL(pagesOptions.signIn ?? '/signin', req.url);
-  signInUrl.searchParams.set('callbackUrl', req.nextUrl.pathname);
+  signInUrl.searchParams.set('callbackUrl', req.nextUrl.pathname + req.nextUrl.search);
   const res = NextResponse.redirect(signInUrl);
   SESSION_COOKIES.forEach((name) => res.cookies.delete(name));
   return res;
 }
 
 const authMiddleware = withAuth(
-  function middleware(req: NextRequest) {
+  async function middleware(req: NextRequest) {
     const authReq = req as NextAuthRequest;
     const token = authReq.nextauth?.token;
     const path = req.nextUrl.pathname;
@@ -105,6 +89,10 @@ const authMiddleware = withAuth(
     // quietly passed every check written in terms of PLATFORM/TENANT roles.
     const role = (token?.role ?? null) as UserRole | null;
     const tenantId = token?.tenantId as string | undefined;
+
+    if (role && TENANT_ROLES.includes(role) && !tenantId) {
+      return NextResponse.redirect(new URL('/access-denied', req.url));
+    }
 
     // ── Subdomain detection ──────────────────────────────────────────────────
     const tenantSlug = extractTenantSlug(req);
@@ -123,133 +111,30 @@ const authMiddleware = withAuth(
     if (tenantSlug && role && TENANT_ROLES.includes(role)) {
       const tokenSlug = (token as any)?.tenantSlug as string | undefined;
       // If we have a slug in the token and it doesn't match, send to access-denied
-      if (tokenSlug && tokenSlug !== tenantSlug) {
+      if (!tokenSlug || tokenSlug !== tenantSlug) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
     }
 
     // ── Role-based access control ────────────────────────────────────────────
-
-    // Platform-only sections — tenant roles cannot access these at all
-    if (isUnder(path, '/executive') || isUnder(path, '/financial')) {
-      if (!role || !PLATFORM_ROLES.includes(role)) {
-        return NextResponse.redirect(new URL('/access-denied', req.url));
-      }
+    let customPermissions: string[] = [];
+    if (role === 'tenant_staff' && (path === '/inventory' || path.startsWith('/inventory/') || path === '/settings/api-keys')) {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/users/me/permissions`, {
+          headers: { Authorization: `Bearer ${token?.accessToken}` }, cache: 'no-store', signal: AbortSignal.timeout(3000),
+        });
+        if (response.ok) customPermissions = (await response.json() as { data: { customPermissions: string[] } }).data.customPermissions;
+      } catch { /* Fail closed when fresh grants cannot be loaded. */ }
     }
-
-    // Platform-only ecommerce pages — tenant management, brand management
-    // Tenant roles should only manage their own data via the tenant sidebar
-    const PLATFORM_ONLY_PATHS = [
-      '/tenants',
-      '/products', // main product catalog is platform-only; tenants use /sub-products
-    ];
-    if (
-      role &&
-      TENANT_ROLES.includes(role) &&
-      PLATFORM_ONLY_PATHS.some((p) => isUnder(path, p))
-    ) {
+    if (!roleCanAccessRoute(path, role, customPermissions)) {
       return NextResponse.redirect(new URL('/access-denied', req.url));
     }
 
-    // General ecommerce/logistics — require tenantId for tenant roles
-    const ECOMMERCE_PREFIXES = [
-      '/ecommerce',
-      '/products',
-      '/sub-products',
-      '/categories',
-      '/sub-categories',
-      '/brands',
-      '/tenants',
-      '/banners',
-    ];
-    if (
-      ECOMMERCE_PREFIXES.some((p) => isUnder(path, p)) ||
-      isUnder(path, '/logistics')
-    ) {
-      if (role && TENANT_ROLES.includes(role) && !tenantId) {
-        return NextResponse.redirect(new URL('/access-denied', req.url));
-      }
-    }
-
-    // User/role management — platform admins + tenant owners/admins only
-    if (isUnder(path, '/roles-permissions') || isUnder(path, '/users')) {
-      if (
-        !role ||
-        (!PLATFORM_ROLES.includes(role) &&
-          role !== 'tenant_admin' &&
-          role !== 'tenant_owner')
-      ) {
-        return NextResponse.redirect(new URL('/access-denied', req.url));
-      }
-    }
-
-    // Staff management — same audience as /roles-permissions; the tenant
-    // sidebar already hides "Employees" from tenant_staff, so block the
-    // direct URL too (defense in depth).
-    if (isUnder(path, '/employees')) {
-      if (
-        !role ||
-        (!PLATFORM_ROLES.includes(role) &&
-          role !== 'tenant_admin' &&
-          role !== 'tenant_owner')
-      ) {
-        return NextResponse.redirect(new URL('/access-denied', req.url));
-      }
-    }
-
-    // Appraisal cycle + template administration — HR audience only.
-    //
-    // Note the deliberate asymmetry with /employees above: bare /appraisals is
-    // NOT gated, because tenant_staff must reach their own appraisal and their
-    // assigned feedback forms. Only the HR sub-routes are restricted.
-    //
-    // The predicate is shared with the appraisals nav header (see
-    // canAdministerAppraisals) rather than spelled out inline a second time:
-    // when the chrome and the gate disagree, tenant_staff get offered tabs
-    // that land them on /access-denied.
-    if (
-      isUnder(path, '/appraisals/cycles') ||
-      isUnder(path, '/appraisals/templates')
-    ) {
-      if (!canAdministerAppraisals(role)) {
-        return NextResponse.redirect(new URL('/access-denied', req.url));
-      }
-    }
-
-    // ── Plan-based access control ────────────────────────────────────────────
-    //
-    // LAST, and deliberately so. The checks above answer "may this person be
-    // here at all"; this one answers "does their business pay for this". Run in
-    // the other order, a tenant_staff hitting an HR route would be told to
-    // upgrade their subscription instead of that they lack the role — the
-    // wrong answer, and one that sends them to sales rather than to their
-    // manager. Specific-refusal-first is the rule; see also the ordering note
-    // on canAdministerAppraisals in types/authorization.ts.
-    //
-    // The plan here is the JWT's cached copy, so this gate is a fast redirect,
-    // not the authority. The authority is the layout guard in app/layout.tsx,
-    // which reads the live tenant document; the API is the actual boundary.
-    // checkPlanAccess exempts platform roles itself — they have no tenant and
-    // so no plan, and would otherwise rank as free_trial and be locked out of
-    // the modules they administer.
-    const planAccess = checkPlanAccess({
-      path,
-      role,
-      plan: token?.plan,
-    });
-    if (!planAccess.allowed && planAccess.requirement) {
-      const upgradeUrl = new URL('/upgrade-required', req.url);
-      upgradeUrl.searchParams.set('feature', planAccess.requirement.label);
-      upgradeUrl.searchParams.set('from', path);
-      if (token?.plan) upgradeUrl.searchParams.set('current', token.plan);
-      if (planAccess.upgradeTo) {
-        upgradeUrl.searchParams.set('plan', planAccess.upgradeTo);
-      }
-      return NextResponse.redirect(upgradeUrl);
-    }
+    // Live subscription access is checked in app/template.tsx on navigation.
+    // A cached JWT plan must never prevent a newly upgraded tenant reaching it.
 
     // The pathname a server component is rendering for. Server components get
-    // no access to the URL, and app/layout.tsx needs it to run the
+    // no access to the URL, and app/template.tsx needs it to run the
     // authoritative plan check against the live tenant. Same mechanism as
     // x-tenant-slug above.
     requestHeaders.set('x-pathname', path);
@@ -327,33 +212,30 @@ export const config = {
     '/contacts/:path*',
     '/blog/:path*',
     '/settings/:path*',
+    '/bookings/:path*',
     '/store-analytics/:path*',
     '/profile/:path*',
     '/support/:path*',
     '/file/:path*',
     '/file-manager',
     '/invoice/:path*',
-    '/forms/profile-settings/:path*',
+    '/forms/:path*',
     '/roles-permissions/:path*',
     '/users/:path*',
     '/employees/:path*',
     '/appraisals/:path*',
     '/point-of-sale/:path*',
+    '/pos/:path*',
     '/inventory/:path*',
-    '/pos/sell',
-    '/pos/orders',
-    '/pos/sessions',
     // Added 2026-09-06. /accounting was the ONE (hydrogen) route group missing
     // from this list, so it got no middleware at all: its UI shell rendered for
     // signed-out visitors and merely failed its data loads, even though
     // accounting.routes.js gates the API behind Pro. /pos/pricelists was absent
     // for the same reason while its three siblings above were listed.
     '/accounting/:path*',
-    '/pos/pricelists',
     // Ordinary POS screens, not kiosks: they render a shop's live orders and
     // price lists to whoever loads the URL. `/kiosk/:token` below is the only
     // screen that legitimately has no session, and it is not one of these.
-    '/pos/kitchen',
     // The plan gate redirects here, so it must carry a session check of its own
     // — otherwise the one page a gated tenant is sent to is the one page that
     // does not know who they are.

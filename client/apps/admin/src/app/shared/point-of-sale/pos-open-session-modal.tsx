@@ -53,7 +53,7 @@ export default function POSOpenSessionModal({ onSessionOpened }: Props) {
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-gray-100 px-6 py-4">
           <Image
-            src="/logo-short.svg"
+            src="/logo-short.png"
             alt="DH"
             width={32}
             height={32}

@@ -434,7 +434,7 @@ export default function PricelistPrintModal({
   function handlePdf() {
     try {
       downloadPricelistPdf(effectiveRows, pricingSource, buildOptions());
-      toast.success('PDF downloaded');
+
     } catch {
       toast.error('Could not generate the PDF');
     }

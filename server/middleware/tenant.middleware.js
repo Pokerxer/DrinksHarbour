@@ -11,7 +11,7 @@ const { resolveEntitlements, readOnlyMessage } = require('../services/entitlemen
 // custom tenant silently falls back to the default set, and the add-on quota
 // reads as "one, free" for everyone regardless of what they bought.
 const TENANT_SELECT_FIELDS =
-  '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan trialEndsAt addOns customCapabilities posSettings.shops';
+  '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan trialEndsAt addOns customCapabilities posSettings.shops email businessName paystackCustomerId paystackSubscriptionCode currentPeriodEnd cancelAtPeriodEnd';
 const ADMIN_ROLES = ['super_admin', 'admin'];
 const RESERVED_SUBDOMAINS = ['www', 'drinksharbour', 'localhost', 'admin', 'platform', 'api'];
 
@@ -33,6 +33,12 @@ const RESERVED_SUBDOMAINS = ['www', 'drinksharbour', 'localhost', 'admin', 'plat
 // The full rule, and why lapsed tenants keep read access, is in
 // server/config/README-plan-entitlements.md §4.
 const TENANT_CONTEXT_STATUSES = ['active', 'trialing', 'past_due'];
+
+const BILLING_RECOVERY_STATUSES = ['canceled', 'incomplete', 'incomplete_expired'];
+function contextStatusAllowed(req, status) {
+  return TENANT_CONTEXT_STATUSES.includes(status) ||
+    (req.billingWriteExempt === true && BILLING_RECOVERY_STATUSES.includes(status));
+}
 
 const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
@@ -90,7 +96,7 @@ const resolveTenantContext = async (req, res, next) => {
       const tenant = await Tenant.findById(req.user.tenant)
         .select(TENANT_SELECT_FIELDS)
         .lean();
-      if (tenant && tenant.status === 'approved' && TENANT_CONTEXT_STATUSES.includes(tenant.subscriptionStatus)) {
+      if (tenant && tenant.status === 'approved' && contextStatusAllowed(req, tenant.subscriptionStatus)) {
         req.tenant = tenant;
       }
     } catch (_) {
@@ -108,7 +114,7 @@ const resolveTenantContext = async (req, res, next) => {
         const tenant = await Tenant.findOne({ slug: tenantSlug, status: 'approved' })
           .select(TENANT_SELECT_FIELDS)
           .lean();
-        if (tenant && TENANT_CONTEXT_STATUSES.includes(tenant.subscriptionStatus)) {
+        if (tenant && contextStatusAllowed(req, tenant.subscriptionStatus)) {
           req.tenant = tenant;
         }
       } catch (_) {
@@ -137,7 +143,7 @@ const resolveTenantContext = async (req, res, next) => {
         // offline over one failed card punishes their customers, and the
         // platform still earns commission on what sells; what dunning stops is
         // the tenant's own writes, enforced by the guards below.
-        if (tenant && TENANT_CONTEXT_STATUSES.includes(tenant.subscriptionStatus)) {
+        if (tenant && contextStatusAllowed(req, tenant.subscriptionStatus)) {
           req.tenant = tenant;
         }
       } catch (_) {
@@ -164,7 +170,7 @@ const requireTenant = (req, res, next) => {
     throw new ForbiddenError('Tenant account is not approved');
   }
 
-  if (!TENANT_CONTEXT_STATUSES.includes(req.tenant.subscriptionStatus)) {
+  if (!contextStatusAllowed(req, req.tenant.subscriptionStatus)) {
     throw new ForbiddenError('Tenant subscription is not active');
   }
 
@@ -203,7 +209,7 @@ const verifyActiveSubscription = (req, res, next) => {
     throw new ForbiddenError('Tenant context required');
   }
 
-  if (!TENANT_CONTEXT_STATUSES.includes(req.tenant.subscriptionStatus)) {
+  if (!contextStatusAllowed(req, req.tenant.subscriptionStatus)) {
     throw new ForbiddenError('Tenant subscription is not active');
   }
 
@@ -262,7 +268,7 @@ const requireOwnTenant = (req, res, next) => {
     throw new ForbiddenError('Tenant account is not approved');
   }
 
-  if (!TENANT_CONTEXT_STATUSES.includes(req.tenant.subscriptionStatus)) {
+  if (!contextStatusAllowed(req, req.tenant.subscriptionStatus)) {
     throw new ForbiddenError('Tenant subscription is not active');
   }
 

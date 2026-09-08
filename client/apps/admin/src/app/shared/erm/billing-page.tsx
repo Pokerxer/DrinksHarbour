@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from 'rizzui/button';
 import { PiWarningCircleDuotone } from 'react-icons/pi';
-import { initSubscribe, cancelSubscription } from '@/services/erm.service';
+import type { ErmPlan, ErmStatus } from '@/services/erm.service';
+import { useBillingActions } from './use-billing-actions';
+import PlanConfirmation from './plan-confirmation';
 import CurrentPlanWidget from './current-plan-widget';
 import PricingCards from './pricing-cards';
 import AddOnsCard from './add-ons-card';
-import type { ErmPlan, ErmStatus } from '@/services/erm.service';
+import SettingsPageHeader from '@/app/shared/settings/settings-page-header';
 
 /**
  * Shown only when the API did not send `entitlementMessage` at all.
@@ -38,58 +39,113 @@ export default function BillingPage({
   status: ErmStatus;
   token: string;
 }) {
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
-  const [cancelling, setCancelling] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSelectPlan(planKey: string) {
-    setLoadingPlan(planKey);
-    setError(null);
-    try {
-      const { authorizationUrl } = await initSubscribe(planKey, token);
-      window.location.href = authorizationUrl;
-    } catch (e: any) {
-      setError(e.message);
-      setLoadingPlan(null);
-    }
-  }
-
-  async function handleCancel() {
-    if (
-      !confirm(
-        'Cancel your subscription? You will lose access at the end of the billing period.'
-      )
-    )
-      return;
-    setCancelling(true);
-    setError(null);
-    try {
-      await cancelSubscription(token);
-      window.location.reload();
-    } catch (e: any) {
-      setError(e.message);
-      setCancelling(false);
-    }
-  }
-
+  const {
+    loadingPlan,
+    cancelling,
+    error,
+    pending,
+    checkingPending,
+    pendingError,
+    setRevision,
+    selectedPlan,
+    setSelectedPlan,
+    changesBlocked,
+    handleManage,
+    handleSelectPlan,
+    handleCancel,
+  } = useBillingActions(status, token);
+  const canManageBilling = status.canManageBilling === true;
+  const hasCurrentSubscription =
+    status.hasSubscription === true &&
+    ['active', 'trialing', 'past_due'].includes(status.subscriptionStatus);
   const canCancel =
+    canManageBilling &&
+    status.hasSubscription === true &&
+    !status.cancelAtPeriodEnd &&
     ['active', 'trialing', 'past_due'].includes(status.subscriptionStatus) &&
     status.plan !== 'free_trial';
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Subscription & Billing
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Manage your ERM plan. Higher tiers reduce your marketplace commission
-          rate.
+    <div className="mx-auto max-w-7xl space-y-8">
+      <SettingsPageHeader
+        title="Subscription & billing"
+        description="Review your plan, keep track of usage and manage payments. Choose the right tools for your business as it grows."
+      >
+        <span className="rounded-full border border-muted px-4 py-2 text-xs font-medium text-gray-600">
+          Payments secured by Paystack · NGN
+        </span>
+      </SettingsPageHeader>
+      {checkingPending && (
+        <p role="status" className="text-sm text-gray-500">
+          Checking scheduled plan changes…
         </p>
-      </div>
+      )}
+      {pendingError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 p-4 text-sm text-red-600"
+        >
+          <span>
+            {pendingError} Plan changes are paused until this is checked.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setRevision((v) => v + 1)}
+          >
+            Retry check
+          </Button>
+        </div>
+      )}
 
+      {!canManageBilling && (
+        <p role="status" className="text-sm text-gray-600">
+          Only your tenant owner or administrator can change billing. You can
+          review your plan and usage here.
+        </p>
+      )}
+      {status.cancelAtPeriodEnd && (
+        <p role="status" className="text-sm text-amber-700">
+          Cancellation scheduled. Your plan remains available until the billing
+          period ends.
+        </p>
+      )}
+      {hasCurrentSubscription && (
+        <p className="text-sm text-gray-600">
+          Plan changes start at the end of your paid period. There are no
+          partial charges or credits; your current access remains until then.
+        </p>
+      )}
+      {pending && (
+        <p
+          role="status"
+          className="rounded-xl border border-muted bg-gray-50 p-4 text-sm"
+        >
+          Plan change to{' '}
+          {plans.find((plan) => plan.key === pending.targetPlan)?.label ??
+            pending.targetPlan}
+          : {pending.state.replaceAll('_', ' ')}. Effective{' '}
+          {new Date(pending.effectiveAt).toLocaleDateString()}.{' '}
+          {pending.state === 'needs_review' &&
+            'Contact support to reconcile the provider outcome before retrying.'}
+        </p>
+      )}
+      {canManageBilling &&
+        status.hasSubscription &&
+        status.cancelAtPeriodEnd &&
+        !pending && (
+          <Button
+            disabled={loadingPlan !== null || cancelling || changesBlocked}
+            onClick={() => handleSelectPlan(status.plan)}
+          >
+            Enable renewal
+          </Button>
+        )}
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400"
+        >
           <PiWarningCircleDuotone className="h-4 w-4 shrink-0" />
           {error}
         </div>
@@ -112,14 +168,27 @@ export default function BillingPage({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
-        <div className="space-y-4 lg:col-span-1">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="space-y-4">
           <CurrentPlanWidget status={status} />
+          {canManageBilling && status.hasSubscription && (
+            <Button
+              className="w-full"
+              size="sm"
+              variant="outline"
+              disabled={cancelling || loadingPlan !== null}
+              isLoading={loadingPlan === 'manage'}
+              onClick={handleManage}
+            >
+              Manage payment method
+            </Button>
+          )}
           {canCancel && (
             <Button
               size="sm"
               variant="outline"
               className="w-full text-red-600 hover:border-red-300 hover:bg-red-50"
+              disabled={loadingPlan !== null || changesBlocked}
               isLoading={cancelling}
               onClick={handleCancel}
             >
@@ -127,15 +196,39 @@ export default function BillingPage({
             </Button>
           )}
         </div>
-        <div className="lg:col-span-3">
+        <div className="min-w-0 space-y-5">
+          <div>
+            <h2 className="text-lg font-semibold">Find your next plan</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Monthly subscriptions, with marketplace commission shown for each
+              tier.
+            </p>
+          </div>
           <PricingCards
             plans={plans}
             currentPlan={status.plan}
-            onSelectPlan={handleSelectPlan}
+            onSelectPlan={setSelectedPlan}
             loading={loadingPlan}
+            disabled={!canManageBilling || cancelling || changesBlocked}
+            canReactivate={
+              (!status.writesAllowed && !status.hasSubscription) ||
+              ['canceled', 'incomplete', 'incomplete_expired'].includes(
+                status.subscriptionStatus
+              )
+            }
           />
         </div>
       </div>
+      <PlanConfirmation
+        plan={plans.find((plan) => plan.key === selectedPlan)}
+        hasSubscription={status.hasSubscription === true}
+        busy={loadingPlan !== null || cancelling}
+        blocked={changesBlocked}
+        error={error}
+        onConfirm={() => selectedPlan && void handleSelectPlan(selectedPlan)}
+        onClose={() => setSelectedPlan(null)}
+      />
+      <AddOnsCard status={status} token={token} />
     </div>
   );
 }

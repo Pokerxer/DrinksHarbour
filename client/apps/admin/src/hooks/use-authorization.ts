@@ -1,6 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
+import { useEffectivePermissions } from './use-effective-permissions';
 import {
   type UserRole,
   type Permission,
@@ -35,20 +36,22 @@ export function useAuthorization() {
 
   const role = (user?.role as UserRole) ?? 'viewer';
   const tenantId = user?.tenantId ?? null;
+  const effective = useEffectivePermissions(user?.token);
+  const permissions = effective?.permissions ?? ROLE_PERMISSIONS[role] ?? [];
 
   const checkPermission = (permission: Permission): boolean => {
     if (!isAuthenticated) return false;
-    return hasPermission(role, permission);
+    return permissions.includes(permission);
   };
 
   const checkAnyPermission = (permissions: Permission[]): boolean => {
     if (!isAuthenticated) return false;
-    return hasAnyPermission(role, permissions);
+    return permissions.some(checkPermission);
   };
 
   const checkAllPermissions = (permissions: Permission[]): boolean => {
     if (!isAuthenticated) return false;
-    return hasAllPermissions(role, permissions);
+    return permissions.every(checkPermission);
   };
 
   const checkTenantAccess = (targetTenantId: string): boolean => {
@@ -73,7 +76,8 @@ export function useAuthorization() {
     checkAnyPermission,
     checkAllPermissions,
     checkTenantAccess,
-    permissions: ROLE_PERMISSIONS[role] ?? [],
+    permissions,
+    customPermissions: effective?.customPermissions ?? [],
   };
 }
 

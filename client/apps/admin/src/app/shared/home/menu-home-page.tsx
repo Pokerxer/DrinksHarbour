@@ -33,9 +33,9 @@ export default function MenuHomePage() {
 
   const groups = useMemo<Group[]>(() => {
     if (!isMainSite || isTenantUser)
-      return buildTenantGroups(tenant?.plan, role);
+      return buildTenantGroups(tenant?.plan, role, tenant?.capabilities);
     return buildPlatformGroups(isPlatformAdmin);
-  }, [isMainSite, isTenantUser, isPlatformAdmin, role, tenant?.plan]);
+  }, [isMainSite, isTenantUser, isPlatformAdmin, role, tenant?.plan, tenant?.capabilities]);
 
   const hasTiles = groups.some((g) => g.tiles.length > 0);
 
@@ -75,7 +75,7 @@ export default function MenuHomePage() {
       <div className="applauncher-bar relative z-10 flex items-center justify-between gap-4 px-6 pt-6 sm:px-9">
         <div className="flex items-center gap-2.5 rounded-2xl bg-white/10 px-4 py-2 ring-1 ring-white/20 backdrop-blur-md">
           <Image
-            src="/logo-short.svg"
+            src="/logo-short.png"
             alt="DH"
             width={22}
             height={22}

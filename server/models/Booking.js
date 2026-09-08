@@ -65,8 +65,9 @@ const bookingSchema = new mongoose.Schema(
       enum: ['pos', 'discovery', 'admin'],
       default: 'pos',
     },
+    checkoutStartedAt: Date,
   },
-  { timestamps: true }
+  { timestamps: true, optimisticConcurrency: true }
 );
 
 bookingSchema.index({ tenant: 1, bookingAt: 1 });

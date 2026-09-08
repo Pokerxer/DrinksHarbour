@@ -2,7 +2,7 @@
 // server record into a DocumentModel; renderDocument() produces the real
 // branded PDF. print* helpers save the file directly — no browser print dialog.
 import { COMPANY } from './print/print-shared';
-import { renderDocument } from './print/pdf-render';
+import { requestDocumentExport } from './print/document-export';
 import type { DocumentModel } from './print/doc-model';
 
 export { COMPANY };
@@ -42,20 +42,7 @@ import {
 } from './print/return-print';
 
 function downloadPdf(model: DocumentModel): void {
-  const doc = renderDocument(model);
-  // doc.save triggers the browser download; in non-browser environments it is
-  // a no-op, so fall back to opening the blob (keeps SSR/tests safe).
-  try {
-    doc.save(model.fileName);
-  } catch {
-    const blob = new Blob([doc.output('arraybuffer')], {
-      type: 'application/pdf',
-    });
-    const url = URL.createObjectURL(blob);
-    const win = window.open(url, '_blank');
-    if (win) win.focus();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  }
+  requestDocumentExport(model);
 }
 
 export function printBillInvoice(

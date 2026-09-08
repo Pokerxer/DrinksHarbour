@@ -402,7 +402,7 @@ export default function POSCloseSessionModal({ session, onSessionClosed, onCance
 
         {/* Header */}
         <div className="flex shrink-0 items-center gap-3 border-b border-gray-100 px-5 py-4">
-          <Image src="/logo-short.svg" alt="DH" width={28} height={28} className="rounded-full" />
+          <Image src="/logo-short.png" alt="DH" width={28} height={28} className="rounded-full" />
           <div className="flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
               {tenant?.name || 'DrinksHarbour'} · {terminalLabel}

@@ -38,11 +38,12 @@ export const HeaderLogo: React.FC<HeaderLogoProps> = ({
         />
       ) : (
         <Image
-          src="/images/logo.svg"
+          src="/images/logo-wordmark.png"
           alt="DrinksHarbour"
-          width={440}
-          height={63}
-          className="h-10 md:h-12 w-auto object-contain"
+          width={2172}
+          height={724}
+          className="h-7 w-56 min-w-56 object-cover"
+          sizes="224px"
           priority
         />
       )}

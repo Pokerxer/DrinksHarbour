@@ -209,11 +209,12 @@ export const Footer: React.FC = () => {
           <div className="col-span-2 md:col-span-3 lg:col-span-1">
             <Link href="/" className="inline-block mb-3">
               <Image
-                src="/images/logo.svg"
+                src="/images/logo-full.png"
                 alt="DrinksHarbour"
-                width={180}
-                height={28}
-                className="h-9 w-auto object-contain"
+                width={2172}
+                height={724}
+                className="h-auto w-72 max-w-full object-contain"
+                sizes="288px"
               />
             </Link>
             <p className="text-white/45 text-xs leading-relaxed mb-5">

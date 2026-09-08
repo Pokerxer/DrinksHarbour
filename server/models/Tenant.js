@@ -35,6 +35,8 @@ const tenantSchema = new Schema(
       alt: String,
     },
 
+    documentTemplates: { type: require("./documentTemplate.schema"), default: () => ({}) },
+
     primaryColor: {
       type: String,
       default: "#1a202c", // fallback dark slate
@@ -77,12 +79,22 @@ const tenantSchema = new Schema(
     paystackCustomerId: { type: String, sparse: true },
     paystackSubscriptionCode: { type: String, sparse: true },
     paystackPlanCode: { type: String, sparse: true },
+    cancelAtPeriodEnd: { type: Boolean, default: false },
+    billingRevision: { type: Number, default: 0 },
+    billingMutationLock: String,
+    billingCheckout: {
+      targetPlan: String,
+      reference: String,
+      authorizationUrl: String,
+      startedAt: Date,
+    },
 
     addOns: {
       type: [{
         type: { type: String, enum: ['extra_shop', 'extra_warehouse'] },
         quantity: { type: Number, default: 1 },
         paystackSubscriptionCode: String,
+        cancelAtPeriodEnd: { type: Boolean, default: false },
       }],
       default: [],
     },

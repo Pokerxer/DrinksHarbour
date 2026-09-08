@@ -19,7 +19,7 @@ export default function HeliumSidebar({ className }: { className?: string }) {
         <div className="sticky top-0 z-40 flex justify-center px-6 pb-5 pt-5 2xl:px-8 2xl:pt-6">
           <Link href={'/'} aria-label="Site Logo">
             <Image
-              src="/logo-short-light.svg"
+              src="/logo-short.png"
               alt={siteConfig.title}
               width={58}
               height={35}

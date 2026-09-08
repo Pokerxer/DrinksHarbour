@@ -55,8 +55,8 @@ export const PLACEMENT_PREVIEW: Record<
   },
   footer: { aspect: 'auto', label: 'Footer — promo strip', layout: 'footer' },
   popup: {
-    aspect: 'aspect-[4/3]',
-    label: 'Popup — modal overlay',
+    aspect: 'aspect-[3/4]',
+    label: 'Popup — portrait modal overlay',
     layout: 'modal',
   },
   header: {

@@ -1,3 +1,5 @@
+import { requestDocumentExport } from './print/document-export';
+import { buildA4Invoice } from './print/a4-invoice';
 /**
  * Shared invoice builder — single source of truth for all invoice HTML generation
  * and print logic across POS orders, POS sessions, and product history panels.
@@ -14,6 +16,7 @@ export interface InvoiceItem {
   name?: string;
   product?: { name?: string };
   variant?: string;
+  size?: { displayName?: string; size?: string };
   quantity?: number;
   priceAtPurchase?: number;
   itemSubtotal?: number;
@@ -40,7 +43,9 @@ export interface InvoiceOrder {
   posStaff?: { firstName?: string; lastName?: string; posName?: string } | null;
   staff?: { name?: string } | null;
   customer?: { firstName?: string; lastName?: string; phone?: string } | null;
-  refunds?: { totalRefunded?: number }[];
+  refunds?: { totalRefunded?: number; items?: { orderItemIndex: number; quantity: number }[] }[];
+  shipping?: { address?: string; city?: string; state?: string };
+  notes?: string;
   items?: InvoiceItem[];
 }
 
@@ -257,27 +262,8 @@ export function buildInvoice(order: InvoiceOrder, store: InvoiceStore = DEFAULT_
 // ── Print helper ──────────────────────────────────────────────────────────────
 
 export function printInvoice(order: InvoiceOrder, store: InvoiceStore = DEFAULT_STORE): void {
-  const win = window.open('', '_blank', 'width=900,height=1100,scrollbars=yes');
-  if (!win) return;
-  win.document.write(buildInvoice(order, store));
-  win.document.close();
-  win.focus();
-  setTimeout(() => { win.print(); win.close(); }, 500);
+  requestDocumentExport(buildA4Invoice(order, store));
 }
-
-/** Print multiple orders, each on its own A4 page */
 export function printInvoices(orders: InvoiceOrder[], store: InvoiceStore = DEFAULT_STORE): void {
-  if (orders.length === 0) return;
-  if (orders.length === 1) return printInvoice(orders[0], store);
-  const win = window.open('', '_blank', 'width=900,height=1100,scrollbars=yes');
-  if (!win) return;
-  const pages = orders.map((o, i) => {
-    const html = buildInvoice(o, store);
-    const body = html.replace(/[\s\S]*?<body[^>]*>/, '').replace(/<\/body>[\s\S]*/, '');
-    return `<div style="page-break-after:${i < orders.length - 1 ? 'always' : 'avoid'}">${body}</div>`;
-  });
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif}@media print{@page{size:A4;margin:14mm 16mm}}</style></head><body>${pages.join('')}</body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => { win.print(); win.close(); }, 500);
+  requestDocumentExport(orders.map(order => buildA4Invoice(order, store)));
 }

@@ -21,6 +21,7 @@ const {
   cancelSubscription,
   cancelAddOnSubscription,
   handleWebhookEvent,
+  getSubscriptionManagementLink,
 } = require('../services/erm.service');
 const { ValidationError } = require('../utils/errors');
 
@@ -80,6 +81,7 @@ const getStatus = async (req, res) => {
     label: ADD_ONS[type].label,
     priceMonthly: ADD_ONS[type].priceMonthly,
     purchased: addOnQuantity(tenant, type),
+    pendingCancellation: (tenant.addOns || []).filter(row => row.type === type && row.cancelAtPeriodEnd).length,
     used: type === 'extra_warehouse' ? warehouseCount : shopCount,
     allowance: addOnAllowance(tenant, type),
   }));
@@ -95,6 +97,11 @@ const getStatus = async (req, res) => {
       commissionRate: tenant.commissionPercentage ?? plan.commissionRate * 100,
       addOnsAllowed: plan.addOnsAllowed,
       writesAllowed: entitlements.writesAllowed,
+      capabilities: entitlements.capabilities,
+      canManageBilling: ['super_admin', 'admin', 'tenant_owner', 'tenant_admin'].includes(req.user?.role),
+      hasSubscription: Boolean(tenant.paystackSubscriptionCode),
+      cancelAtPeriodEnd: Boolean(tenant.cancelAtPeriodEnd),
+      revenueModel: tenant.revenueModel,
       entitlementReason: entitlements.reason,
       // The same sentence the write gates put in their 403, so a tenant is not
       // warned in one wording here and refused in another wording there. Null
@@ -115,16 +122,25 @@ const getStatus = async (req, res) => {
 
 const subscribe = async (req, res) => {
   const { planKey } = req.body;
-  if (!ERM_PLANS[planKey]) throw new ValidationError(`Invalid plan: ${planKey}`);
+  if (typeof planKey !== 'string' || !Object.hasOwn(ERM_PLANS, planKey) || planKey === 'custom') throw new ValidationError(`Invalid plan: ${planKey}`);
   if (planKey === 'free_trial') throw new ValidationError('Cannot subscribe to free trial');
 
-  const result = await initializeSubscription(req.tenant, planKey);
+  const result = await require('../services/billingLock.service').withBillingLock(req.tenant._id,
+    tenant => initializeSubscription(tenant, planKey));
   res.json({ success: true, data: result });
 };
 
 const cancel = async (req, res) => {
-  await cancelSubscription(req.tenant);
+  await require('../services/billingLock.service').withBillingLock(req.tenant._id,
+    tenant => require('../services/billingReconciliation.service').setRenewal(tenant, false));
   res.json({ success: true, message: 'Subscription cancelled' });
+};
+
+const manageSubscription = async (req, res) => {
+  const pending = await require('../models/BillingTransition').findOne({ tenant: req.tenant._id, state: { $ne: 'complete' } });
+  const authorizationUrl = await getSubscriptionManagementLink({ ...req.tenant,
+    paystackSubscriptionCode: pending?.newCode || req.tenant.paystackSubscriptionCode });
+  res.json({ success: true, data: { authorizationUrl } });
 };
 
 /**
@@ -138,6 +154,9 @@ const subscribeAddOn = async (req, res) => {
   }
 
   const plan = getPlanConfig(req.tenant.plan);
+  if (!resolveEntitlements(req.tenant).writesAllowed) {
+    throw new ValidationError('Resolve your base subscription billing before buying add-ons.');
+  }
   if (!plan.addOnsAllowed) {
     throw new ValidationError(
       `The ${plan.label} plan includes one of each. Upgrade to Pro or above to buy more.`
@@ -202,7 +221,7 @@ const webhook = async (req, res) => {
   }
 
   const { event, data } = req.body;
-  await handleWebhookEvent(event, data);
+  await require('../services/billingWebhook.service').handleProviderEvent(event, data);
   res.sendStatus(200);
 };
 
@@ -223,6 +242,7 @@ module.exports = {
   getStatus,
   subscribe,
   cancel,
+  manageSubscription,
   subscribeAddOn,
   cancelAddOn,
   webhook,

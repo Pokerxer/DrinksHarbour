@@ -106,7 +106,7 @@ export default function ContactsNavHeader() {
         className="flex shrink-0 items-center gap-2.5 border-r border-gray-200 py-2 pr-5"
       >
         <Image
-          src="/logo-short.svg"
+          src="/logo-short.png"
           alt="DrinksHarbour"
           width={30}
           height={30}

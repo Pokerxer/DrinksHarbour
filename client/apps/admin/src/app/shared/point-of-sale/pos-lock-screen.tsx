@@ -364,7 +364,7 @@ export default function POSLockScreen() {
         <div className="flex flex-col items-end gap-3">
           <div className="flex items-center gap-2.5 rounded-2xl bg-white/10 px-4 py-2 ring-1 ring-white/20">
             <Image
-              src="/logo-short.svg"
+              src="/logo-short.png"
               alt="DH"
               width={22}
               height={22}

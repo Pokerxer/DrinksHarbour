@@ -127,10 +127,12 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
             >
               <Link href="/" onClick={onClose} className="flex items-center">
                 <Image
-                  src="/images/logo.svg"
+                  src="/images/logo-wordmark.png"
                   alt={isMainSite ? "DrinksHarbour" : (tenant?.name ?? "DrinksHarbour")}
-                  width={140}
-                  height={49}
+                  width={2172}
+                  height={724}
+                  className="h-7 w-56 object-cover"
+                  sizes="224px"
                   priority
                 />
               </Link>

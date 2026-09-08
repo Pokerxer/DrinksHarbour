@@ -108,6 +108,14 @@ router.put('/admin/:id', protect, authorize(...adminRoles), uploadBrandImages, t
 // Tenant deletion — super_admin only (most destructive operation)
 router.delete('/admin/:id', protect, authorize('super_admin'), superAdminOnly, tenantController.deleteAdminTenant);
 
+// Saved internal document styles. JWT tenant wins over all client selectors.
+const templateController = require('../controllers/documentTemplate.controller');
+const asyncHandler = require('../utils/asyncHandler');
+const { attachTenant, requireOwnTenant, authorizeTenantAction } = require('../middleware/auth.middleware');
+router.get('/document-templates', protect, attachTenant, requireOwnTenant, asyncHandler(templateController.read));
+router.put('/document-templates', protect, attachTenant, requireOwnTenant,
+  authorizeTenantAction('settings:write'), asyncHandler(templateController.update));
+
 // ── Own-tenant read (AFTER the /admin and /slug literals, or it shadows them) ──
 // The admin client has always called this; it was never routed, so every
 // session-refresh fetch 404'd and a webhook plan change never reached the gates

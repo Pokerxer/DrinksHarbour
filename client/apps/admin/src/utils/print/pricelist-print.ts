@@ -13,7 +13,7 @@ import {
   type PricelistPrintOptions,
 } from '@/app/shared/inventory/inventory-pricelist-print';
 import { COMPANY, fmtAmt } from './print-shared';
-import { renderDocument } from './pdf-render';
+import { requestDocumentExport } from './document-export';
 import type { DocumentModel, DocCell } from './doc-model';
 
 const MUTED = '#6b7280';
@@ -184,16 +184,5 @@ export function downloadPricelistPdf(
   options: PricelistPrintOptions
 ): void {
   const model = buildPricelistDoc(rows, pricelist, options);
-  const doc = renderDocument(model);
-  try {
-    doc.save(model.fileName);
-  } catch {
-    const blob = new Blob([doc.output('arraybuffer')], {
-      type: 'application/pdf',
-    });
-    const url = URL.createObjectURL(blob);
-    const win = window.open(url, '_blank');
-    if (win) win.focus();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  }
+  requestDocumentExport(model);
 }

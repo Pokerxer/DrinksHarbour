@@ -324,6 +324,12 @@ router.use(protect);
  * @route GET /api/users/me
  */
 router.get('/me', userController.getMyProfile);
+router.get('/me/permissions', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, data: { role: req.user.role,
+    customPermissions: req.user.customPermissions || [],
+    effectivePermissions: require('../services/effectivePermissions.service').effectivePermissions(req.user) } });
+});
 
 /**
  * Update current user profile

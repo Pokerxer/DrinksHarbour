@@ -29,6 +29,13 @@ function PositionedContent({
   posCls: string;
   children: React.ReactNode;
 }) {
+  const hasContent = Boolean(
+    formData.title ||
+      formData.subtitle ||
+      formData.description ||
+      formData.ctaText
+  );
+
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -47,7 +54,7 @@ function PositionedContent({
       />
       {/* Simplified stand-in for the storefront's three-layer cinematic
           treatment — this preview is a placement sketch, not a pixel mirror. */}
-      {(formData.gradientIntensity ?? 100) > 0 && (
+      {hasContent && (formData.gradientIntensity ?? 100) > 0 && (
         <div
           className="absolute inset-0"
           style={{

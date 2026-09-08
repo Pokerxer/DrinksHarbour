@@ -100,6 +100,10 @@ const attachPaymentToOrder = async (orderId, paymentData) => {
       throw new NotFoundError('Order not found');
     }
 
+    if (order.tableServiceBooking) {
+      return await require('./tableCheckout.service').settleTablePayment(order);
+    }
+
     order.paymentStatus = 'paid';
     order.status = 'confirmed';
     order.paidAt = new Date();

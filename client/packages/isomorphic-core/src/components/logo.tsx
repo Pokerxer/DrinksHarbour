@@ -11,7 +11,7 @@ export default function Logo({ iconOnly = false, className, ...props }: LogoProp
   if (iconOnly) {
     return (
       <Image
-        src="/logo-short.svg"
+        src="/logo-short.png"
         alt="DrinksHarbour"
         width={32}
         height={32}
@@ -22,10 +22,12 @@ export default function Logo({ iconOnly = false, className, ...props }: LogoProp
   }
   return (
     <Image
-      src="/logo.svg"
+      src="/logo-wordmark.png"
       alt="DrinksHarbour"
-      width={155}
-      height={32}
+      width={2172}
+      height={724}
+      style={{ width: 155, height: 24, objectFit: 'cover' }}
+      sizes="155px"
       className={className}
       {...props}
     />

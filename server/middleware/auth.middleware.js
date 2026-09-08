@@ -3,6 +3,7 @@
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User');
+const { loadCustomPermissions, TENANT_ACTION_PERMISSIONS } = require('../services/effectivePermissions.service');
 const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
 const {
   resolveTenantContext,
@@ -46,7 +47,7 @@ const protect = asyncHandler(async (req, res, next) => {
     // JWT payload uses userId, not id
     const userId = decoded.userId || decoded.id;
     req.user = await User.findById(userId)
-      .select('_id email role tenant status firstName lastName passwordChangedAt mfaEnabled')
+      .select('_id email role tenant status firstName lastName passwordChangedAt mfaEnabled customRole')
       .lean();
 
     if (!req.user) {
@@ -66,6 +67,7 @@ const protect = asyncHandler(async (req, res, next) => {
       }
     }
 
+    req.user.customPermissions = await loadCustomPermissions(req.user);
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
@@ -108,9 +110,10 @@ const optionalProtect = asyncHandler(async (req, res, next) => {
     // JWT payload uses userId, not id
     const userId = decoded.userId || decoded.id;
     req.user = await User.findById(userId)
-      .select('_id email role tenant status firstName lastName passwordChangedAt')
+      .select('_id email role tenant status firstName lastName passwordChangedAt customRole')
       .lean();
 
+    if (req.user?.status !== 'active') req.user = null;
     // Invalidate JWTs issued before a password change (same as protect)
     if (req.user?.passwordChangedAt && decoded.iat) {
       const passwordChangedTimestamp = Math.floor(req.user.passwordChangedAt.getTime() / 1000);
@@ -120,8 +123,10 @@ const optionalProtect = asyncHandler(async (req, res, next) => {
       }
     }
 
+    if (req.user) req.user.customPermissions = await loadCustomPermissions(req.user);
     next();
   } catch (error) {
+    req.user = null;
     // If token is invalid, just proceed without user (treat as guest)
     next();
   }
@@ -241,10 +246,26 @@ const authorize = (...roles) => {
   return guard;
 };
 
+// Opt-in only. Existing authorize/platform guards never consult custom grants.
+const authorizeTenantAction = (permission, baseGuard = tenantAdminOrSuperAdmin) => {
+  if (!TENANT_ACTION_PERMISSIONS.has(permission)) throw new Error('Unsupported tenant action');
+  const guard = (req, res, next) => {
+    const ownTenant = req.user?.tenant && req.tenant?._id &&
+      String(req.user.tenant) === String(req.tenant._id);
+    if (ownTenant && ['tenant_admin', 'tenant_staff'].includes(req.user.role) &&
+        req.user.customPermissions?.includes(permission)) return next();
+    return baseGuard(req, res, next);
+  };
+  guard.authorizedRoles = baseGuard.authorizedRoles;
+  guard.requiredPermission = permission;
+  return guard;
+};
+
 module.exports = {
   protect,
   authenticate,
   authorize,
+  authorizeTenantAction,
   attachTenant,
   requireTenant,
   // Strict own-tenant gate for tenant-owned modules (POS, sales, purchases,

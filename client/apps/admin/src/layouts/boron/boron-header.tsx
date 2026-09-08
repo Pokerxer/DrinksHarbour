@@ -36,7 +36,7 @@ export default function BoronHeader() {
             aria-label="Site Logo"
             className="w-[155px] text-gray-900 hover:text-gray-800"
           >
-            <Logo className="max-w-[155px] invert dark:invert-0" />
+            <Logo className="max-w-[155px]" />
           </Link>
         </div>
 

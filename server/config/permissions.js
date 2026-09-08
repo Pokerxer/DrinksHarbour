@@ -10,10 +10,9 @@
 //   - server/__tests__/rolePermissionMap.test.js      (ROLE_PERMISSIONS ↔ route
 //     guards — the pre-existing pin on the same file)
 //
-// ENFORCEMENT CAVEAT, stated honestly: custom-role permissions are DECLARATIVE.
-// They gate UI affordances; no requirePermission() middleware consults them at
-// runtime yet. A checked box does not change server authorization until that
-// middleware exists (explicit follow-up, not this module's job).
+// Custom grants are loaded on authentication. Runtime delegation is explicit:
+// inventory actions and API-key settings opt in through authorizeTenantAction.
+// All other fixed-role endpoint boundaries remain unchanged.
 
 // Groups in display order for the admin UI's checkbox grid.
 const PERMISSION_GROUPS = [

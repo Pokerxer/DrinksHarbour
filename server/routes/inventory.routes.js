@@ -20,6 +20,7 @@ const {
   attachTenant,
   tenantAdminOrSuperAdmin,
   requireOwnTenant,
+  authorizeTenantAction,
 } = require('../middleware/auth.middleware');
 
 // All routes require authentication and tenant context
@@ -30,27 +31,35 @@ router.use(attachTenant);
 // no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
 router.use(requireOwnTenant);
 
+const readInventory = authorizeTenantAction('inventory:read');
+const writeInventory = authorizeTenantAction('inventory:write');
+const adjustStock = authorizeTenantAction('inventory:adjust');
+const movementAction = (req, res, next) => {
+  if (['adjustment_in', 'adjustment_out'].includes(req.body?.type) || req.body?.category === 'adjustment') return adjustStock(req, res, next);
+  next();
+};
+
 // Movement routes - use tenantAdminOrSuperAdmin which already handles super_admin
 router.route('/movements')
-  .post(tenantAdminOrSuperAdmin, createMovement)
-  .get(tenantAdminOrSuperAdmin, getMovements);
+  .post(writeInventory, movementAction, createMovement)
+  .get(readInventory, getMovements);
 
-router.post('/movements/:id/cancel', tenantAdminOrSuperAdmin, cancelMovement);
+router.post('/movements/:id/cancel', adjustStock, cancelMovement);
 
 // Summary
-router.get('/summary/:subProductId', tenantAdminOrSuperAdmin, getInventorySummary);
+router.get('/summary/:subProductId', readInventory, getInventorySummary);
 
 // Adjustments
-router.post('/adjust', tenantAdminOrSuperAdmin, adjustInventory);
-router.post('/received', tenantAdminOrSuperAdmin, recordReceived);
-router.post('/return', tenantAdminOrSuperAdmin, recordReturn);
-router.post('/transfer', tenantAdminOrSuperAdmin, transferStock);
+router.post('/adjust', adjustStock, adjustInventory);
+router.post('/received', writeInventory, recordReceived);
+router.post('/return', writeInventory, recordReturn);
+router.post('/transfer', writeInventory, transferStock);
 
 // Utils
-router.get('/next-po', tenantAdminOrSuperAdmin, getNextPONumber);
+router.get('/next-po', readInventory, getNextPONumber);
 
 // Reports
-router.get('/low-stock', tenantAdminOrSuperAdmin, getLowStockItems);
-router.get('/valuation', tenantAdminOrSuperAdmin, getInventoryValuation);
+router.get('/low-stock', readInventory, getLowStockItems);
+router.get('/valuation', readInventory, getInventoryValuation);
 
 module.exports = router;

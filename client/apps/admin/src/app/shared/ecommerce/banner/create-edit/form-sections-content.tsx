@@ -211,6 +211,8 @@ export function ImagesSection({
   set,
   token,
 }: SectionBaseProps & { token: string }) {
+  const isPopup = formData.placement === 'popup';
+
   return (
     <CollapsibleSection
       icon={<PiImageBold className="h-5 w-5 text-purple-600" />}
@@ -226,7 +228,7 @@ export function ImagesSection({
           onChange={(url) => set('image', { ...formData.image, url })}
           token={token}
           folder="banners"
-          aspectRatio="video"
+          aspectRatio={isPopup ? 'portrait' : 'video'}
         />
         <ImageUploadField
           label="Mobile Image"
@@ -236,7 +238,7 @@ export function ImagesSection({
           }
           token={token}
           folder="banners"
-          aspectRatio="wide"
+          aspectRatio={isPopup ? 'portrait' : 'wide'}
         />
       </div>
     </CollapsibleSection>

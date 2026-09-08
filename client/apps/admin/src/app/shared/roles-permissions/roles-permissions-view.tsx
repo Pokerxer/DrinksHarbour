@@ -28,7 +28,6 @@ import {
   PiXBold,
 } from 'react-icons/pi';
 
-
 import ModalButton from '@/app/shared/modal-button';
 import { useModal } from '@/app/shared/modal-views/use-modal';
 import CreateUser from '@/app/shared/roles-permissions/create-user';
@@ -46,10 +45,7 @@ import {
   SYSTEM_ROLE_META,
   UserRole,
 } from '@/types/authorization';
-import {
-  rolesService,
-  type GroupedCatalog,
-} from '@/services/roles.service';
+import { rolesService, type GroupedCatalog } from '@/services/roles.service';
 import {
   activateAdminUser,
   deleteAdminUser,
@@ -58,10 +54,7 @@ import {
   updateAdminUser,
   type AdminUserRow,
 } from '@/services/adminUser.service';
-import {
-  employeeService,
-  type Employee,
-} from '@/services/employee.service';
+import { employeeService, type Employee } from '@/services/employee.service';
 
 export interface UsersActions {
   assignRole: (personId: string, roleId: string | null) => Promise<void>;
@@ -82,7 +75,9 @@ export default function RolesPermissionsView() {
   const { openModal, closeModal } = useModal();
   const token = user?.token;
   const isTenantAudience = !isAdmin;
-  const audience = isTenantAudience ? ('tenant' as const) : ('platform' as const);
+  const audience = isTenantAudience
+    ? ('tenant' as const)
+    : ('platform' as const);
 
   const [roles, setRoles] = useState<CustomRole[]>([]);
   const [catalog, setCatalog] = useState<GroupedCatalog[]>([]);
@@ -111,11 +106,11 @@ export default function RolesPermissionsView() {
       setPlatformOnly(catalogRes.data.platformOnly);
       setPeople(
         isTenantAudience
-          ? (peopleRes as { data: { employees: Employee[] } }).data.employees.map(
-              mapEmployeeRow
-            )
+          ? (
+              peopleRes as { data: { employees: Employee[] } }
+            ).data.employees.map(mapEmployeeRow)
           : (peopleRes as { users: AdminUserRow[] }).users.map(mapAdminUserRow)
-        );
+      );
     } catch (err) {
       setError((err as Error).message || 'Failed to load roles');
     } finally {
@@ -148,13 +143,18 @@ export default function RolesPermissionsView() {
     [people, roles, audience]
   );
 
+  const assignableRoles = useMemo(
+    () => roles.filter((r) => r.scope === audience && r.isActive !== false),
+    [roles, audience]
+  );
+
   /** Label + live match count for the chip that echoes the active card filter. */
   const activeFilter = useMemo(() => {
     if (!selectedKey) return null;
     const label = selectedKey.startsWith('system:')
-      ? SYSTEM_ROLE_META[selectedKey.slice(7) as UserRole]?.label ??
-        selectedKey.slice(7)
-      : roles.find((r) => r._id === selectedKey)?.name ?? 'Selected role';
+      ? (SYSTEM_ROLE_META[selectedKey.slice(7) as UserRole]?.label ??
+        selectedKey.slice(7))
+      : (roles.find((r) => r._id === selectedKey)?.name ?? 'Selected role');
     return {
       label,
       count: people.filter((p) => personMatchesFilter(p, selectedKey)).length,
@@ -192,11 +192,16 @@ export default function RolesPermissionsView() {
   );
 
   const actions: UsersActions = useMemo(() => {
-    if (!token) return { assignRole: async () => {}, toggleStatus: async () => {} };
+    if (!token)
+      return { assignRole: async () => {}, toggleStatus: async () => {} };
     if (isTenantAudience) {
       return {
         assignRole: async (personId, roleId) => {
-          await employeeService.updateEmployee(personId, { customRole: roleId }, token);
+          await employeeService.updateEmployee(
+            personId,
+            { customRole: roleId },
+            token
+          );
           await load();
         },
         toggleStatus: async (person) => {
@@ -206,7 +211,9 @@ export default function RolesPermissionsView() {
             token
           );
           toast.success(
-            person.status === 'suspended' ? 'Access restored' : 'Access suspended'
+            person.status === 'suspended'
+              ? 'Access restored'
+              : 'Access suspended'
           );
           await load();
         },
@@ -306,8 +313,7 @@ export default function RolesPermissionsView() {
           >
             People
             <Text as="span" className="ms-2 text-xs font-normal text-gray-400">
-              {people.length}{' '}
-              {isTenantAudience ? 'team members' : 'users'}
+              {people.length} {isTenantAudience ? 'team members' : 'users'}
             </Text>
           </Title>
 
@@ -333,23 +339,19 @@ export default function RolesPermissionsView() {
           <UsersTable
             key={role}
             people={people}
-            roles={roles}
+            roles={assignableRoles}
+            audience={audience}
             selectedKey={selectedKey}
             canDelete={isTenantAudience}
             actions={actions}
           />
         )}
       </section>
-
     </div>
   );
 }
 
-function EmptyPeople({
-  audience,
-}: {
-  audience: 'tenant' | 'platform';
-}) {
+function EmptyPeople({ audience }: { audience: 'tenant' | 'platform' }) {
   return (
     <div className="flex h-48 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-gray-200 p-6 text-center dark:border-gray-700">
       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-lighter text-primary dark:bg-primary-dark">

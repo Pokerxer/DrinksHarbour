@@ -14,6 +14,7 @@ import {
 import { Button, Text } from 'rizzui';
 import { Form } from '@core/ui/form';
 import { routes } from '@/config/routes';
+import { signInDestination } from './sign-in-destination';
 import { parseMfaChallenge } from '@/app/api/auth/[...nextauth]/mfa-challenge';
 import { loginSchema, LoginSchema } from '@/validators/login.schema';
 import toast from 'react-hot-toast';
@@ -85,15 +86,13 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
     setAuthError(null);
 
     try {
+      const destination = signInDestination(window.location.search, window.location.origin);
       const result = await signIn('mfa', {
         pendingMfaToken,
         code: mfaCode.trim(),
         rememberMe: mfaRemember ? 'true' : 'false',
         redirect: false,
-        callbackUrl:
-          typeof window !== 'undefined'
-            ? `${window.location.origin}${routes.dashboard}`
-            : routes.dashboard,
+        callbackUrl: destination,
       });
 
       if (result?.error) {
@@ -116,7 +115,7 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
         }
       } else if (result?.ok) {
         toast.success('Welcome back!');
-        window.location.href = routes.dashboard;
+        window.location.href = destination;
       }
     } catch (error) {
       setIsLoading(false);
@@ -132,6 +131,7 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
     setAuthError(null);
 
     try {
+      const destination = signInDestination(window.location.search, window.location.origin);
       const result = await signIn('credentials', {
         email: data.email,
         password: data.password,
@@ -139,10 +139,7 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
         rememberMe: data.rememberMe ? 'true' : 'false',
         redirect: false,
         // Must be an absolute URL — new URL('/relative') throws in some browsers
-        callbackUrl:
-          typeof window !== 'undefined'
-            ? `${window.location.origin}${routes.dashboard}`
-            : routes.dashboard,
+        callbackUrl: destination,
       });
 
       // A correct password on an MFA-enabled account is not a failure: no
@@ -187,7 +184,7 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
         toast.success('Welcome back!');
         // Hard redirect ensures the session cookie is picked up correctly
         // by the middleware on the next full request
-        window.location.href = routes.dashboard;
+        window.location.href = destination;
       }
     } catch (error) {
       setIsLoading(false);

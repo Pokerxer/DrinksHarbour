@@ -19,6 +19,8 @@ import {
 import StatusBadge from '@core/components/get-status-badge';
 import MailUnreadBadge from '@/layouts/hydrogen/mail-unread-badge';
 import { checkPlanAccess } from '@/config/plan-capabilities';
+import { roleCanAccessRoute } from '@/config/route-roles';
+import { useAuthorization } from '@/hooks/use-authorization';
 import { useTenant } from '@/context/TenantContext';
 import { useSession } from 'next-auth/react';
 import { TENANT_ROLES } from '@/types/authorization';
@@ -62,12 +64,12 @@ function LiveBadge({ name }: { name?: string }) {
  * always allowed; those entries are pruned anyway once all their children are
  * filtered out.
  */
-function linkAllowed(href: string | undefined, role?: string, plan?: string) {
+function linkAllowed(href: string | undefined, role?: string, plan?: string, capabilities?: string[], customPermissions?: string[]) {
   if (!href || href === '#') return true;
   // Strip any fragment — /settings#warehouses gates as /settings.
   const path = href.split('#')[0];
   if (!path) return true;
-  return checkPlanAccess({ path, role, plan }).allowed;
+  return roleCanAccessRoute(path, role, customPermissions) && checkPlanAccess({ path, role, plan, capabilities }).allowed;
 }
 
 function matchesPath(pathname: string, href?: string) {
@@ -289,6 +291,12 @@ function TenantSidebarMenu({
   const pathname = usePathname();
 
   const activeStyle = { color: accentColor };
+  const { tenant } = useTenant();
+  const { customPermissions } = useAuthorization();
+  const customRoute = (href?: string) => Boolean(href && (
+    (href === '/inventory' || href.startsWith('/inventory/')) && customPermissions.includes('inventory:read') ||
+    href === '/settings/api-keys' && customPermissions.includes('settings:read')));
+  const capabilities = tenant?.capabilities;
   const activeBorderStyle = { backgroundColor: accentColor };
   const activeBgStyle = { backgroundColor: `${accentColor}12` };
 
@@ -300,18 +308,17 @@ function TenantSidebarMenu({
       .filter((entry) => {
         if (isSection(entry)) return true; // keep sections for now, prune below
         const planOk =
-          (!entry.requiredPlan || planAllows(plan, entry.requiredPlan)) &&
-          linkAllowed(entry.href, role, plan);
-        const roleOk = !entry.minRole || roleAllows(role, entry.minRole);
+          (entry.href && entry.href !== '#' || !entry.requiredPlan || planAllows(plan, entry.requiredPlan)) &&
+          linkAllowed(entry.href, role, plan, capabilities, customPermissions);
+        const roleOk = !entry.minRole || roleAllows(role, entry.minRole) || customRoute(entry.href);
         return planOk && roleOk;
       })
       .map((entry) => {
         if (isSection(entry) || !entry.dropdownItems) return entry;
         const dropdownItems = entry.dropdownItems.filter(
           (d) =>
-            (!d.minRole || roleAllows(role, d.minRole)) &&
-            (!d.requiredPlan || planAllows(plan, d.requiredPlan)) &&
-            linkAllowed(d.href, role, plan)
+            (!d.minRole || roleAllows(role, d.minRole) || customRoute(d.href)) &&
+            linkAllowed(d.href, role, plan, capabilities, customPermissions)
         );
         return { ...entry, dropdownItems };
       })

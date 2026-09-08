@@ -1,11 +1,5 @@
-// @ts-nocheck
-import { metaObject } from '@/config/site.config';
-import BillingSettingsView from '@/app/shared/account-settings/billing-settings';
-
-export const metadata = {
-  ...metaObject('Billing'),
-};
+import { redirect } from 'next/navigation';
 
 export default function IntegrationSettingsFormPage() {
-  return <BillingSettingsView />;
+  redirect('/settings/billing');
 }

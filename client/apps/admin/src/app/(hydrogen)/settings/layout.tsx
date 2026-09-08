@@ -1,5 +1,11 @@
+import { routes } from '@/config/routes';
 import ModuleNavHeader from '@/app/shared/module-nav-header';
-import { PiGearDuotone, PiCreditCardDuotone } from 'react-icons/pi';
+import {
+  PiGearDuotone,
+  PiCreditCardDuotone,
+  PiKeyDuotone,
+  PiFileTextDuotone,
+} from 'react-icons/pi';
 
 /**
  * POS-style module chrome: nav header + content canvas. Responsive rules
@@ -15,9 +21,28 @@ export default function SettingsLayout({
       <div className="px-4 md:px-5 lg:px-6 3xl:px-8">
         <ModuleNavHeader
           brand="Settings"
+          brandHref={routes.settings}
           tabs={[
-            { label: 'General', href: '/settings', icon: <PiGearDuotone /> },
-            { label: 'Billing', href: '/settings/billing', icon: <PiCreditCardDuotone /> },
+            {
+              label: 'General',
+              href: routes.settings,
+              icon: <PiGearDuotone />,
+            },
+            {
+              label: 'Document templates',
+              href: routes.documentTemplates,
+              icon: <PiFileTextDuotone />,
+            },
+            {
+              label: 'API keys',
+              href: '/settings/api-keys',
+              icon: <PiKeyDuotone />,
+            },
+            {
+              label: 'Billing',
+              href: routes.billing,
+              icon: <PiCreditCardDuotone />,
+            },
           ]}
         />
       </div>

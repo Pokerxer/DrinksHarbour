@@ -236,6 +236,9 @@ app.use('/api/stock-transfers',    stockTransferRoutes);
 app.use('/api/reorder',            reorderRoutes);
 app.use('/api/deliveries',         deliveryRoutes);
 app.use('/api/bookings',          bookingRoutes);
+app.use('/api/api-keys', require('./routes/apiKey.routes'));
+app.use('/api/integrations', require('./routes/integration.routes'));
+app.use('/api/venues', require('./routes/venue.routes'));
 app.use('/api/drivers',            driverRoutes);
 app.use('/api/promotions',         promotionRoutes);
 app.use('/api/pricelists',         pricelistRoutes);
@@ -472,6 +475,7 @@ async function startServer() {
       // payment-failed email is sent from the webhook, not here.
       const { startBillingNoticesCron } = require('./jobs/billingNotices.job');
       startBillingNoticesCron();
+      require('./jobs/billingReconciliation.job').startBillingReconciliationCron();
     }
 
     console.log('\n┌──────────────────────────────────────────────────────┐');

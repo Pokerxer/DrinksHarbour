@@ -66,7 +66,7 @@ export default function EcommerceHero() {
               />
             ) : (
               <Image
-                src="/logo-short.svg"
+                src="/logo-short.png"
                 alt="DrinksHarbour"
                 width={38}
                 height={38}

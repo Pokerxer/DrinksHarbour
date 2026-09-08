@@ -326,6 +326,8 @@ export const routes = {
     personalInformation: '/forms/profile-settings/profile',
     newsletter: '/forms/newsletter',
   },
+  settings: '/settings',
+  documentTemplates: '/settings/document-templates',
   billing: '/settings/billing',
   emailTemplates: '/email-templates',
   profile: '/profile',

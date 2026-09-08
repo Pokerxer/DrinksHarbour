@@ -9,6 +9,7 @@ export interface AdminTenantData {
   logo?: { url: string; alt?: string };
   primaryColor?: string;
   plan?: string;
+  capabilities?: string[];
   subscriptionStatus?: string;
   status?: string;
   defaultCurrency?: string;
@@ -21,6 +22,8 @@ export interface AdminTenantData {
     country?: string;
     formatted?: string;
   };
+  contactEmail?: string;
+  contactPhone?: string;
   phone?: string;
   email?: string;
 }

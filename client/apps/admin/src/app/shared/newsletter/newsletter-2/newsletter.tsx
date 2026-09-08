@@ -4,7 +4,7 @@
 import Image from 'next/image';
 import cn from '@core/utils/class-names';
 import LogoLight from '@public/logo-short-light.svg';
-import Logo from '@public/logo-short.svg';
+import Logo from '@public/logo-short.png';
 import NewsLetterForm from './newsletter-form';
 
 export default function NewsLetter({ className }: { className?: string }) {

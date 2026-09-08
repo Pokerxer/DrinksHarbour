@@ -90,12 +90,11 @@ const AgeGate: React.FC<AgeGateProps> = ({
             {/* Logo */}
             <div className="relative flex justify-center mb-6">
               <Image
-                src="/images/logo.svg"
+                src="/images/logo-full.png"
                 alt="DrinksHarbour"
-                width={170}
-                height={60}
+                width={270}
+                height={90}
                 priority
-                style={{ filter: 'brightness(0) invert(1)' }}
               />
             </div>
 

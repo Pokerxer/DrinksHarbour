@@ -28,16 +28,37 @@ router.post('/webhook', ctrl.webhook);
 // allowBillingWrites runs FIRST and on purpose: a past_due or expired-trial
 // tenant is read-only everywhere else, and if that applied here too the only
 // route back to paying would be shut. This is the one router exempt from it.
-router.use(allowBillingWrites, protect, attachTenant, requireTenant);
+router.use(allowBillingWrites, protect);
+// Platform operation has no tenant requirement.
+router.post('/admin/sync-commission', authorize('super_admin', 'admin'), ctrl.syncCommission);
+router.use(authorize('super_admin', 'admin', 'tenant_owner', 'tenant_admin', 'tenant_staff'));
+router.use(attachTenant, requireTenant);
 router.get('/status', ctrl.getStatus);
-router.post('/subscribe', ctrl.subscribe);
-router.post('/cancel', ctrl.cancel);
+const manageBilling = authorize('super_admin', 'admin', 'tenant_owner', 'tenant_admin');
+router.post('/subscribe', manageBilling, ctrl.subscribe);
+router.post('/cancel', manageBilling, ctrl.cancel);
+router.post('/manage', manageBilling, ctrl.manageSubscription);
+router.get('/change-plan', require('../utils/asyncHandler')(async (req, res) => {
+  const pending = await require('../models/BillingTransition').findOne({ tenant: req.tenant._id, state: { $ne: 'complete' } })
+    .select('targetPlan effectiveAt state reason').lean();
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, data: pending });
+}));
+router.post('/change-plan', manageBilling, require('../utils/asyncHandler')(async (req, res) => {
+  const data = await require('../services/billingLock.service').withBillingLock(req.tenant._id,
+    tenant => require('../services/planTransition.service').schedulePlanChange(tenant, req.body.planKey));
+  res.json({ success: true, data });
+}));
+router.post('/renew', manageBilling, require('../utils/asyncHandler')(async (req, res) => {
+  await require('../services/billingLock.service').withBillingLock(req.tenant._id,
+    tenant => require('../services/billingReconciliation.service').setRenewal(tenant, true));
+  res.json({ success: true });
+}));
 
 // Add-ons: extra shop / extra warehouse, one unit per call.
-router.post('/add-ons', ctrl.subscribeAddOn);
-router.delete('/add-ons/:addOnType', ctrl.cancelAddOn);
+router.post('/add-ons', manageBilling, ctrl.subscribeAddOn);
+router.delete('/add-ons/:addOnType', manageBilling, ctrl.cancelAddOn);
 
-// Super admin
-router.post('/admin/sync-commission', authorize('super_admin', 'admin'), ctrl.syncCommission);
+
 
 module.exports = router;

@@ -55,6 +55,7 @@ const STATUS_TIMESTAMPS = {
  * @returns {Promise<{previousStatus: string, changed: boolean}>}
  */
 async function applyOrderStatus(order, status, options = {}) {
+  if (order.tableServiceBooking) throw new Error('Manage table-service fulfillment through the booking');
   const { actorId = null, cancelReason, tenantId = null } = options;
 
   if (!APPLICABLE_STATUSES.includes(status)) {

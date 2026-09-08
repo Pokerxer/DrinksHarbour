@@ -205,7 +205,27 @@ async function releaseReserve(items, orderId, userId) {
  * Decrements totalStock and reservedStock; updates sales analytics.
  * Call when order status → 'shipped'.
  */
-async function commitShipment(items, orderId, userId) {
+async function commitShipment(items, orderId, userId, { session } = {}) {
+  // Table completion commits the booking, bill and reserved stock together.
+  // Transaction writes must be sequential and failures must abort the caller.
+  if (session) {
+    for (const item of items.filter(i => i.subproduct)) {
+      const product = await SubProduct.updateOne({ _id: item.subproduct, tenant: item.tenant,
+        reservedStock: { $gte: item.quantity } }, {
+        $inc: { reservedStock: -item.quantity, totalSold: item.quantity,
+          totalRevenue: item.itemSubtotal || 0, purchaseCount: 1 },
+        $set: { lastSoldDate: new Date() },
+      }, { session });
+      if (!product.modifiedCount) throw new Error('Reserved product stock changed; review the table bill');
+      if (item.size) {
+        const size = await Size.updateOne({ _id: item.size, tenant: item.tenant,
+          subproduct: item.subproduct, reservedStock: { $gte: item.quantity } },
+        { $inc: { reservedStock: -item.quantity } }, { session });
+        if (!size.modifiedCount) throw new Error('Reserved size stock changed; review the table bill');
+      }
+    }
+    return;
+  }
   const ops = items.filter(i => i.subproduct).map(async (item) => {
     // totalStock and availableStock were already decremented at reserve() time.
     // Here we only clear the reservation and record the sale.

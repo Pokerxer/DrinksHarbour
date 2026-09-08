@@ -227,6 +227,8 @@ export interface RouteRequirement {
  * prefixes here when the screens exist.
  */
 export const ROUTE_CAPABILITIES: RouteRequirement[] = [
+  { prefix: '/settings/api-keys', anyOf: ['api_access'], label: 'API keys' },
+  { prefix: '/bookings', anyOf: ['table_management'], label: 'Venue bookings' },
   { prefix: '/accounting', anyOf: ['advanced_reports'], label: 'Accounting' },
   // No server guard to pair with this one, and none is missing: the
   // /store-analytics screens make no API calls at all — they are still on
@@ -364,6 +366,8 @@ export interface PlanAccessInput {
   role: string | null | undefined;
   plan: string | undefined | null;
   customCapabilities?: string[] | null;
+  /** Effective capabilities from authenticated /api/erm/status. */
+  capabilities?: string[];
 }
 
 export interface PlanAccessResult {
@@ -385,6 +389,7 @@ export function checkPlanAccess({
   role,
   plan,
   customCapabilities,
+  capabilities,
 }: PlanAccessInput): PlanAccessResult {
   if (role && PLATFORM_ROLES.includes(role)) {
     return { allowed: true, requirement: null, upgradeTo: null };
@@ -397,7 +402,7 @@ export function checkPlanAccess({
   const allowed = requirement.legacyMinPlan
     ? planAtLeast(plan, requirement.legacyMinPlan)
     : requirement.anyOf.some((cap) =>
-        capabilitiesForPlan(plan, customCapabilities).includes(cap)
+        (capabilities ?? capabilitiesForPlan(plan, customCapabilities)).includes(cap)
       );
 
   return {

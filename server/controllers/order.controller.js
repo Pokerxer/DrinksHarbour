@@ -1033,6 +1033,9 @@ exports.updatePaymentStatus = asyncHandler(async (req, res) => {
     }
   }
 
+  if (order.tableServiceBooking) {
+    return res.status(409).json({ success: false, message: 'Table-service payment state must be reconciled with the provider from the booking screen' });
+  }
   const now = new Date();
 
   switch (action) {

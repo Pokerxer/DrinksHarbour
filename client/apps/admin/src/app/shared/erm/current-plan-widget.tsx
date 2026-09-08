@@ -91,7 +91,9 @@ export default function CurrentPlanWidget({ status }: { status: ErmStatus }) {
           <PiCalendarDuotone className="h-4 w-4 shrink-0" />
           {status.subscriptionStatus === 'trialing'
             ? `Trial ends ${renewLabel}`
-            : `Renews ${renewLabel}`}
+            : status.cancelAtPeriodEnd || status.subscriptionStatus === 'canceled'
+              ? `Access ends ${renewLabel}`
+              : `Billing period ends ${renewLabel}`}
         </p>
       )}
 
@@ -126,7 +128,7 @@ export default function CurrentPlanWidget({ status }: { status: ErmStatus }) {
       </div>
 
       <div className="mt-4 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-        Marketplace commission:{' '}
+        {status.revenueModel === 'markup' ? 'Plan commission (your business uses markup): ' : 'Marketplace commission: '}
         <span className="font-semibold">{status.commissionRate}%</span>
       </div>
     </div>

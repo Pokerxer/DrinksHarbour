@@ -1,3 +1,4 @@
+import React from 'react';
 import { routes } from '@/config/routes';
 import {
   PiCashRegisterDuotone,
@@ -68,8 +69,8 @@ export function planAllows(
 export type TenantMenuRole = 'tenant_owner' | 'tenant_admin';
 
 const ROLE_RANK: Record<TenantMenuRole, number> = {
-  tenant_owner: 1,
-  tenant_admin: 2,
+  tenant_owner: 2,
+  tenant_admin: 1,
 };
 
 /** Returns true if the user's role meets or exceeds the required role. */
@@ -224,7 +225,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
         name: 'Cashiers',
         href: routes.pos.cashiers,
         // Server: /api/pos/cashiers* requires tenantAdminOrSuperAdmin.
-        minRole: 'tenant_owner',
+        minRole: 'tenant_admin',
       },
     ],
   },
@@ -332,12 +333,15 @@ export const tenantMenuItems: TenantMenuEntry[] = [
 
   // ─── Settings ───────────────────────────────────────────────
   { label: 'Settings' },
+  { name: 'Document templates', href: routes.documentTemplates, icon: <PiFileTextDuotone />, minRole: 'tenant_admin' },
+  { name: 'API keys', href: '/settings/api-keys', icon: <PiGearDuotone />, minRole: 'tenant_admin' },
+  { name: 'Venue bookings', href: '/bookings', icon: <PiClipboardTextDuotone />, minRole: 'tenant_admin' },
   {
     name: 'Settings',
     href: '/settings',
     icon: <PiGearDuotone />,
     // Store configuration — staff shouldn't reconfigure the business.
-    minRole: 'tenant_owner',
+    minRole: 'tenant_admin',
   },
   {
     name: 'Account Settings',
@@ -350,7 +354,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     href: routes.employees.list,
     icon: <PiUsersThreeDuotone />,
     // Staff/role management — matches /roles-permissions protection.
-    minRole: 'tenant_owner',
+    minRole: 'tenant_admin',
   },
   {
     name: 'Appraisals',
@@ -365,7 +369,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
         name: 'Cycles',
         href: '/appraisals/cycles',
         // HR administration — matches middleware's /appraisals/cycles gate.
-        minRole: 'tenant_owner',
+        minRole: 'tenant_admin',
       },
       {
         name: 'Review Forms',
@@ -373,7 +377,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
         // Same gate as Cycles (middleware's /appraisals/templates). Was
         // missing entirely, so the only route to the template builder was the
         // section nav header inside /appraisals.
-        minRole: 'tenant_owner',
+        minRole: 'tenant_admin',
       },
     ],
   },
@@ -389,6 +393,6 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     icon: <PiShieldCheckDuotone />,
     requiredPlan: 'starter',
     // Middleware refuses /roles-permissions for tenant_staff.
-    minRole: 'tenant_owner',
+    minRole: 'tenant_admin',
   },
 ];

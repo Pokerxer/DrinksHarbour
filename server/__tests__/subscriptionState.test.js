@@ -375,6 +375,7 @@ const baseTenant = (addOns = []) => ({
   plan: 'pro',
   subscriptionStatus: 'active',
   paystackSubscriptionCode: 'SUB_base',
+  paystackPlanCode: 'PLN_pro',
   addOns,
 });
 
@@ -494,6 +495,7 @@ test('recovering clears the dunning stamps, but only when there are any', async 
   const healthy = baseTenant();
   const quiet = await withStubbedTenant(healthy, () =>
     handleWebhookEvent('charge.success', {
+      subscription: { subscription_code: 'SUB_base' },
       metadata: { tenantId: TENANT_ID.toString() },
       paid_at: '2026-02-01T00:00:00.000Z',
       next_payment_date: '2026-03-01T00:00:00.000Z',
@@ -506,6 +508,7 @@ test('recovering clears the dunning stamps, but only when there are any', async 
   const recovered = { ...baseTenant(), billingNotices: { pastDueSentAt: new Date() } };
   const loud = await withStubbedTenant(recovered, () =>
     handleWebhookEvent('charge.success', {
+      subscription: { subscription_code: 'SUB_base' },
       metadata: { tenantId: TENANT_ID.toString() },
       paid_at: '2026-02-01T00:00:00.000Z',
       next_payment_date: '2026-03-01T00:00:00.000Z',
@@ -550,6 +553,7 @@ test('charge.success no longer stamps an already-elapsed period end', async () =
   const doc = baseTenant();
   const updates = await withStubbedTenant(doc, () =>
     handleWebhookEvent('charge.success', {
+      subscription: { subscription_code: 'SUB_base' },
       metadata: { tenantId: TENANT_ID.toString() },
       paid_at: '2026-01-01T00:00:00.000Z',
       next_payment_date: '2026-02-01T00:00:00.000Z',
@@ -571,6 +575,7 @@ test('charge.success without a next payment date leaves the period alone', async
   const doc = baseTenant();
   const updates = await withStubbedTenant(doc, () =>
     handleWebhookEvent('charge.success', {
+      subscription: { subscription_code: 'SUB_base' },
       metadata: { tenantId: TENANT_ID.toString() },
       paid_at: '2026-01-01T00:00:00.000Z',
     })

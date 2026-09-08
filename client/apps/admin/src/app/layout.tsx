@@ -11,12 +11,9 @@ import { inter, lexendDeca } from '@/app/fonts';
 import cn from '@core/utils/class-names';
 import { TenantProvider, type AdminTenantData } from '@/context/TenantContext';
 import { resolveTenantSlug } from '@/context/tenant-slug';
-import { checkPlanAccess } from '@/config/plan-capabilities';
-import UpgradeRequired from '@/app/shared/upgrade-required/upgrade-required';
+import DocumentExportHost from '@/app/shared/document-templates/document-export-host';
 import ExtensionErrorFilter from '@/components/extension-error-filter';
 import EntitlementErrorToast from '@/components/entitlement-error-toast';
-import ReadOnlyBanner from '@/components/read-only-banner';
-import { getErmStatus } from '@/services/erm.service';
 // import NextProgress from '@core/components/next-progress';
 // import ChatbotWidget from '@/components/Chatbot/ChatbotWidget';
 
@@ -29,6 +26,14 @@ export const metadata = {
   title: siteConfig.title,
   description: siteConfig.description,
   manifest: '/manifest.json',
+  icons: {
+    icon: [
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+    ],
+    shortcut: '/favicon.ico',
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export const viewport = {
@@ -121,59 +126,6 @@ export default async function RootLayout({
     ? await fetchTenantBySlug(tenantSlug)
     : null;
 
-  // ── Authoritative plan gate ───────────────────────────────────────────────
-  //
-  // src/middleware.ts also gates on plan, but from the JWT's cached copy — it
-  // runs on the edge and cannot reach the database. This check uses the tenant
-  // document just fetched with `cache: 'no-store'`, so it is never stale, and
-  // it is what actually decides. (The server API is the real boundary; this
-  // decides what the browser is allowed to render.)
-  //
-  // It substitutes the upgrade screen for `children` instead of redirecting:
-  // a redirect from a layout would fight the middleware's own redirect and can
-  // loop, and keeping the URL intact means the page works the moment the plan
-  // does.
-  //
-  // Platform staff are exempt inside checkPlanAccess. Note they can hold a
-  // tenant here — a platform admin pivots into one via the subdomain — so
-  // "there is a tenant" is NOT sufficient to gate on; the role has to be
-  // consulted too, which is why the session role is passed rather than the
-  // presence of initialTenant.
-  // Gated only when a tenant actually resolved. `fetchTenantBySlug` returns
-  // null on a network blip as well as on "no tenant", and the two are
-  // indistinguishable here — so treating null as "no capabilities" would show
-  // the upgrade screen to a paying tenant every time the API hiccups. Failing
-  // open is safe at this tier precisely because it is not the boundary: the
-  // edge gate has already run against the JWT, and the API refuses regardless.
-  const pathname = headersList.get('x-pathname');
-  const planAccess =
-    pathname && initialTenant
-      ? checkPlanAccess({
-          path: pathname,
-          role: (session?.user as { role?: string } | undefined)?.role,
-          plan: initialTenant.plan,
-        })
-      : { allowed: true, requirement: null, upgradeTo: null };
-
-  // ── Read-only warning ─────────────────────────────────────────────────────
-  //
-  // Warn a tenant who cannot save BEFORE they fill a form, not after they lose
-  // it to a 403. The sentence is the server's — the same `readOnlyMessage` that
-  // fills the refusal — so this banner, the toast on every screen and the
-  // billing page all say one thing. Deriving it here from `subscriptionStatus`
-  // would be a second copy of the copy AND of the policy, and would get the
-  // policy wrong: an elapsed trial is still `trialing`.
-  //
-  // Only asked for when there is a tenant to ask about — platform staff have no
-  // subscription — and null on any failure, so a hiccup shows no banner rather
-  // than a wrong one.
-  const sessionToken = (session?.user as { token?: string } | undefined)?.token;
-  const ermStatus =
-    initialTenant && sessionToken ? await getErmStatus(sessionToken) : null;
-  const readOnlyMessage = ermStatus?.writesAllowed
-    ? null
-    : (ermStatus?.entitlementMessage ?? null);
-
   const bodyStyle = initialTenant?.primaryColor
     ? ({
         '--color-tenant-primary': initialTenant.primaryColor,
@@ -208,16 +160,8 @@ export default async function RootLayout({
             <ThemeProvider>
               {/* <NextProgress /> */}
               <JotaiProvider>
-                <ReadOnlyBanner message={readOnlyMessage} />
-                {planAccess.allowed ? (
-                  children
-                ) : (
-                  <UpgradeRequired
-                    feature={planAccess.requirement?.label}
-                    currentPlan={initialTenant?.plan}
-                    upgradeTo={planAccess.upgradeTo}
-                  />
-                )}
+                {children}
+                <DocumentExportHost />
                 <Toaster />
                 <GlobalDrawer />
                 <GlobalModal />

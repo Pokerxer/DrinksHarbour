@@ -5,11 +5,15 @@
 // 3. PO receive with sized sub-product -> WarehouseStock + InventoryMovement correct
 // 4. PO receive with sellWithoutSizeVariants sub-product -> lazy Unit Size creation + stock/inventory correct
 
+if (process.env.STAGING_VALIDATION !== 'true' || !process.env.STAGING_MONGODB_URI) {
+  console.log('Skipped database script: explicitly configure STAGING_VALIDATION=true and STAGING_MONGODB_URI.');
+  process.exit(0);
+}
 require('dotenv').config();
 const mongoose = require('mongoose');
 
 async function main() {
-  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/drinksharbour');
+  await mongoose.connect(process.env.STAGING_MONGODB_URI);
   const db = mongoose.connection.db;
 
   console.log('=== DRINKSHARBOUR PO RECEIVE FIX VERIFICATION ===\n');

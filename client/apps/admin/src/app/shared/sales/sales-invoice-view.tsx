@@ -1,6 +1,8 @@
 // client/apps/admin/src/app/shared/sales/sales-invoice-view.tsx
 'use client';
 
+import { printSalesInvoice } from '@/utils/salesInvoice';
+import { useTenant } from '@/context/TenantContext';
 import { Badge, Title, Text } from 'rizzui';
 import { PiPrinter } from 'react-icons/pi';
 import type { SalesOrder } from '@/services/salesOrder.service';
@@ -18,6 +20,7 @@ import {
 } from './sales-line-read-rows';
 
 export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
+  const { tenant } = useTenant();
   const paid = so.paymentStatus === 'paid';
   // Part-settled through the POS. An invoice that says "Unpaid" over money the
   // till has already taken is the same silent wrong number as the rest of this.
@@ -32,7 +35,7 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
       <div className="mb-4 flex items-center justify-end print:hidden">
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={() => printSalesInvoice(so, tenant?.name || 'DrinksHarbour')}
           className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
           <PiPrinter className="h-4 w-4" /> Print

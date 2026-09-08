@@ -110,15 +110,14 @@ export default async function SignIn({
               </span>
             </>
           ) : (
-            // The brand wordmark is dark, so it sits on a white badge to stay
-            // legible against the red panel.
+            // Keep the supplied full-color emblem on a contrasting badge.
             <span className="inline-flex items-center rounded-2xl bg-white px-6 py-3.5 shadow-lg shadow-black/10">
               <Image
-                src="/brand-logo.svg"
+                src="/logo-full.png"
                 alt="DrinksHarbour"
-                width={176}
-                height={62}
-                className="h-[42px] w-auto"
+                width={270}
+                height={90}
+                className="h-auto w-[270px] max-w-full object-contain"
                 priority
               />
             </span>
@@ -170,10 +169,11 @@ export default async function SignIn({
               </span>
             ) : (
               <Image
-                src="/brand-logo.svg"
+                src="/logo-full.png"
                 alt="DrinksHarbour"
-                width={150}
-                height={53}
+                width={240}
+                height={80}
+                className="h-auto max-w-full object-contain"
                 priority
               />
             )}

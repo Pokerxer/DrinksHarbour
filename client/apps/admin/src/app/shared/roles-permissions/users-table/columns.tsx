@@ -6,11 +6,15 @@
  */
 
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table';
-import { ActionIcon, Badge, Select, Text, Tooltip } from 'rizzui';
 import {
-  PiArrowClockwiseBold,
-  PiProhibitBold,
-} from 'react-icons/pi';
+  ActionIcon,
+  Badge,
+  Select,
+  Text,
+  Tooltip,
+  type SelectOption,
+} from 'rizzui';
+import { PiArrowClockwiseBold, PiProhibitBold } from 'react-icons/pi';
 
 import DeletePopover from '@core/components/delete-popover';
 import {
@@ -25,6 +29,7 @@ const columnHelper = createColumnHelper<PersonRow>();
 interface Options {
   roles: CustomRole[];
   lockedBaseRoles: UserRole[];
+  lockedStatusRoles: UserRole[];
   pendingId: string | null;
   onSelectRole: (person: PersonRow, roleId: string | null) => void;
   onToggleStatus: (person: PersonRow) => void;
@@ -64,6 +69,7 @@ function PersonCell({ person }: { person: PersonRow }) {
 export function makeUsersColumns({
   roles,
   lockedBaseRoles,
+  lockedStatusRoles,
   pendingId,
   onSelectRole,
   onToggleStatus,
@@ -86,7 +92,11 @@ export function makeUsersColumns({
         return (
           <Badge
             variant="flat"
-            color={getValue() === 'super_admin' || getValue() === 'tenant_owner' ? 'success' : 'secondary'}
+            color={
+              getValue() === 'super_admin' || getValue() === 'tenant_owner'
+                ? 'success'
+                : 'secondary'
+            }
             className="text-xs font-medium"
           >
             {meta?.label ?? getValue()}
@@ -108,11 +118,13 @@ export function makeUsersColumns({
           return (
             <Tooltip
               size="sm"
-              content="Fixed by policy — owners and super admins cannot hold custom roles."
+              content="Fixed by policy — this system role cannot hold a custom role here."
               placement="top"
               color="invert"
             >
-              <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+              <span className="text-xs text-gray-300 dark:text-gray-600">
+                —
+              </span>
             </Tooltip>
           );
         }
@@ -126,9 +138,10 @@ export function makeUsersColumns({
             value={current}
             onChange={(value: string) => onSelectRole(person, value || null)}
             options={[
+              { label: 'No custom role', value: '' },
               ...roles.map((r) => ({ label: r.name, value: r._id })),
             ]}
-            getOptionValue={(option: { value: string }) => option.value}
+            getOptionValue={(option: SelectOption) => option.value}
             displayValue={(selected: string) =>
               roles.find((r) => r._id === selected)?.name ?? 'None'
             }
@@ -153,7 +166,11 @@ export function makeUsersColumns({
               ? 'danger'
               : 'warning';
         return (
-          <Badge variant="flat" color={color} className="text-xs font-medium capitalize">
+          <Badge
+            variant="flat"
+            color={color}
+            className="text-xs font-medium capitalize"
+          >
             {status}
           </Badge>
         );
@@ -167,11 +184,18 @@ export function makeUsersColumns({
         const person = row.original;
         const busy = pendingId === person._id;
         const suspended = person.status === 'suspended';
+        const statusLocked = lockedStatusRoles.includes(person.baseRole);
         return (
           <div className="flex items-center justify-end gap-2 pe-3">
             <Tooltip
               size="sm"
-              content={suspended ? 'Restore access' : 'Suspend access'}
+              content={
+                statusLocked
+                  ? 'Fixed by policy from this screen'
+                  : suspended
+                    ? 'Restore access'
+                    : 'Suspend access'
+              }
               placement="top"
               color="invert"
             >
@@ -179,7 +203,7 @@ export function makeUsersColumns({
                 size="sm"
                 variant="outline"
                 aria-label={suspended ? 'Activate' : 'Suspend'}
-                disabled={busy}
+                disabled={busy || statusLocked}
                 onClick={() => onToggleStatus(person)}
               >
                 {suspended ? (

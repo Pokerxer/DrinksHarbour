@@ -1,3 +1,5 @@
+import { buildPricelistDoc } from '@/utils/print/pricelist-print';
+import { requestDocumentExport } from '@/utils/print/document-export';
 import type { StockRow } from '@/services/warehouseStock.service';
 import {
   findMatchingPricelistRules,
@@ -1190,27 +1192,7 @@ export function printCustomerPricelist(
   options: PricelistPrintOptions
 ): boolean {
   if (rows.length === 0 || typeof document === 'undefined') return false;
-  const html = buildCustomerPricelistHtml(rows, pricelist, options);
-  const frame = document.createElement('iframe');
-  frame.setAttribute('aria-hidden', 'true');
-  frame.style.position = 'fixed';
-  frame.style.right = '0';
-  frame.style.bottom = '0';
-  frame.style.width = '1px';
-  frame.style.height = '1px';
-  frame.style.opacity = '0';
-  frame.style.border = '0';
-  frame.srcdoc = html;
-  frame.onload = () => {
-    try {
-      frame.contentWindow?.focus();
-      frame.contentWindow?.print();
-    } finally {
-      // Spool headroom before the frame (and its print job) is dropped.
-      setTimeout(() => frame.remove(), 60_000);
-    }
-  };
-  document.body.appendChild(frame);
+  requestDocumentExport(buildPricelistDoc(rows, pricelist, options));
   return true;
 }
 

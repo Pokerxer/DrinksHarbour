@@ -1,4 +1,5 @@
 import { getServerSession } from 'next-auth';
+import { hasAdminSession } from '@/app/api/auth/[...nextauth]/session-guard';
 import { authOptions } from '@/app/api/auth/[...nextauth]/auth-options';
 import {
   type UserRole,
@@ -32,7 +33,7 @@ export interface AuthResult {
 export async function getAuthenticatedUser(): Promise<AuthorizedServerUser | null> {
   const session = await getServerSession(authOptions);
   
-  if (!session?.user) {
+  if (!session?.user || !hasAdminSession({ role: session.user.role, accessToken: session.user.token })) {
     return null;
   }
 

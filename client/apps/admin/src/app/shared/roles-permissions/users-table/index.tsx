@@ -40,14 +40,26 @@ interface Props {
   people: PersonRow[];
   /** Custom roles available to assign — already audience-scoped by the server. */
   roles: CustomRole[];
+  audience: 'platform' | 'tenant';
   /** Active card filter: `system:<role>` | custom role id | null. */
   selectedKey: string | null;
   canDelete: boolean;
   actions: UsersActions;
 }
 
-/** Roles whose capabilities are fixed by policy — no assignment dropdown. */
-const LOCKED_BASE_ROLES: UserRole[] = ['super_admin', 'tenant_owner'];
+const CUSTOM_ROLE_LOCKS: Record<Props['audience'], UserRole[]> = {
+  platform: [
+    'super_admin',
+    'tenant_owner',
+    'tenant_admin',
+    'tenant_staff',
+    'customer',
+  ],
+  tenant: ['super_admin', 'admin', 'tenant_owner', 'customer'],
+};
+
+/** Roles whose status is fixed by policy from this screen. */
+const STATUS_LOCKED_BASE_ROLES: UserRole[] = ['super_admin', 'tenant_owner'];
 
 function matchesSelected(person: PersonRow, key: string | null): boolean {
   if (!key) return true;
@@ -60,6 +72,7 @@ function matchesSelected(person: PersonRow, key: string | null): boolean {
 export default function UsersTable({
   people,
   roles,
+  audience,
   selectedKey,
   canDelete,
   actions,
@@ -73,10 +86,7 @@ export default function UsersTable({
     return people.filter((p) => {
       if (!matchesSelected(p, selectedKey)) return false;
       if (statusFilter && p.status !== statusFilter) return false;
-      if (
-        term &&
-        !`${p.name} ${p.email}`.toLowerCase().includes(term)
-      )
+      if (term && !`${p.name} ${p.email}`.toLowerCase().includes(term))
         return false;
       return true;
     });
@@ -102,7 +112,8 @@ export default function UsersTable({
     () =>
       makeUsersColumns({
         roles,
-        lockedBaseRoles: LOCKED_BASE_ROLES,
+        lockedBaseRoles: CUSTOM_ROLE_LOCKS[audience],
+        lockedStatusRoles: STATUS_LOCKED_BASE_ROLES,
         pendingId,
         onSelectRole: (person, roleId) =>
           run(person, () => actions.assignRole(person._id, roleId)),
@@ -116,7 +127,7 @@ export default function UsersTable({
           : undefined,
       }),
     // run/actions close over fresh loaders; pendingId re-renders spinners.
-    [roles, pendingId, canDelete, actions]
+    [roles, audience, pendingId, canDelete, actions]
   );
 
   const { table, setData } = useTanStackTable<PersonRow>({

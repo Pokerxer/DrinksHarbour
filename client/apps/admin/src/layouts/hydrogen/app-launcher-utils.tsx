@@ -1,3 +1,4 @@
+import React from 'react';
 import { PiSquaresFourDuotone } from 'react-icons/pi';
 import { menuItems } from '@/layouts/hydrogen/menu-items';
 import {
@@ -7,6 +8,7 @@ import {
   roleAllows,
 } from '@/layouts/hydrogen/tenant-menu-items';
 import { checkPlanAccess } from '@/config/plan-capabilities';
+import { roleCanAccessRoute } from '@/config/route-roles';
 
 // ── Tile model ──────────────────────────────────────────────────────────────────
 // Shared by the full-screen AppLauncher overlay and the home page so both render
@@ -92,12 +94,13 @@ export function buildPlatformGroups(isPlatformAdmin: boolean): Group[] {
 function launcherLinkAllowed(
   href: string | undefined,
   role: string | undefined,
-  plan: string | undefined
+  plan: string | undefined,
+  capabilities?: string[]
 ) {
   if (!href || href === '#') return true;
   const path = href.split('#')[0];
   if (!path) return true;
-  return checkPlanAccess({ path, role, plan }).allowed;
+  return roleCanAccessRoute(path, role) && checkPlanAccess({ path, role, plan, capabilities }).allowed;
 }
 
 /**
@@ -108,7 +111,8 @@ function launcherLinkAllowed(
  */
 export function buildTenantGroups(
   plan: string | undefined,
-  role: string | undefined
+  role: string | undefined,
+  capabilities?: string[]
 ): Group[] {
   const groups: Group[] = [];
   const seen = new Set<string>();
@@ -122,13 +126,17 @@ export function buildTenantGroups(
       cur = { label: entry.label, tiles: [] };
       continue;
     }
-    if (entry.requiredPlan && !planAllows(plan, entry.requiredPlan)) continue;
-    if (!launcherLinkAllowed(entry.href, role, plan)) continue;
+    if ((!entry.href || entry.href === '#') && entry.requiredPlan && !planAllows(plan, entry.requiredPlan)) continue;
+    if (!launcherLinkAllowed(entry.href, role, plan, capabilities)) continue;
     if (entry.minRole && !roleAllows(role, entry.minRole)) continue;
+    const visibleChildren = entry.dropdownItems
+      ?.filter(d => !d.minRole || roleAllows(role, d.minRole))
+      .filter(d => launcherLinkAllowed(d.href, role, plan, capabilities));
+    if (entry.dropdownItems && !visibleChildren?.length) continue;
     // See buildPlatformGroups: keep every child when the tile href is a
     // fallback to the first child, dedupe only against the parent's own href.
     const ownHref = entry.href && entry.href !== '#' ? entry.href : null;
-    const href = resolveHref(entry);
+    const href = resolveHref({ ...entry, dropdownItems: visibleChildren });
     if (!href || seen.has(entry.name)) continue;
     seen.add(entry.name);
     cur.tiles.push({
@@ -136,10 +144,8 @@ export function buildTenantGroups(
       href,
       icon: entry.icon ?? DefaultIcon,
       badge: entry.badge,
-      children: entry.dropdownItems
-        ?.filter((d) => !d.minRole || roleAllows(role, d.minRole))
-        .filter((d) => !d.requiredPlan || planAllows(plan, d.requiredPlan))
-        .filter((d) => launcherLinkAllowed(d.href, role, plan))
+      children: visibleChildren
+        ?.filter((d) => launcherLinkAllowed(d.href, role, plan, capabilities))
         .filter((d) => d.href && (!ownHref || d.href !== ownHref))
         .map((d) => ({
           name: d.name,

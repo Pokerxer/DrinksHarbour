@@ -80,6 +80,10 @@ const attachPaymentToOrder = asyncHandler(async (req, res) => {
     });
   }
 
+  const target = await require('../models/Order').findById(orderId).select('tableServiceBooking tenant user');
+  if (target?.tableServiceBooking && String(target.tenant) !== String(req.user.tenant)) {
+    return res.status(403).json({ success: false, message: 'This bill belongs to another venue' });
+  }
   const order = await paymentService.attachPaymentToOrder(orderId, paymentData);
 
   successResponse(res, { order }, 'Payment attached to order successfully');

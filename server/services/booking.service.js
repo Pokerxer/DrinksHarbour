@@ -8,9 +8,15 @@ function canTransition(from, to) {
 
 async function listBookings(tenantId, { status, from, to } = {}) {
   const query = { tenant: tenantId };
-  if (status) query.status = status;
+  if (status) {
+    if (typeof status !== 'string' || !Object.hasOwn(BOOKING_TRANSITIONS, status)) throw new ValidationError('Invalid booking status');
+    query.status = status;
+  }
   if (from || to) {
     query.bookingAt = {};
+    for (const date of [from, to].filter(Boolean)) {
+      if (typeof date !== 'string' || !Number.isFinite(new Date(date).getTime())) throw new ValidationError('Invalid date filter');
+    }
     if (from) query.bookingAt.$gte = new Date(from);
     if (to) query.bookingAt.$lte = new Date(to);
   }
@@ -67,11 +73,20 @@ async function setBookingStatusFor(tenantId, id, to) {
   const booking = await Booking.findOne({ _id: id, tenant: tenantId });
   if (!booking) throw new NotFoundError('Booking not found');
   const from = booking.status;
+  if (to === 'completed' && from === 'completed') return booking.toObject();
   if (!canTransition(from, to)) {
     throw new ConflictError(`Cannot move a ${from} booking to ${to}`);
   }
+  if (to === 'completed') {
+    const bill = await require('../models/Order').findOne({ tableServiceBooking: booking._id, tenant: tenantId }).select('paymentStatus').lean();
+    if (!bill && booking.checkoutStartedAt) throw new ConflictError('Checkout is being prepared; reconcile it before completing the booking');
+    if (bill && bill.paymentStatus !== 'paid') throw new ConflictError('Settle the table bill before completing the booking');
+    if (bill) return require('./tableCheckout.service').completeTableBooking(tenantId, id);
+  }
   booking.status = to;
-  const updated = await booking.save();
+  let updated;
+  try { updated = await booking.save(); }
+  catch (error) { if (error.name === 'VersionError') throw new ConflictError('Booking changed; reload and retry'); throw error; }
   return updated.toObject();
 }
 

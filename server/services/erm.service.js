@@ -31,7 +31,9 @@
 
 const axios = require('axios');
 const Tenant = require('../models/Tenant');
+const { ConflictError } = require('../utils/errors');
 const {
+  ERM_PLANS,
   getPlanConfig,
   getCommissionRate,
   getAddOnConfig,
@@ -77,12 +79,29 @@ async function ensurePaystackCustomer(tenant) {
 }
 
 async function initializeSubscription(tenant, planKey) {
+  if (tenant.paystackSubscriptionCode) {
+    throw new ConflictError('You already have a subscription. Manage its payment method or cancel renewal before choosing a new plan after the billing period ends.');
+  }
   const plan = getPlanConfig(planKey);
   if (!plan.paystackPlanCode) throw new Error(`No Paystack plan code configured for "${planKey}". Set PAYSTACK_PLAN_${planKey.toUpperCase()} env var.`);
 
   await ensurePaystackCustomer(tenant);
 
+  const reference = `erm-${require('crypto').randomUUID()}`;
+  const claimed = await Tenant.findOneAndUpdate({ _id: tenant._id,
+    'billingCheckout.reference': { $exists: false } }, {
+    $set: { billingCheckout: { targetPlan: planKey, reference, startedAt: new Date() } },
+  }, { new: true });
+  if (!claimed) {
+    const current = await Tenant.findById(tenant._id);
+    if (current.billingCheckout?.targetPlan === planKey && current.billingCheckout.authorizationUrl) {
+      return { authorizationUrl: current.billingCheckout.authorizationUrl, reference: current.billingCheckout.reference };
+    }
+    throw new ConflictError('Subscription checkout is pending. Reconcile its provider outcome before retrying.');
+  }
+
   const res = await axios.post(`${PAYSTACK_BASE}/transaction/initialize`, {
+    reference,
     email: tenant.email,
     amount: plan.priceMonthly * 100,
     plan: plan.paystackPlanCode,
@@ -93,6 +112,8 @@ async function initializeSubscription(tenant, planKey) {
     callback_url: `${process.env.NEXT_PUBLIC_ADMIN_URL || 'http://localhost:3001'}/settings/billing?status=success`,
   }, { headers: headers() });
 
+  await Tenant.updateOne({ _id: tenant._id, 'billingCheckout.reference': reference },
+    { $set: { 'billingCheckout.authorizationUrl': res.data.data.authorization_url } });
   return {
     authorizationUrl: res.data.data.authorization_url,
     reference: res.data.data.reference,
@@ -139,41 +160,50 @@ async function initializeAddOnSubscription(tenant, addOnType) {
   };
 }
 
-async function cancelSubscription(tenant) {
-  if (!tenant.paystackSubscriptionCode) return;
-
-  await axios.post(`${PAYSTACK_BASE}/subscription/disable`, {
-    code: tenant.paystackSubscriptionCode,
-    token: tenant.paystackSubscriptionCode,
-  }, { headers: headers() }).catch(() => {});
-
-  await Tenant.findByIdAndUpdate(tenant._id, { subscriptionStatus: 'canceled' });
+/** Paystack requires the subscription's email_token, not its code twice.
+ * Fetch it server-side for existing subscriptions; never send it to the client.
+ * https://paystack.com/docs/api/subscription/#disable
+ */
+async function disableAtPeriodEnd(code) {
+  const details = await axios.get(`${PAYSTACK_BASE}/subscription/${encodeURIComponent(code)}`, {
+    headers: headers(),
+  });
+  const emailToken = details.data?.data?.email_token;
+  if (!emailToken) throw new Error('Unable to verify subscription cancellation. Please try again.');
+  const result = await axios.post(`${PAYSTACK_BASE}/subscription/disable`, {
+    code, token: emailToken,
+  }, { headers: headers() });
+  if (result.data?.status !== true) throw new Error('Subscription cancellation was not accepted. Please try again.');
 }
 
-/**
- * Drop one paid unit of an add-on.
- *
- * The row is removed locally even if the Paystack disable call fails, for the
- * same reason cancelSubscription swallows its error: a tenant who asked to stop
- * paying must not be left holding a slot they believe they cancelled. The
- * reverse failure (billed but no slot) is the cheaper one to reconcile.
- */
+async function cancelSubscription(tenant) {
+  if (!tenant.paystackSubscriptionCode || tenant.cancelAtPeriodEnd) return;
+  await disableAtPeriodEnd(tenant.paystackSubscriptionCode);
+  // Retain paid access until subscription.disable arrives at the period end.
+  await Tenant.findByIdAndUpdate(tenant._id, { cancelAtPeriodEnd: true });
+}
+
+async function getSubscriptionManagementLink(tenant) {
+  if (!tenant.paystackSubscriptionCode) throw new Error('No subscription is available to manage.');
+  const result = await axios.get(
+    `${PAYSTACK_BASE}/subscription/${encodeURIComponent(tenant.paystackSubscriptionCode)}/manage/link`,
+    { headers: headers() }
+  );
+  const link = result.data?.data?.link;
+  if (!link) throw new Error('Unable to open payment settings. Please try again.');
+  return link;
+}
+
 async function cancelAddOnSubscription(tenant, addOnType) {
-  const rows = (tenant.addOns || []).filter((row) => row.type === addOnType);
-  if (!rows.length) return { removed: 0 };
-
-  // Newest first — dropping the most recently bought unit is the least
-  // surprising, and it is the one whose billing period has run the least.
+  const rows = (tenant.addOns || []).filter(row => row.type === addOnType && !row.cancelAtPeriodEnd);
   const row = rows[rows.length - 1];
-
-  if (row.paystackSubscriptionCode) {
-    await axios.post(`${PAYSTACK_BASE}/subscription/disable`, {
-      code: row.paystackSubscriptionCode,
-      token: row.paystackSubscriptionCode,
-    }, { headers: headers() }).catch(() => {});
-  }
-
-  await removeAddOnRow(tenant._id, row);
+  if (!row) return { removed: 0 };
+  if (!row.paystackSubscriptionCode) throw new Error('This add-on has no billing subscription. Contact support.');
+  await disableAtPeriodEnd(row.paystackSubscriptionCode);
+  await Tenant.updateOne(
+    { _id: tenant._id, 'addOns.paystackSubscriptionCode': row.paystackSubscriptionCode },
+    { $set: { 'addOns.$.cancelAtPeriodEnd': true } }
+  );
   return { removed: 1 };
 }
 
@@ -267,6 +297,15 @@ async function handleWebhookEvent(event, data) {
   const tenantId = tenant._id;
   const addOnType = addOnTypeForEvent(data);
 
+  // A shopper payment or an old subscription for the same customer is not
+  // evidence that this tenant's current ERM subscription has been paid.
+  const eventCode = data?.subscription_code || data?.subscription?.subscription_code;
+  const eventPlan = data?.plan?.plan_code || data?.subscription?.plan?.plan_code;
+  const currentPlanCode = tenant.paystackPlanCode || getPlanConfig(tenant.plan).paystackPlanCode;
+  const matchesBase = eventCode
+    ? eventCode === tenant.paystackSubscriptionCode
+    : Boolean(eventPlan && currentPlanCode && eventPlan === currentPlanCode);
+
   switch (event) {
     case 'subscription.create': {
       if (addOnType) {
@@ -274,12 +313,16 @@ async function handleWebhookEvent(event, data) {
         break;
       }
 
-      const targetPlan = data.metadata?.targetPlan;
-      if (!targetPlan) break;
+      const targetPlan = data.metadata?.targetPlan || Object.keys(ERM_PLANS).find(key => {
+        const code = getPlanConfig(key).paystackPlanCode;
+        return code && code === data.plan?.plan_code;
+      });
+      if (!targetPlan || ['custom', 'free_trial'].includes(targetPlan) || !Object.hasOwn(ERM_PLANS, targetPlan)) break;
       await Tenant.findByIdAndUpdate(tenantId, {
         plan: targetPlan,
         subscriptionStatus: 'active',
         paystackSubscriptionCode: data.subscription_code,
+        cancelAtPeriodEnd: false,
         paystackPlanCode: data.plan?.plan_code,
         commissionPercentage: getCommissionRate(targetPlan) * 100,
         currentPeriodStart: new Date(data.created_at),
@@ -302,7 +345,7 @@ async function handleWebhookEvent(event, data) {
 
     case 'charge.success': {
       // An add-on renewal is not evidence about the base subscription.
-      if (addOnType) break;
+      if (addOnType || !matchesBase) break;
 
       // `paid_at` is when the money arrived, NOT when the period ends —
       // writing it to currentPeriodEnd stamped every successful payment with a
@@ -336,7 +379,7 @@ async function handleWebhookEvent(event, data) {
       // AND it must not send the dunning email — telling a paying tenant their
       // account is read-only when it is not is worse than saying nothing. This
       // one `break` covers both, which is why the send sits below it.
-      if (addOnType) break;
+      if (addOnType || !matchesBase) break;
       await Tenant.findByIdAndUpdate(tenantId, { subscriptionStatus: 'past_due' });
 
       // Tell them. This is the moment it happens and there is no other hook for
@@ -361,6 +404,21 @@ async function handleWebhookEvent(event, data) {
       break;
     }
 
+    case 'subscription.not_renew': {
+      const code = data?.subscription_code;
+      if (!code) break;
+      const row = (tenant.addOns || []).find(r => r.paystackSubscriptionCode === code);
+      if (row) {
+        await Tenant.updateOne(
+          { _id: tenantId, 'addOns.paystackSubscriptionCode': code },
+          { $set: { 'addOns.$.cancelAtPeriodEnd': true } }
+        );
+      } else if (code === tenant.paystackSubscriptionCode) {
+        await Tenant.findByIdAndUpdate(tenantId, { cancelAtPeriodEnd: true });
+      }
+      break;
+    }
+
     case 'subscription.disable': {
       const code = data?.subscription_code;
       const row = (tenant.addOns || []).find(
@@ -372,13 +430,9 @@ async function handleWebhookEvent(event, data) {
       // tenant because one extra shop lapsed would revoke every paid feature.
       if (row || addOnType) {
         if (row) await removeAddOnRow(tenantId, row);
-        else if (addOnType) {
-          const fallback = (tenant.addOns || []).filter((r) => r.type === addOnType).pop();
-          if (fallback) await removeAddOnRow(tenantId, fallback);
-        }
         break;
       }
-
+      if (!code || code !== tenant.paystackSubscriptionCode) break;
       await Tenant.findByIdAndUpdate(tenantId, { subscriptionStatus: 'canceled' });
       break;
     }
@@ -405,6 +459,7 @@ module.exports = {
   cancelAddOnSubscription,
   handleWebhookEvent,
   getSubscriptionDetails,
+  getSubscriptionManagementLink,
   // Exported for the webhook tests — the branching, not the HTTP calls, is
   // what has to be right.
   addOnTypeForEvent,

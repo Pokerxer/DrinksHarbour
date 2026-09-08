@@ -43,6 +43,8 @@ import type {
 } from '../advanced-search/advanced-search-types';
 import InventoryStockImport from './inventory-stock-import';
 import InventoryStockFilterPanel from './inventory-stock-filter-panel';
+import { buildStockDoc } from '@/utils/print/stock-print';
+import { requestDocumentExport } from '@/utils/print/document-export';
 import PricelistPrintModal from './inventory-pricelist-print-modal';
 import {
   PAGE_SIZE,
@@ -169,53 +171,7 @@ const CUSTOM_GROUP_KEY = 'dh-inventory-stock-custom-groups';
 // ── Print (stock report) ──────────────────────────────────────────────────────
 
 function printStock(rows: StockRow[], docTitle: string, valuation: boolean) {
-  if (rows.length === 0) return;
-  const totalUnits = rows.reduce((s, r) => s + r.currentQuantity, 0);
-  const totalValue = rows.reduce((s, r) => s + lineValue(r), 0);
-  const body = rows
-    .map(
-      (r) => `<tr>
-      <td><strong>${r.productName}</strong> <span class="muted">${r.sku}</span></td>
-      <td>${r.sizeName}</td>
-      <td>${r.warehouseName}</td>
-      <td class="num">${r.currentQuantity}</td>
-      <td class="num">${r.reservedQuantity}</td>
-      ${valuation ? `<td class="num">${fmtNgn(r.costPrice || 0)}</td><td class="num">${fmtNgn(lineValue(r))}</td>` : `<td>${STATUS_BADGE[statusOf(r)].label}</td>`}
-    </tr>`
-    )
-    .join('');
-  const html = `<!doctype html><html><head><title>${docTitle}</title><style>
-    * { box-sizing: border-box; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
-    body { margin: 32px; color: #111827; }
-    h1 { font-size: 18px; margin: 0; } .sub { color: #6b7280; font-size: 12px; margin-top: 4px; }
-    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b20202; padding-bottom: 12px; margin-bottom: 16px; }
-    .brand { font-weight: 800; color: #b20202; font-size: 14px; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th { text-align: left; text-transform: uppercase; letter-spacing: .04em; font-size: 9px; color: #6b7280; border-bottom: 1px solid #e5e7eb; padding: 6px 8px; }
-    td { border-bottom: 1px solid #f3f4f6; padding: 7px 8px; }
-    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-    .muted { color: #9ca3af; }
-    tfoot td { font-weight: 700; border-top: 2px solid #e5e7eb; }
-    @media print { body { margin: 12mm; } }
-  </style></head><body>
-    <div class="head">
-      <div><h1>${docTitle}</h1>
-      <p class="sub">${rows.length} line${rows.length === 1 ? '' : 's'} · printed ${fmtDateTime(new Date().toISOString())}</p></div>
-      <div class="brand">DRINKSHARBOUR · INVENTORY</div>
-    </div>
-    <table>
-      <thead><tr><th>Product</th><th>Size</th><th>Warehouse</th><th class="num">On hand</th><th class="num">Reserved</th>
-        ${valuation ? '<th class="num">Unit Cost</th><th class="num">Value</th>' : '<th>Status</th>'}</tr></thead>
-      <tbody>${body}</tbody>
-      <tfoot><tr><td colspan="3">Totals</td><td class="num">${totalUnits}</td><td></td>
-        ${valuation ? `<td></td><td class="num">${fmtNgn(totalValue)}</td>` : '<td></td>'}</tr></tfoot>
-    </table>
-    <script>window.onload = () => { window.print(); }</script>
-  </body></html>`;
-  const win = window.open('', '_blank', 'width=900,height=700');
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
+  if (rows.length) requestDocumentExport(buildStockDoc(rows, docTitle, valuation));
 }
 
 function exportStockCsv(rows: StockRow[], prefix: string) {

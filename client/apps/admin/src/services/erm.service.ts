@@ -32,6 +32,7 @@ export interface ErmAddOn {
   label: string;
   priceMonthly: number;
   purchased: number;
+  pendingCancellation?: number;
   used: number;
   allowance: number;
 }
@@ -45,6 +46,11 @@ export interface ErmStatus {
   commissionRate: number;
   addOnsAllowed: boolean;
   writesAllowed: boolean;
+  capabilities?: string[];
+  canManageBilling?: boolean;
+  hasSubscription?: boolean;
+  cancelAtPeriodEnd?: boolean;
+  revenueModel?: string;
   entitlementReason: string;
   /**
    * The server's own explanation of the read-only state, from the same
@@ -70,21 +76,40 @@ export interface ErmStatus {
   addOns: ErmAddOn[];
 }
 
-export async function getErmPlans(): Promise<ErmPlan[]> {
-  const res = await fetch(`${API_URL}/api/erm/plans`, {
-    next: { revalidate: 3600 },
+export async function changePlan(planKey: string, token: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/erm/change-plan`, {
+    method: 'POST', headers: authHeaders(token), body: JSON.stringify({ planKey }),
   });
-  if (!res.ok) return [];
-  return (await res.json()).data;
+  if (!res.ok) throw new Error(((await res.json()) as { message?: string }).message || 'Plan change failed');
+}
+
+export async function renewSubscription(token: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/erm/renew`, { method: 'POST', headers: authHeaders(token) });
+  if (!res.ok) throw new Error(((await res.json()) as { message?: string }).message || 'Renewal failed');
+}
+
+export async function getErmPlans(): Promise<ErmPlan[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/erm/plans`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return [];
+    return (await res.json() as { data: ErmPlan[] }).data;
+  } catch {
+    return [];
+  }
 }
 
 export async function getErmStatus(token: string): Promise<ErmStatus | null> {
-  const res = await fetch(`${API_URL}/api/erm/status`, {
-    headers: authHeaders(token),
-    cache: 'no-store',
-  });
-  if (!res.ok) return null;
-  return (await res.json()).data;
+  try {
+    const res = await fetch(`${API_URL}/api/erm/status`, {
+      headers: authHeaders(token), cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json() as { data?: ErmStatus }).data ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function initSubscribe(
@@ -98,16 +123,31 @@ export async function initSubscribe(
   });
   if (!res.ok)
     throw new Error(
-      (await res.json()).message || 'Failed to start subscription'
+      (await res.json() as { message?: string }).message || 'Failed to start subscription'
     );
-  return (await res.json()).data;
+  return (await res.json() as { data: { authorizationUrl: string } }).data;
 }
 
 export async function cancelSubscription(token: string): Promise<void> {
-  await fetch(`${API_URL}/api/erm/cancel`, {
+  const res = await fetch(`${API_URL}/api/erm/cancel`, {
     method: 'POST',
     headers: authHeaders(token),
   });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { message?: string };
+    throw new Error(body.message || 'Failed to cancel subscription');
+  }
+}
+
+export async function manageSubscription(token: string): Promise<{ authorizationUrl: string }> {
+  const res = await fetch(`${API_URL}/api/erm/manage`, {
+    method: 'POST', headers: authHeaders(token),
+  });
+  const body = await res.json().catch(() => ({})) as { message?: string; data?: { authorizationUrl: string } };
+  if (!res.ok || !body.data?.authorizationUrl) {
+    throw new Error(body.message || 'Unable to open payment settings');
+  }
+  return body.data;
 }
 
 /**
@@ -147,4 +187,16 @@ export async function cancelAddOn(
     const body = (await res.json()) as { message?: string };
     throw new Error(body.message || 'Failed to cancel add-on');
   }
+}
+
+export type PendingPlanChange = { targetPlan: string; effectiveAt: string; state: string };
+export async function getPendingPlanChange(token: string, signal?: AbortSignal): Promise<PendingPlanChange | null> {
+  const response = await fetch(`${API_URL}/api/erm/change-plan`, {
+    headers: authHeaders(token), cache: 'no-store', signal,
+  });
+  const body = await response.json().catch(() => null) as { message?: string; data?: PendingPlanChange | null } | null;
+  if (!response.ok || !body || body.data === undefined) {
+    throw new Error(body?.message || 'Unable to check pending plan changes. Please retry.');
+  }
+  return body.data;
 }

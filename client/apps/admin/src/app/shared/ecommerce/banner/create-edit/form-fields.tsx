@@ -93,7 +93,7 @@ export function ImageUploadField({
   onChange: (url: string) => void;
   token: string;
   folder: string;
-  aspectRatio?: 'video' | 'square' | 'wide';
+  aspectRatio?: 'video' | 'square' | 'wide' | 'portrait';
 }) {
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -102,6 +102,7 @@ export function ImageUploadField({
     video: 'aspect-[3/1]',
     square: 'aspect-square',
     wide: 'aspect-[16/9]',
+    portrait: 'aspect-[3/4]',
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,7 +142,7 @@ export function ImageUploadField({
             <img
               src={value}
               alt="Preview"
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
             />
           </div>
           <div className="absolute inset-0 flex items-center justify-center gap-3 bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">

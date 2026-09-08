@@ -122,6 +122,9 @@ const orderItemSchema = new Schema({
 
 const orderSchema = new Schema(
   {
+    tableServiceBooking: { type: ObjectId, ref: 'Booking' },
+    tableCheckoutUrl: { type: String, select: false },
+    tableAccountingStatus: { type: String, enum: ['pending', 'posted'] },
     // ────────────────────────────────────────────────
     // Identification
     // ────────────────────────────────────────────────
@@ -504,6 +507,8 @@ orderSchema.virtual('isMultiTenant').get(function () {
 orderSchema.index({ user: 1, placedAt: -1 });
 orderSchema.index({ status: 1, paymentStatus: 1 });
 orderSchema.index({ 'items.tenant': 1, status: 1 });
+orderSchema.index({ tableServiceBooking: 1 }, { unique: true,
+  partialFilterExpression: { tableServiceBooking: { $type: 'objectId' } } });
 
 const Order = mongoose.models.Order || mongoose.model('Order', orderSchema);
 

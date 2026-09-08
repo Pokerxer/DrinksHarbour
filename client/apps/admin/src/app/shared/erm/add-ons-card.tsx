@@ -39,6 +39,7 @@ export default function AddOnsCard({
   const [error, setError] = useState<string | null>(null);
 
   async function handleBuy(addOn: ErmAddOn) {
+    if (status.canManageBilling !== true || !status.writesAllowed || busy) return;
     setBusy(`buy:${addOn.type}`);
     setError(null);
     try {
@@ -51,6 +52,7 @@ export default function AddOnsCard({
   }
 
   async function handleCancel(addOn: ErmAddOn) {
+    if (status.canManageBilling !== true || busy) return;
     if (
       !confirm(
         `Cancel one ${addOn.label.toLowerCase()}? You will lose the slot at the end of the billing period.`
@@ -108,12 +110,13 @@ export default function AddOnsCard({
                     {formatNaira(addOn.priceMonthly)}/mo · using {addOn.used} of{' '}
                     {addOn.allowance}
                     {addOn.purchased > 0 && ` · ${addOn.purchased} paid`}
+                    {!!addOn.pendingCancellation && ` · ${addOn.pendingCancellation} cancellation pending`}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                {addOn.purchased > 0 && (
+                {status.canManageBilling === true && addOn.purchased > (addOn.pendingCancellation ?? 0) && (
                   <Button
                     size="sm"
                     variant="text"
@@ -129,7 +132,7 @@ export default function AddOnsCard({
                   size="sm"
                   variant="outline"
                   isLoading={busy === `buy:${addOn.type}`}
-                  disabled={busy !== null || !status.addOnsAllowed}
+                  disabled={busy !== null || !status.addOnsAllowed || !status.writesAllowed || status.canManageBilling !== true}
                   onClick={() => handleBuy(addOn)}
                 >
                   <PiPlusBold className="me-1.5 h-3 w-3" />

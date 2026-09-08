@@ -74,7 +74,7 @@ export default function AccountingDashboard() {
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-2 ring-white/20">
               <Image
-                src="/logo-short.svg"
+                src="/logo-short.png"
                 alt="DrinksHarbour"
                 width={38}
                 height={38}

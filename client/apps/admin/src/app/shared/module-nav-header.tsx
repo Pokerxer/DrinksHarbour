@@ -14,6 +14,7 @@
  */
 
 import Link from 'next/link';
+import { activeModuleHref } from './module-nav-active';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
@@ -36,8 +37,7 @@ export default function ModuleNavHeader({
   const pathname = usePathname();
   const home = brandHref ?? tabs[0]?.href ?? '/';
 
-  const isActive = (href: string) =>
-    pathname === href || pathname?.startsWith(`${href}/`);
+  const activeHref = activeModuleHref(pathname, tabs.map(tab => tab.href));
 
   return (
     <nav className="relative mb-0 flex flex-wrap items-center border-b border-gray-200 bg-white">
@@ -50,7 +50,7 @@ export default function ModuleNavHeader({
         className="flex shrink-0 items-center gap-2.5 border-r border-gray-200 py-2 pr-5"
       >
         <Image
-          src="/logo-short.svg"
+          src="/logo-short.png"
           alt="DrinksHarbour"
           width={30}
           height={30}
@@ -64,11 +64,13 @@ export default function ModuleNavHeader({
       {/* Tabs — wrap on narrow screens, never clip */}
       <div className="flex min-w-0 flex-1 flex-wrap items-center pl-2">
         {tabs.map((tab) => {
-          const active = isActive(tab.href);
+          const active = activeHref === tab.href;
           return (
             <Link
               key={tab.label}
               href={tab.href}
+              aria-label={tab.label}
+              aria-current={active ? 'page' : undefined}
               className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors md:px-4 ${
                 active
                   ? 'font-semibold text-[#b20202] after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#b20202]'

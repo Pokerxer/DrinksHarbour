@@ -76,7 +76,10 @@ export interface DocHead {
 }
 
 export interface DocumentModel {
+  templateId?: import("./templates/registry").TemplateId;
   kind:
+    | 'stock'
+    | 'invoice'
     | 'rfq'
     | 'po'
     | 'bill'

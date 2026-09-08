@@ -50,6 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
   const navLinks = isMainSite
     ? [
         { name: "Shop", href: "/shop" },
+        { name: "Venues", href: "/venues" },
         { name: "Categories", href: "/categories" },
         { name: "Brands", href: "/brands" },
         { name: "New Arrivals", href: "/shop?tag=new-arrival" },
