@@ -3,7 +3,8 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-interface Brand {
+export interface Brand {
+  logo?: { url: string };
   _id: string;
   name: string;
   slug: string;
@@ -117,7 +118,7 @@ export function buildBrandFormData(data: BrandFormData): FormData {
 }
 
 export async function getAdminBrands(token: string): Promise<{ brands: AdminBrand[]; total: number }> {
-  return apiFetch(`${API_URL}/api/brands/admin`, { headers: authHeaders(token) });
+  return apiFetch(`${API_URL}/api/brands/admin`, { headers: authHeaders(token), cache: 'no-store' });
 }
 
 export async function createBrand(token: string, data: BrandFormData): Promise<{ brand: AdminBrand }> {
@@ -152,12 +153,13 @@ export const brandService = {
   async getBrands(token: string, options?: { limit?: number; search?: string }): Promise<Brand[]> {
     const params = new URLSearchParams();
     if (options?.limit) params.set('limit', options.limit.toString());
-    if (options?.search) params.set('search', options.search);
+    if (options?.search?.trim()) params.set('search', options.search.trim());
     params.set('status', 'active');
 
     const url = `${API_URL}/api/brands?${params.toString()}`;
 
     const response = await fetch(url, {
+      cache: 'no-store',
       headers: {
         'Authorization': `Bearer ${token}`,
       },

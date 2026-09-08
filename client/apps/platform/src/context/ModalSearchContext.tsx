@@ -211,6 +211,9 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
   const suggestionTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const searchAbortRef = useRef<AbortController | null>(null);
+  // Each request gets a sequence number so an older aborted request cannot
+  // clear loading state or overwrite results for a newer query.
+  const searchRequestIdRef = useRef(0);
 
   // ── Refs for transient values (keep callbacks stable) ────────────────────
   const searchQueryRef = useRef(searchQuery);
@@ -320,8 +323,11 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     const cacheKey = getCacheKey(term, activeFilters, page);
     const cached = searchCacheRef.current.get(cacheKey);
     if (cached) {
+      searchRequestIdRef.current += 1;
+      searchAbortRef.current?.abort();
       setSearchResults(cached);
       setCurrentPage(page);
+      setIsSearching(false);
       setSearchError(null);
       lastSearchRef.current = { query: term, filters: activeFilters };
       if (term) {
@@ -333,6 +339,7 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
       return;
     }
 
+    const requestId = ++searchRequestIdRef.current;
     searchAbortRef.current?.abort();
     const controller = new AbortController();
     searchAbortRef.current = controller;
@@ -343,6 +350,9 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
 
     try {
       const result = await fetchSearchPage(term, activeFilters, page, controller.signal);
+
+      // The request may have completed after a newer query started.
+      if (requestId !== searchRequestIdRef.current) return;
 
       // Cache the result (evict oldest if over limit)
       searchCacheRef.current.set(cacheKey, result);
@@ -362,11 +372,11 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
         }
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError' || requestId !== searchRequestIdRef.current) return;
       setSearchError(err.message ?? 'Search failed');
       if (page === 1) setSearchResults({ products: [], total: 0, page: 1, totalPages: 0 });
     } finally {
-      setIsSearching(false);
+      if (requestId === searchRequestIdRef.current) setIsSearching(false);
     }
   }, [fetchSearchPage, addRecentSearch]);
 
@@ -377,6 +387,7 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     const nextPage = (currentPageRef.current ?? 1) + 1;
     const { query, filters: f } = lastSearchRef.current;
 
+    const requestId = ++searchRequestIdRef.current;
     searchAbortRef.current?.abort();
     const controller = new AbortController();
     searchAbortRef.current = controller;
@@ -386,6 +397,8 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     try {
       const result = await fetchSearchPage(query, f, nextPage, controller.signal);
 
+      if (requestId !== searchRequestIdRef.current) return;
+
       setSearchResults((prev) =>
         prev
           ? { ...result, products: [...prev.products, ...result.products] }
@@ -393,16 +406,18 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
       );
       setCurrentPage(nextPage);
     } catch (err: any) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError' || requestId !== searchRequestIdRef.current) return;
       console.error('loadMoreResults error:', err.message);
     } finally {
-      setIsSearching(false);
+      if (requestId === searchRequestIdRef.current) setIsSearching(false);
     }
   }, [fetchSearchPage]);
 
   // ── clearSearch ──────────────────────────────────────────────────────────
   const clearSearch = useCallback(() => {
+    searchRequestIdRef.current += 1;
     searchAbortRef.current?.abort();
+    setIsSearching(false);
     setSearchQuery('');
     setSearchResults(null);
     setSearchError(null);

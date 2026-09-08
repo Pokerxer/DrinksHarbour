@@ -379,7 +379,9 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
                 src={banner.image.url}
                 alt={banner.image.alt || banner.title}
                 fill
-                className="object-cover"
+                // Popup artwork should remain fully visible. Portrait creatives
+                // are common here, and cover would crop their top and bottom.
+                className="object-contain"
                 unoptimized={isGif(banner.image.url)}
                 onError={() => setImgErr(true)}
               />
@@ -466,7 +468,7 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
                   src={banner.image.url}
                   alt={banner.image.alt || banner.title}
                   fill
-                  className="object-cover object-center"
+                  className="object-contain object-center"
                   priority
                   unoptimized={isGif(banner.image.url)}
                   onError={() => setImgErr(true)}
@@ -602,7 +604,7 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
               src={banner.image.url}
               alt={banner.image.alt || banner.title}
               fill
-              className="object-cover"
+              className="object-contain"
               unoptimized={isGif(banner.image.url)}
               onError={() => setImgErr(true)}
             />
@@ -678,7 +680,9 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
   const overlay = (banner.overlayOpacity || 0) / 100;
   const posCls = POS_CLS[banner.contentPosition || 'center'] || POS_CLS.center;
   const ctaCls = ctaButtonClass(banner.ctaStyle);
-  const imageIsContained = banner.imageFit !== 'cover';
+  // Popups are portrait-first placements. Always contain the source artwork so
+  // the complete creative remains visible even when an older banner was saved
+  // with `imageFit: cover`.
   const hasOverlayContent = Boolean(
     banner.title ||
       banner.subtitle ||
@@ -719,7 +723,7 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
             <div
               className={cn(
                 'relative mx-auto w-full overflow-hidden',
-                imageIsContained ? 'aspect-[3/4] max-h-[68vh] max-w-[28rem]' : 'h-72 sm:h-80 md:h-96'
+                'aspect-[3/4] max-h-[78vh] max-w-[28rem]'
               )}
               style={{ backgroundColor: bg }}
             >
@@ -727,7 +731,7 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
                 src={banner.image.url}
                 alt={banner.image.alt || banner.title}
                 fill
-                className={imageIsContained ? 'object-contain object-center' : 'object-cover object-center'}
+                className="object-contain object-center"
                 priority
                 unoptimized={isGif(banner.image.url)}
                 onError={() => setImgErr(true)}
@@ -741,15 +745,7 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
                   }}
                 />
               )}
-              {/* Soft fade confined to the bottom third — keeps the product vivid up top while blending into the content */}
-              {!imageIsContained && (
-                <div
-                  className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5"
-                  style={{
-                    background: `linear-gradient(to top, ${bg} 0%, transparent 100%)`
-                  }}
-                />
-              )}
+              {/* Keep badges above the contained artwork without changing its crop. */}
               {/* Discount badge */}
               {banner.tags?.some((t) => t.includes('%')) && (
                 <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-gradient-to-br from-red-600 to-red-700 text-white px-3.5 py-2 rounded-2xl font-black text-lg shadow-lg backdrop-blur-sm">

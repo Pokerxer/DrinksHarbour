@@ -9,6 +9,7 @@ import { brandsColumns } from './columns';
 import TableFooter from '@core/components/table/footer';
 import TablePagination from '@core/components/table/pagination';
 import BrandFilters from './filters';
+import { matchesBrandSearch } from './search';
 import { getAdminBrands, deleteAdminBrand, AdminBrand } from '@/services/brand.service';
 import { Button, Empty, Loader, Text } from 'rizzui';
 import { PiArrowClockwiseBold, PiStorefrontBold } from 'react-icons/pi';
@@ -24,6 +25,7 @@ export default function BrandTable() {
   const [allBrands, setAllBrands] = useState<AdminBrand[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [brandTypeFilter, setBrandTypeFilter] = useState('');
   const [primaryCategoryFilter, setPrimaryCategoryFilter] = useState('');
@@ -31,12 +33,13 @@ export default function BrandTable() {
   // Apply client-side filters
   const filtered = useMemo(() => {
     return allBrands.filter((b) => {
+      if (!matchesBrandSearch(b, search)) return false;
       if (statusFilter && b.status !== statusFilter) return false;
       if (brandTypeFilter && b.brandType !== brandTypeFilter) return false;
       if (primaryCategoryFilter && b.primaryCategory !== primaryCategoryFilter) return false;
       return true;
     });
-  }, [allBrands, statusFilter, brandTypeFilter, primaryCategoryFilter]);
+  }, [allBrands, search, statusFilter, brandTypeFilter, primaryCategoryFilter]);
 
   const { table, setData } = useTanStackTable<BrandDataType>({
     tableData: filtered,
@@ -115,6 +118,8 @@ export default function BrandTable() {
     <>
       <BrandFilters
         table={table}
+        search={search}
+        onSearchChange={setSearch}
         statusFilter={statusFilter}
         brandTypeFilter={brandTypeFilter}
         primaryCategoryFilter={primaryCategoryFilter}
@@ -138,7 +143,7 @@ export default function BrandTable() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => { setStatusFilter(''); setBrandTypeFilter(''); setPrimaryCategoryFilter(''); }}
+              onClick={() => { setSearch(''); setStatusFilter(''); setBrandTypeFilter(''); setPrimaryCategoryFilter(''); }}
             >
               Clear filters
             </Button>

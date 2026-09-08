@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import BrandsBrowser from './BrandsBrowser';
+import { displayableBrands } from './brand-results';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
@@ -64,8 +65,7 @@ async function fetchBrands(): Promise<any[]> {
     // zero products yet ("Coming soon"). Previously the productCount > 0 filter
     // hid ~200 active brands whose productCount was simply stale (0) even though
     // they link real products by ObjectId.
-    return (Array.isArray(list) ? list : [])
-      .filter((b: any) => b?.slug && b?.name)
+    return displayableBrands(Array.isArray(list) ? list : [])
       .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
   } catch {
     return [];

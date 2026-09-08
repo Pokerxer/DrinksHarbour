@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
+import { displayableBrands } from './brand-results';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -224,7 +225,7 @@ function BrandCard({ brand }: { brand: Brand }) {
     >
       {/* Hero — full-bleed logo/photo or gradient band */}
       <div className="relative h-28 overflow-hidden" style={{ background: hasImage ? color : undefined }}>
-        {hasImage ? (
+        {brandImage ? (
           <>
             <Image
               src={brandImage}
@@ -333,7 +334,11 @@ export default function BrandsBrowser({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  const searchRequest = useRef<AbortController | null>(null);
   const fetchBrands = useCallback(async () => {
+    searchRequest.current?.abort();
+    const controller = new AbortController();
+    searchRequest.current = controller;
     setLoading(true);
     setError('');
     try {
@@ -343,15 +348,16 @@ export default function BrandsBrowser({
       // no products yet must still show ("Coming soon"). The grid is meant to
       // showcase every brand.
       const params = new URLSearchParams({ limit: '500', status: 'active' });
-      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (debouncedSearch) params.set('search', debouncedSearch.trim());
       if (debouncedCountry) params.set('country', debouncedCountry);
 
-      const res = await fetch(`${API_URL}/api/brands?${params}`);
+      const res = await fetch(`${API_URL}/api/brands?${params}`, { signal: controller.signal, cache: 'no-store' });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || 'Failed to load brands');
 
+      if (controller.signal.aborted) return;
       let list: Brand[] = data.data?.brands ?? data.data ?? [];
-      if (!Array.isArray(list)) list = [];
+      list = displayableBrands(Array.isArray(list) ? list : []);
 
       // Client-side sort
       if (sortKey === 'name_asc') list.sort((a, b) => a.name.localeCompare(b.name));
@@ -371,10 +377,11 @@ export default function BrandsBrowser({
       setBrands(list);
       setPagination(data.data?.pagination ?? null);
     } catch (err: any) {
+      if (controller.signal.aborted) return;
       setError(err.message || 'Could not load brands.');
       setBrands([]);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [debouncedSearch, debouncedCountry, sortKey, activeLetter]);
 
@@ -387,6 +394,7 @@ export default function BrandsBrowser({
       return;
     }
     fetchBrands();
+    return () => searchRequest.current?.abort();
   }, [fetchBrands]);
 
   const handleLetterClick = (letter: string) => {
@@ -421,7 +429,7 @@ export default function BrandsBrowser({
                 ref={searchInputRef}
                 type="text"
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => { searchRequest.current?.abort(); setSearch(e.target.value); setActiveLetter(null); }}
                 placeholder="Search brands by name\u2026"
                 className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:bg-white focus:border-red-300 focus:ring-2 focus:ring-red-50 outline-none transition-colors"
               />
@@ -590,7 +598,7 @@ export default function BrandsBrowser({
             className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
           >
             <AnimatePresence mode="popLayout">
-              {brands.filter(b => (b.productCount ?? 0) > 0).map((brand, i) => (
+              {displayableBrands(brands).map((brand, i) => (
                 <motion.div
                   key={brand._id}
                   layout

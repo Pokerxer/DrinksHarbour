@@ -1,3 +1,4 @@
+const { buildBrandSearch } = require('../utils/brandSearch');
 // services/brand.service.js
 /**
  * Brand Service - Handles all brand-related business logic
@@ -5,7 +6,7 @@
  * Features:
  * - Advanced filtering with multiple criteria
  * - Pagination with cursor support
- * - Text search with relevance scoring
+ * - Literal partial-name and brand metadata search
  * - Field selection
  * - Range queries (product count, popularity, founded year)
  * - Statistics aggregation
@@ -215,33 +216,7 @@ const getAllBrands = async (queryParams = {}) => {
     }
   }
   
-  // Advanced search with text index support and relevance scoring
-  let searchQuery = {};
-  let searchScore = null;
-  
-  if (search && search.trim()) {
-    const searchTerm = search.trim();
-    
-    // Try text search first (if text index exists)
-    try {
-      searchQuery = { $text: { $search: searchTerm } };
-      searchScore = { score: { $meta: 'textScore' } };
-    } catch (e) {
-      // Fallback to regex search
-      searchQuery = {
-        $or: [
-          { name: { $regex: searchTerm, $options: 'i' } },
-          { description: { $regex: searchTerm, $options: 'i' } },
-          { shortDescription: { $regex: searchTerm, $options: 'i' } },
-          { tagline: { $regex: searchTerm, $options: 'i' } },
-          { countryOfOrigin: { $regex: searchTerm, $options: 'i' } },
-          { region: { $regex: searchTerm, $options: 'i' } }
-        ]
-      };
-    }
-    
-    Object.assign(query, searchQuery);
-  }
+  Object.assign(query, buildBrandSearch(search));
 
   // Build sort with multiple field support
   const sortObj = {};
@@ -271,11 +246,6 @@ const getAllBrands = async (queryParams = {}) => {
     sortObj.name = order === 'desc' ? -1 : 1;
   }
   
-  // Add text score sort if searching
-  if (searchScore) {
-    sortObj.score = { $meta: 'textScore' };
-  }
-
   // Field selection - include all image fields and the storefront hero CTA
   // (bannerLink/bannerLinkType) used by the shop hero for brand filter pages.
   let selectFields = 'name slug logo logoVariants featuredImage bannerImage gallery brandColors tagline description shortDescription productCount isFeatured verified countryOfOrigin primaryCategory brandType founded isPremium popularityScore createdAt updatedAt bannerLink bannerLinkType';

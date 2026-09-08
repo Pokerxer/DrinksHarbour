@@ -69,6 +69,8 @@ const primaryCategoryOptions = [
 
 interface FiltersProps<T extends Record<string, any>> {
   table: ReactTableType<T>;
+  search: string;
+  onSearchChange: (value: string) => void;
   statusFilter: string;
   brandTypeFilter: string;
   primaryCategoryFilter: string;
@@ -79,6 +81,8 @@ interface FiltersProps<T extends Record<string, any>> {
 
 export default function BrandFilters<TData extends Record<string, any>>({
   table,
+  search,
+  onSearchChange,
   statusFilter,
   brandTypeFilter,
   primaryCategoryFilter,
@@ -90,11 +94,12 @@ export default function BrandFilters<TData extends Record<string, any>>({
     <Flex align="center" justify="between" wrap="wrap" className="mb-4 gap-3">
       <Flex align="center" gap="3" wrap="wrap" className="flex-1">
         <Input
+          aria-label="Search brands"
           type="search"
           placeholder="Search brands..."
-          value={table.getState().globalFilter ?? ''}
-          onClear={() => table.setGlobalFilter('')}
-          onChange={(e) => table.setGlobalFilter(e.target.value)}
+          value={search}
+          onClear={() => onSearchChange('')}
+          onChange={(e) => onSearchChange(e.target.value)}
           inputClassName="h-9"
           clearable
           prefix={<PiMagnifyingGlassBold className="size-4" />}
