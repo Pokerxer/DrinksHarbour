@@ -212,8 +212,8 @@ const CountdownTimer = memo(function CountdownTimer({
 
   const TimeBox = ({ value, label }: { value: number; label: string }) => (
     <div className="flex flex-col items-center">
-      <div className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-lg w-9 h-9 flex items-center justify-center">
-        <span className="text-white font-black text-sm tabular-nums leading-none">
+      <div className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-lg w-7 h-7 sm:w-9 sm:h-9 flex items-center justify-center">
+        <span className="text-white font-black text-xs sm:text-sm tabular-nums leading-none">
           {String(value).padStart(2, "0")}
         </span>
       </div>
@@ -224,11 +224,11 @@ const CountdownTimer = memo(function CountdownTimer({
   );
 
   const Colon = () => (
-    <span className="text-white font-black text-base mb-3 opacity-80">:</span>
+    <span className="text-white font-black text-sm sm:text-base mb-2 sm:mb-3 opacity-80">:</span>
   );
 
   return (
-    <div className="flex items-end gap-1">
+    <div className="flex items-end gap-0.5 sm:gap-1">
       {timeLeft.days > 0 && (
         <>
           <TimeBox value={timeLeft.days} label="Days" />
@@ -523,29 +523,29 @@ const FlashSale = () => {
 
       <div className="container mx-auto px-4 relative">
         {/* ── Header ── */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <div className="flex flex-nowrap items-center justify-between gap-2 sm:gap-4 mb-4">
           {/* Left: icon + title */}
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <div className="relative flex-shrink-0">
-              <div className="w-11 h-11 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-red-900/30">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-red-900/30">
                 <PiLightningFill size={22} className="text-orange-500" />
               </div>
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full motion-safe:animate-bounce border-2 border-orange-500" />
             </div>
-            <div>
-              <h2 className="text-white font-black text-xl leading-tight flex items-center gap-2">
+            <div className="min-w-0">
+              <h2 className="text-white font-black text-lg sm:text-xl leading-tight flex items-center gap-1.5 sm:gap-2 whitespace-nowrap">
                 {label}
-                <span className="px-2 py-0.5 bg-yellow-400 text-red-700 text-[10px] font-black rounded-full motion-safe:animate-pulse">
+                <span className="px-1.5 sm:px-2 py-0.5 bg-yellow-400 text-red-700 text-[9px] sm:text-[10px] font-black rounded-full motion-safe:animate-pulse">
                   LIVE
                 </span>
               </h2>
-              <p className="text-white/75 text-xs leading-tight">{sublabel}</p>
+              <p className="text-white/75 text-[10px] sm:text-xs leading-tight truncate">{sublabel}</p>
             </div>
           </div>
 
           {/* Right: countdown + view all */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 bg-black/20 backdrop-blur-sm border border-white/20 rounded-2xl px-3 py-2">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2 bg-black/20 backdrop-blur-sm border border-white/20 rounded-2xl px-2 sm:px-3 py-1.5 sm:py-2">
               <PiClock size={15} className="text-white/70 flex-shrink-0" />
               <CountdownTimer endTime={saleEndTime} onExpire={load} />
             </div>

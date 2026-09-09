@@ -34,6 +34,8 @@ const getPlans = (req, res) => {
       priceMonthly: cfg.priceMonthly,
       skuLimit: cfg.skuLimit === Infinity ? null : cfg.skuLimit,
       staffLimit: cfg.staffLimit === Infinity ? null : cfg.staffLimit,
+      warehouseLimit: cfg.warehouseLimit === Infinity ? null : cfg.warehouseLimit,
+      posLimit: cfg.posLimit === Infinity ? null : cfg.posLimit,
       commissionRate: cfg.commissionRate,
       features: cfg.features,
       addOnsAllowed: cfg.addOnsAllowed,
@@ -83,7 +85,9 @@ const getStatus = async (req, res) => {
     purchased: addOnQuantity(tenant, type),
     pendingCancellation: (tenant.addOns || []).filter(row => row.type === type && row.cancelAtPeriodEnd).length,
     used: type === 'extra_warehouse' ? warehouseCount : shopCount,
-    allowance: addOnAllowance(tenant, type),
+    included: Number.isFinite(type === 'extra_warehouse' ? plan.warehouseLimit : plan.posLimit)
+      ? (type === 'extra_warehouse' ? plan.warehouseLimit : plan.posLimit) : null,
+    allowance: Number.isFinite(addOnAllowance(tenant, type)) ? addOnAllowance(tenant, type) : null,
   }));
 
   res.json({

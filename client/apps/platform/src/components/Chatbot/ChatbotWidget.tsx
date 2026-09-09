@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/context/CartContext';
 import TalkToHuman from './TalkToHuman';
+import ChatLauncher from './ChatLauncher';
 
 // ── Markdown-lite renderer ────────────────────────────────────────────────────
 // Supports: **bold**, [links](/path), bullet lists, **Section** headers.
@@ -752,32 +753,14 @@ export default function ChatbotWidget() {
   return (
     <>
       {/* ── FAB ──────────────────────────────────────────────────────────── */}
-      <button
-        onClick={() => setIsOpen(o => !o)}
-        aria-label={isOpen ? 'Close chat' : 'Open chat'}
-        className={`fixed bottom-5 right-5 z-[9999] w-12 h-12 rounded-full bg-gradient-to-br from-red-700 to-red-900 text-white shadow-2xl items-center justify-center transition-transform duration-200 hover:scale-105 active:scale-95 hidden sm:flex`}
-      >
-        {isOpen ? (
-          <CloseIcon />
-        ) : (
-          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        )}
-        {unread > 0 && !isOpen && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-white text-red-700 rounded-full text-[10px] font-bold flex items-center justify-center shadow">
-            {unread}
-          </span>
-        )}
-      </button>
+      <ChatLauncher isOpen={isOpen} unread={unread} onToggle={() => setIsOpen(o => !o)} />
 
       {/* ── Chat panel ───────────────────────────────────────────────────── */}
       <div
         className={`
           fixed z-[9998] transition-[opacity,transform] duration-300 ease-out
-          left-0 right-0 top-0 h-[100dvh] sm:inset-auto sm:bottom-24 sm:right-5
-          sm:w-[340px] sm:h-[540px] sm:max-h-[calc(100vh-120px)]
+          left-0 right-0 top-0 h-[100dvh] sm:inset-auto sm:bottom-40 lg:bottom-24 sm:right-5
+          sm:w-[340px] sm:h-[540px] sm:max-h-[calc(100vh-180px)] lg:max-h-[calc(100vh-120px)]
           ${isOpen
             ? 'opacity-100 pointer-events-auto sm:translate-y-0 sm:scale-100'
             : 'opacity-0 pointer-events-none sm:translate-y-4 sm:scale-95'}

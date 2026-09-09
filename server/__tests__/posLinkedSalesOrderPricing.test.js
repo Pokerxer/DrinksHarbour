@@ -32,6 +32,8 @@ const Tenant = require('../models/Tenant');
 const Size = require('../models/Size');
 const SubProduct = require('../models/SubProduct');
 const Warehouse = require('../models/Warehouse');
+const WarehouseStock = require('../models/WarehouseStock');
+const WarehouseMovement = require('../models/WarehouseMovement');
 const POSSession = require('../models/POSSession');
 const SalesOrder = require('../models/SalesOrder');
 const InventoryMovement = require('../models/InventoryMovement');
@@ -79,6 +81,7 @@ function subProduct(id = SP, name = 'Hennessy VS') {
     flashSale: {},
     bundleDeals: [],
     defaultSize: null,
+    sizes: [{ _id: SIZE }],
   };
 }
 
@@ -119,7 +122,11 @@ function stub(t, { salesOrder = null } = {}) {
   const captured = {};
 
   t.mock.method(Tenant, 'findById', () => chainable(null));
-  t.mock.method(Warehouse, 'findOne', () => chainable(null));
+  t.mock.method(Warehouse, 'findOne', () => chainable({ _id: TENANT }));
+  t.mock.method(WarehouseStock, 'findOneAndUpdate', async () => ({ currentQuantity: 90 }));
+  t.mock.method(WarehouseStock, 'find', () => chainable([{ currentQuantity: 90, reservedQuantity: 0 }]));
+  t.mock.method(WarehouseMovement, 'create', async () => ({}));
+  t.mock.method(SubProduct, 'updateOne', async () => ({}));
   t.mock.method(POSSession, 'findOne', () => chainable(null));
   t.mock.method(Order, 'countDocuments', async () => 0);
   t.mock.method(InventoryMovement, 'updateMany', () => Promise.resolve());
@@ -128,6 +135,8 @@ function stub(t, { salesOrder = null } = {}) {
 
   t.mock.method(SubProduct, 'findById', (id) =>
     chainable(String(id) === String(SODA) ? subProduct(SODA, 'Coca-Cola') : subProduct()));
+  t.mock.method(SubProduct, 'findOne', (filter) =>
+    chainable(String(filter._id) === String(SODA) ? subProduct(SODA, 'Coca-Cola') : subProduct()));
   t.mock.method(SubProduct, 'findOneAndUpdate', async () => ({ _id: SP, availableStock: 90 }));
   t.mock.method(Size, 'findById', () => chainable({ _id: SIZE, sellingPrice: 5200, costPrice: 3100 }));
   t.mock.method(Size, 'findOneAndUpdate', async () => ({ _id: SIZE, stock: 90, lowStockThreshold: 6 }));

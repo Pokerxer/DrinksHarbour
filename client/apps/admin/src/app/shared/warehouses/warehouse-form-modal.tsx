@@ -29,6 +29,7 @@ export const EMPTY_WAREHOUSE_FORM: WarehouseInput = {
   contact: { name: '', phone: '', email: '' },
   notes: '',
   isActive: true,
+  posEnabled: true,
   isDefault: false,
 };
 
@@ -41,6 +42,7 @@ export const warehouseToForm = (w: Warehouse): WarehouseInput => ({
   contact: w.contact ?? {},
   notes: w.notes ?? '',
   isActive: w.isActive,
+  posEnabled: w.posEnabled !== false,
   isDefault: w.isDefault,
 });
 
@@ -140,7 +142,7 @@ export default function WarehouseModal({
                   }
                 >
                   <option value="warehouse">Warehouse</option>
-                  <option value="store">Store</option>
+                  <option value="store">Physical storefront / shop</option>
                   <option value="distribution_center">
                     Distribution center
                   </option>
@@ -266,6 +268,11 @@ export default function WarehouseModal({
           </section>
 
           {/* Flags */}
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={form.posEnabled !== false}
+              onChange={event => setForm({ ...form, posEnabled: event.target.checked })} />
+            Allow POS sales from this location
+          </label>
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
@@ -315,4 +322,3 @@ export default function WarehouseModal({
     </div>
   );
 }
-

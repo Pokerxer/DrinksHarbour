@@ -14,6 +14,7 @@ const SubProduct      = require('../models/SubProduct');
 const Warehouse       = require('../models/Warehouse');
 const WarehouseStock  = require('../models/WarehouseStock');
 const { sellStock, returnStock, resolveShopWarehouse } = require('../services/warehouse.service');
+const { requirePOSLocation } = require('../services/posLocation.service');
 const { getTenantWarehouseSettings } = require('./warehouse.controller');
 const InventoryMovement = require('../models/InventoryMovement');
 const SalesOrder = require('../models/SalesOrder');
@@ -1609,12 +1610,7 @@ exports.createPOSShop = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'mode must be retail or wholesale' });
   }
 
-  let warehouseId = null;
-  if (warehouse) {
-    const wh = await Warehouse.findOne({ _id: warehouse, tenant: tenantId, isActive: true });
-    if (!wh) return res.status(400).json({ success: false, message: 'Warehouse not found or inactive' });
-    warehouseId = wh._id;
-  }
+  const warehouseId = await requirePOSLocation(tenantId, warehouse);
 
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
@@ -1633,6 +1629,18 @@ exports.updatePOSShop = asyncHandler(async (req, res) => {
   const { shopId } = req.params;
   const { name, mode, color, description, active, warehouse } = req.body;
 
+  if (shopId === 'retail') {
+    const locationId = await requirePOSLocation(tenantId, warehouse);
+    const retailTenant = await Tenant.findOneAndUpdate(
+      { _id: tenantId }, { $set: { 'posSettings.retailWarehouse': locationId } }, { new: true }
+    ).select('posSettings.retailWarehouse').populate('posSettings.retailWarehouse', 'name code');
+    if (!retailTenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+    return res.json({ success: true, data: { shop: {
+      _id: 'retail', name: 'RETAIL', mode: 'retail', color: '#f97316',
+      active: true, warehouse: retailTenant.posSettings.retailWarehouse,
+    } } });
+  }
+
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
 
@@ -1646,13 +1654,7 @@ exports.updatePOSShop = asyncHandler(async (req, res) => {
   if (active !== undefined) shop.active = !!active;
 
   if (warehouse !== undefined) {
-    if (!warehouse) {
-      shop.warehouse = null;
-    } else {
-      const wh = await Warehouse.findOne({ _id: warehouse, tenant: tenantId, isActive: true });
-      if (!wh) return res.status(400).json({ success: false, message: 'Warehouse not found or inactive' });
-      shop.warehouse = wh._id;
-    }
+    shop.warehouse = await requirePOSLocation(tenantId, warehouse);
   }
 
   await tenant.save();
@@ -1906,7 +1908,7 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     ? Math.min(Math.floor(requestedLimit), POS_CATALOGUE_CAP)
     : POS_CATALOGUE_CAP;
 
-  // warehouseOverride (explicit param) wins; otherwise resolve from shopId.
+  // The configured POS location is authoritative; an override cannot change it.
   //
   // The override is untrusted input and is only honoured when it is actually an
   // id. A client that stringifies a populated `{ _id, name }` ref sends the
@@ -1919,7 +1921,10 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     warehouseOverride && mongoose.isValidObjectId(warehouseOverride)
       ? warehouseOverride
       : null;
-  const warehouseId = validOverride || await resolveShopWarehouse(tenant, tenantId, shopId);
+  const warehouseId = await resolveShopWarehouse(tenant, tenantId, shopId);
+  if (validOverride && String(validOverride) !== String(warehouseId)) {
+    return res.status(400).json({ success: false, message: 'Products must come from the POS stock location.' });
+  }
 
   // Resolve the auto pricelist id for the active shop so the grid knows the
   // default selection without a separate round-trip / race.
@@ -2377,10 +2382,9 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   const blockExpiredStock = whSettings.blockExpiredStock === true;
   const fefoPicking = whSettings.fefoPicking === true;
 
-  // Resolve the active shop's bound warehouse. Built-in shops (retail/
-  // wholesale) and unbound custom shops fall back to the tenant's default
-  // warehouse. When set, stock is sourced from and decremented in
-  // WarehouseStock for that warehouse only.
+  // Configured POS terminals require their bound location. Retail uses its
+  // selected location (or the active default); unbound terminals fail closed.
+  // Stock is deducted only from WarehouseStock at that resolved location.
   const warehouseId = await resolveShopWarehouse(req.tenant, tenantId, shopId);
 
   // Atomic stock deduction with full audit trail
@@ -2393,12 +2397,16 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       if (!quantity || quantity < 1) continue;
 
       // Fetch subproduct for price resolution and order line data
-      const sp = await SubProduct.findById(subProductId)
+      const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId, visibleInPOS: true, status: { $nin: ['discontinued', 'hidden', 'archived'] } })
         .select('product sku baseSellingPrice costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals defaultSize sizes')
         .populate('product', 'name images platformMarkup platformDiscount tracksBatch')
         .populate('sizes', 'wholesalePrice isDefault unitsPerPack')
         .lean();
 
+      if (!sp) throw new Error('Product is unavailable for this POS.');
+      if (sizeId && String(sp.defaultSize) !== String(sizeId) && !(sp.sizes || []).some(size => size && String(size._id || size) === String(sizeId))) {
+        throw new Error('Size does not belong to this product.');
+      }
       // Server-side price: run through same pipeline as the website / cart
       const pricing     = computePOSPricing(sp, null, req.tenant);
       const overrideKey = sizeId ? `${subProductId}_${sizeId}` : subProductId;
@@ -2433,8 +2441,8 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         productId:       sp?.product?._id,
         finalPrice,
         costPrice:       sizePricing.costPrice,
-        allowOverselling,
-        allowNegativeStock,
+        allowOverselling: false,
+        allowNegativeStock: false,
         warehouseId,
         defaultSizeId:   sp?.defaultSize || null,
         tracksBatch:     batchTrackingEnabled && !!sp?.product?.tracksBatch,

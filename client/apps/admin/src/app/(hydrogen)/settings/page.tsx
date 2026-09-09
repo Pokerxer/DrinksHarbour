@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import RetailLocationSettings from '@/app/shared/point-of-sale/components/retail-location-settings';
 import type { POSSettings, POSShop } from '@/app/shared/point-of-sale/types';
 import {
   warehouseService,
@@ -1259,6 +1260,10 @@ export default function SettingsPage() {
 
   async function handleCreateShop(e: React.FormEvent) {
     e.preventDefault();
+    if (!shopForm.warehouse) {
+      setShopError('Select a stock location');
+      return;
+    }
     if (!shopForm.name.trim()) {
       setShopError('Name is required');
       return;
@@ -1331,6 +1336,7 @@ export default function SettingsPage() {
   }
 
   const q = search.toLowerCase();
+  const posWarehouses = warehouses.filter((warehouse) => warehouse.posEnabled !== false);
   function vis(...terms: string[]) {
     return !q || terms.some((t) => t.toLowerCase().includes(q));
   }
@@ -1753,7 +1759,7 @@ export default function SettingsPage() {
                     id="pos_shops"
                     icon={<PiStorefront size={16} />}
                     title="Shops"
-                    note="Each shop is an independent POS terminal. Retail and Wholesale are built-in."
+                    note="Retail is the default POS. Create any additional retail or wholesale terminals and select their stock locations."
                   >
                     {/* Built-in shops */}
                     <div className="px-6 pb-2 pt-1">
@@ -1767,12 +1773,6 @@ export default function SettingsPage() {
                             mode: 'retail',
                             color: '#f97316',
                             desc: 'Front-counter sales',
-                          },
-                          {
-                            name: 'WHOLESALE',
-                            mode: 'wholesale',
-                            color: '#0ea5e9',
-                            desc: 'Bulk & account orders',
                           },
                         ].map((s) => (
                           <div
@@ -1797,6 +1797,7 @@ export default function SettingsPage() {
                     </div>
 
                     {/* Custom shops */}
+                    <RetailLocationSettings token={token} />
                     {shops.length > 0 && (
                       <div className="px-6 pb-2 pt-3">
                         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
@@ -1831,8 +1832,8 @@ export default function SettingsPage() {
                                 }
                                 className="shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
                               >
-                                <option value="">No warehouse</option>
-                                {warehouses.map((w) => (
+                                <option value="" disabled>Select stock location</option>
+                                {posWarehouses.map((w) => (
                                   <option key={w._id} value={w._id}>
                                     {w.name}
                                   </option>
@@ -1972,7 +1973,7 @@ export default function SettingsPage() {
                             <label className="mb-1 block text-xs font-medium text-gray-600">
                               Warehouse{' '}
                               <span className="font-normal text-gray-400">
-                                (optional)
+                                (required)
                               </span>
                             </label>
                             <select
@@ -1985,10 +1986,10 @@ export default function SettingsPage() {
                               }
                               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
                             >
-                              <option value="">
-                                — No warehouse (aggregate stock) —
+                              <option value="" disabled>
+                                — Select stock location —
                               </option>
-                              {warehouses.map((w) => (
+                              {posWarehouses.map((w) => (
                                 <option key={w._id} value={w._id}>
                                   {w.name} ({w.code})
                                 </option>

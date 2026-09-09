@@ -83,29 +83,37 @@ test('countedShops counts deactivated shops', () => {
       ],
     },
   };
-  assert.strictEqual(countedShops(tenant), 2);
+  assert.strictEqual(countedShops(tenant), 3);
 });
 
-test('countedShops is 0 for a tenant with no POS settings at all', () => {
-  assert.strictEqual(countedShops({}), 0);
-  assert.strictEqual(countedShops(undefined), 0);
+test('unused included capacity never counts as a created POS', () => {
+  assert.strictEqual(countedShops({}), 1);
+  assert.strictEqual(countedShops({ plan: 'growth' }), 1);
+  assert.strictEqual(countedShops({ plan: 'pro' }), 1);
+  assert.strictEqual(countedShops({ plan: 'enterprise' }), 1);
+  assert.strictEqual(countedShops({ plan: 'venue' }), 1);
+  assert.strictEqual(countedShops(undefined), 1);
+});
+
+test('unrelated root-level shops are not POS terminals', () => {
+  assert.strictEqual(countedShops({ shops: [{ name: 'A' }, { name: 'B' }] }), 1);
 });
 
 test('deactivating a shop does not free the slot', async () => {
-  // free_trial has addOnsAllowed: false, so the allowance is the one free unit.
+  // free_trial has addOnsAllowed: false, so the allowance is its included unit.
   // Under the OLD filter this tenant counted zero shops and the gate passed —
   // a plan limit that a boolean toggle could defeat.
   const tenant = {
     _id: TENANT_ID,
     plan: 'free_trial',
-    posSettings: { shops: [{ name: 'Retired', active: false }] },
+    posSettings: { shops: [{ name: 'Main', active: true }, { name: 'Retired', active: false }] },
   };
   assert.strictEqual(addOnAllowance(tenant, 'extra_shop'), 1);
 
   const { passed, error } = await run(checkShopLimit, { tenant, user: { role: 'tenant_admin' } });
   assert.strictEqual(passed, false);
   assert.strictEqual(error.code, 'ADD_ON_LIMIT_REACHED');
-  assert.strictEqual(error.details.used, 1, 'the inactive shop still occupies the slot');
+  assert.strictEqual(error.details.used, 3, 'the inactive shop still occupies the slot');
 });
 
 test('the shop count is read from countedShops in both places, not re-filtered', () => {
@@ -285,4 +293,33 @@ test('checkStaffLimit lets a starter seat be reused once the incumbent is delete
   assert.strictEqual(full.passed, false, 'a live member fills the only seat');
   assert.strictEqual(full.error.code, 'STAFF_LIMIT_REACHED');
   assert.deepStrictEqual(full.error.details, { used: 1, limit: 1, currentPlan: 'starter' });
+});
+
+for (const [plan, warehouses, terminals] of [['growth', 1, 2], ['pro', 2, 2], ['enterprise', 3, 3], ['venue', 3, 5]]) {
+  test(`${plan} allows creation up to its included POS capacity`, async () => {
+    const tenant = { _id: TENANT_ID, plan, posSettings: { shops: Array.from({ length: terminals - 2 }, () => ({ active: true })) } };
+    assert.equal(addOnAllowance(tenant, 'extra_warehouse'), warehouses);
+    assert.equal(addOnAllowance(tenant, 'extra_shop'), terminals);
+    assert.equal((await run(checkShopLimit, { tenant, user: { role: 'tenant_admin' } })).passed, true);
+    tenant.posSettings.shops.push({ active: true });
+    assert.equal((await run(checkShopLimit, { tenant, user: { role: 'tenant_admin' } })).passed, false);
+  });
+}
+
+test('billing status reports actual Enterprise usage separately from included and paid capacity', async () => {
+  clearUsageCache();
+  const { getStatus } = require('../controllers/erm.controller');
+  let body;
+  await withCounts({ warehouses: 2 }, () => getStatus({
+    user: { role: 'tenant_owner' }, tenant: {
+      _id: TENANT_ID, plan: 'enterprise', subscriptionStatus: 'active',
+      posSettings: { shops: [{ active: true }] },
+      addOns: [{ type: 'extra_shop', quantity: 1 }],
+    },
+  }, { json(value) { body = value.data; } }));
+  assert.deepEqual(body.usage.shops, { used: 2, limit: 4 });
+  const pos = body.addOns.find(row => row.type === 'extra_shop');
+  assert.equal(pos.included, 3);
+  assert.equal(pos.purchased, 1);
+  assert.equal(pos.allowance, 4);
 });

@@ -28,6 +28,7 @@ export interface Warehouse {
   managers?: { _id: string; name: string; email?: string }[];
   notes?: string;
   isActive: boolean;
+  posEnabled?: boolean;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +42,7 @@ export type WarehouseInput = {
   contact?: WarehouseContact;
   notes?: string;
   isActive?: boolean;
+  posEnabled?: boolean;
   isDefault?: boolean;
 };
 

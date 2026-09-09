@@ -11,7 +11,7 @@ const { resolveEntitlements, readOnlyMessage } = require('../services/entitlemen
 // custom tenant silently falls back to the default set, and the add-on quota
 // reads as "one, free" for everyone regardless of what they bought.
 const TENANT_SELECT_FIELDS =
-  '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan trialEndsAt addOns customCapabilities posSettings.shops email businessName paystackCustomerId paystackSubscriptionCode currentPeriodEnd cancelAtPeriodEnd';
+  '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan trialEndsAt addOns customCapabilities posSettings.shops posSettings.retailWarehouse email businessName paystackCustomerId paystackSubscriptionCode currentPeriodEnd cancelAtPeriodEnd';
 const ADMIN_ROLES = ['super_admin', 'admin'];
 const RESERVED_SUBDOMAINS = ['www', 'drinksharbour', 'localhost', 'admin', 'platform', 'api'];
 

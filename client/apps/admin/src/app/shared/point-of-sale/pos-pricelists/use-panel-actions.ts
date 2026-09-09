@@ -38,10 +38,7 @@ export function usePanelActions({ pl, token, onRefresh }: Args) {
   // Shop + warehouse options for binding selectors
   useEffect(() => {
     if (!token) return;
-    const builtins = [
-      { _id: 'retail', name: 'Retail (built-in)' },
-      { _id: 'wholesale', name: 'Wholesale (built-in)' },
-    ];
+    const builtins = [{ _id: 'retail', name: 'Retail (included)' }];
     posApi
       .listShops(token)
       .then((r: { shops?: { _id: string; name: string }[] }) => {

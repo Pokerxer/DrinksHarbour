@@ -26,6 +26,7 @@ const mongoose = require('mongoose');
 
 const SubProduct = require('../models/SubProduct');
 const Warehouse = require('../models/Warehouse');
+const WarehouseStock = require('../models/WarehouseStock');
 const pricelistService = require('../services/pricelist.service');
 const pos = require('../controllers/pos.controller');
 
@@ -103,18 +104,22 @@ function fakeFind(rows, spy) {
 /** Install the three reads `getPOSProducts` makes besides the catalogue itself. */
 function stub(rows) {
   const spy = { limit: null };
-  const originals = { find: SubProduct.find, findOne: Warehouse.findOne, resolve: pricelistService.resolveShopPricelist };
+  const originals = { find: SubProduct.find, stock: WarehouseStock.find, findOne: Warehouse.findOne, resolve: pricelistService.resolveShopPricelist };
 
   SubProduct.find = () => fakeFind(rows, spy);
   // No default warehouse: the endpoint then reports SubProduct-level stock and
   // never touches WarehouseStock, which keeps these tests about the row count.
-  Warehouse.findOne = () => ({ select: () => ({ lean: async () => null }) });
+  Warehouse.findOne = () => ({ select: () => ({ lean: async () => ({ _id: TENANT }) }) });
+  WarehouseStock.find = () => ({ select: () => ({ lean: async () => rows.map(row => ({
+    subProduct: row._id, size: row.defaultSize, currentQuantity: row.availableStock,
+  })) }) });
   pricelistService.resolveShopPricelist = async () => ({ resolved: null });
 
   return {
     spy,
     restore() {
       SubProduct.find = originals.find;
+      WarehouseStock.find = originals.stock;
       Warehouse.findOne = originals.findOne;
       pricelistService.resolveShopPricelist = originals.resolve;
     },

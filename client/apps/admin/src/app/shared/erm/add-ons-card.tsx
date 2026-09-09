@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from 'rizzui/button';
 import {
   PiPlusBold,
@@ -19,15 +19,7 @@ function formatNaira(amount: number) {
   return `₦${amount.toLocaleString('en-NG')}`;
 }
 
-/**
- * Add-on quotas, and the buttons that actually change them.
- *
- * Until this existed, `Tenant.addOns[]` was written by nothing: the pricing
- * page sold extra shops and warehouses, the server enforced
- * `1 + sum(addOns[].quantity)`, and no code path could ever make that sum
- * anything but zero — so every tenant was capped at one of each however much
- * they paid.
- */
+/** Expansion beyond the plan capacity, billed independently through Paystack. */
 export default function AddOnsCard({
   status,
   token,
@@ -39,14 +31,14 @@ export default function AddOnsCard({
   const [error, setError] = useState<string | null>(null);
 
   async function handleBuy(addOn: ErmAddOn) {
-    if (status.canManageBilling !== true || !status.writesAllowed || busy) return;
+    if (status.canManageBilling !== true || !status.writesAllowed || !status.addOnsAllowed || addOn.allowance === null || busy) return;
     setBusy(`buy:${addOn.type}`);
     setError(null);
     try {
       const { authorizationUrl } = await subscribeAddOn(addOn.type, token);
       window.location.href = authorizationUrl;
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Unable to update billing. Please try again.');
       setBusy(null);
     }
   }
@@ -64,8 +56,8 @@ export default function AddOnsCard({
     try {
       await cancelAddOn(addOn.type, token);
       window.location.reload();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Unable to update billing. Please try again.');
       setBusy(null);
     }
   }
@@ -76,12 +68,12 @@ export default function AddOnsCard({
         <h2 className="text-base font-semibold text-gray-900 dark:text-white">
           Add-ons
         </h2>
-        <span className="text-xs text-gray-500">First of each is free</span>
+        <span className="text-xs text-gray-500">Expand beyond your plan</span>
       </div>
       <p className="mb-4 text-sm text-gray-500">
         {status.addOnsAllowed
           ? 'Each extra unit is billed as its own subscription and can be cancelled on its own.'
-          : `The ${status.planLabel} plan includes one of each. Upgrade to Pro or above to buy more.`}
+          : `The ${status.planLabel} plan includes its listed capacity. Upgrade to Pro or above to buy more.`}
       </p>
 
       {error && (
@@ -93,7 +85,10 @@ export default function AddOnsCard({
       <ul className="space-y-3">
         {status.addOns.map((addOn) => {
           const Icon = ADD_ON_ICONS[addOn.type];
-          const atLimit = addOn.used >= addOn.allowance;
+          const atLimit = addOn.allowance !== null && addOn.used >= addOn.allowance;
+          const included = addOn.included === undefined
+            ? (addOn.allowance === null ? null : Math.max(0, addOn.allowance - (status.addOnsAllowed ? addOn.purchased : 0)))
+            : addOn.included;
 
           return (
             <li
@@ -104,12 +99,12 @@ export default function AddOnsCard({
                 {Icon && <Icon className="h-5 w-5 shrink-0 text-[#b20202]" />}
                 <div>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {addOn.label}
+                    {addOn.type === 'extra_shop' ? 'Extra POS terminal' : 'Extra warehouse'}
                   </p>
                   <p className="text-xs text-gray-500">
                     {formatNaira(addOn.priceMonthly)}/mo · using {addOn.used} of{' '}
-                    {addOn.allowance}
-                    {addOn.purchased > 0 && ` · ${addOn.purchased} paid`}
+                    {addOn.allowance === null ? 'Unlimited' : addOn.allowance}
+                    {` · ${included === null ? 'Unlimited' : included} included · ${addOn.purchased} paid`}
                     {!!addOn.pendingCancellation && ` · ${addOn.pendingCancellation} cancellation pending`}
                   </p>
                 </div>
@@ -132,11 +127,11 @@ export default function AddOnsCard({
                   size="sm"
                   variant="outline"
                   isLoading={busy === `buy:${addOn.type}`}
-                  disabled={busy !== null || !status.addOnsAllowed || !status.writesAllowed || status.canManageBilling !== true}
+                  disabled={busy !== null || addOn.allowance === null || !status.addOnsAllowed || !status.writesAllowed || status.canManageBilling !== true}
                   onClick={() => handleBuy(addOn)}
                 >
                   <PiPlusBold className="me-1.5 h-3 w-3" />
-                  {atLimit ? 'Add a slot' : 'Buy another'}
+                  {addOn.allowance === null ? 'Unlimited capacity' : !status.addOnsAllowed ? 'Add-ons unavailable' : atLimit ? 'Add a slot' : 'Buy another'}
                 </Button>
               </div>
             </li>

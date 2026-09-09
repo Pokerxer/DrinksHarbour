@@ -28,6 +28,8 @@ const warehouseSchema = new Schema(
     },
     notes: { type: String, maxlength: 1000 },
     isActive: { type: Boolean, default: true },
+    // Location type describes the place; sales capability is independent.
+    posEnabled: { type: Boolean, default: true },
     isDefault: { type: Boolean, default: false },
     // Users responsible for this location. Gates the two-sided transfer flow:
     // source-side actions need a SOURCE manager, receiving needs a DESTINATION

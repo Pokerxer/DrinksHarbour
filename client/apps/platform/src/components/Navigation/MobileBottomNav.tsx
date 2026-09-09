@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as Icon from "react-icons/pi";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "@/context/CartContext";
 import { useModalSearchUIContext } from "@/context/ModalSearchContext";
 import { useModalCartContext } from "@/context/ModalCartContext";
@@ -23,7 +23,6 @@ const navItems = [
   { id: "categories", label: "Categories", icon: Icon.PiGridFour,     activeIcon: Icon.PiGridFourFill },
   { id: "profile",    label: "Me",         icon: Icon.PiUser,         activeIcon: Icon.PiUserFill,        href: "/my-account" },
   { id: "cart",       label: "Cart",       icon: Icon.PiShoppingCart, activeIcon: Icon.PiShoppingCartFill },
-  { id: "chatbot",    label: "Chat",       icon: Icon.PiChatCircle,   activeIcon: Icon.PiChatCircleFill },
 ];
 
 // ── Shared inner content for each nav tab ────────────────────────────────────
@@ -32,42 +31,27 @@ function NavItemContent({
   item,
   active,
   cartCount,
-  attention,
 }: {
   item: (typeof navItems)[0];
   active: boolean;
   cartCount: number;
-  attention?: { key?: string; motion?: Record<string, unknown>; unreadPing?: boolean };
 }) {
   const IconComponent = active ? item.activeIcon : item.icon;
   const isCart = item.id === "cart";
 
   return (
-    <div className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors ${
+    <div className={`flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-xl transition-colors ${
       active ? "text-orange-500" : "text-gray-500"
     }`}>
       <div className="relative">
-        {attention ? (
-          <motion.span
-            key={attention.key}
-            {...attention.motion}
-            className="relative inline-flex items-center justify-center"
-          >
-            {attention.unreadPing && (
-              <span className="pointer-events-none absolute -inset-1.5 rounded-full bg-orange-400/50 animate-ping" />
-            )}
-            <IconComponent size={20} />
-          </motion.span>
-        ) : (
-          <IconComponent size={20} />
-        )}
+        <IconComponent size={20} />
         {isCart && cartCount > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[13px] h-[13px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
             {cartCount > 99 ? "99+" : cartCount}
           </span>
         )}
       </div>
-      <span className={`text-[10px] leading-none ${active ? "font-semibold" : "font-medium"}`}>
+      <span className={`text-[9px] sm:text-[10px] leading-none ${active ? "font-semibold" : "font-medium"}`}>
         {item.label}
       </span>
       {/* Active indicator dot */}
@@ -113,73 +97,6 @@ const MobileBottomNav: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Chat tab attention — driven by the widget's open/unread state
-  const prefersReducedMotion = useReducedMotion();
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatUnread, setChatUnread] = useState(0);
-  const [burstDone, setBurstDone] = useState(false);
-  const [nudgeKey, setNudgeKey] = useState(0);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ open: boolean; unread: number }>).detail;
-      setChatOpen(detail.open);
-      setChatUnread(detail.unread);
-    };
-    document.addEventListener("chat-widget-state", handler);
-    return () => document.removeEventListener("chat-widget-state", handler);
-  }, []);
-
-  // One-time intro burst ~1.8s after mount (skipped once chat is opened)
-  useEffect(() => {
-    if (prefersReducedMotion || chatOpen) {
-      setBurstDone(true);
-      return;
-    }
-    const t = setTimeout(() => setBurstDone(true), 1800);
-    return () => clearTimeout(t);
-  }, [prefersReducedMotion, chatOpen]);
-
-  // Periodic gentle nudge every 30s while the chat is closed with no unread
-  useEffect(() => {
-    if (prefersReducedMotion || chatOpen || chatUnread > 0 || !burstDone) return;
-    const id = setInterval(() => setNudgeKey((k) => k + 1), 30000);
-    return () => clearInterval(id);
-  }, [prefersReducedMotion, chatOpen, chatUnread, burstDone]);
-
-  // Priority: unread pulse > intro burst > periodic nudge. Silent when open.
-  const chatAttention = (() => {
-    if (prefersReducedMotion || chatOpen) return undefined;
-    if (chatUnread > 0) {
-      return {
-        unreadPing: true,
-        motion: {
-          animate: { scale: [1, 1.22, 1] },
-          transition: { repeat: Infinity, duration: 1.5, ease: "easeInOut" as const },
-        },
-      };
-    }
-    if (!burstDone) {
-      return {
-        motion: {
-          initial: { scale: 0.7, opacity: 0.5 },
-          animate: { scale: [1, 1.2, 1], opacity: 1 },
-          transition: { duration: 0.9, ease: "easeOut" as const },
-        },
-      };
-    }
-    if (nudgeKey > 0) {
-      return {
-        key: `chat-nudge-${nudgeKey}`,
-        motion: {
-          animate: { x: [0, -3, 3, -3, 3, 0] },
-          transition: { duration: 0.55, ease: "easeInOut" as const },
-        },
-      };
-    }
-    return undefined;
-  })();
-
   useEffect(() => {
     if (!showCategories) return;
     let cancelled = false;
@@ -223,7 +140,6 @@ const MobileBottomNav: React.FC = () => {
     if (id === "search") openModalSearch();
     else if (id === "cart") openModalCart();
     else if (id === "categories") { setShowCategories(true); setActiveCategory(null); }
-    else if (id === "chatbot") document.dispatchEvent(new CustomEvent("toggle-chatbot"));
   };
 
   const handleClose = useCallback(() => {
@@ -515,20 +431,24 @@ const MobileBottomNav: React.FC = () => {
       </AnimatePresence>
 
       {/* ── Bottom Navigation Bar ───────────────────────────────────────────── */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-bottom lg:hidden">
-        <div className="flex items-center justify-around px-1 py-1">
+      <nav aria-label="Mobile navigation" className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-bottom lg:hidden">
+        <div className="grid grid-cols-4 items-center px-1 py-1">
           {navItems.map((item) => {
             const active = isActive(item) || (item.id === "categories" && showCategories);
 
             return (
-              <div key={item.id} className="flex-1 flex justify-center">
+              <div key={item.id} className="min-w-0 flex justify-center">
                 {item.href ? (
-                  <Link href={item.href}>
-                    <NavItemContent item={item} active={active} cartCount={cartCount} attention={item.id === "chatbot" ? chatAttention : undefined} />
+                  <Link href={item.href} className="w-full min-h-11 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600">
+                    <NavItemContent item={item} active={active} cartCount={cartCount} />
                   </Link>
                 ) : (
-                  <button onClick={() => handleAction(item.id)}>
-                    <NavItemContent item={item} active={active} cartCount={cartCount} attention={item.id === "chatbot" ? chatAttention : undefined} />
+                  <button type="button"
+                    aria-label={item.label}
+                    aria-expanded={item.id === 'categories' ? showCategories : undefined}
+                    className="w-full min-h-11 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600"
+                    onClick={() => handleAction(item.id)}>
+                    <NavItemContent item={item} active={active} cartCount={cartCount} />
                   </button>
                 )}
               </div>

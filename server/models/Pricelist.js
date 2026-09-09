@@ -79,8 +79,8 @@ const pricelistSchema = new Schema({
   tenant:        { type: Schema.Types.ObjectId, ref: 'Tenant', required: false },
 
   // ── Resolution bindings (POS shop/warehouse → pricelist) ───────────────────
-  // `shops` holds string ids: custom posSettings.shops subdoc ids AND the
-  // built-in virtual shop ids 'retail' / 'wholesale'. Empty shops+warehouses
+  // `shops` holds string ids: custom posSettings.shops subdoc ids and the
+  // included Retail virtual shop id 'retail'. Empty shops+warehouses
   // with isSelectable=true means "unscoped" — offered everywhere as a manual
   // option but never auto-resolved.
   shops:         [{ type: String }],

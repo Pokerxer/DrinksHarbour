@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { routes } from '@/config/routes';
+import POSLocationSelect from './components/pos-location-select';
 import {
   PiCaretDown,
   PiPlus,
@@ -159,15 +160,6 @@ const BUILT_IN: POSShop[] = [
     active: true,
     createdAt: '',
   },
-  {
-    _id: 'wholesale',
-    name: 'WHOLESALE',
-    mode: 'wholesale',
-    color: '#0ea5e9',
-    description: 'Bulk & account orders',
-    active: true,
-    createdAt: '',
-  },
 ];
 
 // ── New Shop Modal ────────────────────────────────────────────────────────────
@@ -184,6 +176,7 @@ function NewShopModal({
   const [mode, setMode] = useState<'retail' | 'wholesale'>('retail');
   const [color, setColor] = useState('#b20202');
   const [desc, setDesc] = useState('');
+  const [warehouse, setWarehouse] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -206,6 +199,10 @@ function NewShopModal({
       setError('Shop name is required');
       return;
     }
+    if (!warehouse) {
+      setError('Select a stock location');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -214,6 +211,7 @@ function NewShopModal({
         mode,
         color,
         description: desc,
+        warehouse,
       });
       onCreated(shop);
       onClose();
@@ -244,6 +242,7 @@ function NewShopModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5 p-6">
+          <POSLocationSelect token={token} value={warehouse} onChange={setWarehouse} />
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
               Shop Name
@@ -330,7 +329,7 @@ function NewShopModal({
             </button>
             <button
               type="submit"
-              disabled={saving || !name.trim()}
+              disabled={saving || !name.trim() || !warehouse}
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#9a0101] disabled:opacity-50"
             >
               {saving ? 'Creating…' : 'Create Shop'}

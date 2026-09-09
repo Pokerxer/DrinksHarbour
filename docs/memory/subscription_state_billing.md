@@ -9,6 +9,17 @@ type: memory
 Canonical rules: `server/config/README-plan-entitlements.md`. This file is the
 pointer + the gotchas that do not belong in the rules document.
 
+## Configured POS terminals (2026-09-09)
+
+Retail is the one included terminal. Any additional terminal, including a
+Wholesale terminal, is a `posSettings.shops` row. Billing labels the total as
+POS terminals: usage = one Retail + created POS rows; allowance = plan-specific
+included capacity + eligible purchased add-ons. Growth
+includes 2 POS/1 warehouse, Pro 2/2, Enterprise 3/3, and Venue 5/3. Earlier
+assertions about legacy root-level shops were unverified and the fallback has
+been removed. See
+`docs/superpowers/specs/RESUME-location-pos.md` for the location binding contract.
+
 ## The one decision that shapes everything (2026-09-06)
 
 **`past_due` is read-only, not a lockout.** `requireTenant` admits

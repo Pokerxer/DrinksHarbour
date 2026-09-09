@@ -272,10 +272,12 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
               activeShop?._id,
               warehouseId || undefined
             )
-          : await getProductsWithLocalStock();
+          : await getProductsWithLocalStock(token, activeShop?._id);
         setAllProducts((products || []) as unknown as POSProduct[]);
         setGlobalProducts((products || []) as unknown as POSProduct[]);
       } catch (err: unknown) {
+        setAllProducts([]);
+        setGlobalProducts([]);
         setError(
           err instanceof Error ? err.message : 'Failed to load products'
         );

@@ -22,6 +22,10 @@ function nextOfflineReceipt(terminal: string): string {
 }
 
 // ── Products ──────────────────────────────────────────────────────────────────
+async function catalogueScope(token: string, shopId?: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return `${Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')}:${shopId || 'default'}`;
+}
 
 function recordToPOSProduct(r: ProductRecord): any {
   return {
@@ -46,10 +50,10 @@ export async function getProducts(
   shopId?: string,
   warehouseId?: string
 ): Promise<any[]> {
+  const scope = await catalogueScope(token, shopId);
   if (isOnline()) {
     const data = await posApi.getProducts(token, {
       ...(shopId ? { shopId } : {}),
-      ...(warehouseId ? { warehouseId } : {}),
     });
     const products: any[] = data?.products ?? [];
     // The grid searches this array and nothing else, so a clipped catalogue
@@ -63,6 +67,7 @@ export async function getProducts(
     }
     // Flatten to Dexie records for offline use, mapping nested POSProduct fields
     const records: ProductRecord[] = products.map((p: any) => ({
+      catalogueScope: scope,
       _id: p._id,
       name: p.product?.name ?? p.name ?? '',
       sku: p.sku,
@@ -85,7 +90,12 @@ export async function getProducts(
       activeBundles: p.activeBundles,
       updatedAt: p.updatedAt ?? new Date().toISOString(),
     }));
-    await posDb.products.bulkPut(records);
+    // Replace the cached catalogue atomically. bulkPut alone retained products
+    // removed from this location, making them reappear when offline.
+    await posDb.transaction('rw', posDb.products, async () => {
+      await posDb.products.clear();
+      await posDb.products.bulkPut(records);
+    });
 
     // Pull the image bytes into Dexie so the grid survives a network drop. The
     // catalogue record only ever held URLs, and a cached URL is still just a
@@ -97,7 +107,7 @@ export async function getProducts(
     return products; // Return original POSProduct[] for the grid
   }
   const records = await posDb.products.toArray();
-  return records.map(recordToPOSProduct);
+  return records.filter(record => record.catalogueScope === scope).map(recordToPOSProduct);
 }
 
 /**
@@ -135,8 +145,10 @@ async function cacheCatalogueImages(products: any[]): Promise<void> {
   }
 }
 
-export async function getProductsWithLocalStock(): Promise<any[]> {
-  const products = await posDb.products.toArray();
+export async function getProductsWithLocalStock(token?: string, shopId?: string): Promise<any[]> {
+  if (!token) return [];
+  const scope = await catalogueScope(token, shopId);
+  const products = (await posDb.products.toArray()).filter(record => record.catalogueScope === scope);
   const adjusts = await posDb.stockAdjust.toArray();
 
   const deltaMap = new Map<string, number>();
@@ -184,10 +196,10 @@ export async function getSessionInfo(
       }
       return null;
     } catch {
-      return posDb.session.get('current') ?? null;
+      return (await posDb.session.get('current')) ?? null;
     }
   }
-  return posDb.session.get('current') ?? null;
+  return (await posDb.session.get('current')) ?? null;
 }
 
 // ── Orders ────────────────────────────────────────────────────────────────────

@@ -253,7 +253,7 @@ function checkAddOnLimit(type, countDocs) {
         const err = new ForbiddenError(
           plan.addOnsAllowed
             ? `You have used all ${allowance} of your ${noun} slots. Add an extra ${noun} add-on to create another.`
-            : `The ${plan.label} plan includes one ${noun}. Upgrade to Pro or above to add more.`
+            : `The ${plan.label} plan includes ${allowance} ${noun}${allowance === 1 ? '' : 's'}. Upgrade to Pro or above to add more.`
         );
         err.code = 'ADD_ON_LIMIT_REACHED';
         err.details = { addOn: type, used: count, allowance, currentPlan: tenant.plan };

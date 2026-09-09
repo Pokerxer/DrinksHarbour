@@ -2,10 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const PHONE = process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2347048004020';
-const PREFILL = encodeURIComponent('Hi DrinksHarbour! I need help with ');
-const WA_URL  = `https://wa.me/${PHONE}?text=${PREFILL}`;
+import { WHATSAPP_URL } from './whatsappLink';
 
 export default function WhatsAppButton() {
   const [showTooltip, setShowTooltip] = useState(false);
@@ -14,7 +11,7 @@ export default function WhatsAppButton() {
   // Stop pulse after first interaction
   const handleClick = () => {
     setPulse(false);
-    window.open(WA_URL, '_blank', 'noopener,noreferrer');
+    window.open(WHATSAPP_URL, '_blank', 'noopener,noreferrer');
   };
 
   // Auto-hide pulse ring after 8 s
@@ -25,8 +22,8 @@ export default function WhatsAppButton() {
 
   return (
     <div
-      // Mobile: sits just above the 60px bottom nav bar. Desktop: sits above the chatbot FAB.
-      className="fixed bottom-[72px] sm:bottom-[88px] right-5 z-[9998] flex flex-col items-end gap-2"
+      // Above card tooltips (50), below share/cart dialogs (60+) and the chatbot.
+      className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 lg:bottom-5 lg:left-5 z-[55] flex flex-col items-start gap-2"
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >

@@ -241,6 +241,7 @@ export interface POSNextOrderCouponConfig {
 }
 
 export interface POSSettings {
+  retailWarehouse?: string | null;
   allowOverselling?: boolean;
   isBarRestaurant?: boolean;
   autoValidateOrder?: boolean;

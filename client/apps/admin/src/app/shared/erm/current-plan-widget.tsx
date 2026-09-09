@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   PiCrownDuotone,
   PiCalendarDuotone,
@@ -36,6 +37,9 @@ function UsageMeter({
           {limit === null ? '∞' : limit.toLocaleString()}
         </span>
       </div>
+      {limit !== null && used > limit && (
+        <p role="status" className="text-xs text-red-600">{used - limit} over your allowance. Review your capacity below.</p>
+      )}
       {limit !== null && (
         <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-700">
           <div
@@ -110,23 +114,29 @@ export default function CurrentPlanWidget({ status }: { status: ErmStatus }) {
           limit={status.usage.staff.limit}
           Icon={PiUsersDuotone}
         />
-        {/* Warehouse and shop limits are the add-on quotas: one free unit plus
-            whatever was bought. Both were enforced server-side with nothing on
-            screen to explain a refusal. */}
+        {/* Usage and allowances come from the same resolver as the write gates. */}
         <UsageMeter
-          label="Warehouses"
+          label="Stock locations"
           used={status.usage.warehouses.used}
           limit={status.usage.warehouses.limit}
           Icon={PiWarehouseDuotone}
         />
         <UsageMeter
-          label="POS shops"
+          label="POS terminals"
           used={status.usage.shops.used}
           limit={status.usage.shops.limit}
           Icon={PiStorefrontDuotone}
         />
       </div>
 
+      <p className="mt-3 text-xs text-gray-500">
+        Retail is the only default POS. Create additional terminals within your allowance,
+        and each POS can use its own selected stock location.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-3 text-xs underline">
+        <a href="/warehouses">Manage stock locations</a>
+        <a href="/settings#point_of_sale">Manage POS terminals</a>
+      </div>
       <div className="mt-4 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">
         {status.revenueModel === 'markup' ? 'Plan commission (your business uses markup): ' : 'Marketplace commission: '}
         <span className="font-semibold">{status.commissionRate}%</span>

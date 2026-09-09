@@ -13,6 +13,8 @@ export interface ErmPlan {
   priceMonthly: number;
   skuLimit: number | null;
   staffLimit: number | null;
+  warehouseLimit: number | null;
+  posLimit: number | null;
   commissionRate: number;
   features: string[];
   addOnsAllowed: boolean;
@@ -23,7 +25,7 @@ export type ErmAddOnType = 'extra_shop' | 'extra_warehouse';
 /**
  * One add-on row as the server reports it.
  *
- * `allowance` is the total the tenant may have (the one free unit plus what
+ * `allowance` is the total the tenant may have (the plan capacity plus what
  * they bought) and `purchased` is only the paid part — showing `purchased`
  * against `used` would read "0 of 0" for a tenant using their free slot.
  */
@@ -34,7 +36,8 @@ export interface ErmAddOn {
   purchased: number;
   pendingCancellation?: number;
   used: number;
-  allowance: number;
+  included?: number | null;
+  allowance: number | null;
 }
 
 export interface ErmStatus {
@@ -91,7 +94,7 @@ export async function renewSubscription(token: string): Promise<void> {
 export async function getErmPlans(): Promise<ErmPlan[]> {
   try {
     const res = await fetch(`${API_URL}/api/erm/plans`, {
-      next: { revalidate: 3600 },
+      cache: 'no-store',
     });
     if (!res.ok) return [];
     return (await res.json() as { data: ErmPlan[] }).data;

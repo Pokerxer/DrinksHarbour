@@ -6,6 +6,7 @@ import { Badge } from 'rizzui';
 import type { ErmPlan } from '@/services/erm.service';
 
 const FEATURE_LABELS: Record<string, string> = {
+  storefront: 'Branded storefront',
   inventory: 'Inventory management',
   orders: 'Order management',
   pos_single: 'Single-location POS',
@@ -100,6 +101,12 @@ export default function PricingCards({
                 {plan.staffLimit === null
                   ? 'Unlimited staff'
                   : `${plan.staffLimit} staff user${plan.staffLimit !== 1 ? 's' : ''}`}
+              </li>
+              <li className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                {plan.warehouseLimit === undefined ? 'Stock location allowance unavailable' : plan.warehouseLimit === null ? 'Unlimited stock locations' : `${plan.warehouseLimit} stock location${plan.warehouseLimit !== 1 ? 's' : ''}`}
+              </li>
+              <li className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                {plan.posLimit === undefined ? 'POS allowance unavailable' : plan.posLimit === null ? 'Unlimited POS terminals' : `${plan.posLimit} POS terminal${plan.posLimit !== 1 ? 's' : ''}`}
               </li>
               {plan.features.map((f) => (
                 <li

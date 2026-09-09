@@ -114,7 +114,12 @@ function fakeTenant(shopsById) {
 }
 
 test('resolveShopWarehouse returns a custom shop\'s bound warehouse', async (t) => {
-  t.mock.method(Warehouse, 'findOne', () => { throw new Error('should not be called'); });
+  t.mock.method(Warehouse, 'findOne', (filter) => {
+    assert.equal(filter.tenant, TENANT_ID);
+    assert.equal(filter._id, 'whA');
+    assert.equal(filter.isActive, true);
+    return { select: () => ({ lean: async () => ({ _id: 'whA' }) }) };
+  });
   const tenant = fakeTenant({ shop1: { warehouse: 'whA' } });
 
   const result = await resolveShopWarehouse(tenant, TENANT_ID, 'shop1');
@@ -122,18 +127,16 @@ test('resolveShopWarehouse returns a custom shop\'s bound warehouse', async (t) 
   assert.strictEqual(result, 'whA');
 });
 
-test('resolveShopWarehouse returns null for an unbound custom shop (aggregate stock)', async (t) => {
+test('resolveShopWarehouse rejects an unbound custom shop', async (t) => {
   t.mock.method(Warehouse, 'findOne', () => { throw new Error('should not be called'); });
   const tenant = fakeTenant({ shop1: { warehouse: null } });
 
-  const result = await resolveShopWarehouse(tenant, TENANT_ID, 'shop1');
-
-  assert.strictEqual(result, null);
+  await assert.rejects(resolveShopWarehouse(tenant, TENANT_ID, 'shop1'), /Select a stock location/);
 });
 
 test('resolveShopWarehouse falls back to the tenant default warehouse for built-in shops', async (t) => {
   t.mock.method(Warehouse, 'findOne', (filter) => {
-    assert.deepStrictEqual(filter, { tenant: TENANT_ID, isDefault: true });
+    assert.deepStrictEqual(filter, { tenant: TENANT_ID, isDefault: true, isActive: true, posEnabled: { $ne: false } });
     return { select: () => ({ lean: async () => ({ _id: 'whDefault' }) }) };
   });
   const tenant = fakeTenant({});
@@ -152,13 +155,11 @@ test('resolveShopWarehouse falls back to the default warehouse for an unrecogniz
   assert.strictEqual(result, 'whDefault');
 });
 
-test('resolveShopWarehouse returns null when no default warehouse is configured', async (t) => {
+test('resolveShopWarehouse rejects a missing default warehouse', async (t) => {
   t.mock.method(Warehouse, 'findOne', () => ({ select: () => ({ lean: async () => null }) }));
   const tenant = fakeTenant({});
 
-  const result = await resolveShopWarehouse(tenant, TENANT_ID, undefined);
-
-  assert.strictEqual(result, null);
+  await assert.rejects(resolveShopWarehouse(tenant, TENANT_ID, undefined), /default stock location/);
 });
 
 test('sellStock returns FEFO batchAllocations when tracksBatch is true', async (t) => {

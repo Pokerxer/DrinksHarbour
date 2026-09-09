@@ -266,10 +266,14 @@ The pricing page sells extra shop **₦12,000/mo** and extra warehouse
 **₦20,000/mo**, *first of each free*. Nothing counted against that before —
 both were unbounded.
 
-Allowance = `1 + (plan.addOnsAllowed ? sum(addOns[type].quantity) : 0)`.
+Warehouse and POS allowances are plan-specific included capacities plus paid
+add-ons. Growth includes 1 warehouse and 2 POS terminals; Pro includes 2 and 2;
+Enterprise includes 2 and 3; Venue includes 3 and 5. Additional Retail or
+Wholesale terminals consume configured slots.
 
-Plans that cannot buy add-ons (`free_trial`, `starter`, `growth`) get the one
-free unit and no more. Enforced by `checkWarehouseLimit` and `checkShopLimit`.
+Plans that cannot buy add-ons (`free_trial`, `starter`, `growth`) get those
+included units and no more. Enforced by `checkWarehouseLimit` and
+`checkShopLimit`.
 
 The arithmetic is `addOnAllowance` in `erm-plans.js` and nowhere else, because
 `GET /api/erm/status` reports the same number the middleware enforces. Two

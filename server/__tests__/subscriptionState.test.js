@@ -83,10 +83,10 @@ test('a missing or non-array addOns reads as zero rather than throwing', () => {
   assert.strictEqual(addOnQuantity(undefined, 'extra_shop'), 0);
 });
 
-test('allowance is one free unit plus what was bought', () => {
+test('allowance includes plan capacity plus paid add-ons', () => {
   const tenant = { plan: 'pro', addOns: [{ type: 'extra_warehouse', quantity: 2 }] };
-  assert.strictEqual(addOnAllowance(tenant, 'extra_warehouse'), 3);
-  assert.strictEqual(addOnAllowance(tenant, 'extra_shop'), 1);
+  assert.strictEqual(addOnAllowance(tenant, 'extra_warehouse'), 4);
+  assert.strictEqual(addOnAllowance(tenant, 'extra_shop'), 2);
 });
 
 test('plans that cannot buy add-ons get the free unit and nothing more', () => {
@@ -98,7 +98,8 @@ test('plans that cannot buy add-ons get the free unit and nothing more', () => {
   }
   for (const plan of ['pro', 'enterprise', 'venue', 'custom']) {
     const tenant = { plan, addOns: [{ type: 'extra_warehouse', quantity: 5 }] };
-    assert.strictEqual(addOnAllowance(tenant, 'extra_warehouse'), 6, plan);
+    const included = plan === 'pro' ? 2 : plan === 'enterprise' ? 3 : plan === 'venue' ? 3 : Infinity;
+    assert.strictEqual(addOnAllowance(tenant, 'extra_warehouse'), included + 5, plan);
   }
 });
 
@@ -112,16 +113,18 @@ const warehouseGate = (tenant, count) => {
     .finally(() => { Warehouse.countDocuments = original; });
 };
 
-test('the free warehouse is allowed and the second is refused', async () => {
+test('the included warehouses are allowed and the next is refused', async () => {
   const tenant = { _id: new mongoose.Types.ObjectId(), plan: 'pro', addOns: [] };
 
   const first = await warehouseGate(tenant, 0);
   assert.strictEqual(first.passed, true);
 
   const second = await warehouseGate(tenant, 1);
-  assert.strictEqual(second.passed, false);
-  assert.strictEqual(second.error.code, 'ADD_ON_LIMIT_REACHED');
-  assert.strictEqual(second.error.details.allowance, 1);
+  assert.strictEqual(second.passed, true);
+  const third = await warehouseGate(tenant, 2);
+  assert.strictEqual(third.passed, false);
+  assert.strictEqual(third.error.code, 'ADD_ON_LIMIT_REACHED');
+  assert.strictEqual(third.error.details.allowance, 2);
 });
 
 test('buying an add-on actually raises the warehouse cap', async () => {
@@ -133,12 +136,14 @@ test('buying an add-on actually raises the warehouse cap', async () => {
     addOns: [{ type: 'extra_warehouse', quantity: 1 }],
   };
 
-  const second = await warehouseGate(tenant, 1);
+  const second = await warehouseGate(tenant, 2);
   assert.strictEqual(second.passed, true, 'the paid-for second warehouse must be allowed');
 
   const third = await warehouseGate(tenant, 2);
-  assert.strictEqual(third.passed, false);
-  assert.strictEqual(third.error.details.allowance, 2);
+  assert.strictEqual(third.passed, true);
+  const fourth = await warehouseGate(tenant, 3);
+  assert.strictEqual(fourth.passed, false);
+  assert.strictEqual(fourth.error.details.allowance, 3);
 });
 
 test('an add-on of the wrong type does not raise the cap', async () => {
@@ -147,9 +152,9 @@ test('an add-on of the wrong type does not raise the cap', async () => {
     plan: 'pro',
     addOns: [{ type: 'extra_shop', quantity: 3 }],
   };
-  const second = await warehouseGate(tenant, 1);
+  const second = await warehouseGate(tenant, 2);
   assert.strictEqual(second.passed, false);
-  assert.strictEqual(second.error.details.allowance, 1);
+  assert.strictEqual(second.error.details.allowance, 2);
 });
 
 test('a starter tenant is told to upgrade, not to buy an add-on', async () => {
@@ -158,7 +163,7 @@ test('a starter tenant is told to upgrade, not to buy an add-on', async () => {
   assert.match(error.message, /upgrade to pro/i);
 });
 
-test('shops count only the active ones, and the add-on raises that cap too', async () => {
+test('shops count all rows, and the add-on raises that cap too', async () => {
   const shops = (n, extra = []) => ({
     _id: new mongoose.Types.ObjectId(),
     plan: 'pro',
@@ -166,21 +171,21 @@ test('shops count only the active ones, and the add-on raises that cap too', asy
     posSettings: { shops: Array.from({ length: n }, () => ({ active: true })) },
   });
 
-  const one = await run(checkShopLimit, { user: tenantUser, tenant: shops(1), method: 'POST' });
-  assert.strictEqual(one.passed, false, 'a second shop needs the add-on');
+  const one = await run(checkShopLimit, { user: tenantUser, tenant: shops(2), method: 'POST' });
+  assert.strictEqual(one.passed, false, 'a third shop needs the add-on');
 
   const paid = await run(checkShopLimit, {
     user: tenantUser,
-    tenant: shops(1, [{ type: 'extra_shop', quantity: 1 }]),
+    tenant: shops(0, [{ type: 'extra_shop', quantity: 1 }]),
     method: 'POST',
   });
   assert.strictEqual(paid.passed, true);
 
-  // A deactivated shop is not occupying a slot.
-  const withClosed = shops(1);
+  // A deactivated shop still occupies a slot.
+  const withClosed = shops(2);
   withClosed.posSettings.shops.push({ active: false });
   const closed = await run(checkShopLimit, { user: tenantUser, tenant: withClosed, method: 'POST' });
-  assert.strictEqual(closed.passed, false, 'still one active shop, still at the cap');
+  assert.strictEqual(closed.passed, false, 'the inactive row still occupies a slot');
 });
 
 test('platform staff are exempt from the add-on quotas', async () => {

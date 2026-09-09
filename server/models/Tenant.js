@@ -464,6 +464,7 @@ const tenantSchema = new Schema(
     // POS Settings
     // ────────────────────────────────────────────────
     posSettings: {
+      retailWarehouse: { type: ObjectId, ref: 'Warehouse', default: null },
       // Allow adding out-of-stock products to cart and processing the order
       allowOverselling: { type: Boolean, default: false },
 
@@ -582,7 +583,7 @@ const tenantSchema = new Schema(
       loyaltyPointsValue:       { type: Number,  default: 1     }, // 1pt = ₦1
       loyaltyMaxRedemptionPct:  { type: Number,  default: 50    }, // cap 50% of item
 
-      // ── POS Shops (named terminals beyond the built-in retail/wholesale) ────────
+      // ── POS Shops (named terminals beyond the included Retail terminal) ───────
       shops: [{
         name:        { type: String, required: true, trim: true },
         mode:        { type: String, enum: ['retail', 'wholesale'], default: 'retail' },

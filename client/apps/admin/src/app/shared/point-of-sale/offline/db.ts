@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 
 export interface ProductRecord {
+  catalogueScope?: string;
   _id: string;
   name: string;
   sku?: string;

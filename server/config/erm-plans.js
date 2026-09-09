@@ -75,6 +75,8 @@ const ERM_PLANS = {
     priceMonthly: 0,
     skuLimit: 50,
     staffLimit: 1,
+    warehouseLimit: 1,
+    posLimit: 1,
     commissionRate: 0.13,
     paystackPlanCode: null,
     features: ['storefront', 'inventory', 'orders', 'pos_single'],
@@ -85,6 +87,8 @@ const ERM_PLANS = {
     priceMonthly: 15000,
     skuLimit: 100,
     staffLimit: 1,
+    warehouseLimit: 1,
+    posLimit: 1,
     commissionRate: 0.13,
     paystackPlanCode: process.env.PAYSTACK_PLAN_STARTER,
     features: ['storefront', 'inventory', 'orders', 'pos_single', 'sales_invoicing'],
@@ -95,6 +99,8 @@ const ERM_PLANS = {
     priceMonthly: 35000,
     skuLimit: 500,
     staffLimit: 3,
+    warehouseLimit: 1,
+    posLimit: 2,
     commissionRate: 0.11,
     paystackPlanCode: process.env.PAYSTACK_PLAN_GROWTH,
     features: ['storefront', 'inventory', 'orders', 'pos_single', 'sales_invoicing', 'crm_basic', 'purchase_orders'],
@@ -105,6 +111,8 @@ const ERM_PLANS = {
     priceMonthly: 65000,
     skuLimit: 2000,
     staffLimit: 10,
+    warehouseLimit: 2,
+    posLimit: 2,
     commissionRate: 0.10,
     paystackPlanCode: process.env.PAYSTACK_PLAN_PRO,
     features: ['storefront', 'inventory', 'orders', 'pos_multi', 'sales_invoicing', 'crm_basic', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access'],
@@ -115,6 +123,8 @@ const ERM_PLANS = {
     priceMonthly: 85000,
     skuLimit: Infinity,
     staffLimit: Infinity,
+    warehouseLimit: 3,
+    posLimit: 3,
     commissionRate: 0.09,
     paystackPlanCode: process.env.PAYSTACK_PLAN_ENTERPRISE,
     features: ['storefront', 'inventory', 'orders', 'pos_multi', 'sales_invoicing', 'crm_advanced', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access', 'custom_integrations', 'priority_support'],
@@ -125,6 +135,8 @@ const ERM_PLANS = {
     priceMonthly: 150000,
     skuLimit: Infinity,
     staffLimit: Infinity,
+    warehouseLimit: 3,
+    posLimit: 5,
     commissionRate: 0.09,
     paystackPlanCode: process.env.PAYSTACK_PLAN_VENUE,
     // pos_multi is required by the comparison table; pos_realtime is the venue
@@ -150,6 +162,8 @@ const ERM_PLANS = {
     priceMonthly: null,
     skuLimit: Infinity,
     staffLimit: Infinity,
+    warehouseLimit: Infinity,
+    posLimit: Infinity,
     commissionRate: 0.09,
     paystackPlanCode: null,
     features: ['storefront', 'inventory', 'orders', 'pos_multi', 'sales_invoicing', 'crm_advanced', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access', 'custom_integrations', 'priority_support'],
@@ -237,13 +251,12 @@ function addOnQuantity(tenant, type) {
 }
 
 /**
- * How many of `type` this tenant may have in total: the one free unit every
- * plan includes, plus whatever it is paying for. Plans without `addOnsAllowed`
- * get the free unit and nothing more, however many rows are on the document.
+ * The plan's included capacity plus purchased add-ons.
  */
 function addOnAllowance(tenant, type) {
   const plan = getPlanConfig(tenant?.plan);
-  return 1 + (plan.addOnsAllowed ? addOnQuantity(tenant, type) : 0);
+  const included = type === 'extra_warehouse' ? plan.warehouseLimit : plan.posLimit;
+  return included + (plan.addOnsAllowed ? addOnQuantity(tenant, type) : 0);
 }
 
 /**
@@ -264,7 +277,8 @@ function addOnAllowance(tenant, type) {
  * gate refuses.
  */
 function countedShops(tenant) {
-  return (tenant?.posSettings?.shops || []).length;
+  // Retail is the only automatically created terminal. Unused slots are capacity.
+  return 1 + (tenant?.posSettings?.shops || []).length;
 }
 
 function getPlanConfig(planKey) {

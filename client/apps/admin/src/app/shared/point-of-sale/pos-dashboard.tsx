@@ -524,15 +524,6 @@ const BUILT_IN_SHOPS: POSShop[] = [
     active: true,
     createdAt: '',
   },
-  {
-    _id: 'wholesale',
-    name: 'WHOLESALE',
-    mode: 'wholesale',
-    color: '#0ea5e9',
-    description: 'Bulk & account-based orders',
-    active: true,
-    createdAt: '',
-  },
 ];
 
 const DEFAULT_TERM: TerminalInfo = {
