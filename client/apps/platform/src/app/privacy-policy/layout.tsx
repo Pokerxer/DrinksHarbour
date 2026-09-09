@@ -5,7 +5,7 @@ const SITE_NAME = "DrinksHarbour";
 const LAST_UPDATED_ISO = "2026-07-12";
 
 const description =
-  "How DrinksHarbour collects, uses, shares, and protects your personal data across our multi-tenant beverage marketplace. NDPA & NDPR compliant, with your rights, cookies, AI processing, and data-security practices explained.";
+  "Learn how DrinksHarbour collects, uses and protects personal data. Read about cookies, data sharing, your privacy rights and how to contact us with a request.";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",

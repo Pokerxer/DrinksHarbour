@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
+import { buildBrandDescription } from '@/lib/brandSeoDescription';
 import EntityBannerOverlay from '@/components/Banner/entity-banner-overlay';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -165,14 +166,14 @@ export async function generateMetadata({
   const url = `${BASE_URL}/brands/${slug}`;
   const title = capTitle(
     brand.metaTitle ||
-      `${brand.name} — Buy ${brand.name} Drinks Online in Nigeria`,
+      `Buy ${brand.name} Online in Nigeria`,
   );
-  const description = (
+  const description = buildBrandDescription(brand.name,
     plainText(brand.metaDescription) ||
     plainText(brand.shortDescription) ||
     plainText(brand.description) ||
-    `Shop authentic ${brand.name} drinks on DrinksHarbour with fast delivery across Nigeria.${brand.tagline ? ` ${brand.tagline}.` : ''}`
-  ).slice(0, 160);
+    ''
+  );
   const ogImage =
     brand.bannerImage?.url ||
     brand.featuredImage?.url ||

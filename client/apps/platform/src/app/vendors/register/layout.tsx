@@ -5,7 +5,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.
 export const metadata: Metadata = {
   title: 'Become a Vendor | Sell on DrinksHarbour',
   description:
-    "List your beverages on Nigeria's premier drinks marketplace. Get a digital storefront, reach thousands of buyers, and manage your business with our ERM tools. Plans from ₦0 to ₦150K/month.",
+    "Sell drinks online with DrinksHarbour. Apply for a tenant storefront, list beverages and explore business tools for inventory, orders and customer management.",
   robots: { index: true, follow: true },
   alternates: {
     canonical: `${BASE_URL}/vendors/register`,

@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -570,6 +571,19 @@ export default async function CategoryPage({
 
   return (
     <div className="min-h-screen bg-gray-100">
+      <SeoContextBlock
+        heading={`Buy ${name} online in Nigeria`}
+        paragraphs={[
+          `Shop ${name} online on DrinksHarbour. Explore authentic bottles, compare brands and prices, and find products available for delivery across Nigeria.`,
+          `Order ${name} for delivery in Abuja and nationwide, with product details and available sizes shown before checkout.`,
+        ]}
+        links={[
+          { href: `/shop?category=${encodeURIComponent(slug)}`, label: `Shop ${name} online` },
+          { href: '/categories', label: 'Browse all drinks categories' },
+          { href: '/brands', label: 'Explore drinks brands' },
+          { href: '/shipping-info', label: 'Check delivery areas and fees' },
+        ]}
+      />
       {jsonLd.map((ld, i) => (
         <script
           key={i}

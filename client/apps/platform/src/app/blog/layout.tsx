@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { getPosts } from './api';
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const BASE_URL  = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
 const SITE_NAME = 'DrinksHarbour';
@@ -95,6 +96,18 @@ export default async function BlogLayout({ children }: { children: React.ReactNo
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(blogJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }} />
+      <SeoContextBlock
+        heading="Drinks guides, recipes and tasting notes"
+        paragraphs={[
+          'Read DrinksHarbour guides about wine, whisky, spirits, beer, cocktails and non-alcoholic drinks in Nigeria.',
+          'Use the articles to compare styles, understand tasting notes and choose what to buy online for your home bar or next occasion.',
+        ]}
+        links={[
+          { href: '/shop', label: 'Buy drinks online' },
+          { href: '/categories', label: 'Browse drinks categories' },
+          { href: '/brands', label: 'Explore drinks brands' },
+        ]}
+      />
       {children}
     </>
   );

@@ -5,6 +5,7 @@ import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
 import LinkableBanner from '@/components/Banner/linkable-banner';
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -475,6 +476,19 @@ export default async function SubCategoryPage({
 
   return (
     <div className="min-h-screen bg-gray-100">
+      <SeoContextBlock
+        heading={`Buy ${name} online in Nigeria`}
+        paragraphs={[
+          `Browse ${name} on DrinksHarbour, including authentic bottles, brands and sizes available to buy online in Nigeria.`,
+          `Compare products and order ${name} for delivery in Abuja and across Nigeria, subject to current stock and delivery options.`,
+        ]}
+        links={[
+          { href: url, label: `Shop ${name} online` },
+          { href: parentHref, label: `Browse ${parentName}` },
+          { href: '/brands', label: 'Explore drinks brands' },
+          { href: '/shipping-info', label: 'Check delivery areas and fees' },
+        ]}
+      />
       {jsonLd.map((ld, i) => (
         <script
           key={i}

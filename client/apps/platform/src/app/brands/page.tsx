@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import BrandsBrowser from './BrandsBrowser';
 import { displayableBrands } from './brand-results';
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
@@ -14,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Shop by Brand — Premium Drinks Brands in Nigeria',
   description:
-    'Browse all premium drinks brands available on DrinksHarbour — Hennessy, Johnnie Walker, Glenfiddich, Moët & Chandon, Ciroc and more. Authentic products delivered across Nigeria.',
+    'Explore drinks brands on DrinksHarbour, including Hennessy, Johnnie Walker and Glenfiddich. Browse bottles and compare prices with delivery across Nigeria.',
   keywords: [
     'drinks brands Nigeria',
     'buy Hennessy Nigeria',
@@ -113,6 +114,18 @@ export default async function BrandsPage() {
 
   return (
     <>
+      <SeoContextBlock
+        heading="Buy drinks from trusted brands in Nigeria"
+        paragraphs={[
+          'Browse drinks brands available on DrinksHarbour, from whisky and champagne houses to wine, gin, vodka, tequila and non-alcoholic beverage brands.',
+          'Open a brand page to explore available bottles, compare prices and buy drinks online with delivery across Nigeria.',
+        ]}
+        links={[
+          { href: '/categories', label: 'Shop by drinks category' },
+          { href: '/shop', label: 'Browse all drinks online' },
+          { href: '/shipping-info', label: 'Check delivery information' },
+        ]}
+      />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
       <BrandsBrowser initialBrands={brands} />

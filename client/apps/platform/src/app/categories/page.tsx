@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
 import Image from 'next/image';
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -255,6 +256,18 @@ export default async function CategoriesPage() {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      <SeoContextBlock
+        heading="Shop drinks by category in Nigeria"
+        paragraphs={[
+          'Buy drinks online in Nigeria by category. Explore whisky, wine, champagne, gin, vodka, tequila, beer, soft drinks and non-alcoholic beverages on DrinksHarbour.',
+          'Compare bottles and prices, then order authentic drinks with delivery across Abuja and nationwide.',
+        ]}
+        links={[
+          { href: '/shop', label: 'Shop all drinks online' },
+          { href: '/brands', label: 'Browse drinks brands' },
+          { href: '/shipping-info', label: 'See delivery areas and fees' },
+        ]}
+      />
       {jsonLd.map((ld, i) => (
         <script
           key={i}

@@ -5,7 +5,7 @@ const SITE_NAME = "DrinksHarbour";
 const LAST_UPDATED_ISO = "2026-07-12";
 
 const description =
-  "The Terms of Service for DrinksHarbour — how our multi-tenant beverage marketplace works, age (18+) and account rules, payments, delivery, refunds, Merchant terms, and your rights under Nigerian law.";
+  "Read DrinksHarbour's terms for using our beverage marketplace, including age requirements, accounts, payments, delivery, refunds and merchant responsibilities.";
 
 export const metadata: Metadata = {
   title: "Terms of Service",

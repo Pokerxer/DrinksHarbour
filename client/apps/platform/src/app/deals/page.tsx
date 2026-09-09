@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import ShopPage, { generateMetadata as shopMetadata } from '../shop/page';
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 /**
  * /deals — the sale collection on a real, crawlable path.
@@ -29,5 +30,16 @@ export default async function DealsPage({
 }: {
   searchParams: Promise<Record<string, string>>;
 }) {
-  return ShopPage({ searchParams: withSale(await searchParams) });
+  return <><SeoContextBlock
+    heading="Drinks deals and discounts in Nigeria"
+    paragraphs={[
+      'Find current deals on wines, spirits, champagne, beer and other drinks when you buy online from DrinksHarbour.',
+      'Browse discounted bottles and order authentic drinks for delivery in Abuja and across Nigeria while stocks last.',
+    ]}
+    links={[
+      { href: '/shop', label: 'Browse all drinks' },
+      { href: '/categories', label: 'Shop by category' },
+      { href: '/shipping-info', label: 'Check delivery information' },
+    ]}
+  />{await ShopPage({ searchParams: withSale(await searchParams) })}</>;
 }

@@ -5,7 +5,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.
 export const metadata: Metadata = {
   title: "Returns & Refunds Policy",
   description:
-    "Learn about DrinksHarbour's hassle-free returns and refunds policy. We stand behind every product we sell.",
+    "Read DrinksHarbour's returns and refunds policy. Learn how to report an issue, provide evidence, arrange a return and follow the refund process for your order.",
   openGraph: {
     url: `${BASE_URL}/returns`,
     title: "Returns & Refunds | DrinksHarbour",

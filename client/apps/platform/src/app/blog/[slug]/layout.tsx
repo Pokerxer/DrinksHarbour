@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { type ContentBlock } from "../data";
 import { getPostBySlug } from "../api";
 import ReadingProgress from "./ReadingProgress";
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 const SITE_NAME = "DrinksHarbour";
@@ -150,6 +151,15 @@ export default async function BlogPostLayout({ children, params }: { children: R
       <link rel="dns-prefetch" href="https://images.unsplash.com" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
+      <SeoContextBlock
+        heading={post.title}
+        paragraphs={[post.excerpt || `Read this DrinksHarbour ${post.category.toLowerCase()} guide and discover practical ideas for choosing and enjoying drinks in Nigeria.`]}
+        links={[
+          { href: '/blog', label: 'Read more drinks guides' },
+          { href: '/shop', label: 'Buy drinks online' },
+          { href: '/categories', label: 'Browse drinks categories' },
+        ]}
+      />
       <ReadingProgress />
       {children}
     </>

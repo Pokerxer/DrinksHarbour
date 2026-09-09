@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
 export const metadata: Metadata = {
   title: "FAQs — Frequently Asked Questions",
   description:
-    "Find answers to common questions about ordering, delivery, payments, returns, and more on DrinksHarbour.",
+    "Find answers to DrinksHarbour questions about placing orders, delivery in Nigeria, payments, returns and accounts before shopping for your next bottle.",
   openGraph: {
     url: `${BASE_URL}/faqs`,
     title: "FAQs | DrinksHarbour",
@@ -77,6 +78,18 @@ export default function FaqsLayout({ children }: { children: React.ReactNode }) 
         dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }}
       />
       {children}
+      <SeoContextBlock
+        heading="Frequently asked questions about buying drinks online"
+        paragraphs={[
+          'Find answers about buying drinks online in Nigeria, including product authenticity, payments, age verification, delivery, returns and order tracking.',
+          'Use the shop to browse wines, spirits, beer and non-alcoholic drinks, then review delivery details before checkout.',
+        ]}
+        links={[
+          { href: '/shop', label: 'Shop drinks online' },
+          { href: '/shipping-info', label: 'View shipping information' },
+          { href: '/returns', label: 'Read returns and refunds' },
+        ]}
+      />
     </>
   );
 }

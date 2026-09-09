@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 const SITE_NAME = "DrinksHarbour";
 
 export const metadata: Metadata = {
-  title: "About DrinksHarbour | Nigeria's Premier Beverage Marketplace",
+  title: { absolute: "About Our Beverage Marketplace | DrinksHarbour" },
   description:
-    "Discover DrinksHarbour — Nigeria's trusted online marketplace for authentic wines, spirits, beers and non-alcoholic drinks. Shop 800+ products, enjoy same-day delivery in Abuja, and buy with confidence from verified vendors.",
+    "Meet DrinksHarbour, the beverage marketplace founded in Abuja. Discover our story, our approach to authentic drinks and how we serve customers across Nigeria.",
   robots: { index: true, follow: true },
   alternates: {
     canonical: `${BASE_URL}/about`,
@@ -48,6 +49,18 @@ export default function AboutLayout({ children }: { children: React.ReactNode })
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(BREADCRUMB_SCHEMA) }} />
       {children}
+      <SeoContextBlock
+        heading="About DrinksHarbour, Nigeria's online beverage marketplace"
+        paragraphs={[
+          'DrinksHarbour is an online marketplace for authentic wines, spirits, beers and non-alcoholic drinks in Nigeria.',
+          'Customers can discover brands, compare bottles and buy drinks online with delivery from Abuja and across the country.',
+        ]}
+        links={[
+          { href: '/shop', label: 'Buy drinks online' },
+          { href: '/brands', label: 'Browse drinks brands' },
+          { href: '/shipping-info', label: 'Learn about delivery' },
+        ]}
+      />
     </>
   );
 }

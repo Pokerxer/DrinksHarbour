@@ -2,8 +2,10 @@ import { cache } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { capSeoTitle } from "@/lib/seoTitle";
+import { normalizeDescription } from "@/lib/seoDescription";
 import { pickDefaultVariant, isDefaultVariantInStock, SHIPPING_DETAILS, MERCHANT_RETURN_POLICY } from "commerce-core";
 import ProductClient from "./ProductClient";
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL  || "https://www.drinksharbour.com";
@@ -156,9 +158,8 @@ function buildTitle(p: any): string {
 function buildDescription(p: any): string {
   // Stored metadata first (admin-entered or AI-generated at import), each capped
   // at 160 chars — stored descriptions can run long and search engines truncate.
-  if (p.metaDescription)  return p.metaDescription.slice(0, 160);
-  if (p.shortDescription) return p.shortDescription.slice(0, 160);
-  if (p.description)      return p.description.slice(0, 160);
+  const stored = p.metaDescription || p.shortDescription || p.description;
+  if (stored) return normalizeDescription(stored, `Buy ${p.name} online in Nigeria.`);
 
   const parts: string[] = [`Buy ${p.name}`];
   if (p.brand?.name)    parts.push(`by ${p.brand.name}`);
@@ -174,7 +175,7 @@ function buildDescription(p: any): string {
   const isSpirit = /whisky|whiskey|rum|gin|vodka|tequila|brandy|cognac|bourbon|mezcal|liqueur|spirit/i.test(p.type ?? "");
   parts.push(isSpirit ? "Order online — delivered to Abuja, Lagos & across Nigeria." : "Fast delivery across Nigeria on DrinksHarbour.");
 
-  return parts.join(" ").slice(0, 160);
+  return normalizeDescription(parts.join(" "), `Buy ${p.name} online in Nigeria.`);
 }
 
 // ─── Keywords builder ─────────────────────────────────────────────────────────
@@ -267,6 +268,16 @@ export default async function ProductPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
         />
       ))}
+      <SeoContextBlock
+        heading={`Buy ${p.name} online in Nigeria`}
+        paragraphs={[normalizeDescription(p.metaDescription || p.shortDescription || p.description || '', `Buy ${p.name} online in Nigeria with product details, available sizes and current pricing on DrinksHarbour.`)]}
+        links={[
+          { href: '/shop', label: 'Browse all drinks online' },
+          { href: '/categories', label: 'Shop by drinks category' },
+          { href: '/brands', label: 'Explore drinks brands' },
+          { href: '/shipping-info', label: 'Check delivery information' },
+        ]}
+      />
       {/* Hand the already-fetched product to the client component so the body —
           description, specs, reviews — is in the server HTML rather than a
           "Loading product details..." spinner. The fetch is deduped with the

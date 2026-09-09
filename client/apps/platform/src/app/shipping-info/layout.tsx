@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
@@ -34,6 +35,18 @@ export default function ShippingInfoLayout({ children }: { children: React.React
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       {children}
+      <SeoContextBlock
+        heading="Drinks delivery across Nigeria"
+        paragraphs={[
+          'DrinksHarbour delivers wine, whisky, champagne, spirits and non-alcoholic beverages from Abuja to customers across Nigeria.',
+          'Review delivery zones, fees, order cutoffs and estimated times before you buy drinks online.',
+        ]}
+        links={[
+          { href: '/shop', label: 'Buy drinks online' },
+          { href: '/categories', label: 'Browse drinks categories' },
+          { href: '/faqs', label: 'Read delivery FAQs' },
+        ]}
+      />
     </>
   );
 }

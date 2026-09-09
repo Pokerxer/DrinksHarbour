@@ -5,7 +5,7 @@ const SITE_NAME = "DrinksHarbour";
 const LAST_UPDATED_ISO = "2026-07-12";
 
 const description =
-  "How DrinksHarbour uses cookies and similar technologies — essential, preference, analytics, and marketing cookies — and how you can manage your consent. NDPA & NDPR aligned.";
+  "Understand the essential, preference, analytics and marketing cookies used by DrinksHarbour, and learn how to manage your choices and withdraw consent.";
 
 export const metadata: Metadata = {
   title: "Cookie Policy",

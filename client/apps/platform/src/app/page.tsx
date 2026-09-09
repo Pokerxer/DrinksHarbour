@@ -1,5 +1,9 @@
 import React from "react";
 import nextDynamic from "next/dynamic";
+import { HOME_TITLE, HOME_DESCRIPTION, homeMetadata } from "./home-seo";
+import MarketplaceIntro from "@/components/Home1/MarketplaceIntro";
+
+export const metadata = homeMetadata;
 
 // Rendered per request, not prerendered at build. `middleware.ts` matches `/`
 // and rewrites request headers, so this page is served dynamically at runtime
@@ -125,9 +129,8 @@ function buildHomeWebPageJsonLd(hasItemList: boolean) {
     "@type": "WebPage",
     "@id": `${BASE_URL}/#webpage`,
     url: `${BASE_URL}/`,
-    name: "Premium Spirits & Beverages Delivered in Nigeria",
-    description:
-      "Shop Nigeria's widest selection of premium spirits, wines, beers, and non-alcoholic drinks. Authentic products, fast delivery, and the best prices.",
+    name: HOME_TITLE,
+    description: HOME_DESCRIPTION,
     isPartOf: { "@id": `${BASE_URL}/#website` },
     about: { "@id": `${BASE_URL}/#organization` },
     primaryImageOfPage: { "@type": "ImageObject", url: `${BASE_URL}/og-default.jpg` },
@@ -176,7 +179,7 @@ export default async function Home() {
       {/* Main Content Area */}
       <div className="min-w-0">
         {/* Primary H1 — hidden from UI, visible to crawlers */}
-        <h1 className="sr-only">Premium Spirits &amp; Beverages Delivered in Nigeria</h1>
+        <h1 className="sr-only">Buy Drinks Online in Nigeria</h1>
 
         {/* Hero Banner — above the fold, loads immediately */}
         <HeroBanner
@@ -186,6 +189,11 @@ export default async function Home() {
           showControls={true}
           showIndicators={true}
         />
+
+        {/* Crawlable/accessibility copy; visually hidden from sighted visitors. */}
+        <div className="sr-only">
+          <MarketplaceIntro />
+        </div>
 
         {/* Flash Sale — promotional, kept lazy (client-fetched) */}
         <LazySection rootMargin="400px">
@@ -228,9 +236,7 @@ export default async function Home() {
 
         {/* Blog — latest articles + category filter, server-seeded */}
         {blogPosts.length > 0 && (
-          <LazySection rootMargin="300px">
-            <BlogSection posts={blogPosts} />
-          </LazySection>
+          <BlogSection posts={blogPosts} />
         )}
 
         {/* Personalized Recommendations — server-seeded (trending) */}

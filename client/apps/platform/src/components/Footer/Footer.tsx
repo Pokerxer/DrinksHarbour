@@ -15,6 +15,8 @@ type FooterLink = { label: string; href: string };
 // Static shop links rendered above the dynamic category shortcuts.
 const SHOP_TOP_LINKS: FooterLink[] = [
   { label: "All Products",   href: "/shop" },
+  { label: "Drinks A–Z",     href: "/catalogue" },
+  { label: "VIP Membership", href: "/vip-signup" },
   { label: "New Arrivals",   href: "/shop?tag=new-arrival" },
   { label: "On Sale",        href: "/deals" },
 ];

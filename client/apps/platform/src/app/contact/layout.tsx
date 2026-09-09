@@ -5,7 +5,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.
 export const metadata: Metadata = {
   title: "Contact Us",
   description:
-    "Get in touch with DrinksHarbour. Reach our support team for questions about orders, delivery, products, and more.",
+    "Contact DrinksHarbour for help with orders, drinks, delivery and your account. Find our support details and send the team a message about your enquiry.",
   openGraph: {
     url: `${BASE_URL}/contact`,
     title: "Contact DrinksHarbour",
