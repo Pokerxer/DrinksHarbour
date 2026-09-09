@@ -140,6 +140,26 @@ async function getProducts(query = {}) {
   return res.body.data;
 }
 
+test('the POS catalogue exposes tenant prices without website sale badges', async (t) => {
+  const product = row(0, 1);
+  Object.assign(product, {
+    baseSellingPrice: 5000, costPrice: 3000,
+    isOnSale: true, saleType: 'fixed', saleDiscountValue: 1000,
+    flashSale: { isActive: true, discountPercentage: 50, remainingQuantity: 10 },
+    sizes: [{ _id: oid(), sellingPrice: 8000, costPrice: 6000, availableStock: product.availableStock }],
+  });
+  product.product.platformDiscount = { type: 'percentage', value: 40 };
+  const s = stub([product]);
+  t.after(s.restore);
+  const { products: [result] } = await getProducts();
+  assert.equal(result.baseSellingPrice, 5000);
+  assert.equal(result.sizes[0].sellingPrice, 8000);
+  assert.equal(result.originalPrice, null);
+  assert.equal(result.sizes[0].originalPrice, null);
+  assert.equal(result.isOnSale, false);
+  assert.equal(result.isFlashSale, false);
+});
+
 test('the POS catalogue is not cut off at 200 rows', async (t) => {
   const s = stub(catalogue(260));
   t.after(s.restore);

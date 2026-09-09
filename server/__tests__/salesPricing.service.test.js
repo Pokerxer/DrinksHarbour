@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const SubProduct = require('../models/SubProduct');
 const Pricelist = require('../models/Pricelist');
 const Tenant = require('../models/Tenant');
-const { computePOSPricing } = require('../controllers/pos.controller');
+const { computeSalesBasePricing } = require('../services/salesBasePricing');
 
 const oid = () => new mongoose.Types.ObjectId();
 
@@ -62,7 +62,7 @@ test('computeAuthoritativeLinePrices recomputes unitPrice from the subproduct pi
   t.mock.method(SubProduct, 'findById', () => chainable(spDoc));
   t.mock.method(Pricelist, 'findOne', () => chainable(pricelistDoc));
 
-  const baseline = computePOSPricing(spDoc, null, tenantDoc).sellingPrice;
+  const baseline = computeSalesBasePricing(spDoc, null, tenantDoc).sellingPrice;
 
   const items = [{ subproduct: subProductId, quantity: 2, unitPrice: 1, priceOverridden: false }];
   const result = await computeAuthoritativeLinePrices(items, { tenantId, pricelistId });

@@ -3,7 +3,7 @@ const SubProduct = require('../models/SubProduct');
 const Size = require('../models/Size');
 const Pricelist = require('../models/Pricelist');
 const Tenant = require('../models/Tenant');
-const { computePOSPricing } = require('../controllers/pos.controller');
+const { computeSalesBasePricing } = require('./salesBasePricing');
 const {
   findMatchingPriceRules,
   applyPriceRules,
@@ -17,7 +17,7 @@ const {
 
 /**
  * The authoritative per-unit pricing for one line: runs the subproduct through
- * the same base pricing pipeline as POS (computePOSPricing), then the
+ * the existing website base pricing pipeline (computeSalesBasePricing), then the
  * tenant's pricelist price rules + same-product bundle rules on top.
  * Percentage/fixed bundle savings fold into the per-unit price (Sales has no
  * separate line-level discount field the way POS's receipt breakdown does).
@@ -34,7 +34,7 @@ async function computeLinePricing({ subProductId, sizeId, quantity, pricelist, t
   if (!sp) return null;
 
   const sizeDoc = sizeId ? await Size.findById(sizeId).lean() : null;
-  const pricing = computePOSPricing(sp, sizeDoc, tenant);
+  const pricing = computeSalesBasePricing(sp, sizeDoc, tenant);
   const cost = pricing.costPrice || 0;
   if (!(pricing.sellingPrice > 0)) {
     return { unitPrice: pricing.sellingPrice, costPrice: cost, originalPrice: pricing.originalPrice };

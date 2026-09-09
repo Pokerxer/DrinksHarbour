@@ -27,7 +27,7 @@ const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
 const { emitToTerminal, emitToKds } = require('../services/pos.realtime');
 const { venueBlocked } = require('../services/posVenue.service');
-const { calcPlatformCostPrice, calcPlatformSellingPrice, resolveRevenueRates, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { resolveRevenueRates } = require('../utils/pricing');
 const {
   findMatchingPriceRules,
   applyPriceRules,
@@ -342,7 +342,7 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Compute the full POS pricing details using the same pipeline as the website cart.
+ * Compute tenant POS prices independently of website markup and promotions.
  * Returns both the selling price and the cost price needed for revenue tracking.
  *
  * @param {object} sp       - SubProduct document (lean, with product populated)
@@ -355,65 +355,18 @@ function computePOSPricing(sp, sizeDoc, tenant) {
   // POS quantity/bulk pricing comes from tenant pricelists (minQuantity rules),
   // not the platform pack trigger — always the normal rates here.
   const { markupPct, commissionPct } = resolveRevenueRates(tenant, 1);
-  const platformMarkupPct = sp.product?.platformMarkup  ?? DEFAULT_PLATFORM_MARKUP;
-
-  const productDiscount = sp.product?.platformDiscount?.value > 0 && sp.product?.platformDiscount?.type
-    ? { value: sp.product.platformDiscount.value, type: sp.product.platformDiscount.type,
-        start: sp.product.platformDiscount.start,  end: sp.product.platformDiscount.end }
-    : null;
-
-  // Size values fall back to subproduct when 0 (0 means "not set")
-  const rawCost    = (sizeDoc?.costPrice    > 0 ? sizeDoc.costPrice    : null) ?? sp.costPrice        ?? 0;
-  const rawSelling = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null) ?? sp.basePriceBeforePricelist ?? sp.baseSellingPrice ?? 0;
-
-  if (rawCost <= 0 && rawSelling <= 0) {
-    return { sellingPrice: 0, costPrice: 0, revenueModel, markupPct, commissionPct };
-  }
-
-  const platformCostPrice    = calcPlatformCostPrice(rawCost, rawSelling, revenueModel, markupPct, commissionPct);
-  let   platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
-  const priceBeforeSale      = platformSellingPrice;
-
-  const now = new Date();
-
-  // ── Flash sale (checked first — takes priority over regular sale) ────────────
-  const fs         = sp.flashSale;
-  const flashStart = fs?.startDate ? new Date(fs.startDate) : null;
-  const flashEnd   = fs?.endDate   ? new Date(fs.endDate)   : null;
-  const flashActive =
-    fs?.isActive === true &&
-    (fs?.discountPercentage ?? 0) > 0 &&
-    (!flashStart || now >= flashStart) &&
-    (!flashEnd   || now <= flashEnd)   &&
-    (fs?.remainingQuantity == null || fs.remainingQuantity > 0);
-
-  if (flashActive) {
-    platformSellingPrice = parseFloat((platformSellingPrice * (1 - fs.discountPercentage / 100)).toFixed(2));
-  } else {
-    // ── Regular sale discount ────────────────────────────────────────────────
-    const saleStart  = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
-    const saleEnd    = sp.saleEndDate   ? new Date(sp.saleEndDate)   : null;
-    const saleActive = sp.isOnSale &&
-      (sp.saleDiscountValue ?? 0) > 0 &&
-      (!saleStart || now >= saleStart) &&
-      (!saleEnd   || now <= saleEnd);
-
-    if (saleActive) {
-      const dtype = sp.saleType || 'percentage';
-      if (dtype === 'percentage' || dtype === 'flash_sale') {
-        platformSellingPrice = parseFloat((platformSellingPrice * (1 - sp.saleDiscountValue / 100)).toFixed(2));
-      } else if (dtype === 'fixed') {
-        platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - sp.saleDiscountValue).toFixed(2)));
-      }
-    }
-  }
+  // Tenant retail prices are independent of marketplace markup and promotions.
+  // Zero on a Size means the price has not been configured.
+  const costPrice = (sizeDoc?.costPrice > 0 ? sizeDoc.costPrice : null) ?? sp.costPrice ?? 0;
+  const sellingPrice = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null)
+    ?? sp.basePriceBeforePricelist ?? sp.baseSellingPrice ?? 0;
 
   return {
-    sellingPrice:       platformSellingPrice,
-    originalPrice:      priceBeforeSale,
-    isOnSale:           platformSellingPrice < priceBeforeSale,
-    isFlashSale:        flashActive,
-    costPrice:          platformCostPrice,
+    sellingPrice,
+    originalPrice: sellingPrice,
+    isOnSale: false,
+    isFlashSale: false,
+    costPrice,
     revenueModel,
     markupPct,
     commissionPct,
@@ -2008,9 +1961,9 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     ].join(' '))
     .populate({
       path:     'product',
-      // platformMarkup and platformDiscount are needed for the pricing pipeline.
+      // Product provides catalogue identity; pricing belongs to the tenant.
       // subCategory is needed by the purchases-analytics "Group By" feature.
-      select:   'name images type brand category subCategory platformMarkup platformDiscount',
+      select:   'name images type brand category subCategory',
       populate: [
         { path: 'brand',       select: '_id name' },
         { path: 'category',    select: '_id name' },
@@ -2055,7 +2008,7 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     }
   }
 
-  // Inject computed platform selling prices so the client never sees raw 0-values
+  // Expose tenant retail prices for the POS catalogue.
   const enriched = subProducts.map((sp) => {
     const basePricing   = computePOSPricing(sp, null, tenant);
     const basePrice     = basePricing.sellingPrice;
@@ -2498,22 +2451,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         batchAllocations: deductedDoc?.batchAllocations || [],
       });
 
-      // ── Flash sale: decrement remainingQuantity (best-effort, non-blocking) ──
-      const fsNow = new Date();
-      const fsDoc = sp.flashSale;
-      const fsApplied =
-        fsDoc?.isActive === true &&
-        (fsDoc?.discountPercentage ?? 0) > 0 &&
-        (!fsDoc.startDate || fsNow >= new Date(fsDoc.startDate)) &&
-        (!fsDoc.endDate   || fsNow <= new Date(fsDoc.endDate))   &&
-        (fsDoc.remainingQuantity == null || fsDoc.remainingQuantity > 0);
-
-      if (fsApplied && fsDoc.remainingQuantity != null) {
-        SubProduct.findOneAndUpdate(
-          { _id: subProductId, 'flashSale.remainingQuantity': { $gte: quantity } },
-          { $inc: { 'flashSale.remainingQuantity': -quantity } }
-        ).catch(() => {});
-      }
+      // Website flash-sale allowances are not consumed by POS purchases.
 
       // ── Apply pricelist price rules sequentially (shared with /sales — pricelistPricing.service) ──
       let appliedPlRuleSnapshot = null;
