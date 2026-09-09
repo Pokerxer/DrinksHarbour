@@ -6,8 +6,7 @@ import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence, Variants, useReducedMotion } from 'framer-motion';
 import { BannerClickLayer } from './banner-link';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+import { API_URL } from '@/lib/api';
 
 interface HeroBannerProps {
   placement?: string;
@@ -15,15 +14,9 @@ interface HeroBannerProps {
   autoPlay?: boolean;
   showControls?: boolean;
   showIndicators?: boolean;
-  /**
-   * Show the built-in demo slides when the placement has no banners.
-   * True on the homepage, where an empty hero would leave a hole above the
-   * fold. Placements that have their own empty state (e.g. the shop hero,
-   * which falls back to its themed gradient frame) pass false and use
-   * `onEmpty` to take over.
-   */
+  /** @deprecated Banners are always sourced from the database. Kept for caller compatibility. */
   useFallback?: boolean;
-  /** Called once when the fetch returns no banners and `useFallback` is false. */
+  /** Called once when the database has no banners for this placement or the request fails. */
   onEmpty?: () => void;
 }
 
@@ -52,43 +45,12 @@ interface BannerData {
   autoplay?: { enabled: boolean; interval?: number };
 }
 
-// Fallback slides shown when the API has no data yet
-const FALLBACK_SLIDES: BannerData[] = [
-  {
-    _id: 'fallback-1',
-    title: 'Premium Spirits, Delivered',
-    subtitle: 'New Arrivals',
-    description: 'Explore our curated selection of world-class whiskeys, wines, and more — straight to your door.',
-    type: 'hero',
-    placement: 'home_hero',
-    ctaText: 'Shop Now',
-    ctaLink: '/shop',
-    ctaStyle: 'primary',
-    backgroundColor: '#1A1A2E',
-    image: { url: '/images/images/product/1000x1000.png', alt: 'DrinksHarbour' },
-  },
-  {
-    _id: 'fallback-2',
-    title: 'Weekend Flash Sale',
-    subtitle: 'Up to 40% Off',
-    description: 'Limited time deals on premium bottles. Stock up before they\'re gone.',
-    type: 'hero',
-    placement: 'home_hero',
-    ctaText: 'View Deals',
-    ctaLink: '/deals',
-    ctaStyle: 'primary',
-    backgroundColor: '#7C1D1D',
-    image: { url: '/images/images/product/1000x1000.png', alt: 'Sale' },
-  },
-];
-
 const HeroBanner: React.FC<HeroBannerProps> = ({
   placement = 'home_hero',
   limit = 5,
   autoPlay = true,
   showControls = true,
   showIndicators = true,
-  useFallback = true,
   onEmpty,
 }) => {
   const [banners, setBanners]       = useState<BannerData[]>([]);
@@ -113,26 +75,23 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
           return;
         }
         // No banners for this placement.
-        if (!useFallback) onEmpty?.();
+        onEmpty?.();
       } catch {
-        if (!useFallback) onEmpty?.();
-        // otherwise use fallbacks
+        onEmpty?.();
       } finally {
         setLoading(false);
       }
     };
     fetchBanners();
-  }, [placement, limit, useFallback, onEmpty]);
+  }, [placement, limit, onEmpty]);
 
-  // With useFallback (homepage), an empty fetch shows the demo slides so the
-  // hero never goes blank. Without it (shop hero), empty means "render nothing"
-  // so the placement can fall back to its own empty state.
-  const needsFallback = banners.length === 0 && useFallback;
-  const slides = needsFallback ? FALLBACK_SLIDES : banners;
+  // The hero is database-backed only. During loading we show a neutral frame;
+  // after loading, an empty or failed request renders no promotional content.
+  const slides = banners;
   const hasSlides = slides.length > 0;
 
-  // `currentIndex` can outlive a shrinking slide array (fallbacks have 2 entries,
-  // a fetch may return 1), so fall back to the first slide rather than crashing.
+  // `currentIndex` can outlive a shrinking slide array, so fall back to the
+  // first database-backed slide rather than crashing.
   // May be undefined only when slides is empty — guarded by `hasSlides` in the
   // render (after every hook) so we never dereference an empty set.
   const slide = slides[currentIndex] ?? slides[0];
@@ -141,9 +100,9 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   // early and none of that JSX runs. Use a safe empty object for those derived
   // values so the (dead in that case) reads can't throw on `undefined`.
   const cur = slide ?? ({} as BannerData);
-  const imgSrc = imgErrors[cur._id] ? '/images/images/product/1000x1000.png' : slide?.image?.url;
+  const imgSrc = imgErrors[cur._id] ? undefined : slide?.image?.url;
   // Animated GIFs must skip the Next image optimizer so they keep animating.
-  const gifSrc = /\.gif(\?|$)/i.test(imgSrc);
+  const gifSrc = imgSrc ? /\.gif(\?|$)/i.test(imgSrc) : false;
 
   // ---- Per-banner display controls --------------------------------------
   // Every hardcoded blur/alpha below is SCALED by these, never replaced. At
@@ -260,7 +219,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   };
 
   const trackClick = async (id: string) => {
-    if (!id || id.startsWith('fallback')) return;
+    if (!id) return;
     try { await fetch(`${API_URL}/api/banners/${id}/click`, { method: 'POST' }); } catch {}
   };
 
@@ -270,7 +229,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   useEffect(() => {
     if (loading) return;
     const id = slides[currentIndex]?._id;
-    if (!id || id.startsWith('fallback') || seenImpressions.current.has(id)) return;
+    if (!id || seenImpressions.current.has(id)) return;
     seenImpressions.current.add(id);
     fetch(`${API_URL}/api/banners/${id}/impression`, { method: 'POST' }).catch(() => {});
   }, [currentIndex, slides, loading]);
@@ -290,7 +249,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     return 'bg-transparent text-white hover:underline';
   };
 
-  // No slides at all (and no fallback): every hook above has run, so this
+  // No database slides: every hook above has run, so this
   // conditional return is safe per the Rules of Hooks. While loading we render
   // a spinner (banners may still arrive); once the fetch settles empty we render
   // nothing so the caller's empty state (e.g. the shop hero's themed gradient
@@ -354,16 +313,18 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               }}
               className="absolute inset-0"
             >
-              <Image
-                src={imgSrc}
-                alt={slide.image.alt || slide.title || ''}
-                fill
-                className={fitContain ? 'object-contain' : 'object-cover'}
-                priority
-                sizes="100vw"
-                unoptimized={gifSrc}
-                onError={() => setImgErrors(p => ({ ...p, [slide._id]: true }))}
-              />
+              {imgSrc && (
+                <Image
+                  src={imgSrc}
+                  alt={slide.image.alt || slide.title || ''}
+                  fill
+                  className={fitContain ? 'object-contain' : 'object-cover'}
+                  priority
+                  sizes="100vw"
+                  unoptimized={gifSrc}
+                  onError={() => setImgErrors(p => ({ ...p, [slide._id]: true }))}
+                />
+              )}
             </motion.div>
             {/* Dark overlay */}
             {(slide.overlayOpacity ?? 0) > 0 && (

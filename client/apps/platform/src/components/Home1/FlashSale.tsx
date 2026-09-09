@@ -7,6 +7,7 @@ import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Navigation } from "swiper/modules";
 import { useModalQuickviewContext } from "@/context/ModalQuickviewContext";
 import { StockStatus } from "@/components/StockStatus";
+import { API_URL } from "@/lib/api";
 import {
   PiLightningFill,
   PiClock,
@@ -102,17 +103,18 @@ function getBestSale(product: SaleProduct) {
     const firstSize = firstAt?.sizes?.[0];
     const pricing = firstSize?.pricing || {};
     const current = pricing.websitePrice || product.priceRange?.min || 0;
-    const original = pricing.originalWebsitePrice || current;
+    const productDiscount = product.discount;
+    const original = pricing.originalWebsitePrice || productDiscount?.originalPrice || current;
     const savings = original - current;
     return {
       currentPrice: current,
       originalPrice: original,
-      hasDiscount: savings > 0 && current > 0,
-      discountPct: savings > 0 ? Math.round((savings / original) * 100) : 0,
-      saleType: firstAt?.saleType || null,
+      hasDiscount: Boolean(productDiscount?.hasDiscount || savings > 0) && current > 0,
+      discountPct: productDiscount?.percentage ?? (savings > 0 ? Math.round((savings / original) * 100) : 0),
+      saleType: firstAt?.saleType || productDiscount?.type || null,
       saleEndDate: firstAt?.saleEndDate || null,
       stock: firstSize?.stock,
-      discountLabel: null,
+      discountLabel: productDiscount?.label || null,
     };
   }
 
@@ -389,42 +391,77 @@ const SkeletonCard = () => (
 
 // ─── FlashSale (main) ─────────────────────────────────────────────────────────
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
-
 const _saleCache = new Map<string, { data: SaleProduct[]; ts: number }>();
 const SALE_CACHE_TTL = 60_000;
+const SALE_QUERY = "sortBy=discount&limit=100&allPages=true";
+const SALE_CACHE_KEY = SALE_QUERY;
+
+function isActiveDateRange(start?: string, end?: string) {
+  const now = Date.now();
+  return (!start || new Date(start).getTime() <= now) && (!end || new Date(end).getTime() >= now);
+}
+
+function isSaleProduct(product: SaleProduct) {
+  if (product.discount?.hasDiscount || (product.discount?.value ?? 0) > 0) return true;
+
+  return (product.availableAt || []).some((at) => {
+    const activeSale = at.isOnSale && isActiveDateRange(at.saleStartDate, at.saleEndDate);
+    const hasSaleValue = (at.saleDiscountValue ?? 0) > 0;
+    const hasDiscountedSize = (at.sizes || []).some((size) => {
+      const discount = size.discount;
+      const current = size.pricing?.websitePrice ?? 0;
+      const original = size.pricing?.originalWebsitePrice ?? current;
+      return discount?.hasDiscount || (discount?.value ?? 0) > 0 || original > current;
+    });
+    return Boolean((activeSale && hasSaleValue) || hasDiscountedSize);
+  });
+}
 
 async function fetchSaleProducts(saleType?: string): Promise<SaleProduct[]> {
   const params = new URLSearchParams({
-    onSale: "true",
-    limit: "20",
-    inStock: "false",
+    sortBy: "discount",
+    // The API applies its on-sale post-filter after pagination. Fetch a wider
+    // window, then walk every page so discounted products later in the
+    // catalogue are not lost.
+    limit: "100",
   });
   if (saleType) params.set("saleType", saleType);
 
-  const cacheKey = params.toString();
-  const cached = _saleCache.get(cacheKey);
+  const cached = _saleCache.get(SALE_CACHE_KEY);
   if (cached && Date.now() - cached.ts < SALE_CACHE_TTL) return cached.data;
 
-  const res = await fetch(`${API_URL}/api/products?${params}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-  let products: SaleProduct[] = [];
-  if (data.success && data.data?.products) products = data.data.products;
-  else if (Array.isArray(data.products)) products = data.products;
-  else if (Array.isArray(data)) products = data;
+  const products: SaleProduct[] = [];
+  let page = 1;
+  let totalPages = 1;
 
-  _saleCache.set(cacheKey, { data: products, ts: Date.now() });
+  do {
+    params.set("page", String(page));
+    const res = await fetch(`${API_URL}/api/products?${params}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const pageProducts = data.success && data.data?.products
+      ? data.data.products
+      : Array.isArray(data.products)
+        ? data.products
+        : Array.isArray(data)
+          ? data
+          : [];
+    products.push(...pageProducts);
+    totalPages = Number(data.data?.pagination?.totalPages || data.pagination?.totalPages || (pageProducts.length === 100 ? page + 1 : page));
+    page += 1;
+  } while (page <= totalPages);
+
+  _saleCache.set(SALE_CACHE_KEY, { data: products, ts: Date.now() });
   return products;
 }
 
 const FlashSale = () => {
   const [products, setProducts] = useState<SaleProduct[]>(() => {
-    const cached = _saleCache.get("onSale=true&limit=20&inStock=false");
+    const cached = _saleCache.get(SALE_CACHE_KEY);
     return cached && Date.now() - cached.ts < SALE_CACHE_TTL ? cached.data.slice(0, 20) : [];
   });
   const [loading, setLoading] = useState(() => {
-    const cached = _saleCache.get("onSale=true&limit=20&inStock=false");
+    const cached = _saleCache.get(SALE_CACHE_KEY);
     return !(cached && Date.now() - cached.ts < SALE_CACHE_TTL);
   });
   const [isFlashSaleSection, setIsFlashSaleSection] = useState(false);
@@ -434,16 +471,11 @@ const FlashSale = () => {
     setLoading(true);
     try {
       const items = await fetchSaleProducts();
-      setIsFlashSaleSection(items.some((p) =>
-        (p.availableAt || []).some((at) => at.saleType === "flash_sale")
+      const withDiscount = items.filter(isSaleProduct).slice(0, 20);
+      setIsFlashSaleSection(withDiscount.some((p) =>
+        (p.availableAt || []).some((at) => at.saleType === "flash_sale" && at.isOnSale)
       ));
-
-      const withDiscount = items.filter((p) =>
-        (p.availableAt || []).some((at) =>
-          (at.sizes || []).some((s) => s.discount?.hasDiscount)
-        )
-      );
-      setProducts(withDiscount.length > 0 ? withDiscount : items);
+      setProducts(withDiscount);
     } catch {
       // silent
     } finally {
