@@ -1,7 +1,7 @@
 import type jsPDF from 'jspdf';
 import type { DocumentModel } from '../doc-model';
 import type { DocumentTemplate } from './registry';
-import { hexToRgb } from '../pdf-theme';
+import { hexToRgb, mix, tint, STATUS_COLORS } from '../pdf-theme';
 export const W = 595.28,
   H = 841.89,
   M = 40,
@@ -43,103 +43,62 @@ function fitted(
   const lines = doc.splitTextToSize(value, width) as string[];
   doc.text(lines.slice(0, 2), x, y, { align });
 }
+/** Original 104pt masthead shared by every colour choice. */
 export function drawHeader(doc: jsPDF, m: DocumentModel, t: DocumentTemplate) {
-  const h = t.headerHeight;
-  const issuer = m.companyName;
-  const contact = [m.head?.email, m.head?.phone].filter(Boolean).join(' | ');
-  const address = [m.head?.address, m.head?.city].filter(Boolean).join(', ');
+  const panel = W * 0.575;
+  const ink = mix(t.accent, '#000000', 0.48);
+  box(doc, 0, 0, W, 104, t.accent);
+  doc.setFillColor(...ink);
+  doc.triangle(panel - 30, 104, panel, 0, panel, 104, 'F');
+  doc.rect(panel, 0, W - panel, 104, 'F');
+  doc.setFillColor(...mix(t.accent, '#000000', 0.3));
+  doc.rect(0, 104, W, 3, 'F');
+  box(doc, 0, 107, W, 1.2, t.secondary);
   doc.setFont(t.font, 'bold');
-  if (t.id === 'classic' || t.id === 'signature') {
-    box(doc, 0, 0, W, h - 4, t.accent);
-    if (t.id === 'classic') {
-      box(doc, W * 0.58, 0, W * 0.42, h - 4, '#620202');
-      doc.setFillColor(...hexToRgb('#620202'));
-      doc.triangle(W * 0.58 - 28, h - 4, W * 0.58, 0, W * 0.58, h - 4, 'F');
-    } else {
-      line(doc, M, 18, CW, t.secondary, 1);
-      box(doc, W - M - 195, 30, 195, 63, t.accent, t.secondary);
-    }
-    color(doc, '#ffffff');
-    fitted(doc, issuer, M, 40, 250, 19);
-    doc.setFont(t.font, 'normal');
-    fitted(doc, address, M, 59, 245, 8);
-    fitted(doc, contact, M, 72, 245, 8);
-    color(doc, t.secondary);
-    fitted(doc, m.department, M, 91, 240, 8);
-    color(doc, '#ffffff');
-    doc.setFont(t.font, 'bold');
-    fitted(doc, m.docTitle.toUpperCase(), W - M - 12, 45, 183, 10, 'right');
-    fitted(doc, m.number, W - M - 12, 68, 183, 17, 'right');
-    fitted(
+  color(doc, '#ffffff');
+  fitted(doc, m.companyName, M, 40, panel - M - 44, 16);
+  doc.setFont(t.font, 'normal');
+  doc.setTextColor(...tint(t.accent, 0.74));
+  fitted(doc, [m.head?.address, m.head?.city].filter(Boolean).join(', '), M, 55, panel - M - 44, 8);
+  fitted(doc, [m.head?.email, m.head?.phone].filter(Boolean).join(' | '), M, 66, panel - M - 44, 8);
+  badge(doc, m.department, M, 75, t.accent, panel - M - 44, false);
+  doc.setFont(t.font, 'bold');
+  doc.setTextColor(...tint(t.accent, 0.65));
+  fitted(doc, m.docTitle.toUpperCase(), W - M, 33, W - panel - 22, 7.4, 'right');
+  color(doc, '#ffffff');
+  fitted(doc, m.number, W - M, 58, W - panel - 22, 18, 'right');
+  if (m.status)
+    badge(
       doc,
-      (m.status ?? '').replaceAll('_', ' ').toUpperCase(),
-      W - M - 12,
-      85,
-      180,
-      8,
-      'right'
-    );
-    line(doc, 0, h - 3, W, t.secondary, 2);
-  } else if (t.id === 'atelier') {
-    color(doc, t.accent);
-    fitted(doc, issuer, W / 2, 38, CW, 25, 'center');
-    doc.setFont(t.font, 'normal');
-    fitted(doc, address, W / 2, 55, CW, 9, 'center');
-    fitted(doc, contact, W / 2, 69, CW, 8, 'center');
-    line(doc, W / 2 - 70, 81, 140, t.secondary);
-    doc.setFont(t.font, 'bold');
-    fitted(doc, m.docTitle, W / 2, 102, CW, 16, 'center');
-    fitted(doc, `${m.number}  |  ${m.status ?? m.department}`, W / 2, 118, CW, 8, 'center');
-  } else if (t.id === 'axis') {
-    box(doc, M, 16, 152, h - 22, t.accent);
-    color(doc, '#ffffff');
-    fitted(doc, m.docTitle.toUpperCase(), M + 12, 40, 126, 10);
-    fitted(doc, m.number, M + 12, 65, 126, 15);
-    fitted(doc, m.status ?? m.department, M + 12, 89, 126, 8);
-    color(doc, t.accent);
-    fitted(doc, issuer, 212, 42, W - M - 212, 22);
-    doc.setFont(t.font, 'normal');
-    fitted(doc, address, 212, 63, W - M - 212, 9);
-    fitted(doc, contact, 212, 80, W - M - 212, 8);
-    line(doc, 212, 100, 70, t.secondary, 4);
-  } else if (t.id === 'blueprint') {
-    box(doc, M, 18, CW * 0.59, 78, '#ffffff', t.accent);
-    box(doc, M + CW * 0.59 + 8, 18, CW * 0.41 - 8, 78, t.wash, t.accent);
-    color(doc, t.accent);
-    fitted(doc, issuer, M + 12, 40, CW * 0.59 - 24, 18);
-    doc.setFont(t.font, 'normal');
-    fitted(doc, address, M + 12, 59, CW * 0.59 - 24, 8);
-    fitted(doc, contact, M + 12, 75, CW * 0.59 - 24, 8);
-    doc.setFont(t.font, 'bold');
-    fitted(doc, m.docTitle, W - M - 12, 38, CW * 0.41 - 30, 11, 'right');
-    fitted(doc, m.number, W - M - 12, 60, CW * 0.41 - 30, 15, 'right');
-    fitted(doc, m.status ?? '', W - M - 12, 79, CW * 0.41 - 30, 8, 'right');
-  } else {
-    if (t.id === 'modern') box(doc, 0, 0, 9, h, t.accent);
-    if (t.id === 'editorial') {
-      line(doc, M, 17, CW, t.accent, 2);
-      line(doc, M, 22, CW, t.accent);
-    }
-    const top = t.id === 'ledger' ? 28 : 45;
-    color(doc, t.accent);
-    fitted(doc, issuer, M, top, CW * 0.54, t.id === 'ledger' ? 15 : 24);
-    doc.setFont(t.font, 'normal');
-    fitted(doc, address, M, top + 16, CW * 0.54, 8);
-    fitted(doc, contact, M, top + 29, CW * 0.54, 8);
-    doc.setFont(t.font, 'bold');
-    fitted(
-      doc,
-      m.docTitle.toUpperCase(),
+      m.status.replaceAll('_', ' '),
       W - M,
-      top,
-      CW * 0.42,
-      t.id === 'modern' ? 18 : 11,
-      'right'
+      70,
+      STATUS_COLORS[m.status] ?? '#6b7280',
+      W - panel - 22,
+      true
     );
-    fitted(doc, m.number, W - M, top + 20, CW * 0.42, 12, 'right');
-    fitted(doc, m.status ?? m.department, W - M, top + 34, CW * 0.42, 8, 'right');
-    line(doc, M, h - 5, CW, t.accent, t.id === 'ledger' ? 1 : 0.6);
-  }
+}
+function badge(
+  doc: jsPDF,
+  label: string,
+  x: number,
+  y: number,
+  accent: string,
+  maxWidth: number,
+  right: boolean
+) {
+  const text = label.toUpperCase();
+  doc.setFontSize(6.4);
+  while (doc.getTextWidth(text) > maxWidth - 16 && doc.getFontSize() > 4)
+    doc.setFontSize(doc.getFontSize() - 0.2);
+  const width = Math.min(maxWidth, doc.getTextWidth(text) + 16);
+  const left = right ? x - width : x;
+  doc.setFillColor(...(right ? tint(accent, 0.88) : mix(accent, '#000000', 0.22)));
+  doc.setDrawColor(...(right ? hexToRgb(accent) : tint(accent, 0.4)));
+  doc.setLineWidth(0.6);
+  doc.roundedRect(left, y, width, 13, 6.5, 6.5, 'FD');
+  doc.setTextColor(...(right ? hexToRgb(accent) : tint(accent, 0.85)));
+  doc.text(text, left + width / 2, y + 8.6, { align: 'center' });
 }
 export function drawFooter(
   doc: jsPDF,
@@ -148,11 +107,28 @@ export function drawFooter(
   page: number,
   total: number
 ) {
-  line(doc, M, H - 35, CW, t.secondary);
+  line(doc, M, H - 35, CW, '#e5e7eb');
+  box(doc, M, H - 36.5, 28, 3, t.accent);
   doc.setFont(t.font, 'normal');
   color(doc, '#666666');
-  fitted(doc, `${m.companyName} | ${m.number}`, M, H - 21, CW - 90, 7);
-  fitted(doc, `${page} / ${total}`, W - M, H - 21, 70, 7, 'right');
+  const issuer = [m.companyName, m.head?.address, m.head?.city, m.head?.email, m.head?.phone]
+    .filter(Boolean)
+    .join(' | ');
+  const generated = new Date().toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+  fitted(doc, issuer, M, H - 21, CW * 0.47, 7);
+  fitted(
+    doc,
+    `${m.number} | Generated ${generated} | Page ${page} of ${total}`,
+    W - M,
+    H - 21,
+    CW * 0.51,
+    7,
+    'right'
+  );
 }
 
 export const CONTINUATION_TOP = 78;

@@ -27,3 +27,14 @@ controls use the shared PDF preview. CSV and thermal receipt formats are unchang
 
 Run the tests from the admin app: `npx --no-install vitest run src/utils/print/`.
 Sample generation writes PDFs to `/tmp/document-template-preview`.
+
+## Original design restoration (2026-09-08)
+
+The user requested the design from before the template system. The reference is
+`3c78f3fc:client/apps/admin/src/utils/print/pdf-render.ts`. All eight IDs now share
+that slanted 104pt masthead, department/status badges, accented rounded party
+cards, individual metadata cards, compact grid, rounded totals and notes panels.
+Only the palettes differ; Classic is the original red/gold. Gallery thumbnails
+and docs/document-templates PDFs must match. Keep Helvetica and common spacing.
+Retain current pagination and tenant-authoritative issuer data; do not restore
+the historical fallback that put a platform address on a tenant's letterhead.

@@ -8,14 +8,18 @@ defaults. Existing Print/PDF actions open a preview with a temporary style picke
 
 | Style | Sample | Character |
 | --- | --- | --- |
-| Classic | [PDF](./classic.pdf) | Red and gold formal masthead |
-| Modern | [PDF](./modern.pdf) | Navy, open spacing, prominent title |
-| Editorial | [PDF](./editorial.pdf) | Serif headings and fine burgundy rules |
-| Ledger | [PDF](./ledger.pdf) | Compact monochrome grid |
-| Signature | [PDF](./signature.pdf) | Green and gold, framed totals |
-| Axis | [PDF](./axis.pdf) | Charcoal reference rail and teal details |
-| Atelier | [PDF](./atelier.pdf) | Centered serif letterhead and terracotta |
-| Blueprint | [PDF](./blueprint.pdf) | Outlined blue modules and numbered party sections |
+| Classic | [PDF](./classic.pdf) | Original red and gold |
+| Modern | [PDF](./modern.pdf) | Navy and blue |
+| Editorial | [PDF](./editorial.pdf) | Burgundy and bronze |
+| Ledger | [PDF](./ledger.pdf) | Charcoal and grey |
+| Signature | [PDF](./signature.pdf) | Green and gold |
+| Axis | [PDF](./axis.pdf) | Charcoal and teal |
+| Atelier | [PDF](./atelier.pdf) | Terracotta and sand |
+| Blueprint | [PDF](./blueprint.pdf) | Blue and slate |
+
+All eight now share the original slanted masthead, status badge, rounded party
+cards, reference cards, compact table, shaded notes and rounded totals panel.
+The historical PDF renderer at commit `3c78f3fc` is the design reference.
 
 These samples contain demonstration data, not tenant records. Printing uses the
 PDF viewer's print button or Open PDF in a new tab. Bulk invoices can be downloaded
@@ -23,8 +27,8 @@ as a single PDF. Thermal receipts and CSV exports keep their current formats.
 
 ## Verification (2026-09-08)
 
-Admin: 1,780 tests passed across 108 files. Server: 2,744 tests passed. All eight
-actual PDF samples visually inspected. Existing unrelated TypeScript errors
-remain elsewhere in the repository; no diagnostics in the template integration.
-The live save/reload browser check awaits a working tenant login because the
-local sign-in page's displayed test credentials were rejected.
+Restoration: 57 print tests passed across eight files. All eight actual PDF samples
+visually inspected against the historical design. TypeScript still reports 454
+existing errors elsewhere; none in the changed template files. Prior integration
+baseline: admin 1,780 tests and server 2,744 tests passed. Live tenant save/reload
+acceptance still awaits valid credentials; this change concerns presentation.

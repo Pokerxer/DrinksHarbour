@@ -7,6 +7,7 @@ import { templateById } from './templates/registry';
 import { drawHeader, drawFooter, color, line, M, W, H, CW, BOTTOM } from './templates/pdf-layout';
 import { drawTable } from './templates/pdf-table';
 import { drawTotals } from './templates/pdf-totals';
+import { drawMeta } from './templates/pdf-meta';
 import { drawParties } from './templates/pdf-parties';
 export { safeText } from './pdf-text';
 
@@ -34,26 +35,33 @@ export function renderDocument(model: DocumentModel, target?: jsPDF): jsPDF {
   // Split text into page-sized chunks; never clip a long terms/notes section.
   const paragraph = (title: string, body: string) => {
     doc.setFont(t.font, 'normal').setFontSize(9);
-    const lines = doc.splitTextToSize(body, CW - 16) as string[];
+    const lines = doc.splitTextToSize(body, CW - 28) as string[];
     let offset = 0;
     do {
       ensure(50);
-      color(doc, t.accent);
-      doc.setFont(t.font, 'bold').setFontSize(8);
-      doc.text(title.toUpperCase() + (offset ? ' (CONTINUED)' : ''), M, y + 10);
-      line(doc, M, y + 16, CW, t.secondary);
-      const count = Math.max(1, Math.floor((BOTTOM - y - 30) / 12));
+      const count = Math.max(1, Math.floor((BOTTOM - y - 38) / 12));
       const chunk = lines.slice(offset, offset + count);
+      const height = 30 + chunk.length * 12;
+      doc.setFillColor(title === 'Amount in words' ? t.wash : '#f9fafb');
+      doc.setDrawColor('#e5e7eb');
+      doc.setLineWidth(0.6);
+      doc.roundedRect(M, y, CW, height, 4, 4, 'FD');
+      doc.setFillColor(title === 'Amount in words' ? t.secondary : t.accent);
+      doc.rect(M + 0.7, y + 4, 2.6, height - 8, 'F');
+      color(doc, '#6b7280');
+      doc.setFont(t.font, 'bold').setFontSize(6.8);
+      doc.text(title.toUpperCase() + (offset ? ' (CONTINUED)' : ''), M + 14, y + 15);
       color(doc, '#374151');
-      doc.setFont(t.font, 'normal').setFontSize(9);
-      doc.text(chunk, M + 8, y + 30);
-      y += 38 + chunk.length * 12;
+      doc.setFont(t.font, 'normal').setFontSize(8.6);
+      doc.text(chunk, M + 14, y + 28, { lineHeightFactor: 1.395 });
+      y += height + 14;
       offset += count;
     } while (offset < lines.length);
   };
   y = drawParties(doc, m, t, y);
   if (m.meta.length) {
     y =
+      drawMeta(doc, m.meta, t, y) ??
       drawTable(
         doc,
         t,
@@ -94,9 +102,9 @@ export function renderDocument(model: DocumentModel, target?: jsPDF): jsPDF {
     for (let i = 0; i < m.signatures.length; i++) {
       const signature = m.signatures[i];
       const x = M + i * width;
-      line(doc, x, y, width - 20, t.secondary);
-      color(doc, t.accent);
-      doc.setFont(t.font, 'bold').setFontSize(8);
+      line(doc, x, y, width - 20, '#cbd5e1');
+      color(doc, '#9ca3af');
+      doc.setFont(t.font, 'bold').setFontSize(6.6);
       doc.text(doc.splitTextToSize(signature.role, width - 20), x, y + 14);
       if (signature.name) {
         doc.setFont(t.font, 'normal');

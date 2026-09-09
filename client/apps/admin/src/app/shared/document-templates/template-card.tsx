@@ -9,8 +9,6 @@ export default function TemplateCard({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const dark = ['classic', 'signature', 'axis'].includes(t.id);
-  const centered = t.id === 'atelier';
   return (
     <button
       type="button"
@@ -24,68 +22,27 @@ export default function TemplateCard({
         aria-hidden="true"
       >
         <rect width="220" height="265" fill="white" />
-        {dark && (
-          <rect
-            x={t.id === 'axis' ? 12 : 0}
-            y={t.id === 'axis' ? 10 : 0}
-            width={t.id === 'axis' ? 68 : 220}
-            height="64"
-            fill={t.accent}
-          />
-        )}
-        {t.id === 'modern' && <rect width="5" height="64" fill={t.accent} />}
-        {t.id === 'blueprint' && (
-          <>
-            <rect
-              x="12"
-              y="10"
-              width="115"
-              height="52"
-              fill="none"
-              stroke={t.accent}
-            />
-            <rect
-              x="131"
-              y="10"
-              width="77"
-              height="52"
-              fill={t.wash}
-              stroke={t.accent}
-            />
-          </>
-        )}
-        {t.id === 'editorial' && (
-          <>
-            <path d="M12 9H208 M12 12H208" stroke={t.accent} />
-          </>
-        )}
-        <text
-          x={centered ? 110 : t.id === 'axis' ? 90 : 18}
-          y="30"
-          textAnchor={centered ? 'middle' : 'start'}
-          fontFamily={
-            t.font === 'times'
-              ? 'Georgia'
-              : t.font === 'courier'
-                ? 'monospace'
-                : 'sans-serif'
-          }
-          fontWeight="bold"
-          fontSize="11"
-          fill={dark && t.id !== 'axis' ? 'white' : t.accent}
-        >
+        <rect width="220" height="64" fill={t.accent} />
+        <path d="M128 0H220V64H117Z" fill="#000" opacity="0.48" />
+        <path d="M0 65H220" stroke={t.secondary} strokeWidth="2" />
+        <text x="14" y="25" fontFamily="sans-serif" fontWeight="bold" fontSize="9" fill="white">
           HARBOUR HOUSE
         </text>
-        <text
-          x={centered ? 110 : 18}
-          y="49"
-          textAnchor={centered ? 'middle' : 'start'}
-          fontSize="6"
-          fill={dark ? 'white' : t.accent}
-        >
-          QUOTATION · 0042
+        <path d="M14 34H90 M14 40H81" stroke="white" opacity="0.6" />
+        <rect x="14" y="47" width="44" height="9" rx="4" fill="none" stroke="white" opacity="0.6" />
+        <text x="21" y="53" fontSize="4" fill="white">
+          SALES
         </text>
-        <path d="M12 67H208" stroke={t.secondary} />
+        <text x="205" y="22" textAnchor="end" fontSize="5" fill="white">
+          QUOTATION
+        </text>
+        <text x="205" y="37" textAnchor="end" fontWeight="bold" fontSize="10" fill="white">
+          QT-0042
+        </text>
+        <rect x="177" y="45" width="28" height="9" rx="4" fill="#e5e7eb" />
+        <text x="184" y="51" fontSize="4" fill="#555">
+          DRAFT
+        </text>
         {[12, 116].map((x) => (
           <g key={x}>
             <rect
@@ -93,8 +50,14 @@ export default function TemplateCard({
               y="78"
               width="92"
               height="34"
+              rx="3"
               fill={t.parties === 'cards' ? t.wash : 'white'}
               stroke={t.parties === 'ruled' ? t.accent : 'none'}
+            />
+            <path
+              d={`M${x + 2} 82v26`}
+              stroke={x === 12 ? t.accent : t.secondary}
+              strokeWidth="2"
             />
             <path
               d={`M${x + 5} 87h46 M${x + 5} 95h65 M${x + 5} 103h38`}
@@ -117,7 +80,7 @@ export default function TemplateCard({
               y={139 + i * 12}
               width="196"
               height="12"
-              fill={t.table === 'striped' && i % 2 === 0 ? t.wash : 'white'}
+              fill={i % 2 === 0 ? '#f9fafb' : 'white'}
               stroke={t.table === 'grid' ? '#dddddd' : 'none'}
             />
             <path
@@ -135,21 +98,14 @@ export default function TemplateCard({
           fill={t.totals === 'bar' ? t.accent : 'white'}
           stroke={t.accent}
         />
-        <text
-          x="129"
-          y="225"
-          fontSize="7"
-          fill={t.totals === 'bar' ? 'white' : t.accent}
-        >
+        <text x="129" y="225" fontSize="7" fill={t.totals === 'bar' ? 'white' : t.accent}>
           TOTAL NGN 285,950
         </text>
         <path d="M12 248H208" stroke={t.secondary} />
       </svg>
       <div className="mt-3 flex items-center justify-between">
         <span className="font-semibold text-gray-900">{t.name}</span>
-        <span className="text-xs text-gray-600">
-          {selected ? 'Selected ✓' : 'Choose'}
-        </span>
+        <span className="text-xs text-gray-600">{selected ? 'Selected ✓' : 'Choose'}</span>
       </div>
       <p className="mt-1 text-xs leading-5 text-gray-500">{t.description}</p>
     </button>

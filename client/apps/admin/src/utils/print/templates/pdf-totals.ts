@@ -1,57 +1,71 @@
-import { CONTINUATION_TOP } from './pdf-layout';
 import type jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import type { DocTotalRow } from '../doc-model';
 import type { DocumentTemplate } from './registry';
-import { CW, W, M, H, BOTTOM } from './pdf-layout';
+import { W, M, BOTTOM, CONTINUATION_TOP, box, color } from './pdf-layout';
+
+/** Rounded, right-aligned summary from the original invoice design. */
 export function drawTotals(
   doc: jsPDF,
   rows: DocTotalRow[],
   t: DocumentTemplate,
-  y: number
+  startY: number
 ): number {
-  const width = t.id === 'ledger' ? CW : t.id === 'axis' ? 320 : 290;
-  autoTable(doc, {
-    startY: y,
-    margin: { left: W - M - width, right: M, top: CONTINUATION_TOP, bottom: H - BOTTOM },
-    tableWidth: width,
-    theme: 'plain',
-    rowPageBreak: 'avoid',
-    body: rows.map((row) => [row.label, row.value]),
-    styles: {
-      font: t.font,
-      fontSize: 9,
-      cellPadding: 7,
-      textColor: '#374151',
-      overflow: 'linebreak',
-      lineWidth: t.totals === 'frame' ? 0.5 : 0,
-      lineColor: t.secondary,
-      fillColor: t.totals === 'frame' ? t.wash : '#ffffff',
-    },
-    columnStyles: { 0: { cellWidth: width * 0.5 }, 1: { halign: 'right', cellWidth: width * 0.5 } },
-    didParseCell(data) {
-      const row = rows[data.row.index];
-      if (!row) return;
-      if (row.color) data.cell.styles.textColor = row.color;
-      if (row.variant === 'strong' || row.variant === 'grand') data.cell.styles.fontStyle = 'bold';
-      if (row.variant === 'grand') {
-        data.cell.styles.fontSize = 11;
-        data.cell.styles.cellPadding = 9;
-        if (t.totals === 'bar') {
-          data.cell.styles.fillColor = t.accent;
-          data.cell.styles.textColor = '#ffffff';
-        } else {
-          data.cell.styles.textColor = t.accent;
-          data.cell.styles.lineWidth = {
-            top: 1,
-            bottom: t.totals === 'frame' ? 1 : 0,
-            left: 0,
-            right: 0,
-          };
-          data.cell.styles.lineColor = t.secondary;
-        }
-      }
-    },
+  const width = 268,
+    x = W - M - width;
+  const entries = rows.flatMap((row) => {
+    const grand = row.variant === 'grand';
+    const size = grand ? 10 : 8.6;
+    doc.setFont(t.font, 'bold').setFontSize(size);
+    const label = doc.splitTextToSize(grand ? row.label.toUpperCase() : row.label, 100) as string[];
+    const value = doc.splitTextToSize(row.value, width - 139) as string[];
+    // Break extreme values into continuations so no summary row can exceed a page.
+    const lines = Math.max(label.length, value.length);
+    return Array.from({ length: Math.ceil(lines / 40) }, (_, i) => ({
+      row,
+      size,
+      label: label.slice(i * 40, (i + 1) * 40),
+      value: value.slice(i * 40, (i + 1) * 40),
+      height: Math.max(
+        grand ? 27 : row.variant === 'strong' ? 19 : 16,
+        Math.min(40, lines - i * 40) * 12 + 8
+      ),
+    }));
   });
-  return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+  let y = startY,
+    offset = 0;
+  while (offset < entries.length) {
+    if (y + entries[offset].height + 12 > BOTTOM) {
+      doc.addPage();
+      y = CONTINUATION_TOP;
+    }
+    let end = offset,
+      height = 12;
+    while (end < entries.length && y + height + entries[end].height <= BOTTOM)
+      height += entries[end++].height;
+    doc.setFillColor('#f9fafb');
+    doc.setDrawColor('#e5e7eb');
+    doc.setLineWidth(0.7);
+    doc.roundedRect(x, y, width, height, 4, 4, 'FD');
+    let rowY = y + 6;
+    for (const entry of entries.slice(offset, end)) {
+      const grand = entry.row.variant === 'grand';
+      if (grand) box(doc, x + 0.7, rowY, width - 1.4, entry.height, t.accent);
+      color(doc, grand ? '#ffffff' : (entry.row.color ?? '#6b7280'));
+      doc
+        .setFont(t.font, grand || entry.row.variant === 'strong' ? 'bold' : 'normal')
+        .setFontSize(entry.size);
+      if (entry.label.length)
+        doc.text(entry.label, x + 13, rowY + 13, { lineHeightFactor: 12 / entry.size });
+      doc.setFont(t.font, 'bold');
+      if (entry.value.length)
+        doc.text(entry.value, W - M - 13, rowY + 13, {
+          align: 'right',
+          lineHeightFactor: 12 / entry.size,
+        });
+      rowY += entry.height;
+    }
+    y += height;
+    offset = end;
+  }
+  return y;
 }
