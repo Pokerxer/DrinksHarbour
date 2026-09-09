@@ -84,6 +84,7 @@ interface BannerData {
   description?: string;
   ctaText?: string;
   ctaLink?: string;
+  imageClickable?: boolean;
   ctaStyle?: string;
   linkType?: string;
   backgroundColor?: string;
@@ -289,7 +290,8 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
   const trackClick = useCallback(async () => {
     try {
       await fetch(`${API_URL}/api/banners/${banner._id}/click`, {
-        method: 'POST'
+        method: 'POST',
+        keepalive: true
       });
     } catch {}
   }, [banner._id]);
@@ -743,6 +745,19 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
                   style={{
                     backgroundColor: `rgba(0,0,0,${Math.min(overlay, 0.35)})`
                   }}
+                />
+              )}
+              {banner.ctaLink && banner.imageClickable !== false && (
+                <Link
+                  href={banner.ctaLink}
+                  aria-label={banner.ctaText || banner.image.alt || banner.title || 'Explore promotion'}
+                  target={banner.linkType === 'external' ? '_blank' : undefined}
+                  rel={banner.linkType === 'external' ? 'noopener noreferrer' : undefined}
+                  onClick={() => {
+                    void trackClick();
+                    onClose();
+                  }}
+                  className="absolute inset-0 z-[1] rounded-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-orange-500"
                 />
               )}
               {/* Keep badges above the contained artwork without changing its crop. */}
