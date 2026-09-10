@@ -293,7 +293,9 @@ router.post(
 router.post(
   '/refresh-token',
   refreshTokenLimiter,
-  [body('refreshToken').notEmpty().withMessage('Refresh token is required')],
+  // Browser sessions send the refresh token in the httpOnly dh_refresh cookie;
+  // older API clients may still send it in the request body.
+  [body('refreshToken').optional().isString().withMessage('Refresh token must be a string')],
   validate,
   userController.refreshAuthToken
 );

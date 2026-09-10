@@ -197,7 +197,7 @@ export default async function Home() {
 
         {/* Flash Sale — promotional, kept lazy (client-fetched) */}
         <LazySection rootMargin="400px">
-          <FlashSale />
+          <FlashSale initialProducts={featuredDeals} />
         </LazySection>
 
         {/* Hot Deals — server-seeded so the grid ships in the raw HTML */}

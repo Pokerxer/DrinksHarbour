@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, memo } from "react";
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Swiper, SwiperSlide } from "swiper/react";
@@ -395,6 +395,7 @@ const _saleCache = new Map<string, { data: SaleProduct[]; ts: number }>();
 const SALE_CACHE_TTL = 60_000;
 const SALE_QUERY = "sortBy=discount&limit=100&allPages=true";
 const SALE_CACHE_KEY = SALE_QUERY;
+const FLASH_SALE_HREF = "/deals";
 
 function isActiveDateRange(start?: string, end?: string) {
   const now = Date.now();
@@ -430,45 +431,59 @@ async function fetchSaleProducts(saleType?: string): Promise<SaleProduct[]> {
   const cached = _saleCache.get(SALE_CACHE_KEY);
   if (cached && Date.now() - cached.ts < SALE_CACHE_TTL) return cached.data;
 
-  const products: SaleProduct[] = [];
-  let page = 1;
-  let totalPages = 1;
-
-  do {
-    params.set("page", String(page));
-    const res = await fetch(`${API_URL}/api/products?${params}`, { cache: "no-store" });
+  const fetchPage = async (page: number) => {
+    const pageParams = new URLSearchParams(params);
+    pageParams.set("page", String(page));
+    const res = await fetch(`${API_URL}/api/products?${pageParams}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const pageProducts = data.success && data.data?.products
+    const products = data.success && data.data?.products
       ? data.data.products
       : Array.isArray(data.products)
         ? data.products
         : Array.isArray(data)
           ? data
           : [];
-    products.push(...pageProducts);
-    totalPages = Number(data.data?.pagination?.totalPages || data.pagination?.totalPages || (pageProducts.length === 100 ? page + 1 : page));
-    page += 1;
-  } while (page <= totalPages);
+    const totalPages = Number(data.data?.pagination?.totalPages || data.pagination?.totalPages || (products.length === 100 ? page + 1 : page));
+    return { products, totalPages };
+  };
+
+  // Fetch page one first to learn the catalogue size, then request the
+  // remaining pages concurrently. This still checks every product while
+  // avoiding a full network waterfall.
+  const firstPage = await fetchPage(1);
+  const remainingPages = await Promise.all(
+    Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) => fetchPage(index + 2)),
+  );
+  const products = [firstPage, ...remainingPages].flatMap((pageResult) => pageResult.products);
 
   _saleCache.set(SALE_CACHE_KEY, { data: products, ts: Date.now() });
   return products;
 }
 
-const FlashSale = () => {
+interface FlashSaleProps {
+  initialProducts?: SaleProduct[];
+}
+
+const FlashSale = ({ initialProducts = [] }: FlashSaleProps) => {
+  const seededProducts = useMemo(() => initialProducts.filter(isSaleProduct).slice(0, 20), [initialProducts]);
   const [products, setProducts] = useState<SaleProduct[]>(() => {
     const cached = _saleCache.get(SALE_CACHE_KEY);
-    return cached && Date.now() - cached.ts < SALE_CACHE_TTL ? cached.data.slice(0, 20) : [];
+    return cached && Date.now() - cached.ts < SALE_CACHE_TTL ? cached.data.filter(isSaleProduct).slice(0, 20) : seededProducts;
   });
   const [loading, setLoading] = useState(() => {
     const cached = _saleCache.get(SALE_CACHE_KEY);
-    return !(cached && Date.now() - cached.ts < SALE_CACHE_TTL);
+    return !(cached && Date.now() - cached.ts < SALE_CACHE_TTL) && seededProducts.length === 0;
   });
-  const [isFlashSaleSection, setIsFlashSaleSection] = useState(false);
+  const [isFlashSaleSection, setIsFlashSaleSection] = useState(() => seededProducts.some((p) =>
+    (p.availableAt || []).some((at) => at.saleType === "flash_sale" && at.isOnSale)
+  ));
   const { openQuickview } = useModalQuickviewContext() || {};
 
   const load = useCallback(async () => {
-    setLoading(true);
+    // Seeded deals are already available from the homepage server request.
+    // Refresh them in the background without replacing them with a skeleton.
+    setLoading(seededProducts.length === 0);
     try {
       const items = await fetchSaleProducts();
       const withDiscount = items.filter(isSaleProduct).slice(0, 20);
@@ -481,7 +496,7 @@ const FlashSale = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [seededProducts.length]);
 
   useEffect(() => {
     load();
@@ -550,7 +565,8 @@ const FlashSale = () => {
               <CountdownTimer endTime={saleEndTime} onExpire={load} />
             </div>
             <Link
-              href="/deals"
+              href={FLASH_SALE_HREF}
+              onClick={(event) => event.stopPropagation()}
               className="hidden sm:flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-600 rounded-xl text-xs font-black hover:bg-orange-50 motion-safe:active:scale-95 transition-all shadow-sm"
             >
               View All <PiArrowRight size={13} />
@@ -584,7 +600,8 @@ const FlashSale = () => {
         {/* ── Mobile "View All" ── */}
         <div className="text-center mt-3 sm:hidden">
           <Link
-            href="/deals"
+            href={FLASH_SALE_HREF}
+            onClick={(event) => event.stopPropagation()}
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-bold rounded-xl transition-colors"
           >
             View All {products.length}+ Deals <PiArrowRight size={14} />

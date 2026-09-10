@@ -52,7 +52,7 @@ const CATEGORIES: { key: string; icon: React.ElementType; label: string }[] = [
 
 function BlogPostCard({ post }: { post: Post }) {
   return (
-    <article className="group bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg hover:border-red-100 transition-all duration-300 flex flex-col">
+    <article className="group relative bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg hover:border-red-100 transition-all duration-300 flex flex-col">
       {/* Image */}
       <div className="relative overflow-hidden h-52 sm:h-56">
         <BlogImage

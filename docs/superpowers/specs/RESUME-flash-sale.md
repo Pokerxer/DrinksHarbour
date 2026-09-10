@@ -15,6 +15,8 @@ updated: 2026-09-09
 - Preserved the existing card, countdown, carousel, quick-view, and `/deals` behavior.
 - Increased the source query window from 20 to 100 because the API applies its on-sale filter after pagination; the UI still caps the rendered carousel at 20 products.
 - Changed the loader to walk every public catalogue page (`limit=100`) before filtering promotions locally, so the section no longer depends on the API's post-pagination sale filter.
+- Fetches page one first and loads remaining catalogue pages concurrently, while homepage server-fetched deals render immediately as a seed during the background refresh.
+- Scoped the homepage blog card's full-card link overlay to its own positioned article so blog URLs cannot intercept Flash Sale controls.
 
 ## Verification
 
