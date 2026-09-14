@@ -218,6 +218,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/careers`,                     changeFrequency: "weekly",  priority: 0.4 },
     { url: `${BASE_URL}/returns`,                     changeFrequency: "monthly", priority: 0.4 },
     { url: `${BASE_URL}/shipping-info`,               changeFrequency: "monthly", priority: 0.4 },
+    { url: `${BASE_URL}/delivery/abuja`,              changeFrequency: "monthly", priority: 0.7 },
+    { url: `${BASE_URL}/delivery/lagos`,              changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE_URL}/sustainability`,              changeFrequency: "monthly", priority: 0.4 },
     { url: `${BASE_URL}/brands`,                      changeFrequency: "weekly",  priority: 0.5 },
     { url: `${BASE_URL}/categories`,                  changeFrequency: "weekly",  priority: 0.5 },

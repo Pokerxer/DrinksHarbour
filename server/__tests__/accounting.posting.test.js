@@ -60,3 +60,24 @@ test('builders registry covers every postable source', () => {
     'vendor_return',
   ]);
 });
+
+test('bank-paid and partially paid sales separate tender from receivables', () => {
+  const bank = linesForSalesOrder({ total: 100, paymentStatus: 'paid', paymentMethod: 'bank_transfer' });
+  assert.equal(bank[0].account, '1100');
+  const partial = linesForSalesOrder({ total: 100, amountPaid: 40, paymentStatus: 'partial', paymentMethod: 'cash' });
+  assert.ok(partial.some(l => l.account === '1000' && l.debit === 40));
+  assert.ok(partial.some(l => l.account === '1300' && l.debit === 60));
+  assert.ok(isBalanced(partial));
+});
+
+test('product vendor bills capitalize stock rather than duplicate operating expense', () => {
+  const lines = linesForVendorBill({ subtotal: 100, taxAmount: 0, purchaseOrder: 'po', items: [{ subProductId: 'sp', amount: 100 }] });
+  assert.equal(lines[0].account, '1200');
+});
+
+test('mixed vendor bills split stock purchases from operating expenses', () => {
+  const lines = linesForVendorBill({ subtotal: 120, taxAmount: 9, billNumber: 'B1', items: [{ subProductId: 'stock', amount: 100 }, { amount: 20 }] });
+  assert.equal(lines.find(l => l.account === '1200').debit, 100);
+  assert.equal(lines.find(l => l.account === '6000').debit, 20);
+  assert.ok(isBalanced(lines));
+});

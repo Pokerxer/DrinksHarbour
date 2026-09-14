@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, memo } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   PiWine,
@@ -19,11 +19,7 @@ import {
   PiCalendarCheck,
 } from 'react-icons/pi';
 
-interface BenefitStat {
-  value: number;
-  suffix: string;
-  label: string;
-}
+interface BenefitStat { label: string; }
 
 interface BenefitItem {
   icon: React.ReactNode;
@@ -41,43 +37,6 @@ interface BenefitProps {
   className?: string;
 }
 
-// ─── Counter ──────────────────────────────────────────────────────────────────
-
-const AnimatedCounter = memo(function AnimatedCounter({ value, suffix }: { value: number; suffix: string }) {
-  const [count, setCount] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-  const [hasAnimated, setHasAnimated] = useState(false);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !hasAnimated) {
-          setHasAnimated(true);
-          let start = 0;
-          const duration = 2000;
-          const increment = value / (duration / 16);
-          const timer = setInterval(() => {
-            if (document.hidden) return;
-            start += increment;
-            if (start >= value) {
-              setCount(value);
-              clearInterval(timer);
-            } else {
-              setCount(Math.floor(start));
-            }
-          }, 16);
-        }
-      },
-      { threshold: 0.5 }
-    );
-
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [value, hasAnimated]);
-
-  return <span ref={ref}>{count}{suffix}</span>;
-});
-
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
 const benefits: BenefitItem[] = [
@@ -90,7 +49,7 @@ const benefits: BenefitItem[] = [
     bgColor: 'bg-red-50',
     borderColor: 'border-red-200',
     hoverGradient: 'from-red-500/10',
-    stats: { value: 500, suffix: '+', label: 'Premium Brands' }
+    stats: { label: 'Curated catalog' }
   },
   {
     icon: <PiTruck size={36} />,
@@ -101,7 +60,7 @@ const benefits: BenefitItem[] = [
     bgColor: 'bg-blue-50',
     borderColor: 'border-blue-200',
     hoverGradient: 'from-blue-500/10',
-    stats: { value: 30, suffix: 'min', label: 'Avg. Delivery' }
+    stats: { label: 'Same-day FCT delivery' }
   },
   {
     icon: <PiShieldCheck size={36} />,
@@ -112,7 +71,7 @@ const benefits: BenefitItem[] = [
     bgColor: 'bg-emerald-50',
     borderColor: 'border-emerald-200',
     hoverGradient: 'from-emerald-500/10',
-    stats: { value: 100, suffix: '%', label: 'Compliant' }
+    stats: { label: '18+ required' }
   },
   {
     icon: <PiMedal size={36} />,
@@ -123,7 +82,7 @@ const benefits: BenefitItem[] = [
     bgColor: 'bg-amber-50',
     borderColor: 'border-amber-200',
     hoverGradient: 'from-amber-500/10',
-    stats: { value: 50, suffix: 'K+', label: 'Happy Customers' }
+    stats: { label: 'Authenticity checked' }
   }
 ];
 
@@ -275,10 +234,7 @@ const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
                     <div className={`flex items-baseline gap-1 transition-opacity duration-300 ${benefit.color} ${
                       hoveredIndex === index ? 'opacity-100' : 'opacity-70'
                     }`}>
-                      <span className="text-3xl font-black">
-                        <AnimatedCounter value={benefit.stats.value} suffix={benefit.stats.suffix} />
-                      </span>
-                      <span className="text-xs font-medium opacity-80 ml-1">
+                      <span className="text-sm md:text-base font-bold">
                         {benefit.stats.label}
                       </span>
                     </div>

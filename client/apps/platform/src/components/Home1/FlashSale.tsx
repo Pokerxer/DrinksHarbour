@@ -463,13 +463,24 @@ async function fetchSaleProducts(saleType?: string): Promise<SaleProduct[]> {
 
 interface FlashSaleProps {
   initialProducts?: SaleProduct[];
+  /** When true, render only currently active flash-sale offers. */
+  flashOnly?: boolean;
 }
 
-const FlashSale = ({ initialProducts = [] }: FlashSaleProps) => {
-  const seededProducts = useMemo(() => initialProducts.filter(isSaleProduct).slice(0, 20), [initialProducts]);
+const isActiveFlashSale = (product: SaleProduct) =>
+  (product.availableAt || []).some((at) =>
+    at.saleType === "flash_sale" && at.isOnSale && isActiveDateRange(at.saleStartDate, at.saleEndDate)
+  );
+
+const FlashSale = ({ initialProducts = [], flashOnly = false }: FlashSaleProps) => {
+  const filterProducts = useCallback((products: SaleProduct[]) => {
+    const eligible = products.filter(isSaleProduct);
+    return (flashOnly ? eligible.filter(isActiveFlashSale) : eligible).slice(0, 20);
+  }, [flashOnly]);
+  const seededProducts = useMemo(() => filterProducts(initialProducts), [filterProducts, initialProducts]);
   const [products, setProducts] = useState<SaleProduct[]>(() => {
     const cached = _saleCache.get(SALE_CACHE_KEY);
-    return cached && Date.now() - cached.ts < SALE_CACHE_TTL ? cached.data.filter(isSaleProduct).slice(0, 20) : seededProducts;
+    return cached && Date.now() - cached.ts < SALE_CACHE_TTL ? filterProducts(cached.data) : seededProducts;
   });
   const [loading, setLoading] = useState(() => {
     const cached = _saleCache.get(SALE_CACHE_KEY);
@@ -486,7 +497,7 @@ const FlashSale = ({ initialProducts = [] }: FlashSaleProps) => {
     setLoading(seededProducts.length === 0);
     try {
       const items = await fetchSaleProducts();
-      const withDiscount = items.filter(isSaleProduct).slice(0, 20);
+      const withDiscount = filterProducts(items);
       setIsFlashSaleSection(withDiscount.some((p) =>
         (p.availableAt || []).some((at) => at.saleType === "flash_sale" && at.isOnSale)
       ));
@@ -496,7 +507,7 @@ const FlashSale = ({ initialProducts = [] }: FlashSaleProps) => {
     } finally {
       setLoading(false);
     }
-  }, [seededProducts.length]);
+  }, [filterProducts, seededProducts.length]);
 
   useEffect(() => {
     load();

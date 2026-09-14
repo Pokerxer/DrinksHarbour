@@ -13,12 +13,18 @@ export default function AccountingPageShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen min-w-0 bg-gray-50">
       <AccountingNavHeader />
-      <main className="mx-auto max-w-7xl px-4 py-6">
-        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
-          {subtitle && <span className="text-xs text-gray-500">{subtitle}</span>}
+      <main className="mx-auto w-full min-w-0 max-w-screen-2xl px-3 py-5 sm:px-6 sm:py-8">
+        <div className="mb-6 border-b border-gray-200 pb-5">
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">
+            {title}
+          </h1>
+          {subtitle && (
+            <span className="mt-2 block max-w-2xl text-sm text-gray-500">
+              {subtitle}
+            </span>
+          )}
         </div>
         {children}
       </main>

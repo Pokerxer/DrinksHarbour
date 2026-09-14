@@ -58,3 +58,23 @@ test('buildFullCatalogContext tags on-sale products with [ON SALE] and does not 
   assert.match(catalog, /Sale Whiskey[^\n]*\[ON SALE\]/);
   assert.ok(!/Regular Gin[^\n]*\[ON SALE\]/.test(catalog), 'non-sale product should not be tagged [ON SALE]');
 });
+
+test('catalog presents equivalent volumes once and retains genuinely different sizes', async (t) => {
+  const tenantId = new mongoose.Types.ObjectId();
+  const productId = new mongoose.Types.ObjectId();
+  const sizes = ['75cl', '750ml', '70cl'].map(size => ({
+    _id: new mongoose.Types.ObjectId(), size, stock: 10, costPrice: 1000, sellingPrice: 1000,
+  }));
+  t.mock.method(Tenant, 'find', () => chainable([{ _id: tenantId, revenueModel: 'markup', markupPercentage: 0 }]));
+  t.mock.method(Product, 'find', () => chainable([{ _id: productId, name: 'Test Gin', slug: 'test-gin' }]));
+  t.mock.method(SubProduct, 'find', () => chainable([{
+    product: productId, tenant: tenantId, costPrice: 1000, baseSellingPrice: 1000,
+    availableStock: 30, sizes: sizes.map(s => s._id),
+  }]));
+  t.mock.method(Size, 'find', () => chainable(sizes));
+  const catalog = await chatbotService.loadCatalog(tenantId);
+  assert.equal(catalog.entries[0].sizes.length, 2);
+  assert.match(catalog.text, /75cl/);
+  assert.match(catalog.text, /70cl/);
+  assert.doesNotMatch(catalog.text, /750ml/);
+});

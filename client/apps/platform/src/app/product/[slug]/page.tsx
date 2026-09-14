@@ -6,6 +6,9 @@ import { normalizeDescription } from "@/lib/seoDescription";
 import { pickDefaultVariant, isDefaultVariantInStock, SHIPPING_DETAILS, MERCHANT_RETURN_POLICY } from "commerce-core";
 import ProductClient from "./ProductClient";
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
+import { jsonLdHtml } from '@/lib/jsonld';
+import OpportunityProductLinks from '@/components/SEO/OpportunityProductLinks';
+import ProductSeoDetails from '@/components/SEO/ProductSeoDetails';
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL  || "https://www.drinksharbour.com";
@@ -145,7 +148,7 @@ function buildTitle(p: any): string {
 
   // Always keep the full product name; only add the "– Buy {Type} Online"
   // purchase-intent suffix when it fits inside the budget.
-  const name = p.name as string;
+  const name = String(p.name || p.title || 'Premium drinks');
   if (p.type) {
     const suffix = `– Buy ${formatType(p.type)} Online`;
     if (`${name} ${suffix}`.length <= budget) return `${name} ${suffix}`;
@@ -265,11 +268,11 @@ export default async function ProductPage({
         <script
           key={i}
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdHtml(schema) }}
         />
       ))}
       <SeoContextBlock
-        heading={`Buy ${p.name} online in Nigeria`}
+        heading={p.seoH1 || `Buy ${p.name} online in Nigeria`}
         paragraphs={[normalizeDescription(p.metaDescription || p.shortDescription || p.description || '', `Buy ${p.name} online in Nigeria with product details, available sizes and current pricing on DrinksHarbour.`)]}
         links={[
           { href: '/shop', label: 'Browse all drinks online' },
@@ -278,6 +281,8 @@ export default async function ProductPage({
           { href: '/shipping-info', label: 'Check delivery information' },
         ]}
       />
+      <OpportunityProductLinks compact />
+      <ProductSeoDetails slug={slug} product={p} />
       {/* Hand the already-fetched product to the client component so the body —
           description, specs, reviews — is in the server HTML rather than a
           "Loading product details..." spinner. The fetch is deduped with the
@@ -299,6 +304,11 @@ function buildSchemas(p: any, slug: string): object[] {
   schemas.push(buildBreadcrumbSchema(p, slug));
 
   return schemas;
+}
+
+function isGtin(value: unknown): value is string {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 8 || digits.length === 12 || digits.length === 13 || digits.length === 14;
 }
 
 function buildProductSchema(p: any, slug: string): object {
@@ -326,10 +336,10 @@ function buildProductSchema(p: any, slug: string): object {
     image:       allImageUrls.length > 0 ? allImageUrls : (p.primaryImage?.url || `${BASE_URL}/images/logo.png`),
     url:         productUrl,
     // Prefer real identifiers over MongoDB _id
-    ...(p.sku     ? { sku:    p.sku }     : { sku: p._id }),
-    ...(p.gtin    ? { gtin:   p.gtin }    : {}),
-    ...(p.barcode ? { gtin13: p.barcode } : {}),
-    ...(p.upc     ? { gtin12: p.upc }     : {}),
+    ...(p.sku     ? { sku:    p.sku }     : {}),
+    ...(isGtin(p.gtin) ? { gtin: p.gtin } : {}),
+    ...(isGtin(p.barcode) ? { gtin13: p.barcode } : {}),
+    ...(isGtin(p.upc) ? { gtin12: p.upc } : {}),
     itemCondition: "https://schema.org/NewCondition",
   };
 

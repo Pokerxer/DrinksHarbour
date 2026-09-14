@@ -57,12 +57,12 @@ const FAQS: FAQ[] = [
   {
     category: 'delivery',
     q: 'Which areas do you deliver to?',
-    a: 'We deliver to all 36 states and the FCT across Nigeria. Same-day delivery is available in Abuja and Lagos. Next-day delivery covers Port Harcourt, Kano, Ibadan, Enugu, and other major cities. Remote areas may take 2–4 business days.',
+    a: 'We deliver to all 36 states and the FCT across Nigeria. Same-day delivery is available in Abuja and the FCT. Nearby states are generally next-day, while other zones use the delivery estimate shown at checkout.',
   },
   {
     category: 'delivery',
     q: 'How long does delivery take?',
-    a: 'Abuja & Lagos: same-day (orders before 12 noon) or next day. Other major cities: 1–2 business days. Remaining states: 2–4 business days. You will receive SMS and email updates at each stage of your delivery.',
+    a: 'Abuja and the FCT: same-day or next-day for orders before the stated cutoff. Nearby states are generally next-day; other locations use the zone estimate shown at checkout. You will receive SMS and email updates at each stage.',
   },
   {
     category: 'delivery',

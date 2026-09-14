@@ -1,5 +1,7 @@
 'use client';
 
+import { useAccountingDialog } from './use-accounting-dialog';
+
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
@@ -29,6 +31,7 @@ export default function BatchFormModal({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [account, setAccount] = useState<'1000' | '1100'>('1100');
   const [busy, setBusy] = useState(false);
+  const dialogRef = useAccountingDialog(onClose, busy);
 
   useEffect(() => {
     if (!token) return;
@@ -46,9 +49,12 @@ export default function BatchFormModal({
       return next;
     });
 
-  const total = Math.round(
-    available.filter((p) => selected.has(p._id)).reduce((s, p) => s + p.amount, 0) * 100
-  ) / 100;
+  const total =
+    Math.round(
+      available
+        .filter((p) => selected.has(p._id))
+        .reduce((s, p) => s + p.amount, 0) * 100
+    ) / 100;
 
   const submit = async () => {
     if (selected.size === 0) return;
@@ -72,17 +78,22 @@ export default function BatchFormModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+      onClick={() => {
+        if (!busy) onClose();
+      }}
       role="presentation"
     >
       <div
-        className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
+        className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="New batch"
       >
-        <h3 className="text-base font-semibold text-gray-900">New Payment Batch</h3>
+        <h3 className="text-base font-semibold text-gray-900">
+          New Payment Batch
+        </h3>
         <p className="mt-0.5 text-xs text-gray-400">
           Group unbatched {side} payments into a deposit run.
         </p>
@@ -106,13 +117,18 @@ export default function BatchFormModal({
                     className="h-4 w-4 rounded border-gray-300"
                   />
                   <span>
-                    <span className="font-medium text-gray-800">{p.number}</span>
+                    <span className="font-medium text-gray-800">
+                      {p.number}
+                    </span>
                     <span className="ml-2 text-xs text-gray-400">
-                      {p.customerName || p.vendorName || ''} · {fmtDateShort(p.date)}
+                      {p.customerName || p.vendorName || ''} ·{' '}
+                      {fmtDateShort(p.date)}
                     </span>
                   </span>
                 </span>
-                <span className="font-bold tabular-nums text-gray-900">{fmtMoney(p.amount)}</span>
+                <span className="font-bold tabular-nums text-gray-900">
+                  {fmtMoney(p.amount)}
+                </span>
               </label>
             ))}
           </div>
@@ -136,7 +152,11 @@ export default function BatchFormModal({
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
             Cancel
           </button>
           <button
@@ -154,5 +174,8 @@ export default function BatchFormModal({
 }
 
 function fmtDateShort(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
 }

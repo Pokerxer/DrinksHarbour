@@ -266,6 +266,7 @@ const orderSchema = new Schema(
     },
 
     paidAt: Date,
+    linkedSalesOrder: { type: ObjectId, ref: 'SalesOrder', default: null },
 
     paymentDetails: {
       method: String,
@@ -291,6 +292,10 @@ const orderSchema = new Schema(
         customerId: { type: ObjectId, ref: 'POSCustomer', default: null },
       },
     },
+
+    accountingStatus: { type: String, enum: ['pending', 'posted', 'needs_review'], default: 'pending' },
+    accountingIssue: { type: String, default: '' },
+    accountingCheckedAt: Date,
 
     refundDetails: {
       refundId: String,
@@ -509,6 +514,14 @@ orderSchema.index({ status: 1, paymentStatus: 1 });
 orderSchema.index({ 'items.tenant': 1, status: 1 });
 orderSchema.index({ tableServiceBooking: 1 }, { unique: true,
   partialFilterExpression: { tableServiceBooking: { $type: 'objectId' } } });
+
+// Only settlement/refund transitions trigger accounting, not every order edit.
+orderSchema.pre('save', function () {
+  this.$locals.captureAccounting = this.isNew || this.isModified('paymentStatus') || this.isModified('refunds') || this.isModified('isVoided') || this.isModified('refundDetails');
+});
+orderSchema.post('save', async function (doc) {
+  if (doc.$locals.captureAccounting) await require('../services/accounting.orders').captureOrderAccounting(doc);
+});
 
 const Order = mongoose.models.Order || mongoose.model('Order', orderSchema);
 

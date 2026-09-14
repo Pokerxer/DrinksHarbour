@@ -17,6 +17,7 @@ import ShareButtons, { ShareRail } from './ShareButtons';
 import TableOfContents from './TableOfContents';
 import PlacementBanner from '@/components/Banner/PlacementBanner';
 import AdSlot from '@/components/Ads/AdSlot';
+import OpportunityProductLinks from '@/components/SEO/OpportunityProductLinks';
 
 export const revalidate = 300;
 
@@ -222,6 +223,19 @@ export default async function BlogPostPage({
 
           {/* Author */}
           <AuthorCard post={post} />
+
+          {/* Editorial-to-commerce links give every article a crawlable path
+              into the canonical catalogue and taxonomy pages. */}
+          <div className="rounded-2xl border border-red-100 bg-red-50/60 p-5">
+            <h2 className="text-lg font-bold text-gray-900">Shop the drinks mentioned</h2>
+            <p className="mt-1 text-sm text-gray-600">Compare authentic bottles, categories and brands available across Nigeria.</p>
+            <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
+              <Link href="/shop" className="rounded-full bg-red-700 px-4 py-2 text-white">Browse all drinks</Link>
+              <Link href="/categories" className="rounded-full border border-red-200 bg-white px-4 py-2 text-red-800">Shop by category</Link>
+              <Link href="/brands" className="rounded-full border border-red-200 bg-white px-4 py-2 text-red-800">Explore brands</Link>
+            </div>
+          </div>
+          <OpportunityProductLinks />
 
           {/* Related */}
           <RelatedArticles posts={others} />

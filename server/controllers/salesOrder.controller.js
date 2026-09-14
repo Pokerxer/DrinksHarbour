@@ -447,7 +447,7 @@ exports.confirmSalesOrder = asyncHandler(async (req, res) => {
   so.pointsRedeemed = result.pointsRedeemed || 0;
   await so.save();
   captureDocumentTax({ sourceType: 'sales_order', doc: so, postedBy: req.user?._id });
-  postDocumentEntry({ sourceType: 'sales_order', doc: so, postedBy: req.user?._id });
+  await postDocumentEntry({ sourceType: 'sales_order', doc: so, postedBy: req.user?._id });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_CONFIRM', 'update', so);
   await salesLog.logActivity(tenantId, so._id, {
     subject: salesLog.statusSubject(so.docType, 'confirmed'), userId: req.user?._id,
@@ -591,8 +591,8 @@ exports.accruedRevenueEntry = asyncHandler(async (req, res) => {
   const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId, docType: 'order' });
   if (!so) return res.status(404).json({ success: false, message: 'Order not found' });
   if (so.orderStatus !== 'confirmed') return res.status(409).json({ success: false, message: 'Only a confirmed order can record accrued revenue' });
-  // Stub: real accounting integration will replace this
-  console.log(`[ACCRUED REVENUE STUB] Order ${so.soNumber} (${so._id}) — total ${so.total}`);
+  const entry = await postDocumentEntry({ sourceType: 'sales_order', doc: so, postedBy: req.user?._id });
+  if (!entry) return res.status(503).json({ success: false, message: 'Journal posting failed; please retry' });
   auditPrivilegedSalesAction(req, 'ACCRUED_REVENUE', 'create', so);
   res.json({ success: true, data: { message: `Accrued revenue recorded for ${so.soNumber}`, total: so.total } });
 });

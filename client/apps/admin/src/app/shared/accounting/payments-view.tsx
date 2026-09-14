@@ -5,7 +5,11 @@ import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { PiCaretLeft, PiCaretRight, PiPlus } from 'react-icons/pi';
 import toast from 'react-hot-toast';
-import { arApService, type PaymentDoc, type PaymentSide } from '@/services/arAp.service';
+import {
+  arApService,
+  type PaymentDoc,
+  type PaymentSide,
+} from '@/services/arAp.service';
 import { fmtDate, fmtMoney } from './accounting-helpers';
 import PaymentFormModal from './payment-form-modal';
 
@@ -33,6 +37,12 @@ export default function PaymentsView() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setSide(initialSide === 'vendor' ? 'vendor' : 'customer');
+    setPage(1);
+    setShowForm(false);
+  }, [initialSide]);
 
   const switchSide = (next: PaymentSide) => {
     setSide(next);
@@ -47,6 +57,7 @@ export default function PaymentsView() {
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true);
+    setError('');
     try {
       const res = await arApService.payments(token, side, {
         page,
@@ -56,7 +67,7 @@ export default function PaymentsView() {
       setPayments(res.data ?? []);
       setPages(res.pagination?.pages ?? 1);
     } catch (e) {
-      toast.error((e as Error).message);
+      setError((e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -67,10 +78,19 @@ export default function PaymentsView() {
   }, [load]);
 
   const cancel = async (id: string) => {
+    if (
+      busyId ||
+      !window.confirm(
+        'Cancel this payment and reverse its allocations and journal entry?'
+      )
+    )
+      return;
     setBusyId(id);
     try {
       await arApService.cancelPayment(token, side, id);
-      toast.success('Payment cancelled — journal reversed, allocations rolled back');
+      toast.success(
+        'Payment cancelled — journal reversed, allocations rolled back'
+      );
       load();
     } catch (e) {
       toast.error((e as Error).message);
@@ -81,13 +101,28 @@ export default function PaymentsView() {
 
   const partyOf = (p: PaymentDoc) =>
     side === 'customer'
-      ? p.customer
+      ? p.customer && typeof p.customer === 'object'
         ? `${p.customer.firstName} ${p.customer.lastName}`.trim()
         : p.customerName || '—'
       : p.vendor?.name || p.vendorName || '—';
 
   return (
-    <div>
+    <div className="min-w-0">
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+        >
+          {error}
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="ml-3 min-h-10 font-semibold underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="flex gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200">
           {(['customer', 'vendor'] as PaymentSide[]).map((s) => (
@@ -95,8 +130,10 @@ export default function PaymentsView() {
               key={s}
               type="button"
               onClick={() => switchSide(s)}
-              className={`rounded-md px-4 py-1.5 text-sm font-medium transition ${
-                side === s ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
+              className={`rounded-md px-3 py-2 text-xs font-medium transition sm:text-sm ${
+                side === s
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
               {s === 'customer' ? 'Customer Receipts' : 'Vendor Payments'}
@@ -121,7 +158,8 @@ export default function PaymentsView() {
           onClick={() => setShowForm(true)}
           className="ml-auto flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-black"
         >
-          <PiPlus size={14} /> {side === 'customer' ? 'Record Receipt' : 'New Payment'}
+          <PiPlus size={14} />{' '}
+          {side === 'customer' ? 'Record Receipt' : 'New Payment'}
         </button>
       </div>
 
@@ -131,7 +169,9 @@ export default function PaymentsView() {
             <tr>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Number</th>
-              <th className="px-4 py-3">{side === 'customer' ? 'Customer' : 'Vendor'}</th>
+              <th className="px-4 py-3">
+                {side === 'customer' ? 'Customer' : 'Vendor'}
+              </th>
               <th className="px-4 py-3">Method</th>
               <th className="px-4 py-3">Allocations</th>
               <th className="px-4 py-3 text-right">Amount</th>
@@ -142,28 +182,43 @@ export default function PaymentsView() {
           <tbody className="divide-y divide-gray-100">
             {loading && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">Loading…</td>
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                  Loading…
+                </td>
               </tr>
             )}
             {!loading && payments.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">No payments yet.</td>
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                  No payments yet.
+                </td>
               </tr>
             )}
             {payments.map((p) => (
-              <tr key={p._id} className={p.status === 'cancelled' ? 'opacity-50' : ''}>
-                <td className="whitespace-nowrap px-4 py-3">{fmtDate(p.date)}</td>
+              <tr
+                key={p._id}
+                className={p.status === 'cancelled' ? 'opacity-50' : ''}
+              >
+                <td className="whitespace-nowrap px-4 py-3">
+                  {fmtDate(p.date)}
+                </td>
                 <td className="px-4 py-3 font-medium">{p.number}</td>
                 <td className="px-4 py-3">{partyOf(p)}</td>
-                <td className="px-4 py-3 capitalize">{p.method.replace(/_/g, ' ')}</td>
+                <td className="px-4 py-3 capitalize">
+                  {p.method.replace(/_/g, ' ')}
+                </td>
                 <td className="px-4 py-3 text-xs text-gray-500">
-                  {p.allocations.length ? `${p.allocations.length} doc(s)` : 'On account'}
+                  {p.allocations.length
+                    ? `${p.allocations.length} doc(s)`
+                    : 'On account'}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
                   {fmtMoney(p.amount)}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[p.status] ?? ''}`}>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[p.status] ?? ''}`}
+                  >
                     {p.status}
                   </span>
                 </td>
@@ -195,7 +250,9 @@ export default function PaymentsView() {
         >
           <PiCaretLeft size={14} />
         </button>
-        <span className="text-gray-600">Page {page} of {pages}</span>
+        <span className="text-gray-600">
+          Page {page} of {pages}
+        </span>
         <button
           type="button"
           disabled={page >= pages}
@@ -208,7 +265,11 @@ export default function PaymentsView() {
       </div>
 
       {showForm && (
-        <PaymentFormModal side={side} onClose={() => setShowForm(false)} onSaved={() => load()} />
+        <PaymentFormModal
+          side={side}
+          onClose={() => setShowForm(false)}
+          onSaved={() => load()}
+        />
       )}
     </div>
   );

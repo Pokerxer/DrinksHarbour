@@ -5,7 +5,7 @@ const SubProduct = require("../models/SubProduct");
 const VendorBill = require("../models/VendorBill");
 const asyncHandler = require('../utils/asyncHandler');
 const { captureDocumentTax, reverseDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
-const { postDocumentEntry } = require("../services/accounting.posting");
+const { postDocumentEntry, reverseDocumentEntry } = require("../services/accounting.posting");
 const { round2 } = require("../services/tax.helpers");
 
 async function generateReturnNumber(tenantId) {
@@ -439,16 +439,17 @@ exports.updateReturnStatus = asyncHandler(async (req, res) => {
     }
   }
 
-  const updated = await VendorReturn.findByIdAndUpdate(
-    id,
+  const updated = await VendorReturn.findOneAndUpdate(
+    { _id: id, tenant: tenantId },
     { $set: updateData },
     { new: true }
   );
 
   if (status === "refunded") {
     captureDocumentTax({ sourceType: 'vendor_return', doc: updated, postedBy: req.user._id });
-    postDocumentEntry({ sourceType: 'vendor_return', doc: updated, postedBy: req.user._id });
+    await postDocumentEntry({ sourceType: 'vendor_return', doc: updated, postedBy: req.user._id });
   } else if (status === "cancelled") {
+    await reverseDocumentEntry({ sourceType: 'vendor_return', doc: updated, userId: req.user._id });
     reverseDocumentTax({ sourceType: 'vendor_return', doc: updated, userId: req.user._id });
   }
 
@@ -508,8 +509,8 @@ exports.recordRefund = asyncHandler(async (req, res) => {
     updateData.refundStatus = "processing";
   }
 
-  const updated = await VendorReturn.findByIdAndUpdate(
-    id,
+  const updated = await VendorReturn.findOneAndUpdate(
+    { _id: id, tenant: tenantId },
     { $set: updateData },
     { new: true }
   );

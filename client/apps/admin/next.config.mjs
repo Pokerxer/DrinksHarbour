@@ -97,18 +97,12 @@ const nextConfig = {
       },
     ];
 
-    if (!dev) {
-      // Webpack's filesystem cache is the largest single memory consumer here:
-      // it holds the module graph in memory and then serializes it in large
-      // buffers. On Vercel's 8GB container that spike is what SIGKILLs the
-      // build — and it happens during compilation, which is why
-      // memoryBasedWorkersCount (a static-generation lever) never helped.
-      // The cost is a cold cache on every deploy; a build that finishes is
-      // worth more than a faster one that does not.
-      config.cache = false;
-      // One module worker rather than one per core, for the same reason.
-      config.parallelism = 1;
-    }
+    // Filesystem-cache serialization allocates large buffers in development
+    // too (not just builds). Keep that work out of the 4 GB dev-server heap.
+    config.cache = false;
+    // Bound concurrent module transforms when opening the full sales/invoice
+    // editor. Production retains its existing single-worker setting.
+    config.parallelism = dev ? 2 : 1;
 
     return config;
   },

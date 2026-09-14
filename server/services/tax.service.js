@@ -173,11 +173,8 @@ async function effectiveTaxForFlow({ tenantId, taxId, sourceType }) {
 /** Period aggregate for GET /api/taxes/summary. */
 async function getSummary(tenantId, { from, to } = {}) {
   const filter = { tenant: tenantId };
-  if (from || to) {
-    filter.postedAt = {};
-    if (from) filter.postedAt.$gte = new Date(from);
-    if (to) filter.postedAt.$lte = new Date(to);
-  }
+  const date = require('./accounting.query').dateRange({ from, to });
+  if (date) filter.postedAt = date;
   const records = await TaxRecord.find(filter).lean();
   return buildSummary(records);
 }

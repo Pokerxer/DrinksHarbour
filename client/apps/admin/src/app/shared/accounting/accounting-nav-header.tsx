@@ -1,203 +1,120 @@
 'use client';
-
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
-import { usePathname } from 'next/navigation';
-import {
-  PiCaretDown,
-  PiGaugeDuotone,
-  PiBookOpenDuotone,
-  PiChartBarDuotone,
-  PiBookOpenTextDuotone,
-  PiReceiptDuotone,
-  PiUsersDuotone,
-  PiHandshakeDuotone,
-  PiFileTextDuotone,
-  PiArrowCounterClockwiseDuotone,
-  PiMoneyDuotone,
-  PiStackDuotone,
-  PiPackageDuotone,
-} from 'react-icons/pi';
-import { routes } from '@/config/routes';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { PiBooksDuotone, PiCaretDown, PiArrowUpRight } from 'react-icons/pi';
 import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
-import NavDropdownPanel, {
-  type NavSubItem,
-} from '@/app/shared/nav-dropdown-panel';
+import { navItems } from './accounting-navigation';
+import { accountingNavActive } from './accounting-documents';
 
-type NavItem =
-  | { label: string; href: string; icon: React.ReactNode }
-  | { label: string; icon: React.ReactNode; items: NavSubItem[] };
-
-const navItems: NavItem[] = [
-  {
-    label: 'Overview',
-    href: routes.accounting.index,
-    icon: <PiGaugeDuotone />,
-  },
-  {
-    label: 'Journal Entries',
-    href: routes.accounting.journalEntries,
-    icon: <PiBookOpenDuotone />,
-  },
-  {
-    label: 'Reports',
-    href: routes.accounting.reports,
-    icon: <PiChartBarDuotone />,
-  },
-  {
-    label: 'Customers',
-    icon: <PiUsersDuotone />,
-    items: [
-      { label: 'Invoices', href: routes.accounting.invoices, icon: <PiFileTextDuotone />, desc: 'Open customer invoices' },
-      { label: 'Credit Notes', href: routes.accounting.creditNotes, icon: <PiArrowCounterClockwiseDuotone />, desc: 'Issue customer credits' },
-      { label: 'Payments', href: `${routes.accounting.payments}?side=customer`, icon: <PiMoneyDuotone />, desc: 'Register customer payments' },
-      { label: 'Batch Payments', href: `${routes.accounting.batchPayments}?side=customer`, icon: <PiStackDuotone />, desc: 'Group payments for deposit' },
-      { label: 'Products', href: routes.accounting.products, icon: <PiPackageDuotone />, desc: 'What you sell' },
-      { label: 'Customers', href: routes.accounting.customers, icon: <PiUsersDuotone />, desc: 'Balances & contacts' },
-    ],
-  },
-  {
-    label: 'Vendors',
-    icon: <PiHandshakeDuotone />,
-    items: [
-      { label: 'Bills', href: routes.accounting.bills, icon: <PiFileTextDuotone />, desc: 'Open vendor bills' },
-      { label: 'Payments', href: `${routes.accounting.payments}?side=vendor`, icon: <PiMoneyDuotone />, desc: 'Pay your vendors' },
-      { label: 'Batch Payments', href: `${routes.accounting.batchPayments}?side=vendor`, icon: <PiStackDuotone />, desc: 'Group payments for payout' },
-      { label: 'Products', href: routes.accounting.products, icon: <PiPackageDuotone />, desc: 'What you sell' },
-      { label: 'Vendors', href: routes.accounting.vendors, icon: <PiHandshakeDuotone />, desc: 'Balances & contacts' },
-    ],
-  },
-  {
-    label: 'Configuration',
-    icon: <PiBookOpenTextDuotone />,
-    items: [
-      {
-        label: 'Chart of Accounts',
-        href: routes.accounting.chartOfAccounts,
-        icon: <PiBookOpenTextDuotone />,
-        desc: 'Accounts & balances',
-      },
-      {
-        label: 'Taxes',
-        href: routes.accounting.taxes,
-        icon: <PiReceiptDuotone />,
-        desc: 'Rates, ledger, summary',
-      },
-    ],
-  },
-];
-
-function subItemsOf(item: NavItem): NavSubItem[] {
-  if ('items' in item) return item.items;
-  return [];
-}
-
-export default function AccountingNavHeader() {
+function Navigation() {
   const pathname = usePathname();
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const navRef = useRef<HTMLElement>(null);
-
-  const close = useCallback(() => setOpenMenu(null), []);
-
+  const side = useSearchParams().get('side') || 'customer';
+  const [open, setOpen] = useState<string | null>(null);
+  const root = useRef<HTMLElement>(null);
   useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (navRef.current && !navRef.current.contains(e.target as Node)) close();
-    }
-    document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
-  }, [close]);
-
+    setOpen(null);
+  }, [pathname, side]);
   useEffect(() => {
-    close();
-  }, [pathname, close]);
-
+    const outside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(null);
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, []);
+  const selected = navItems.find((item) => item.label === open);
   return (
     <nav
-      ref={navRef}
-      className="relative mb-0 flex flex-wrap items-center border-b border-gray-200 bg-white"
+      ref={root}
+      aria-label="Accounting"
+      className="relative z-20 min-w-0 border-b border-gray-200 bg-white"
     >
-      {/* App launcher toggle */}
-      <LauncherButton className="me-1 ms-3 shadow-none" />
-
-      {/* Brand */}
-      <Link
-        href={routes.accounting.index}
-        className="flex shrink-0 items-center gap-2.5 border-r border-gray-200 py-2 pr-5"
-      >
-        <Image
-          src="/logo-short.png"
-          alt="DrinksHarbour"
-          width={30}
-          height={30}
-          className="rounded-full"
-        />
-        <span className="hidden min-[480px]:inline text-sm font-semibold text-gray-900">Accounting</span>
-      </Link>
-
-      {/* Nav links */}
-      <div className="flex min-w-0 flex-1 flex-wrap items-center pl-2">
+      <div className="flex min-h-14 items-center gap-2 px-2 sm:px-4">
+        <LauncherButton className="shrink-0 shadow-none" />
+        <Link
+          href="/accounting"
+          className="flex items-center gap-2 text-sm font-bold text-gray-900"
+        >
+          <PiBooksDuotone className="h-6 w-6 text-brand" />
+          Accounting
+        </Link>
+        <span className="ml-auto rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-gray-500">
+          NGN · GENERAL LEDGER
+        </span>
+      </div>
+      <div className="flex overflow-x-auto px-2 sm:px-4">
         {navItems.map((item) => {
-          const isDirectActive = 'href' in item && item.href === pathname;
-          const isDropdownActive = subItemsOf(item).some(
-            (s) => s.href !== '#' && pathname.startsWith(s.href.split('?')[0])
-          );
-          const isActive = isDirectActive || isDropdownActive;
-          const isOpen = openMenu === item.label;
-
-          const activeCls = `font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#b20202]`;
-
-          if ('href' in item) {
-            return (
-              <Link
-                key={item.label}
-                href={item.href}
-                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors md:px-4 ${
-                  isActive
-                    ? `${activeCls} text-[#b20202]`
-                    : 'font-normal text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <span className="[&>svg]:h-[18px] [&>svg]:w-[18px]">
-                  {item.icon}
-                </span>
-                {item.label}
-              </Link>
-            );
-          }
-
-          return (
-            <div key={item.label} className="relative">
-              <button
-                type="button"
-                onClick={() => setOpenMenu(isOpen ? null : item.label)}
-                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors md:px-4 ${
-                  isActive || isOpen
-                    ? `${activeCls} text-[#b20202]`
-                    : 'font-normal text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <span className="[&>svg]:h-[18px] [&>svg]:w-[18px]">
-                  {item.icon}
-                </span>
-                {item.label}
-                <PiCaretDown
-                  className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
-
-              {isOpen && (
-                <NavDropdownPanel
-                  items={subItemsOf(item)}
-                  pathname={pathname}
-                  onNavigate={close}
-                  columns={1}
-                />
-              )}
-            </div>
+          const active =
+            'href' in item
+              ? accountingNavActive(item.href, pathname, side)
+              : item.items.some((link) =>
+                  accountingNavActive(link.href, pathname, side)
+                );
+          const cls = `flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-xs font-semibold transition-colors sm:text-sm ${active || open === item.label ? 'border-brand text-brand' : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`;
+          return 'href' in item ? (
+            <Link
+              key={item.label}
+              href={item.href}
+              className={cls}
+              aria-current={active ? 'page' : undefined}
+            >
+              {item.label}
+            </Link>
+          ) : (
+            <button
+              type="button"
+              key={item.label}
+              className={cls}
+              aria-expanded={open === item.label}
+              aria-controls="accounting-menu"
+              onClick={() => setOpen(open === item.label ? null : item.label)}
+            >
+              {item.label}
+              <PiCaretDown
+                className={open === item.label ? 'rotate-180' : ''}
+              />
+            </button>
           );
         })}
       </div>
+      {selected && 'items' in selected && (
+        <div
+          id="accounting-menu"
+          className="absolute inset-x-0 top-full grid gap-1 rounded-b-2xl border border-gray-200 bg-white p-3 shadow-xl sm:grid-cols-2 lg:grid-cols-3"
+        >
+          {selected.items.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setOpen(null)}
+              className={`flex min-h-14 items-center gap-3 rounded-xl p-3 hover:bg-gray-50 ${accountingNavActive(item.href, pathname, side) ? 'bg-red-50 text-brand' : 'text-gray-700'}`}
+            >
+              <span className="text-xl">{item.icon}</span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold">
+                  {item.label}
+                </span>
+                <span className="block text-xs text-gray-500">{item.desc}</span>
+              </span>
+              <PiArrowUpRight className="ml-auto shrink-0" />
+            </Link>
+          ))}
+        </div>
+      )}
     </nav>
+  );
+}
+export default function AccountingNavHeader() {
+  return (
+    <Suspense fallback={<div className="h-24 border-b bg-white" />}>
+      <Navigation />
+    </Suspense>
   );
 }

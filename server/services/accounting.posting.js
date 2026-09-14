@@ -32,10 +32,13 @@ function linesForSalesOrder(doc) {
   if (total <= 0) return [];
   const tax = round2(doc.taxTotal || doc.taxAmount || 0);
   const revenue = round2(total - tax);
-  const debitAccount =
-    String(doc.paymentStatus || '') === 'paid' ? CODE.CASH : CODE.RECEIVABLES;
+  const paid = Math.min(total, Math.max(0, round2(doc.paymentStatus === 'paid' ? total : doc.amountPaid)));
+  const tender = doc.paymentMethod === 'wallet' ? '2200' : !doc.paymentMethod || doc.paymentMethod === 'cash' ? CODE.CASH : '1100';
+  const debits = [];
+  if (paid) debits.push({ account: tender, debit: paid, credit: 0, memo: doc.soNumber || doc.orderNumber });
+  if (paid < total) debits.push({ account: CODE.RECEIVABLES, debit: round2(total - paid), credit: 0, memo: doc.soNumber || doc.orderNumber });
   return [
-    { account: debitAccount, debit: total, credit: 0, memo: doc.orderNumber },
+    ...debits,
     { account: CODE.TAX_COLLECTED, debit: 0, credit: tax, memo: 'Output VAT' },
     { account: CODE.SALES_REVENUE, debit: 0, credit: revenue, memo: 'Sales revenue' },
   ];
@@ -68,8 +71,14 @@ function linesForVendorBill(doc) {
   const tax = round2(doc.taxAmount);
   const gross = round2(subtotal + tax);
   if (gross <= 0) return [];
+  const items = doc.items || [];
+  const itemTotal = round2(items.reduce((sum, item) => sum + Math.max(0, Number(item.amount) || 0), 0));
+  const stockTotal = round2(items.reduce((sum, item) => sum + (item.subProductId ? Math.max(0, Number(item.amount) || 0) : 0), 0));
+  const inventory = itemTotal > 0 ? round2(subtotal * stockTotal / itemTotal) : doc.purchaseOrder || items.some(item => item.subProductId) ? subtotal : 0;
+  const expense = round2(subtotal - inventory);
   return [
-    { account: CODE.OPEX, debit: subtotal, credit: 0, memo: doc.billNumber },
+    ...(inventory ? [{ account: CODE.INVENTORY, debit: inventory, credit: 0, memo: doc.billNumber }] : []),
+    ...(expense ? [{ account: CODE.OPEX, debit: expense, credit: 0, memo: doc.billNumber }] : []),
     { account: CODE.TAX_PAID, debit: tax, credit: 0, memo: 'Input VAT' },
     { account: CODE.PAYABLES, debit: 0, credit: gross, memo: 'Vendor payable' },
   ];
@@ -82,7 +91,7 @@ function linesForVendorReturn(doc) {
   const gross = round2(subtotal + tax);
   if (gross <= 0) return [];
   return [
-    { account: CODE.PAYABLES, debit: gross, credit: 0, memo: doc.returnNumber },
+    { account: !doc.refundMethod || doc.refundMethod === 'credit_note' ? CODE.PAYABLES : doc.refundMethod === 'cash' ? CODE.CASH : '1100', debit: gross, credit: 0, memo: doc.returnNumber },
     { account: CODE.INVENTORY, debit: 0, credit: subtotal, memo: 'Stock returned to vendor' },
     { account: CODE.TAX_PAID, debit: 0, credit: tax, memo: 'Input VAT reversal' },
   ];
@@ -108,14 +117,22 @@ const REF_FIELDS = {
  */
 async function postDocumentEntry({ sourceType, doc, postedBy }) {
   try {
-    if (!doc?._id) return null;
+    if (!doc?._id || !doc.tenant || (doc.currency && doc.currency !== 'NGN')) return null;
+    // Purchase commitments are not another payable: the validated bill posts it.
+    if (sourceType === 'purchase_order') return null;
     const builder = BUILDERS[sourceType];
     if (!builder) return null;
     // Lazy require avoids a circular import at module load time.
     const { postJournalEntry } = require('./journalEntry.service');
+    if (!builder(doc).length) return null;
+    await require('./chartOfAccounts.service').ensureDefaultCOA(doc.tenant);
+    if (sourceType === 'vendor_bill' && doc.purchaseOrder) {
+      // Reverse a legacy PO accrual once, before recording the actual bill.
+      await reverseDocumentEntry({ sourceType: 'purchase_order', doc: { _id: doc.purchaseOrder?._id || doc.purchaseOrder, tenant: doc.tenant }, userId: postedBy, strict: true });
+    }
     return await postJournalEntry({
       tenantId: doc.tenant,
-      date: doc.updatedAt || new Date(),
+      date: doc.billDate || doc.approvedAt || doc.createdAt || new Date(),
       lines: builder(doc),
       source: sourceType,
       refDoc: doc._id,
@@ -139,7 +156,7 @@ async function postDocumentEntry({ sourceType, doc, postedBy }) {
  * Reverse the entry previously posted for a document (SO cancel paths).
  * Idempotent: no-op when there is nothing to reverse.
  */
-async function reverseDocumentEntry({ sourceType, doc, userId }) {
+async function reverseDocumentEntry({ sourceType, doc, userId, strict = false }) {
   try {
     if (!doc?._id) return null;
     const { findEntry, reverseEntry } = require('./journalEntry.service');
@@ -153,6 +170,7 @@ async function reverseDocumentEntry({ sourceType, doc, userId }) {
     if (!original) return null;
     return await reverseEntry({ tenantId: doc.tenant, entryId: original._id, userId });
   } catch (err) {
+    if (strict) throw err;
     console.error('journalReverseFailed', { sourceType, sourceId: String(doc?._id), err });
     return null;
   }

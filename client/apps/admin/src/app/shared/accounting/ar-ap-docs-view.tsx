@@ -1,206 +1,286 @@
 'use client';
-
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { PiCaretLeft, PiCaretRight } from 'react-icons/pi';
-import toast from 'react-hot-toast';
+import { PiArrowsClockwise, PiMagnifyingGlass } from 'react-icons/pi';
 import {
   arApService,
   type ArApSummary,
-  type OpenBill,
-  type OpenInvoice,
   type PaymentSide,
 } from '@/services/arAp.service';
-import { fmtDate, fmtMoney } from './accounting-helpers';
+import { type AccountingDocument } from './accounting-documents';
+import { fmtMoney } from './accounting-helpers';
+import AccountingDocumentResults from './accounting-document-results';
+import PaymentFormModal from './payment-form-modal';
+const INPUT =
+  'min-h-11 min-w-0 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-red-100';
 
-type Doc = OpenInvoice | OpenBill;
-
-const SELECT_CLS =
-  'rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-400';
-
-const STATUS_STYLES: Record<string, string> = {
-  unpaid: 'bg-red-100 text-red-700',
-  partial: 'bg-amber-100 text-amber-700',
-  paid: 'bg-emerald-100 text-emerald-700',
-  confirmed: 'bg-blue-100 text-blue-700',
-  overdue: 'bg-red-100 text-red-700',
-};
-
-function docLabel(d: Doc) {
-  return (d as OpenInvoice).orderNumber || (d as OpenBill).billNumber || '—';
-}
-function docName(d: Doc) {
-  const inv = d as OpenInvoice;
-  const bill = d as OpenBill;
-  return inv.customer
-    ? `${inv.customer.firstName} ${inv.customer.lastName}`.trim()
-    : inv.customerSnapshot?.name || bill.vendor?.name || '—';
-}
-function docTotal(d: Doc) {
-  return (d as OpenInvoice).total ?? (d as OpenBill).totalAmount ?? 0;
-}
-function docPaid(d: Doc) {
-  return (d as OpenInvoice).amountPaid ?? (d as OpenBill).paidAmount ?? 0;
-}
-function docStatus(d: Doc) {
-  return (d as OpenInvoice).paymentStatus ?? (d as OpenBill).status ?? '—';
-}
-
-/** Invoices (AR) / Bills (AP) — open documents browser with aging summary. */
 export default function ArApDocsView({ side }: { side: PaymentSide }) {
   const { data: session } = useSession();
-  const token = (session?.user as { token?: string })?.token ?? '';
-  const isAr = side === 'customer';
-
+  const token = (session?.user as { token?: string })?.token || '';
+  const ar = side === 'customer';
   const [summary, setSummary] = useState<ArApSummary | null>(null);
-  const [docs, setDocs] = useState<Doc[]>([]);
+  const [docs, setDocs] = useState<AccountingDocument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [summaryError, setSummaryError] = useState('');
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [statusFilter, setStatusFilter] = useState('');
-
-  const load = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    try {
-      const [sumRes, listRes] = await Promise.all([
-        isAr ? arApService.receivablesSummary(token) : arApService.payablesSummary(token),
-        isAr ? arApService.invoices(token, { page, limit: 25, status: statusFilter || undefined }) : arApService.bills(token, { page, limit: 25, status: statusFilter || undefined }),
-      ]);
-      setSummary(sumRes.data);
-      setDocs(listRes.data ?? []);
-      setPages(listRes.pagination?.pages ?? 1);
-      setTotal(listRes.pagination?.total ?? 0);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [token, isAr, page, statusFilter]);
-
+  const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [refresh, setRefresh] = useState(0);
+  const [paymentDoc, setPaymentDoc] = useState<AccountingDocument | null>(null);
   useEffect(() => {
-    load();
-  }, [load]);
-
+    const timer = setTimeout(() => {
+      setQuery(search.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setSummaryError('');
+    (ar
+      ? arApService.receivablesSummary(token)
+      : arApService.payablesSummary(token)
+    )
+      .then((result) => {
+        if (!cancelled) setSummary(result.data);
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setSummaryError(
+            err instanceof Error ? err.message : 'Could not load balances'
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, ar, refresh]);
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    const params = {
+      page,
+      limit: 25,
+      status: status || undefined,
+      search: query || undefined,
+      from: from || undefined,
+      to: to || undefined,
+    };
+    const load = async () => {
+      try {
+        const result = ar
+          ? await arApService.invoices(token, params)
+          : await arApService.bills(token, params);
+        if (cancelled) return;
+        setDocs(result.data);
+        setPages(result.pagination?.pages || 1);
+        setTotal(result.pagination?.total || 0);
+      } catch (err) {
+        if (!cancelled)
+          setError(
+            err instanceof Error ? err.message : 'Could not load documents'
+          );
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, ar, page, status, query, from, to, refresh]);
   return (
-    <div>
-      {/* Summary strip */}
+    <div className="min-w-0 space-y-5">
       {summary && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              {isAr ? 'Receivable' : 'Payable'}
+        <section
+          aria-label="Outstanding balances"
+          className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6"
+        >
+          <div className="rounded-2xl bg-gray-900 p-4 text-white sm:col-span-2 xl:col-span-1">
+            <p className="text-xs text-gray-300">
+              {ar ? 'To collect' : 'To pay'}
             </p>
-            <p className="mt-0.5 text-lg font-black tabular-nums text-[#b20202]">
+            <p className="mt-2 break-words text-2xl font-semibold tabular-nums">
               {fmtMoney(summary.totalOutstanding)}
             </p>
-            <p className="text-[10px] text-gray-400">{summary.count} open</p>
+            <p className="mt-1 text-xs text-gray-400">
+              {summary.count} open documents
+            </p>
           </div>
-          {Object.entries(summary.buckets).map(([bucket, amount]) => (
-            <div key={bucket} className="rounded-xl bg-gray-50 px-3 py-2.5">
-              <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{bucket}</p>
-              <p className="mt-0.5 text-sm font-bold tabular-nums text-gray-800">{fmtMoney(amount)}</p>
+          {Object.entries(summary.buckets).map(([bucket, value]) => (
+            <div
+              key={bucket}
+              className="rounded-2xl border border-gray-200 bg-white p-4"
+            >
+              <p className="text-xs text-gray-500">
+                {bucket === 'current'
+                  ? 'Not due / up to 15 days'
+                  : `${bucket} days overdue`}
+              </p>
+              <p className="mt-2 break-words text-lg font-semibold tabular-nums text-gray-900">
+                {fmtMoney(value)}
+              </p>
             </div>
           ))}
-        </div>
+        </section>
       )}
-
-      <div className="mb-3 flex items-center gap-2">
-        <select
-          className={SELECT_CLS}
-          value={statusFilter}
-          onChange={(e) => {
-            setPage(1);
-            setStatusFilter(e.target.value);
-          }}
-          aria-label="Filter by status"
+      {summaryError && (
+        <p
+          role="alert"
+          className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
         >
-          <option value="">All statuses</option>
-          {isAr ? (
-            <>
-              <option value="unpaid">Unpaid</option>
-              <option value="partial">Partial</option>
-            </>
-          ) : (
-            <>
-              <option value="confirmed">Confirmed</option>
-              <option value="partial">Partial</option>
-              <option value="overdue">Overdue</option>
-            </>
-          )}
-        </select>
-        <span className="ml-auto text-xs text-gray-500">{total} document(s)</span>
-      </div>
-
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full min-w-[680px] text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-            <tr>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">{isAr ? 'Invoice' : 'Bill'}</th>
-              <th className="px-4 py-3">{isAr ? 'Customer' : 'Vendor'}</th>
-              <th className="px-4 py-3 text-right">Total</th>
-              <th className="px-4 py-3 text-right">Paid</th>
-              <th className="px-4 py-3 text-right">Outstanding</th>
-              <th className="px-4 py-3">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {loading && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">Loading…</td>
-              </tr>
-            )}
-            {!loading && docs.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
-                  Nothing open — all settled.
-                </td>
-              </tr>
-            )}
-            {docs.map((d) => (
-              <tr key={d._id} className="hover:bg-gray-50">
-                <td className="whitespace-nowrap px-4 py-3">{fmtDate(d.date)}</td>
-                <td className="px-4 py-3 font-medium">{docLabel(d)}</td>
-                <td className="px-4 py-3">{docName(d)}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtMoney(docTotal(d))}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtMoney(docPaid(d))}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-[#b20202]">
-                  {fmtMoney(d.outstanding)}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[docStatus(d)] ?? 'bg-gray-100 text-gray-600'}`}>
-                    {String(docStatus(d)).replace(/_/g, ' ')}
-                  </span>
-                </td>
-              </tr>
+          Balance summary unavailable: {summaryError}
+        </p>
+      )}
+      <section
+        aria-label="Document filters"
+        className="rounded-2xl border border-gray-200 bg-white p-4"
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_160px_160px_160px_auto]">
+          <label className="relative flex items-center">
+            <span className="sr-only">Search document or customer/vendor</span>
+            <PiMagnifyingGlass className="absolute left-3 text-gray-400" />
+            <input
+              className={`${INPUT} w-full pl-9`}
+              value={search}
+              placeholder="Search documents or names"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          <select
+            className={INPUT}
+            aria-label="Payment status"
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">All open statuses</option>
+            {(ar
+              ? ['unpaid', 'partial']
+              : ['confirmed', 'partial', 'overdue']
+            ).map((value) => (
+              <option key={value} value={value}>
+                {value[0].toUpperCase() + value.slice(1)}
+              </option>
             ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-3 flex items-center justify-end gap-2 text-sm">
-        <button
-          type="button"
-          disabled={page <= 1}
-          onClick={() => setPage((p) => p - 1)}
-          className="rounded border border-gray-300 p-1.5 disabled:opacity-40"
-          aria-label="Previous page"
+          </select>
+          <input
+            type="date"
+            aria-label="From date"
+            className={INPUT}
+            value={from}
+            max={to || undefined}
+            onChange={(event) => {
+              setFrom(event.target.value);
+              setPage(1);
+            }}
+          />
+          <input
+            type="date"
+            aria-label="To date"
+            className={INPUT}
+            value={to}
+            min={from || undefined}
+            onChange={(event) => {
+              setTo(event.target.value);
+              setPage(1);
+            }}
+          />
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setRefresh((value) => value + 1)}
+            className={`${INPUT} flex items-center justify-center gap-2 font-medium disabled:opacity-50`}
+          >
+            <PiArrowsClockwise className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+          <span>
+            {total} matching documents · balances above cover all open documents
+          </span>
+          {(search || status || from || to) && (
+            <button
+              type="button"
+              className="min-h-8 font-semibold text-brand"
+              onClick={() => {
+                setSearch('');
+                setQuery('');
+                setStatus('');
+                setFrom('');
+                setTo('');
+                setPage(1);
+              }}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      </section>
+      {error ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800"
         >
-          <PiCaretLeft size={14} />
-        </button>
-        <span className="text-gray-600">Page {page} of {pages}</span>
-        <button
-          type="button"
-          disabled={page >= pages}
-          onClick={() => setPage((p) => p + 1)}
-          className="rounded border border-gray-300 p-1.5 disabled:opacity-40"
-          aria-label="Next page"
-        >
-          <PiCaretRight size={14} />
-        </button>
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => setRefresh((value) => value + 1)}
+            className="mt-3 min-h-10 rounded-lg border border-red-200 bg-white px-4 font-semibold"
+          >
+            Try again
+          </button>
+        </div>
+      ) : (
+        <AccountingDocumentResults
+          docs={docs}
+          side={side}
+          loading={loading}
+          onPay={setPaymentDoc}
+        />
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <span className="text-gray-500">
+          Page {page} of {pages}
+        </span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className={`${INPUT} disabled:opacity-40`}
+            disabled={loading || page <= 1}
+            onClick={() => setPage((value) => value - 1)}
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className={`${INPUT} disabled:opacity-40`}
+            disabled={loading || page >= pages}
+            onClick={() => setPage((value) => value + 1)}
+          >
+            Next
+          </button>
+        </div>
       </div>
+      {paymentDoc && (
+        <PaymentFormModal
+          side={side}
+          initialDocument={paymentDoc}
+          onClose={() => setPaymentDoc(null)}
+          onSaved={() => setRefresh((value) => value + 1)}
+        />
+      )}
     </div>
   );
 }

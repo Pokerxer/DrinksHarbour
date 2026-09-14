@@ -1,6 +1,8 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
+import { routes } from '@/config/routes';
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { PiArrowsClockwise, PiTrendUp, PiWarningCircle } from 'react-icons/pi';
@@ -8,7 +10,7 @@ import {
   accountingService,
   type AccountingDashboard as DashboardPayload,
 } from '@/services/accounting.service';
-import toast from 'react-hot-toast';
+import AccountingOperations from './accounting-operations';
 import AccountingNavHeader from './accounting-nav-header';
 import AccountingDashboardKpis from './accounting-dashboard-kpis';
 import AccountingDashboardChart from './accounting-dashboard-chart';
@@ -23,15 +25,17 @@ export default function AccountingDashboard() {
   const token = (session?.user as { token?: string })?.token ?? '';
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true);
+    setError('');
     try {
       const res = await accountingService.dashboard(token);
       setData(res.data);
     } catch (e) {
-      toast.error((e as Error).message);
+      setError((e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -49,7 +53,8 @@ export default function AccountingDashboard() {
   const lateAvg =
     monthly.slice(half).reduce((s, m) => s + m.revenue, 0) /
     (monthly.length - half || 1);
-  const trendPct = earlyAvg > 0 ? ((lateAvg - earlyAvg) / earlyAvg) * 100 : null;
+  const trendPct =
+    earlyAvg > 0 ? ((lateAvg - earlyAvg) / earlyAvg) * 100 : null;
 
   return (
     <div className="-mx-4 -mt-2 flex flex-col md:-mx-5 lg:-mx-6 3xl:-mx-8 4xl:-mx-10">
@@ -60,7 +65,7 @@ export default function AccountingDashboard() {
 
       {/* ── Hero ── */}
       <div
-        className="relative overflow-hidden px-6 py-8 md:px-10 lg:px-14"
+        className="relative overflow-hidden px-4 py-6 sm:px-6 lg:px-8"
         style={{
           background:
             'linear-gradient(135deg, #b20202 0%, #8f0101 60%, #6e0101 100%)',
@@ -85,7 +90,9 @@ export default function AccountingDashboard() {
               <p className="text-xs font-semibold uppercase tracking-[0.15em] text-red-200">
                 DrinksHarbour
               </p>
-              <h1 className="mt-0.5 text-2xl font-bold text-white">Accounting</h1>
+              <h1 className="mt-0.5 text-2xl font-bold text-white">
+                Accounting
+              </h1>
               <p className="mt-0.5 text-sm text-red-200">
                 {new Date().toLocaleDateString('en-US', {
                   weekday: 'long',
@@ -109,7 +116,9 @@ export default function AccountingDashboard() {
               className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white transition-colors hover:bg-white/20 disabled:opacity-50"
               title="Refresh"
             >
-              <PiArrowsClockwise className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <PiArrowsClockwise
+                className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+              />
             </button>
             {data && (
               <div className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 backdrop-blur-sm">
@@ -125,7 +134,9 @@ export default function AccountingDashboard() {
                   <div
                     className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold ${trendPct >= 0 ? 'bg-green-500/30 text-green-200' : 'bg-red-500/30 text-red-200'}`}
                   >
-                    <PiTrendUp className={`h-3 w-3 ${trendPct < 0 ? 'rotate-180' : ''}`} />
+                    <PiTrendUp
+                      className={`h-3 w-3 ${trendPct < 0 ? 'rotate-180' : ''}`}
+                    />
                     {Math.abs(trendPct).toFixed(0)}%
                   </div>
                 )}
@@ -135,25 +146,73 @@ export default function AccountingDashboard() {
         </div>
       </div>
 
+      {!!data?.ordersToReview?.length && (
+        <section
+          role="status"
+          className="mx-4 mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"
+        >
+          <h2 className="font-semibold text-amber-900">
+            Orders needing accounting review
+          </h2>
+          <p className="mt-1 text-sm text-amber-900">
+            These orders have incomplete postings. Review their receipts and
+            record any missing adjustment before relying on the reports.
+          </p>
+          <ul className="mt-3 space-y-2 text-sm">
+            {data.ordersToReview.map((order) => (
+              <li key={order._id}>
+                <Link
+                  className="font-semibold underline"
+                  href={routes.eCommerce.orderDetails(order._id)}
+                >
+                  {order.receiptNumber || order.orderNumber || 'View order'}
+                </Link>
+                <span className="ml-2">{order.accountingIssue}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {/* ── Content ── */}
-      <div className="flex-1 bg-gray-50 px-6 pb-10 pt-6 md:px-10 lg:px-14">
+      <div className="min-w-0 flex-1 bg-gray-50 px-3 pb-10 pt-5 sm:px-6 lg:px-8">
         {!token ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
               <PiWarningCircle className="h-8 w-8 text-gray-400" />
             </div>
-            <h2 className="text-base font-semibold text-gray-700">Not signed in</h2>
+            <h2 className="text-base font-semibold text-gray-700">
+              Not signed in
+            </h2>
             <p className="mt-1 text-sm text-gray-400">
               Sign in as a tenant admin to view the accounting dashboard
             </p>
           </div>
         ) : (
           <>
+            {error && (
+              <div
+                role="alert"
+                className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+              >
+                Could not refresh accounting: {error}
+                <button
+                  type="button"
+                  onClick={() => void load()}
+                  className="ml-3 min-h-10 font-semibold underline"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            <AccountingOperations token={token} />
             {/* ── Stats row ── */}
             {loading && !data ? (
-              <div className="mb-6 grid grid-cols-2 animate-pulse gap-4 lg:grid-cols-4">
+              <div className="mb-6 grid animate-pulse grid-cols-2 gap-4 lg:grid-cols-4">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="rounded-2xl border border-gray-200 bg-white p-5">
+                  <div
+                    key={i}
+                    className="rounded-2xl border border-gray-200 bg-white p-5"
+                  >
                     <div className="h-10 w-full rounded-lg bg-gray-200" />
                   </div>
                 ))}
@@ -165,9 +224,11 @@ export default function AccountingDashboard() {
             {/* ── Main grid ── */}
             <div className="grid gap-6 lg:grid-cols-3">
               {/* LEFT: module cards + chart */}
-              <div className="space-y-6 lg:col-span-2">
+              <div className="min-w-0 space-y-6 lg:col-span-2">
                 <div className="flex items-center gap-1.5">
-                  <h2 className="text-sm font-semibold text-gray-700">Modules</h2>
+                  <h2 className="text-sm font-semibold text-gray-700">
+                    Modules
+                  </h2>
                 </div>
 
                 <AccountingDashboardModules data={data} />
@@ -192,8 +253,12 @@ export default function AccountingDashboard() {
 
               {/* RIGHT: VAT breakdown + recent entries */}
               <div className="space-y-6">
-                {data && <AccountingDashboardTaxCard profitLoss={data.profitLoss} />}
-                {data && <AccountingDashboardRecent entries={data.recentEntries} />}
+                {data && (
+                  <AccountingDashboardTaxCard profitLoss={data.profitLoss} />
+                )}
+                {data && (
+                  <AccountingDashboardRecent entries={data.recentEntries} />
+                )}
               </div>
             </div>
           </>

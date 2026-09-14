@@ -10,9 +10,12 @@ import {
   salesOrderService,
   type SalesOrder,
 } from '@/services/salesOrder.service';
+import { singleFlight } from './sales-repricing';
 import { useSalesCreateForm } from './hooks/useSalesCreateForm';
 import { useSalesAutosave } from './hooks/useSalesAutosave';
 import SalesCreateHeader from './sales-create-header';
+import InvoiceCreateHeader from '@/app/shared/accounting/invoice-create-header';
+import { arApService } from '@/services/arAp.service';
 import SalesCustomerBar from './sales-customer-bar';
 import SalesLineTable from './sales-line-table';
 import SalesTotals from './sales-totals';
@@ -31,8 +34,10 @@ import type { CreateTab } from './sales-stage-pill';
 export default function SalesCreate({
   mode = 'create',
   initial,
+  invoice = false,
 }: {
   mode?: 'create' | 'edit';
+  invoice?: boolean;
   initial?: SalesOrder;
 }) {
   const router = useRouter();
@@ -42,9 +47,15 @@ export default function SalesCreate({
 
   const form = useSalesCreateForm({ token, mode, initial });
 
+  const [invoiceDueDate, setInvoiceDueDate] = useState(
+    initial?.dueDate?.slice(0, 10) || ''
+  );
   const { autoSaveStatus, isDirtyRef, draftId, handleManualSave, ensureSaved } =
     useSalesAutosave({
       token,
+      draftPath: invoice
+        ? (id) => `${routes.accounting.invoiceCreate}?draft=${id}`
+        : undefined,
       initial,
       priced: form.priced,
       customer: form.customer,
@@ -56,9 +67,12 @@ export default function SalesCreate({
       warehouseId: form.warehouseId as string,
       shippingFee: form.shippingFee,
       plannedRedeemPoints: form.plannedRedeemPoints,
-      buildPayload: form.buildPayload,
+      buildPayload: invoice
+        ? () => ({ ...form.buildPayload(), dueDate: invoiceDueDate || null })
+        : form.buildPayload,
     });
 
+  const issueFlight = useRef(singleFlight());
   const orderId = initial?._id ?? draftId ?? undefined;
   const [historyKey, setHistoryKey] = useState(0);
   const [confirmPrices, setConfirmPrices] = useState(false);
@@ -119,26 +133,29 @@ export default function SalesCreate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, token, prefillCustomer]);
 
-  async function handleUpdatePrices() {
-    setPricesBusy(true);
-    try {
-      const id = await ensureSaved();
-      if (!id) {
-        toast.error('Add a product first');
-        return;
+  const updatePricesFlight = useRef(singleFlight());
+  function handleUpdatePrices() {
+    return updatePricesFlight.current(async () => {
+      setPricesBusy(true);
+      try {
+        const id = await ensureSaved();
+        if (!id) {
+          toast.error('Add a product first');
+          return;
+        }
+        const res = await salesOrderService.updatePrices(id, token);
+        form.applyServerItems(res.data.items);
+        toast.success('Prices updated');
+        setHistoryKey((k) => k + 1);
+        setConfirmPrices(false);
+      } catch (err: unknown) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to update prices'
+        );
+      } finally {
+        setPricesBusy(false);
       }
-      const res = await salesOrderService.updatePrices(id, token);
-      form.applyServerItems(res.data.items);
-      toast.success('Prices updated');
-      setHistoryKey((k) => k + 1);
-      setConfirmPrices(false);
-    } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to update prices'
-      );
-    } finally {
-      setPricesBusy(false);
-    }
+    });
   }
 
   // Coupons are validated server-side against tenant Promotions, so the
@@ -241,6 +258,36 @@ export default function SalesCreate({
     }
   }
 
+  function handleIssueInvoice() {
+    return issueFlight.current(async () => {
+      if (!validateFilled()) return;
+      form.setSaving(true);
+      try {
+        if (orderId) {
+          const existing = await salesOrderService.get(orderId, token);
+          if (existing.data.invoiceIssuedAt) {
+            isDirtyRef.current = false;
+            toast.success('Invoice already issued');
+            router.push(routes.accounting.invoices);
+            return;
+          }
+        }
+        const id = await ensureSaved(true);
+        if (!id) throw new Error('Could not save invoice draft');
+        await arApService.issueInvoice(token, id, invoiceDueDate || undefined);
+        isDirtyRef.current = false;
+        toast.success('Invoice issued');
+        router.push(routes.accounting.invoices);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Could not issue invoice'
+        );
+      } finally {
+        form.setSaving(false);
+      }
+    });
+  }
+
   function handleTabChange(next: CreateTab) {
     form.setTab(next);
   }
@@ -267,21 +314,39 @@ export default function SalesCreate({
 
   return (
     <div className="pb-24">
-      <SalesCreateHeader
-        mode={mode}
-        initial={initial}
-        saving={form.saving}
-        hasLines={form.hasLines}
-        orderId={initial?._id}
-        token={token}
-        autoSaveStatus={autoSaveStatus}
-        onManualSave={handleManualSave}
-        onCreateOrder={() => handleSave(true)}
-        onSaveQuotation={() => handleSave(false)}
-        onSaveEdit={handleSaveEdit}
-        onPrint={() => handlePrint('quotation')}
-        onSendProForma={() => handlePrint('proforma')}
-      />
+      {invoice ? (
+        <InvoiceCreateHeader
+          saving={form.saving || autoSaveStatus === 'saving'}
+          hasLines={form.hasLines}
+          saveStatus={autoSaveStatus}
+          dueDate={invoiceDueDate}
+          onDueDate={(value) => {
+            setInvoiceDueDate(value);
+            isDirtyRef.current = true;
+          }}
+          onIssue={handleIssueInvoice}
+          onSave={() => {
+            void handleManualSave();
+          }}
+          onPrint={() => handlePrint('proforma')}
+        />
+      ) : (
+        <SalesCreateHeader
+          mode={mode}
+          initial={initial}
+          saving={form.saving}
+          hasLines={form.hasLines}
+          orderId={initial?._id}
+          token={token}
+          autoSaveStatus={autoSaveStatus}
+          onManualSave={handleManualSave}
+          onCreateOrder={() => handleSave(true)}
+          onSaveQuotation={() => handleSave(false)}
+          onSaveEdit={handleSaveEdit}
+          onPrint={() => handlePrint('quotation')}
+          onSendProForma={() => handlePrint('proforma')}
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[7fr_3fr]">
         <div className="min-w-0">

@@ -20,6 +20,7 @@ const oid = () => new mongoose.Types.ObjectId();
 // give up buffering. Stub it so the suite stays fast.
 function stubActivityLog(t) {
   t.mock.method(salesLog, 'logActivity', async () => {});
+  t.mock.method(require('../models/Order'), 'findOne', async () => null);
 }
 
 test('fulfilling a quotation from the POS keeps its number', async (t) => {

@@ -5,11 +5,12 @@ import { STATS, VALUES, WHY_ITEMS, FAQ_SCHEMA, LAST_UPDATED } from './data';
 import { FadeIn } from './components/FadeIn';
 import { StorySection } from './components/StorySection';
 import { VendorCTA } from './components/VendorCTA';
+import { jsonLdHtml } from '@/lib/jsonld';
 
 export default function AboutPage() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(FAQ_SCHEMA) }} />
       <style dangerouslySetInnerHTML={{
         __html: `@keyframes heroGradient{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}`
       }} />

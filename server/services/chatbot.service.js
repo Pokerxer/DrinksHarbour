@@ -1,3 +1,4 @@
+const { sizeKey, sizeLabel, resolveCartSize } = require('../utils/chatbotSizes');
 // server/services/chatbot.service.js
 // Chatbot Service using Claude Haiku for DrinksHarbour Multi-tenant Platform
 // Supports: Text queries, Image analysis, Database products, General beverage knowledge
@@ -242,14 +243,16 @@ const extractCartProposal = (responseText, validProducts = []) => {
     if (!name) continue;
     const product = findByName(name, validProducts);
     if (!product || !product.slug) continue;
+    const variant = resolveCartSize(product, item.size);
+    if (!variant) continue;
     const qty = Math.max(1, Math.min(99, parseInt(item.qty, 10) || 1));
     proposal.push({
       id: product._id?.toString?.() || product._id || product.id,
       slug: product.slug,
       name: product.name,
-      size: typeof item.size === 'string' && item.size.trim() ? item.size.trim() : null,
+      size: variant.label,
       qty,
-      price: product.minPrice || 0,
+      price: variant.price,
       image: productImageUrl(product),
     });
   }
@@ -581,15 +584,16 @@ const loadCatalog = async (tenantId = null) => {
       status: { $in: ['active', 'low_stock', 'out_of_stock'] },
       tenant: { $in: tenantFilter },
       baseSellingPrice: { $gt: 0 },
-    }).select('product baseSellingPrice costPrice availableStock discount discountType discountStart discountEnd isOnSale saleType saleDiscountValue saleStartDate saleEndDate sizes tenant').lean();
+    }).select('product baseSellingPrice costPrice platformMarkupOverridePct availableStock discount discountType discountStart discountEnd isOnSale saleType saleDiscountValue saleStartDate saleEndDate sizes tenant').lean();
 
-    // Step 4: Sizes for those subproducts — match shop's exact filter
+    // Step 4: Keep the storefront pricing inputs, including saved overrides and
+    // wholesale cost. Omitting them silently recalculates a different price.
     const allSizeIds = subProducts.flatMap(sp => sp.sizes || []);
     const sizes = await SizeModel.find({
       _id: { $in: allSizeIds },
       status: 'active',
       availability: { $in: ['available', 'in_stock', 'low_stock'] },
-    }).select('_id size volumeMl stock sellingPrice costPrice unitsPerPack discountValue discountType discountStart discountEnd availability')
+    }).select('_id size volumeMl stock sellingPrice costPrice wholesalePrice platformMarkupOverridePct packPlatformMarkupOverridePct maxOrderQuantity unitsPerPack discountValue discountType discountStart discountEnd availability')
       .lean();
     const sizeById = {};
     sizes.forEach(s => { sizeById[s._id.toString()] = s; });
@@ -649,10 +653,11 @@ const loadCatalog = async (tenantId = null) => {
             const { price: finalPrice, originalPrice, onSale } = applySaleDiscount(pricing, sp);
             if (onSale) anyOnSale = true;
             computedPrices.push(finalPrice);
-            const key = sz.size || (sz.volumeMl + 'ml');
+            const label = sizeLabel(sz);
+            const key = label ? sizeKey(label) : `unknown:${sizeId}`;
             const stock = sz.stock || sp.availableStock || 0;
             if (!sizeMap.has(key) || finalPrice < sizeMap.get(key).price) {
-              sizeMap.set(key, { label: key, price: finalPrice, originalPrice, onSale, stock });
+              sizeMap.set(key, { label: label || 'Size not specified', price: finalPrice, originalPrice, onSale, stock });
             }
           }
         } else {
@@ -956,15 +961,10 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
         }
         // Add sizes - use fetched Size docs with their individual pricing
         if (sp.sizes && sp.sizes.length > 0) {
-          sp.sizes.forEach((sizeId, idx) => {
+          sp.sizes.forEach((sizeId) => {
             const sizeDoc = sizeMap[sizeId.toString()];
-            // Generate a reasonable size name
-            let sizeName = sizeDoc?.size;
-            if (!sizeName) {
-              // Generate names based on index: Standard, Large, Small, etc.
-              const sizeNames = ['Standard', 'Large', 'Small', 'XL', '30cl', '50cl', '75cl', '1L'];
-              sizeName = sizeNames[idx % sizeNames.length] || `Size ${idx + 1}`;
-            }
+            const sizeName = sizeLabel(sizeDoc);
+            if (!sizeDoc || !sizeName) return;
             // Use Size's individual sellingPrice, fallback to baseSellingPrice
             const sizePrice = sizeDoc?.sellingPrice ?? sp.baseSellingPrice;
             availableAtMap[productId].sizes.push({
@@ -1310,8 +1310,8 @@ const handleChatbotQuery = async (options) => {
     // Rich system prompt with catalog + conversation context
     const systemPrompt = `${BASE_SYSTEM_PROMPT}
 
-${catalogContext ? `FULL SHOP CATALOG — ONLY use these products, categories, and prices. Do not invent anything outside this list:\n${catalogContext}` : '⚠️ CATALOG: No products available right now. Do NOT invent products or prices. Tell the customer to browse /shop.'}
-${webSearchResults ? `\nWEB SEARCH RESULTS (use for history, descriptions, food pairings, expert knowledge — NOT for prices):\n${webSearchResults}` : ''}
+${catalogContext ? `FULL SHOP CATALOG — ONLY use these products, categories, sizes, and prices. Do not invent anything outside this list:\n${catalogContext}` : '⚠️ CATALOG: No products available right now. Do NOT invent products or prices. Tell the customer to browse /shop.'}
+${webSearchResults ? `\nWEB SEARCH RESULTS (use for history, descriptions, food pairings, expert knowledge — NOT for prices or available bottle sizes):\n${webSearchResults}` : ''}
 ${historyBlock ? `\nCONVERSATION SO FAR:\n${historyBlock}` : ''}
 ${priceComplaintContext ? `\nCONTEXT: The customer is reacting to the price of "${priceComplaintContext}" which was just shown. They want something more affordable in the same category.` : ''}
 ${productInfoContext ? `\nCONTEXT: The customer is asking for more information about "${productInfoContext}" which was mentioned earlier in the conversation.` : ''}
@@ -1320,6 +1320,7 @@ ${intent.isFollowUp ? '\nCONTEXT: This is a short follow-up reaction to the prev
 INTENT DETECTED: ${intent.type}${intent.isEvent ? ' (event planning)' : ''}${intent.isOnSale ? ' (looking for deals)' : ''}${intent.isPriceComplaint ? ' (price complaint)' : ''}${intent.isFollowUp ? ' (follow-up)' : ''}
 
 RESPONSE INSTRUCTIONS FOR THIS QUERY:
+- Use only the sizes listed for each product in the current catalog. Never infer sizes from general knowledge, web results, or earlier replies. Equivalent units (75cl and 750ml) describe one size. Keep each size paired with its own price. If size is unspecified, say so.
 ${intent.type === 'price' ? '- Lead with the price clearly from the catalog. List all available sizes and their prices.' : ''}
 ${intent.type === 'price_complaint' ? '- Acknowledge the price empathetically (1 short sentence). Then list ONLY cheaper products from the CATALOG DATA. Show exact catalog prices. If none cheaper, say so and suggest browsing /shop.' : ''}
 ${intent.type === 'recommendation' ? '- Give a confident recommendation from the catalog. Briefly explain why it suits them using your expert knowledge.' : ''}
@@ -1360,7 +1361,7 @@ ${catalogContext ? IMAGE_REQUEST_INSTRUCTIONS : ''}`.trim();
 
     // If Claude returned nothing, retry once with a minimal conversational prompt
     if (!response) {
-      const minimalPrompt = `${BASE_SYSTEM_PROMPT}\n\nRespond naturally to the customer's message. Be warm and helpful. If they're reacting to a price or product, acknowledge it and offer next steps.`;
+      const minimalPrompt = `${BASE_SYSTEM_PROMPT}\n\n${catalogContext ? `CURRENT CATALOG (only source for sizes and prices):\n${catalogContext}` : "Catalog unavailable. Do not invent sizes or prices."}\n\nRespond naturally to the customer's message. Be warm and helpful. If they're reacting to a price or product, acknowledge it and offer next steps.`;
       response = await callClaude(query, minimalPrompt, conversationHistory);
     }
 
@@ -1370,10 +1371,9 @@ ${catalogContext ? IMAGE_REQUEST_INSTRUCTIONS : ''}`.trim();
     }
 
     // Pull out the structured add-to-cart offer (and strip it from the display text).
-    // Match against this query's products first, then the whole catalog — on a
-    // confirmation turn ("yes please") the product search finds nothing, but the
-    // re-emitted CART_JSON names still resolve via catalog entries.
-    const resolvable = [...validProducts, ...catalogEntries];
+    // Price cart offers from the same catalog supplied to the model. Search
+    // results can have different pricing and must not override that snapshot.
+    const resolvable = catalogEntries.length ? catalogEntries : validProducts;
     const { text: cleanResponse, proposal: cartProposal } = extractCartProposal(response, resolvable);
     // Then the picture request, on the already-stripped text. Names resolve
     // against the same lists — catalogEntries is already filtered to published

@@ -246,6 +246,7 @@ export const routes = {
     chartOfAccounts: '/accounting/chart-of-accounts',
     taxes: '/accounting/taxes',
     invoices: '/accounting/invoices',
+    invoiceCreate: '/accounting/invoices/create',
     bills: '/accounting/bills',
     creditNotes: '/accounting/credit-notes',
     payments: '/accounting/payments',

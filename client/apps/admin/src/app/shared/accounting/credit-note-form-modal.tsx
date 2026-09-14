@@ -1,5 +1,7 @@
 'use client';
 
+import { useAccountingDialog } from './use-accounting-dialog';
+
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
@@ -27,6 +29,7 @@ export default function CreditNoteFormModal({
   const [taxAmount, setTaxAmount] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const dialogRef = useAccountingDialog(onClose, busy);
 
   useEffect(() => {
     if (!salesOrderId) return;
@@ -38,13 +41,24 @@ export default function CreditNoteFormModal({
           : inv.customerSnapshot?.name || ''
       );
       setAmount(String(inv.outstanding ?? ''));
+      setTaxAmount('');
     }
   }, [salesOrderId, invoices]);
 
-  const valid = Number(amount) > 0;
+  const selectedInvoice = invoices.find(
+    (invoice) => invoice._id === salesOrderId
+  );
+  const gross = Number(amount) + Number(taxAmount || 0);
+  const valid =
+    Number.isFinite(gross) &&
+    Number(amount) > 0 &&
+    Number(taxAmount || 0) >= 0 &&
+    !!customerName.trim() &&
+    (!selectedInvoice ||
+      Math.round(gross * 100) <= Math.round(selectedInvoice.outstanding * 100));
 
   const submit = async () => {
-    if (!valid) return;
+    if (!valid || busy) return;
     setBusy(true);
     try {
       await arApService.createCreditNote(token, {
@@ -67,19 +81,25 @@ export default function CreditNoteFormModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+      onClick={() => {
+        if (!busy) onClose();
+      }}
       role="presentation"
     >
       <div
-        className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="New credit note"
       >
-        <h3 className="text-base font-semibold text-gray-900">New Credit Note</h3>
+        <h3 className="text-base font-semibold text-gray-900">
+          New Credit Note
+        </h3>
         <p className="mt-0.5 text-xs text-gray-400">
-          Posts Dr Sales Revenue + Dr Tax Collected, Cr Receivables.
+          Reduce an invoice balance or record a customer credit. No cash refund
+          is sent.
         </p>
 
         <div className="mt-4 space-y-3">
@@ -148,7 +168,9 @@ export default function CreditNoteFormModal({
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (!busy) onClose();
+            }}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Cancel

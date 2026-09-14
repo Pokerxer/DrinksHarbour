@@ -62,10 +62,22 @@ export default function JournalEntryDetail({
   };
 
   const printEntry = () => {
+    const escapeHtml = (value: unknown) =>
+      String(value ?? '').replace(
+        /[&<>"']/g,
+        (char) =>
+          ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+          })[char]!
+      );
     const rows = entry.lines
       .map(
         (l) =>
-          `<tr><td>${l.account}${accountName(l.account) ? ` — ${accountName(l.account)}` : ''}</td><td>${l.memo ?? ''}</td><td class="num">${fmtMoney(l.debit)}</td><td class="num">${fmtMoney(l.credit)}</td></tr>`
+          `<tr><td>${escapeHtml(l.account)}${accountName(l.account) ? ` — ${escapeHtml(accountName(l.account))}` : ''}</td><td>${escapeHtml(l.memo)}</td><td class="num">${fmtMoney(l.debit)}</td><td class="num">${fmtMoney(l.credit)}</td></tr>`
       )
       .join('');
     const html = `<!doctype html><html><head><title>Journal Entry</title><style>
@@ -78,8 +90,8 @@ export default function JournalEntryDetail({
       tfoot td{font-weight:700;border-top:2px solid #e5e7eb}
     </style></head><body>
       <h1>Journal Entry</h1>
-      <p class="sub">${refDocLabel(entry.refDocType)} · ${entryTypeLabel(entry.entryType)} · ${fmtDate(entry.date)} · ${entry.status}</p>
-      <p class="sub">${entry.memo ?? ''}</p>
+      <p class="sub">${escapeHtml(refDocLabel(entry.refDocType))} · ${escapeHtml(entryTypeLabel(entry.entryType))} · ${fmtDate(entry.date)} · ${escapeHtml(entry.status)}</p>
+      <p class="sub">${escapeHtml(entry.memo)}</p>
       <table><thead><tr><th>Account</th><th>Memo</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td colspan="2">Totals</td><td class="num">${fmtMoney(totalDebit)}</td><td class="num">${fmtMoney(totalCredit)}</td></tr></tfoot>
@@ -100,7 +112,9 @@ export default function JournalEntryDetail({
     <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-xl">
       <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">{refDocLabel(entry.refDocType)}</h3>
+          <h3 className="text-sm font-semibold text-gray-900">
+            {refDocLabel(entry.refDocType)}
+          </h3>
           <p className="text-xs text-gray-500">
             {entryTypeLabel(entry.entryType)} · {fmtDate(entry.date)}
           </p>
@@ -131,7 +145,9 @@ export default function JournalEntryDetail({
           {meta.map(([label, value]) => (
             <div key={label}>
               <dt className="uppercase tracking-wide text-gray-400">{label}</dt>
-              <dd className="mt-0.5 font-medium capitalize text-gray-700">{value}</dd>
+              <dd className="mt-0.5 font-medium capitalize text-gray-700">
+                {value}
+              </dd>
             </div>
           ))}
         </dl>
@@ -151,12 +167,26 @@ export default function JournalEntryDetail({
                 return (
                   <tr key={i}>
                     <td className="px-3 py-2">
-                      <span className="font-medium tabular-nums">{l.account}</span>
-                      {name && <span className="block text-[11px] text-gray-500">{name}</span>}
-                      {l.memo && <span className="block text-[11px] italic text-gray-400">{l.memo}</span>}
+                      <span className="font-medium tabular-nums">
+                        {l.account}
+                      </span>
+                      {name && (
+                        <span className="block text-[11px] text-gray-500">
+                          {name}
+                        </span>
+                      )}
+                      {l.memo && (
+                        <span className="block text-[11px] italic text-gray-400">
+                          {l.memo}
+                        </span>
+                      )}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(l.debit)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(l.credit)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {fmtMoney(l.debit)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {fmtMoney(l.credit)}
+                    </td>
                   </tr>
                 );
               })}
@@ -164,8 +194,12 @@ export default function JournalEntryDetail({
             <tfoot className="bg-gray-50 font-semibold">
               <tr>
                 <td className="px-3 py-2">Totals</td>
-                <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(totalDebit)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(totalCredit)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {fmtMoney(totalDebit)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {fmtMoney(totalCredit)}
+                </td>
               </tr>
             </tfoot>
           </table>
@@ -193,7 +227,10 @@ export default function JournalEntryDetail({
             type="button"
             disabled={busy}
             onClick={() =>
-              run(() => accountingService.deleteJournalEntry(token, entry._id), 'Draft deleted')
+              run(
+                () => accountingService.deleteJournalEntry(token, entry._id),
+                'Draft deleted'
+              )
             }
             className="rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
           >
@@ -214,7 +251,16 @@ export default function JournalEntryDetail({
 
 export function exportEntriesCsv(entries: JournalEntry[]) {
   downloadCsv(
-    ['Date', 'Reference', 'Ref Number', 'Type', 'Memo', 'Debit', 'Credit', 'Status'],
+    [
+      'Date',
+      'Reference',
+      'Ref Number',
+      'Type',
+      'Memo',
+      'Debit',
+      'Credit',
+      'Status',
+    ],
     entries.map((e) => [
       fmtDate(e.date),
       refDocLabel(e.refDocType),

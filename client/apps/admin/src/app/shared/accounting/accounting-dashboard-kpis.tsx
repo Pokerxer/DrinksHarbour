@@ -1,7 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { PiCaretRight, PiTrendUp, PiTrendDown, PiReceipt, PiArrowsCounterClockwise } from 'react-icons/pi';
+import {
+  PiCaretRight,
+  PiTrendUp,
+  PiTrendDown,
+  PiReceipt,
+  PiArrowsCounterClockwise,
+} from 'react-icons/pi';
 import type { AccountingDashboard as DashboardPayload } from '@/services/accounting.service';
 import { fmtMoney } from './accounting-helpers';
 
@@ -24,7 +30,7 @@ function StatCard({
   return (
     <Link
       href={href}
-      className={`flex items-start gap-4 rounded-2xl border p-5 transition-shadow hover:shadow-md ${accent ? 'border-[#b20202]/20 bg-[#b20202]/5' : 'border-gray-200 bg-white'}`}
+      className={`flex items-start gap-3 rounded-2xl border p-4 transition-shadow hover:shadow-md ${accent ? 'border-[#b20202]/20 bg-[#b20202]/5' : 'border-gray-200 bg-white'}`}
     >
       <div
         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accent ? 'bg-[#b20202] text-white' : 'bg-gray-100 text-gray-500'}`}
@@ -32,9 +38,11 @@ function StatCard({
         {icon}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</p>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+          {label}
+        </p>
         <p
-          className={`mt-0.5 text-xl font-black tabular-nums leading-none ${accent ? 'text-[#b20202]' : 'text-gray-900'}`}
+          className={`mt-0.5 break-words text-lg font-bold tabular-nums leading-none ${accent ? 'text-[#b20202]' : 'text-gray-900'}`}
         >
           {value}
         </p>
@@ -51,13 +59,17 @@ export default function AccountingDashboardKpis({
 }: {
   data: DashboardPayload['kpis'];
 }) {
-  const netTax = Math.round((data.taxCollectedMtd - data.taxPaidMtd) * 100) / 100;
+  const netTax =
+    Math.round((data.taxCollectedMtd - data.taxPaidMtd) * 100) / 100;
   const profitPositive = data.netProfitMtd >= 0;
   const stats = [
     {
       label: 'Revenue MTD',
       value: fmtMoney(data.revenueMtd),
-      sub: data.grossProfitMtd != null ? `Gross ${fmtMoney(data.grossProfitMtd)}` : undefined,
+      sub:
+        data.grossProfitMtd != null
+          ? `Gross ${fmtMoney(data.grossProfitMtd)}`
+          : undefined,
       icon: <PiTrendUp className="h-5 w-5" />,
       accent: true,
       href: '/accounting/reports',
@@ -73,7 +85,11 @@ export default function AccountingDashboardKpis({
       label: 'Net Profit MTD',
       value: fmtMoney(data.netProfitMtd),
       sub: profitPositive ? 'In the black' : 'Running at a loss',
-      icon: <PiTrendUp className={`h-5 w-5 ${profitPositive ? '' : 'rotate-180'}`} />,
+      icon: (
+        <PiTrendUp
+          className={`h-5 w-5 ${profitPositive ? '' : 'rotate-180'}`}
+        />
+      ),
       href: '/accounting/reports',
     },
     {
@@ -91,7 +107,7 @@ export default function AccountingDashboardKpis({
     },
   ];
   return (
-    <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {stats.map((s) => (
         <StatCard key={s.label} {...s} />
       ))}

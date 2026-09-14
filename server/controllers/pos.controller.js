@@ -2748,6 +2748,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     tenant:        tenantId,
     source:        'pos',
     receiptNumber,
+    linkedSalesOrder: linkedSalesOrderId || null,
     posSessionId:  session?._id || null,
     posStaff:      staffId,
     items:         orderItems,
@@ -4528,13 +4529,28 @@ exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
     paymentMethod,
   });
 
+  // The receipt may have been captured while its source was still a quotation.
+  // Re-run after conversion/settlement, including replayed reconciliation calls.
+  const postReceipt = async () => {
+    if (!ref) return;
+    const receipt = await Order.findOne({ tenant: tenantId, source: 'pos', receiptNumber: ref,
+      linkedSalesOrder: { $in: [req.params.id, order._id] } });
+    if (!receipt) return;
+    if (String(receipt.linkedSalesOrder) !== String(order._id)) {
+      receipt.linkedSalesOrder = order._id;
+      await receipt.save();
+    }
+    await require('../services/accounting.orders').captureOrderAccounting(receipt);
+  };
   if (duplicate) {
+    await postReceipt();
     return res.json({ success: true, data: order, reconciled: 0, duplicate: true });
   }
 
   if (order.orderStatus === 'draft') order.orderStatus = 'confirmed';
   if (paymentMethod) order.paymentMethod = paymentMethod;
   await order.save();
+  await postReceipt();
 
   res.json({ success: true, data: order, reconciled });
 

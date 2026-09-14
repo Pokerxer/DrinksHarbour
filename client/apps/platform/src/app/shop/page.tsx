@@ -12,6 +12,7 @@ import {
 } from './searchQuery';
 import { fetchInitialRecommendations } from '@/components/Shop/recommendations';
 import { buildPageTitle } from '@/lib/seoTitle';
+import { jsonLdHtml } from '@/lib/jsonld';
 import {
   resolveCategorySlug,
   fetchSubCategoryBySlug,
@@ -1823,7 +1824,7 @@ export default async function ShopPage({
         <script
           key={i}
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdHtml(schema) }}
         />
       ))}
       {prevHref && <link rel="prev" href={prevHref} />}

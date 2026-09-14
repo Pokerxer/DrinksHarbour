@@ -22,19 +22,21 @@ function badRequest(message) {
 
 /**
  * Resolve legacy free-string account codes to Account documents for a tenant.
- * Unknown or inactive codes reject with 400. Lines already carrying accountId
- * pass through untouched.
+ * Unknown, inactive or mismatched tenant accounts reject with 400.
  */
-async function resolveAccounts(tenantId, lines) {
-  const codes = [...new Set(lines.filter((l) => !l.accountId && l.account).map((l) => l.account))];
+async function resolveAccounts(tenantId, lines, session) {
+  const codes = [...new Set(lines.filter((l) => l.account).map((l) => l.account))];
   if (!codes.length) return lines;
-  const accounts = await Account.find({ tenant: tenantId, code: { $in: codes } }).lean();
+  const query = Account.find({ tenant: tenantId, code: { $in: codes } });
+  if (session) query.session(session);
+  const accounts = await query.lean();
   const byCode = new Map(accounts.map((a) => [String(a.code), a]));
   return lines.map((l) => {
-    if (l.accountId) return l;
+
     const account = byCode.get(l.account);
     if (!account) throw badRequest(`Unknown account code "${l.account}"`);
     if (!account.isActive) throw badRequest(`Account "${account.name}" (${l.account}) is inactive`);
+    if (l.accountId && String(l.accountId) !== String(account._id)) throw badRequest('Account ID does not match this tenant account');
     return { ...l, accountId: account._id };
   });
 }
@@ -43,8 +45,7 @@ async function resolveAccounts(tenantId, lines) {
  * Post an entry. Backwards compatible with the original signature
  * ({tenantId, date, lines, source, refDoc, refDocType, memo, postedBy}) —
  * entryType defaults to 'manual'. Idempotent: when an entry already exists
- * for {tenant, refDoc, entryType} it is replaced in place (posted docs keep
- * their _id) instead of duplicating against the unique index.
+ * for {tenant, refDoc, entryType}, the immutable original is returned.
  */
 async function postJournalEntry({
   tenantId,
@@ -57,7 +58,14 @@ async function postJournalEntry({
   postedBy,
   entryType = 'manual',
   status = 'posted',
+  session,
 }) {
+  if (!tenantId) throw badRequest('Tenant is required');
+  if (!Array.isArray(lines) || lines.some(l =>
+    !Number.isFinite(Number(l.debit ?? 0)) || !Number.isFinite(Number(l.credit ?? 0)) ||
+    Number(l.debit) < 0 || Number(l.credit) < 0 || (Number(l.debit) > 0 && Number(l.credit) > 0))) {
+    throw badRequest('Use at least two lines with finite non-negative amounts on one side per line');
+  }
   const rounded = normalizeLines(lines);
   if (!isBalanced(rounded)) {
     throw badRequest(
@@ -68,7 +76,8 @@ async function postJournalEntry({
         : 'Journal entry has no amount'
     );
   }
-  const resolved = await resolveAccounts(tenantId, rounded);
+  if (lines.length < 2) throw badRequest('Use at least two journal lines');
+  const resolved = await resolveAccounts(tenantId, rounded, session);
   const when = date ? new Date(date) : new Date();
   const payload = {
     tenant: tenantId,
@@ -85,20 +94,17 @@ async function postJournalEntry({
     postedAt: new Date(),
   };
 
-  const existing = await JournalEntry.findOne({
-    tenant: tenantId,
-    refDoc,
-    entryType,
-  });
-  if (existing) {
-    if (existing.status === 'posted' && status !== 'draft') {
-      // Re-capture: refresh the financials on the same document.
-      existing.set(payload);
-      return existing.save();
-    }
-    return existing; // drafts are only promoted explicitly, never overwritten
+  // Manual entries have no business-document identity: always append.
+  if (!refDoc) {
+    if (session) return (await JournalEntry.create([payload], { session }))[0];
+    return JournalEntry.create(payload);
   }
-  return JournalEntry.create(payload);
+  // A retry must never rewrite a posted entry (especially one already reversed).
+  return JournalEntry.findOneAndUpdate(
+    { tenant: tenantId, refDoc, entryType },
+    { $setOnInsert: payload },
+    { upsert: true, new: true, runValidators: true, ...(session ? { session } : {}) }
+  );
 }
 
 /** Tenant-scoped lookup used by hooks and the reverse endpoint. */
@@ -111,21 +117,21 @@ async function findEntry({ tenantId, refDoc, entryType }) {
  * original _id, entryType 'reversal'). The original is untouched. Idempotent:
  * returns the existing reversal instead of creating a second one.
  */
-async function reverseEntry({ tenantId, entryId, userId }) {
-  const original = await JournalEntry.findOne({ _id: entryId, tenant: tenantId });
+async function reverseEntry({ tenantId, entryId, userId, session }) {
+  const original = await JournalEntry.findOne({ _id: entryId, tenant: tenantId }).session(session || null);
   if (!original) throw badRequest('Journal entry not found');
   if (original.status !== 'posted') {
     throw badRequest('Only posted entries can be reversed');
   }
   const alreadyReversed = await JournalEntry.findOne({
-    tenant: tenantId,
-    refDoc: original._id,
-    entryType: 'reversal',
-  });
+    tenant: tenantId, refDoc: original._id, entryType: 'reversal',
+  }).session(session || null);
   if (alreadyReversed) return alreadyReversed;
 
   const swapped = swapLinesForReversal(original);
-  return JournalEntry.create({
+  return JournalEntry.findOneAndUpdate(
+    { tenant: tenantId, refDoc: original._id, entryType: 'reversal' },
+    { $setOnInsert: {
     tenant: tenantId,
     refDoc: original._id,
     refDocType: original.refDocType,
@@ -137,7 +143,7 @@ async function reverseEntry({ tenantId, entryId, userId }) {
     memo: swapped.memo || `Reversal of ${original.refDocType} entry`,
     postedBy: userId,
     status: 'posted',
-  });
+  } }, { upsert: true, new: true, runValidators: true, ...(session ? { session } : {}) });
 }
 
 module.exports = {

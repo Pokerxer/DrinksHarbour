@@ -41,6 +41,9 @@ const AgeGate: React.FC<AgeGateProps> = ({
     <AnimatePresence>
       <motion.div
         key="age-gate"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drinksharbour-age-gate-title"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -106,7 +109,7 @@ const AgeGate: React.FC<AgeGateProps> = ({
               <Icon.PiWineFill size={30} style={{ color: '#ff6060' }} />
             </div>
 
-            <h2 className="modal-title text-xl font-black text-white mb-2 leading-tight">
+            <h2 id="drinksharbour-age-gate-title" className="modal-title text-xl font-black text-white mb-2 leading-tight">
               Age Verification
             </h2>
             <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>

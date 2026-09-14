@@ -15,16 +15,16 @@ export const dynamic = "force-dynamic";
 import LazySection from "@/components/UI/LazySection";
 import { fetchInitialRecommendations } from "@/components/Shop/recommendations";
 import { buildProductItemList } from "@/lib/product-jsonld";
+import { jsonLdHtml } from "@/lib/jsonld";
+import OpportunityProductLinks from "@/components/SEO/OpportunityProductLinks";
 
 // HeroBanner is above the fold — load it eagerly
 import HeroBanner from "@/components/Banner/HeroBanner";
 import HomeCategoryDrawer from "@/components/Home1/HomeCategoryDrawer";
 
 // Below-fold sections: dynamically imported to reduce initial JS bundle
-const FlashSale = nextDynamic(() => import("@/components/Home1/FlashSale"), {
-  loading: () => <FlashSaleSkeleton />,
-});
 const FeaturedDeals = nextDynamic(() => import("@/components/Home1/FeaturedDeals"));
+const FlashSale = nextDynamic(() => import("@/components/Home1/FlashSale"));
 const FeaturedProducts = nextDynamic(
   () => import("@/components/Home1/FeaturedProducts")
 );
@@ -38,21 +38,6 @@ const RecommendedForYou = nextDynamic(
 const BlogSection = nextDynamic(() => import("@/components/Home1/BlogSection"), {
   loading: () => null,
 });
-
-function FlashSaleSkeleton() {
-  return (
-    <div className="py-4 bg-white animate-pulse">
-      <div className="container mx-auto px-3">
-        <div className="h-6 w-40 bg-gray-200 rounded mb-4" />
-        <div className="flex gap-3 overflow-hidden">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="min-w-[150px] h-48 bg-gray-100 rounded-lg" />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // Server-side fetch of the "Hot Deals" products so the cards + /product links
 // are present in the raw HTML for crawlers. Mirrors FeaturedDeals' own client
@@ -160,17 +145,20 @@ export default async function Home() {
     products: [...featuredDeals, ...featured],
   });
   const webPageJsonLd = buildHomeWebPageJsonLd(Boolean(productListJsonLd));
+  const regularDeals = featuredDeals.filter((product: any) =>
+    !(product.availableAt || []).some((offer: any) => offer.saleType === "flash_sale" && offer.isOnSale)
+  );
 
   return (
     <div className="bg-gray-100 min-h-screen">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdHtml(webPageJsonLd) }}
       />
       {productListJsonLd && (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(productListJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdHtml(productListJsonLd) }}
         />
       )}
       {/* Mobile Category Sidebar Overlay (interactive — client component) */}
@@ -195,9 +183,10 @@ export default async function Home() {
           <MarketplaceIntro />
         </div>
 
-        {/* Flash Sale — promotional, kept lazy (client-fetched) */}
+        {/* Active flash-sale offers are isolated from Hot Deals so the same
+            product is not rendered twice in the homepage HTML. */}
         <LazySection rootMargin="400px">
-          <FlashSale initialProducts={featuredDeals} />
+          <FlashSale initialProducts={featuredDeals} flashOnly />
         </LazySection>
 
         {/* Hot Deals — server-seeded so the grid ships in the raw HTML */}
@@ -207,7 +196,7 @@ export default async function Home() {
               title="Hot Deals"
               subtitle="Limited time offers - Grab them fast!"
               limit={12}
-              initialProducts={featuredDeals}
+              initialProducts={regularDeals}
             />
           </div>
         </section>
@@ -215,7 +204,8 @@ export default async function Home() {
         {/* Featured Products — admin-curated, server-seeded (bestseller fallback) */}
         <section className="py-4 bg-white">
           <div className="container mx-auto px-3">
-            <FeaturedProducts limit={8} initialProducts={featured} />
+        <FeaturedProducts limit={8} initialProducts={featured} />
+        <OpportunityProductLinks />
           </div>
         </section>
 

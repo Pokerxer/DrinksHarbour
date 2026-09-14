@@ -1,16 +1,16 @@
 'use client';
 
-import AccountingNavHeader from './accounting-nav-header';
+import AccountingPageShell from './accounting-page-shell';
 import ReportsView from './reports-view';
 
 /** /accounting/reports — module chrome + tabbed report workspace. */
 export default function AccountingReports() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AccountingNavHeader />
-      <main className="mx-auto max-w-7xl px-4 py-6">
-        <ReportsView />
-      </main>
-    </div>
+    <AccountingPageShell
+      title="Financial reports"
+      subtitle="Review your trial balance, income, financial position and account movements."
+    >
+      <ReportsView />
+    </AccountingPageShell>
   );
 }

@@ -181,7 +181,10 @@ const FeaturedProducts: React.FC<FeaturedProductsContainerProps> = ({
     })
   );
   const totalTenants = tenantKeys.size;
-  const avgRating = products.reduce((sum, p) => sum + p.averageRating, 0) / products.length;
+  const ratedProducts = products.filter((p) => p.averageRating > 0 && p.reviewCount > 0);
+  const avgRating = ratedProducts.length
+    ? ratedProducts.reduce((sum, p) => sum + p.averageRating, 0) / ratedProducts.length
+    : 0;
 
   return (
     <section ref={sectionRef} className="overflow-hidden bg-gradient-to-b from-white via-amber-50/20 to-white py-16 sm:py-24">

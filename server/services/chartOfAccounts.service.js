@@ -16,6 +16,8 @@ const DEFAULT_COA = [
   { code: '1400', name: 'Tax Paid (Input VAT)', type: 'asset' },
   { code: '2000', name: 'Payables', type: 'liability' },
   { code: '2100', name: 'Tax Collected (Output VAT)', type: 'liability' },
+  { code: '2200', name: 'Customer Wallet Liability', type: 'liability' },
+  { code: '2300', name: 'Tips Payable', type: 'liability' },
   { code: '3000', name: "Owner's Equity", type: 'equity' },
   { code: '3100', name: 'Retained Earnings', type: 'equity' },
   { code: '4000', name: 'Sales Revenue', type: 'income' },

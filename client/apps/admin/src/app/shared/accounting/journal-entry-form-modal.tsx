@@ -1,5 +1,7 @@
 'use client';
 
+import { useAccountingDialog } from './use-accounting-dialog';
+
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
@@ -34,28 +36,31 @@ export default function JournalEntryFormModal({
 }) {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
-  const activeAccounts = useMemo(() => accounts.filter((a) => a.isActive), [accounts]);
+  const activeAccounts = useMemo(
+    () => accounts.filter((a) => a.isActive),
+    [accounts]
+  );
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [memo, setMemo] = useState('');
-  const [lines, setLines] = useState<FormLine[]>([{ ...EMPTY_LINE }, { ...EMPTY_LINE }]);
+  const [lines, setLines] = useState<FormLine[]>([
+    { ...EMPTY_LINE },
+    { ...EMPTY_LINE },
+  ]);
   const [busy, setBusy] = useState(false);
+  const dialogRef = useAccountingDialog(onClose, busy);
 
   const balance = linesBalanced(lines);
   // Backend rejects entries with fewer than two lines — mirror that client-side.
   const filledLines = lines.filter((l) => l.account).length;
-  const incompleteLines = lines.filter((l) => !l.account && (l.debit || l.credit)).length;
+  const incompleteLines = lines.filter(
+    (l) => !l.account && (l.debit || l.credit)
+  ).length;
   const canPost = balance.balanced && filledLines >= 2 && incompleteLines === 0;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const setLine = (i: number, patch: Partial<FormLine>) =>
-    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+    setLines((prev) =>
+      prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l))
+    );
 
   const submit = async () => {
     if (!canPost) return;
@@ -86,17 +91,22 @@ export default function JournalEntryFormModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+      onClick={() => {
+        if (!busy) onClose();
+      }}
       role="presentation"
     >
       <div
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
+        className="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="New manual entry"
       >
-        <h3 className="text-base font-semibold text-gray-900">New Manual Entry</h3>
+        <h3 className="text-base font-semibold text-gray-900">
+          New Manual Entry
+        </h3>
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs font-medium text-gray-600">
@@ -130,7 +140,10 @@ export default function JournalEntryFormModal({
             <span />
           </div>
           {lines.map((line, i) => (
-            <div key={i} className="grid grid-cols-[2fr_1fr_1fr_1.4fr_auto] items-center gap-2">
+            <div
+              key={i}
+              className="grid grid-cols-[2fr_1fr_1fr_1.4fr_auto] items-center gap-2"
+            >
               <select
                 className={INPUT_CLS}
                 value={line.account}
@@ -150,7 +163,9 @@ export default function JournalEntryFormModal({
                 step="0.01"
                 className={`${INPUT_CLS} text-right`}
                 value={line.debit}
-                onChange={(e) => setLine(i, { debit: e.target.value, credit: '' })}
+                onChange={(e) =>
+                  setLine(i, { debit: e.target.value, credit: '' })
+                }
                 aria-label={`Debit line ${i + 1}`}
               />
               <input
@@ -159,7 +174,9 @@ export default function JournalEntryFormModal({
                 step="0.01"
                 className={`${INPUT_CLS} text-right`}
                 value={line.credit}
-                onChange={(e) => setLine(i, { credit: e.target.value, debit: '' })}
+                onChange={(e) =>
+                  setLine(i, { credit: e.target.value, debit: '' })
+                }
                 aria-label={`Credit line ${i + 1}`}
               />
               <input
@@ -172,7 +189,9 @@ export default function JournalEntryFormModal({
               <button
                 type="button"
                 disabled={lines.length <= 2}
-                onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}
+                onClick={() =>
+                  setLines((prev) => prev.filter((_, idx) => idx !== i))
+                }
                 className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30"
                 aria-label={`Remove line ${i + 1}`}
               >
@@ -192,7 +211,9 @@ export default function JournalEntryFormModal({
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
           <p
             className={`text-sm font-medium ${
-              balance.balanced && incompleteLines === 0 ? 'text-emerald-600' : 'text-red-600'
+              balance.balanced && incompleteLines === 0
+                ? 'text-emerald-600'
+                : 'text-red-600'
             }`}
           >
             {!balance.balanced
@@ -206,7 +227,9 @@ export default function JournalEntryFormModal({
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                if (!busy) onClose();
+              }}
               className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Cancel

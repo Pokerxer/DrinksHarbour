@@ -10,7 +10,7 @@ export const STATS: StatData[] = [
   { value: '800+',  label: 'Products', icon: Icon.PiWineBold },
   { value: '60+',   label: 'Brands',   icon: Icon.PiStorefront },
   { value: '1,500+', label: 'Customers', icon: Icon.PiUsers },
-  { value: '5+',    label: 'States Reached', icon: Icon.PiMapPin },
+  { value: '36+',   label: 'States Covered', icon: Icon.PiMapPin },
 ];
 
 export const VALUES: ValueData[] = [
@@ -23,7 +23,7 @@ export const VALUES: ValueData[] = [
   {
     icon: Icon.PiTruckBold,
     title: 'Fast, Reliable Delivery',
-    body: 'Same-day delivery in Abuja and Lagos, next-day to major cities. We partner with trusted logistics providers to get your order to you safely and on time.',
+    body: 'Same-day delivery in Abuja and the FCT, with nationwide delivery through trusted logistics partners. Exact timing and fees are shown at checkout.',
     color: 'bg-blue-50 text-blue-700',
   },
   {

@@ -2,13 +2,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { salesOrderService } from '@/services/salesOrder.service';
+import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
 import { routes } from '@/config/routes';
-import type { SalesOrder } from '@/services/salesOrder.service';
 import type { PricedLine } from '../sales-line-table';
 
 export interface UseSalesAutosaveOptions {
   token: string;
+  draftPath?: (id: string) => string;
   initial?: SalesOrder;
   priced: PricedLine[];
   customer: { _id: string } | null;
@@ -25,6 +25,7 @@ export interface UseSalesAutosaveOptions {
 
 export function useSalesAutosave({
   token,
+  draftPath = routes.eCommerce.salesEdit,
   initial,
   priced,
   customer,
@@ -124,21 +125,21 @@ export function useSalesAutosave({
         });
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps — intentional: restarts interval only when token or doc ID changes; form data read from refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: restarts interval only when token or doc ID changes; form data read from refs
   }, [token, initial?._id]);
 
   // Deliberate autosave policy: NO debounced background save on every edit.
   // The document persists only on explicit triggers — the manual save button,
   // a warehouse switch (below), a confirmed pricelist recompute / coupon /
   // print (via ensureSaved), and page leave (beforeunload/unmount bgSave).
-  const manualSaveRef = useRef<() => Promise<void>>(async () => {});
+  const manualSaveRef = useRef<() => Promise<unknown>>(async () => {});
   const prevWarehouseRef = useRef(warehouseId);
   useEffect(() => {
     if (prevWarehouseRef.current === warehouseId) return;
     prevWarehouseRef.current = warehouseId;
     if (!autoSaveEnabledRef.current) return;
     void manualSaveRef.current();
-    // eslint-disable-next-line react-hooks/exhaustive-deps — save-on-warehouse-change only
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- save-on-warehouse-change only
   }, [warehouseId]);
 
   useEffect(() => {
@@ -174,27 +175,26 @@ export function useSalesAutosave({
           token
         );
         assignDraftId(res.data._id);
-        window.history.replaceState(
-          null,
-          '',
-          routes.eCommerce.salesEdit(res.data._id)
-        );
+        window.history.replaceState(null, '', draftPath(res.data._id));
       }
       isDirtyRef.current = false;
       setAutoSaveStatus('saved');
+      return true;
     } catch {
       setAutoSaveStatus('error');
+      return false;
     }
   }
 
   manualSaveRef.current = handleManualSave;
 
-  async function ensureSaved(): Promise<string | null> {
+  async function ensureSaved(force = false): Promise<string | null> {
     const existingId = initial?._id ?? draftIdRef.current;
     if (existingId) {
       // Flush pending edits so server-side actions (Update Prices, coupon,
       // print) operate on what the operator sees.
-      if (isDirtyRef.current) await handleManualSave();
+      if ((force || isDirtyRef.current) && !(await handleManualSave()))
+        return null;
       return existingId;
     }
     const productLines = priced.filter(
@@ -209,7 +209,8 @@ export function useSalesAutosave({
       );
       const newId = res.data._id;
       assignDraftId(newId);
-      window.history.replaceState(null, '', routes.eCommerce.salesEdit(newId));
+      isDirtyRef.current = false;
+      window.history.replaceState(null, '', draftPath(newId));
       setAutoSaveStatus('saved');
       return newId;
     } catch {

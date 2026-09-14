@@ -9,18 +9,18 @@ const asyncHandler = require('../utils/asyncHandler');
 const { logPrivilegedAction } = require('../utils/auditLog');
 const arApService = require('../services/arAp.service');
 const creditNoteService = require('../services/creditNote.service');
-const paymentService = require('../services/payment.service');
+const paymentService = require('../services/accountingPayment.service');
 const batchService = require('../services/batchPayment.service');
 
 function paged(req) {
   return {
     page: Math.max(parseInt(req.query.page, 10) || 1, 1),
-    limit: Math.min(parseInt(req.query.limit, 10) || 50, 500),
+    limit: Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100),
   };
 }
 
-function envelope(res, { data, total, page, pages }) {
-  res.json({ success: true, data, pagination: { page, limit: Number(req.query.limit) || 50, total, pages } });
+function envelope(req, res, { data, total, page, pages }) {
+  res.json({ success: true, data, pagination: { page, limit: paged(req).limit, total, pages } });
 }
 
 // ── Summaries + open documents ───────────────────────────────────────────────
@@ -34,17 +34,17 @@ exports.payablesSummary = asyncHandler(async (req, res) => {
 });
 
 exports.listInvoices = asyncHandler(async (req, res) => {
-  envelope(res, await arApService.listOpenDocs(req.tenant._id, 'ar', { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to }));
+  envelope(req, res, await arApService.listOpenDocs(req.tenant._id, 'ar', { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search }));
 });
 
 exports.listBills = asyncHandler(async (req, res) => {
-  envelope(res, await arApService.listOpenDocs(req.tenant._id, 'ap', { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to }));
+  envelope(req, res, await arApService.listOpenDocs(req.tenant._id, 'ap', { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search }));
 });
 
 // ── Credit notes ─────────────────────────────────────────────────────────────
 
 exports.listCreditNotes = asyncHandler(async (req, res) => {
-  envelope(res, await creditNoteService.listCreditNotes(req.tenant._id, { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to }));
+  envelope(req, res, await creditNoteService.listCreditNotes(req.tenant._id, { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search }));
 });
 
 exports.createCreditNote = asyncHandler(async (req, res) => {
@@ -88,7 +88,7 @@ function sideOf(req) {
 }
 
 exports.listPayments = asyncHandler(async (req, res) => {
-  envelope(res, await paymentService.listPayments(req.tenant._id, sideOf(req), { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to }));
+  envelope(req, res, await paymentService.listPayments(req.tenant._id, sideOf(req), { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search }));
 });
 
 exports.createPayment = asyncHandler(async (req, res) => {
@@ -131,11 +131,11 @@ exports.cancelPayment = asyncHandler(async (req, res) => {
 // ── Batch payments ───────────────────────────────────────────────────────────
 
 exports.listBatches = asyncHandler(async (req, res) => {
-  envelope(res, await batchService.listBatches(req.tenant._id, { ...paged(req), direction: req.query.direction, status: req.query.status }));
+  envelope(req, res, await batchService.listBatches(req.tenant._id, { ...paged(req), direction: req.query.direction, status: req.query.status }));
 });
 
 exports.listUnbatched = asyncHandler(async (req, res) => {
-  envelope(res, await batchService.listUnbatched(req.tenant._id, sideOf(req), paged(req)));
+  envelope(req, res, await batchService.listUnbatched(req.tenant._id, sideOf(req), paged(req)));
 });
 
 exports.createBatch = asyncHandler(async (req, res) => {
@@ -182,7 +182,7 @@ exports.listCustomers = asyncHandler(async (req, res) => {
     arApService.customerBalances(req.tenant._id),
   ]);
   const balanceById = new Map(balances.map((b) => [String(b.customerId), b]));
-  envelope(res, {
+  envelope(req, res, {
     ...list,
     data: list.data.map((c) => ({
       ...c,
@@ -198,7 +198,7 @@ exports.listVendors = asyncHandler(async (req, res) => {
     arApService.vendorBalances(req.tenant._id),
   ]);
   const balanceById = new Map(balances.map((b) => [String(b.vendorId), b]));
-  envelope(res, {
+  envelope(req, res, {
     ...list,
     data: list.data.map((v) => ({
       ...v,
@@ -209,5 +209,13 @@ exports.listVendors = asyncHandler(async (req, res) => {
 });
 
 exports.listProducts = asyncHandler(async (req, res) => {
-  envelope(res, await arApService.productsList(req.tenant._id, { ...paged(req), search: req.query.search }));
+  envelope(req, res, await arApService.productsList(req.tenant._id, { ...paged(req), search: req.query.search }));
+});
+
+exports.issueInvoice = asyncHandler(async (req, res) => {
+  const doc = await require('../services/accountingInvoice.service').issueInvoice({
+    tenantId: req.tenant._id, id: req.params.id, dueDate: req.body.dueDate, userId: req.user._id,
+  });
+  await require('../services/tax.service').captureDocumentTax({ sourceType: 'sales_order', doc, postedBy: req.user._id });
+  res.json({ success: true, data: doc });
 });

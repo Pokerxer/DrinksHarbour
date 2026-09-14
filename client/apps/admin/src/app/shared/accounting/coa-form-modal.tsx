@@ -1,9 +1,15 @@
 'use client';
 
+import { useAccountingDialog } from './use-accounting-dialog';
+
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
-import { accountingService, type Account, type AccountType } from '@/services/accounting.service';
+import {
+  accountingService,
+  type Account,
+  type AccountType,
+} from '@/services/accounting.service';
 import { ACCOUNT_TYPE_LABELS } from './accounting-helpers';
 
 const INPUT_CLS =
@@ -26,6 +32,7 @@ export default function CoaFormModal({
   const [type, setType] = useState<AccountType>(editing?.type ?? 'expense');
   const [description, setDescription] = useState(editing?.description ?? '');
   const [busy, setBusy] = useState(false);
+  const dialogRef = useAccountingDialog(onClose, busy);
 
   useEffect(() => {
     setCode(editing?.code ?? '');
@@ -41,10 +48,19 @@ export default function CoaFormModal({
     setBusy(true);
     try {
       if (editing) {
-        await accountingService.updateAccount(token, editing._id, { name, type, description });
+        await accountingService.updateAccount(token, editing._id, {
+          name,
+          type,
+          description,
+        });
         toast.success('Account updated');
       } else {
-        await accountingService.createAccount(token, { code, name, type, description });
+        await accountingService.createAccount(token, {
+          code,
+          name,
+          type,
+          description,
+        });
         toast.success('Account created');
       }
       onSaved();
@@ -59,12 +75,15 @@ export default function CoaFormModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+      onClick={() => {
+        if (!busy) onClose();
+      }}
       role="presentation"
     >
       <div
-        className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={editing ? 'Edit account' : 'New account'}
@@ -84,7 +103,11 @@ export default function CoaFormModal({
               disabled={!!editing}
               placeholder="e.g. 6800"
             />
-            {editing && <span className="mt-1 block text-[11px] text-gray-400">Codes are immutable</span>}
+            {editing && (
+              <span className="mt-1 block text-[11px] text-gray-400">
+                Codes are immutable
+              </span>
+            )}
           </label>
           <label className="block text-xs font-medium text-gray-600">
             Name
@@ -125,7 +148,9 @@ export default function CoaFormModal({
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (!busy) onClose();
+            }}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Cancel

@@ -19,13 +19,7 @@ const {
 } = require('./accounting.helpers');
 const { getSummary } = require('./tax.service');
 
-const dateFilter = ({ from, to }) => {
-  if (!from && !to) return undefined;
-  const filter = {};
-  if (from) filter.$gte = new Date(from);
-  if (to) filter.$lte = new Date(to);
-  return filter;
-};
+const { dateRange: dateFilter } = require('./accounting.query');
 
 async function fetchEntries(tenantId, { from, to, period } = {}) {
   const filter = { tenant: tenantId, status: 'posted' };
@@ -33,7 +27,7 @@ async function fetchEntries(tenantId, { from, to, period } = {}) {
   if (date) {
     if (period) {
       const [y, m] = String(period).split('-').map(Number);
-      if (!y || !m) {
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period)) || !y || !m) {
         const err = new Error('period must be YYYY-MM');
         err.status = 400;
         throw err;
@@ -87,7 +81,7 @@ async function getProfitLoss(tenantId, { from, to } = {}) {
 /** Assets/liabilities/equity as of a moment; RE = cumulative net profit. */
 async function getBalanceSheet(tenantId, { asOf } = {}) {
   const filter = { tenant: tenantId, status: 'posted' };
-  if (asOf) filter.date = { $lte: new Date(asOf) };
+  if (asOf) filter.date = dateFilter({ to: asOf });
   const entries = await JournalEntry.find(filter).sort({ date: 1 }).lean();
   const lifetime = buildProfitLoss(entries, {});
   return buildBalanceSheet(entries, asOf, lifetime.netProfit);
@@ -143,9 +137,8 @@ async function getDashboard(tenantId, { from, to } = {}) {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const window = { from: from || startOfMonth.toISOString(), to: to || now.toISOString() };
 
-  const [pl, taxSummary, recent, draftCount, sixMonthEntries] = await Promise.all([
+  const [pl, recent, draftCount, sixMonthEntries, ordersToReview] = await Promise.all([
     getProfitLoss(tenantId, window),
-    getSummary(tenantId, window),
     JournalEntry.find({ tenant: tenantId })
       .sort({ date: -1 })
       .limit(10)
@@ -159,6 +152,8 @@ async function getDashboard(tenantId, { from, to } = {}) {
         .select('period lines')
         .lean();
     })(),
+    require('../models/Order').find({ 'items.tenant': tenantId, accountingStatus: 'needs_review' })
+      .select('orderNumber receiptNumber accountingIssue').sort({ accountingCheckedAt: -1 }).limit(10).lean(),
   ]);
 
   return {
@@ -167,13 +162,14 @@ async function getDashboard(tenantId, { from, to } = {}) {
       expensesMtd: round2(pl.cogs.total + pl.expenseTotal),
       netProfitMtd: pl.netProfit,
       grossProfitMtd: pl.grossProfit,
-      taxCollectedMtd: taxSummary.collected,
-      taxPaidMtd: taxSummary.paid,
+      taxCollectedMtd: pl.tax.collected,
+      taxPaidMtd: pl.tax.paid,
       unpostedDraftCount: draftCount,
     },
     profitLoss: pl,
     monthly: buildMonthlySeries(sixMonthEntries, periodOf(now)),
     recentEntries: recent,
+    ordersToReview,
     unpostedDraftCount: draftCount,
   };
 }

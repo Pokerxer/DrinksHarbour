@@ -66,16 +66,20 @@ const FeaturedProductsHeader: React.FC<FeaturedProductsHeaderProps> = ({
             label="Featured"
           />
           <div className="h-10 w-px bg-gray-200" />
-          <Stat
-            icon={<PiStarFill size={18} className="text-amber-500" />}
-            value={avgRating.toFixed(1)}
-            label="Avg rating"
-          />
-          <div className="h-10 w-px bg-gray-200" />
+          {avgRating > 0 && (
+            <>
+              <Stat
+                icon={<PiStarFill size={18} className="text-amber-500" />}
+                value={avgRating.toFixed(1)}
+                label="Avg rating"
+              />
+              <div className="h-10 w-px bg-gray-200" />
+            </>
+          )}
           <Stat
             icon={<PiStorefront size={18} className="text-emerald-600" />}
             value={tenantsCount}
-            label="Tenants"
+            label={tenantsCount === 1 ? "Store" : "Stores"}
           />
         </div>
       )}

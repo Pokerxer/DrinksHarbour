@@ -1,5 +1,6 @@
 'use client';
 
+import { selectChatSize } from './chatSizeSelection';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/context/CartContext';
@@ -663,12 +664,7 @@ export default function ChatbotWidget() {
         const vendor = full?.availableAt?.[0];
         if (!full || !vendor) { failed.push(item.name); continue; }
         const sizes = (vendor.sizes || []).filter((s: any) => (s.pricing?.websitePrice || 0) > 0);
-        const wanted = item.size?.toLowerCase() || null;
-        const match = wanted
-          ? sizes.find((s: any) =>
-              (s.size || '').toLowerCase() === wanted || (s.displayName || '').toLowerCase() === wanted)
-          : null;
-        const size = match || sizes.find((s: any) => (s.stock ?? 0) > 0) || sizes[0];
+        const size = selectChatSize<(typeof sizes)[number]>(sizes, item.size);
         if (!size || (size.stock ?? 0) <= 0) { failed.push(item.name); continue; }
         // Size label may live in size/displayName/name depending on how the
         // product was imported — the cart displays selectedSize verbatim.

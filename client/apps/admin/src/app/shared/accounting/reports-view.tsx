@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import {
@@ -42,7 +42,11 @@ const SELECT_CLS =
   'rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-400';
 
 /** /accounting/reports — tabbed workspace: KPI chips, chart, then the table. */
-export default function ReportsView({ initialTab = 'trial-balance' }: { initialTab?: Tab }) {
+export default function ReportsView({
+  initialTab = 'trial-balance',
+}: {
+  initialTab?: Tab;
+}) {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
 
@@ -59,6 +63,8 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
   const [bs, setBs] = useState<BalanceSheet | null>(null);
   const [gl, setGl] = useState<GeneralLedger | null>(null);
   const [loading, setLoading] = useState(false);
+  const requestSeq = useRef(0);
+  const [error, setError] = useState('');
 
   // Accounts grouped by canonical type for the GL selector.
   const accountsByType = useMemo(
@@ -72,39 +78,45 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
 
   const load = useCallback(async () => {
     if (!token) return;
+    const seq = ++requestSeq.current;
     setLoading(true);
+    setError('');
     try {
       if (tab === 'trial-balance') {
         const res = await accountingService.trialBalance(token, { period });
-        setTb(res.data);
+        if (seq === requestSeq.current) setTb(res.data);
       } else if (tab === 'profit-loss') {
         const res = await accountingService.profitLoss(token, {
           from: from || undefined,
           to: to || undefined,
         });
-        setPl(res.data);
+        if (seq === requestSeq.current) setPl(res.data);
       } else if (tab === 'balance-sheet') {
         const res = await accountingService.balanceSheet(token, {
           asOf: to || new Date().toISOString(),
         });
-        setBs(res.data);
+        if (seq === requestSeq.current) setBs(res.data);
       } else {
         const res = await accountingService.generalLedger(token, {
           account: glAccount,
           from: from || undefined,
           to: to || undefined,
         });
-        setGl(res.data);
+        if (seq === requestSeq.current) setGl(res.data);
       }
     } catch (e) {
-      toast.error((e as Error).message);
+      if (seq === requestSeq.current) setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   }, [token, tab, period, from, to, glAccount]);
 
   useEffect(() => {
-    load();
+    void load();
+    const sequence = requestSeq;
+    return () => {
+      sequence.current++;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -124,7 +136,22 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
         : `${windowLabel} · NGN`;
 
   return (
-    <div>
+    <div className="min-w-0">
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+        >
+          {error}
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="ml-3 min-h-10 font-semibold underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200">
           {TABS.map((t) => (
@@ -133,7 +160,9 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
               type="button"
               onClick={() => setTab(t.key)}
               className={`rounded-md px-4 py-1.5 text-sm font-medium transition ${
-                tab === t.key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
+                tab === t.key
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
               {t.label}
@@ -189,7 +218,10 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
               aria-label="Account"
             >
               {accountsByType.map((g) => (
-                <optgroup key={g.type} label={ACCOUNT_TYPE_LABELS[g.type] ?? g.type}>
+                <optgroup
+                  key={g.type}
+                  label={ACCOUNT_TYPE_LABELS[g.type] ?? g.type}
+                >
                   {g.rows.map((a) => (
                     <option key={a._id} value={a.code}>
                       {a.code} · {a.name}
@@ -216,7 +248,11 @@ export default function ReportsView({ initialTab = 'trial-balance' }: { initialT
       <p className="mb-2 text-xs text-gray-500" aria-live="polite">
         {subtitle}
       </p>
-      <div className={loading ? 'pointer-events-none opacity-50 transition-opacity' : ''}>
+      <div
+        className={
+          loading ? 'pointer-events-none opacity-50 transition-opacity' : ''
+        }
+      >
         {tab === 'trial-balance' && tb && (
           <>
             <TBKpis data={tb} />

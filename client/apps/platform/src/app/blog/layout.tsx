@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getPosts } from './api';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
+import { jsonLdHtml } from '@/lib/jsonld';
 
 const BASE_URL  = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
 const SITE_NAME = 'DrinksHarbour';
@@ -93,9 +94,9 @@ export default async function BlogLayout({ children }: { children: React.ReactNo
     <>
       <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
       <link rel="dns-prefetch" href="https://images.unsplash.com" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(blogJsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(blogJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(breadcrumbJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(itemListJsonLd) }} />
       <SeoContextBlock
         heading="Drinks guides, recipes and tasting notes"
         paragraphs={[

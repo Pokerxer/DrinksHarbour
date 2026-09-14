@@ -140,7 +140,6 @@ function sumType(entries, type, accounts) {
  */
 function buildProfitLoss(entries, taxSummary = {}, movementTotals = null) {
   // COGS-bearing entries when no COA metadata is available yet.
-  const cogsEntryTypes = new Set(['cogs', 'refund']);
   let revenueTotal = 0;
   let expenseTotal = 0;
   let cogsTotal = 0;
@@ -158,11 +157,10 @@ function buildProfitLoss(entries, taxSummary = {}, movementTotals = null) {
       // Balance-sheet codes (1xxxx cash/assets, 2xxx payables…) don't hit P&L.
     }
   }
-  const derived =
-    movementTotals && cogsTotal === 0 && movementTotals.cogs > 0
-      ? { ...movementTotals, source: 'derived' }
-      : { ...movementTotals, source: 'journal' };
-  const finalCogs = cogsTotal > 0 ? { total: cogsTotal, source: 'journal' } : derived;
+  const hasJournalCosts = (entries || []).some(entry => (entry.lines || []).some(line => String(line.account).startsWith('5')));
+  const finalCogs = hasJournalCosts
+    ? { total: cogsTotal, source: 'journal' }
+    : { total: round2(movementTotals?.cogs || 0), source: movementTotals ? 'derived' : 'journal' };
   return {
     revenueTotal,
     cogs: { total: round2(finalCogs.total || 0), source: finalCogs.source },
@@ -183,6 +181,7 @@ function buildProfitLoss(entries, taxSummary = {}, movementTotals = null) {
 function buildBalanceSheet(entries, _asOf, retainedEarnings = 0) {
   const assetsByCode = new Map();
   const liabByCode = new Map();
+  const equityByCode = new Map();
   for (const entry of entries || []) {
     for (const line of entry.lines || []) {
       const code = String(line.account);
@@ -190,7 +189,7 @@ function buildBalanceSheet(entries, _asOf, retainedEarnings = 0) {
         ? assetsByCode
         : code.startsWith('2')
           ? liabByCode
-          : null; // income/equity codes surface via retained earnings instead
+          : code.startsWith('3') ? equityByCode : null;
       if (!bucket) continue;
       const row = bucket.get(code) || { code, amount: 0 };
       row.amount = round2(
@@ -205,11 +204,12 @@ function buildBalanceSheet(entries, _asOf, retainedEarnings = 0) {
   const toRows = (m) => [...m.values()].sort((a, b) => a.code.localeCompare(b.code));
   const assets = { rows: toRows(assetsByCode), total: round2([...assetsByCode.values()].reduce((s, r) => s + r.amount, 0)) };
   const liabilities = { rows: toRows(liabByCode), total: round2([...liabByCode.values()].reduce((s, r) => s + r.amount, 0)) };
+  const retained = equityByCode.get('3100') || { code: '3100', amount: 0 };
+  retained.amount = round2(retained.amount + retainedEarnings);
+  equityByCode.set('3100', retained);
   const equity = {
-    rows: [
-      { code: '3100', amount: round2(retainedEarnings) },
-    ],
-    total: round2(retainedEarnings),
+    rows: toRows(equityByCode),
+    total: round2([...equityByCode.values()].reduce((sum, row) => sum + row.amount, 0)),
   };
   return {
     assets,

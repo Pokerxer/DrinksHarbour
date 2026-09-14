@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useAccountingDialog } from './use-accounting-dialog';
+
+import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
 import {
@@ -10,25 +12,27 @@ import {
   type PaymentMethod,
   type PaymentSide,
 } from '@/services/arAp.service';
-import { fmtMoney } from './accounting-helpers';
+import {
+  allocationError,
+  documentView,
+  type AccountingDocument,
+} from './accounting-documents';
+import PaymentAllocations, { type AllocRow } from './payment-allocations';
 
 const INPUT_CLS =
   'w-full rounded border border-gray-300 bg-white px-2.5 py-2 text-sm outline-none focus:border-gray-400';
 
-interface AllocRow {
-  docId: string;
-  amount: string;
-}
-
-const METHODS: PaymentMethod[] = ['cash', 'bank_transfer', 'card', 'pos', 'wallet'];
+const METHODS: PaymentMethod[] = ['cash', 'bank_transfer', 'card', 'pos'];
 
 /** Record a customer/vendor payment and allocate it across open documents. */
 export default function PaymentFormModal({
   side,
+  initialDocument,
   onClose,
   onSaved,
 }: {
   side: PaymentSide;
+  initialDocument?: AccountingDocument;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -36,48 +40,61 @@ export default function PaymentFormModal({
   const token = (session?.user as { token?: string })?.token ?? '';
   const isAr = side === 'customer';
   const [openDocs, setOpenDocs] = useState<OpenInvoice[] | OpenBill[]>([]);
-  const [name, setName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<PaymentMethod>(isAr ? 'cash' : 'bank_transfer');
+  const [name, setName] = useState(
+    initialDocument ? documentView(initialDocument, side).name : ''
+  );
+  const [amount, setAmount] = useState(
+    initialDocument ? String(initialDocument.outstanding) : ''
+  );
+  const [method, setMethod] = useState<PaymentMethod>(
+    isAr ? 'cash' : 'bank_transfer'
+  );
   const [reference, setReference] = useState('');
-  const [allocs, setAllocs] = useState<AllocRow[]>([]);
+  const [allocs, setAllocs] = useState<AllocRow[]>(
+    initialDocument
+      ? [
+          {
+            docId: initialDocument._id,
+            amount: String(initialDocument.outstanding),
+          },
+        ]
+      : []
+  );
   const [busy, setBusy] = useState(false);
+  const dialogRef = useAccountingDialog(onClose, busy);
+  const saving = useRef(false);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
     const load = async () => {
       try {
         const res = isAr
           ? await arApService.invoices(token, { limit: 100 })
           : await arApService.bills(token, { limit: 100 });
-        setOpenDocs(res.data ?? []);
+        if (!cancelled)
+          setOpenDocs(
+            initialDocument &&
+              !res.data.some((doc) => doc._id === initialDocument._id)
+              ? ([initialDocument, ...res.data] as OpenInvoice[] | OpenBill[])
+              : res.data
+          );
       } catch (e) {
-        toast.error((e as Error).message);
+        if (!cancelled) setLoadError((e as Error).message);
       }
     };
-    load();
-  }, [token, isAr]);
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, isAr, initialDocument]);
 
-  const outstandingOf = (d: OpenInvoice | OpenBill) => d.outstanding;
-  const labelOf = (d: OpenInvoice | OpenBill) =>
-    isAr
-      ? `${(d as OpenInvoice).orderNumber} · ${(d as OpenInvoice).customer?.firstName ?? ''} ${fmtMoney(d.outstanding)}`
-      : `${(d as OpenBill).billNumber} · ${(d as OpenBill).vendor?.name ?? ''} · ${fmtMoney(d.outstanding)}`;
-
-  const allocated = useMemo(
-    () => Math.round(allocs.reduce((s, a) => s + (Number(a.amount) || 0), 0) * 100) / 100,
-    [allocs]
-  );
-  const overAllocated = Number(amount) > 0 && allocated > Number(amount) + 0.001;
-
-  const addAlloc = () => {
-    const first = openDocs[0];
-    if (!first) return;
-    setAllocs((prev) => [...prev, { docId: first._id, amount: String(first.outstanding) }]);
-  };
+  const validationError = allocationError(Number(amount), allocs, openDocs);
 
   const submit = async () => {
-    if (!(Number(amount) > 0) || overAllocated) return;
+    if (saving.current || validationError || !name.trim() || loadError) return;
+    saving.current = true;
     setBusy(true);
     try {
       await arApService.createPayment(token, side, {
@@ -89,7 +106,9 @@ export default function PaymentFormModal({
         allocations: allocs
           .filter((a) => a.docId && Number(a.amount) > 0)
           .map((a) =>
-            isAr ? { salesOrder: a.docId, amount: Number(a.amount) } : { vendorBill: a.docId, amount: Number(a.amount) }
+            isAr
+              ? { salesOrder: a.docId, amount: Number(a.amount) }
+              : { vendorBill: a.docId, amount: Number(a.amount) }
           ),
       });
       toast.success('Payment recorded');
@@ -98,6 +117,7 @@ export default function PaymentFormModal({
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   };
@@ -105,12 +125,15 @@ export default function PaymentFormModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+      onClick={() => {
+        if (!busy) onClose();
+      }}
       role="presentation"
     >
       <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
+        className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="New payment"
@@ -119,10 +142,27 @@ export default function PaymentFormModal({
           {isAr ? 'Record Customer Payment' : 'Pay Vendor'}
         </h3>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <p className="mt-1 text-xs text-gray-500">
+          Record money already received or paid. This does not initiate a bank
+          transfer.
+        </p>
+        {loadError && (
+          <p
+            role="alert"
+            className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700"
+          >
+            Could not load allocations: {loadError}. Close and retry.
+          </p>
+        )}
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block text-xs font-medium text-gray-600">
             {isAr ? 'Customer name' : 'Vendor name'}
-            <input type="text" className={`${INPUT_CLS} mt-1`} value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              type="text"
+              className={`${INPUT_CLS} mt-1`}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </label>
           <label className="block text-xs font-medium text-gray-600">
             Amount
@@ -137,89 +177,54 @@ export default function PaymentFormModal({
           </label>
           <label className="block text-xs font-medium text-gray-600">
             Method
-            <select className={`${INPUT_CLS} mt-1`} value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+            <select
+              className={`${INPUT_CLS} mt-1`}
+              value={method}
+              onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+            >
               {METHODS.map((m) => (
-                <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>
+                <option key={m} value={m}>
+                  {m.replace(/_/g, ' ')}
+                </option>
               ))}
             </select>
           </label>
           <label className="block text-xs font-medium text-gray-600">
             Reference
-            <input type="text" className={`${INPUT_CLS} mt-1`} value={reference} onChange={(e) => setReference(e.target.value)} />
+            <input
+              type="text"
+              className={`${INPUT_CLS} mt-1`}
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+            />
           </label>
         </div>
 
-        <div className="mt-4">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Allocation (optional)
-            </p>
-            <button
-              type="button"
-              onClick={addAlloc}
-              disabled={openDocs.length === 0}
-              className="rounded-lg border border-dashed border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:border-gray-400 disabled:opacity-40"
-            >
-              + Allocate
-            </button>
-          </div>
-          <div className="space-y-2">
-            {allocs.map((a, i) => (
-              <div key={i} className="grid grid-cols-[2fr_1fr_auto] items-center gap-2">
-                <select
-                  className={INPUT_CLS}
-                  value={a.docId}
-                  onChange={(e) =>
-                    setAllocs((prev) => prev.map((r, idx) => (idx === i ? { ...r, docId: e.target.value } : r)))
-                  }
-                  aria-label={`Document ${i + 1}`}
-                >
-                  {openDocs.map((d) => (
-                    <option key={d._id} value={d._id}>{labelOf(d)}</option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className={`${INPUT_CLS} text-right`}
-                  value={a.amount}
-                  onChange={(e) =>
-                    setAllocs((prev) => prev.map((r, idx) => (idx === i ? { ...r, amount: e.target.value } : r)))
-                  }
-                  aria-label={`Amount ${i + 1}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setAllocs((prev) => prev.filter((_, idx) => idx !== i))}
-                  className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600"
-                  aria-label={`Remove allocation ${i + 1}`}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-            {allocs.length === 0 && (
-              <p className="text-xs text-gray-400">No allocation — recorded on account.</p>
-            )}
-          </div>
-          <p className={`mt-2 text-xs font-medium ${overAllocated ? 'text-red-600' : 'text-gray-500'}`}>
-            Allocated {fmtMoney(allocated)} of {fmtMoney(Number(amount) || 0)}
-            {overAllocated ? ' — exceeds payment amount' : ''}
-          </p>
-        </div>
+        <PaymentAllocations
+          side={side}
+          openDocs={openDocs}
+          allocs={allocs}
+          setAllocs={setAllocs}
+          busy={busy}
+          amount={amount}
+        />
 
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
             Cancel
           </button>
           <button
             type="button"
-            disabled={!(Number(amount) > 0) || overAllocated || busy}
+            disabled={!!validationError || !name.trim() || !!loadError || busy}
             onClick={submit}
             className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
           >
-            Record Payment
+            {busy ? 'Recording…' : 'Record Payment'}
           </button>
         </div>
       </div>

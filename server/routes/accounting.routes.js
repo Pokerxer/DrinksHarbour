@@ -52,6 +52,7 @@ router.get('/dashboard', ctrl.getDashboard);
 router.get('/receivables/summary', arAp.receivablesSummary);
 router.get('/payables/summary', arAp.payablesSummary);
 router.get('/receivables/invoices', arAp.listInvoices);
+router.post('/receivables/invoices/:id/issue', arAp.issueInvoice);
 router.get('/payables/bills', arAp.listBills);
 
 router.get('/credit-notes', arAp.listCreditNotes);

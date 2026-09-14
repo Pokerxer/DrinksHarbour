@@ -24,7 +24,6 @@ const MONGO_URI =
 // for the already-present check (must match accounting.posting.js).
 const SOURCES = [
   ['sales_order', 'SalesOrder', { docType: 'order', orderStatus: { $in: ['confirmed', 'partially_fulfilled', 'fulfilled'] } }, 'sales_revenue'],
-  ['purchase_order', 'PurchaseOrder', { status: 'confirmed', approvalStatus: 'approved' }, 'expense_accrual'],
   ['vendor_bill', 'VendorBill', { status: { $in: ['confirmed', 'paid', 'partial', 'overdue'] } }, 'expense_accrual'],
   ['vendor_return', 'VendorReturn', { status: 'refunded' }, 'refund'],
 ];
@@ -46,7 +45,7 @@ async function main() {
   const perTenant = {};
   for (const [sourceType, modelName, filter] of SOURCES) {
     const Model = mongoose.model(modelName);
-    const docs = await Model.find(filter).lean();
+    const docs = await Model.find({ ...filter, currency: { $in: ['NGN', null] } }).lean();
     let written = 0;
     let skipped = 0;
     for (const lean of docs) {
@@ -62,7 +61,8 @@ async function main() {
         continue;
       }
       if (!DRY_RUN) {
-        await postDocumentEntry({ sourceType, doc, postedBy: null });
+        const posted = await postDocumentEntry({ sourceType, doc, postedBy: null });
+        if (!posted) throw new Error(`Posting failed: ${sourceType} ${doc._id}`);
       }
       written++;
       const key = String(doc.tenant);

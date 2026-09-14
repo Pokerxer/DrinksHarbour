@@ -3,14 +3,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import type {
-  SalesLineItem,
-  SalesOrder,
-  SalesOrderAddress,
-  CartQuoteItem,
+import {
+  salesOrderService,
+  type SalesLineItem,
+  type SalesOrder,
+  type SalesOrderAddress,
+  type CartQuoteItem,
 } from '@/services/salesOrder.service';
 import type { POSCustomer } from '@/app/shared/point-of-sale/types';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import { mergeRepricedLines, pricingSignature } from '../sales-repricing';
 import { useSalesCustomerPricelist } from '../use-sales-customer-pricelist';
 import {
   findCartThresholdRules,
@@ -28,7 +30,6 @@ import type { DraftLine, PricedLine } from '../sales-line-table';
 import type { ProductLineSelection } from '../product-line-search';
 import type { CreateTab } from '../sales-stage-pill';
 import { subproductService } from '@/services/subproduct.service';
-import { salesOrderService } from '@/services/salesOrder.service';
 
 function toLinePayload(l: PricedLine) {
   if (l.lineType !== 'product') {
@@ -150,7 +151,7 @@ export function useSalesCreateForm({
           }
         : null
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps — only `initial` should trigger; state setters are stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only `initial` should trigger; state setters are stable
   }, [initial]);
 
   useEffect(() => {
@@ -171,7 +172,7 @@ export function useSalesCreateForm({
         }
       })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps — fetching warehouses; omit warehouseId to avoid re-fetching on selection
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetching warehouses; omit warehouseId to avoid re-fetching on selection
   }, [token]);
 
   /**
@@ -310,7 +311,7 @@ export function useSalesCreateForm({
     useSalesCustomerPricelist(
       token as string,
       customer?._id ?? '',
-      (warehouseId as string) || undefined
+      warehouseIdStr || undefined
     );
 
   useEffect(() => {
@@ -333,20 +334,21 @@ export function useSalesCreateForm({
    * persist. Best-effort: on failure the client-side estimate stands and the
    * server still reprices on save.
    */
-  const pricingSig = useMemo(() => {
-    const parts = lines
-      .filter(
-        (l) => l.lineType === 'product' && l.subProductId && !l.priceOverridden
-      )
-      .map((l) => `${l.subProductId}|${l.sizeId ?? ''}|${l.quantity}`);
-    return parts.length ? `${pricelistId}::${parts.join(';')}` : '';
-  }, [lines, pricelistId]);
+  const pricingSig = useMemo(
+    () => pricingSignature(lines, pricelistId),
+    [lines, pricelistId]
+  );
+  const confirmedPricingSigRef = useRef('');
 
   const priceSeqRef = useRef(0);
   useEffect(() => {
-    if (!token || !pricingSig) return;
     const seq = ++priceSeqRef.current;
+    const alreadyPriced = pricingSig === confirmedPricingSigRef.current;
+    confirmedPricingSigRef.current = '';
+    if (!token || !pricingSig || alreadyPriced) return;
+    let cancelled = false;
     const t = setTimeout(async () => {
+      if (seq !== priceSeqRef.current) return;
       try {
         const items = linesRef.current
           .filter(
@@ -366,7 +368,7 @@ export function useSalesCreateForm({
           { items, pricelist: pricelistId || null },
           token
         );
-        if (seq !== priceSeqRef.current) return; // a newer request superseded this one
+        if (cancelled || seq !== priceSeqRef.current) return; // superseded response
         const byKey = new Map(
           (res?.data?.items ?? []).map((it) => [it.key, it.unitPrice])
         );
@@ -383,7 +385,10 @@ export function useSalesCreateForm({
         // keep the client-side estimate; the server reprices on save anyway
       }
     }, 350);
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [pricingSig, token, pricelistId]);
 
   const updateLine = useCallback((key: string, patch: Partial<DraftLine>) => {
@@ -472,15 +477,16 @@ export function useSalesCreateForm({
     []
   );
 
-  /** Replace all lines with the server's recomputed items (Update Prices),
-   *  then re-hydrate catalog metadata the response doesn't carry. */
+  /** Keep metadata already loaded for this warehouse; only prices changed. */
   const applyServerItems = useCallback(
     (items: SalesLineItem[]) => {
-      const mapped = items.map(soItemToDraftLine);
+      const mapped = mergeRepricedLines(linesRef.current, items);
+      ++priceSeqRef.current;
+      confirmedPricingSigRef.current = pricingSignature(mapped, pricelistId);
+      linesRef.current = mapped;
       setLines(mapped);
-      void hydrateLineMeta(mapped, warehouseIdStr || undefined);
     },
-    [hydrateLineMeta, warehouseIdStr]
+    [pricelistId]
   );
 
   const setCatalogLineQty = useCallback(

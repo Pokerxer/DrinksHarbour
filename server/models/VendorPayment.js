@@ -25,7 +25,7 @@ const VendorPaymentSchema = new Schema(
     amount: { type: Number, required: true, min: 0 },
     method: {
       type: String,
-      enum: ['cash', 'bank_transfer', 'card', 'pos', 'wallet'],
+      enum: ['cash', 'bank_transfer', 'card', 'pos', 'wallet', 'cheque', 'other'],
       default: 'bank_transfer',
     },
     reference: { type: String, trim: true },

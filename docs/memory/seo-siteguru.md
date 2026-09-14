@@ -31,6 +31,16 @@ See docs/seo-orphan-inventory.md, docs/seo-description-inventory.md and
 docs/seo-authority-actions.md. Authority remains external work, not fixed.
 No deployment or refreshed live audit yet.
 
+2026-09-14 opportunity-product remediation: the shared product template now
+falls back to a product-name title and SEO H1, validates real SKU/GTIN values
+before Product JSON-LD, and renders an opportunity-only buying-details block.
+The homepage, category hub, brand hub, blog articles and product pages now
+carry crawlable links to the eight SiteGuru opportunity products, including
+Bold 98, Salamanca, Laphroaig, Famous Grouse, Whitley Neill, Old Smuggler,
+Pata Negra and Glenfiddich 18. The live Bold 98 route confirmed the expected
+slug. Focused SEO tests pass; the full typecheck still has unrelated baseline
+errors. Deploy and rerun SiteGuru/GSC after indexing.
+
 2026-09-09 user direction: target "buy drinks online" as the homepage's primary
 search intent. Title/H1 now use "Buy Drinks Online in Nigeria"; description and
 visible introduction reinforce online shopping. Abuja delivery remains supporting

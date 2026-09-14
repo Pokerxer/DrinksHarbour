@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import BrandsBrowser from './BrandsBrowser';
 import { displayableBrands } from './brand-results';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
+import { jsonLdHtml } from '@/lib/jsonld';
+import OpportunityProductLinks from '@/components/SEO/OpportunityProductLinks';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
@@ -126,8 +128,9 @@ export default async function BrandsPage() {
           { href: '/shipping-info', label: 'Check delivery information' },
         ]}
       />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(collectionJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(breadcrumbJsonLd) }} />
+      <OpportunityProductLinks />
       <BrandsBrowser initialBrands={brands} />
     </>
   );

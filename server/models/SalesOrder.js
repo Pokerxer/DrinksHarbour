@@ -128,6 +128,7 @@ const SalesOrderSchema = new Schema(
     paymentMethod: { type: String },
     paymentStatus: { type: String, enum: ['unpaid', 'partial', 'paid'], default: 'unpaid' },
     amountPaid:    { type: Number, default: 0 },
+    creditedAmount: { type: Number, default: 0, min: 0 },
     walletTxRef:   { type: ObjectId, ref: 'WalletTransaction', sparse: true },
     loyaltyEarned: { type: Number, default: 0 },
     loyaltyRedeemed: { type: Number, default: 0 }, // ₦ value redeemed via loyalty points at confirm
@@ -149,6 +150,7 @@ const SalesOrderSchema = new Schema(
       default: 'immediate',
     },
     dueDate: { type: Date },
+    invoiceIssuedAt: { type: Date },
 
     // Billing + shipping addresses (snapshots; optional)
     invoiceAddress:  addressSchema,

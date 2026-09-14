@@ -483,7 +483,7 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
     plannedRedeemPoints: Math.max(0, Math.round(Number(body.plannedRedeemPoints) || 0)),
     validUntil: body.validUntil || undefined,
     paymentTerms,
-    dueDate: computeDueDate(paymentTerms),
+    dueDate: body.dueDate ? require('./accounting.query').dateRange({ from: body.dueDate }).$gte : computeDueDate(paymentTerms),
     invoiceAddress: normalizeAddress(body.invoiceAddress),
     deliveryAddress: normalizeAddress(body.deliveryAddress),
     notes: body.notes, terms: body.terms,
@@ -612,13 +612,14 @@ async function applyEdit(so, body) {
       await recomputeOrderPricing(so, { tenantId: so.tenant });
     }
   }
+  if (body.dueDate !== undefined) so.dueDate = body.dueDate ? require('./accounting.query').dateRange({ from: body.dueDate }).$gte : undefined;
   if (body.notes !== undefined) so.notes = body.notes;
   if (body.terms !== undefined) so.terms = body.terms;
   if (body.validUntil !== undefined) so.validUntil = body.validUntil;
   if (body.paymentTerms !== undefined) {
     so.paymentTerms = normalizePaymentTerms(body.paymentTerms);
     // Recompute due date off the original document date, not "now".
-    so.dueDate = computeDueDate(so.paymentTerms, so.createdAt || new Date());
+    if (body.dueDate === undefined) so.dueDate = computeDueDate(so.paymentTerms, so.createdAt || new Date());
   }
   if (body.invoiceAddress !== undefined) so.invoiceAddress = normalizeAddress(body.invoiceAddress);
   if (body.deliveryAddress !== undefined) so.deliveryAddress = normalizeAddress(body.deliveryAddress);

@@ -5,7 +5,12 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-export type AccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+export type AccountType =
+  | 'asset'
+  | 'liability'
+  | 'equity'
+  | 'income'
+  | 'expense';
 
 export type JournalEntryType =
   | 'accrued_revenue'
@@ -109,6 +114,12 @@ export interface MonthlyPoint {
 }
 
 export interface AccountingDashboard {
+  ordersToReview?: Array<{
+    _id: string;
+    orderNumber?: string;
+    receiptNumber?: string;
+    accountingIssue?: string;
+  }>;
   kpis: {
     revenueMtd: number;
     expensesMtd: number;
@@ -151,20 +162,31 @@ function toQuery(params?: QueryParams): string {
 
 class AccountingService {
   private getHeaders(token: string) {
-    return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
   }
 
-  private async unwrap<T>(response: Response, fallbackMessage: string): Promise<Envelope<T>> {
+  private async unwrap<T>(
+    response: Response,
+    fallbackMessage: string
+  ): Promise<Envelope<T>> {
     let body: Envelope<T>;
     try {
       body = (await response.json()) as Envelope<T>;
     } catch {
-      throw new Error(response.ok ? fallbackMessage : `${fallbackMessage} (HTTP ${response.status})`);
+      throw new Error(
+        response.ok
+          ? fallbackMessage
+          : `${fallbackMessage} (HTTP ${response.status})`
+      );
     }
     if (!response.ok && response.status !== 207) {
       throw new Error(body.message || fallbackMessage);
     }
-    if (body.success === false) throw new Error(body.message || fallbackMessage);
+    if (body.success === false)
+      throw new Error(body.message || fallbackMessage);
     return body;
   }
 
@@ -174,13 +196,19 @@ class AccountingService {
     token: string,
     params?: QueryParams & { page?: number; limit?: number }
   ): Promise<Envelope<JournalEntry[]>> {
-    const res = await fetch(`${API_URL}/api/accounting/journal-entries${toQuery(params)}`, {
-      headers: this.getHeaders(token),
-    });
+    const res = await fetch(
+      `${API_URL}/api/accounting/journal-entries${toQuery(params)}`,
+      {
+        headers: this.getHeaders(token),
+      }
+    );
     return this.unwrap<JournalEntry[]>(res, 'Failed to load journal entries');
   }
 
-  async journalEntry(token: string, id: string): Promise<Envelope<JournalEntry>> {
+  async journalEntry(
+    token: string,
+    id: string
+  ): Promise<Envelope<JournalEntry>> {
     const res = await fetch(`${API_URL}/api/accounting/journal-entries/${id}`, {
       headers: this.getHeaders(token),
     });
@@ -199,15 +227,24 @@ class AccountingService {
     return this.unwrap<JournalEntry>(res, 'Failed to post journal entry');
   }
 
-  async reverseJournalEntry(token: string, id: string): Promise<Envelope<JournalEntry>> {
-    const res = await fetch(`${API_URL}/api/accounting/journal-entries/${id}/reverse`, {
-      method: 'POST',
-      headers: this.getHeaders(token),
-    });
+  async reverseJournalEntry(
+    token: string,
+    id: string
+  ): Promise<Envelope<JournalEntry>> {
+    const res = await fetch(
+      `${API_URL}/api/accounting/journal-entries/${id}/reverse`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+      }
+    );
     return this.unwrap<JournalEntry>(res, 'Failed to reverse journal entry');
   }
 
-  async deleteJournalEntry(token: string, id: string): Promise<{ success: boolean; message?: string }> {
+  async deleteJournalEntry(
+    token: string,
+    id: string
+  ): Promise<{ success: boolean; message?: string }> {
     const res = await fetch(`${API_URL}/api/accounting/journal-entries/${id}`, {
       method: 'DELETE',
       headers: this.getHeaders(token),
@@ -217,14 +254,23 @@ class AccountingService {
 
   // ── Chart of accounts ──────────────────────────────────────────────────────
 
-  async accounts(token: string, params?: QueryParams): Promise<Envelope<Account[]>> {
-    const res = await fetch(`${API_URL}/api/accounting/accounts${toQuery(params)}`, {
-      headers: this.getHeaders(token),
-    });
+  async accounts(
+    token: string,
+    params?: QueryParams
+  ): Promise<Envelope<Account[]>> {
+    const res = await fetch(
+      `${API_URL}/api/accounting/accounts${toQuery(params)}`,
+      {
+        headers: this.getHeaders(token),
+      }
+    );
     return this.unwrap<Account[]>(res, 'Failed to load chart of accounts');
   }
 
-  async createAccount(token: string, body: Partial<Account>): Promise<Envelope<Account>> {
+  async createAccount(
+    token: string,
+    body: Partial<Account>
+  ): Promise<Envelope<Account>> {
     const res = await fetch(`${API_URL}/api/accounting/accounts`, {
       method: 'POST',
       headers: this.getHeaders(token),
@@ -233,7 +279,11 @@ class AccountingService {
     return this.unwrap<Account>(res, 'Failed to create account');
   }
 
-  async updateAccount(token: string, id: string, body: Partial<Account>): Promise<Envelope<Account>> {
+  async updateAccount(
+    token: string,
+    id: string,
+    body: Partial<Account>
+  ): Promise<Envelope<Account>> {
     const res = await fetch(`${API_URL}/api/accounting/accounts/${id}`, {
       method: 'PUT',
       headers: this.getHeaders(token),
@@ -242,7 +292,10 @@ class AccountingService {
     return this.unwrap<Account>(res, 'Failed to update account');
   }
 
-  async removeAccount(token: string, id: string): Promise<{ success: boolean; message?: string }> {
+  async removeAccount(
+    token: string,
+    id: string
+  ): Promise<{ success: boolean; message?: string }> {
     const res = await fetch(`${API_URL}/api/accounting/accounts/${id}`, {
       method: 'DELETE',
       headers: this.getHeaders(token),
@@ -252,31 +305,67 @@ class AccountingService {
 
   // ── Reports + dashboard ────────────────────────────────────────────────────
 
-  private async report<T>(token: string, path: string, params?: QueryParams, fallback = 'Failed to load report'): Promise<Envelope<T>> {
-    const res = await fetch(`${API_URL}/api/accounting/${path}${toQuery(params)}`, {
-      headers: this.getHeaders(token),
-    });
+  private async report<T>(
+    token: string,
+    path: string,
+    params?: QueryParams,
+    fallback = 'Failed to load report'
+  ): Promise<Envelope<T>> {
+    const res = await fetch(
+      `${API_URL}/api/accounting/${path}${toQuery(params)}`,
+      {
+        headers: this.getHeaders(token),
+      }
+    );
     return this.unwrap<T>(res, fallback);
   }
 
   trialBalance(token: string, params?: { period?: string }) {
-    return this.report<TrialBalance>(token, 'reports/trial-balance', params, 'Failed to load trial balance');
+    return this.report<TrialBalance>(
+      token,
+      'reports/trial-balance',
+      params,
+      'Failed to load trial balance'
+    );
   }
 
   profitLoss(token: string, params?: { from?: string; to?: string }) {
-    return this.report<ProfitLoss>(token, 'reports/profit-loss', params, 'Failed to load P&L');
+    return this.report<ProfitLoss>(
+      token,
+      'reports/profit-loss',
+      params,
+      'Failed to load P&L'
+    );
   }
 
   balanceSheet(token: string, params?: { asOf?: string }) {
-    return this.report<BalanceSheet>(token, 'reports/balance-sheet', params, 'Failed to load balance sheet');
+    return this.report<BalanceSheet>(
+      token,
+      'reports/balance-sheet',
+      params,
+      'Failed to load balance sheet'
+    );
   }
 
-  generalLedger(token: string, params?: { account?: string; from?: string; to?: string }) {
-    return this.report<GeneralLedger>(token, 'reports/general-ledger', params, 'Failed to load general ledger');
+  generalLedger(
+    token: string,
+    params?: { account?: string; from?: string; to?: string }
+  ) {
+    return this.report<GeneralLedger>(
+      token,
+      'reports/general-ledger',
+      params,
+      'Failed to load general ledger'
+    );
   }
 
   dashboard(token: string, params?: { from?: string; to?: string }) {
-    return this.report<AccountingDashboard>(token, 'dashboard', params, 'Failed to load accounting dashboard');
+    return this.report<AccountingDashboard>(
+      token,
+      'dashboard',
+      params,
+      'Failed to load accounting dashboard'
+    );
   }
 }
 

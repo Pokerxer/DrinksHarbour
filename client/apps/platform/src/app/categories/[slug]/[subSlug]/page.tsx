@@ -6,6 +6,7 @@ import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
 import LinkableBanner from '@/components/Banner/linkable-banner';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
+import { jsonLdHtml } from '@/lib/jsonld';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -205,6 +206,18 @@ export async function generateMetadata({
       title: { absolute: `Category Not Found | ${SITE_NAME}` },
       description: 'This category could not be found on DrinksHarbour.',
       robots: { index: false, follow: false },
+    };
+  }
+
+  const productCount = await fetchSubCategoryProducts(
+    String(sub.parent?._id || sub.parent),
+    String(sub._id),
+  ).then((products) => products.length);
+  if (productCount === 0) {
+    return {
+      title: { absolute: `${sub.displayName || sub.name} | ${SITE_NAME}` },
+      description: `There are currently no ${sub.displayName || sub.name} products available on DrinksHarbour.`,
+      robots: { index: false, follow: true },
     };
   }
 
@@ -493,7 +506,7 @@ export default async function SubCategoryPage({
         <script
           key={i}
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdHtml(ld) }}
         />
       ))}
 

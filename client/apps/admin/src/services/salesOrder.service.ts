@@ -52,7 +52,13 @@ export interface CartQuoteResult {
   found: boolean;
   matchBy: 'email' | 'phone' | 'name' | 'not-found';
   user?: { email: string; name: string };
-  posCustomer?: { _id: string; firstName: string; lastName: string; email: string; phone: string };
+  posCustomer?: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+  };
   cartCount: number;
   items: CartQuoteItem[];
   skippedCount: number;
@@ -162,6 +168,7 @@ export interface SalesOrder {
   orderStatus?: OrderStatus;
   paymentTerms?: string;
   dueDate?: string;
+  invoiceIssuedAt?: string;
   invoiceAddress?: SalesOrderAddress;
   deliveryAddress?: SalesOrderAddress;
   paymentMethod?: string;

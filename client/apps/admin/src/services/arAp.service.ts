@@ -8,7 +8,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export type PaymentSide = 'customer' | 'vendor';
 
-export type PaymentMethod = 'cash' | 'bank_transfer' | 'card' | 'pos' | 'wallet';
+export type PaymentMethod =
+  | 'cash'
+  | 'bank_transfer'
+  | 'card'
+  | 'pos'
+  | 'wallet';
 
 export interface ArApSummary {
   count: number;
@@ -24,6 +29,7 @@ export interface OpenInvoice {
   outstanding: number;
   total: number;
   amountPaid: number;
+  creditedAmount?: number;
   paymentStatus: string;
   orderStatus?: string;
   customer?: { _id: string; firstName: string; lastName: string } | null;
@@ -33,6 +39,7 @@ export interface OpenInvoice {
 export interface OpenBill {
   _id: string;
   billNumber?: string;
+  vendorName?: string;
   date: string;
   dueDate?: string;
   outstanding: number;
@@ -66,7 +73,11 @@ export interface PaymentDoc {
   amount: number;
   method: PaymentMethod;
   reference?: string;
-  allocations: Array<{ salesOrder?: string; vendorBill?: string; amount: number }>;
+  allocations: Array<{
+    salesOrder?: string;
+    vendorBill?: string;
+    amount: number;
+  }>;
   batch?: string | null;
   status: 'active' | 'cancelled';
 }
@@ -153,28 +164,56 @@ function toQuery(params?: Query): string {
 
 class ArApService {
   private headers(token: string) {
-    return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
   }
 
-  private async unwrap<T>(res: Response, fallback: string): Promise<Envelope<T>> {
+  private async unwrap<T>(
+    res: Response,
+    fallback: string
+  ): Promise<Envelope<T>> {
     let body: Envelope<T>;
     try {
       body = (await res.json()) as Envelope<T>;
     } catch {
       throw new Error(res.ok ? fallback : `${fallback} (HTTP ${res.status})`);
     }
-    if (!res.ok || body.success === false) throw new Error(body.message || fallback);
+    if (!res.ok || body.success === false)
+      throw new Error(body.message || fallback);
     return body;
   }
 
-  private async get<T>(token: string, path: string, params?: Query, fallback = 'Request failed'): Promise<Envelope<T>> {
-    const res = await fetch(`${API_URL}/api/accounting/${path}${toQuery(params)}`, {
-      headers: this.headers(token),
-    });
+  issueInvoice(token: string, id: string, dueDate?: string) {
+    return this.post<{ _id: string }>(
+      token,
+      `receivables/invoices/${id}/issue`,
+      { dueDate }
+    );
+  }
+
+  private async get<T>(
+    token: string,
+    path: string,
+    params?: Query,
+    fallback = 'Request failed'
+  ): Promise<Envelope<T>> {
+    const res = await fetch(
+      `${API_URL}/api/accounting/${path}${toQuery(params)}`,
+      {
+        headers: this.headers(token),
+      }
+    );
     return this.unwrap<T>(res, fallback);
   }
 
-  private async post<T>(token: string, path: string, body?: unknown, fallback = 'Request failed'): Promise<Envelope<T>> {
+  private async post<T>(
+    token: string,
+    path: string,
+    body?: unknown,
+    fallback = 'Request failed'
+  ): Promise<Envelope<T>> {
     const res = await fetch(`${API_URL}/api/accounting/${path}`, {
       method: 'POST',
       headers: this.headers(token),
@@ -185,35 +224,83 @@ class ArApService {
 
   // Summaries + documents
   receivablesSummary(token: string) {
-    return this.get<ArApSummary>(token, 'receivables/summary', undefined, 'Failed to load receivables');
+    return this.get<ArApSummary>(
+      token,
+      'receivables/summary',
+      undefined,
+      'Failed to load receivables'
+    );
   }
   payablesSummary(token: string) {
-    return this.get<ArApSummary>(token, 'payables/summary', undefined, 'Failed to load payables');
+    return this.get<ArApSummary>(
+      token,
+      'payables/summary',
+      undefined,
+      'Failed to load payables'
+    );
   }
   invoices(token: string, params?: Query) {
-    return this.get<OpenInvoice[]>(token, 'receivables/invoices', params, 'Failed to load invoices');
+    return this.get<OpenInvoice[]>(
+      token,
+      'receivables/invoices',
+      params,
+      'Failed to load invoices'
+    );
   }
   bills(token: string, params?: Query) {
-    return this.get<OpenBill[]>(token, 'payables/bills', params, 'Failed to load bills');
+    return this.get<OpenBill[]>(
+      token,
+      'payables/bills',
+      params,
+      'Failed to load bills'
+    );
   }
 
   // Credit notes
   creditNotes(token: string, params?: Query) {
-    return this.get<CreditNote[]>(token, 'credit-notes', params, 'Failed to load credit notes');
+    return this.get<CreditNote[]>(
+      token,
+      'credit-notes',
+      params,
+      'Failed to load credit notes'
+    );
   }
   createCreditNote(
     token: string,
-    body: { amount: number; taxAmount?: number; customer?: string; customerName?: string; salesOrder?: string; reason?: string; date?: string }
+    body: {
+      amount: number;
+      taxAmount?: number;
+      customer?: string;
+      customerName?: string;
+      salesOrder?: string;
+      reason?: string;
+      date?: string;
+    }
   ) {
-    return this.post<CreditNote>(token, 'credit-notes', body, 'Failed to create credit note');
+    return this.post<CreditNote>(
+      token,
+      'credit-notes',
+      body,
+      'Failed to create credit note'
+    );
   }
   cancelCreditNote(token: string, id: string) {
-    return this.post<CreditNote>(token, `credit-notes/${id}/cancel`, undefined, 'Failed to cancel credit note');
+    return this.post<CreditNote>(
+      token,
+      `credit-notes/${id}/cancel`,
+      undefined,
+      'Failed to cancel credit note'
+    );
   }
 
   // Payments
   payments(token: string, side: PaymentSide, params?: Query) {
-    return this.get<PaymentDoc[]>(token, 'payments', { side, ...params }, 'Failed to load payments');
+    return this.get<PaymentDoc[]>(
+      token,
+      'payments',
+      { side, ...params },
+      'Failed to load payments'
+    );
   }
   createPayment(
     token: string,
@@ -227,41 +314,102 @@ class ArApService {
       vendorName?: string;
       reference?: string;
       date?: string;
-      allocations: Array<{ salesOrder?: string; vendorBill?: string; amount: number }>;
+      allocations: Array<{
+        salesOrder?: string;
+        vendorBill?: string;
+        amount: number;
+      }>;
     }
   ) {
-    return this.post<PaymentDoc>(token, 'payments', { side, ...body }, 'Failed to record payment');
+    return this.post<PaymentDoc>(
+      token,
+      'payments',
+      { side, ...body },
+      'Failed to record payment'
+    );
   }
   cancelPayment(token: string, side: PaymentSide, id: string) {
-    return this.post<PaymentDoc>(token, `payments/${id}/cancel`, { side }, 'Failed to cancel payment');
+    return this.post<PaymentDoc>(
+      token,
+      `payments/${id}/cancel`,
+      { side },
+      'Failed to cancel payment'
+    );
   }
 
   // Batch payments
   batches(token: string, params?: Query) {
-    return this.get<BatchPayment[]>(token, 'batch-payments', params, 'Failed to load batches');
+    return this.get<BatchPayment[]>(
+      token,
+      'batch-payments',
+      params,
+      'Failed to load batches'
+    );
   }
   unbatched(token: string, side: PaymentSide) {
-    return this.get<PaymentDoc[]>(token, 'batch-payments/unbatched', { side }, 'Failed to load open payments');
+    return this.get<PaymentDoc[]>(
+      token,
+      'batch-payments/unbatched',
+      { side },
+      'Failed to load open payments'
+    );
   }
-  createBatch(token: string, body: { direction: PaymentSide; paymentIds: string[]; account?: '1000' | '1100' }) {
-    return this.post<BatchPayment>(token, 'batch-payments', body, 'Failed to create batch');
+  createBatch(
+    token: string,
+    body: {
+      direction: PaymentSide;
+      paymentIds: string[];
+      account?: '1000' | '1100';
+    }
+  ) {
+    return this.post<BatchPayment>(
+      token,
+      'batch-payments',
+      body,
+      'Failed to create batch'
+    );
   }
   depositBatch(token: string, id: string) {
-    return this.post<BatchPayment>(token, `batch-payments/${id}/deposit`, undefined, 'Failed to deposit batch');
+    return this.post<BatchPayment>(
+      token,
+      `batch-payments/${id}/deposit`,
+      undefined,
+      'Failed to deposit batch'
+    );
   }
   cancelBatch(token: string, id: string) {
-    return this.post<BatchPayment>(token, `batch-payments/${id}/cancel`, undefined, 'Failed to cancel batch');
+    return this.post<BatchPayment>(
+      token,
+      `batch-payments/${id}/cancel`,
+      undefined,
+      'Failed to cancel batch'
+    );
   }
 
   // Directories
   customers(token: string, params?: Query) {
-    return this.get<AccountingCustomer[]>(token, 'customers', params, 'Failed to load customers');
+    return this.get<AccountingCustomer[]>(
+      token,
+      'customers',
+      params,
+      'Failed to load customers'
+    );
   }
   vendors(token: string, params?: Query) {
-    return this.get<AccountingVendor[]>(token, 'vendors', params, 'Failed to load vendors');
+    return this.get<AccountingVendor[]>(
+      token,
+      'vendors',
+      params,
+      'Failed to load vendors'
+    );
   }
   products(token: string, params?: Query) {
-    return this.get<AccountingProduct[]>(token, 'products', params, 'Failed to load products');
+    return this.get<AccountingProduct[]>(
+      token,
+      'products',
+      params,
+      'Failed to load products'
+    );
   }
 }
 

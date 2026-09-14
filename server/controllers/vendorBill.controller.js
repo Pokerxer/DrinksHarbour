@@ -7,7 +7,7 @@ const {
   ValidationError,
   ForbiddenError,
 } = require("../utils/errors");
-const { captureDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
+const { captureDocumentTax, reverseDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
 const { postDocumentEntry } = require("../services/accounting.posting");
 
 /**
@@ -352,31 +352,17 @@ const recordPayment = asyncHandler(async (req, res) => {
     );
   }
 
-  // Add payment
-  const payment = {
-    amount: payAmount,
-    date: date || new Date(),
-    method,
-    reference,
-    notes,
-    recordedBy: userId,
-  };
-
-  vendorBill.payments.push(payment);
-  vendorBill.paidAmount = (vendorBill.paidAmount || 0) + payAmount;
-
-  // Update status based on payment
-  if (vendorBill.paidAmount >= vendorBill.totalAmount) {
-    vendorBill.status = "paid";
-  } else if (vendorBill.paidAmount > 0) {
-    vendorBill.status = "partial";
-  }
-
-  await vendorBill.save();
+  await require('../services/accountingPayment.service').createPayment({
+    tenantId, direction: 'vendor', userId,
+    data: { amount: payAmount, date, method: method || 'bank_transfer', reference,
+      vendor: vendorBill.vendor, vendorName: vendorBill.vendorName,
+      allocations: [{ vendorBill: vendorBill._id, amount: payAmount }] },
+  });
+  const updatedBill = await VendorBill.findOne({ _id: id, tenant: tenantId });
 
   res.status(200).json({
     success: true,
-    data: vendorBill,
+    data: updatedBill,
   });
 });
 
@@ -681,8 +667,9 @@ const validateBill = asyncHandler(async (req, res) => {
   await vendorBill.save();
 
   if (wasDraft) {
-    captureDocumentTax({ sourceType: 'vendor_bill', doc: vendorBill, postedBy: req.user?._id });
-    postDocumentEntry({ sourceType: 'vendor_bill', doc: vendorBill, postedBy: req.user?._id });
+    if (vendorBill.purchaseOrder) await reverseDocumentTax({ sourceType: 'purchase_order', doc: { _id: vendorBill.purchaseOrder, tenant: vendorBill.tenant }, userId: req.user?._id });
+    await captureDocumentTax({ sourceType: 'vendor_bill', doc: vendorBill, postedBy: req.user?._id });
+    await postDocumentEntry({ sourceType: 'vendor_bill', doc: vendorBill, postedBy: req.user?._id });
   }
 
   res.status(200).json({

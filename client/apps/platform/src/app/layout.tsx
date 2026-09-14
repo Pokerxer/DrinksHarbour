@@ -15,6 +15,7 @@ import { Analytics } from "@vercel/analytics/next";
 import GoogleAdSense, { ADSENSE_CLIENT_ID } from "@/components/Analytics/GoogleAdSense";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
+import { jsonLdHtml } from "@/lib/jsonld";
 import { configureCommerceCore } from "commerce-core";
 
 configureCommerceCore({
@@ -255,15 +256,15 @@ export default async function RootLayout({
           <head>
             <script
               type="application/ld+json"
-              dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }}
+              dangerouslySetInnerHTML={{ __html: jsonLdHtml(localBusinessJsonLd) }}
             />
             <script
               type="application/ld+json"
-              dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
+              dangerouslySetInnerHTML={{ __html: jsonLdHtml(orgJsonLd) }}
             />
             <script
               type="application/ld+json"
-              dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+              dangerouslySetInnerHTML={{ __html: jsonLdHtml(websiteJsonLd) }}
             />
             {/* Preconnect to third-party origins */}
             <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
