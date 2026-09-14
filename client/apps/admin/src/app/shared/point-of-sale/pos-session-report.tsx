@@ -1,4 +1,6 @@
 'use client';
+import { ShopHistorySelector } from './components/shop-history-selector';
+import { usePOSShopScope } from './store';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
@@ -1310,6 +1312,8 @@ function CashierLogSection({ session }: { session: POSSession }) {
 type Tab = 'report' | 'orders' | 'zreport';
 
 export default function POSSessionReport() {
+  const { shopId } = usePOSShopScope();
+  const [historyShop, setHistoryShop] = useState(shopId);
   const { data: auth } = useSession();
   const { tenant } = useTenant();
   const storeName = tenant?.name || 'DrinksHarbour';
@@ -1351,7 +1355,8 @@ export default function POSSessionReport() {
           LIMIT,
           status,
           dateFrom || undefined,
-          dateTo || undefined
+          dateTo || undefined,
+          historyShop
         );
         setSessions(res.sessions);
         setTotalPages(Math.max(1, Math.ceil(res.total / LIMIT)));
@@ -1364,7 +1369,7 @@ export default function POSSessionReport() {
         setLoading(false);
       }
     },
-    [token, statusFilter, dateFrom, dateTo]
+    [token, statusFilter, dateFrom, dateTo, historyShop]
   );
 
   useEffect(() => {
@@ -1377,7 +1382,7 @@ export default function POSSessionReport() {
     setOrders([]);
     setOrdersError(null);
     posApi
-      .getSessionOrders(token, selected._id)
+      .getSessionOrders(token, selected._id, selected.shopId || 'legacy')
       .then((data) => setOrders((data || []) as SessionOrder[]))
       .catch((err) =>
         setOrdersError(
@@ -1397,7 +1402,7 @@ export default function POSSessionReport() {
         staffName(s.openedBy as any)
           .toLowerCase()
           .includes(q) ||
-        (s.terminalType || '').toLowerCase().includes(q)
+        (s.shopName || s.terminalType || '').toLowerCase().includes(q)
     );
   }, [sessions, search]);
 
@@ -1483,6 +1488,7 @@ export default function POSSessionReport() {
           <div className="border-b border-gray-100 px-4 py-3">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-bold text-gray-900">Sessions</p>
+              <ShopHistorySelector token={token} value={historyShop} onChange={value => { setSelected(null); setOrders([]); setSessions([]); setHistoryShop(value); }} />
               <button
                 type="button"
                 onClick={() => load(1)}

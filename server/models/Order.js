@@ -436,6 +436,9 @@ const orderSchema = new Schema(
       index: true,
       sparse: true,
     },
+    shopId: { type: String, immutable: true, index: true },
+    shopName: { type: String, immutable: true },
+    posWarehouse: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse', immutable: true },
     posSessionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'POSSession',

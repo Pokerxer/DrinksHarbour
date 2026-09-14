@@ -16,7 +16,6 @@ import LazySection from "@/components/UI/LazySection";
 import { fetchInitialRecommendations } from "@/components/Shop/recommendations";
 import { buildProductItemList } from "@/lib/product-jsonld";
 import { jsonLdHtml } from "@/lib/jsonld";
-import OpportunityProductLinks from "@/components/SEO/OpportunityProductLinks";
 
 // HeroBanner is above the fold — load it eagerly
 import HeroBanner from "@/components/Banner/HeroBanner";
@@ -205,7 +204,6 @@ export default async function Home() {
         <section className="py-4 bg-white">
           <div className="container mx-auto px-3">
         <FeaturedProducts limit={8} initialProducts={featured} />
-        <OpportunityProductLinks />
           </div>
         </section>
 

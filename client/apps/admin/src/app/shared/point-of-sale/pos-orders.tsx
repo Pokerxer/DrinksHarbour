@@ -2,7 +2,9 @@
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth } from '@/app/shared/point-of-sale/store';
+import { usePOSAuth, usePOSShopScope } from '@/app/shared/point-of-sale/store';
+import { historyAccess } from './shop-entry';
+import { ShopHistorySelector } from './components/shop-history-selector';
 import { useSession } from 'next-auth/react';
 import { POSTenant } from '@/app/shared/point-of-sale/types';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -105,7 +107,8 @@ function isTokenExpired(tok: string | null | undefined): boolean {
   if (!tok) return true;
   try {
     const payload = JSON.parse(atob(tok.split('.')[1]));
-    return (payload.exp ?? 0) * 1000 < Date.now();
+    return !payload || typeof payload !== 'object' || !('exp' in payload) ||
+      typeof payload.exp !== 'number' || payload.exp * 1000 < Date.now();
   } catch { return true; }
 }
 
@@ -553,7 +556,13 @@ export default function POSOrders() {
   const { token: posToken, tenant } = usePOSAuth();
   const { data: session, status: sessionStatus } = useSession();
   const sessionToken = (session?.user as { token?: string })?.token ?? null;
-  const token = (!posToken || isTokenExpired(posToken)) ? sessionToken : posToken;
+  const { shopId } = usePOSShopScope();
+  const { token, defaultShop } = historyAccess(sessionToken, isTokenExpired(posToken) ? null : posToken, shopId);
+  const [selectedHistoryShop, setHistoryShop] = useState<string | null>(null);
+  const historyShop = selectedHistoryShop || defaultShop;
+  const [loadError, setLoadError] = useState('');
+  const requestVersion = useRef(0);
+  useEffect(() => { setHistoryShop(null); }, [token, defaultShop]);
 
   const [orders,         setOrders]         = useState<PosOrder[]>([]);
   const [loading,        setLoading]        = useState(true);
@@ -582,20 +591,24 @@ export default function POSOrders() {
   const [methodFilter,  setMethodFilter]  = useState('');
 
   const fetchOrders = useCallback((all = false) => {
+    const version = ++requestVersion.current;
     if (sessionStatus === 'loading') return;
-    if (!token) { setLoading(false); return; }
+    if (!token) { setOrders([]); setLoading(false); return; }
     setLoading(true);
-    posApi.getAllOrders(token, { limit: all ? 2000 : 500 })
+    setLoadError(''); setOrders([]); setSelected(null); setChecked(new Set()); setPage(1);
+    posApi.getAllOrders(token, { limit: all ? 2000 : 500, shopId: historyShop })
       .then(data => {
+        if (version !== requestVersion.current) return;
         const rows = (data || []) as PosOrder[];
         setOrders(rows);
         setTruncated(!all && rows.length === 500);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [token, sessionStatus]);
+      .catch(error => { if (version === requestVersion.current) setLoadError(error instanceof Error ? error.message : 'Could not load orders'); })
+      .finally(() => { if (version === requestVersion.current) setLoading(false); });
+  }, [token, sessionStatus, historyShop]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  useEffect(() => () => { requestVersion.current++; }, []);
   useEffect(() => { setExpandedGroups(new Set()); }, [groupBy]);
   useEffect(() => { setPage(1); }, [search, statusFilter, dateFrom, dateTo, timeFrom, timeTo, cashierFilter, methodFilter, sortCol, sortDir]);
 
@@ -824,6 +837,10 @@ export default function POSOrders() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-gray-50">
       <POSNavHeader />
+      <div className="flex items-center gap-3 border-b bg-white p-3">
+        <ShopHistorySelector token={token} value={historyShop} onChange={value => { requestVersion.current++; setHistoryShop(value); setOrders([]); setSelected(null); setPage(1); }} />
+        {loadError && <p role="alert" className="text-red-600">{loadError}</p>}
+      </div>
 
       {/* ── Control bar ── */}
       <div className="shrink-0 bg-white border-b border-gray-200">

@@ -24,7 +24,9 @@ let precacheReport = {
 
 vi.mock('./db', () => ({
   posDb: {
+    transaction: async (_mode: string, _table: unknown, work: () => Promise<void>) => work(),
     products: {
+      clear: async () => { stored = []; },
       bulkPut: async (recs: any[]) => {
         stored = recs;
       },

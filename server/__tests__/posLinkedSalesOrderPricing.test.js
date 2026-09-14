@@ -127,7 +127,8 @@ function stub(t, { salesOrder = null } = {}) {
   t.mock.method(WarehouseStock, 'find', () => chainable([{ currentQuantity: 90, reservedQuantity: 0 }]));
   t.mock.method(WarehouseMovement, 'create', async () => ({}));
   t.mock.method(SubProduct, 'updateOne', async () => ({}));
-  t.mock.method(POSSession, 'findOne', () => chainable(null));
+  t.mock.method(POSSession, 'findOne', () => chainable({ _id: TENANT, shopId: 'retail', shopName: 'Retail', terminalType: 'retail', warehouse: TENANT }));
+  t.mock.method(POSSession, 'findOneAndUpdate', async () => ({}));
   t.mock.method(Order, 'countDocuments', async () => 0);
   t.mock.method(InventoryMovement, 'updateMany', () => Promise.resolve());
   t.mock.method(InventoryMovement, 'create', async () => ({}));

@@ -1,4 +1,6 @@
 'use client';
+import { LegacySessionLink } from './legacy-session-link';
+import { usePOSShopScope } from '@/app/shared/point-of-sale/store';
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -688,6 +690,8 @@ function StatChip({
 // ── Session bar ───────────────────────────────────────────────────────────────
 export default function POSSessionBar({ className }: { className?: string }) {
   const { token, staff, tenant, terminal } = usePOSAuth();
+  const { shopId } = usePOSShopScope();
+  const { activeShop } = usePOSActiveShop();
   const { saleCounter } = usePOSSaleSignal();
   // Realtime events from other devices (cashier switch, orders) bump this and
   // re-fetch the session view below without waiting for a poll.
@@ -698,6 +702,7 @@ export default function POSSessionBar({ className }: { className?: string }) {
   const [openingCash, setOpeningCash] = useState(0);
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [openingError, setOpeningError] = useState('');
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const isOnline = useOnlineStatus();
@@ -747,28 +752,35 @@ export default function POSSessionBar({ className }: { className?: string }) {
 
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
+    setSession(null);
     // Re-fetch on mount and after every completed sale
     if (saleCounter === 0) setLoading(true);
     posApi
-      .getSessionInfo(token, terminal ?? 'retail')
-      .then((data) => setSession(data.currentSession))
+      .getSessionInfo(token, terminal ?? 'retail', shopId)
+      .then((data) => { if (!cancelled) setSession(data.currentSession); })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [token, terminal, saleCounter, realtimeTick]);
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, terminal, shopId, saleCounter, realtimeTick]);
 
   async function handleOpenSession() {
     if (!token) return;
     setOpening(true);
+    setOpeningError('');
     try {
       const newSession = await posApi.openSession(
         token,
         openingCash,
-        terminal ?? 'retail'
+        terminal ?? 'retail',
+        undefined,
+        shopId
       );
       setSession(newSession);
       setShowOpenDialog(false);
-    } catch {
-      /* ignore */
+    } catch (error) {
+      setOpeningError(error instanceof Error ? error.message : 'Could not open this shop session');
+      toast.error(error instanceof Error ? error.message : 'Could not open this shop session');
     } finally {
       setOpening(false);
     }
@@ -795,7 +807,7 @@ export default function POSSessionBar({ className }: { className?: string }) {
     return url?.trim() || null;
   })();
   const termLabel = (
-    terminal === 'wholesale' ? 'Wholesale' : 'Retail'
+    session?.shopName || activeShop?.name || (shopId === 'retail' ? 'Retail' : 'Selected shop')
   ).toUpperCase();
 
   // ── No session ──────────────────────────────────────────────────────────────
@@ -825,6 +837,7 @@ export default function POSSessionBar({ className }: { className?: string }) {
         <div className="flex-1" />
 
         {/* Open session action */}
+        <LegacySessionLink error={openingError} />
         {showOpenDialog ? (
           <div className="flex items-center gap-2">
             <span className="text-xs text-white/70">Opening cash (₦):</span>

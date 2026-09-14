@@ -7,7 +7,6 @@ import { capSeoTitle } from '@/lib/seoTitle';
 import { buildBrandDescription } from '@/lib/brandSeoDescription';
 import EntityBannerOverlay from '@/components/Banner/entity-banner-overlay';
 import { jsonLdHtml } from '@/lib/jsonld';
-import OpportunityProductLinks, { BRAND_OPPORTUNITY_SLUGS } from '@/components/SEO/OpportunityProductLinks';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -834,7 +833,6 @@ export default async function BrandPage({
           </section>
         )}
 
-        <OpportunityProductLinks includeSlugs={BRAND_OPPORTUNITY_SLUGS[slug]} />
 
         {/* ── Related brands ────────────────────────────────────────────── */}
         {relatedBrands.length > 0 && (

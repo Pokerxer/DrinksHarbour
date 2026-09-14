@@ -34,7 +34,12 @@ const POSSessionSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Terminal type — retail or wholesale (one open session allowed per type per tenant)
+    // Immutable ownership; missing shopId identifies unassigned legacy records.
+    shopId: { type: String, immutable: true },
+    shopName: { type: String, immutable: true },
+    warehouse: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse', immutable: true },
+
+    // Selling mode, independent of shop identity.
     terminalType: {
       type: String,
       enum: ['retail', 'wholesale'],
@@ -134,5 +139,7 @@ POSSessionSchema.virtual('cashTheoretical').get(function () {
 
 // One open session per tenant+terminal at a time
 POSSessionSchema.index({ tenant: 1, terminalType: 1, status: 1 });
+
+POSSessionSchema.index({ tenant: 1, shopId: 1 }, { unique: true, name: 'one_open_session_per_shop', partialFilterExpression: { status: 'open', shopId: { $type: 'string' } } });
 
 module.exports = mongoose.model('POSSession', POSSessionSchema);

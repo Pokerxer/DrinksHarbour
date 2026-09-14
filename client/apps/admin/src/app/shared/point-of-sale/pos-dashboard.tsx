@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
@@ -37,12 +36,11 @@ import {
 } from 'recharts';
 import { CustomTooltip } from '@core/components/charts/custom-tooltip';
 import { useSession } from 'next-auth/react';
-import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth, usePOSShops } from '@/app/shared/point-of-sale/store';
+import { usePOSAuth, usePOSShopScope } from '@/app/shared/point-of-sale/store';
+import { usePOSDashboardData } from './hooks/usePOSDashboardData';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { routes } from '@/config/routes';
 import {
-  POSDashboardData,
   POSRecentOrder,
   POSShop,
 } from '@/app/shared/point-of-sale/types';
@@ -53,7 +51,7 @@ import POSNavHeader from './pos-nav-header';
 function isTokenExpired(tok: string | null | undefined): boolean {
   if (!tok) return true;
   try {
-    const payload = JSON.parse(atob(tok.split('.')[1]));
+    const payload = JSON.parse(atob(tok.split('.')[1])) as { exp?: number };
     return (payload.exp ?? 0) * 1000 < Date.now();
   } catch {
     return true;
@@ -533,72 +531,34 @@ const DEFAULT_TERM: TerminalInfo = {
 };
 
 export default function POSDashboard() {
-  const { token: posToken } = usePOSAuth();
-  const { shops: customShops, setShops } = usePOSShops();
-  const { data: session } = useSession();
+  const { token: posToken, staff } = usePOSAuth();
+  const { shopId } = usePOSShopScope();
+  const { data: session, status: authStatus } = useSession();
   const sessionToken = (session?.user as { token?: string })?.token ?? null;
-  const token = !posToken || isTokenExpired(posToken) ? sessionToken : posToken;
-
+  // The landing page belongs to the signed-in back office. A leftover cashier
+  // login must not override that account or silently narrow the overview.
+  const adminToken = !isTokenExpired(sessionToken) ? sessionToken : null;
+  const token = authStatus === 'loading' ? null : adminToken || (!isTokenExpired(posToken) ? posToken : null);
+  const canViewOverview = Boolean(adminToken) || ['tenant_owner', 'tenant_admin', 'admin', 'super_admin'].includes(staff?.role || '');
+  const overviewScope = canViewOverview ? 'all' : shopId;
+  const { dashboard: dashData, shops: customShops, sessions, errors, loading, refresh } = usePOSDashboardData(token, overviewScope);
   const allShops = [...BUILT_IN_SHOPS, ...customShops];
-
-  const [dashData, setDashData] = useState<POSDashboardData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [terminalInfo, setTerminalInfo] = useState<
-    Record<string, TerminalInfo>
-  >({
-    retail: DEFAULT_TERM,
-    wholesale: DEFAULT_TERM,
+  const terminalInfo: Record<string, TerminalInfo> = {};
+  Object.entries(sessions).forEach(([id, data]) => {
+    const sess = data.currentSession;
+    const last = data.lastSession;
+    terminalInfo[id] = {
+      sessionOpen: !!sess,
+      sessionSales: sess?.totalSales,
+      sessionOrders: sess?.orderCount,
+      cashierName: sess?.activeCashier
+        ? sess.activeCashier.posName || `${sess.activeCashier.firstName} ${sess.activeCashier.lastName}`
+        : undefined,
+      openedAt: sess?.openedAt,
+      closingDate: last ? fmtDate(last.closedAt) : null,
+      closingBalance: last ? formatCurrency(last.totalSales) : null,
+    };
   });
-
-  function fetchAll(tk: string) {
-    setLoading(true);
-
-    posApi
-      .getDashboard(tk)
-      .then((d) => setDashData(d))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-
-    posApi
-      .listShops(tk)
-      .then(({ shops: loaded }) => setShops(loaded))
-      .catch(() => {});
-
-    allShops.forEach((shop) => {
-      posApi
-        .getSessionInfo(tk, shop.mode)
-        .then((data) => {
-          const sess = data.currentSession;
-          const last = data.lastSession;
-          setTerminalInfo((prev) => ({
-            ...prev,
-            [shop._id]: {
-              sessionOpen: !!sess,
-              sessionSales: sess?.totalSales,
-              sessionOrders: sess?.orderCount,
-              cashierName: sess?.activeCashier
-                ? sess.activeCashier.posName ||
-                  `${sess.activeCashier.firstName} ${sess.activeCashier.lastName}`
-                : undefined,
-              openedAt: sess?.openedAt,
-              closingDate: last ? fmtDate(last.closedAt) : null,
-              closingBalance: last ? formatCurrency(last.totalSales) : null,
-            },
-          }));
-        })
-        .catch(() =>
-          setTerminalInfo((prev) => ({
-            ...prev,
-            [shop._id]: { ...DEFAULT_TERM, sessionOpen: false },
-          }))
-        );
-    });
-  }
-
-  useEffect(() => {
-    if (token) fetchAll(token);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
 
   const today = dashData?.today;
   const yesterday = dashData?.yesterday;
@@ -625,6 +585,15 @@ export default function POSDashboard() {
       <div className="px-4 md:px-5 lg:px-6 3xl:px-8 4xl:px-10">
         <POSNavHeader />
       </div>
+      {errors.length > 0 && (
+        <div role="alert" className="mx-4 my-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p>Some POS data could not be loaded. Use Refresh to try again.</p>
+          {errors.map(error => <p key={error}>{error}</p>)}
+        </div>
+      )}
+      {authStatus !== 'loading' && !token && (
+        <p role="alert" className="m-4 text-sm text-red-700">Sign in to load your POS overview.</p>
+      )}
 
       {/* ── Hero ── */}
       <div
@@ -674,7 +643,7 @@ export default function POSDashboard() {
             )}
             <button
               type="button"
-              onClick={() => token && fetchAll(token)}
+              onClick={() => void refresh()}
               disabled={loading}
               className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white transition-colors hover:bg-white/20 disabled:opacity-50"
               title="Refresh"

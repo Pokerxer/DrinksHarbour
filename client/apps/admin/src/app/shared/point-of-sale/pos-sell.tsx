@@ -1,4 +1,5 @@
 'use client';
+import { usePOSShopScope } from '@/app/shared/point-of-sale/store';
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -34,6 +35,7 @@ export default function POSSell() {
   const { addItem } = usePOSCart();
   const { activeView } = usePOSUI();
   const { token, terminal } = usePOSAuth();
+  const { shopId } = usePOSShopScope();
   const settings = usePOSSettings();
   const isOnline = useOnlineStatus();
   useRegisterSW();
@@ -62,20 +64,23 @@ export default function POSSell() {
   useEffect(() => {
     if (!hydrated) return;
     if (!token) {
-      const t = searchParams.get('terminal') ?? terminal ?? 'retail';
+      const t = searchParams.get('shopId') ?? searchParams.get('terminal') ?? shopId;
       router.replace(`${routes.pos.lock}?terminal=${t}`);
     }
-  }, [hydrated, token, terminal, router, searchParams]);
+  }, [hydrated, token, shopId, router, searchParams]);
 
   // Check for an open session once we have a token
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
+    setHasSession(false); setSessionChecked(false);
     posApi
-      .getSessionInfo(token, terminal ?? 'retail')
-      .then((data) => setHasSession(!!data.currentSession))
-      .catch(() => setHasSession(false))
-      .finally(() => setSessionChecked(true));
-  }, [token, terminal]);
+      .getSessionInfo(token, terminal ?? 'retail', shopId)
+      .then((data) => { if (!cancelled) setHasSession(!!data.currentSession); })
+      .catch(() => { if (!cancelled) setHasSession(false); })
+      .finally(() => { if (!cancelled) setSessionChecked(true); });
+    return () => { cancelled = true; };
+  }, [token, terminal, shopId]);
 
   // Session timeout — lock screen after inactivity
   useEffect(() => {
@@ -86,7 +91,7 @@ export default function POSSell() {
     function reset() {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const t = terminal ?? 'retail';
+        const t = shopId;
         router.push(`${routes.pos.lock}?terminal=${t}`);
       }, ms);
     }
@@ -100,7 +105,7 @@ export default function POSSell() {
       document.removeEventListener('keydown', reset);
       document.removeEventListener('click', reset);
     };
-  }, [settings.sessionTimeoutMins, terminal, router]);
+  }, [settings.sessionTimeoutMins, shopId, router]);
 
   // Sync offline queue and refresh product cache when coming back online
   useEffect(() => {

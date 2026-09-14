@@ -10,6 +10,7 @@
 // forged or foreign token cannot eavesdrop on another tenant's session feed.
 
 const jwt = require('jsonwebtoken');
+const Tenant = require('../models/Tenant');
 const { terminalRoom, kdsRoom } = require('../services/pos.realtime');
 
 function attachPosGateway(io) {
@@ -29,10 +30,18 @@ function attachPosGateway(io) {
   });
 
   io.on('connection', (socket) => {
-    socket.on('pos:join', ({ terminalType } = {}, ack) => {
-      const room = terminalRoom(socket.data.tenantId, terminalType);
-      socket.join(room);
-      if (typeof ack === 'function') ack({ ok: true, room });
+    socket.on('pos:join', async ({ shopId = 'retail' } = {}, ack) => {
+      try {
+        if (shopId !== 'retail') {
+          if (!/^[a-f\d]{24}$/i.test(shopId)) throw new Error('Invalid shop');
+          const tenant = await Tenant.findOne({ _id: socket.data.tenantId, isActive: true }).select('posSettings.shops').lean();
+          if (!tenant?.posSettings?.shops?.some(s => String(s._id) === shopId && s.active !== false)) throw new Error('Shop unavailable');
+        }
+        const room = terminalRoom(socket.data.tenantId, shopId);
+        if (socket.data.posRoom && socket.data.posRoom !== room) await socket.leave(socket.data.posRoom);
+        socket.join(room); socket.data.posRoom = room;
+        if (typeof ack === 'function') ack({ ok: true, room });
+      } catch { if (typeof ack === 'function') ack({ ok: false, message: 'Shop unavailable' }); }
     });
 
     // Kitchen display screens. Same rule as pos:join: the tenant comes from

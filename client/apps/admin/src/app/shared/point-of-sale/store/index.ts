@@ -1,4 +1,5 @@
 'use client';
+import { shopStorageKey } from '../shop-scope';
 
 import { atom, useAtom, useAtomValue } from 'jotai';
 import { resolveSubProductThumb } from '@/app/shared/ecommerce/sub-product/image-utils';
@@ -32,14 +33,19 @@ export const usePOSAuth = () => {
   const [staff, setStaff] = useAtom(posStaffAtom);
   const [tenant, setTenant] = useAtom(posTenantAtom);
   const [terminal, setTerminal] = useAtom(posTerminalAtom);
+  const [, setShopSelections] = useAtom(posShopSelectionsAtom);
 
   const setAuth = useCallback(
-    (newToken: string, newStaff: POSStaff, newTenant: POSTenant) => {
+    (newToken: string, newStaff: POSStaff, newTenant: POSTenant, entry?: { shopId: string; mode: 'retail' | 'wholesale' }) => {
       setToken(newToken);
       setStaff(newStaff);
       setTenant(newTenant);
+      if (entry) {
+        setShopSelections(previous => ({ ...previous, [newTenant._id]: entry.shopId }));
+        setTerminal(entry.mode);
+      }
     },
-    [setToken, setStaff, setTenant]
+    [setToken, setStaff, setTenant, setShopSelections, setTerminal]
   );
 
   const logout = useCallback(() => {
@@ -72,7 +78,15 @@ export const usePOSShops = () => {
   return { shops, setShops };
 };
 
-const posActiveShopIdAtom = atomWithStorage<string | null>('dh-pos-shop', null);
+const posShopSelectionsAtom = atomWithStorage<Record<string, string>>('dh-pos-shops-by-tenant', {});
+const posActiveShopIdAtom = atom(
+  get => get(posShopSelectionsAtom)[get(posTenantAtom)?._id || 'backoffice'] || null,
+  (get, set, value: string | null) => {
+    const tenantKey = get(posTenantAtom)?._id || 'backoffice';
+    const next = { ...get(posShopSelectionsAtom), [tenantKey]: value || 'retail' };
+    set(posShopSelectionsAtom, next);
+  }
+);
 
 export const usePOSActiveShop = () => {
   const [activeShopId, setActiveShopId] = useAtom(posActiveShopIdAtom);
@@ -221,20 +235,24 @@ export {
 // Retail and wholesale each have their own cart, active cart ID, and pricelist
 // selection so they operate as independent closed systems.
 
-function termAtoms<T>(baseKey: string, fallback: T) {
+const shopCartAtoms = new Map<string, ReturnType<typeof makeShopCartAtoms>>();
+function makeShopCartAtoms(key: string) {
   return {
-    retail: atomWithStorage<T>(`${baseKey}-retail`, fallback),
-    wholesale: atomWithStorage<T>(`${baseKey}-wholesale`, fallback),
+    cartAtom: atomWithStorage<CartData[]>(`dh-pos-carts-v2:${key}`, [INITIAL_CART]),
+    activeCartAtom: atomWithStorage<string>(`dh-pos-active-cart-v2:${key}`, INITIAL_CART_ID),
   };
 }
-
-// ─── Multi-cart atoms (persisted, terminal-scoped) ────────────────────────────
-
-const cartsAtoms = termAtoms<CartData[]>('dh-pos-carts', [INITIAL_CART]);
-const activeCartIdAtoms = termAtoms<string>(
-  'dh-pos-active-cart',
-  INITIAL_CART_ID
-);
+export function usePOSShopScope() {
+  const { tenant } = usePOSAuth();
+  const { activeShopId } = usePOSActiveShop();
+  const shopId = activeShopId || 'retail';
+  return { shopId, scopeKey: shopStorageKey(tenant?._id || 'backoffice', shopId) };
+}
+function useShopCartAtoms() {
+  const { scopeKey } = usePOSShopScope();
+  if (!shopCartAtoms.has(scopeKey)) shopCartAtoms.set(scopeKey, makeShopCartAtoms(scopeKey));
+  return shopCartAtoms.get(scopeKey)!;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -260,12 +278,7 @@ function makeCartRef(existingCount: number) {
 
 export const usePOSCart = () => {
   const { terminal } = usePOSAuth();
-  const cartAtom =
-    terminal === 'wholesale' ? cartsAtoms.wholesale : cartsAtoms.retail;
-  const activeCartAtom =
-    terminal === 'wholesale'
-      ? activeCartIdAtoms.wholesale
-      : activeCartIdAtoms.retail;
+  const { cartAtom, activeCartAtom } = useShopCartAtoms();
   const allPOSProducts = useAtomValue(posProductsAtom);
   // Pricelist is shop-effective (resolved-or-override) so cart totals match the grid.
   const { selectedPricelist } = usePOSPricelist();
@@ -919,12 +932,7 @@ export const usePOSPricelist = () => {
 /** The active terminal's selected-customer id ('' for a walk-in / no DB customer). */
 function useActiveCartCustomer(): CartCustomer {
   const { terminal } = usePOSAuth();
-  const cartAtom =
-    terminal === 'wholesale' ? cartsAtoms.wholesale : cartsAtoms.retail;
-  const activeCartAtom =
-    terminal === 'wholesale'
-      ? activeCartIdAtoms.wholesale
-      : activeCartIdAtoms.retail;
+  const { cartAtom, activeCartAtom } = useShopCartAtoms();
   const carts = useAtomValue(cartAtom);
   const activeCartId = useAtomValue(activeCartAtom);
   const activeCart =
@@ -1132,13 +1140,7 @@ export const usePOSAvailableWarehouses = () => {
 
 /** Per-cart linked sales order — read/write on the active cart. */
 export const usePOSLinkedSalesOrder = () => {
-  const { terminal } = usePOSAuth();
-  const cartAtom =
-    terminal === 'wholesale' ? cartsAtoms.wholesale : cartsAtoms.retail;
-  const activeCartIdAtom =
-    terminal === 'wholesale'
-      ? activeCartIdAtoms.wholesale
-      : activeCartIdAtoms.retail;
+  const { cartAtom, activeCartAtom: activeCartIdAtom } = useShopCartAtoms();
   const [carts, setCarts] = useAtom(cartAtom);
   const activeCartId = useAtomValue(activeCartIdAtom);
   const activeCart = carts.find((c) => c.id === activeCartId) ?? carts[0];

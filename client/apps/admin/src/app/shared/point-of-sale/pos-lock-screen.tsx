@@ -5,7 +5,8 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { routes } from '@/config/routes';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth, usePOSSettings } from '@/app/shared/point-of-sale/store';
+import { usePOSAuth, usePOSSettings, usePOSShops } from '@/app/shared/point-of-sale/store';
+import { resolveShopEntry } from './shop-entry';
 import { useTenant } from '@/context/TenantContext';
 import { POSStaff } from '@/app/shared/point-of-sale/types';
 import {
@@ -185,10 +186,13 @@ function StaffRow({
 export default function POSLockScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const terminal = searchParams.get('terminal') || 'retail';
-  const terminalLabel = terminal === 'retail' ? 'Retail' : 'Wholesale';
+  const requestedShop = searchParams.get('shopId') || searchParams.get('terminal') || 'retail';
+  const { shops, setShops } = usePOSShops();
+  const selectedShop = shops.find(shop => shop._id === requestedShop);
+  const terminal = selectedShop?.mode || (requestedShop === 'retail' ? 'retail' : null);
+  const terminalLabel = selectedShop?.name || (requestedShop === 'retail' ? 'Retail' : 'Selected shop');
 
-  const { token, setAuth, setTerminal } = usePOSAuth();
+  const { token, staff: currentStaff, tenant: currentTenant, setAuth } = usePOSAuth();
   const settings = usePOSSettings();
   const canBypassPIN = !settings.requirePINOnUnlock && !!token;
   const { tenant, tenantSlug: contextSlug } = useTenant();
@@ -241,7 +245,7 @@ export default function POSLockScreen() {
         setAllStaff(list);
         const eligible = list.filter((s) => {
           const tp = s.terminalPermissions;
-          if (!tp) return true;
+          if (!tp || !terminal) return true;
           return terminal === 'retail' ? tp.retail : tp.wholesale;
         });
         if (eligible.length === 1) setSelectedStaff(eligible[0]);
@@ -258,7 +262,7 @@ export default function POSLockScreen() {
     () =>
       allStaff.filter((s) => {
         const tp = s.terminalPermissions;
-        if (!tp) return true;
+        if (!tp || !terminal) return true;
         return terminal === 'retail' ? tp.retail : tp.wholesale;
       }),
     [allStaff, terminal]
@@ -282,8 +286,10 @@ export default function POSLockScreen() {
               passwordValue
             )
           : await posApi.staffLogin(tenantSlug, selectedStaff._id, pinValue);
-        setAuth(data.token, data.staff, data.tenant);
-        setTerminal(terminal === 'wholesale' ? 'wholesale' : 'retail');
+        const { shops: freshShops } = await posApi.listShops(data.token);
+        const entry = resolveShopEntry(requestedShop, freshShops);
+        setShops(freshShops);
+        setAuth(data.token, data.staff, data.tenant, entry);
         router.push(routes.pos.sell);
       } catch (err: any) {
         setError(err.message || 'Invalid credentials. Try again.');
@@ -295,7 +301,7 @@ export default function POSLockScreen() {
         setLoggingIn(false);
       }
     },
-    [selectedStaff, tenantSlug, loggingIn, usePassword, setAuth, router]
+    [selectedStaff, tenantSlug, loggingIn, usePassword, setAuth, router, requestedShop, setShops]
   );
 
   const handleLoginRef = useRef(handleLogin);
@@ -434,10 +440,21 @@ export default function POSLockScreen() {
 
         {/* Right: PIN / password */}
         <div className="flex w-full max-w-xs flex-col items-center rounded-3xl bg-white/10 p-6 ring-1 ring-white/20 backdrop-blur-md lg:max-w-sm">
-          {canBypassPIN && (
+          {canBypassPIN && currentTenant?.slug === tenantSlug && (
             <button
               type="button"
-              onClick={() => router.push(routes.pos.sell)}
+              onClick={async () => {
+                if (!token || !currentStaff || !currentTenant) return;
+                try {
+                  const { shops: freshShops } = await posApi.listShops(token);
+                  const entry = resolveShopEntry(requestedShop, freshShops);
+                  setShops(freshShops);
+                  setAuth(token, currentStaff, currentTenant, entry);
+                  router.push(routes.pos.sell);
+                } catch (error) {
+                  setError(error instanceof Error ? error.message : 'Could not select this shop');
+                }
+              }}
               className="mb-4 w-full rounded-xl bg-white/20 py-3 text-sm font-semibold text-white ring-1 ring-white/30 transition-colors hover:bg-white/30"
             >
               Continue without PIN

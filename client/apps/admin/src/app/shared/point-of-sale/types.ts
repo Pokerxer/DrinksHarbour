@@ -586,6 +586,9 @@ export interface POSRefundResponse {
 }
 
 export interface POSSession {
+  shopId?: string;
+  shopName?: string;
+  warehouse?: string;
   _id: string;
   tenant: string;
   terminalType?: 'retail' | 'wholesale';
@@ -683,6 +686,8 @@ export interface POSDashboardData {
 }
 
 export interface POSRecentOrder {
+  shopId?: string;
+  shopName?: string;
   _id: string;
   orderNumber: string;
   total: number;

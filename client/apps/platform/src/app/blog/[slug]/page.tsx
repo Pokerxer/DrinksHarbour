@@ -17,7 +17,6 @@ import ShareButtons, { ShareRail } from './ShareButtons';
 import TableOfContents from './TableOfContents';
 import PlacementBanner from '@/components/Banner/PlacementBanner';
 import AdSlot from '@/components/Ads/AdSlot';
-import OpportunityProductLinks from '@/components/SEO/OpportunityProductLinks';
 
 export const revalidate = 300;
 
@@ -235,7 +234,6 @@ export default async function BlogPostPage({
               <Link href="/brands" className="rounded-full border border-red-200 bg-white px-4 py-2 text-red-800">Explore brands</Link>
             </div>
           </div>
-          <OpportunityProductLinks />
 
           {/* Related */}
           <RelatedArticles posts={others} />

@@ -1,4 +1,7 @@
 'use client';
+import { historyAccess } from './shop-entry';
+import { ShopHistorySelector } from './components/shop-history-selector';
+import { usePOSShopScope } from './store';
 
 import React, {
   useEffect,
@@ -23,7 +26,8 @@ function isTokenExpired(tok: string | null | undefined): boolean {
   if (!tok) return true;
   try {
     const payload = JSON.parse(atob(tok.split('.')[1]));
-    return (payload.exp ?? 0) * 1000 < Date.now();
+    return !payload || typeof payload !== 'object' || !('exp' in payload) ||
+      typeof payload.exp !== 'number' || payload.exp * 1000 < Date.now();
   } catch {
     return true;
   }
@@ -81,6 +85,7 @@ interface HistoryRefund {
 }
 
 interface HistoryOrder {
+  shopId?: string;
   _id: string;
   receiptNumber?: string;
   orderNumber?: string;
@@ -398,11 +403,16 @@ function ReturnDetailPanel({
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function POSHistory() {
+  const { shopId: activeShopId } = usePOSShopScope();
+  const [selectedHistoryShop, setHistoryShop] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const requestVersion = useRef(0);
   const router = useRouter();
   const { token: posToken } = usePOSAuth();
   const { data: session, status: sessionStatus } = useSession();
   const sessionToken = (session?.user as { token?: string })?.token ?? null;
-  const token = !posToken || isTokenExpired(posToken) ? sessionToken : posToken;
+  const { token, defaultShop } = historyAccess(sessionToken, isTokenExpired(posToken) ? null : posToken, activeShopId);
+  const historyShop = selectedHistoryShop || defaultShop;
   const { addItem } = usePOSCart();
 
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
@@ -430,19 +440,26 @@ export default function POSHistory() {
     setPage(1);
   }
 
+  function changeShop(value: string) {
+    requestVersion.current++; setHistoryShop(value); setOrders([]); setPage(1); setSelectedOrder(null); setSelectedRefund(null);
+  }
+  useEffect(() => { setHistoryShop(null); setOrders([]); setPage(1); setSelectedOrder(null); setSelectedRefund(null); }, [token, defaultShop]);
+  useEffect(() => () => { requestVersion.current++; }, []);
+
   const fetchOrders = useCallback(() => {
     if (sessionStatus === 'loading') return;
     if (!token) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    const version = ++requestVersion.current;
+    setLoadError(''); setLoading(true);
     posApi
-      .getAllOrders(token)
-      .then((data) => setOrders((data || []) as HistoryOrder[]))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [token, sessionStatus]);
+      .getAllOrders(token, { shopId: historyShop })
+      .then((data) => { if (version === requestVersion.current) setOrders((data || []) as HistoryOrder[]); })
+      .catch((e: unknown) => { if (version === requestVersion.current) setLoadError(e instanceof Error ? e.message : 'Failed to load orders'); })
+      .finally(() => { if (version === requestVersion.current) setLoading(false); });
+  }, [token, sessionStatus, historyShop]);
 
   useEffect(() => {
     fetchOrders();
@@ -530,7 +547,7 @@ export default function POSHistory() {
     if (!token) return;
     setVoiding(true);
     try {
-      await posApi.voidOrder(token, o._id, 'Voided from POS history');
+      await posApi.voidOrder(token, o._id, 'Voided from POS history', o.shopId);
       toast.success('Order voided');
       fetchOrders();
       setSelectedOrder(null);
@@ -580,6 +597,7 @@ export default function POSHistory() {
 
   return (
     <div className="flex h-dvh flex-col bg-[#f0f0f0]">
+      <div className="flex items-center gap-3 border-b bg-white p-3"><ShopHistorySelector token={token} value={historyShop} onChange={changeShop} />{loadError && <p role="alert" className="text-red-600">{loadError}</p>}</div>
       {/* ── Top bar ── */}
       <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2">
         {/* Back */}

@@ -6,6 +6,7 @@ import { io, type Socket } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import {
   usePOSAuth,
+  usePOSShopScope,
   usePOSRealtimeTick,
 } from '@/app/shared/point-of-sale/store';
 import { routes } from '@/config/routes';
@@ -28,6 +29,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
  * explicit refreshes still drive every screen.
  */
 export function usePOSRealtime() {
+  const { shopId } = usePOSShopScope();
   const { token, terminal } = usePOSAuth();
   const router = useRouter();
   const { bumpRealtimeTick } = usePOSRealtimeTick();
@@ -43,7 +45,7 @@ export function usePOSRealtime() {
 
     socket.on('connect', () => {
       // Re-join after every (re)connect — rooms are per-connection.
-      socket.emit('pos:join', { terminalType: terminal ?? 'retail' });
+      socket.emit('pos:join', { shopId });
     });
 
     socket.on('session:closed', () => {
@@ -64,5 +66,5 @@ export function usePOSRealtime() {
     return () => {
       socket.disconnect();
     };
-  }, [token, terminal, router, bumpRealtimeTick]);
+  }, [token, terminal, shopId, router, bumpRealtimeTick]);
 }

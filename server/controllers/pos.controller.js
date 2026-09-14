@@ -2,6 +2,7 @@
 
 const mongoose = require('mongoose');
 const POSSession = require('../models/POSSession');
+const { shopFilter, resolveOpeningShop, resolveSaleSession, assertNoLegacyDrawer } = require('../services/posShopScope.service');
 const Order = require('../models/Order');
 const POSTable = require('../models/POSTable');
 const asyncHandler = require('../utils/asyncHandler');
@@ -408,11 +409,12 @@ function tenantScope(tenantId) {
 const PAYMENT_METHODS = ['cash', 'card', 'bank_transfer', 'mobile_money', 'split'];
 
 /** Aggregate POS orders by payment method for a time range */
-async function getPOSOrderStats(tenantId, from, to) {
+async function getPOSOrderStats(tenantId, from, to, scope = {}) {
   const agg = await Order.aggregate([
     {
       $match: {
         'items.tenant': tenantId,   // Order has no top-level tenant; filter via items
+        ...scope,
         source: 'pos',
         paymentStatus: 'paid',
         createdAt: { $gte: from, $lte: to },
@@ -453,9 +455,7 @@ async function getPOSOrderStats(tenantId, from, to) {
 }
 
 /** Aggregate orders placed during an open session window */
-async function getSessionOrderStats(tenantId, from, to) {
-  return getPOSOrderStats(tenantId, from, to);
-}
+
 
 // ─── Open a session ──────────────────────────────────────────────────────────
 
@@ -466,58 +466,7 @@ async function getSessionOrderStats(tenantId, from, to) {
  * Odoo-style: captures opening cash balance, records the opening cashier,
  * initialises methodBalances with opening cash.
  */
-exports.openSession = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant required' });
 
-  const { openingCash = 0, notes = '', terminalType = 'retail' } = req.body;
-  const validTerminals = ['retail', 'wholesale'];
-  const terminal = validTerminals.includes(terminalType) ? terminalType : 'retail';
-
-  const existing = await POSSession.findOne({ tenant: tenantId, status: 'open', terminalType: terminal });
-  if (existing) {
-    return res.status(409).json({
-      success: false,
-      message: `A ${terminal} session is already open`,
-      data: { session: existing },
-    });
-  }
-  const cashAmount = Math.max(0, Number(openingCash) || 0);
-
-  const now = new Date();
-
-  const session = await POSSession.create({
-    tenant:     tenantId,
-    openedBy:   req.user._id,
-    activeCashier: req.user._id,
-    terminalType: terminal,
-    openingCash: cashAmount,
-    openingBalance: cashAmount,   // legacy compat
-    notes,
-    status:    'open',
-    openedAt:  now,
-    // Seed methodBalances with opening cash
-    methodBalances: [
-      { method: 'cash',         opening: cashAmount, theoretical: cashAmount, counted: null, difference: null },
-      { method: 'card',         opening: 0,          theoretical: 0,          counted: null, difference: null },
-      { method: 'bank_transfer',opening: 0,          theoretical: 0,          counted: null, difference: null },
-      { method: 'mobile_money', opening: 0,          theoretical: 0,          counted: null, difference: null },
-    ],
-    // Start cashier log
-    cashierLog: [{ cashier: req.user._id, startedAt: now }],
-  });
-
-  await session.populate('openedBy activeCashier', 'firstName lastName email posName avatar');
-
-  emitToTerminal(req, tenantId, terminal, 'session:opened', {
-    sessionId:  session._id,
-    terminal,
-    openedBy:   req.user._id,
-    openedAt:   now.toISOString(),
-  });
-
-  res.status(201).json({ success: true, data: { session } });
-});
 
 // ─── Closing Control — get theoretical values ────────────────────────────────
 
@@ -528,58 +477,7 @@ exports.openSession = asyncHandler(async (req, res) => {
  * before the cashier enters counted amounts. Call this to populate
  * the closing control screen.
  */
-exports.getClosingControl = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  const session  = await POSSession.findOne({ _id: req.params.id, tenant: tenantId });
-  if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
-  if (session.status === 'closed') {
-    return res.status(400).json({ success: false, message: 'Session already closed' });
-  }
 
-  // Re-calculate theoretical values from all orders placed in this session window
-  const stats = await getSessionOrderStats(tenantId, session.openedAt, new Date());
-
-  // Net cash movements (in - out)
-  const movements   = session.cashMovements || [];
-  const totalCashIn  = movements.filter(m => m.type === 'in').reduce((s, m) => s + m.amount, 0);
-  const totalCashOut = movements.filter(m => m.type === 'out').reduce((s, m) => s + m.amount, 0);
-  const netCashMove  = totalCashIn - totalCashOut;
-
-  const methods = PAYMENT_METHODS.filter(m => m !== 'split').map(method => {
-    const orderTotal = stats.breakdown?.[method]?.total || 0;
-    const orderCount = stats.breakdown?.[method]?.count || 0;
-    // For cash: theoretical = opening + cash sales + net cash movements
-    const theoretical = method === 'cash'
-      ? session.openingCash + orderTotal + netCashMove
-      : orderTotal;
-
-    return {
-      method,
-      opening:     method === 'cash' ? session.openingCash : 0,
-      theoretical,
-      orderTotal,
-      orderCount,
-    };
-  });
-
-  res.json({
-    success: true,
-    data: {
-      sessionId:    session._id,
-      openedAt:     session.openedAt,
-      openingCash:  session.openingCash,
-      totalSales:   stats.totalSales,
-      orderCount:   stats.orderCount,
-      totalTips:     stats.totalTips || 0,
-      totalRounding: stats.totalRounding || 0,
-      totalCashIn,
-      totalCashOut,
-      netCashMove,
-      cashMovements: movements,
-      methods,
-    },
-  });
-});
 
 // ─── Close a session ─────────────────────────────────────────────────────────
 
@@ -592,97 +490,7 @@ exports.getClosingControl = asyncHandler(async (req, res) => {
  *
  * Odoo-style: computes difference per method, flags discrepancies.
  */
-exports.closeSession = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
 
-  // Atomically claim the session — only one close request wins.
-  const session = await POSSession.findOneAndUpdate(
-    { _id: req.params.id, tenant: tenantId, status: 'open' },
-    { $set: { status: 'closed', closedBy: req.user._id, closedAt: new Date() } },
-    { new: false }
-  );
-
-  if (!session) {
-    // Either doesn't exist or already closed
-    const exists = await POSSession.findOne({ _id: req.params.id, tenant: tenantId }).lean();
-    if (!exists) return res.status(404).json({ success: false, message: 'Session not found' });
-    return res.status(409).json({ success: false, message: 'Session already closed' });
-  }
-
-  const closedAt = new Date();
-
-  // Final order stats
-  const stats = await getSessionOrderStats(tenantId, session.openedAt, closedAt);
-
-  // Net cash movements
-  const movements    = session.cashMovements || [];
-  const totalCashIn  = movements.filter(m => m.type === 'in').reduce((s, m) => s + m.amount, 0);
-  const totalCashOut = movements.filter(m => m.type === 'out').reduce((s, m) => s + m.amount, 0);
-  const netCashMove  = totalCashIn - totalCashOut;
-
-  // Build methodBalances with theoretical + counted + difference
-  const { countedBalances = [], closingNotes = '' } = req.body;
-  const methodBalances = PAYMENT_METHODS.filter(m => m !== 'split').map(method => {
-    const orderTotal = stats.breakdown?.[method]?.total || 0;
-    const theoretical = method === 'cash'
-      ? session.openingCash + orderTotal + netCashMove
-      : orderTotal;
-
-    const countedEntry = countedBalances.find(b => b.method === method);
-    const counted = countedEntry != null && countedEntry.counted != null
-      ? Number(countedEntry.counted)
-      : null;
-
-    const difference = counted != null ? counted - theoretical : null;
-
-    return { method, opening: method === 'cash' ? session.openingCash : 0, theoretical, counted, difference };
-  });
-
-  const hasDifference = methodBalances.some(
-    m => m.difference != null && Math.abs(m.difference) > 0.01
-  );
-
-  // End active cashier log entry
-  const log = session.cashierLog || [];
-  const lastEntry = log[log.length - 1];
-  if (lastEntry && !lastEntry.endedAt) {
-    lastEntry.endedAt = closedAt;
-  }
-
-  // Update with computed values (session is already closed, just enriching)
-  await POSSession.findByIdAndUpdate(session._id, {
-    $set: {
-      closingNotes,
-      methodBalances,
-      hasDifference,
-      cashierLog: log,
-      totalSales:       stats.totalSales,
-      orderCount:       stats.orderCount,
-      totalTips:        stats.totalTips     || 0,
-      totalRounding:    stats.totalRounding || 0,
-      cashSales:        stats.breakdown?.cash?.total        || 0,
-      cardSales:        stats.breakdown?.card?.total        || 0,
-      transferSales:    stats.breakdown?.bank_transfer?.total || 0,
-      mobileMoneySales: stats.breakdown?.mobile_money?.total || 0,
-      splitSales:       stats.breakdown?.split?.total       || 0,
-      closingBalance:   (methodBalances.find(m => m.method === 'cash'))?.counted
-        ?? (methodBalances.find(m => m.method === 'cash'))?.theoretical
-        ?? 0,
-    },
-  });
-
-  const updatedSession = await POSSession.findById(session._id)
-    .populate('openedBy closedBy activeCashier', 'firstName lastName email posName');
-
-  emitToTerminal(req, tenantId, session.terminalType, 'session:closed', {
-    sessionId: session._id,
-    terminal:  session.terminalType,
-    closedBy:  req.user._id,
-    closedAt:  closedAt.toISOString(),
-  });
-
-  res.json({ success: true, data: { session: updatedSession, hasDifference } });
-});
 
 // ─── Cash In / Cash Out ───────────────────────────────────────────────────────
 
@@ -693,82 +501,12 @@ exports.closeSession = asyncHandler(async (req, res) => {
  * Records a manual cash movement against the session.
  * Adjusts the theoretical cash balance used in closing control.
  */
-exports.recordCashMove = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  const session  = await POSSession.findOne({ _id: req.params.id, tenant: tenantId, status: 'open' });
-  if (!session) return res.status(404).json({ success: false, message: 'Session not found or not open' });
 
-  const { type, amount, reason = '' } = req.body;
-
-  if (!['in', 'out'].includes(type)) {
-    return res.status(400).json({ success: false, message: "type must be 'in' or 'out'" });
-  }
-  const num = Number(amount);
-  if (!num || num <= 0) {
-    return res.status(400).json({ success: false, message: 'amount must be a positive number' });
-  }
-
-  // Prevent cash-out exceeding current theoretical cash balance
-  if (type === 'out') {
-    const movements   = session.cashMovements || [];
-    const totalCashIn  = movements.filter(m => m.type === 'in').reduce((s, m) => s + m.amount, 0);
-    const totalCashOut = movements.filter(m => m.type === 'out').reduce((s, m) => s + m.amount, 0);
-    const netMoves     = totalCashIn - totalCashOut;
-    // Get cash sales from orders in this session
-    const stats = await getSessionOrderStats(tenantId, session.openedAt, new Date());
-    const cashAvailable = session.openingCash + (stats.breakdown?.cash?.total || 0) + netMoves;
-    if (num > cashAvailable) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient cash. Available: ${cashAvailable.toFixed(2)}`,
-      });
-    }
-  }
-
-  const movement = {
-    type,
-    amount: parseFloat(num.toFixed(2)),
-    reason: reason.trim(),
-    performedBy: req.posUser._id,
-    performedAt: new Date(),
-  };
-
-  session.cashMovements.push(movement);
-
-  // Also update methodBalances theoretical for cash if session already has methodBalances
-  if (session.methodBalances?.length) {
-    const cashBalance = session.methodBalances.find(m => m.method === 'cash');
-    if (cashBalance) {
-      cashBalance.theoretical += type === 'in' ? num : -num;
-    }
-  }
-
-  await session.save();
-  await session.populate('cashMovements.performedBy', 'firstName lastName posName');
-
-  const added = session.cashMovements[session.cashMovements.length - 1];
-
-  res.status(201).json({
-    success: true,
-    data: {
-      movement: added,
-      cashMovements: session.cashMovements,
-    },
-  });
-});
 
 /**
  * GET /api/pos/sessions/:id/cash-moves
  */
-exports.getCashMoves = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  const session  = await POSSession.findOne({ _id: req.params.id, tenant: tenantId })
-    .populate('cashMovements.performedBy', 'firstName lastName posName')
-    .select('cashMovements status');
-  if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
 
-  res.json({ success: true, data: { cashMovements: session.cashMovements || [] } });
-});
 
 // ─── Switch Cashier (mid-session) ────────────────────────────────────────────
 
@@ -780,127 +518,21 @@ exports.getCashMoves = asyncHandler(async (req, res) => {
  * Verifies PIN against all posAccess users for this tenant.
  * Updates session.activeCashier and appends to cashierLog.
  */
-exports.switchCashier = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  const { pin }  = req.body;
 
-  if (!pin) return res.status(400).json({ success: false, message: 'PIN required' });
-
-  const session = await POSSession.findOne({ _id: req.params.id, tenant: tenantId, status: 'open' });
-  if (!session) return res.status(404).json({ success: false, message: 'Session not found or not open' });
-
-  // Find matching PIN among tenant's POS users
-  const users = await User.find({
-    tenant:     tenantId,
-    posAccess:  true,
-    posPinHash: { $exists: true, $ne: null },
-    status:     'active',
-  }).select('+posPinHash');
-
-  let matchedUser = null;
-  for (const u of users) {
-    if (await bcrypt.compare(String(pin), u.posPinHash)) {
-      matchedUser = u;
-      break;
-    }
-  }
-
-  if (!matchedUser) {
-    return res.status(401).json({ success: false, message: 'Invalid PIN' });
-  }
-
-  const now = new Date();
-
-  // End the current cashier's log entry
-  const log = session.cashierLog || [];
-  const lastEntry = log[log.length - 1];
-  if (lastEntry && !lastEntry.endedAt) {
-    lastEntry.endedAt = now;
-  }
-
-  // Start new entry only if switching to a different cashier
-  if (session.activeCashier?.toString() !== matchedUser._id.toString()) {
-    log.push({ cashier: matchedUser._id, startedAt: now });
-  } else {
-    // Re-activating same cashier — just reopen the log entry
-    log.push({ cashier: matchedUser._id, startedAt: now });
-  }
-
-  session.activeCashier = matchedUser._id;
-  session.cashierLog    = log;
-  await session.save();
-
-  emitToTerminal(req, tenantId, session.terminalType, 'session:cashier_switched', {
-    sessionId:   session._id,
-    terminal:    session.terminalType,
-    cashierId:   matchedUser._id,
-    cashierName: matchedUser.posName || `${matchedUser.firstName} ${matchedUser.lastName}`.trim(),
-    switchedAt:  now.toISOString(),
-  });
-
-  res.json({
-    success: true,
-    data: {
-      cashier: {
-        _id:      matchedUser._id,
-        firstName: matchedUser.firstName,
-        lastName:  matchedUser.lastName,
-        posName:   matchedUser.posName,
-        email:     matchedUser.email,
-      },
-    },
-  });
-});
 
 // ─── Get current open session ────────────────────────────────────────────────
 
 /**
  * GET /api/pos/sessions/current
  */
-exports.getCurrentSession = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  const session  = await POSSession.findOne({ tenant: tenantId, status: 'open' })
-    .populate('openedBy activeCashier', 'firstName lastName email posName avatar')
-    .sort({ openedAt: -1 });
 
-  res.json({ success: true, data: { session: session || null } });
-});
 
 // ─── Session history ─────────────────────────────────────────────────────────
 
 /**
  * GET /api/pos/sessions
  */
-exports.getSessionList = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  const page     = Math.max(1, parseInt(req.query.page) || 1);
-  const limit    = Math.min(50, parseInt(req.query.limit) || 20);
-  const skip     = (page - 1) * limit;
-  const status   = req.query.status;
-  const dateFrom = req.query.dateFrom;
-  const dateTo   = req.query.dateTo;
 
-  const filter = { tenant: tenantId };
-  if (status === 'open' || status === 'closed') filter.status = status;
-  if (dateFrom || dateTo) {
-    filter.openedAt = {};
-    if (dateFrom) filter.openedAt.$gte = new Date(dateFrom);
-    if (dateTo)   filter.openedAt.$lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
-  }
-
-  const [sessions, total] = await Promise.all([
-    POSSession.find(filter)
-      .populate('openedBy closedBy activeCashier', 'firstName lastName posName avatar')
-      .populate({ path: 'cashierLog.cashier', select: 'firstName lastName posName', strictPopulate: false })
-      .populate({ path: 'cashMovements.performedBy', select: 'firstName lastName posName', strictPopulate: false })
-      .sort({ openedAt: -1 })
-      .skip(skip)
-      .limit(limit),
-    POSSession.countDocuments(filter),
-  ]);
-
-  res.json({ success: true, data: { sessions, total, page, limit } });
-});
 
 // ─── POS Dashboard ───────────────────────────────────────────────────────────
 
@@ -917,13 +549,13 @@ exports.getPOSDashboard = asyncHandler(async (req, res) => {
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [todayStats, yesterdayStats, monthStats, currentSession, recentOrders] = await Promise.all([
-    getPOSOrderStats(tenantId, todayStart, todayEnd),
-    getPOSOrderStats(tenantId, yesterdayStart, yesterdayEnd),
-    getPOSOrderStats(tenantId, thisMonthStart, todayEnd),
-    POSSession.findOne({ tenant: tenantId, status: 'open' })
+    getPOSOrderStats(tenantId, todayStart, todayEnd, shopFilter(req)),
+    getPOSOrderStats(tenantId, yesterdayStart, yesterdayEnd, shopFilter(req)),
+    getPOSOrderStats(tenantId, thisMonthStart, todayEnd, shopFilter(req)),
+    POSSession.findOne({ tenant: tenantId, ...shopFilter(req), status: 'open' })
       .populate('openedBy activeCashier', 'firstName lastName posName')
       .sort({ openedAt: -1 }),
-    Order.find({ 'items.tenant': tenantId, source: 'pos', paymentStatus: 'paid' })
+    Order.find({ 'items.tenant': tenantId, ...shopFilter(req), source: 'pos', paymentStatus: 'paid' })
       .select('orderNumber totalAmount paymentMethod placedAt createdAt')
       .sort({ createdAt: -1 })
       .limit(10)
@@ -939,6 +571,7 @@ exports.getPOSDashboard = asyncHandler(async (req, res) => {
     {
       $match: {
         ...tenantScope(tenantId),
+        ...shopFilter(req),
         source: 'pos',
         paymentStatus: 'paid',
         isVoided: { $ne: true },
@@ -2308,6 +1941,12 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   if (!items?.length) return res.status(400).json({ success: false, message: 'No items in order' });
   if (!paymentMethod)  return res.status(400).json({ success: false, message: 'Payment method required' });
 
+  const session = await resolveSaleSession(req);
+  const orderTerminal = session.terminalType;
+  if (heldOrderId && !await Order.findOne({ _id: heldOrderId, tenant: tenantId, ...shopFilter(req), status: 'hold' })) {
+    return res.status(404).json({ success: false, message: 'Held order not found in this shop' });
+  }
+
   // Wallet tender (store credit) needs a saved customer to draw the balance from —
   // a walk-in has no wallet. The actual debit (with an atomic overdraw guard) runs
   // once the order total is known, below.
@@ -2700,20 +2339,6 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   }
   const payableTotal = parseFloat((payableBeforeRounding + roundingAmount).toFixed(2));
 
-  // Determine active session — prefer the caller's terminal type
-  const orderTerminal = ['retail', 'wholesale'].includes(req.body.terminalType)
-    ? req.body.terminalType
-    : 'retail';
-
-  let session = null;
-  if (sessionId) {
-    session = await POSSession.findOne({ _id: sessionId, tenant: tenantId, status: 'open' });
-  }
-  if (!session) {
-    session = await POSSession.findOne({ tenant: tenantId, status: 'open', terminalType: orderTerminal })
-      .sort({ openedAt: -1 });
-  }
-
   // ── Wallet tender ──
   // Charge the customer's stored-value wallet for the order total. The debit is an
   // atomic, guarded $inc (see wallet.service) so a balance that's too low blocks
@@ -2749,7 +2374,10 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     source:        'pos',
     receiptNumber,
     linkedSalesOrder: linkedSalesOrderId || null,
-    posSessionId:  session?._id || null,
+    shopId: session.shopId,
+    shopName: session.shopName,
+    posWarehouse: session.warehouse,
+    posSessionId: session._id,
     posStaff:      staffId,
     items:         orderItems,
     subtotal,
@@ -2870,14 +2498,14 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     for (const ep of effectivePayments) {
       methodUpdates[`methodBalances.$[el_${ep.method}].theoretical`] = ep.amount;
     }
-    await POSSession.findByIdAndUpdate(
-      session._id,
+    await POSSession.findOneAndUpdate(
+      { _id: session._id, tenant: tenantId },
       { $inc: sessionInc }
     );
     // Update theoretical per-method balance individually
     for (const ep of effectivePayments) {
       await POSSession.findOneAndUpdate(
-        { _id: session._id, 'methodBalances.method': ep.method },
+        { _id: session._id, tenant: tenantId, 'methodBalances.method': ep.method },
         { $inc: { 'methodBalances.$.theoretical': ep.amount } }
       );
     }
@@ -2932,7 +2560,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   // The selling device learns about its own sale from the response above, not
   // from its own echo — receiving both is harmless (idempotent refetch).
   if (session) {
-    emitToTerminal(req, tenantId, session.terminalType, 'order:created', {
+    emitToTerminal(req, tenantId, session.shopId, 'order:created', {
       sessionId:     session._id,
       terminal:      session.terminalType,
       orderId:       order._id,
@@ -3018,7 +2646,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
   const performer = req.posUser || req.user;
   if (!performer) return res.status(401).json({ success: false, message: 'Authentication required' });
 
-  const order = await Order.findOne({ _id: req.params.id, 'items.tenant': req.tenant?._id });
+  const order = await Order.findOne({ _id: req.params.id, source: 'pos', ...shopFilter(req), 'items.tenant': req.tenant?._id });
   if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
   if (order.isVoided) return res.status(400).json({ success: false, message: 'Cannot refund a voided order' });
 
@@ -3212,7 +2840,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
  */
 exports.voidPOSOrder = asyncHandler(async (req, res) => {
   const { reason = '' } = req.body;
-  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(req.tenant?._id) });
+  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(req.tenant?._id), ...shopFilter(req) });
   if (!order)          return res.status(404).json({ success: false, message: 'Order not found' });
   if (order.isVoided)  return res.status(400).json({ success: false, message: 'Already voided' });
 
@@ -3362,7 +2990,8 @@ async function createHoldOrder({
   discountType,
   discountValue,
   pricelistId,
-  shopId, // eslint-disable-line no-unused-vars — accepted for call-site parity with the hold body
+  session,
+  shopId,
   terminalType,
   sessionId,
   appliedRewards,
@@ -3374,16 +3003,6 @@ async function createHoldOrder({
   const holdItems = buildHoldLineItems(items, tenantId);
   const cartItems = buildHoldCartItems(items);
 
-  // Session lookup — optional, for scoping holds to a session
-  let session = null;
-  if (sessionId) {
-    session = await POSSession.findOne({ _id: sessionId, tenant: tenantId, status: 'open' });
-  }
-  if (!session) {
-    session = await POSSession.findOne({ tenant: tenantId, status: 'open', terminalType })
-      .sort({ openedAt: -1 });
-  }
-
   return Order.create({
     orderNumber,
     tenant:        tenantId,
@@ -3394,7 +3013,10 @@ async function createHoldOrder({
     totalAmount:   0,
     paymentMethod: 'cash',
     paymentStatus: 'pending',
-    posSessionId:  session?._id || null,
+    shopId: session.shopId,
+    shopName: session.shopName,
+    posWarehouse: session.warehouse,
+    posSessionId: session._id,
     posStaff:      staffId,
     note,
     discountTotal: 0,
@@ -3407,7 +3029,7 @@ async function createHoldOrder({
       customer,
       discountType,
       discountValue,
-      terminalType,
+      terminalType: session.terminalType,
       appliedRewards,
       cartItems,
       // Table binding for venue tabs. listTables reads tableId/guests/openedAt
@@ -3447,6 +3069,7 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
   }
 
   const order = await createHoldOrder({
+    session: await resolveSaleSession(req),
     tenantId,
     staffId,
     items,
@@ -3514,6 +3137,7 @@ exports.openTabAtTable = asyncHandler(async (req, res) => {
   }
 
   const order = await createHoldOrder({
+    session: await resolveSaleSession(req),
     tenantId,
     staffId:         req.posUser._id,
     items:           [],
@@ -3540,7 +3164,7 @@ exports.openTabAtTable = asyncHandler(async (req, res) => {
     // the orphaned hold (same treatment as recallPOSOrder — findOneAndUpdate
     // skips enum validation, which is how 'recalled'/'cancelled' persist).
     await Order.findOneAndUpdate(
-      { _id: order._id, ...tenantScope(tenantId) },
+      { _id: order._id, ...tenantScope(tenantId), ...shopFilter(req) },
       { $set: { status: 'recalled', paymentStatus: 'cancelled' } }
     );
     return res.status(409).json({ success: false, message: 'table no longer available' });
@@ -3564,7 +3188,7 @@ exports.updateTab = asyncHandler(async (req, res) => {
 
   const tenantId = req.tenant?._id;
 
-  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), status: 'hold' });
+  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), ...shopFilter(req), status: 'hold' });
   if (!order) {
     return res.status(404).json({ success: false, message: 'Held order not found' });
   }
@@ -3601,7 +3225,7 @@ exports.getHeldPOSOrders = asyncHandler(async (req, res) => {
   // Match either scoping: the root `tenant` (written since it was declared on
   // the schema) or `items.tenant` (every hold parked before that). Scoping on
   // the root alone would make existing holds unreachable.
-  const holds = await Order.find({ ...tenantScope(tenantId), status: 'hold' })
+  const holds = await Order.find({ ...tenantScope(tenantId), ...shopFilter(req), status: 'hold' })
     .select('orderNumber items note createdAt holdMetadata')
     .sort({ createdAt: -1 })
     .lean();
@@ -3633,7 +3257,7 @@ exports.getHeldPOSOrders = asyncHandler(async (req, res) => {
 exports.recallPOSOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
 
-  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), status: 'hold' }).lean();
+  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), ...shopFilter(req), status: 'hold' }).lean();
   if (!order) {
     return res.status(404).json({ success: false, message: 'Held order not found' });
   }
@@ -3756,7 +3380,7 @@ exports.fireRoundFromCart = asyncHandler(async (req, res) => {
 
   const tenantId = req.tenant?._id;
 
-  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), status: 'hold' });
+  const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), ...shopFilter(req), status: 'hold' });
   if (!order) {
     return res.status(404).json({ success: false, message: 'Held order not found' });
   }
@@ -3826,7 +3450,7 @@ exports.getKitchenActive = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
 
   const rows = await Order.find({
-    ...tenantScope(tenantId),
+    ...tenantScope(tenantId), ...shopFilter(req),
     status: 'hold',
     'holdMetadata.firedRounds.0': { $exists: true },
   })
@@ -3887,7 +3511,7 @@ exports.bumpKitchenRound = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'orderId, roundNo and nextStatus are required' });
   }
 
-  const order = await Order.findOne({ _id: orderId, ...tenantScope(tenantId), status: 'hold' });
+  const order = await Order.findOne({ _id: orderId, ...tenantScope(tenantId), ...shopFilter(req), status: 'hold' });
   if (!order) {
     return res.status(404).json({ success: false, message: 'Held order not found' });
   }
@@ -3926,32 +3550,7 @@ exports.bumpKitchenRound = asyncHandler(async (req, res) => {
  * POS-token protected — returns current session info for the cashier's tenant.
  * Also returns the last closed session for balance display.
  */
-exports.getPOSSessionInfo = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
 
-  const terminalType = ['retail', 'wholesale'].includes(req.query.terminalType)
-    ? req.query.terminalType
-    : 'retail';
-
-  const [openSession, lastClosed] = await Promise.all([
-    POSSession.findOne({ tenant: tenantId, status: 'open', terminalType })
-      .populate('openedBy activeCashier', 'firstName lastName posName avatar')
-      .lean(),
-    POSSession.findOne({ tenant: tenantId, status: 'closed', terminalType })
-      .sort({ closedAt: -1 })
-      .select('closedAt totalSales orderCount closedBy')
-      .populate('closedBy', 'firstName lastName posName')
-      .lean(),
-  ]);
-
-  res.json({
-    success: true,
-    data: {
-      currentSession: openSession || null,
-      lastSession:    lastClosed  || null,
-    },
-  });
-});
 
 // ─── All POS Orders (across all sessions) ────────────────────────────────────
 /**
@@ -3965,10 +3564,10 @@ exports.getAllPOSOrders = asyncHandler(async (req, res) => {
   const limit = Math.min(500, parseInt(req.query.limit) || 200);
   const skip  = (page - 1) * limit;
 
-  const orders = await Order.find({ 'items.tenant': tenantId, source: 'pos' })
-    .select('orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails posSessionId')
+  const orders = await Order.find({ 'items.tenant': tenantId, ...shopFilter(req), source: 'pos' })
+    .select('shopId shopName posWarehouse orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails posSessionId')
     .populate('posStaff', 'firstName lastName posName')
-    .populate({ path: 'posSessionId', select: 'terminalType openedAt status', strictPopulate: false })
+    .populate({ path: 'posSessionId', select: 'shopId shopName terminalType openedAt status', strictPopulate: false })
     .populate({
       path: 'items.product',
       select: 'name brand category subCategory',
@@ -4023,11 +3622,11 @@ exports.getAllPOSOrders = asyncHandler(async (req, res) => {
 
 exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
   // Verify the session belongs to this tenant before returning its orders
-  const session = await POSSession.findOne({ _id: req.params.id, tenant: req.tenant?._id });
+  const session = await POSSession.findOne({ _id: req.params.id, ...shopFilter(req), tenant: req.tenant?._id });
   if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
 
-  const orders = await Order.find({ posSessionId: req.params.id, ...tenantScope(req.tenant?._id) })
-    .select('orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails')
+  const orders = await Order.find({ posSessionId: req.params.id, ...tenantScope(req.tenant?._id), ...shopFilter(req) })
+    .select('shopId shopName posWarehouse orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails')
     .populate('posStaff', 'firstName lastName posName')
     .populate({
       path: 'items.product',
@@ -4559,3 +4158,11 @@ exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
     userId: req.posUser?._id || req.user?._id,
   });
 });
+
+Object.assign(exports, require('./pos/sessions-open-read.controller'));
+
+Object.assign(exports, require('./pos/sessions-close.controller'));
+
+Object.assign(exports, require('./pos/sessions-cash-moves.controller'));
+
+Object.assign(exports, require('./pos/sessions-cashier.controller'));

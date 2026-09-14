@@ -47,6 +47,7 @@ function getOrderWarehouse(order: { items?: HistoryItem[] }) {
 }
 
 interface DetailOrder {
+  shopId?: string;
   _id: string;
   receiptNumber?: string;
   orderNumber?: string;
@@ -1177,7 +1178,8 @@ export default function POSOrderDetail({
         order._id,
         linesWithReason,
         globalReason || 'Return from POS',
-        method
+        method,
+        order.shopId
       );
       setShowConfirmDialog(false);
       setReturnResult(result);

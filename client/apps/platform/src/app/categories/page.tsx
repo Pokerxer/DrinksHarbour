@@ -5,7 +5,6 @@ import * as Icon from 'react-icons/pi';
 import Image from 'next/image';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
-import OpportunityProductLinks from '@/components/SEO/OpportunityProductLinks';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL =
@@ -277,7 +276,6 @@ export default async function CategoriesPage() {
           dangerouslySetInnerHTML={{ __html: jsonLdHtml(ld) }}
         />
       ))}
-      <OpportunityProductLinks />
 
       {/* Load reveal. Motion is opt-out via prefers-reduced-motion. */}
       <style

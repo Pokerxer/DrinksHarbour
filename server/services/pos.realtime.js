@@ -13,7 +13,7 @@
  * Derived from the verified token server-side — never from client input.
  */
 function terminalRoom(tenantId, terminalType) {
-  const t = ['retail', 'wholesale'].includes(terminalType)
+  const t = (['retail', 'wholesale', 'legacy'].includes(terminalType) || /^[a-f\d]{24}$/i.test(terminalType))
     ? terminalType
     : 'retail';
   return `pos:${tenantId}:${t}`;

@@ -8,6 +8,7 @@ const {
   tenantUserOnly,
 } = require('../middleware/auth.middleware');
 const { protectPOS, requirePOSPermission, protectPOSOrAdmin } = require('../middleware/pos.middleware');
+const { authorizeLegacyClose } = require('../controllers/pos/legacy-session.controller');
 const { checkStaffLimit, checkShopLimit } = require('../middleware/plan.middleware');
 const rateLimit = require('express-rate-limit');
 // IPv6-safe IP normaliser. express-rate-limit v8 refuses a keyGenerator that
@@ -124,6 +125,7 @@ router.get('/staff',             listPOSStaff);  // staff grid (public, no secre
 // protectPOS verifies the token, cross-checks user.tenant === decoded.tenantId,
 // and attaches req.tenant from the DB — never from the raw token claim.
 
+router.get('/shops', protectPOSOrAdmin, listPOSShops);
 router.get('/session-info',                   protectPOSOrAdmin, getPOSSessionInfo);
 router.get('/notifications',                  protectPOSOrAdmin, getPOSNotifications);
 router.get('/products',                       protectPOSOrAdmin, getPOSProducts);
@@ -277,6 +279,7 @@ router.get('/sessions/current',               protectPOS, getCurrentSession);
 router.post('/sessions/open',                 protectPOS, openSession);
 router.get('/sessions/:id/closing-control',   protectPOS, getClosingControl);
 router.post('/sessions/:id/close',            protectPOS, closeSession);
+router.post('/sessions/:id/close-legacy', protectPOSOrAdmin, authorizeLegacyClose, closeSession);
 router.post('/sessions/:id/switch-cashier',   protectPOS, switchCashier);
 router.get('/sessions/:id/orders',            protectPOSOrAdmin, getPOSSessionOrders);
 router.get('/sessions/:id/cash-moves',        protectPOS, getCashMoves);
@@ -312,7 +315,7 @@ router.get('/tenant/bank-accounts',  tenantAdminOrSuperAdmin, getTenantBankAccou
 router.patch('/tenant/bank-accounts',tenantAdminOrSuperAdmin, updateTenantBankAccounts);
 router.get('/tenant/settings',       tenantAdminOrSuperAdmin, getPOSSettings);
 router.patch('/tenant/settings',     tenantAdminOrSuperAdmin, updatePOSSettings);
-router.get('/shops',                 tenantAdminOrSuperAdmin, listPOSShops);
+
 // One shop is included on every plan; further ones are the "extra shop
 // +₦12,000/mo" add-on. checkShopLimit was written for this and wired nowhere,
 // so shops were unbounded on every plan.

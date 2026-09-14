@@ -1,4 +1,5 @@
 'use client';
+import { usePOSShopScope } from './store';
 
 import React, {
   useCallback,
@@ -577,6 +578,7 @@ export default function POSSellOrders() {
 
   const isOnline = useOnlineStatus();
   const [hydrated, setHydrated] = useState(false);
+  const { shopId } = usePOSShopScope();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [scope, setScope] = useState<'session' | 'all'>('session');
   const [orders, setOrders] = useState<SellOrder[]>([]);
@@ -608,25 +610,29 @@ export default function POSSellOrders() {
 
   useEffect(() => {
     if (!token) return;
-    getSessionInfo(token)
+    let cancelled = false;
+    setSessionId(null); setOrders([]);
+    getSessionInfo(token, shopId)
       .then((data) => {
-        if (data?.sessionId) setSessionId(data.sessionId);
+        if (!cancelled && data?.sessionId) setSessionId(data.sessionId);
       })
       .catch(() => {});
-  }, [token]);
+    return () => { cancelled = true; };
+  }, [token, shopId]);
 
   const fetchOrders = useCallback(() => {
     if (!token) return;
+    if (scope === 'session' && !sessionId) { setOrders([]); setLoading(false); return; }
     setLoading(true);
     const req =
       scope === 'session' && sessionId
-        ? getSessionOrders(token, sessionId)
-        : getAllOrders(token);
+        ? getSessionOrders(token, sessionId, shopId)
+        : getAllOrders(token, shopId);
     req
       .then((data) => setOrders((data || []) as SellOrder[]))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token, sessionId, scope]);
+  }, [token, sessionId, scope, shopId]);
 
   useEffect(() => {
     fetchOrders();

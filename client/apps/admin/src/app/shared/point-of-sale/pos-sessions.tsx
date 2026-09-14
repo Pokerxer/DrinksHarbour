@@ -1,4 +1,8 @@
 'use client';
+import { historyAccess } from './shop-entry';
+import { LegacySessionClose } from './components/legacy-session-close';
+import { ShopHistorySelector } from './components/shop-history-selector';
+import { usePOSShopScope } from './store';
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -64,7 +68,8 @@ function isTokenExpired(tok: string | null | undefined): boolean {
   if (!tok) return true;
   try {
     const payload = JSON.parse(atob(tok.split('.')[1]));
-    return (payload.exp ?? 0) * 1000 < Date.now();
+    return !payload || typeof payload !== 'object' || !('exp' in payload) ||
+      typeof payload.exp !== 'number' || payload.exp * 1000 < Date.now();
   } catch { return true; }
 }
 
@@ -570,7 +575,7 @@ function OrderDrawer({ order, tenant, onClose }: { order: SessionOrder; tenant?:
 }
 
 // ── Orders tab ────────────────────────────────────────────────────────────────
-function OrdersTab({ sessionId, token, tenant }: { sessionId: string; token: string; tenant?: POSTenant | null }) {
+function OrdersTab({ sessionId, token, tenant, shopId }: { shopId: string; sessionId: string; token: string; tenant?: POSTenant | null }) {
   const [orders,      setOrders]      = useState<SessionOrder[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [drawerOrder, setDrawerOrder] = useState<SessionOrder | null>(null);
@@ -580,11 +585,11 @@ function OrdersTab({ sessionId, token, tenant }: { sessionId: string; token: str
     setLoading(true);
     setDrawerOrder(null);
     setCheckedIds(new Set());
-    posApi.getSessionOrders(token, sessionId)
+    posApi.getSessionOrders(token, sessionId, shopId)
       .then((data) => setOrders((data || []) as SessionOrder[]))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token, sessionId]);
+  }, [token, sessionId, shopId]);
 
   // Selection helpers
   const allChecked  = orders.length > 0 && checkedIds.size === orders.length;
@@ -833,7 +838,7 @@ function SessionDetail({ session, token, tenant, onClose, onTabChange }: { sessi
                 : 'Closed'}
             </span>
             <span className="rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              {session.terminalType || 'retail'}
+              {session.shopName || (session.shopId ? 'Shop' : 'Legacy — unassigned')}
             </span>
           </div>
           <p className="mt-0.5 text-[11px] text-gray-400">{fmtDateTime(session.openedAt)}</p>
@@ -996,7 +1001,7 @@ function SessionDetail({ session, token, tenant, onClose, onTabChange }: { sessi
 
       {/* ── Orders tab ── */}
       {tab === 'orders' && (
-        <OrdersTab sessionId={session._id} token={token} tenant={tenant} />
+        <OrdersTab shopId={session.shopId || 'legacy'} sessionId={session._id} token={token} tenant={tenant} />
       )}
     </div>
   );
@@ -1048,7 +1053,7 @@ function SessionRow({
             {!compact && (
               <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border
                 ${selected ? 'border-white/30 bg-white/15 text-white/80' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
-                {session.terminalType || 'retail'}
+                {session.shopName || (session.shopId ? 'Shop' : 'Legacy — unassigned')}
               </span>
             )}
             {session.hasDifference && (
@@ -1083,18 +1088,23 @@ function SessionRow({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function POSSessions() {
+export default function POSSessions({ initialShopId }: { initialShopId?: string } = {}) {
+  const { shopId: activeShopId } = usePOSShopScope();
+  const [selectedHistoryShop, setHistoryShop] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const requestVersion = useRef(0);
   const { token: posToken, tenant, staff } = usePOSAuth();
   const { data: session, status: sessionStatus } = useSession();
   const sessionToken = (session?.user as { token?: string })?.token ?? null;
-  const token = (!posToken || isTokenExpired(posToken)) ? sessionToken : posToken;
+  const { token, defaultShop } = historyAccess(sessionToken, isTokenExpired(posToken) ? null : posToken, activeShopId);
+  const historyShop = selectedHistoryShop || initialShopId || defaultShop;
   const router = useRouter();
 
   const [sessions, setSessions]         = useState<POSSession[]>([]);
   const [loading,  setLoading]          = useState(true);
   const [page,     setPage]             = useState(1);
   const [total,    setTotal]            = useState(0);
-  const [filter,   setFilter]           = useState<FilterStatus>('all');
+  const [filter,   setFilter]           = useState<FilterStatus>(initialShopId === 'legacy' ? 'open' : 'all');
   const [search,   setSearch]           = useState('');
   const [showPanel, setShowPanel]       = useState(false);
   const [activeFilters, setActiveFilters] = useState<Set<FilterKey>>(new Set());
@@ -1114,15 +1124,22 @@ export default function POSSessions() {
     return undefined;
   }, [filter, activeFilters]);
 
+  function changeShop(value: string) {
+    requestVersion.current++; setHistoryShop(value); setSessions([]); setPage(1); setSelected(null);
+  }
+  useEffect(() => { setHistoryShop(null); setSelected(null); setSessions([]); setPage(1); }, [token, defaultShop, initialShopId]);
+  useEffect(() => () => { requestVersion.current++; }, []);
+
   const fetchSessions = useCallback(() => {
     if (sessionStatus === 'loading') return;
     if (!token) { setLoading(false); return; }
-    setLoading(true);
-    posApi.getSessions(token, page, PAGE_SIZE, effectiveStatus)
-      .then((d) => { setSessions(d.sessions || []); setTotal(d.total || 0); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [token, page, effectiveStatus, sessionStatus]);
+    const version = ++requestVersion.current;
+    setLoadError(''); setLoading(true);
+    posApi.getSessions(token, page, PAGE_SIZE, effectiveStatus, undefined, undefined, historyShop)
+      .then((d) => { if (version === requestVersion.current) { setSessions(d.sessions || []); setTotal(d.total || 0); } })
+      .catch((e: unknown) => { if (version === requestVersion.current) setLoadError(e instanceof Error ? e.message : 'Failed to load sessions'); })
+      .finally(() => { if (version === requestVersion.current) setLoading(false); });
+  }, [token, page, effectiveStatus, sessionStatus, historyShop]);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
   useEffect(() => { setExpandedGroups(new Set()); }, [groupBy]);
@@ -1287,6 +1304,8 @@ export default function POSSessions() {
 
         <div>
           <h1 className="text-base font-bold text-gray-900">Sessions</h1>
+          <ShopHistorySelector token={token} value={historyShop} onChange={changeShop} />
+          {loadError && <p role="alert" className="text-red-600">{loadError}</p>}
           <p className="text-[11px] text-gray-400">{total} total · {openCount} open</p>
         </div>
 
@@ -1532,6 +1551,8 @@ export default function POSSessions() {
         {/* ── Detail panel — grows to fill remaining space ── */}
         <div className={`flex flex-col transition-all duration-200 ${selected ? 'flex-1 overflow-hidden' : 'w-72 shrink-0'}`}>
           {selected ? (
+            <>
+            <LegacySessionClose session={selected} token={token!} onClosed={() => { setSelected(null); fetchSessions(); }} />
             <SessionDetail
               session={selected}
               token={token!}
@@ -1539,6 +1560,7 @@ export default function POSSessions() {
               onClose={() => { setSelected(null); setDetailTab('overview'); }}
               onTabChange={setDetailTab}
             />
+            </>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100">

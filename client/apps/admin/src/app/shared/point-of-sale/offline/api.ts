@@ -1,3 +1,4 @@
+import { readActiveShop } from '../shop-scope';
 import { posApi } from '../api';
 import { resolveSubProductGallery } from '@/app/shared/ecommerce/sub-product/image-utils';
 import { catalogueImageKeys, POS_IMAGES_UPDATED } from './image-cache';
@@ -172,42 +173,30 @@ export async function getProductsWithLocalStock(token?: string, shopId?: string)
 
 // ── Session ───────────────────────────────────────────────────────────────────
 
-export async function getSessionInfo(
-  token: string
-): Promise<SessionRecord | null> {
+export async function getSessionInfo(token: string, shopId = readActiveShop()): Promise<SessionRecord | null> {
+  const scope = await catalogueScope(token, shopId);
   if (isOnline()) {
-    try {
-      const data = await posApi.getSessionInfo(token);
-      if (data) {
-        const record: SessionRecord = {
-          _id: 'current',
-          sessionId: (data as any)._id ?? (data as any).sessionId,
-          terminalType: (data as any).terminalType ?? 'retail',
-          openedAt:
-            (data as any).openedAt ??
-            (data as any).createdAt ??
-            new Date().toISOString(),
-          orderCount: (data as any).orderCount ?? 0,
-          totalSales: (data as any).totalSales ?? 0,
-          methodBalances: (data as any).methodBalances ?? [],
-        };
-        await posDb.session.put(record);
-        return record;
-      }
-      return null;
-    } catch {
-      return (await posDb.session.get('current')) ?? null;
-    }
+    // Online authentication/validation failures must not resurrect a cached session.
+    const data = await posApi.getSessionInfo(token, undefined, shopId);
+    const session = data.currentSession;
+    if (!session) { await posDb.session.delete(scope); return null; }
+    const record: SessionRecord = {
+      _id: scope, sessionId: session._id, terminalType: session.terminalType || 'retail',
+      openedAt: session.openedAt, orderCount: session.orderCount,
+      totalSales: session.totalSales, methodBalances: session.methodBalances || [],
+    };
+    await posDb.session.put(record); return record;
   }
-  return (await posDb.session.get('current')) ?? null;
+  return (await posDb.session.get(scope)) ?? null;
 }
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 
-export async function getAllOrders(token: string): Promise<OrderRecord[]> {
+export async function getAllOrders(token: string, shopId = readActiveShop()): Promise<OrderRecord[]> {
+  const scope = await catalogueScope(token, shopId);
   if (isOnline()) {
-    const data = await posApi.getAllOrders(token);
-    const records: OrderRecord[] = (data ?? []).map(orderToRecord);
+    const data = await posApi.getAllOrders(token, { shopId });
+    const records: OrderRecord[] = (data ?? []).map(o => ({ ...orderToRecord(o), scope }));
     await posDb.orders.bulkPut(records);
     return records;
   }
@@ -215,16 +204,18 @@ export async function getAllOrders(token: string): Promise<OrderRecord[]> {
     posDb.orders.orderBy('createdAt').reverse().toArray(),
     posDb.offlineQueue.where('type').equals('order').toArray(),
   ]);
-  return [...queueToFakeOrders(queue), ...dbOrders];
+  return [...queueToFakeOrders(queue.filter(q => (q.payload as { _token?: string; shopId?: string })._token === token && (q.payload as { shopId?: string }).shopId === shopId)), ...dbOrders.filter(o => o.scope === scope)];
 }
 
 export async function getSessionOrders(
   token: string,
-  sessionId: string
+  sessionId: string,
+  shopId = readActiveShop()
 ): Promise<OrderRecord[]> {
+  const scope = await catalogueScope(token, shopId);
   if (isOnline()) {
-    const data = await posApi.getSessionOrders(token, sessionId);
-    const records: OrderRecord[] = (data ?? []).map(orderToRecord);
+    const data = await posApi.getSessionOrders(token, sessionId, shopId);
+    const records: OrderRecord[] = (data ?? []).map(o => ({ ...orderToRecord(o), scope, sessionId }));
     await posDb.orders.bulkPut(records);
     return records;
   }
@@ -232,12 +223,13 @@ export async function getSessionOrders(
     posDb.orders.orderBy('createdAt').reverse().toArray(),
     posDb.offlineQueue.where('type').equals('order').toArray(),
   ]);
-  return [...queueToFakeOrders(queue), ...dbOrders];
+  return [...queueToFakeOrders(queue.filter(q => { const p = q.payload as { _token?: string; shopId?: string; sessionId?: string }; return p._token === token && p.shopId === shopId && p.sessionId === sessionId; })), ...dbOrders.filter(o => o.scope === scope && o.sessionId === sessionId)];
 }
 
 function orderToRecord(o: any): OrderRecord {
   return {
     _id: o._id,
+    sessionId: o.session?._id || o.posSessionId,
     receiptNumber: o.receiptNumber,
     total: o.total ?? 0,
     paymentMethod: o.paymentMethod ?? '',
@@ -298,10 +290,13 @@ export async function createOrder(
     return data;
   }
 
+  const shopId = (payload as { shopId?: string }).shopId || readActiveShop();
+  const cachedSession = await getSessionInfo(token, shopId);
+  if (!cachedSession?.sessionId) throw new Error('Open this shop session online before taking offline orders.');
   const tempReceipt = nextOfflineReceipt(terminal);
   const queueId = await posDb.offlineQueue.add({
     type: 'order',
-    payload: { ...payload, _token: token },
+    payload: { ...payload, shopId, sessionId: cachedSession.sessionId, _token: token },
     tempReceiptNumber: tempReceipt,
     createdAt: new Date().toISOString(),
     status: 'pending',
@@ -388,7 +383,7 @@ export async function refundOrder(
 
   await posDb.offlineQueue.add({
     type: 'refund',
-    payload: { items, reason, refundPaymentMethod, _token: token },
+    payload: { orderId, items, reason, refundPaymentMethod, shopId: readActiveShop(), _token: token },
     orderId,
     createdAt: new Date().toISOString(),
     status: 'pending',

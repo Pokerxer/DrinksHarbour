@@ -19,6 +19,7 @@ const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 
 const Order = require('../models/Order');
+const Warehouse = require('../models/Warehouse');
 const POSSession = require('../models/POSSession');
 const POSTable = require('../models/POSTable');
 const pos = require('../controllers/pos.controller');
@@ -96,7 +97,9 @@ function cartLine(over = {}) {
 /** Standard persistence mocks for any code path that ends in Order.create. */
 function mockHoldPersistence(t) {
   t.mock.method(Order, 'countDocuments', async () => 0);
-  t.mock.method(POSSession, 'findOne', () => chainable(null));
+  t.mock.method(Warehouse, 'findOne', () => chainable({ _id: TENANT }));
+  t.mock.method(POSSession, 'findOne', () => chainable({ _id: TENANT, shopId: 'retail', shopName: 'Retail', terminalType: 'retail', warehouse: TENANT }));
+  t.mock.method(POSSession, 'findOneAndUpdate', async () => ({}));
   return t.mock.method(Order, 'create', async (doc) => ({
     ...doc,
     _id: TAB_ID,
@@ -281,7 +284,9 @@ test('updateTab on an order that is not on hold finds nothing', async (t) => {
 test('holding a cart records its table binding in holdMetadata', async (t) => {
   let captured = null;
   t.mock.method(Order, 'countDocuments', async () => 0);
-  t.mock.method(POSSession, 'findOne', () => chainable(null));
+  t.mock.method(Warehouse, 'findOne', () => chainable({ _id: TENANT }));
+  t.mock.method(POSSession, 'findOne', () => chainable({ _id: TENANT, shopId: 'retail', shopName: 'Retail', terminalType: 'retail', warehouse: TENANT }));
+  t.mock.method(POSSession, 'findOneAndUpdate', async () => ({}));
   t.mock.method(Order, 'create', async (doc) => {
     captured = doc;
     return { ...doc, _id: TAB_ID, createdAt: new Date() };

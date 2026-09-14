@@ -45,16 +45,18 @@ export interface ComboRecord {
 }
 
 export interface SessionRecord {
-  _id: 'current';
+  _id: string;
   sessionId: string;
   terminalType: 'retail' | 'wholesale';
   openedAt: string;
   orderCount: number;
   totalSales: number;
-  methodBalances: { method: string; amount: number }[];
+  methodBalances: { method: string; theoretical?: number; amount?: number }[];
 }
 
 export interface OrderRecord {
+  scope?: string;
+  sessionId?: string;
   _id: string;
   receiptNumber?: string;
   total: number;

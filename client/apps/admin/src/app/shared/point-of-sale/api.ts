@@ -1,3 +1,4 @@
+import { scopePOSRequest } from './shop-scope';
 import type {
   POSAuthResponse,
   POSStaff,
@@ -41,7 +42,7 @@ function authHeaders(token: string): HeadersInit {
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
+  const res = await fetch(scopePOSRequest(url, options), options);
   const body = (await res.json()) as ApiResponse<T>;
   // Do NOT signOut() here. This handler runs for every POS request, including
   // staff-login: a wrong PIN returns 401, and calling signOut() destroyed the
@@ -76,9 +77,11 @@ export const posApi = {
     }>(`${API_URL}/api/pos/staff?tenantSlug=${encodeURIComponent(tenantSlug)}`);
   },
 
-  async getSessionInfo(token: string, terminalType?: 'retail' | 'wholesale') {
-    const qs = terminalType ? `?terminalType=${terminalType}` : '';
-    return request<POSSessionInfo>(`${API_URL}/api/pos/session-info${qs}`, {
+  async getSessionInfo(token: string, terminalType?: 'retail' | 'wholesale', shopId?: string) {
+    const qs = new URLSearchParams();
+    if (terminalType) qs.set('terminalType', terminalType);
+    if (shopId) qs.set('shopId', shopId);
+    return request<POSSessionInfo>(`${API_URL}/api/pos/session-info?${qs}`, {
       headers: authHeaders(token),
     });
   },
@@ -284,31 +287,33 @@ export const posApi = {
       restock?: boolean;
     }[],
     reason?: string,
-    refundPaymentMethod?: string
+    refundPaymentMethod?: string,
+    shopId?: string
   ) {
     return request<POSRefundResponse>(
       `${API_URL}/api/pos/orders/${orderId}/refund`,
       {
         method: 'POST',
         headers: authHeaders(token),
-        body: JSON.stringify({ items, reason, refundPaymentMethod }),
+        body: JSON.stringify({ items, reason, refundPaymentMethod, shopId }),
       }
     );
   },
 
-  async voidOrder(token: string, orderId: string, reason?: string) {
+  async voidOrder(token: string, orderId: string, reason?: string, shopId?: string) {
     return request<{ _id: string; status: string }>(
       `${API_URL}/api/pos/orders/${orderId}/void`,
       {
         method: 'POST',
         headers: authHeaders(token),
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, shopId }),
       }
     );
   },
 
-  async getDashboard(token: string) {
-    return request<POSDashboardData>(`${API_URL}/api/pos/dashboard`, {
+  async getDashboard(token: string, shopId?: string) {
+    const qs = shopId ? `?shopId=${encodeURIComponent(shopId)}` : '';
+    return request<POSDashboardData>(`${API_URL}/api/pos/dashboard${qs}`, {
       headers: authHeaders(token),
     });
   },
@@ -323,7 +328,8 @@ export const posApi = {
     token: string,
     openingCash?: number,
     terminalType?: 'retail' | 'wholesale',
-    notes?: string
+    notes?: string,
+    shopId?: string
   ) {
     const res = await request<{ session: POSSession }>(
       `${API_URL}/api/pos/sessions/open`,
@@ -332,6 +338,7 @@ export const posApi = {
         headers: authHeaders(token),
         body: JSON.stringify({
           openingCash,
+          shopId,
           terminalType: terminalType ?? 'retail',
           notes,
         }),
@@ -344,14 +351,31 @@ export const posApi = {
     token: string,
     sessionId: string,
     countedBalances: { method: string; counted: number }[],
-    closingNotes?: string
+    closingNotes?: string,
+    shopId?: string
   ) {
     const res = await request<{ session: POSSession; hasDifference: boolean }>(
       `${API_URL}/api/pos/sessions/${sessionId}/close`,
       {
         method: 'POST',
         headers: authHeaders(token),
-        body: JSON.stringify({ countedBalances, closingNotes }),
+        body: JSON.stringify({ countedBalances, closingNotes, shopId }),
+      }
+    );
+    return res.session;
+  },
+
+  async closeLegacySession(token: string, sessionId: string, countedCash: number) {
+    const res = await request<{ session: POSSession; hasDifference: boolean }>(
+      `${API_URL}/api/pos/sessions/${sessionId}/close-legacy`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({
+          shopId: 'legacy',
+          countedBalances: [{ method: 'cash', counted: countedCash }],
+          closingNotes: 'Legacy drawer reconciled before shop sessions',
+        }),
       }
     );
     return res.session;
@@ -368,9 +392,9 @@ export const posApi = {
     );
   },
 
-  async getClosingControl(token: string, sessionId: string) {
+  async getClosingControl(token: string, sessionId: string, shopId?: string) {
     return request<POSClosingControl>(
-      `${API_URL}/api/pos/sessions/${sessionId}/closing-control`,
+      `${API_URL}/api/pos/sessions/${sessionId}/closing-control${shopId ? `?shopId=${encodeURIComponent(shopId)}` : ''}`,
       { headers: authHeaders(token) }
     );
   },
@@ -405,7 +429,8 @@ export const posApi = {
     limit?: number,
     status?: 'open' | 'closed',
     dateFrom?: string,
-    dateTo?: string
+    dateTo?: string,
+    shopId?: string
   ) {
     const qs = new URLSearchParams();
     if (page) qs.set('page', String(page));
@@ -413,6 +438,7 @@ export const posApi = {
     if (status) qs.set('status', status);
     if (dateFrom) qs.set('dateFrom', dateFrom);
     if (dateTo) qs.set('dateTo', dateTo);
+    if (shopId) qs.set('shopId', shopId);
     return request<{
       sessions: POSSession[];
       total: number;
@@ -423,9 +449,10 @@ export const posApi = {
 
   async getAllOrders(
     token: string,
-    params?: { page?: number; limit?: number }
+    params?: { page?: number; limit?: number; shopId?: string }
   ) {
     const qs = new URLSearchParams();
+    if (params?.shopId) qs.set('shopId', params.shopId);
     if (params?.page) qs.set('page', String(params.page));
     if (params?.limit) qs.set('limit', String(params.limit));
     return request<POSRecentOrder[]>(`${API_URL}/api/pos/orders?${qs}`, {
@@ -433,9 +460,9 @@ export const posApi = {
     });
   },
 
-  async getSessionOrders(token: string, sessionId: string) {
+  async getSessionOrders(token: string, sessionId: string, shopId?: string) {
     return request<POSRecentOrder[]>(
-      `${API_URL}/api/pos/sessions/${sessionId}/orders`,
+      `${API_URL}/api/pos/sessions/${sessionId}/orders${shopId ? `?shopId=${encodeURIComponent(shopId)}` : ''}`,
       { headers: authHeaders(token) }
     );
   },

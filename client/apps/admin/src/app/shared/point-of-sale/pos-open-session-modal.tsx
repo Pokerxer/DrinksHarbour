@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { LegacySessionLink } from './components/legacy-session-link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { routes } from '@/config/routes';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth, usePOSSettings } from '@/app/shared/point-of-sale/store';
+import { usePOSAuth, usePOSSettings, usePOSShopScope, usePOSActiveShop } from '@/app/shared/point-of-sale/store';
 import { useTenant } from '@/context/TenantContext';
 import { POSSession } from '@/app/shared/point-of-sale/types';
 
@@ -15,6 +16,8 @@ type Props = {
 
 export default function POSOpenSessionModal({ onSessionOpened }: Props) {
   const { token, staff, terminal } = usePOSAuth();
+  const { shopId } = usePOSShopScope();
+  const { activeShop } = usePOSActiveShop();
   const { tenant } = useTenant();
   const { requireOpeningCash } = usePOSSettings();
   const router = useRouter();
@@ -37,7 +40,9 @@ export default function POSOpenSessionModal({ onSessionOpened }: Props) {
       const session = await posApi.openSession(
         token,
         Number(openingCash) || 0,
-        terminal ?? 'retail'
+        terminal ?? 'retail',
+        undefined,
+        shopId
       );
       onSessionOpened(session);
     } catch (err: any) {
@@ -74,7 +79,7 @@ export default function POSOpenSessionModal({ onSessionOpened }: Props) {
         {/* Body */}
         <div className="px-6 py-5">
           <p className="mb-1 text-sm font-semibold text-gray-800">
-            Opening Control
+            Opening Control — {activeShop?.name || (shopId === 'retail' ? 'Retail' : 'Selected shop')}
           </p>
           <p className="mb-5 text-xs text-gray-500">
             Enter the cash amount in the till at the start of this session.
@@ -121,6 +126,7 @@ export default function POSOpenSessionModal({ onSessionOpened }: Props) {
           {error && (
             <p className="mt-3 text-center text-sm font-medium text-red-600">
               {error}
+              <LegacySessionLink error={error} />
             </p>
           )}
         </div>

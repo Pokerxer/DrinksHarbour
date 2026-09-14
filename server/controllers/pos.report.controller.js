@@ -2,6 +2,8 @@
 // Session Z-reports, daily summaries, and range reports for the POS system.
 
 const asyncHandler = require('../utils/asyncHandler');
+const { shopFilter } = require('../services/posShopScope.service');
+const { summarizeSessionOrders, settled } = require('../services/posSessionTotals.service');
 const POSSession   = require('../models/POSSession');
 const Order        = require('../models/Order');
 const mongoose     = require('mongoose');
@@ -20,10 +22,10 @@ function buildProductBreakdown(orders) {
   for (const order of orders) {
     if (order.status === 'voided') continue;
     for (const item of order.items || []) {
-      const key = item.productId?.toString() || item.name || 'unknown';
-      if (!map[key]) map[key] = { name: item.name || 'Unknown', qty: 0, gross: 0, discounts: 0, net: 0 };
+      const key = item.product?.toString() || item.name || 'unknown';
+      if (!map[key]) map[key] = { name: item._name || item.name || 'Unknown', qty: 0, gross: 0, discounts: 0, net: 0 };
       const qty  = item.quantity || 1;
-      const unit = item.finalPrice ?? item.unitPrice ?? 0;
+      const unit = item.priceAtPurchase ?? 0;
       const disc = item.discountAmount || 0;
       map[key].qty       += qty;
       map[key].gross     += unit * qty;
@@ -35,12 +37,8 @@ function buildProductBreakdown(orders) {
 }
 
 function paymentTotalsFrom(orders) {
-  const totals = { cash: 0, card: 0, bank_transfer: 0, mobile_money: 0, split: 0 };
-  for (const o of orders) {
-    const m = o.paymentMethod || 'cash';
-    if (totals[m] !== undefined) totals[m] += o.totalAmount || 0;
-  }
-  return totals;
+  const stats = summarizeSessionOrders(orders);
+  return Object.fromEntries(['cash', 'card', 'bank_transfer', 'mobile_money', 'split', 'wallet'].map(method => [method, stats.breakdown[method]?.total || 0]));
 }
 
 // ── GET /api/pos/reports/session/:id  ─────────────────────────────────────────
@@ -54,7 +52,7 @@ exports.getSessionReport = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid session ID' });
   }
 
-  const session = await POSSession.findOne({ _id: id, tenant: tenantId })
+  const session = await POSSession.findOne({ _id: id, tenant: tenantId, ...shopFilter(req) })
     .populate('openedBy',           'firstName lastName posName')
     .populate('closedBy',           'firstName lastName posName')
     .populate('activeCashier',      'firstName lastName posName')
@@ -65,15 +63,15 @@ exports.getSessionReport = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Session not found' });
   }
 
-  const orders          = await Order.find({ posSession: id, tenant: tenantId }).lean();
-  const completedOrders = orders.filter((o) => o.status !== 'voided' && o.status !== 'cancelled');
-  const voidedOrders    = orders.filter((o) => o.status === 'voided');
-  const refundOrders    = orders.filter((o) => o.isRefund === true);
+  const orders          = await Order.find({ posSessionId: id, ...shopFilter(req), $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] }).lean();
+  const completedOrders = orders.filter(settled);
+  const voidedOrders    = orders.filter((o) => o.isVoided || o.status === 'voided');
+  const refundOrders    = orders.filter((o) => o.refunds?.length > 0);
 
   const paymentTotals  = paymentTotalsFrom(completedOrders);
   const grossRevenue   = completedOrders.reduce((s, o) => s + (o.totalAmount  || 0), 0);
-  const totalRefunds   = refundOrders.reduce   ((s, o) => s + Math.abs(o.totalAmount || 0), 0);
-  const totalDiscounts = completedOrders.reduce((s, o) => s + (o.discountAmount || 0), 0);
+  const totalRefunds = summarizeSessionOrders(orders).totalRefunds;
+  const totalDiscounts = completedOrders.reduce((s, o) => s + (o.discountTotal || 0), 0);
   const netRevenue     = grossRevenue - totalRefunds;
 
   const cashIn  = (session.cashMovements || []).filter((m) => m.type === 'in' ).reduce((s, m) => s + m.amount, 0);
@@ -102,6 +100,8 @@ exports.getSessionReport = asyncHandler(async (req, res) => {
       session: {
         _id:            session._id,
         terminalType:   session.terminalType,
+        shopId: session.shopId,
+        shopName: session.shopName,
         status:         session.status,
         openedAt:       session.openedAt,
         closedAt:       session.closedAt,
@@ -150,6 +150,7 @@ exports.getDailyReport = asyncHandler(async (req, res) => {
 
   const sessions = await POSSession.find({
     tenant:   tenantId,
+    ...shopFilter(req),
     openedAt: { $gte: startOfDay(date), $lte: endOfDay(date) },
   })
     .populate('openedBy', 'firstName lastName posName')
@@ -165,22 +166,24 @@ exports.getDailyReport = asyncHandler(async (req, res) => {
   }
 
   const sessionIds = sessions.map((s) => s._id);
-  const orders     = await Order.find({ posSession: { $in: sessionIds }, tenant: tenantId }).lean();
+  const orders     = await Order.find({ posSessionId: { $in: sessionIds }, ...shopFilter(req), $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] }).lean();
 
-  const completed  = orders.filter((o) => o.status !== 'voided' && o.status !== 'cancelled');
-  const voided     = orders.filter((o) => o.status === 'voided');
-  const refunds    = orders.filter((o) => o.isRefund === true);
+  const completed  = orders.filter(settled);
+  const voided     = orders.filter((o) => o.isVoided || o.status === 'voided');
+  const refunds    = orders.filter((o) => o.refunds?.length > 0);
 
   const paymentTotals  = paymentTotalsFrom(completed);
   const grossRevenue   = completed.reduce((s, o) => s + (o.totalAmount  || 0), 0);
-  const totalRefunds   = refunds.reduce  ((s, o) => s + Math.abs(o.totalAmount || 0), 0);
-  const totalDiscounts = completed.reduce((s, o) => s + (o.discountAmount || 0), 0);
+  const totalRefunds = summarizeSessionOrders(orders).totalRefunds;
+  const totalDiscounts = completed.reduce((s, o) => s + (o.discountTotal || 0), 0);
 
   const sessionSummaries = sessions.map((session) => {
-    const sOrders  = completed.filter((o) => o.posSession?.toString() === session._id.toString());
+    const sOrders  = completed.filter((o) => o.posSessionId?.toString() === session._id.toString());
     return {
       _id:         session._id,
       terminalType:session.terminalType,
+      shopId: session.shopId,
+      shopName: session.shopName,
       status:      session.status,
       openedAt:    session.openedAt,
       closedAt:    session.closedAt,
@@ -222,6 +225,7 @@ exports.getReportSummary = asyncHandler(async (req, res) => {
 
   const sessions = await POSSession.find({
     tenant:   tenantId,
+    ...shopFilter(req),
     openedAt: { $gte: startOfDay(dateFrom), $lte: endOfDay(dateTo) },
   }).lean();
 
@@ -239,16 +243,16 @@ exports.getReportSummary = asyncHandler(async (req, res) => {
   }
 
   const sessionIds = sessions.map((s) => s._id);
-  const orders     = await Order.find({ posSession: { $in: sessionIds }, tenant: tenantId }).lean();
+  const orders     = await Order.find({ posSessionId: { $in: sessionIds }, ...shopFilter(req), $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] }).lean();
 
-  const completed  = orders.filter((o) => o.status !== 'voided' && o.status !== 'cancelled');
-  const voided     = orders.filter((o) => o.status === 'voided');
-  const refunds    = orders.filter((o) => o.isRefund === true);
+  const completed  = orders.filter(settled);
+  const voided     = orders.filter((o) => o.isVoided || o.status === 'voided');
+  const refunds    = orders.filter((o) => o.refunds?.length > 0);
 
   const paymentTotals  = paymentTotalsFrom(completed);
   const grossRevenue   = completed.reduce((s, o) => s + (o.totalAmount  || 0), 0);
-  const totalRefunds   = refunds.reduce  ((s, o) => s + Math.abs(o.totalAmount || 0), 0);
-  const totalDiscounts = completed.reduce((s, o) => s + (o.discountAmount || 0), 0);
+  const totalRefunds = summarizeSessionOrders(orders).totalRefunds;
+  const totalDiscounts = completed.reduce((s, o) => s + (o.discountTotal || 0), 0);
   const avgOrderValue  = completed.length ? grossRevenue / completed.length : 0;
 
   // Daily breakdown

@@ -30,6 +30,7 @@ const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 
 const Order = require('../models/Order');
+const Warehouse = require('../models/Warehouse');
 const POSSession = require('../models/POSSession');
 const pos = require('../controllers/pos.controller');
 
@@ -90,7 +91,9 @@ async function hold(t, items) {
   let captured = null;
 
   t.mock.method(Order, 'countDocuments', async () => 0);
-  t.mock.method(POSSession, 'findOne', () => chainable(null));
+  t.mock.method(Warehouse, 'findOne', () => chainable({ _id: TENANT }));
+  t.mock.method(POSSession, 'findOne', () => chainable({ _id: TENANT, shopId: 'retail', shopName: 'Retail', terminalType: 'retail', warehouse: TENANT }));
+  t.mock.method(POSSession, 'findOneAndUpdate', async () => ({}));
   t.mock.method(Order, 'create', async (doc) => {
     captured = doc;
     return { ...doc, _id: HOLD_ID, createdAt: new Date() };

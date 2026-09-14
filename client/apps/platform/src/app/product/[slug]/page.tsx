@@ -7,7 +7,6 @@ import { pickDefaultVariant, isDefaultVariantInStock, SHIPPING_DETAILS, MERCHANT
 import ProductClient from "./ProductClient";
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
-import OpportunityProductLinks from '@/components/SEO/OpportunityProductLinks';
 import ProductSeoDetails from '@/components/SEO/ProductSeoDetails';
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
@@ -281,7 +280,6 @@ export default async function ProductPage({
           { href: '/shipping-info', label: 'Check delivery information' },
         ]}
       />
-      <OpportunityProductLinks compact />
       <ProductSeoDetails slug={slug} product={p} />
       {/* Hand the already-fetched product to the client component so the body —
           description, specs, reviews — is in the server HTML rather than a

@@ -28,25 +28,26 @@ export async function runSyncEngine(token?: string): Promise<SyncResult> {
         if (entry.type === 'order') {
           const { _token, ...body } = entry.payload as any;
           const data = await posApi.createOrder(t, body);
-          if (data?.order) await posDb.orders.put(data.order);
+          if (data?.order) await posDb.orders.put({ ...(data.order as any), total: (data.order as any).total ?? (data.order as any).totalAmount ?? 0, createdAt: (data.order as any).createdAt ?? new Date().toISOString() } as any);
           await posDb.stockAdjust.where('queueId').equals(entry.id!).delete();
           await posDb.offlineQueue.delete(entry.id!);
           synced++;
         } else if (entry.type === 'refund') {
-          const { _token, orderId, items, reason, refundPaymentMethod } =
+          const { _token, orderId, items, reason, refundPaymentMethod, shopId } =
             entry.payload as any;
           await posApi.refundOrder(
             t,
             orderId,
             items,
             reason,
-            refundPaymentMethod
+            refundPaymentMethod,
+            shopId
           );
           await posDb.offlineQueue.delete(entry.id!);
           synced++;
         } else if (entry.type === 'void') {
-          const { _token, orderId, reason } = entry.payload as any;
-          await posApi.voidOrder(t, orderId, reason);
+          const { _token, orderId, reason, shopId } = entry.payload as any;
+          await posApi.voidOrder(t, orderId, reason, shopId);
           await posDb.offlineQueue.delete(entry.id!);
           synced++;
         } else if (entry.type === 'reconcile') {

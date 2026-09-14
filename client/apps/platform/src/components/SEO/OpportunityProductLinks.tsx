@@ -408,19 +408,32 @@ export const BRAND_OPPORTUNITY_SLUGS: Record<string, readonly string[]> = {
   'sweet-kiss': ['sweet-kiss-natural-sweet-white'],
 };
 
-/** Static, crawlable links to the pages already identified as SEO opportunities. */
-export default function OpportunityProductLinks({ compact = false, includeSlugs }: { compact?: boolean; includeSlugs?: readonly string[] }) {
-  const products = includeSlugs
+/** A small editorial link module; the full catalogue remains in the sitemap. */
+export default function OpportunityProductLinks({ includeSlugs, limit = 8 }: { includeSlugs?: readonly string[]; limit?: number }) {
+  const matchingProducts = includeSlugs
     ? OPPORTUNITY_PRODUCTS.filter((product) => includeSlugs.includes(product.slug))
     : OPPORTUNITY_PRODUCTS;
+  const products = matchingProducts.slice(0, limit);
   if (products.length === 0) return null;
   return (
-    <section className={compact ? 'sr-only' : 'border-t border-stone-200 bg-white px-4 py-8'} aria-labelledby="opportunity-products-heading">
-      <div className={compact ? '' : 'mx-auto max-w-6xl'}>
-        <h2 id="opportunity-products-heading" className={compact ? '' : 'text-xl font-bold text-stone-900'}>Popular bottles to explore</h2>
-        <p className={compact ? '' : 'mt-2 text-sm text-stone-600'}>Compare prices and availability for frequently searched drinks.</p>
-        <nav aria-label="Popular product links" className={compact ? '' : 'mt-4 flex flex-wrap gap-x-5 gap-y-2'}>
-          {products.map((product) => <Link key={product.slug} href={`/product/${product.slug}`} className={compact ? '' : 'text-sm font-semibold text-[#7C1D1D] underline-offset-2 hover:underline'}>{product.name}</Link>)}
+    <section className="border-t border-stone-200 bg-[#fbf8f3] px-4 py-10" aria-labelledby="opportunity-products-heading">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#9b5a4e]">From the harbour</p>
+            <h2 id="opportunity-products-heading" className="mt-1 text-2xl font-bold tracking-tight text-stone-900">Popular bottles to explore</h2>
+            <p className="mt-2 max-w-xl text-sm text-stone-600">A considered shortlist of bottles customers are searching for now.</p>
+          </div>
+          <Link href="/shop" className="text-sm font-bold text-[#7C1D1D] underline-offset-4 hover:underline">Browse the full shop →</Link>
+        </div>
+        <nav aria-label="Popular product links" className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {products.map((product, index) => (
+            <Link key={product.slug} href={`/product/${product.slug}`} className="group rounded-2xl border border-stone-200/80 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#b87968] hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0">
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-stone-400">0{index + 1}</span>
+              <span className="mt-3 block text-sm font-bold leading-5 text-stone-900 group-hover:text-[#7C1D1D]">{product.name}</span>
+              <span className="mt-3 block text-xs font-semibold text-[#9b5a4e]">View bottle <span aria-hidden="true">↗</span></span>
+            </Link>
+          ))}
         </nav>
       </div>
     </section>
