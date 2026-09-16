@@ -261,6 +261,14 @@ export interface AppraisalQuestion {
   _id: string;
   type: QuestionType;
   label: string;
+  /**
+   * Optional first-person wording shown ONLY on the subject's own self form;
+   * the manager and peer forms keep reading `label`. Compare self-vs-manager
+   * by shared questionId, so the two rows ask the same underlying question
+   * even though Salome reads "How well do you..." and Jordan reads "How well
+   * does the staff member...".
+   */
+  selfLabel?: string;
   helpText?: string;
   required: boolean;
   scaleMax?: number;

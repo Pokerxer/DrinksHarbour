@@ -6,6 +6,7 @@ import { PiChatText, PiCheck, PiWarningCircle } from 'react-icons/pi';
 import type {
   AppraisalQuestion,
   AppraisalAnswer,
+  FeedbackKind,
 } from '@/services/appraisal.service';
 import {
   isAnswered,
@@ -69,18 +70,25 @@ const FOCUS_RING =
 function QuestionLabel({
   question,
   as,
+  kind,
 }: {
   question: AppraisalQuestion;
   /** `legend` inside a fieldset, `label` for the free-text field. */
   as: 'legend' | 'label';
+  /**
+   * The reviewer filling this form in — the self form reads `selfLabel` when
+   * one exists ("How well do you..."), every other form reads `label`.
+   */
+  kind: FeedbackKind;
 }) {
   const Tag = as;
+  const text = kind === 'self' ? question.selfLabel ?? question.label : question.label;
   return (
     <Tag
       {...(as === 'label' ? { htmlFor: `q-${question._id}` } : {})}
       className="block p-0 text-sm font-semibold leading-snug text-gray-900"
     >
-      {question.label}
+      {text}
       {question.required && (
         <span className="ml-1 text-[#b20202]" aria-hidden="true">
           *
@@ -138,7 +146,7 @@ function ScoredOptionsField({
 
   return (
     <fieldset className="m-0 min-w-0 border-0 p-0" disabled={disabled}>
-      <QuestionLabel question={question} as="legend" />
+      <QuestionLabel question={question} as="legend" kind={kind} />
       <div className="mt-3 flex flex-col gap-2">
         {options.map(({ label: opt, score }, i) => {
           const checked = value === score;
@@ -196,7 +204,7 @@ function ScaleField({
 
   return (
     <fieldset className="m-0 min-w-0 border-0 p-0" disabled={disabled}>
-      <QuestionLabel question={question} as="legend" />
+      <QuestionLabel question={question} as="legend" kind={kind} />
 
       {/* auto-fit keeps a 10-point scale on one row on desktop and reflows it
           to as many rows as it needs on a narrow phone, without a breakpoint
@@ -266,7 +274,7 @@ function YesNoField({
 }) {
   return (
     <fieldset className="m-0 min-w-0 border-0 p-0" disabled={disabled}>
-      <QuestionLabel question={question} as="legend" />
+      <QuestionLabel question={question} as="legend" kind={kind} />
       <div className="mt-4 grid grid-cols-2 gap-2.5 sm:max-w-xs">
         {[
           { label: 'Yes', v: 1 },
@@ -325,7 +333,7 @@ function ChoiceField({
     // did not know about.
     return (
       <div className="min-w-0">
-        <QuestionLabel question={question} as="legend" />
+        <QuestionLabel question={question} as="legend" kind={kind} />
         <p className="mt-3 flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
           <PiWarningCircle className="h-3.5 w-3.5 shrink-0" />
           This question has no answer options configured.
@@ -336,7 +344,7 @@ function ChoiceField({
 
   return (
     <fieldset className="m-0 min-w-0 border-0 p-0" disabled={disabled}>
-      <QuestionLabel question={question} as="legend" />
+      <QuestionLabel question={question} as="legend" kind={kind} />
       <div className="mt-1 flex items-center justify-between gap-3">
         {multiple ? (
           <p className="text-[11px] font-medium text-gray-400">
@@ -428,7 +436,7 @@ function TextField({
 
   return (
     <div className="min-w-0">
-      <QuestionLabel question={question} as="label" />
+      <QuestionLabel question={question} as="label" kind={kind} />
       <div className="relative mt-3">
         <textarea
           id={`q-${question._id}`}
@@ -467,6 +475,7 @@ function TextField({
 export default function ReviewQuestionCard({
   question,
   answer,
+  kind,
   onRatingChange,
   onTextChange,
   onSelectedChange,
@@ -481,6 +490,11 @@ export default function ReviewQuestionCard({
 }: {
   question: AppraisalQuestion;
   answer: AppraisalAnswer | undefined;
+  /**
+   * Which reviewer this form belongs to. Drives `selfLabel` selection — the
+   * self form reads it rather than the third-person `label`.
+   */
+  kind: FeedbackKind;
   onRatingChange: (rating: number) => void;
   onTextChange: (text: string) => void;
   onSelectedChange: (selected: string[]) => void;

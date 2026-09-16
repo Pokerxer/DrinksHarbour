@@ -668,6 +668,10 @@ export default function ReviewerForm({ feedbackId }: { feedbackId: string }) {
                       key={q._id}
                       question={q}
                       answer={answers[q._id]}
+                      // Self-directed wording for the subject, third-person
+                      // wording for a manager or peer — see `selfLabel` on the
+                      // template's question.
+                      kind={form.kind}
                       onRatingChange={(v) => setRating(q._id, v)}
                       onTextChange={(v) => setText(q._id, v)}
                       onSelectedChange={(v) => setSelected(q._id, v)}

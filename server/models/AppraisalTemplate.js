@@ -8,6 +8,13 @@ const questionSchema = new Schema({
     required: true,
   },
   label: { type: String, required: true, trim: true, maxlength: 300 },
+  // The same question shown to a self-reviewer in the first person ("How well
+  // do you..." rather than "How well does the staff member..."). Optional —
+  // when absent the self form falls back to `label`. Kept as a separate field
+  // rather than folding per-kind text into `label` because the manager and peer
+  // forms keep reading the third-person wording, and self-vs-manager comparison
+  // relies on the SAME questionId for both rows.
+  selfLabel: { type: String, trim: true, maxlength: 300 },
   helpText: { type: String, trim: true, maxlength: 500 },
   required: { type: Boolean, default: true },
   scaleMax: { type: Number, min: 2, max: 10, default: 5 },

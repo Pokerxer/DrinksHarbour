@@ -139,7 +139,7 @@ export default function SubjectAnswersPanel({
                               className="rounded-xl border border-gray-100 bg-gray-50/60 px-3.5 py-2.5"
                             >
                               <p className="text-xs font-medium text-gray-700">
-                                {q.label}
+                                {q.selfLabel ?? q.label}
                               </p>
                               <p className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
                                 {/* formatAnswer owns the per-type rendering —
