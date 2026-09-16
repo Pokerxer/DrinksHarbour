@@ -8,6 +8,7 @@ import ProductClient from "./ProductClient";
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
 import ProductSeoDetails from '@/components/SEO/ProductSeoDetails';
+import { isCrawlerRequest } from '@/lib/crawlerRequest';
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL  || "https://www.drinksharbour.com";
@@ -261,6 +262,10 @@ export default async function ProductPage({
   const { product: p, related } = fetched;
   const schemas = buildSchemas(p, slug);
 
+  // The buying-guide block below is served in the HTML to search/AI crawlers
+  // only — human visitors get a focused purchase page without it.
+  const showSeoDetails = await isCrawlerRequest();
+
   return (
     <>
       {schemas.map((schema, i) => (
@@ -280,7 +285,7 @@ export default async function ProductPage({
           { href: '/shipping-info', label: 'Check delivery information' },
         ]}
       />
-      <ProductSeoDetails slug={slug} product={p} />
+      {showSeoDetails && <ProductSeoDetails slug={slug} product={p} />}
       {/* Hand the already-fetched product to the client component so the body —
           description, specs, reviews — is in the server HTML rather than a
           "Loading product details..." spinner. The fetch is deduped with the
