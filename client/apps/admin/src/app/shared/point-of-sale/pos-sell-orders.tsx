@@ -1,13 +1,9 @@
 'use client';
+import { requestDocumentExport } from '@/utils/print/document-export';
+import { buildPOSRefund } from '@/utils/print/pos-documents';
 import { usePOSShopScope } from './store';
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import {
@@ -116,9 +112,7 @@ const FILTER_LABELS: Record<Filter, string> = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getCashierName(o: SellOrder) {
   return o.posStaff
-    ? (
-        o.posStaff.posName || `${o.posStaff.firstName} ${o.posStaff.lastName}`
-      ).trim()
+    ? (o.posStaff.posName || `${o.posStaff.firstName} ${o.posStaff.lastName}`).trim()
     : '';
 }
 function getCustomerName(o: SellOrder) {
@@ -175,9 +169,7 @@ function FilterDropdown({
         >
           <span className={`h-2 w-2 rounded-full ${o.dot}`} />
           {o.label}
-          {value === o.value && (
-            <span className="ml-auto text-[#b20202]">✓</span>
-          )}
+          {value === o.value && <span className="ml-auto text-[#b20202]">✓</span>}
         </button>
       ))}
     </div>
@@ -244,8 +236,7 @@ function ReturnDetailPanel({
 }) {
   const { tenant } = usePOSAuth();
   const cashierName = refund.refundedBy
-    ? refund.refundedBy.posName ||
-      `${refund.refundedBy.firstName} ${refund.refundedBy.lastName}`
+    ? refund.refundedBy.posName || `${refund.refundedBy.firstName} ${refund.refundedBy.lastName}`
     : '—';
   const refundDate = new Date(refund.refundedAt).toLocaleString('en-GB', {
     day: '2-digit',
@@ -257,64 +248,9 @@ function ReturnDetailPanel({
   });
 
   function handlePrint() {
-    const win = window.open(
-      '',
-      '_blank',
-      'width=400,height=700,scrollbars=yes'
+    requestDocumentExport(
+      buildPOSRefund(parentOrder as unknown as Parameters<typeof buildPOSRefund>[0], refund, tenant)
     );
-    if (!win) return;
-    const rows = (refund.items || [])
-      .map((line) => {
-        const item =
-          line.orderItemIndex != null
-            ? parentOrder.items?.[line.orderItemIndex]
-            : undefined;
-        const name = item
-          ? `${item.name}${item.variant ? ` · ${item.variant}` : ''}`
-          : `Item #${(line.orderItemIndex ?? 0) + 1}`;
-        return `<tr>
-        <td style="padding:4px 0;border-bottom:1px solid #eee">${name}</td>
-        <td style="text-align:right;padding:4px 8px;border-bottom:1px solid #eee">${line.quantity}</td>
-        <td style="text-align:right;padding:4px 0;border-bottom:1px solid #eee">${formatCurrency(line.unitPrice ?? 0)}</td>
-        <td style="text-align:right;padding:4px 0;border-bottom:1px solid #eee;color:#b20202">−${formatCurrency(line.amount ?? 0)}</td>
-      </tr>`;
-      })
-      .join('');
-    win.document
-      .write(`<!DOCTYPE html><html><head><title>${refund.receiptNumber}</title>
-      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:12px;padding:16px;width:380px;margin:0 auto}</style>
-    </head><body>
-      <div style="text-align:center;margin-bottom:12px">
-        <strong style="font-size:14px;letter-spacing:2px">${(tenant?.name || 'DRINKS HARBOUR').toUpperCase()}</strong><br>
-        <span style="font-size:11px;font-weight:bold;color:#b20202">RETURN RECEIPT</span>
-      </div>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <table style="width:100%;font-size:11px;margin-bottom:8px">
-        <tr><td style="color:#555;width:90px">Return #</td><td><strong>${refund.receiptNumber || '—'}</strong></td></tr>
-        <tr><td style="color:#555">Original</td><td>${parentOrder.receiptNumber || '—'}</td></tr>
-        <tr><td style="color:#555">Date</td><td>${refundDate}</td></tr>
-        <tr><td style="color:#555">Cashier</td><td>${cashierName}</td></tr>
-        <tr><td style="color:#555">Refund via</td><td style="text-transform:capitalize">${(refund.paymentMethod || '—').replace(/_/g, ' ')}</td></tr>
-        ${refund.reason ? `<tr><td style="color:#555">Reason</td><td>${refund.reason}</td></tr>` : ''}
-      </table>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <table style="width:100%;font-size:11px">
-        <thead><tr style="color:#888"><th style="text-align:left">Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Amount</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <hr style="border:2px solid #333;margin:8px 0">
-      <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:14px;color:#b20202">
-        <span>TOTAL RETURNED</span><span>−${formatCurrency(refund.totalRefunded)}</span>
-      </div>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <div style="text-align:center;font-size:10px;color:#666">Thank you for your patience.</div>
-    </body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-    }, 400);
   }
 
   return (
@@ -325,17 +261,11 @@ function ReturnDetailPanel({
             <PiArrowCounterClockwise className="h-4 w-4 text-[#b20202]" />
           </div>
           <div>
-            <p className="text-sm font-bold text-[#b20202]">
-              {refund.receiptNumber || 'Return'}
-            </p>
+            <p className="text-sm font-bold text-[#b20202]">{refund.receiptNumber || 'Return'}</p>
             <p className="text-[10px] text-gray-400">Return Receipt</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-gray-400 hover:text-gray-600"
-        >
+        <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
           <PiX className="h-4 w-4" />
         </button>
       </div>
@@ -346,10 +276,7 @@ function ReturnDetailPanel({
             ['Original order', parentOrder.receiptNumber || '—'],
             ['Return date', refundDate],
             ['Cashier', cashierName],
-            [
-              'Refund via',
-              capitalize((refund.paymentMethod || '—').replace(/_/g, ' ')),
-            ],
+            ['Refund via', capitalize((refund.paymentMethod || '—').replace(/_/g, ' '))],
             ...(refund.reason ? [['Reason', refund.reason]] : []),
           ] as [string, string][]
         ).map(([label, val]) => (
@@ -369,9 +296,7 @@ function ReturnDetailPanel({
         <div className="divide-y divide-gray-50">
           {(refund.items || []).map((line, i) => {
             const item =
-              line.orderItemIndex != null
-                ? parentOrder.items?.[line.orderItemIndex]
-                : undefined;
+              line.orderItemIndex != null ? parentOrder.items?.[line.orderItemIndex] : undefined;
             const name = item
               ? `${item.name}${item.variant ? ` · ${item.variant}` : ''}`
               : `Item #${(line.orderItemIndex ?? i) + 1}`;
@@ -379,30 +304,21 @@ function ReturnDetailPanel({
               <div key={i} className="px-5 py-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-gray-900">
-                      {name}
-                    </p>
+                    <p className="truncate text-sm font-semibold text-gray-900">{name}</p>
                     <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
                       <span className="inline-flex min-w-[2.5rem] items-center justify-center rounded border border-[#b20202]/30 bg-red-50 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-[#b20202]">
                         ×{line.quantity}
                       </span>
                       <span>×</span>
                       <span className="tabular-nums">
-                        {formatCurrency(
-                          line.unitPrice ?? item?.priceAtPurchase ?? 0
-                        )}{' '}
-                        / unit
+                        {formatCurrency(line.unitPrice ?? item?.priceAtPurchase ?? 0)} / unit
                       </span>
                       {(line.discPct ?? 0) > 0 && (
-                        <span className="text-amber-600">
-                          (−{line.discPct}% deduction)
-                        </span>
+                        <span className="text-amber-600">(−{line.discPct}% deduction)</span>
                       )}
                     </div>
                     {line.restock === false && (
-                      <p className="mt-0.5 text-[10px] text-amber-600">
-                        ⚠ Not restocked
-                      </p>
+                      <p className="mt-0.5 text-[10px] text-amber-600">⚠ Not restocked</p>
                     )}
                   </div>
                   <span className="shrink-0 text-sm font-bold text-[#b20202]">
@@ -417,16 +333,13 @@ function ReturnDetailPanel({
 
       <div className="shrink-0 border-t border-gray-200 px-5 py-3">
         <div className="flex items-baseline justify-between">
-          <span className="text-sm font-bold text-gray-900">
-            Total Returned
-          </span>
+          <span className="text-sm font-bold text-gray-900">Total Returned</span>
           <span className="text-base font-bold text-[#b20202]">
             −{formatCurrency(refund.totalRefunded)}
           </span>
         </div>
         <p className="mt-0.5 text-xs capitalize text-gray-400">
-          Refunded via{' '}
-          {(refund.paymentMethod || 'original method').replace(/_/g, ' ')}
+          Refunded via {(refund.paymentMethod || 'original method').replace(/_/g, ' ')}
         </p>
       </div>
 
@@ -468,9 +381,7 @@ function SessionSummaryStrip({ orders }: { orders: SellOrder[] }) {
       <div className="flex shrink-0 items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5">
         <PiShoppingCart className="h-3.5 w-3.5 text-gray-400" />
         <div>
-          <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">
-            Orders
-          </p>
+          <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">Orders</p>
           <p className="text-sm font-bold tabular-nums leading-tight text-gray-800">
             {paid.length}
           </p>
@@ -489,9 +400,7 @@ function SessionSummaryStrip({ orders }: { orders: SellOrder[] }) {
         </div>
       </div>
 
-      {methodEntries.length > 0 && (
-        <div className="h-6 w-px shrink-0 bg-gray-200" />
-      )}
+      {methodEntries.length > 0 && <div className="h-6 w-px shrink-0 bg-gray-200" />}
 
       {methodEntries.map(([method, total]) => (
         <div
@@ -518,9 +427,7 @@ function SessionSummaryStrip({ orders }: { orders: SellOrder[] }) {
               <p className="text-[9px] font-semibold uppercase tracking-widest text-red-400">
                 Voided
               </p>
-              <p className="text-sm font-bold tabular-nums leading-tight text-red-600">
-                {voided}
-              </p>
+              <p className="text-sm font-bold tabular-nums leading-tight text-red-600">{voided}</p>
             </div>
           </div>
         </>
@@ -530,41 +437,27 @@ function SessionSummaryStrip({ orders }: { orders: SellOrder[] }) {
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
-function StatusBadge({
-  order,
-  selected,
-}: {
-  order: SellOrder;
-  selected: boolean;
-}) {
+function StatusBadge({ order, selected }: { order: SellOrder; selected: boolean }) {
   if (order.isVoided)
     return (
-      <span
-        className={`text-xs font-medium ${selected ? 'text-red-200' : 'text-red-500'}`}
-      >
+      <span className={`text-xs font-medium ${selected ? 'text-red-200' : 'text-red-500'}`}>
         Voided
       </span>
     );
   if (order.paymentStatus === 'refunded')
     return (
-      <span
-        className={`text-xs font-medium ${selected ? 'text-orange-200' : 'text-orange-500'}`}
-      >
+      <span className={`text-xs font-medium ${selected ? 'text-orange-200' : 'text-orange-500'}`}>
         Refunded
       </span>
     );
   if (order.paymentStatus === 'partially_refunded')
     return (
-      <span
-        className={`text-xs font-medium ${selected ? 'text-amber-200' : 'text-amber-600'}`}
-      >
+      <span className={`text-xs font-medium ${selected ? 'text-amber-200' : 'text-amber-600'}`}>
         Part. Returned
       </span>
     );
   return (
-    <span
-      className={`text-xs font-medium ${selected ? 'text-red-100' : 'text-emerald-600'}`}
-    >
+    <span className={`text-xs font-medium ${selected ? 'text-red-100' : 'text-emerald-600'}`}>
       Paid
     </span>
   );
@@ -611,18 +504,25 @@ export default function POSSellOrders() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    setSessionId(null); setOrders([]);
+    setSessionId(null);
+    setOrders([]);
     getSessionInfo(token, shopId)
       .then((data) => {
         if (!cancelled && data?.sessionId) setSessionId(data.sessionId);
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [token, shopId]);
 
   const fetchOrders = useCallback(() => {
     if (!token) return;
-    if (scope === 'session' && !sessionId) { setOrders([]); setLoading(false); return; }
+    if (scope === 'session' && !sessionId) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const req =
       scope === 'session' && sessionId
@@ -696,9 +596,7 @@ export default function POSSellOrders() {
   }
   function selectRefund(refund: Refund, order: SellOrder) {
     setSelectedOrder(null);
-    setSelectedRefund((prev) =>
-      prev?.refund === refund ? null : { refund, order }
-    );
+    setSelectedRefund((prev) => (prev?.refund === refund ? null : { refund, order }));
   }
 
   const filtered = useMemo(() => {
@@ -909,8 +807,7 @@ export default function POSSellOrders() {
           {!isOnline && (
             <div className="mx-3 mb-2 mt-2 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
               <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
-              Offline — showing cached orders. Unsynced orders shown as{' '}
-              <strong>OFF-###</strong>.
+              Offline — showing cached orders. Unsynced orders shown as <strong>OFF-###</strong>.
             </div>
           )}
           {loading ? (
@@ -980,10 +877,7 @@ export default function POSSellOrders() {
                 <tbody>
                   {paginated.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={9}
-                        className="py-20 text-center text-sm text-gray-400"
-                      >
+                      <td colSpan={9} className="py-20 text-center text-sm text-gray-400">
                         {scope === 'session' && !sessionId
                           ? 'No open session — orders are session-scoped'
                           : search
@@ -994,8 +888,7 @@ export default function POSSellOrders() {
                   ) : (
                     paginated.map((order) => {
                       const isSelected = selectedOrder?._id === order._id;
-                      const isRefundParent =
-                        selectedRefund?.order._id === order._id;
+                      const isRefundParent = selectedRefund?.order._id === order._id;
                       const customerName = getCustomerName(order);
                       const cashierName = getCashierName(order);
 
@@ -1015,9 +908,7 @@ export default function POSSellOrders() {
                             <td
                               className={`px-4 py-3 text-xs ${isSelected ? 'text-red-100' : 'text-gray-500'}`}
                             >
-                              {formatOrderDate(
-                                order.createdAt || order.placedAt
-                              )}
+                              {formatOrderDate(order.createdAt || order.placedAt)}
                             </td>
                             <td
                               className={`px-4 py-3 font-medium ${isSelected ? 'text-white' : 'text-gray-800'}`}
@@ -1041,13 +932,7 @@ export default function POSSellOrders() {
                               className={`px-4 py-3 ${isSelected ? 'text-red-100' : 'text-gray-600'}`}
                             >
                               {customerName || (
-                                <span
-                                  className={
-                                    isSelected
-                                      ? 'text-red-200'
-                                      : 'text-gray-300'
-                                  }
-                                >
+                                <span className={isSelected ? 'text-red-200' : 'text-gray-300'}>
                                   —
                                 </span>
                               )}
@@ -1056,13 +941,7 @@ export default function POSSellOrders() {
                               className={`px-4 py-3 ${isSelected ? 'text-red-100' : 'text-gray-600'}`}
                             >
                               {cashierName || (
-                                <span
-                                  className={
-                                    isSelected
-                                      ? 'text-red-200'
-                                      : 'text-gray-300'
-                                  }
-                                >
+                                <span className={isSelected ? 'text-red-200' : 'text-gray-300'}>
                                   —
                                 </span>
                               )}
@@ -1078,10 +957,7 @@ export default function POSSellOrders() {
                               {order.paymentMethod?.replace(/_/g, ' ') || '—'}
                             </td>
                             <td className="px-4 py-3">
-                              <StatusBadge
-                                order={order}
-                                selected={isSelected}
-                              />
+                              <StatusBadge order={order} selected={isSelected} />
                             </td>
                             <td className="px-4 py-3 text-right">
                               {!order.isVoided && (
@@ -1122,8 +998,7 @@ export default function POSSellOrders() {
 
                             const isRefundSelected =
                               selectedRefund?.refund === refund ||
-                              selectedRefund?.refund?.receiptNumber ===
-                                refund.receiptNumber;
+                              selectedRefund?.refund?.receiptNumber === refund.receiptNumber;
 
                             return (
                               <tr
@@ -1149,14 +1024,8 @@ export default function POSSellOrders() {
                                 <td className="px-4 py-2 text-[11px] text-red-400">
                                   ↳ {order.receiptNumber}
                                 </td>
-                                <td
-                                  className="px-4 py-2 text-[11px] text-gray-600"
-                                  colSpan={2}
-                                >
-                                  <p
-                                    className="max-w-[260px] truncate"
-                                    title={itemsSummary}
-                                  >
+                                <td className="px-4 py-2 text-[11px] text-gray-600" colSpan={2}>
+                                  <p className="max-w-[260px] truncate" title={itemsSummary}>
                                     {itemsSummary || '—'}
                                   </p>
                                 </td>
@@ -1164,10 +1033,7 @@ export default function POSSellOrders() {
                                   −{formatCurrency(refund.totalRefunded)}
                                 </td>
                                 <td className="px-4 py-2 text-[11px] capitalize text-gray-500">
-                                  {(refund.paymentMethod || '').replace(
-                                    /_/g,
-                                    ' '
-                                  )}
+                                  {(refund.paymentMethod || '').replace(/_/g, ' ')}
                                 </td>
                                 <td className="px-4 py-2">
                                   <span className="text-[10px] font-semibold text-[#b20202]">
@@ -1175,9 +1041,7 @@ export default function POSSellOrders() {
                                   </span>
                                 </td>
                                 <td className="px-4 py-2">
-                                  <span className="text-[10px] text-gray-400">
-                                    {refundCashier}
-                                  </span>
+                                  <span className="text-[10px] text-gray-400">{refundCashier}</span>
                                 </td>
                               </tr>
                             );
@@ -1214,9 +1078,7 @@ export default function POSSellOrders() {
               Back to list
             </button>
           </div>
-          <div className="flex flex-1 flex-col overflow-hidden">
-            {rightPanel}
-          </div>
+          <div className="flex flex-1 flex-col overflow-hidden">{rightPanel}</div>
         </div>
       )}
     </div>

@@ -1,6 +1,10 @@
 'use client';
+import { requestDocumentExport } from '@/utils/print/document-export';
+import { buildPOSSessionDocument } from '@/utils/print/pos-session-document';
 import { ShopHistorySelector } from './components/shop-history-selector';
+import { historyAccess } from './shop-entry';
 import { usePOSShopScope } from './store';
+import { usePOSAuth } from './store';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
@@ -27,7 +31,7 @@ import {
   PiCaretDown,
   PiCaretUp,
 } from 'react-icons/pi';
-import jsPDF from 'jspdf';
+
 import autoTable from 'jspdf-autotable';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -36,7 +40,8 @@ function isTokenExpired(tok: string | null | undefined): boolean {
   if (!tok) return true;
   try {
     const payload = JSON.parse(atob(tok.split('.')[1]));
-    return (payload.exp ?? 0) * 1000 < Date.now();
+    return !payload || typeof payload !== 'object' || !('exp' in payload) ||
+      typeof payload.exp !== 'number' || payload.exp * 1000 < Date.now();
   } catch {
     return true;
   }
@@ -147,541 +152,12 @@ const PDF_ORANGE: [number, number, number] = [217, 70, 0];
 // ── PDF: Session Report ───────────────────────────────────────────────────────
 
 function buildSessionReportPdf(session: POSSession, orders: SessionOrder[], storeName: string) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const M = 14;
-  const CW = pageW - 2 * M;
-
-  doc.setFillColor(...PDF_BRAND);
-  doc.rect(0, 0, pageW, 14, 'F');
-  doc.setTextColor(...PDF_WHITE);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text(storeName, M, 9.5);
-  doc.setFontSize(11);
-  doc.text('SESSION REPORT', pageW / 2, 9.5, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text(new Date().toLocaleString('en-GB'), pageW - M, 9.5, {
-    align: 'right',
-  });
-
-  doc.setFillColor(250, 250, 250);
-  doc.rect(0, 14, pageW, 16, 'F');
-  doc.setTextColor(...PDF_MED);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  const terminal = (session.terminalType || 'retail').toUpperCase();
-  const period = `${fmtDateTime(session.openedAt)}${session.closedAt ? ` → ${fmtDateTime(session.closedAt)}` : ' (Open)'}`;
-  const opener = staffName(session.openedBy as any);
-  doc.text(
-    `Terminal: ${terminal}   ·   Period: ${period}   ·   Opened by: ${opener}`,
-    M,
-    20
-  );
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
-  doc.setTextColor(...PDF_DARK);
-  doc.text(`${terminal} · ${fmtDate(session.openedAt)}`, M, 27);
-  doc.setFont('helvetica', 'normal');
-  doc.setDrawColor(210, 210, 210);
-  doc.setLineWidth(0.2);
-  doc.line(0, 30, pageW, 30);
-
-  let y = 34;
-
-  const sectionHead = (label: string) => {
-    doc.setFillColor(...PDF_LIGHT);
-    doc.rect(M, y, CW, 7.5, 'F');
-    doc.setTextColor(...PDF_DARK);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text(label, M + 3.5, y + 5.3);
-    y += 7.5;
-  };
-
-  const tRow = (
-    c1: string,
-    c2: string,
-    c3: string,
-    opts?: {
-      bold?: boolean;
-      color?: [number, number, number];
-      topLine?: boolean;
-    }
-  ) => {
-    const { bold = false, color = PDF_DARK, topLine = false } = opts ?? {};
-    if (topLine) {
-      doc.setDrawColor(...PDF_BRAND);
-      doc.setLineWidth(0.4);
-      doc.line(M, y, M + CW, y);
-    }
-    doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...PDF_MED);
-    if (c1) doc.text(c1, M + 5, y + 4.8);
-    doc.setTextColor(...color);
-    if (c2) doc.text(c2, M + CW * 0.62, y + 4.8);
-    if (c3) doc.text(c3, M + CW - 5, y + 4.8, { align: 'right' });
-    doc.setDrawColor(235, 235, 235);
-    doc.setLineWidth(0.1);
-    doc.line(M, y + 6.5, M + CW, y + 6.5);
-    y += 7;
-  };
-
-  const kv = (
-    label: string,
-    value: string,
-    bold = false,
-    color: [number, number, number] = PDF_DARK
-  ) => {
-    doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...PDF_MED);
-    doc.text(label, M + 5, y + 4.8);
-    doc.setTextColor(...color);
-    doc.text(value, M + CW - 5, y + 4.8, { align: 'right' });
-    doc.setDrawColor(235, 235, 235);
-    doc.setLineWidth(0.1);
-    doc.line(M, y + 6.5, M + CW, y + 6.5);
-    y += 7;
-  };
-
-  const totalSales = session.totalSales || 0;
-  const orderCount = session.orderCount || 0;
-  const itemsSold = orders.reduce(
-    (s, o) => s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
-    0
-  );
-  const totalDiscount = orders.reduce((s, o) => s + (o.discountTotal ?? 0), 0);
-  const discCount = orders.filter(
-    (o) => !o.isVoided && (o.discountTotal ?? 0) > 0
-  ).length;
-
-  doc.setFillColor(250, 250, 250);
-  doc.rect(M, y, CW, 9, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(...PDF_DARK);
-  doc.text('Total', M + 5, y + 6);
-  doc.text(itemsSold.toLocaleString(), M + CW * 0.62, y + 6);
-  doc.setTextColor(...PDF_BRAND);
-  doc.text(formatCurrency(totalSales), M + CW - 5, y + 6, { align: 'right' });
-  doc.setDrawColor(...PDF_BRAND);
-  doc.setLineWidth(0.4);
-  doc.line(M, y + 9, M + CW, y + 9);
-  y += 13;
-
-  sectionHead('Taxes on Sales');
-  tRow('No Taxes', '0.00', formatCurrency(totalSales));
-  tRow('Total', '0.00', formatCurrency(totalSales), { bold: true });
-  y += 5;
-
-  sectionHead('Payments');
-  const paymentMethods = [
-    { label: 'Cash', amount: session.cashSales || 0 },
-    { label: 'Card / POS', amount: session.cardSales || 0 },
-    { label: 'Bank Transfer', amount: session.transferSales || 0 },
-    { label: 'Mobile Money', amount: session.mobileMoneySales || 0 },
-    { label: 'Split', amount: (session as any).splitSales || 0 },
-  ].filter((m) => m.amount > 0);
-  paymentMethods.forEach((m) => tRow(m.label, '', formatCurrency(m.amount)));
-  tRow('Total', '', formatCurrency(totalSales), {
-    bold: true,
-    color: PDF_BRAND,
-    topLine: true,
-  });
-  y += 5;
-
-  sectionHead('Discounts');
-  kv('Number of discounts:', discCount.toLocaleString());
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...PDF_MED);
-  doc.text('Amount of discounts:', M + 5, y + 4.8);
-  doc.setTextColor(
-    totalDiscount > 0 ? PDF_ORANGE[0] : PDF_DARK[0],
-    totalDiscount > 0 ? PDF_ORANGE[1] : PDF_DARK[1],
-    totalDiscount > 0 ? PDF_ORANGE[2] : PDF_DARK[2]
-  );
-  doc.text(formatCurrency(totalDiscount), M + CW - 5, y + 4.8, {
-    align: 'right',
-  });
-  doc.setDrawColor(235, 235, 235);
-  doc.setLineWidth(0.1);
-  doc.line(M, y + 6.5, M + CW, y + 6.5);
-  y += 12;
-
-  sectionHead('Session Control');
-  kv('Total:', formatCurrency(totalSales), true);
-  kv('Opening Cash:', formatCurrency(session.openingCash || 0));
-  const cashMoves = session.cashMovements || [];
-  const cashIn = cashMoves
-    .filter((m) => m.type === 'in')
-    .reduce((s, m) => s + m.amount, 0);
-  const cashOut = cashMoves
-    .filter((m) => m.type === 'out')
-    .reduce((s, m) => s + m.amount, 0);
-  if (cashIn > 0) kv('Cash In:', `+ ${formatCurrency(cashIn)}`);
-  if (cashOut > 0) kv('Cash Out:', `− ${formatCurrency(cashOut)}`);
-  kv('Number of transactions:', orderCount.toLocaleString());
-  kv('Duration:', duration(session.openedAt, session.closedAt));
-
-  const methods = (session.methodBalances || []).filter(
-    (m) => m.theoretical > 0 || (m.counted ?? 0) > 0
-  );
-  if (methods.length > 0 && session.status === 'closed') {
-    y += 5;
-    sectionHead('Cash Balance');
-    tRow('Payment Method', 'Expected', 'Counted', { bold: true });
-    methods.forEach((m) => {
-      const counted = m.counted ?? m.theoretical;
-      const diff = counted - m.theoretical;
-      const diffStr =
-        Math.abs(diff) > 0.01
-          ? `  (${diff > 0 ? '+' : ''}${formatCurrency(diff)})`
-          : '';
-      tRow(
-        METHOD_LABELS[m.method] ?? m.method,
-        formatCurrency(m.theoretical),
-        `${formatCurrency(counted)}${diffStr}`,
-        { color: Math.abs(diff) > 0.01 ? [190, 50, 50] : PDF_DARK }
-      );
-    });
-  }
-
-  const totalPages = (doc.internal as any).getNumberOfPages() as number;
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
-    doc.setDrawColor(210, 210, 210);
-    doc.setLineWidth(0.3);
-    doc.line(M, pageH - 8, pageW - M, pageH - 8);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
-    doc.setTextColor(...PDF_MED);
-    doc.text(storeName + '  ·  Confidential', M, pageH - 4.5);
-    doc.text('Session Report', pageW / 2, pageH - 4.5, { align: 'center' });
-    doc.text(`Page ${i} of ${totalPages}`, pageW - M, pageH - 4.5, {
-      align: 'right',
-    });
-  }
-
-  const label = `${(session.terminalType || 'retail').toLowerCase()}-session-${fmtDate(session.openedAt).replace(/ /g, '-')}`;
-  doc.save(`session-report-${label}.pdf`);
+  requestDocumentExport(buildPOSSessionDocument(session, orders, storeName));
 }
-
-// ── PDF: Z-Report ─────────────────────────────────────────────────────────────
-
 function buildZReportPdf(session: POSSession, orders: SessionOrder[], storeName: string) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const M = 14;
-  const CW = pageW - 2 * M;
-
-  doc.setFillColor(...PDF_BRAND);
-  doc.rect(0, 0, pageW, 14, 'F');
-  doc.setTextColor(...PDF_WHITE);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('Z-REPORT', pageW / 2, 9.5, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text(storeName, M, 9.5);
-  doc.text(new Date().toLocaleString('en-GB'), pageW - M, 9.5, {
-    align: 'right',
-  });
-
-  doc.setFillColor(250, 250, 250);
-  doc.rect(0, 14, pageW, 12, 'F');
-  doc.setTextColor(...PDF_MED);
-  doc.setFontSize(7.5);
-  const terminal = (session.terminalType || 'retail').toUpperCase();
-  const period = `${fmtDateTime(session.openedAt)}${session.closedAt ? ` → ${fmtDateTime(session.closedAt)}` : ' (Open)'}`;
-  doc.text(
-    `${terminal}  ·  ${period}  ·  ${staffName(session.openedBy as any)}`,
-    M,
-    22
-  );
-  doc.setDrawColor(210, 210, 210);
-  doc.setLineWidth(0.2);
-  doc.line(0, 26, pageW, 26);
-
-  let y = 30;
-
-  const kv = (
-    label: string,
-    value: string,
-    bold = false,
-    color: [number, number, number] = PDF_DARK
-  ) => {
-    doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(...PDF_MED);
-    doc.text(label, M + 5, y + 5);
-    doc.setTextColor(...color);
-    doc.text(value, M + CW - 5, y + 5, { align: 'right' });
-    doc.setDrawColor(235, 235, 235);
-    doc.setLineWidth(0.1);
-    doc.line(M, y + 7.5, M + CW, y + 7.5);
-    y += 8;
-  };
-
-  const sHead = (label: string) => {
-    doc.setFillColor(...PDF_LIGHT);
-    doc.rect(M, y, CW, 8, 'F');
-    doc.setTextColor(...PDF_DARK);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(label, M + 4, y + 5.5);
-    y += 8;
-  };
-
-  const voids = orders.filter((o) => o.isVoided);
-  const refunds = orders.filter((o) => (o.refunds?.length ?? 0) > 0);
-  const refundAmt = refunds.reduce(
-    (s, o) =>
-      s + (o.refunds || []).reduce((a, r) => a + (r.totalRefunded ?? 0), 0),
-    0
-  );
-  const voidAmt = voids.reduce((s, o) => s + (o.total || 0), 0);
-  const cashMethod = (session.methodBalances || []).find(
-    (m) => m.method === 'cash'
-  );
-
-  sHead('Sales Summary');
-  kv('Total Sales', formatCurrency(session.totalSales || 0), true, PDF_BRAND);
-  kv('Total Transactions', String(session.orderCount || 0));
-  kv(
-    'Total Items Sold',
-    String(
-      orders.reduce(
-        (s, o) => s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
-        0
-      )
-    )
-  );
-  kv('Duration', duration(session.openedAt, session.closedAt));
-  y += 3;
-
-  sHead('Payment Breakdown');
-  const pmethods = [
-    { label: 'Cash', amount: session.cashSales || 0 },
-    { label: 'Card / POS', amount: session.cardSales || 0 },
-    { label: 'Bank Transfer', amount: session.transferSales || 0 },
-    { label: 'Mobile Money', amount: session.mobileMoneySales || 0 },
-    { label: 'Split', amount: (session as any).splitSales || 0 },
-  ].filter((m) => m.amount > 0);
-  pmethods.forEach((m) => kv(m.label, formatCurrency(m.amount)));
-  kv('Total', formatCurrency(session.totalSales || 0), true, PDF_BRAND);
-  y += 3;
-
-  sHead('Voids & Refunds');
-  kv(
-    'Voided Orders',
-    String(voids.length),
-    false,
-    voids.length > 0 ? PDF_ORANGE : PDF_DARK
-  );
-  kv(
-    'Voided Amount',
-    formatCurrency(voidAmt),
-    false,
-    voids.length > 0 ? PDF_ORANGE : PDF_DARK
-  );
-  kv('Refunded Orders', String(refunds.length));
-  kv('Refunded Amount', formatCurrency(refundAmt));
-  y += 3;
-
-  sHead('Cash Reconciliation');
-  kv('Opening Cash', formatCurrency(session.openingCash || 0));
-  if (cashMethod) {
-    kv('Expected Cash', formatCurrency(cashMethod.theoretical));
-    if (cashMethod.counted !== null) {
-      kv('Counted Cash', formatCurrency(cashMethod.counted ?? 0));
-      const diff = (cashMethod.counted ?? 0) - cashMethod.theoretical;
-      kv(
-        'Difference',
-        (diff >= 0 ? '+' : '') + formatCurrency(diff),
-        true,
-        Math.abs(diff) > 0.01 ? [190, 50, 50] : [22, 163, 74]
-      );
-    }
-  }
-
-  const totalPages = (doc.internal as any).getNumberOfPages() as number;
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
-    doc.setDrawColor(210, 210, 210);
-    doc.setLineWidth(0.3);
-    doc.line(M, pageH - 8, pageW - M, pageH - 8);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
-    doc.setTextColor(...PDF_MED);
-    doc.text(storeName + '  ·  Confidential', M, pageH - 4.5);
-    doc.text('Z-Report', pageW / 2, pageH - 4.5, { align: 'center' });
-    doc.text(`Page ${i} of ${totalPages}`, pageW - M, pageH - 4.5, {
-      align: 'right',
-    });
-  }
-
-  const label = `${(session.terminalType || 'retail').toLowerCase()}-zreport-${fmtDate(session.openedAt).replace(/ /g, '-')}`;
-  doc.save(`z-report-${label}.pdf`);
+  requestDocumentExport(buildPOSSessionDocument(session, orders, storeName, true));
 }
-
-// ── Print: Session Report ─────────────────────────────────────────────────────
-
-function printSessionReport(session: POSSession, orders: SessionOrder[], storeName: string) {
-  const totalSales = session.totalSales || 0;
-  const orderCount = session.orderCount || 0;
-  const itemsSold = orders.reduce(
-    (s, o) => s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
-    0
-  );
-  const totalDiscount = orders.reduce((s, o) => s + (o.discountTotal ?? 0), 0);
-  const discCount = orders.filter(
-    (o) => !o.isVoided && (o.discountTotal ?? 0) > 0
-  ).length;
-  const ng = (v: number) => formatCurrency(v);
-
-  const paymentRows = [
-    { label: 'Cash', amount: session.cashSales || 0 },
-    { label: 'Card / POS', amount: session.cardSales || 0 },
-    { label: 'Bank Transfer', amount: session.transferSales || 0 },
-    { label: 'Mobile Money', amount: session.mobileMoneySales || 0 },
-    { label: 'Split', amount: (session as any).splitSales || 0 },
-  ].filter((m) => m.amount > 0);
-
-  const cashMoves = session.cashMovements || [];
-  const cashIn = cashMoves
-    .filter((m) => m.type === 'in')
-    .reduce((s, m) => s + m.amount, 0);
-  const cashOut = cashMoves
-    .filter((m) => m.type === 'out')
-    .reduce((s, m) => s + m.amount, 0);
-  const methods = (session.methodBalances || []).filter(
-    (m) => m.theoretical > 0 || (m.counted ?? 0) > 0
-  );
-
-  const sRow = (label: string) =>
-    `<tr><td colspan="3" style="background:#e5e7eb;padding:8px 14px;font-size:11px;font-weight:700;color:#111;letter-spacing:0.04em">${label}</td></tr>`;
-  const dRow = (
-    c1: string,
-    c2: string,
-    c3: string,
-    bold = false,
-    color = '#374151'
-  ) =>
-    `<tr style="border-bottom:1px solid #f3f4f6">
-      <td style="padding:7px 14px;font-size:12px;color:#6b7280">${c1}</td>
-      <td style="padding:7px 14px;text-align:right;font-size:12px;color:${color};font-weight:${bold ? 700 : 400}">${c2}</td>
-      <td style="padding:7px 14px;text-align:right;font-size:12px;color:${color};font-weight:${bold ? 700 : 400}">${c3}</td>
-    </tr>`;
-
-  const win = window.open('', '_blank', 'width=860,height=1100,scrollbars=yes');
-  if (!win) return;
-
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>Session Report</title>
-  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;padding:44px 52px 80px}
-  table{width:100%;border-collapse:collapse}
-  @media print{body{padding:24px 32px}@page{size:A4;margin:12mm}}</style>
-  </head><body>
-  <div style="height:5px;background:#b20202;margin-bottom:32px;border-radius:3px"></div>
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px">
-    <div>
-      <div style="font-size:22px;font-weight:900;color:#b20202">SESSION REPORT</div>
-      <div style="font-size:13px;color:#6b7280;margin-top:4px">${storeName} · ${(session.terminalType || 'retail').toUpperCase()}</div>
-    </div>
-    <div style="text-align:right;font-size:12px;color:#6b7280;line-height:1.8">
-      <div><strong>Period:</strong> ${fmtDateTime(session.openedAt)}${session.closedAt ? ` → ${fmtDateTime(session.closedAt)}` : ' (Open)'}</div>
-      <div><strong>Opened by:</strong> ${staffName(session.openedBy as any)}</div>
-      <div><strong>Generated:</strong> ${new Date().toLocaleString('en-GB')}</div>
-    </div>
-  </div>
-  <table>
-    <thead><tr style="border-bottom:2px solid #b20202;border-top:1px solid #e5e7eb">
-      <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em"></th>
-      <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">Items / Qty</th>
-      <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">Amount</th>
-    </tr></thead>
-    <tbody>
-      <tr style="border-bottom:2px solid #e5e7eb">
-        <td style="padding:11px 14px;font-size:13px;font-weight:700">Total</td>
-        <td style="padding:11px 14px;text-align:right;font-size:13px;font-weight:700">${itemsSold.toLocaleString()}</td>
-        <td style="padding:11px 14px;text-align:right;font-size:14px;font-weight:900;color:#b20202">${ng(totalSales)}</td>
-      </tr>
-      ${sRow('Taxes on Sales')}
-      ${dRow('No Taxes', '0.00', ng(totalSales))}
-      ${dRow('Total', '<strong>0.00</strong>', `<strong>${ng(totalSales)}</strong>`, true)}
-      ${sRow('Payments')}
-      ${paymentRows.map((p) => dRow(p.label, '', ng(p.amount))).join('')}
-      ${dRow('<strong>Total</strong>', '', `<strong style="color:#b20202">${ng(totalSales)}</strong>`, true, '#b20202')}
-      ${sRow('Discounts')}
-      <tr style="border-bottom:1px solid #f3f4f6">
-        <td colspan="2" style="padding:7px 14px;font-size:12px;color:#6b7280">Number of discounts:</td>
-        <td style="padding:7px 14px;text-align:right;font-size:12px;color:#374151">${discCount.toLocaleString()}</td>
-      </tr>
-      <tr style="border-bottom:1px solid #f3f4f6">
-        <td colspan="2" style="padding:7px 14px;font-size:12px;color:#6b7280">Amount of discounts:</td>
-        <td style="padding:7px 14px;text-align:right;font-size:12px;color:${totalDiscount > 0 ? '#d94600' : '#374151'}">${ng(totalDiscount)}</td>
-      </tr>
-      ${sRow('Session Control')}
-      <tr style="border-bottom:1px solid #f3f4f6">
-        <td colspan="2" style="padding:7px 14px;font-size:12px;color:#6b7280">Total:</td>
-        <td style="padding:7px 14px;text-align:right;font-size:12px;font-weight:700;color:#b20202">${ng(totalSales)}</td>
-      </tr>
-      <tr style="border-bottom:1px solid #f3f4f6">
-        <td colspan="2" style="padding:7px 14px;font-size:12px;color:#6b7280">Opening Cash:</td>
-        <td style="padding:7px 14px;text-align:right;font-size:12px;color:#374151">${ng(session.openingCash || 0)}</td>
-      </tr>
-      ${cashIn > 0 ? `<tr style="border-bottom:1px solid #f3f4f6"><td colspan="2" style="padding:7px 14px;font-size:12px;color:#6b7280">Cash In:</td><td style="padding:7px 14px;text-align:right;font-size:12px;color:#16a34a">+${ng(cashIn)}</td></tr>` : ''}
-      ${cashOut > 0 ? `<tr style="border-bottom:1px solid #f3f4f6"><td colspan="2" style="padding:7px 14px;font-size:12px;color:#6b7280">Cash Out:</td><td style="padding:7px 14px;text-align:right;font-size:12px;color:#dc2626">−${ng(cashOut)}</td></tr>` : ''}
-      <tr style="border-bottom:1px solid #f3f4f6">
-        <td colspan="2" style="padding:7px 14px;font-size:12px;color:#6b7280">Number of transactions:</td>
-        <td style="padding:7px 14px;text-align:right;font-size:12px;color:#374151">${orderCount.toLocaleString()}</td>
-      </tr>
-      <tr>
-        <td colspan="2" style="padding:7px 14px;font-size:12px;color:#6b7280">Duration:</td>
-        <td style="padding:7px 14px;text-align:right;font-size:12px;color:#374151">${duration(session.openedAt, session.closedAt)}</td>
-      </tr>
-      ${
-        methods.length > 0 && session.status === 'closed'
-          ? `
-        ${sRow('Cash Balance')}
-        ${methods
-          .map((m) => {
-            const counted = m.counted ?? m.theoretical;
-            const diff = counted - m.theoretical;
-            const hasDiff = Math.abs(diff) > 0.01;
-            return dRow(
-              METHOD_LABELS[m.method] ?? m.method,
-              ng(m.theoretical),
-              hasDiff
-                ? `${ng(counted)} <span style="color:${diff > 0 ? '#16a34a' : '#dc2626'};font-size:10px">(${diff > 0 ? '+' : ''}${ng(diff)})</span>`
-                : ng(counted),
-              false,
-              hasDiff ? '#b91c1c' : '#374151'
-            );
-          })
-          .join('')}
-      `
-          : ''
-      }
-    </tbody>
-  </table>
-  <div style="margin-top:40px;border-top:1px solid #ccc;padding-top:10px;display:flex;justify-content:space-between;font-size:11px;color:#6b7280">
-    <span>${storeName} · Confidential</span><span>Session Report</span>
-  </div>
-  </body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => {
-    win.print();
-    win.close();
-  }, 500);
-}
+const printSessionReport = buildSessionReportPdf;
 
 // ── Session list row ──────────────────────────────────────────────────────────
 
@@ -1313,14 +789,18 @@ type Tab = 'report' | 'orders' | 'zreport';
 
 export default function POSSessionReport() {
   const { shopId } = usePOSShopScope();
-  const [historyShop, setHistoryShop] = useState(shopId);
+  const { token: posToken } = usePOSAuth();
   const { data: auth } = useSession();
   const { tenant } = useTenant();
   const storeName = tenant?.name || 'DrinksHarbour';
-  const token = useMemo(() => {
+  const sessionToken = useMemo(() => {
     const t = (auth?.user as { token?: string })?.token ?? null;
     return isTokenExpired(t) ? null : t;
   }, [auth]);
+  const access = historyAccess(sessionToken, isTokenExpired(posToken) ? null : posToken, shopId);
+  const [selectedHistoryShop, setHistoryShop] = useState<string | null>(null);
+  const historyShop = selectedHistoryShop || access.defaultShop;
+  const token = access.token;
 
   const [sessions, setSessions] = useState<POSSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1488,7 +968,7 @@ export default function POSSessionReport() {
           <div className="border-b border-gray-100 px-4 py-3">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-bold text-gray-900">Sessions</p>
-              <ShopHistorySelector token={token} value={historyShop} onChange={value => { setSelected(null); setOrders([]); setSessions([]); setHistoryShop(value); }} />
+          <ShopHistorySelector token={token} value={historyShop} onChange={value => { setSelected(null); setOrders([]); setSessions([]); setHistoryShop(value); }} />
               <button
                 type="button"
                 onClick={() => load(1)}

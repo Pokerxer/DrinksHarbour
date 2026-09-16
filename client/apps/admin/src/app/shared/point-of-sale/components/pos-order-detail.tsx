@@ -1,13 +1,13 @@
 'use client';
+import { requestDocumentExport } from '@/utils/print/document-export';
+import { buildPOSRefund, posStore } from '@/utils/print/pos-documents';
+import { printInvoice } from '@/utils/invoice';
 
 import { useState } from 'react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth, usePOSSettings } from '@/app/shared/point-of-sale/store';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
-import type {
-  POSRefundRecord,
-  POSRefundResponse,
-} from '@/app/shared/point-of-sale/types';
+import type { POSRefundRecord, POSRefundResponse } from '@/app/shared/point-of-sale/types';
 import {
   PiInfo,
   PiReceipt,
@@ -109,9 +109,7 @@ function formatOrderDate(d: string) {
 
 // ── Helpers: compute already-refunded qty per item index ──────────────────────
 
-function computeRefundedMap(
-  refunds?: POSRefundRecord[]
-): Record<number, number> {
+function computeRefundedMap(refunds?: POSRefundRecord[]): Record<number, number> {
   const map: Record<number, number> = {};
   if (!refunds) return map;
   for (const r of refunds) {
@@ -168,8 +166,7 @@ function QtyBadge({
 function RefundHistoryRow({ refund }: { refund: POSRefundRecord }) {
   const [expanded, setExpanded] = useState(false);
   const cashierName = refund.refundedBy
-    ? refund.refundedBy.posName ||
-      `${refund.refundedBy.firstName} ${refund.refundedBy.lastName}`
+    ? refund.refundedBy.posName || `${refund.refundedBy.firstName} ${refund.refundedBy.lastName}`
     : '—';
   return (
     <div className="border-b border-gray-100 last:border-b-0">
@@ -179,9 +176,7 @@ function RefundHistoryRow({ refund }: { refund: POSRefundRecord }) {
         className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
       >
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-gray-900">
-            {refund.receiptNumber || 'Refund'}
-          </p>
+          <p className="text-xs font-semibold text-gray-900">{refund.receiptNumber || 'Refund'}</p>
           <p className="text-[10px] text-gray-400">
             {formatOrderDate(refund.refundedAt)} · {cashierName}
           </p>
@@ -200,20 +195,13 @@ function RefundHistoryRow({ refund }: { refund: POSRefundRecord }) {
       {expanded && (
         <div className="border-t border-dashed border-gray-100 bg-gray-50/50 px-4 py-2">
           {refund.items.map((line, li) => (
-            <div
-              key={li}
-              className="flex items-center justify-between py-1 text-xs text-gray-600"
-            >
+            <div key={li} className="flex items-center justify-between py-1 text-xs text-gray-600">
               <span>
                 #{line.orderItemIndex + 1} × {line.quantity}
                 {line.discPct > 0 && (
-                  <span className="ml-1 text-[#b20202]">
-                    (−{line.discPct}% disc)
-                  </span>
+                  <span className="ml-1 text-[#b20202]">(−{line.discPct}% disc)</span>
                 )}
-                {line.reason && (
-                  <span className="ml-1 text-gray-400">· {line.reason}</span>
-                )}
+                {line.reason && <span className="ml-1 text-gray-400">· {line.reason}</span>}
               </span>
               <span className="font-medium tabular-nums text-gray-800">
                 {formatCurrency(line.amount)}
@@ -259,9 +247,7 @@ function ReturnConfirmDialog({
   onConfirm: (method: string, reason: string) => void;
   onCancel: () => void;
 }) {
-  const [method, setMethod] = useState(
-    defaultMethod || order.paymentMethod || 'cash'
-  );
+  const [method, setMethod] = useState(defaultMethod || order.paymentMethod || 'cash');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -271,18 +257,12 @@ function ReturnConfirmDialog({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <div>
-            <h2 className="text-base font-bold text-gray-900">
-              Return Products
-            </h2>
+            <h2 className="text-base font-bold text-gray-900">Return Products</h2>
             <p className="text-xs text-gray-400">
               {order.receiptNumber} · {order.orderNumber}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="text-gray-400 hover:text-gray-600"
-          >
+          <button type="button" onClick={onCancel} className="text-gray-400 hover:text-gray-600">
             <PiX className="h-5 w-5" />
           </button>
         </div>
@@ -302,8 +282,7 @@ function ReturnConfirmDialog({
               {lines.map((line, i) => {
                 const item = items[line.orderItemIndex];
                 const price = line.unitPrice ?? item?.priceAtPurchase ?? 0;
-                const amt =
-                  price * line.quantity * (1 - (line.discPct ?? 0) / 100);
+                const amt = price * line.quantity * (1 - (line.discPct ?? 0) / 100);
                 return (
                   <tr key={i} className="hover:bg-gray-50/50">
                     <td className="px-5 py-2.5">
@@ -317,14 +296,10 @@ function ReturnConfirmDialog({
                         </p>
                       )}
                       {line.reason && (
-                        <p className="text-[10px] italic text-gray-400">
-                          {line.reason}
-                        </p>
+                        <p className="text-[10px] italic text-gray-400">{line.reason}</p>
                       )}
                       <p className="text-[10px] text-gray-400">
-                        {line.restock === false
-                          ? '⚠ Not restocked'
-                          : '✓ Restocked'}
+                        {line.restock === false ? '⚠ Not restocked' : '✓ Restocked'}
                       </p>
                     </td>
                     <td className="px-3 py-2.5 text-center tabular-nums text-gray-500">
@@ -391,9 +366,7 @@ function ReturnConfirmDialog({
         <div className="border-t border-gray-100 px-6 py-4">
           <div className="mb-4 flex items-center justify-between">
             <span className="text-sm text-gray-600">Total return amount</span>
-            <span className="text-lg font-bold text-gray-900">
-              {formatCurrency(total)}
-            </span>
+            <span className="text-lg font-bold text-gray-900">{formatCurrency(total)}</span>
           </div>
           <div className="flex gap-3">
             <button
@@ -456,58 +429,17 @@ function ReturnReceiptScreen({
   });
 
   function handlePrint() {
-    const win = window.open(
-      '',
-      '_blank',
-      'width=400,height=700,scrollbars=yes'
+    requestDocumentExport(
+      buildPOSRefund(
+        { ...originalOrder, items },
+        {
+          ...result.refundRecord,
+          receiptNumber: result.returnNumber,
+          items: result.refundLines,
+          totalRefunded: result.totalRefunded,
+        }
+      )
     );
-    if (!win) return;
-    const rows = result.refundLines
-      .map((line) => {
-        const item = items[line.orderItemIndex];
-        return `<tr>
-        <td style="padding:4px 0;border-bottom:1px solid #eee">${item?.name ?? ''}${item?.variant ? ` · ${item.variant}` : ''}</td>
-        <td style="text-align:right;padding:4px 8px;border-bottom:1px solid #eee">${line.quantity}</td>
-        <td style="text-align:right;padding:4px 0;border-bottom:1px solid #eee">${line.unitPrice?.toLocaleString('en-NG', { style: 'currency', currency: 'NGN' })}</td>
-        <td style="text-align:right;padding:4px 0;border-bottom:1px solid #eee">${line.amount?.toLocaleString('en-NG', { style: 'currency', currency: 'NGN' })}</td>
-      </tr>`;
-      })
-      .join('');
-    win.document
-      .write(`<!DOCTYPE html><html><head><title>${result.returnNumber}</title>
-      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:12px;padding:16px;width:380px;margin:0 auto}</style>
-    </head><body>
-      <div style="text-align:center;margin-bottom:12px">
-        <strong style="font-size:14px;letter-spacing:2px">DRINKS HARBOUR</strong><br>
-        <span style="font-size:11px;font-weight:bold;color:#b20202">RETURN RECEIPT</span>
-      </div>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <table style="width:100%;font-size:11px;margin-bottom:8px">
-        <tr><td style="color:#555;width:90px">Return #</td><td><strong>${result.returnNumber}</strong></td></tr>
-        <tr><td style="color:#555">Original</td><td>${originalOrder.receiptNumber}</td></tr>
-        <tr><td style="color:#555">Date</td><td>${dateStr}</td></tr>
-        <tr><td style="color:#555">Refund via</td><td style="text-transform:capitalize">${(result.refundRecord?.paymentMethod || 'cash').replace(/_/g, ' ')}</td></tr>
-      </table>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <table style="width:100%;font-size:11px">
-        <thead><tr style="color:#888"><th style="text-align:left">Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <hr style="border:2px solid #333;margin:8px 0">
-      <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:14px;color:#b20202">
-        <span>TOTAL RETURNED</span><span>−${result.totalRefunded?.toLocaleString('en-NG', { style: 'currency', currency: 'NGN' })}</span>
-      </div>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <div style="text-align:center;font-size:10px;color:#666;margin-top:8px">
-        This is your return confirmation.<br>Please retain for your records.
-      </div>
-    </body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-    }, 400);
   }
 
   return (
@@ -544,9 +476,7 @@ function ReturnReceiptScreen({
               >
                 DRINKS HARBOUR
               </p>
-              <p style={{ fontSize: 11, fontWeight: 700, color: '#b20202' }}>
-                RETURN RECEIPT
-              </p>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#b20202' }}>RETURN RECEIPT</p>
             </div>
             <div style={{ borderTop: '1px dashed #bbb', margin: '8px 0' }} />
             {/* Meta */}
@@ -606,9 +536,7 @@ function ReturnReceiptScreen({
                         −{formatCurrency(line.amount)}
                       </span>
                     </div>
-                    <div
-                      style={{ fontSize: 10, color: '#555', paddingLeft: 8 }}
-                    >
+                    <div style={{ fontSize: 10, color: '#555', paddingLeft: 8 }}>
                       {line.quantity} × {formatCurrency(line.unitPrice ?? 0)}
                       {(line.discPct ?? 0) > 0 && ` (−${line.discPct}%)`}
                     </div>
@@ -627,9 +555,7 @@ function ReturnReceiptScreen({
               }}
             >
               <span>TOTAL RETURNED</span>
-              <span style={{ color: '#b20202' }}>
-                −{formatCurrency(result.totalRefunded)}
-              </span>
+              <span style={{ color: '#b20202' }}>−{formatCurrency(result.totalRefunded)}</span>
             </div>
             {result.cumulativeRefunded > result.totalRefunded && (
               <div
@@ -702,9 +628,7 @@ export default function POSOrderDetail({
   const { token, tenant } = usePOSAuth();
   const settings = usePOSSettings();
 
-  const [activeTab, setActiveTab] = useState<'details' | 'invoice' | 'returns'>(
-    'details'
-  );
+  const [activeTab, setActiveTab] = useState<'details' | 'invoice' | 'returns'>('details');
   const [refundData, setRefundData] = useState<Record<number, RefundLine>>({});
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [numInput, setNumInput] = useState('0');
@@ -714,9 +638,7 @@ export default function POSOrderDetail({
 
   // Odoo-style two-step: confirm dialog → return receipt
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [returnResult, setReturnResult] = useState<POSRefundResponse | null>(
-    null
-  );
+  const [returnResult, setReturnResult] = useState<POSRefundResponse | null>(null);
 
   const items = order.items || [];
   const refunds: POSRefundRecord[] = (order.refunds as POSRefundRecord[]) || [];
@@ -781,9 +703,7 @@ export default function POSOrderDetail({
     if (refundMode === 'qty') return String(d.qty);
     if (refundMode === 'disc') return String(d.discPct);
     if (refundMode === 'price')
-      return d.unitPrice > 0
-        ? String(d.unitPrice)
-        : String(items[idx]?.priceAtPurchase ?? 0);
+      return d.unitPrice > 0 ? String(d.unitPrice) : String(items[idx]?.priceAtPurchase ?? 0);
     return '0';
   }
 
@@ -882,8 +802,7 @@ export default function POSOrderDetail({
       next = d === '0' ? '0' : d;
       setFresh(false);
     } else {
-      next =
-        numInput === '0' ? d : numInput.length >= 8 ? numInput : numInput + d;
+      next = numInput === '0' ? d : numInput.length >= 8 ? numInput : numInput + d;
     }
     setNumInput(next);
     applyInput(activeIdx, next);
@@ -893,23 +812,18 @@ export default function POSOrderDetail({
 
   function buildInvoiceHTML(forPrint = false) {
     const _cashierName = order.posStaff
-      ? order.posStaff.posName ||
-        `${order.posStaff.firstName} ${order.posStaff.lastName}`
+      ? order.posStaff.posName || `${order.posStaff.firstName} ${order.posStaff.lastName}`
       : '—';
-    const _hasCustomer =
-      order.customer?.firstName && order.customer.firstName !== 'Walk-in';
+    const _hasCustomer = order.customer?.firstName && order.customer.firstName !== 'Walk-in';
     const _customerName = _hasCustomer
       ? `${order.customer!.firstName} ${order.customer!.lastName || ''}`.trim()
       : 'Walk-in Customer';
-    const _customerPhone =
-      _hasCustomer && order.customer?.phone ? order.customer.phone : '';
+    const _customerPhone = _hasCustomer && order.customer?.phone ? order.customer.phone : '';
     const _subtotal = order.subtotal ?? order.total;
     const _discount = order.discountTotal ?? 0;
     const _splitPmts = order.paymentDetails?.splitPayments ?? [];
     const _change = order.paymentDetails?.change ?? 0;
-    const _orderDate = new Date(
-      order.placedAt || order.createdAt
-    ).toLocaleDateString('en-GB', {
+    const _orderDate = new Date(order.placedAt || order.createdAt).toLocaleDateString('en-GB', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -918,9 +832,8 @@ export default function POSOrderDetail({
     const _warehouse = getOrderWarehouse(order);
     const _rawLogo = tenant?.logo;
     const _logoSrc =
-      (typeof _rawLogo === 'string'
-        ? _rawLogo?.trim()
-        : (_rawLogo as any)?.url?.trim()) || '/logo.png';
+      (typeof _rawLogo === 'string' ? _rawLogo?.trim() : (_rawLogo as any)?.url?.trim()) ||
+      '/logo.png';
 
     const ng = (v: number) =>
       `₦${v.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1002,11 +915,7 @@ export default function POSOrderDetail({
             <div>Nigeria</div>
             ${(tenant?.bankAccounts ?? [])
               .map(
-                (b: {
-                  bankName: string;
-                  accountNumber: string;
-                  accountName?: string;
-                }) =>
+                (b: { bankName: string; accountNumber: string; accountName?: string }) =>
                   `<div style="margin-top:2px">${b.bankName}${b.accountNumber ? ` - ${b.accountNumber}` : ''}${b.accountName ? `<span style="color:#9ca3af;font-size:11px"> · ${b.accountName}</span>` : ''}</div>`
               )
               .join('')}
@@ -1135,19 +1044,7 @@ export default function POSOrderDetail({
   // ── Print ─────────────────────────────────────────────────────────────────
 
   function handlePrint() {
-    const win = window.open(
-      '',
-      '_blank',
-      'width=900,height=1100,scrollbars=yes'
-    );
-    if (!win) return;
-    win.document.write(buildInvoiceHTML(true));
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-    }, 500);
+    printInvoice(order, posStore(tenant));
   }
 
   // ── Submit refund — Odoo flow: open dialog first ──────────────────────────
@@ -1163,9 +1060,7 @@ export default function POSOrderDetail({
       return;
     }
     if (order._id.startsWith('offline-')) {
-      toast.error(
-        'This order has not synced yet. Wait for network and try again.'
-      );
+      toast.error('This order has not synced yet. Wait for network and try again.');
       return;
     }
     try {
@@ -1197,8 +1092,7 @@ export default function POSOrderDetail({
   if (!order) return null;
 
   const cashierName = order.posStaff
-    ? order.posStaff.posName ||
-      `${order.posStaff.firstName} ${order.posStaff.lastName}`
+    ? order.posStaff.posName || `${order.posStaff.firstName} ${order.posStaff.lastName}`
     : '—';
   const customerName =
     order.customer?.firstName && order.customer.firstName !== 'Walk-in'
@@ -1207,10 +1101,8 @@ export default function POSOrderDetail({
 
   // Count refunded items for status badge
   const totalRefunded = refunds.reduce((s, r) => s + r.totalRefunded, 0);
-  const isPartiallyRefunded =
-    totalRefunded > 0 && totalRefunded < (order.total || 0);
-  const isFullyRefundedStatus =
-    totalRefunded > 0 && totalRefunded >= (order.total || 0);
+  const isPartiallyRefunded = totalRefunded > 0 && totalRefunded < (order.total || 0);
+  const isFullyRefundedStatus = totalRefunded > 0 && totalRefunded >= (order.total || 0);
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -1284,9 +1176,7 @@ export default function POSOrderDetail({
           {/* Items list */}
           <div className="flex-1 overflow-y-auto">
             {items.length === 0 ? (
-              <p className="mt-12 text-center text-sm text-gray-400">
-                No item details available
-              </p>
+              <p className="mt-12 text-center text-sm text-gray-400">No item details available</p>
             ) : (
               <div className="divide-y divide-gray-100">
                 {items.map((item, i) => {
@@ -1295,20 +1185,14 @@ export default function POSOrderDetail({
                   const remaining = getRemainingQty(i);
                   const refunded = refundedMap[i] || 0;
                   const isSelected = !!lineData && lineData.qty > 0;
-                  const modeVal = isActive
-                    ? numInput
-                    : lineData
-                      ? getModeValue(i)
-                      : null;
+                  const modeVal = isActive ? numInput : lineData ? getModeValue(i) : null;
                   const fullyRefunded = isFullyRefunded(i);
 
                   return (
                     <button
                       key={i}
                       type="button"
-                      onClick={() =>
-                        isPaid && !fullyRefunded && handleSelectItem(i)
-                      }
+                      onClick={() => isPaid && !fullyRefunded && handleSelectItem(i)}
                       disabled={!isPaid || fullyRefunded}
                       className={cn(
                         'relative w-full px-4 py-3 text-left transition-colors',
@@ -1351,17 +1235,13 @@ export default function POSOrderDetail({
                                 Ord: {item.quantity}
                               </span>
                               {refunded > 0 && (
-                                <span className="tabular-nums text-[#b20202]">
-                                  Ret: {refunded}
-                                </span>
+                                <span className="tabular-nums text-[#b20202]">Ret: {refunded}</span>
                               )}
                               {!fullyRefunded && (
                                 <span
                                   className={cn(
                                     'font-semibold tabular-nums',
-                                    remaining > 0
-                                      ? 'text-emerald-600'
-                                      : 'text-gray-300'
+                                    remaining > 0 ? 'text-emerald-600' : 'text-gray-300'
                                   )}
                                 >
                                   Rem: {remaining}
@@ -1389,9 +1269,7 @@ export default function POSOrderDetail({
                             <span
                               className={cn(
                                 'tabular-nums',
-                                isActive && refundMode === 'price'
-                                  ? 'font-bold text-[#b20202]'
-                                  : ''
+                                isActive && refundMode === 'price' ? 'font-bold text-[#b20202]' : ''
                               )}
                             >
                               {item.bxgyRole === 'get'
@@ -1422,9 +1300,7 @@ export default function POSOrderDetail({
                               <input
                                 type="text"
                                 value={lineData.reason}
-                                onChange={(e) =>
-                                  handleReasonChange(i, e.target.value)
-                                }
+                                onChange={(e) => handleReasonChange(i, e.target.value)}
                                 placeholder="Reason..."
                                 className="h-6 min-w-0 flex-1 rounded border border-gray-200 bg-white px-1.5 text-[10px] text-gray-600 outline-none focus:border-[#b20202]"
                                 maxLength={80}
@@ -1435,9 +1311,7 @@ export default function POSOrderDetail({
                         <span
                           className={cn(
                             'shrink-0 text-sm font-semibold',
-                            fullyRefunded
-                              ? 'text-gray-300 line-through'
-                              : 'text-gray-800'
+                            fullyRefunded ? 'text-gray-300 line-through' : 'text-gray-800'
                           )}
                         >
                           {formatCurrency(item.itemSubtotal)}
@@ -1464,9 +1338,7 @@ export default function POSOrderDetail({
             {totalRefunded > 0 && (
               <div className="mt-1 flex justify-between text-xs text-[#b20202]">
                 <span>Already refunded</span>
-                <span className="tabular-nums">
-                  −{formatCurrency(totalRefunded)}
-                </span>
+                <span className="tabular-nums">−{formatCurrency(totalRefunded)}</span>
               </div>
             )}
           </div>
@@ -1479,9 +1351,7 @@ export default function POSOrderDetail({
                 <div
                   className={cn(
                     'mb-2 rounded-xl px-4 py-2 text-center',
-                    activeItem
-                      ? 'bg-white ring-1 ring-[#b20202]/25'
-                      : 'bg-white'
+                    activeItem ? 'bg-white ring-1 ring-[#b20202]/25' : 'bg-white'
                   )}
                 >
                   <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-gray-400">
@@ -1661,23 +1531,14 @@ export default function POSOrderDetail({
                 if (!settings.allowRefunds) return null;
                 const isPendingSync = order._id.startsWith('offline-');
                 const daysSince =
-                  (Date.now() -
-                    new Date(order.placedAt || order.createdAt).getTime()) /
-                  86_400_000;
+                  (Date.now() - new Date(order.placedAt || order.createdAt).getTime()) / 86_400_000;
                 const outsideWindow =
-                  settings.refundWindowDays > 0 &&
-                  daysSince > settings.refundWindowDays;
+                  settings.refundWindowDays > 0 && daysSince > settings.refundWindowDays;
                 return (
                   <button
                     type="button"
-                    onClick={
-                      outsideWindow || isPendingSync
-                        ? undefined
-                        : handleRefundClick
-                    }
-                    disabled={
-                      refundLines.length === 0 || outsideWindow || isPendingSync
-                    }
+                    onClick={outsideWindow || isPendingSync ? undefined : handleRefundClick}
+                    disabled={refundLines.length === 0 || outsideWindow || isPendingSync}
                     title={
                       isPendingSync
                         ? 'Order not yet synced — return available once online'
@@ -1779,16 +1640,14 @@ export default function POSOrderDetail({
           {refunds.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center p-6">
               <PiClockCounterClockwise className="mb-2 h-8 w-8 text-gray-300" />
-              <p className="text-sm text-gray-400">
-                No returns recorded for this order
-              </p>
+              <p className="text-sm text-gray-400">No returns recorded for this order</p>
             </div>
           ) : (
             <>
               <div className="border-b border-gray-100 bg-gray-50/50 px-4 py-2">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                  {refunds.length} return{refunds.length > 1 ? 's' : ''} · total
-                  refunded: {formatCurrency(totalRefunded)}
+                  {refunds.length} return{refunds.length > 1 ? 's' : ''} · total refunded:{' '}
+                  {formatCurrency(totalRefunded)}
                 </p>
               </div>
               <div className="flex-1 divide-y divide-gray-100">

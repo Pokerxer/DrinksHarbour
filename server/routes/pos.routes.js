@@ -125,6 +125,7 @@ router.get('/staff',             listPOSStaff);  // staff grid (public, no secre
 // protectPOS verifies the token, cross-checks user.tenant === decoded.tenantId,
 // and attaches req.tenant from the DB — never from the raw token claim.
 
+router.get('/document-templates', protectPOS, require('../utils/asyncHandler')(require('../controllers/documentTemplate.controller').read));
 router.get('/shops', protectPOSOrAdmin, listPOSShops);
 router.get('/session-info',                   protectPOSOrAdmin, getPOSSessionInfo);
 router.get('/notifications',                  protectPOSOrAdmin, getPOSNotifications);

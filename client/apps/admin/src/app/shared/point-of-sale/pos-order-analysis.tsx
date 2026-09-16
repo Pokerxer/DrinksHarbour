@@ -64,6 +64,8 @@ import {
   PiPrinter,
 } from 'react-icons/pi';
 import { printInvoices, DEFAULT_STORE } from '@/utils/invoice';
+import { posStore } from '@/utils/print/pos-documents';
+import { useTenant } from '@/context/TenantContext';
 import InvoicePreview from '@/components/InvoicePreview';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -2084,7 +2086,7 @@ function OrderDrillDrawer({
                     <button
                       type="button"
                       onClick={() =>
-                        printInvoices(checkedOrders, DEFAULT_STORE)
+                        printInvoices(checkedOrders, invoiceStore)
                       }
                       className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-1.5 text-xs font-bold text-white hover:opacity-90"
                     >
@@ -2301,7 +2303,7 @@ function OrderDrillDrawer({
                               <button
                                 type="button"
                                 onClick={() =>
-                                  printInvoices([o], DEFAULT_STORE)
+                                  printInvoices([o], invoiceStore)
                                 }
                                 title="Print"
                                 className="text-gray-200 transition-colors hover:text-[#b20202]"
@@ -4789,6 +4791,8 @@ function StackedChart({
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function POSOrderAnalysis() {
+  const { tenant } = useTenant();
+  const invoiceStore = posStore(tenant);
   const { data: session, status: sessionStatus } = useSession();
   const token = (session?.user as { token?: string })?.token ?? null;
   const [orders, setOrders] = useState<PosOrder[]>([]);

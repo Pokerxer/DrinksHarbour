@@ -2,23 +2,16 @@
 
 import { useEffect, useRef } from 'react';
 import { PiCheckCircle, PiPrinter } from 'react-icons/pi';
-import {
-  usePOSCart,
-  usePOSAuth,
-  usePOSSettings,
-} from '@/app/shared/point-of-sale/store';
+import { usePOSCart, usePOSAuth, usePOSSettings } from '@/app/shared/point-of-sale/store';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import {
   POSOrderResponse,
   POSCartItem,
   POSNextOrderCouponConfig,
 } from '@/app/shared/point-of-sale/types';
-import { printReceiptElement } from './pos-receipt-print';
-import type {
-  PaymentLine,
-  AppliedCode,
-  AppliedDiscount,
-} from './pos-payment-types';
+import { requestDocumentExport } from '@/utils/print/document-export';
+import { buildPOSCheckout } from '@/utils/print/pos-documents';
+import type { PaymentLine, AppliedCode, AppliedDiscount } from './pos-payment-types';
 
 // ── Receipt ───────────────────────────────────────────────────────────────────
 
@@ -82,13 +75,9 @@ export default function ReceiptScreen({
   }, []);
 
   const storeName = (posTenantName || 'DRINKS HARBOUR').toUpperCase();
-  const staffName = staff
-    ? staff.posName || `${staff.firstName} ${staff.lastName}`.trim()
-    : '—';
+  const staffName = staff ? staff.posName || `${staff.firstName} ${staff.lastName}`.trim() : '—';
   const hasCustomer = !!customer.customerId;
-  const custName = hasCustomer
-    ? `${customer.firstName} ${customer.lastName}`.trim()
-    : null;
+  const custName = hasCustomer ? `${customer.firstName} ${customer.lastName}`.trim() : null;
 
   const displaySubtotal = order.subtotal ?? cartSubtotal;
   const displayDiscount = order.discountTotal ?? cartDiscount;
@@ -104,12 +93,7 @@ export default function ReceiptScreen({
   });
 
   function handlePrint() {
-    const el = printRef.current;
-    if (!el) return;
-    void printReceiptElement(el, {
-      title: order.receiptNumber,
-      copies: settings.receiptCopies ?? 1,
-    });
+    requestDocumentExport(buildPOSCheckout(order, posTenant, customer, staff));
   }
 
   // Shared row: label left, value right — all inline styles
@@ -207,9 +191,7 @@ export default function ReceiptScreen({
           </div>
           <div>
             <p style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
-              {(order as any).isOffline
-                ? 'Recorded offline'
-                : 'Payment successful'}
+              {(order as any).isOffline ? 'Recorded offline' : 'Payment successful'}
             </p>
             <p
               style={{
@@ -239,9 +221,7 @@ export default function ReceiptScreen({
             {/* Store header — name from POS tenant, address from settings */}
             {!settings.basicReceipt && (
               <div style={{ ...R.center, marginBottom: 8 }}>
-                <p style={{ ...R.bold, fontSize: 15, letterSpacing: '0.1em' }}>
-                  {storeName}
-                </p>
+                <p style={{ ...R.bold, fontSize: 15, letterSpacing: '0.1em' }}>{storeName}</p>
                 {settings.receiptHeader ? (
                   <p
                     style={{
@@ -265,15 +245,11 @@ export default function ReceiptScreen({
               <Row label="Order #" value={order.orderNumber} />
             )}
             <Row label="Date" value={receiptDate} />
-            {settings.showCashierName && (
-              <Row label="Cashier" value={staffName} />
-            )}
+            {settings.showCashierName && <Row label="Cashier" value={staffName} />}
             {custName && <Row label="Customer" value={custName} />}
             <Row
               label="Items"
-              value={String(
-                (order.items || []).reduce((s, it) => s + it.quantity, 0)
-              )}
+              value={String((order.items || []).reduce((s, it) => s + it.quantity, 0))}
             />
 
             <div style={R.rule} />
@@ -336,27 +312,16 @@ export default function ReceiptScreen({
                 }
               });
 
-              function renderLine(
-                item: (typeof augmented)[0],
-                i: number,
-                indent = false
-              ) {
+              function renderLine(item: (typeof augmented)[0], i: number, indent = false) {
                 const isGet = item.bxgyRole === 'get';
                 const price = item.priceAtPurchase ?? 0;
                 const lineTotal = item.itemSubtotal ?? price * item.quantity;
-                const label =
-                  (item.name || 'Item') +
-                  (item.variant ? ` (${item.variant})` : '');
+                const label = (item.name || 'Item') + (item.variant ? ` (${item.variant})` : '');
                 const maxLen = indent ? 23 : 26;
-                const truncated =
-                  label.length > maxLen
-                    ? label.slice(0, maxLen - 1) + '…'
-                    : label;
+                const truncated = label.length > maxLen ? label.slice(0, maxLen - 1) + '…' : label;
                 const discPct =
                   price > 0 && item.discountAmount > 0
-                    ? Math.round(
-                        (item.discountAmount / (price * item.quantity)) * 100
-                      )
+                    ? Math.round((item.discountAmount / (price * item.quantity)) * 100)
                     : 0;
                 return (
                   <div
@@ -409,13 +374,8 @@ export default function ReceiptScreen({
                         ...R.muted,
                       }}
                     >
-                      {item.quantity} ×{' '}
-                      {isGet ? formatCurrency(0) : formatCurrency(price)}
-                      {isGet && (
-                        <span style={{ marginLeft: 4, color: '#059669' }}>
-                          FREE
-                        </span>
-                      )}
+                      {item.quantity} × {isGet ? formatCurrency(0) : formatCurrency(price)}
+                      {isGet && <span style={{ marginLeft: 4, color: '#059669' }}>FREE</span>}
                       {!isGet && item.discountAmount > 0 && (
                         <span style={{ marginLeft: 6, ...R.red }}>
                           combo -{discPct}% (-
@@ -434,14 +394,8 @@ export default function ReceiptScreen({
 
                 // Combo group
                 const groupItems = group.indices.map((j) => augmented[j]);
-                const comboTotal = groupItems.reduce(
-                  (s, it) => s + (it.itemSubtotal ?? 0),
-                  0
-                );
-                const comboSaving = groupItems.reduce(
-                  (s, it) => s + (it.discountAmount ?? 0),
-                  0
-                );
+                const comboTotal = groupItems.reduce((s, it) => s + (it.itemSubtotal ?? 0), 0);
+                const comboSaving = groupItems.reduce((s, it) => s + (it.discountAmount ?? 0), 0);
                 const comboName =
                   group.comboName.length > 24
                     ? group.comboName.slice(0, 23) + '…'
@@ -469,16 +423,12 @@ export default function ReceiptScreen({
                     </div>
                     {/* Combo saving line */}
                     {comboSaving > 0 && (
-                      <div
-                        style={{ fontSize: 9, ...R.green, paddingBottom: 3 }}
-                      >
+                      <div style={{ fontSize: 9, ...R.green, paddingBottom: 3 }}>
                         Combo saving: -{formatCurrency(comboSaving)}
                       </div>
                     )}
                     {/* Combo items */}
-                    {groupItems.map((item, ii) =>
-                      renderLine(item, group.indices[ii], true)
-                    )}
+                    {groupItems.map((item, ii) => renderLine(item, group.indices[ii], true))}
                     <div
                       style={{
                         borderBottom: '1px dashed #e0e0e0',
@@ -508,19 +458,13 @@ export default function ReceiptScreen({
               const hasOrderDisc = displayDiscount > 0.005;
               const hasPricelist = (order.pricelistSavings ?? 0) > 0.005;
               const hasThreshold = (order.thresholdDiscount ?? 0) > 0.005;
-              const showBreakdown =
-                hasItemDisc || hasOrderDisc || hasPricelist || hasThreshold;
+              const showBreakdown = hasItemDisc || hasOrderDisc || hasPricelist || hasThreshold;
 
               // Build named discount rows; fall back to a single generic row
-              const autoTotal = autoDiscounts.reduce(
-                (s, d) => s + d.discount,
-                0
-              );
+              const autoTotal = autoDiscounts.reduce((s, d) => s + d.discount, 0);
               // Code's share = whatever the server stored minus the auto-discounts we computed
               const codePortion =
-                appliedCode && hasOrderDisc
-                  ? Math.max(0, displayDiscount - autoTotal)
-                  : 0;
+                appliedCode && hasOrderDisc ? Math.max(0, displayDiscount - autoTotal) : 0;
 
               return (
                 <>
@@ -530,9 +474,7 @@ export default function ReceiptScreen({
                         <>
                           <Row
                             label="Original Subtotal"
-                            value={formatCurrency(
-                              order.originalSubtotal ?? grossSubtotal
-                            )}
+                            value={formatCurrency(order.originalSubtotal ?? grossSubtotal)}
                           />
                           <Row
                             label={
@@ -546,10 +488,7 @@ export default function ReceiptScreen({
                           <div style={R.divider} />
                         </>
                       )}
-                      <Row
-                        label="Gross Subtotal"
-                        value={formatCurrency(grossSubtotal)}
-                      />
+                      <Row label="Gross Subtotal" value={formatCurrency(grossSubtotal)} />
                       {hasItemDisc && (
                         <Row
                           label="Item Discounts"
@@ -579,15 +518,13 @@ export default function ReceiptScreen({
                         />
                       )}
                       {/* Fallback: no named discounts but server recorded one (e.g. cart-level cashier discount) */}
-                      {autoDiscounts.length === 0 &&
-                        !appliedCode &&
-                        hasOrderDisc && (
-                          <Row
-                            label="Order Discount"
-                            value={`-${formatCurrency(displayDiscount)}`}
-                            vStyle={R.red}
-                          />
-                        )}
+                      {autoDiscounts.length === 0 && !appliedCode && hasOrderDisc && (
+                        <Row
+                          label="Order Discount"
+                          value={`-${formatCurrency(displayDiscount)}`}
+                          vStyle={R.red}
+                        />
+                      )}
                       {/* Cart-level cashier discount alongside named discounts */}
                       {(autoDiscounts.length > 0 || appliedCode) &&
                         hasOrderDisc &&
@@ -651,28 +588,21 @@ export default function ReceiptScreen({
             {/* Payment */}
             {paymentLines.length > 1 ? (
               paymentLines.map((ln, i) => (
-                <Row
-                  key={i}
-                  label={ln.label}
-                  value={formatCurrency(ln.amount)}
-                />
+                <Row key={i} label={ln.label} value={formatCurrency(ln.amount)} />
               ))
             ) : (
               <>
                 <Row
-                  label={
-                    METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod
-                  }
+                  label={METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}
                   value={formatCurrency(order.total)}
                 />
-                {order.amountTendered != null &&
-                  order.amountTendered !== order.total && (
-                    <Row
-                      label="TENDERED"
-                      value={formatCurrency(order.amountTendered)}
-                      vStyle={R.muted}
-                    />
-                  )}
+                {order.amountTendered != null && order.amountTendered !== order.total && (
+                  <Row
+                    label="TENDERED"
+                    value={formatCurrency(order.amountTendered)}
+                    vStyle={R.muted}
+                  />
+                )}
               </>
             )}
             {order.change > 0 && (
@@ -687,9 +617,7 @@ export default function ReceiptScreen({
             {displayNote && (
               <>
                 <div style={R.divider} />
-                <p style={{ fontSize: 10, fontStyle: 'italic', ...R.muted }}>
-                  Note: {displayNote}
-                </p>
+                <p style={{ fontSize: 10, fontStyle: 'italic', ...R.muted }}>Note: {displayNote}</p>
               </>
             )}
 
@@ -706,9 +634,7 @@ export default function ReceiptScreen({
                 <Row
                   label={`VAT ${settings.taxRate}%`}
                   value={formatCurrency(
-                    ((order.total -
-                      (order.tipAmount ?? 0) -
-                      (order.roundingAmount ?? 0)) *
+                    ((order.total - (order.tipAmount ?? 0) - (order.roundingAmount ?? 0)) *
                       settings.taxRate) /
                       (100 + settings.taxRate)
                   )}
@@ -718,27 +644,17 @@ export default function ReceiptScreen({
             )}
 
             {/* Footer */}
-            <div
-              style={{ ...R.center, fontSize: 10, ...R.muted, marginTop: 4 }}
-            >
+            <div style={{ ...R.center, fontSize: 10, ...R.muted, marginTop: 4 }}>
               {settings.receiptFooter ? (
-                <p style={{ whiteSpace: 'pre-line', marginBottom: 4 }}>
-                  {settings.receiptFooter}
-                </p>
+                <p style={{ whiteSpace: 'pre-line', marginBottom: 4 }}>{settings.receiptFooter}</p>
               ) : (
                 <>
-                  <p style={{ ...R.bold, color: '#222' }}>
-                    *** THANK YOU FOR YOUR PURCHASE ***
-                  </p>
-                  <p style={{ marginTop: 3 }}>
-                    Goods are not returnable unless defective.
-                  </p>
+                  <p style={{ ...R.bold, color: '#222' }}>*** THANK YOU FOR YOUR PURCHASE ***</p>
+                  <p style={{ marginTop: 3 }}>Goods are not returnable unless defective.</p>
                   <p>Please retain this receipt for reference.</p>
                 </>
               )}
-              <p style={{ marginTop: 8, fontSize: 9, color: '#aaa' }}>
-                {order.receiptNumber}
-              </p>
+              <p style={{ marginTop: 8, fontSize: 9, color: '#aaa' }}>{order.receiptNumber}</p>
             </div>
 
             {/* Next-order coupon */}

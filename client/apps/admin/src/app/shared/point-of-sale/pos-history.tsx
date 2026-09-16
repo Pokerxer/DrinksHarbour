@@ -1,15 +1,11 @@
 'use client';
+import { requestDocumentExport } from '@/utils/print/document-export';
+import { buildPOSRefund } from '@/utils/print/pos-documents';
 import { historyAccess } from './shop-entry';
 import { ShopHistorySelector } from './components/shop-history-selector';
 import { usePOSShopScope } from './store';
 
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useMemo,
-  useCallback,
-} from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth, usePOSCart } from '@/app/shared/point-of-sale/store';
@@ -26,8 +22,13 @@ function isTokenExpired(tok: string | null | undefined): boolean {
   if (!tok) return true;
   try {
     const payload = JSON.parse(atob(tok.split('.')[1]));
-    return !payload || typeof payload !== 'object' || !('exp' in payload) ||
-      typeof payload.exp !== 'number' || payload.exp * 1000 < Date.now();
+    return (
+      !payload ||
+      typeof payload !== 'object' ||
+      !('exp' in payload) ||
+      typeof payload.exp !== 'number' ||
+      payload.exp * 1000 < Date.now()
+    );
   } catch {
     return true;
   }
@@ -165,9 +166,7 @@ function FilterDropdown({
         >
           <span className={`h-2 w-2 rounded-full ${o.dot}`} />
           {o.label}
-          {value === o.value && (
-            <span className="ml-auto text-[#b20202]">✓</span>
-          )}
+          {value === o.value && <span className="ml-auto text-[#b20202]">✓</span>}
         </button>
       ))}
     </div>
@@ -187,8 +186,7 @@ function ReturnDetailPanel({
 }) {
   const { tenant } = usePOSAuth();
   const cashierName = refund.refundedBy
-    ? refund.refundedBy.posName ||
-      `${refund.refundedBy.firstName} ${refund.refundedBy.lastName}`
+    ? refund.refundedBy.posName || `${refund.refundedBy.firstName} ${refund.refundedBy.lastName}`
     : '—';
 
   const refundDate = new Date(refund.refundedAt).toLocaleString('en-GB', {
@@ -201,65 +199,9 @@ function ReturnDetailPanel({
   });
 
   function handlePrint() {
-    const win = window.open(
-      '',
-      '_blank',
-      'width=400,height=700,scrollbars=yes'
+    requestDocumentExport(
+      buildPOSRefund(parentOrder as unknown as Parameters<typeof buildPOSRefund>[0], refund, tenant)
     );
-    if (!win) return;
-    const rows = (refund.items || [])
-      .map((line: HistoryRefundLine) => {
-        const item =
-          line.orderItemIndex != null
-            ? parentOrder.items?.[line.orderItemIndex]
-            : undefined;
-        const name = item
-          ? `${item.name}${item.variant ? ` · ${item.variant}` : ''}`
-          : `Item #${(line.orderItemIndex ?? 0) + 1}`;
-        return `<tr>
-        <td style="padding:4px 0;border-bottom:1px solid #eee">${name}</td>
-        <td style="text-align:right;padding:4px 8px;border-bottom:1px solid #eee">${line.quantity}</td>
-        <td style="text-align:right;padding:4px 0;border-bottom:1px solid #eee">${formatCurrency(line.unitPrice ?? 0)}</td>
-        <td style="text-align:right;padding:4px 0;border-bottom:1px solid #eee;color:#b20202">−${formatCurrency(line.amount ?? 0)}</td>
-      </tr>`;
-      })
-      .join('');
-
-    win.document
-      .write(`<!DOCTYPE html><html><head><title>${refund.receiptNumber}</title>
-      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:12px;padding:16px;width:380px;margin:0 auto}</style>
-    </head><body>
-      <div style="text-align:center;margin-bottom:12px">
-        <strong style="font-size:14px;letter-spacing:2px">${(tenant?.name || 'DRINKS HARBOUR').toUpperCase()}</strong><br>
-        <span style="font-size:11px;font-weight:bold;color:#b20202">RETURN RECEIPT</span>
-      </div>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <table style="width:100%;font-size:11px;margin-bottom:8px">
-        <tr><td style="color:#555;width:90px">Return #</td><td><strong>${refund.receiptNumber || '—'}</strong></td></tr>
-        <tr><td style="color:#555">Original</td><td>${parentOrder.receiptNumber || '—'}</td></tr>
-        <tr><td style="color:#555">Date</td><td>${refundDate}</td></tr>
-        <tr><td style="color:#555">Cashier</td><td>${cashierName}</td></tr>
-        <tr><td style="color:#555">Refund via</td><td style="text-transform:capitalize">${(refund.paymentMethod || '—').replace(/_/g, ' ')}</td></tr>
-        ${refund.reason ? `<tr><td style="color:#555">Reason</td><td>${refund.reason}</td></tr>` : ''}
-      </table>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <table style="width:100%;font-size:11px">
-        <thead><tr style="color:#888"><th style="text-align:left">Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Amount</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <hr style="border:2px solid #333;margin:8px 0">
-      <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:14px;color:#b20202">
-        <span>TOTAL RETURNED</span><span>−${formatCurrency(refund.totalRefunded)}</span>
-      </div>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <div style="text-align:center;font-size:10px;color:#666">Thank you for your patience.</div>
-    </body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-    }, 400);
   }
 
   return (
@@ -271,17 +213,11 @@ function ReturnDetailPanel({
             <PiArrowCounterClockwise className="h-4 w-4 text-[#b20202]" />
           </div>
           <div>
-            <p className="text-sm font-bold text-[#b20202]">
-              {refund.receiptNumber || 'Return'}
-            </p>
+            <p className="text-sm font-bold text-[#b20202]">{refund.receiptNumber || 'Return'}</p>
             <p className="text-[10px] text-gray-400">Return Receipt</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-gray-400 hover:text-gray-600"
-        >
+        <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
           <PiX className="h-4 w-4" />
         </button>
       </div>
@@ -317,9 +253,7 @@ function ReturnDetailPanel({
         <div className="divide-y divide-gray-50">
           {(refund.items || []).map((line: HistoryRefundLine, i: number) => {
             const item =
-              line.orderItemIndex != null
-                ? parentOrder.items?.[line.orderItemIndex]
-                : undefined;
+              line.orderItemIndex != null ? parentOrder.items?.[line.orderItemIndex] : undefined;
             const name = item
               ? `${item.name}${item.variant ? ` · ${item.variant}` : ''}`
               : `Item #${(line.orderItemIndex ?? i) + 1}`;
@@ -328,30 +262,21 @@ function ReturnDetailPanel({
               <div key={i} className="px-5 py-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-gray-900">
-                      {name}
-                    </p>
+                    <p className="truncate text-sm font-semibold text-gray-900">{name}</p>
                     <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
                       <span className="inline-flex min-w-[2.5rem] items-center justify-center rounded border border-[#b20202]/30 bg-red-50 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-[#b20202]">
                         ×{line.quantity}
                       </span>
                       <span>×</span>
                       <span className="tabular-nums">
-                        {formatCurrency(
-                          line.unitPrice ?? item?.priceAtPurchase ?? 0
-                        )}{' '}
-                        / Units
+                        {formatCurrency(line.unitPrice ?? item?.priceAtPurchase ?? 0)} / Units
                       </span>
                       {(line.discPct ?? 0) > 0 && (
-                        <span className="text-amber-600">
-                          (−{line.discPct}% deduction)
-                        </span>
+                        <span className="text-amber-600">(−{line.discPct}% deduction)</span>
                       )}
                     </div>
                     {line.restock === false && (
-                      <p className="mt-0.5 text-[10px] text-amber-600">
-                        ⚠ Not restocked
-                      </p>
+                      <p className="mt-0.5 text-[10px] text-amber-600">⚠ Not restocked</p>
                     )}
                   </div>
                   <span className="shrink-0 text-sm font-bold text-[#b20202]">
@@ -367,16 +292,13 @@ function ReturnDetailPanel({
       {/* Total */}
       <div className="shrink-0 border-t border-gray-200 px-5 py-3">
         <div className="flex items-baseline justify-between">
-          <span className="text-sm font-bold text-gray-900">
-            Total Returned
-          </span>
+          <span className="text-sm font-bold text-gray-900">Total Returned</span>
           <span className="text-base font-bold text-[#b20202]">
             −{formatCurrency(refund.totalRefunded)}
           </span>
         </div>
         <p className="mt-0.5 text-xs capitalize text-gray-400">
-          Refunded via{' '}
-          {(refund.paymentMethod || 'original method').replace(/_/g, ' ')}
+          Refunded via {(refund.paymentMethod || 'original method').replace(/_/g, ' ')}
         </p>
       </div>
 
@@ -411,7 +333,11 @@ export default function POSHistory() {
   const { token: posToken } = usePOSAuth();
   const { data: session, status: sessionStatus } = useSession();
   const sessionToken = (session?.user as { token?: string })?.token ?? null;
-  const { token, defaultShop } = historyAccess(sessionToken, isTokenExpired(posToken) ? null : posToken, activeShopId);
+  const { token, defaultShop } = historyAccess(
+    sessionToken,
+    isTokenExpired(posToken) ? null : posToken,
+    activeShopId
+  );
   const historyShop = selectedHistoryShop || defaultShop;
   const { addItem } = usePOSCart();
 
@@ -441,10 +367,26 @@ export default function POSHistory() {
   }
 
   function changeShop(value: string) {
-    requestVersion.current++; setHistoryShop(value); setOrders([]); setPage(1); setSelectedOrder(null); setSelectedRefund(null);
+    requestVersion.current++;
+    setHistoryShop(value);
+    setOrders([]);
+    setPage(1);
+    setSelectedOrder(null);
+    setSelectedRefund(null);
   }
-  useEffect(() => { setHistoryShop(null); setOrders([]); setPage(1); setSelectedOrder(null); setSelectedRefund(null); }, [token, defaultShop]);
-  useEffect(() => () => { requestVersion.current++; }, []);
+  useEffect(() => {
+    setHistoryShop(null);
+    setOrders([]);
+    setPage(1);
+    setSelectedOrder(null);
+    setSelectedRefund(null);
+  }, [token, defaultShop]);
+  useEffect(
+    () => () => {
+      requestVersion.current++;
+    },
+    []
+  );
 
   const fetchOrders = useCallback(() => {
     if (sessionStatus === 'loading') return;
@@ -453,12 +395,20 @@ export default function POSHistory() {
       return;
     }
     const version = ++requestVersion.current;
-    setLoadError(''); setLoading(true);
+    setLoadError('');
+    setLoading(true);
     posApi
       .getAllOrders(token, { shopId: historyShop })
-      .then((data) => { if (version === requestVersion.current) setOrders((data || []) as HistoryOrder[]); })
-      .catch((e: unknown) => { if (version === requestVersion.current) setLoadError(e instanceof Error ? e.message : 'Failed to load orders'); })
-      .finally(() => { if (version === requestVersion.current) setLoading(false); });
+      .then((data) => {
+        if (version === requestVersion.current) setOrders((data || []) as HistoryOrder[]);
+      })
+      .catch((e: unknown) => {
+        if (version === requestVersion.current)
+          setLoadError(e instanceof Error ? e.message : 'Failed to load orders');
+      })
+      .finally(() => {
+        if (version === requestVersion.current) setLoading(false);
+      });
   }, [token, sessionStatus, historyShop]);
 
   useEffect(() => {
@@ -468,9 +418,7 @@ export default function POSHistory() {
   // Helpers for sorting
   function getCashierName(o: HistoryOrder) {
     return o.posStaff
-      ? (
-          o.posStaff.posName || `${o.posStaff.firstName} ${o.posStaff.lastName}`
-        ).trim()
+      ? (o.posStaff.posName || `${o.posStaff.firstName} ${o.posStaff.lastName}`).trim()
       : '';
   }
   function getCustomerName(o: HistoryOrder) {
@@ -597,7 +545,14 @@ export default function POSHistory() {
 
   return (
     <div className="flex h-dvh flex-col bg-[#f0f0f0]">
-      <div className="flex items-center gap-3 border-b bg-white p-3"><ShopHistorySelector token={token} value={historyShop} onChange={changeShop} />{loadError && <p role="alert" className="text-red-600">{loadError}</p>}</div>
+      <div className="flex items-center gap-3 border-b bg-white p-3">
+        <ShopHistorySelector token={token} value={historyShop} onChange={changeShop} />
+        {loadError && (
+          <p role="alert" className="text-red-600">
+            {loadError}
+          </p>
+        )}
+      </div>
       {/* ── Top bar ── */}
       <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2">
         {/* Back */}
@@ -741,24 +696,17 @@ export default function POSHistory() {
                 <tbody>
                   {paginated.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={9}
-                        className="py-20 text-center text-sm text-gray-400"
-                      >
-                        {search
-                          ? `No orders match "${search}"`
-                          : 'No orders found'}
+                      <td colSpan={9} className="py-20 text-center text-sm text-gray-400">
+                        {search ? `No orders match "${search}"` : 'No orders found'}
                       </td>
                     </tr>
                   ) : (
                     paginated.map((order) => {
                       // eslint-disable-line
                       const isSelected = selectedOrder?._id === order._id;
-                      const isRefundParent =
-                        selectedRefund?.order._id === order._id;
+                      const isRefundParent = selectedRefund?.order._id === order._id;
                       const isWalkin =
-                        !order.customer?.firstName ||
-                        order.customer.firstName === 'Walk-in';
+                        !order.customer?.firstName || order.customer.firstName === 'Walk-in';
                       const customerName = isWalkin
                         ? ''
                         : `${order.customer!.firstName} ${order.customer!.lastName || ''}`.trim();
@@ -778,9 +726,7 @@ export default function POSHistory() {
                             <td
                               className={`px-4 py-3 text-xs ${isSelected ? 'text-red-100' : 'text-gray-500'}`}
                             >
-                              {formatOrderDate(
-                                order.createdAt || order.placedAt
-                              )}
+                              {formatOrderDate(order.createdAt || order.placedAt)}
                             </td>
                             <td
                               className={`px-4 py-3 font-medium ${isSelected ? 'text-white' : 'text-gray-800'}`}
@@ -803,16 +749,12 @@ export default function POSHistory() {
                             <td
                               className={`px-4 py-3 ${isSelected ? 'text-red-100' : 'text-gray-600'}`}
                             >
-                              {customerName || (
-                                <span className="text-gray-300">—</span>
-                              )}
+                              {customerName || <span className="text-gray-300">—</span>}
                             </td>
                             <td
                               className={`px-4 py-3 ${isSelected ? 'text-red-100' : 'text-gray-600'}`}
                             >
-                              {cashierName || (
-                                <span className="text-gray-300">—</span>
-                              )}
+                              {cashierName || <span className="text-gray-300">—</span>}
                             </td>
                             <td
                               className={`px-4 py-3 font-semibold ${isSelected ? 'text-white' : 'text-gray-900'}`}
@@ -837,8 +779,7 @@ export default function POSHistory() {
                                 >
                                   Refunded
                                 </span>
-                              ) : order.paymentStatus ===
-                                'partially_refunded' ? (
+                              ) : order.paymentStatus === 'partially_refunded' ? (
                                 <span
                                   className={`text-xs font-medium ${isSelected ? 'text-amber-200' : 'text-amber-600'}`}
                                 >
@@ -875,8 +816,7 @@ export default function POSHistory() {
                             const itemsSummary = (refund.items || [])
                               .map((line: HistoryRefundLine) => {
                                 const idx = line.orderItemIndex;
-                                const item =
-                                  idx != null ? order.items?.[idx] : undefined;
+                                const item = idx != null ? order.items?.[idx] : undefined;
                                 const name = item
                                   ? `${item.name}${item.variant ? ` · ${item.variant}` : ''}`
                                   : idx != null
@@ -893,8 +833,7 @@ export default function POSHistory() {
 
                             const isRefundSelected =
                               selectedRefund?.refund === refund ||
-                              selectedRefund?.refund?.receiptNumber ===
-                                refund.receiptNumber;
+                              selectedRefund?.refund?.receiptNumber === refund.receiptNumber;
 
                             return (
                               <tr
@@ -927,20 +866,12 @@ export default function POSHistory() {
                                 </td>
 
                                 {/* Items returned */}
-                                <td
-                                  className="px-4 py-2 text-[11px] text-gray-600"
-                                  colSpan={2}
-                                >
-                                  <p
-                                    className="max-w-[260px] truncate"
-                                    title={itemsSummary}
-                                  >
+                                <td className="px-4 py-2 text-[11px] text-gray-600" colSpan={2}>
+                                  <p className="max-w-[260px] truncate" title={itemsSummary}>
                                     {itemsSummary || '—'}
                                   </p>
                                   {refundCashier && (
-                                    <p className="text-[10px] text-gray-400">
-                                      by {refundCashier}
-                                    </p>
+                                    <p className="text-[10px] text-gray-400">by {refundCashier}</p>
                                   )}
                                 </td>
 
@@ -951,8 +882,7 @@ export default function POSHistory() {
 
                                 {/* Method */}
                                 <td className="px-4 py-2 text-[11px] capitalize text-red-400">
-                                  {refund.paymentMethod?.replace(/_/g, ' ') ||
-                                    '—'}
+                                  {refund.paymentMethod?.replace(/_/g, ' ') || '—'}
                                 </td>
 
                                 {/* Status */}
@@ -1002,9 +932,7 @@ export default function POSHistory() {
             />
           ) : (
             <div className="flex flex-1 items-center justify-center p-6 text-center">
-              <p className="text-sm text-gray-400">
-                Select an order or return to see details
-              </p>
+              <p className="text-sm text-gray-400">Select an order or return to see details</p>
             </div>
           )}
         </div>

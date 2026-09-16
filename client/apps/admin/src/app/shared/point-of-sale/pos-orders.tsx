@@ -1,4 +1,5 @@
 'use client';
+import { posStore } from '@/utils/print/pos-documents';
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -164,14 +165,7 @@ function loadSaved(): SavedSearch[] {
 function persistSaved(list: SavedSearch[]) { localStorage.setItem(SAVED_KEY, JSON.stringify(list)); }
 
 function printOrders(orders: PosOrder[], tenant?: POSTenant | null) {
-  const rawLogo = tenant?.logo;
-  const store = {
-    name: tenant?.name || 'DRINKS HARBOUR',
-    logoSrc: ((typeof rawLogo === 'string' ? rawLogo : (rawLogo as any)?.url)?.trim()) || '/logo.png',
-    address: ['Nigeria', '39 Gana Street, Maitama, Abuja'],
-    bankAccounts: tenant?.bankAccounts ?? [],
-  };
-  printInvoices(orders, store);
+  printInvoices(orders, posStore(tenant));
 }
 
 function exportCsv(rows: PosOrder[]) {

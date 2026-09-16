@@ -74,3 +74,11 @@ Verification: 14 focused client and 15 focused server tests pass. Admin type
 checking has no errors in this follow-up's changed files; unrelated repository
 errors remain. No live Wyn City session was modified or reassigned, and browser
 verification remains unavailable in this environment.
+
+Session Report and Sales Details follow-up: both pages now use the authenticated
+back-office token when available and send an explicit shop scope on every
+session/order request. Back-office views default to All shops, while cashiers
+remain scoped to their active shop. Sales Details now includes the shared shop
+selector (including Legacy); Session Report retains its selector and corrects
+its token scope. Focused client and server tests pass. Type checking has no
+errors in these changed files; unrelated repository errors remain.

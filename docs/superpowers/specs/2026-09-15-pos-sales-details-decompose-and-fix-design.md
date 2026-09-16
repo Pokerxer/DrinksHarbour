@@ -1,7 +1,7 @@
 # POS Sales Details — Decompose + Fix Core Logic
 
 **Date:** 2026-09-15  
-**Status:** Draft  
+**Status:** Implemented 2026-09-16 — see [RESUME — sales-details decomposition](./RESUME-sales-details-decomposition.md)  
 **Scope:** Sub-project 1 of 4 — decompose the 3,651-line monolith, fix all calculation/filtering bugs  
 **Sub-projects (future):** Order drill-down, Real-time updates, Analytics features
 
