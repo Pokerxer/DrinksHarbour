@@ -22,6 +22,7 @@ import { useModalCompareContext } from '@/context/ModalCompareContext';
 import Rate from '@/components/Other/Rate';
 import ProductSpecifications from './ProductSpecifications';
 import ShareButton from './ShareButton';
+import OrderWhatsAppButton from './OrderWhatsAppButton';
 import ProductReviews from '@/components/Product/ProductReviews';
 import RelatedProducts from './RelatedProducts';
 import PackPricingCard from '@/components/Product/PackPricingCard';
@@ -815,6 +816,18 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                       </>
                     )}
                   </button>
+                  {/* Order on WhatsApp — cart-free checkout path */}
+                  <OrderWhatsAppButton
+                    productName={productData.name || 'this product'}
+                    size={selectedSizeData?.displayName || effectiveSize}
+                    quantity={localQuantity}
+                    unitPrice={effectiveUnitPrice}
+                    total={effectiveTotal}
+                    currencySymbol={displayCurrencySymbol}
+                    seller={selectedVendor?.tenant.name}
+                    packRateActive={packRateActive}
+                    disabled={!effectiveSize || !inStock}
+                  />
                   {/* Price display */}
                   {effectiveSize && inStock && (
                     <div className="text-center sm:text-right">
