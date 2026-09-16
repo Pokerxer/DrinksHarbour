@@ -16,8 +16,16 @@ export function drawTotals(
     const grand = row.variant === 'grand';
     const size = grand ? 10 : 8.6;
     doc.setFont(t.font, 'bold').setFontSize(size);
-    const label = doc.splitTextToSize(grand ? row.label.toUpperCase() : row.label, 100) as string[];
-    const value = doc.splitTextToSize(row.value, width - 139) as string[];
+    // Grand totals have a wide, two-column banner. Give the label enough room
+    // to keep short summaries such as "ITEMS TOTAL (1 LINE)" on one line,
+    // while retaining a dedicated right-hand column for the amount.
+    const labelWidth = grand ? 120 : 100;
+    const valueWidth = grand ? width - 153 : width - 139;
+    const label = doc.splitTextToSize(
+      grand ? row.label.toUpperCase() : row.label,
+      labelWidth
+    ) as string[];
+    const value = doc.splitTextToSize(row.value, valueWidth) as string[];
     // Break extreme values into continuations so no summary row can exceed a page.
     const lines = Math.max(label.length, value.length);
     return Array.from({ length: Math.ceil(lines / 40) }, (_, i) => ({

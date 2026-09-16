@@ -63,10 +63,10 @@ import {
   type DatePreset,
 } from './purchases-orders-helpers';
 
-// Drafts print as RFQs, everything else as the purchase order — the same
-// branch the detail page uses.
+// The document type determines whether this is an RFQ. A PO may still be in
+// draft while awaiting approval, but it must not be printed as a quotation.
 function printOrderDoc(order: PurchaseOrder, companyName: string) {
-  if (order.type === 'rfq' || order.status === 'draft')
+  if (order.type === 'rfq')
     printRFQInvoice(order, companyName);
   else printPOInvoice(order, companyName);
 }
@@ -1124,8 +1124,8 @@ export default function PurchasesOrders() {
   const tabCounts = useMemo(
     () => ({
       all: orders.length,
-      rfq: orders.filter((o) => o.status === 'draft').length,
-      po: orders.filter((o) => o.status === 'confirmed').length,
+      rfq: orders.filter((o) => o.type === 'rfq').length,
+      po: orders.filter((o) => o.type === 'po').length,
       to_receive: orders.filter(isToReceive).length,
       to_bill: orders.filter(isToBill).length,
     }),
@@ -1151,9 +1151,9 @@ export default function PurchasesOrders() {
   }, [activeTab]);
 
   const tabFiltered = useMemo(() => {
-    if (activeTab === 'rfq') return orders.filter((o) => o.status === 'draft');
+    if (activeTab === 'rfq') return orders.filter((o) => o.type === 'rfq');
     if (activeTab === 'po')
-      return orders.filter((o) => o.status === 'confirmed');
+      return orders.filter((o) => o.type === 'po');
     if (activeTab === 'to_receive') return orders.filter(isToReceive);
     if (activeTab === 'to_bill') return orders.filter(isToBill);
     return orders;

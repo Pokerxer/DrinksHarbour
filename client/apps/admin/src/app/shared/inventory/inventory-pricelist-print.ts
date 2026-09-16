@@ -120,6 +120,12 @@ export interface PricelistPrintOptions {
   originHead?: PricelistOriginHead;
   /** Ad-hoc wholesale discount % applied after the chosen price source. */
   discountPercent?: number;
+  /** Show the bundle threshold as its own column instead of in the heading. */
+  showBundleQuantity?: boolean;
+  /** Show the pre-discount value beneath unit and bundle prices. */
+  showWasPrices?: boolean;
+  /** Extra named price columns, each calculated from its selected pricelist. */
+  additionalPriceColumns?: Array<{ label: string; pricelist: PricelistLite }>;
 }
 
 export interface PricedLine extends PricelistPrintRow {
@@ -138,6 +144,8 @@ export interface PricedLine extends PricelistPrintRow {
   bundleTotal: number | null;
   /** Human-readable bundle label, e.g. "6+". Empty string when no bundle applies. */
   bundleLabel: string;
+  bundleWas: number | null;
+  additionalPrices: Array<{ label: string; price: number; was: number | null }>;
 }
 
 /** Structural input — satisfied by both StockRow and PricelistPrintRow. */
@@ -294,9 +302,10 @@ export function resolveBundlePriceForRow(
         rule.bundleMarkupBase === 'wholesale' ? wholesalePrice : costPrice;
       // No basis = the server leaves the price alone, so there is nothing to quote.
       if (basis <= 0) continue;
-      // roundUpTo100 — the server rounds a markup override UP to the nearest
-      // ₦100, so quoting the unrounded figure would undercut checkout.
-      unitPrice = Math.ceil((basis * (1 + disc / 100)) / 100) * 100;
+      // Keep the calculated markup value on printed pricelists. Checkout may
+      // apply its own cash-rounding policy, but a pricelist must show the exact
+      // bundle price configured from the cost/wholesale basis.
+      unitPrice = basis * (1 + disc / 100);
     } else if (dt === 'fixed') {
       unitPrice = Math.max(0, perLinePrice - disc);
     } else {
@@ -618,6 +627,12 @@ export function priceAndSortLines(
         ...r,
         ...base,
         ...bundle,
+        bundleWas:
+          bundle.bundlePrice != null &&
+          Math.abs(bundle.bundlePrice - base.price) > 0.001
+            ? base.price
+            : null,
+        additionalPrices: [],
       };
     })
     .sort(
@@ -697,7 +712,7 @@ function lineHtml(
       ? `<td class="num">${l.currentQuantity}</td>`
       : '<td class="num zero">\u2014</td>';
   const wasCell =
-    l.was != null
+    o.showWasPrices !== false && l.was != null
       ? `<span class="was">${fmtMoney(l.was, currency)}</span>`
       : '';
   const bundleCell = !showBundle
@@ -706,12 +721,27 @@ function lineHtml(
       ? // Lead with what the customer pays for the tier; keep the per-unit
         // price underneath, since that is the figure the Unit Price column can
         // be compared against — and the one that applies past the threshold.
-        `<td class="num"><span class="price bundle">${fmtMoney(l.bundleTotal, currency)}</span><span class="bundle-label">${escapeHtml(l.bundleLabel)} · ${fmtMoney(l.bundlePrice ?? 0, currency)} each</span></td>`
+        `<td class="num"><span class="price bundle">${fmtMoney(l.bundleTotal, currency)}</span><span class="bundle-label">${o.showWasPrices !== false && l.bundleWas != null ? `was ${fmtMoney(l.bundleWas, currency)} · ` : ''}${o.showBundleQuantity === false ? '' : `${escapeHtml(l.bundleLabel)} · `}${fmtMoney(l.bundlePrice ?? 0, currency)} each</span></td>`
       : '<td class="num muted">\u2014</td>';
   return `<tr>
     <td><strong>${escapeHtml(l.productName)}</strong>${skuCell}</td>
     <td class="muted">${escapeHtml(l.sizeName)}</td>${availCell}
-    <td class="num"><span class="price">${fmtMoney(l.price, currency)}</span>${wasCell}</td>${bundleCell}
+    <td class="num"><span class="price">${fmtMoney(l.price, currency)}</span>${wasCell}</td>${bundleCell}${(
+      o.additionalPriceColumns ?? []
+    )
+      .map((c) => {
+        const p = priceAndSortLines([l], c.pricelist)[0] ?? {
+          price: 0,
+          was: null,
+          bundlePrice: null,
+        };
+        const columnPrice = p.bundleTotal ?? p.bundlePrice ?? p.price;
+        const columnWas =
+          p.bundleTotal != null ? p.price * (p.bundleQuantity ?? 1) : p.was;
+        const cur = c.pricelist.currency || currency;
+        return `<td class="num"><span class="price">${fmtMoney(columnPrice, cur)}</span>${o.showWasPrices !== false && columnWas != null ? `<span class="was">${fmtMoney(columnWas, cur)}</span>` : ''}</td>`;
+      })
+      .join('')}
   </tr>`;
 }
 
@@ -739,13 +769,27 @@ export function buildCustomerPricelistHtml(
 
   // Bundle column: only when the pricelist carries same-product bundle rules
   const showBundle = linesHaveBundlePrices(lines);
+  const extraColumns = (o.additionalPriceColumns ?? []).map((c) => {
+    const sample = lines.find(
+      (l) => l.bundleTotal != null && l.bundleQuantity != null
+    );
+    return {
+      ...c,
+      displayLabel: sample?.bundleQuantity
+        ? `${c.label} ×${sample.bundleQuantity}`
+        : c.label,
+    };
+  });
   const bundleTh = showBundle
     ? // No tier suffix on the header: it used to be read off whichever line
       // happened to sort first, which is wrong the moment two lines carry
       // different tiers. Each cell now states its own quantity.
-      `<th class="num">Bundle Price</th>`
+      `<th class="num">${o.showBundleQuantity === false ? `Bundle Price ×${lines.find((l) => l.bundleQuantity)?.bundleQuantity ?? ''}` : 'Bundle Price'}</th>`
     : '';
   const availTh = o.showAvailability ? '<th class="num">Available</th>' : '';
+  const extraTh = extraColumns
+    .map((c) => `<th class="num">${escapeHtml(c.displayLabel)}</th>`)
+    .join('');
 
   const body = o.groupByCategory
     ? Array.from(
@@ -758,12 +802,12 @@ export function buildCustomerPricelistHtml(
         ([category, catLines]) => `
       <h2><span class="cat">${escapeHtml(category)}</span><span class="rule"></span><span class="count">${catLines.length}</span></h2>
       <table>
-        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th>${bundleTh}</tr></thead>
+        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th>${bundleTh}${extraTh}</tr></thead>
         <tbody>${catLines.map((l) => lineHtml(l, o, currency, showBundle)).join('')}</tbody>
       </table>`
       ).join('')
     : `<table>
-        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th>${bundleTh}</tr></thead>
+        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th>${bundleTh}${extraTh}</tr></thead>
         <tbody>${lines.map((l) => lineHtml(l, o, currency, showBundle)).join('')}</tbody>
       </table>`;
 
@@ -1217,6 +1261,17 @@ export function buildPricelistCsv(
     options.discountPercent ?? 0
   );
   const showBundle = linesHaveBundlePrices(lines);
+  const extraColumns = (options.additionalPriceColumns ?? []).map((c) => {
+    const sample = lines.find(
+      (l) => l.bundleTotal != null && l.bundleQuantity != null
+    );
+    return {
+      ...c,
+      displayLabel: sample?.bundleQuantity
+        ? `${c.label} ×${sample.bundleQuantity}`
+        : c.label,
+    };
+  });
   const headers = [
     'Category',
     'Product',
@@ -1224,10 +1279,20 @@ export function buildPricelistCsv(
     'Size',
     ...(options.showAvailability ? ['Available'] : []),
     'Unit Price',
-    'Was Price',
+    ...(options.showWasPrices === false ? [] : ['Was Price']),
     // Explicit headers: "Bundle Price" alone is ambiguous now that the sheet
     // leads with the tier total.
-    ...(showBundle ? ['Bundle Unit Price', 'Bundle Qty', 'Bundle Total'] : []),
+    ...(showBundle
+      ? [
+          options.showBundleQuantity === false
+            ? 'Bundle Price'
+            : 'Bundle Unit Price',
+          ...(options.showBundleQuantity === false ? [] : ['Bundle Qty']),
+          'Bundle Total',
+          ...(options.showWasPrices === false ? [] : ['Bundle Was Price']),
+        ]
+      : []),
+    ...extraColumns.map((c) => c.displayLabel),
     'Currency',
   ];
   const body = lines.map((l) =>
@@ -1238,14 +1303,25 @@ export function buildPricelistCsv(
       csvCell(l.sizeName),
       ...(options.showAvailability ? [l.currentQuantity] : []),
       l.price.toFixed(2),
-      l.was != null ? l.was.toFixed(2) : '',
+      ...(options.showWasPrices === false
+        ? []
+        : [l.was != null ? l.was.toFixed(2) : '']),
       ...(showBundle
         ? [
             l.bundlePrice?.toFixed(2) ?? '',
-            l.bundleQuantity ?? '',
+            ...(options.showBundleQuantity === false
+              ? []
+              : [l.bundleQuantity ?? '']),
             l.bundleTotal?.toFixed(2) ?? '',
+            ...(options.showWasPrices === false
+              ? []
+              : [l.bundleWas?.toFixed(2) ?? '']),
           ]
         : []),
+      ...(options.additionalPriceColumns ?? []).map((c) => {
+        const p = priceAndSortLines([l], c.pricelist)[0];
+        return (p?.bundleTotal ?? p?.bundlePrice ?? p?.price ?? 0).toFixed(2);
+      }),
       currency,
     ].join(',')
   );

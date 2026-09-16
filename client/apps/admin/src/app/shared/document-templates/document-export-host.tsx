@@ -1,14 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
-import { useTenant } from '@/context/TenantContext';
+import { useDocumentIdentity } from './use-document-identity';
 import { DOCUMENT_EXPORT_EVENT, type DocumentExportRequest } from '@/utils/print/document-export';
 import DocumentExportDialog from './document-export-dialog';
 export default function DocumentExportHost() {
-  const { tenant } = useTenant();
-  const { data: session } = useSession();
-  const user = session?.user as { token?: string; tenantId?: string } | undefined;
-  const scope = `${user?.token}:${tenant?._id ?? user?.tenantId}:${tenant?.slug}`;
+  const { scope } = useDocumentIdentity();
   const [request, setRequest] = useState<{ scope: string; value: DocumentExportRequest }>();
   useEffect(() => {
     const receive = (event: Event) =>

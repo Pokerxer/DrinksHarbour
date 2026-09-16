@@ -43,6 +43,22 @@ function fitted(
   const lines = doc.splitTextToSize(value, width) as string[];
   doc.text(lines.slice(0, 2), x, y, { align });
 }
+
+/** Masthead lines must stay on one baseline so a long tenant name cannot collide with its address. */
+function fittedSingle(
+  doc: jsPDF,
+  value: string,
+  x: number,
+  y: number,
+  width: number,
+  size: number,
+  align: 'left' | 'center' | 'right' = 'left'
+) {
+  if (!value) return;
+  doc.setFontSize(size);
+  while (doc.getTextWidth(value) > width && size > 5) doc.setFontSize((size -= 0.25));
+  doc.text(value, x, y, { align });
+}
 /** Original 104pt masthead shared by every colour choice. */
 export function drawHeader(doc: jsPDF, m: DocumentModel, t: DocumentTemplate) {
   const panel = W * 0.575;
@@ -56,12 +72,27 @@ export function drawHeader(doc: jsPDF, m: DocumentModel, t: DocumentTemplate) {
   box(doc, 0, 107, W, 1.2, t.secondary);
   doc.setFont(t.font, 'bold');
   color(doc, '#ffffff');
-  fitted(doc, m.companyName, M, 40, panel - M - 44, 16);
+  const leftWidth = panel - M - 44;
+  fittedSingle(doc, m.companyName, M, 40, leftWidth, 16);
   doc.setFont(t.font, 'normal');
   doc.setTextColor(...tint(t.accent, 0.74));
-  fitted(doc, [m.head?.address, m.head?.city].filter(Boolean).join(', '), M, 55, panel - M - 44, 8);
-  fitted(doc, [m.head?.email, m.head?.phone].filter(Boolean).join(' | '), M, 66, panel - M - 44, 8);
-  badge(doc, m.department, M, 75, t.accent, panel - M - 44, false);
+  fittedSingle(
+    doc,
+    [m.head?.address, m.head?.city].filter(Boolean).join(', '),
+    M,
+    58,
+    leftWidth,
+    8
+  );
+  fittedSingle(
+    doc,
+    [m.head?.email, m.head?.phone].filter(Boolean).join(' | '),
+    M,
+    70,
+    leftWidth,
+    8
+  );
+  badge(doc, m.department, M, 79, t.accent, leftWidth, false);
   doc.setFont(t.font, 'bold');
   doc.setTextColor(...tint(t.accent, 0.65));
   fitted(doc, m.docTitle.toUpperCase(), W - M, 33, W - panel - 22, 7.4, 'right');

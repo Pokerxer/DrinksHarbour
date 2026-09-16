@@ -146,7 +146,7 @@ export function buildPOInvoice(
     },
     totals: [
       {
-        label: `Items Total (${po.items.length} line${po.items.length === 1 ? '' : 's'})`,
+        label: 'Total',
         value: fmtAmt(totalCost, po.currency),
         variant: 'grand',
       },

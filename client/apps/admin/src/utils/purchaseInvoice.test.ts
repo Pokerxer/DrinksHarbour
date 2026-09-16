@@ -451,9 +451,14 @@ describe('buildTransferInvoice — detail', () => {
     expect(doc.parties[1]).toMatchObject({ heading: 'Supplier', name: 'Central Warehouse (CWH)' });
   });
 
-  it('carries the destination details into the head', () => {
-    expect(doc.companyName).toBe('Maitama Store');
-    expect(doc.head?.email).toBe('maitama@drinksharbour.com');
+  it('carries the supplying warehouse details into the head', () => {
+    expect(doc.companyName).toBe('Central Warehouse');
+    expect(doc.head).toMatchObject({
+      address: 'Plot 5, Utako District',
+      city: 'Abuja, FCT, Nigeria',
+      email: 'central@drinksharbour.com',
+      phone: '+234 803 000 1111',
+    });
   });
 
   it('shows sent vs received with pending counts and money columns', () => {

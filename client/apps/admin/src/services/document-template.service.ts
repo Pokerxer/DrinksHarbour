@@ -4,9 +4,11 @@ export async function documentPreferences(
   token: string,
   slug?: string,
   value?: TemplatePreferences,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  pos = false
 ): Promise<TemplatePreferences> {
-  const response = await fetch(`${API}/api/tenants/document-templates`, {
+  if (pos && value) throw new Error('POS template preferences are read-only');
+  const response = await fetch(`${API}/api/${pos ? 'pos' : 'tenants'}/document-templates`, {
     method: value ? 'PUT' : 'GET',
     cache: 'no-store',
     signal,

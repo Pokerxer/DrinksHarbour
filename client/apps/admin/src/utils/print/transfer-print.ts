@@ -40,8 +40,12 @@ export function buildTransferInvoice(
   companyName: string
 ): DocumentModel {
   const currency = transfer.currency || 'NGN';
-  // The destination is the buying entity on paper: it owns the head block and
-  // the Buyer box; the source warehouse ships as the Supplier.
+  // The source warehouse supplies the transfer and owns the document header;
+  // the destination remains the buying entity in the parties section.
+  const src =
+    typeof transfer.sourceWarehouse === 'object'
+      ? transfer.sourceWarehouse
+      : null;
   const dst =
     typeof transfer.destinationWarehouse === 'object'
       ? transfer.destinationWarehouse
@@ -87,8 +91,8 @@ export function buildTransferInvoice(
 
   return {
     kind: 'transfer',
-    companyName: dst?.name || companyName,
-    head: warehouseHeadOf(dst),
+    companyName: src?.name || companyName,
+    head: warehouseHeadOf(src),
     department: 'Stock Transfer',
     docTitle: 'Stock Transfer',
     number: transfer.transferNumber,

@@ -1,16 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
-import { useTenant } from '@/context/TenantContext';
+import { useDocumentIdentity } from './use-document-identity';
 import { documentPreferences } from '@/services/document-template.service';
 import type { TemplatePreferences } from '@/utils/print/templates/registry';
 export function useDocumentPreferences() {
-  const { data: session, status } = useSession();
-  const { tenant } = useTenant();
-  const user = session?.user as { token?: string; tenantId?: string } | undefined;
-  const token = user?.token ?? '';
-  const scope = `${token}:${tenant?._id ?? user?.tenantId ?? ''}:${tenant?.slug ?? ''}`;
-  const hasTenant = Boolean(tenant?._id || user?.tenantId);
+  const { token, tenant, hasTenant, scope, status, isPOS } = useDocumentIdentity();
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState<{
     scope: string;
@@ -25,7 +19,7 @@ export function useDocumentPreferences() {
       setState({ scope, value: { defaultTemplate: 'classic', families: {} } });
       return;
     }
-    documentPreferences(token, tenant?.slug, undefined, controller.signal)
+    documentPreferences(token, tenant?.slug, undefined, controller.signal, isPOS)
       .then((value) => {
         if (!controller.signal.aborted) setState({ scope, value });
       })
@@ -37,7 +31,7 @@ export function useDocumentPreferences() {
           });
       });
     return () => controller.abort();
-  }, [scope, token, tenant?.slug, hasTenant, revision]);
+  }, [scope, token, tenant?.slug, hasTenant, revision, isPOS]);
   const current = state?.scope === scope ? state : undefined;
   return {
     scope,

@@ -55,8 +55,11 @@ interface StoredSettings {
   groupByCategory: boolean;
   showSku: boolean;
   showAvailability: boolean;
+  showBundleQuantity: boolean;
+  showWasPrices: boolean;
   discountPercent: number;
   businessName: string;
+  additionalColumns: Array<{ label: string; plId: string }>;
 }
 
 const DEFAULTS: StoredSettings = {
@@ -66,8 +69,11 @@ const DEFAULTS: StoredSettings = {
   groupByCategory: true,
   showSku: false,
   showAvailability: false,
+  showBundleQuantity: true,
+  showWasPrices: true,
   discountPercent: 0,
   businessName: '',
+  additionalColumns: [],
 };
 
 function loadStored(): StoredSettings {
@@ -88,6 +94,8 @@ function loadStored(): StoredSettings {
       groupByCategory: s.groupByCategory ?? DEFAULTS.groupByCategory,
       showSku: s.showSku ?? DEFAULTS.showSku,
       showAvailability: s.showAvailability ?? DEFAULTS.showAvailability,
+      showBundleQuantity: s.showBundleQuantity ?? DEFAULTS.showBundleQuantity,
+      showWasPrices: s.showWasPrices ?? DEFAULTS.showWasPrices,
       discountPercent:
         typeof s.discountPercent === 'number' &&
         s.discountPercent >= 0 &&
@@ -95,6 +103,14 @@ function loadStored(): StoredSettings {
           ? s.discountPercent
           : 0,
       businessName: typeof s.businessName === 'string' ? s.businessName : '',
+      additionalColumns: Array.isArray(s.additionalColumns)
+        ? s.additionalColumns
+            .filter(
+              (c) =>
+                c && typeof c.label === 'string' && typeof c.plId === 'string'
+            )
+            .slice(0, 3)
+        : [],
     };
   } catch {
     return DEFAULTS;
@@ -124,6 +140,9 @@ export default function PricelistPrintModal({
   // pricelist. The list endpoint strips rules for size, so this is fetched via
   // GET /pricelists/:id on selection — the pricing source for Print/PDF/CSV.
   const [plDetail, setPlDetail] = useState<PricelistLite | null>(null);
+  const [additionalDetails, setAdditionalDetails] = useState<
+    Record<string, PricelistLite>
+  >({});
   const [plDetailLoading, setPlDetailLoading] = useState(false);
 
   const [plId, setPlId] = useState(DEFAULTS.plId);
@@ -136,10 +155,17 @@ export default function PricelistPrintModal({
   const [showAvailability, setShowAvailability] = useState(
     DEFAULTS.showAvailability
   );
+  const [showBundleQuantity, setShowBundleQuantity] = useState(
+    DEFAULTS.showBundleQuantity
+  );
+  const [showWasPrices, setShowWasPrices] = useState(DEFAULTS.showWasPrices);
   const [discountPercent, setDiscountPercent] = useState(
     DEFAULTS.discountPercent
   );
   const [businessName, setBusinessName] = useState(DEFAULTS.businessName);
+  const [additionalColumns, setAdditionalColumns] = useState(
+    DEFAULTS.additionalColumns
+  );
 
   // Scope selection ("What's on the list")
   const [scopeMode, setScopeMode] = useState<'current' | 'select'>('current');
@@ -169,8 +195,11 @@ export default function PricelistPrintModal({
     setGroupByCategory(stored.groupByCategory);
     setShowSku(stored.showSku);
     setShowAvailability(stored.showAvailability);
+    setShowBundleQuantity(stored.showBundleQuantity);
+    setShowWasPrices(stored.showWasPrices);
     setDiscountPercent(stored.discountPercent);
     setBusinessName(stored.businessName);
+    setAdditionalColumns(stored.additionalColumns);
   }, []);
 
   // Persist on every change while open.
@@ -184,8 +213,11 @@ export default function PricelistPrintModal({
         groupByCategory,
         showSku,
         showAvailability,
+        showBundleQuantity,
+        showWasPrices,
         discountPercent,
         businessName,
+        additionalColumns,
       };
       localStorage.setItem(STORE_KEY, JSON.stringify(s));
     } catch {
@@ -199,8 +231,11 @@ export default function PricelistPrintModal({
     groupByCategory,
     showSku,
     showAvailability,
+    showBundleQuantity,
+    showWasPrices,
     discountPercent,
     businessName,
+    additionalColumns,
   ]);
 
   useEffect(() => {
@@ -276,6 +311,33 @@ export default function PricelistPrintModal({
       cancelled = true;
     };
   }, [open, plId, token, plDetail]);
+
+  useEffect(() => {
+    const ids = additionalColumns
+      .map((c) => c.plId)
+      .filter(Boolean)
+      .filter((id) => id !== plId && !additionalDetails[id]);
+    if (!open || !token || ids.length === 0) return;
+    Promise.all(
+      ids.map((id) =>
+        pricelistService
+          .get(id, token)
+          .then(
+            (res: unknown) =>
+              [id, (res as { data?: PricelistLite }).data] as const
+          )
+          .catch(() => null)
+      )
+    ).then((items) =>
+      setAdditionalDetails((prev) => {
+        const next = { ...prev };
+        items.forEach((item) => {
+          if (item?.[1]) next[item[0]] = item[1];
+        });
+        return next;
+      })
+    );
+  }, [open, token, plId, additionalColumns, additionalDetails]);
 
   useEffect(() => {
     if (!open) return;
@@ -394,8 +456,20 @@ export default function PricelistPrintModal({
       groupByCategory,
       showSku,
       showAvailability,
+      showBundleQuantity,
+      showWasPrices,
       discountPercent: effectiveDiscount,
       businessName: businessName.trim() || undefined,
+      additionalPriceColumns: additionalColumns
+        .map((c) => {
+          const pricelist =
+            (c.plId === plId ? plDetail : additionalDetails[c.plId]) ??
+            pricelists.find((p) => p._id === c.plId);
+          return { label: pricelist?.name ?? '', pricelist };
+        })
+        .filter(
+          (c): c is { label: string; pricelist: PricelistLite } => !!c.pricelist
+        ),
       originName: origin.name,
       originWarehouseCount: origin.warehouseCount,
       originHead: origin.head,
@@ -408,8 +482,15 @@ export default function PricelistPrintModal({
       groupByCategory,
       showSku,
       showAvailability,
+      showBundleQuantity,
+      showWasPrices,
       effectiveDiscount,
       businessName,
+      additionalColumns,
+      pricelists,
+      additionalDetails,
+      plDetail,
+      plId,
       origin.name,
       origin.warehouseCount,
       origin.head,
@@ -418,7 +499,10 @@ export default function PricelistPrintModal({
 
   // Hold exports until the selected pricelist's rules have loaded, so a
   // quick click can't silently produce a retail-priced sheet instead.
-  const rulesBusy = !!plId && plDetailLoading;
+  const additionalRulesBusy = additionalColumns.some(
+    (c) => !!c.plId && c.plId !== plId && !additionalDetails[c.plId]
+  );
+  const rulesBusy = (!!plId && plDetailLoading) || additionalRulesBusy;
 
   if (!open) return null;
 
@@ -434,7 +518,6 @@ export default function PricelistPrintModal({
   function handlePdf() {
     try {
       downloadPricelistPdf(effectiveRows, pricingSource, buildOptions());
-
     } catch {
       toast.error('Could not generate the PDF');
     }
@@ -579,6 +662,10 @@ export default function PricelistPrintModal({
                 Manage pricelists →
               </Link>
             </div>
+            <p className="mb-2 text-[11px] text-gray-400">
+              Select one pricelist for Unit Price, then select up to three more
+              to add as price columns.
+            </p>
             {loadingLists ? (
               <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-4 py-5 text-xs text-gray-400">
                 <PiSpinner className="h-4 w-4 animate-spin" /> Loading
@@ -589,7 +676,10 @@ export default function PricelistPrintModal({
                 <button
                   type="button"
                   aria-pressed={plId === ''}
-                  onClick={() => setPlId('')}
+                  onClick={() => {
+                    setPlId('');
+                    setAdditionalColumns([]);
+                  }}
                   className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors ${
                     plId === ''
                       ? 'border-[#b20202] bg-white shadow-sm'
@@ -612,14 +702,35 @@ export default function PricelistPrintModal({
                   )}
                 </button>
                 {pricelists.map((p) => {
-                  const active = p._id === plId;
+                  const active =
+                    p._id === plId ||
+                    additionalColumns.some((c) => c.plId === p._id);
                   const ruleCount = pricelistRuleCount(p);
                   return (
                     <button
                       key={p._id}
                       type="button"
                       aria-pressed={active}
-                      onClick={() => setPlId(p._id)}
+                      onClick={() => {
+                        if (p._id === plId) {
+                          const [next, ...rest] = additionalColumns;
+                          setPlId(next?.plId ?? '');
+                          setAdditionalColumns(rest);
+                          return;
+                        }
+                        if (additionalColumns.some((c) => c.plId === p._id)) {
+                          setAdditionalColumns((v) =>
+                            v.filter((c) => c.plId !== p._id)
+                          );
+                          return;
+                        }
+                        if (!plId) setPlId(p._id);
+                        else if (additionalColumns.length < 3)
+                          setAdditionalColumns((v) => [
+                            ...v,
+                            { label: '', plId: p._id },
+                          ]);
+                      }}
                       className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors ${
                         active
                           ? 'border-[#b20202] bg-white shadow-sm'
@@ -670,9 +781,9 @@ export default function PricelistPrintModal({
                     : 'Some rules did not apply to this list'}
                 </p>
                 <ul className="mt-1 space-y-0.5">
-                  {summary.inert.map((i) => (
+                  {summary.inert.map((i, index) => (
                     <li
-                      key={`${i.label}-${i.reason}`}
+                      key={`${i.label}-${i.reason}-${index}`}
                       className="text-[11px] leading-relaxed text-amber-700"
                     >
                       <b className="font-semibold">{i.label}</b> — {i.reason}.
@@ -770,6 +881,110 @@ export default function PricelistPrintModal({
                 showAvailability,
                 setShowAvailability
               )}
+              {toggleRow(
+                'Show bundle quantity column',
+                showBundleQuantity,
+                setShowBundleQuantity
+              )}
+              {toggleRow('Show “was” prices', showWasPrices, setShowWasPrices)}
+            </div>
+            <div className="mt-3 space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-600">
+                  Additional price columns
+                </p>
+                {additionalColumns.length < 3 && (
+                  <button
+                    type="button"
+                    className="text-[11px] font-semibold text-[#b20202]"
+                    onClick={() =>
+                      setAdditionalColumns((v) => [
+                        ...v,
+                        { label: '', plId: plId || pricelists[0]?._id || '' },
+                      ])
+                    }
+                  >
+                    + Add column
+                  </button>
+                )}
+              </div>
+              {additionalColumns.map((column, index) => (
+                <div
+                  key={`${index}-${column.plId}`}
+                  className="flex items-center gap-2"
+                >
+                  <span className="min-w-0 flex-1 truncate text-xs text-gray-700">
+                    {pricelists.find((p) => p._id === column.plId)?.name ??
+                      'Choose a pricelist'}
+                  </span>
+                  <select
+                    className="h-8 min-w-0 flex-1 rounded border border-gray-200 px-2 text-xs"
+                    value={column.plId}
+                    onChange={(e) =>
+                      setAdditionalColumns((v) =>
+                        v.map((c, i) =>
+                          i === index ? { ...c, plId: e.target.value } : c
+                        )
+                      )
+                    }
+                  >
+                    <option value="">Choose pricelist</option>
+                    {pricelists.map((p) => (
+                      <option key={p._id} value={p._id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="px-1 text-xs text-gray-400 disabled:opacity-30"
+                    disabled={index === 0}
+                    onClick={() =>
+                      setAdditionalColumns((v) => {
+                        const next = [...v];
+                        [next[index - 1], next[index]] = [
+                          next[index],
+                          next[index - 1],
+                        ];
+                        return next;
+                      })
+                    }
+                    aria-label="Move column up"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="px-1 text-xs text-gray-400 disabled:opacity-30"
+                    disabled={index === additionalColumns.length - 1}
+                    onClick={() =>
+                      setAdditionalColumns((v) => {
+                        const next = [...v];
+                        [next[index], next[index + 1]] = [
+                          next[index + 1],
+                          next[index],
+                        ];
+                        return next;
+                      })
+                    }
+                    aria-label="Move column down"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="px-1 text-xs text-gray-400"
+                    onClick={() =>
+                      setAdditionalColumns((v) =>
+                        v.filter((_, i) => i !== index)
+                      )
+                    }
+                    aria-label="Remove column"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 

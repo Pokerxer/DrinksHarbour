@@ -25,7 +25,6 @@ import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import { vendorService } from '@/services/vendor.service';
-import { posApi } from '@/app/shared/point-of-sale/api';
 import { subproductService } from '@/services/subproduct.service';
 import { useTenant } from '@/context/TenantContext';
 import { printPOInvoice, printRFQInvoice } from '@/utils/purchaseInvoice';
@@ -394,8 +393,12 @@ function ProductSearch({
     if (initialLoaded || !token) return;
     setLoading(true);
     try {
-      const res = await posApi.getProducts(token, { limit: 8 });
-      const list = mapProducts(res?.products ?? []);
+      // Purchase lines can use any tenant SubProduct, including products that
+      // are not currently enabled or stocked at a POS location. The POS
+      // catalogue endpoint is intentionally filtered for selling and its
+      // limited result set makes search miss valid purchase products.
+      const res = await subproductService.getSubProducts(token, { limit: 50 });
+      const list = mapProducts(res?.data?.subProducts ?? []);
       setInitial(list);
       setProducts(list);
       setInitialLoaded(true);
@@ -415,11 +418,11 @@ function ProductSearch({
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await posApi.getProducts(token, {
+        const res = await subproductService.getSubProducts(token, {
           search: query.trim(),
-          limit: 8,
+          limit: 50,
         });
-        const list = mapProducts(res?.products ?? []);
+        const list = mapProducts(res?.data?.subProducts ?? []);
         setProducts(list);
         setExpandedId(null);
       } catch {
@@ -946,12 +949,15 @@ export default function PurchasesEdit({ id }: { id: string }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            // Draft-only page — the printed document is always an RFQ.
-            onClick={() => printRFQInvoice(po, tenant?.name || 'DrinksHarbour')}
+            onClick={() =>
+              po.type === 'rfq'
+                ? printRFQInvoice(po, tenant?.name || 'DrinksHarbour')
+                : printPOInvoice(po, tenant?.name || 'DrinksHarbour')
+            }
             className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <PiPrinter className="h-4 w-4" />
-            Print RFQ
+            {po.type === 'rfq' ? 'Print RFQ' : 'Print / Download'}
           </button>
           <button
             type="button"

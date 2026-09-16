@@ -662,7 +662,10 @@ describe('resolvePricelistOrigin — issuing warehouse letterhead', () => {
   it('behaves exactly as before when no directory is supplied', () => {
     expect(
       resolvePricelistOrigin([{ warehouseName: 'Cloud Bay' }], 'Wyn City')
-    ).toEqual({ name: 'Cloud Bay', warehouseCount: 1 });
+    ).toEqual({
+      name: 'Cloud Bay',
+      warehouseCount: 1,
+    });
   });
 });
 
@@ -936,7 +939,7 @@ describe('resolveBundlePriceForRow', () => {
     expect(r.bundleLabel).toBe('12+');
   });
 
-  it('computes a markup_on_cost bundle price from the line cost', () => {
+  it('computes an exact markup_on_cost bundle price from the line cost', () => {
     const pl = {
       _id: 'p',
       name: 'Cost-plus',
@@ -954,9 +957,9 @@ describe('resolveBundlePriceForRow', () => {
       pl as never,
       10000
     );
-    // cost 7000 × 1.25 = 8750 → roundUpTo100 → 8800, matching the price the
-    // server actually charges (applyBundleOverride rounds a markup override up).
-    expect(r.bundlePrice).toBe(8800);
+    // Printed pricelists preserve the calculated value; they do not apply
+    // checkout's separate nearest-₦100 cash-rounding policy.
+    expect(r.bundlePrice).toBe(8750);
     expect(r.bundleQuantity).toBe(6);
   });
 
@@ -1185,8 +1188,8 @@ describe('resolveBundlePriceForRow', () => {
       pl as never,
       10000
     );
-    // wholesale 5000 × 1.25 = 6250 → roundUpTo100 → 6300; qty from unitsPerPack=12
-    expect(r.bundlePrice).toBe(6300);
+    // wholesale 5000 × 1.25 = 6250; qty from unitsPerPack=12
+    expect(r.bundlePrice).toBe(6250);
     expect(r.bundleQuantity).toBe(12);
     expect(r.bundleLabel).toBe('12+');
   });
@@ -1512,9 +1515,8 @@ describe('resolveBundlePriceForRow — server parity', () => {
     expect(r.bundlePrice).toBe(9000);
   });
 
-  it('rounds a markup_on_cost bundle UP to the nearest 100, as the server does', () => {
-    // 7010 * 1.10 = 7711 -> roundUpTo100 -> 7800. Quoting 7711 would undercut
-    // the price the customer is actually charged at checkout.
+  it('preserves decimal markup_on_cost bundle prices in print output', () => {
+    // 7010 * 1.10 = 7711; the printed pricelist keeps 7711.
     const r = resolveBundlePriceForRow(
       row({ costPrice: 7010 }),
       bundle({
@@ -1523,7 +1525,7 @@ describe('resolveBundlePriceForRow — server parity', () => {
       }) as never,
       10000
     );
-    expect(r.bundlePrice).toBe(7800);
+    expect(r.bundlePrice).toBe(7711);
   });
 
   it('quotes nothing for markup_on_cost with no basis — the server leaves price alone', () => {
@@ -1733,13 +1735,13 @@ describe('explainPricelistCoverage — the Cloud Bay report', () => {
 
   it('reports nothing inert when the lines do carry a wholesale price', () => {
     // WYN48B-POLI16E4-FC0S1R: retail 40000, wholesale 27200, pack 6 — verified
-    // against the real server engine (unit 32640, bundle 31300).
+    // against the printed sheet (unit 32640, exact bundle 31280).
     const lines = priceAndSortLines(
       [row({ sellingPrice: 40000, wholesalePrice: 27200, unitsPerPack: 6 })],
       cloudBay
     );
     expect(lines[0].price).toBe(32640);
-    expect(lines[0].bundlePrice).toBe(31300);
+    expect(lines[0].bundlePrice).toBe(31280);
 
     const cov = explainPricelistCoverage(lines, cloudBay);
     expect(cov.repriced).toBe(1);
@@ -2104,7 +2106,7 @@ describe('a bundle that costs MORE than the unit price', () => {
   // Live regression (Monte dos Perdigoes Viognier & Gouveio, Cloud Bay):
   // retail 28000, wholesale 14400, pack 6.
   //   all-products formula, wholesale +30%  -> unit 18720
-  //   product-specific bundle, wholesale +50.5% -> roundUpTo100 -> 21700
+  //   product-specific bundle, wholesale +50.5% -> 21672
   // The bundle prices ABOVE the unit price because its basis is wholesale, not
   // the retail path. A `savings <= 0` guard used to drop it BEFORE the pool
   // split, so the sheet fell through to the all-products bundle and quoted
@@ -2145,18 +2147,18 @@ describe('a bundle that costs MORE than the unit price', () => {
     unitsPerPack: 6,
   });
 
-  it('still quotes the product-specific rule, matching what checkout charges', () => {
+  it('still quotes the product-specific rule without print rounding', () => {
     const r = resolveBundlePriceForRow(viognier, pl, 18720);
-    expect(r.bundlePrice).toBe(21700);
+    expect(r.bundlePrice).toBe(21672);
     expect(r.bundleQuantity).toBe(6);
-    expect(r.bundleTotal).toBe(130200);
+    expect(r.bundleTotal).toBe(130032);
   });
 
   it('does not fall through to the cheaper all-products bundle', () => {
-    // 14400 x 1.2362 -> roundUpTo100 -> 17900: the figure the sheet used to
-    // print, and the one checkout would never charge for this product.
+    // The lower all-products tier remains shadowed by the product-specific
+    // rule, even though its exact calculated value would be 17,801.28.
     expect(resolveBundlePriceForRow(viognier, pl, 18720).bundlePrice).not.toBe(
-      17900
+      17801.28
     );
   });
 });

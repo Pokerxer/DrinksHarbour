@@ -42,6 +42,17 @@ export function buildPricelistDoc(
   const o = options;
   const currency = pricelist?.currency || 'NGN';
   const lines = priceAndSortLines(rows, pricelist, o.discountPercent ?? 0);
+  const extraColumns = (o.additionalPriceColumns ?? []).map((c) => {
+    const sample = lines.find(
+      (l) => l.bundleTotal != null && l.bundleQuantity != null
+    );
+    return {
+      ...c,
+      displayLabel: sample?.bundleQuantity
+        ? `${c.label} ×${sample.bundleQuantity}`
+        : c.label,
+    };
+  });
   const { stamp, iso } = todayParts();
 
   const issuerName =
@@ -56,10 +67,22 @@ export function buildPricelistDoc(
     { label: 'Unit Price', align: 'right' },
     ...(linesHaveBundlePrices(lines)
       ? [
-          { label: 'Bundle Price', align: 'right' as const },
-          { label: 'Bundle Qty', align: 'right' as const },
+          {
+            label:
+              o.showBundleQuantity === false
+                ? `Bundle Price ×${lines.find((l) => l.bundleQuantity)?.bundleQuantity ?? ''}`
+                : 'Bundle Price',
+            align: 'right' as const,
+          },
+          ...(o.showBundleQuantity === false
+            ? []
+            : [{ label: 'Bundle Qty', align: 'right' as const }]),
         ]
       : []),
+    ...extraColumns.map((c) => ({
+      label: c.displayLabel,
+      align: 'right' as const,
+    })),
   ];
 
   const showBundle = linesHaveBundlePrices(lines);
@@ -81,7 +104,10 @@ export function buildPricelistDoc(
       {
         text: fmtAmt(l.price, currency),
         strong: true,
-        sub: l.was != null ? `was ${fmtAmt(l.was, currency)}` : undefined,
+        sub:
+          o.showWasPrices !== false && l.was != null
+            ? `was ${fmtAmt(l.was, currency)}`
+            : undefined,
       },
       ...(showBundle
         ? [
@@ -91,14 +117,32 @@ export function buildPricelistDoc(
               ? {
                   text: fmtAmt(l.bundleTotal, currency),
                   strong: true,
-                  sub: `${fmtAmt(l.bundlePrice ?? 0, currency)} each`,
+                  sub: `${o.showWasPrices !== false && l.bundleWas != null ? `was ${fmtAmt(l.bundleWas, currency)} · ` : ''}${fmtAmt(l.bundlePrice ?? 0, currency)} each`,
                 }
               : { text: '—', color: MUTED },
-            l.bundleQuantity != null
+            o.showBundleQuantity !== false && l.bundleQuantity != null
               ? { text: String(l.bundleQuantity) }
               : { text: '' },
           ]
         : []),
+      ...extraColumns.map((c) => {
+        const p = priceAndSortLines([l], c.pricelist)[0] ?? {
+          price: 0,
+          was: null,
+          bundlePrice: null,
+        };
+        const columnPrice = p.bundleTotal ?? p.bundlePrice ?? p.price;
+        const columnWas =
+          p.bundleTotal != null ? p.price * (p.bundleQuantity ?? 1) : p.was;
+        return {
+          text: fmtAmt(columnPrice, c.pricelist.currency || currency),
+          strong: true,
+          sub:
+            o.showWasPrices !== false && columnWas != null
+              ? `was ${fmtAmt(columnWas, c.pricelist.currency || currency)}`
+              : undefined,
+        };
+      }),
     ];
     return cells;
   };

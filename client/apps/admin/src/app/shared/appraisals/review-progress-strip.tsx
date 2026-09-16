@@ -118,6 +118,12 @@ export default function ReviewProgressStrip({
         </div>
       </div>
 
+      {/* Rating instruction — read before the first question. */}
+      <p className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-2.5 text-sm leading-relaxed text-gray-600">
+        Rate each statement from 1 to 5, where 1 is the lowest and 5 is the
+        highest.
+      </p>
+
       {/* Progress bar */}
       <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between text-xs">

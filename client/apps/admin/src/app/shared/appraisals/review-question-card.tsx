@@ -95,11 +95,6 @@ function QuestionLabel({
         </span>
       )}
       {question.required && <span className="sr-only"> (required)</span>}
-      {question.helpText && (
-        <span className="mt-1 block text-xs font-normal leading-relaxed text-gray-400">
-          {question.helpText}
-        </span>
-      )}
     </Tag>
   );
 }
@@ -126,12 +121,18 @@ function QuestionLabel({
  */
 function ScoredOptionsField({
   question,
+  kind,
   value,
   onChange,
   disabled,
   shuffleSalt,
 }: {
   question: AppraisalQuestion;
+  /**
+   * Which reviewer this form belongs to. Drives `selfLabel` selection — the
+   * self form reads it rather than the third-person `label`.
+   */
+  kind: FeedbackKind;
   value: number | undefined;
   onChange: (rating: number) => void;
   disabled: boolean;
@@ -187,11 +188,14 @@ function ScoredOptionsField({
 
 function ScaleField({
   question,
+  kind,
   value,
   onChange,
   disabled,
 }: {
   question: AppraisalQuestion;
+  /** Which reviewer this form belongs to — drives `selfLabel` selection. */
+  kind: FeedbackKind;
   value: number | undefined;
   onChange: (rating: number) => void;
   disabled: boolean;
@@ -199,8 +203,6 @@ function ScaleField({
   const max = scaleMaxOf(question);
   const steps = Array.from({ length: max }, (_, i) => i + 1);
   const isRating = question.type === 'rating';
-  const lowLabel = question.scaleLabels?.low?.trim() || 'Lowest';
-  const highLabel = question.scaleLabels?.high?.trim() || 'Highest';
 
   return (
     <fieldset className="m-0 min-w-0 border-0 p-0" disabled={disabled}>
@@ -247,14 +249,6 @@ function ScaleField({
           );
         })}
       </div>
-
-      {/* Endpoint labels. The template's own wording when it has any — a
-          likert question reading "Strongly disagree → Strongly agree" is the
-          whole point of the type. */}
-      <div className="mt-2 flex items-start justify-between gap-4 text-[11px] leading-tight text-gray-400">
-        <span className="max-w-[45%] text-left">{lowLabel}</span>
-        <span className="max-w-[45%] text-right">{highLabel}</span>
-      </div>
     </fieldset>
   );
 }
@@ -263,11 +257,14 @@ function ScaleField({
 
 function YesNoField({
   question,
+  kind,
   value,
   onChange,
   disabled,
 }: {
   question: AppraisalQuestion;
+  /** Which reviewer this form belongs to — drives `selfLabel` selection. */
+  kind: FeedbackKind;
   value: number | undefined;
   onChange: (rating: number) => void;
   disabled: boolean;
@@ -312,11 +309,14 @@ function YesNoField({
 
 function ChoiceField({
   question,
+  kind,
   value,
   onChange,
   disabled,
 }: {
   question: AppraisalQuestion;
+  /** Which reviewer this form belongs to — drives `selfLabel` selection. */
+  kind: FeedbackKind;
   value: string[] | undefined;
   onChange: (selected: string[]) => void;
   disabled: boolean;
@@ -416,11 +416,14 @@ function ChoiceField({
 
 function TextField({
   question,
+  kind,
   value,
   onChange,
   disabled,
 }: {
   question: AppraisalQuestion;
+  /** Which reviewer this form belongs to — drives `selfLabel` selection. */
+  kind: FeedbackKind;
   value: string;
   onChange: (text: string) => void;
   disabled: boolean;
@@ -540,6 +543,7 @@ export default function ReviewQuestionCard({
           return (
             <ScoredOptionsField
               question={question}
+              kind={kind}
               value={answer?.rating}
               onChange={onRatingChange}
               disabled={fieldDisabled}
@@ -550,6 +554,7 @@ export default function ReviewQuestionCard({
         return (
           <ScaleField
             question={question}
+            kind={kind}
             value={answer?.rating}
             onChange={onRatingChange}
             disabled={fieldDisabled}
@@ -559,6 +564,7 @@ export default function ReviewQuestionCard({
         return (
           <YesNoField
             question={question}
+            kind={kind}
             value={answer?.rating}
             onChange={onRatingChange}
             disabled={fieldDisabled}
@@ -568,6 +574,7 @@ export default function ReviewQuestionCard({
         return (
           <ChoiceField
             question={question}
+            kind={kind}
             value={answer?.selected}
             onChange={onSelectedChange}
             disabled={fieldDisabled}
@@ -581,6 +588,7 @@ export default function ReviewQuestionCard({
         return (
           <TextField
             question={question}
+            kind={kind}
             value={answer?.text ?? ''}
             onChange={onTextChange}
             disabled={fieldDisabled}

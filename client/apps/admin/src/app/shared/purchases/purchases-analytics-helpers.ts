@@ -106,7 +106,7 @@ export const PALETTE = [
 ];
 
 export const STATUS_LABELS: Record<string, string> = {
-  draft: 'RFQ / Draft',
+  draft: 'Draft',
   confirmed: 'Confirmed',
   received: 'Received',
   validated: 'Validated',
@@ -117,7 +117,7 @@ export const SAVED_KEY = 'dh-purchases-analysis-searches';
 
 export const FILTER_STATIC: { key: string; label: string }[] = [
   { key: 'not_cancelled', label: 'Not Cancelled' },
-  { key: 'status_draft', label: 'RFQs (Draft)' },
+  { key: 'status_draft', label: 'Draft' },
   { key: 'status_confirmed', label: 'Confirmed' },
   { key: 'status_received', label: 'Received' },
   { key: 'status_validated', label: 'Validated' },

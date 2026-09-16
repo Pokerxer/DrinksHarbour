@@ -277,4 +277,33 @@ describe('buildPricelistDoc', () => {
     expect(labels).not.toContain('Bundle Price');
     expect(labels).not.toContain('Bundle Qty');
   });
+
+  it('uses bundle pricing in added pricelist columns', () => {
+    const bundle = {
+      _id: 'wholesale',
+      name: 'Wholesale Price',
+      rules: [
+        {
+          priceType: 'bundle',
+          bundleQuantity: 6,
+          bundleDiscount: 10,
+          bundleDiscountType: 'percentage',
+        },
+      ],
+    };
+    const m = buildPricelistDoc(
+      [row()],
+      null,
+      opts({
+        groupByCategory: false,
+        additionalPriceColumns: [
+          { label: bundle.name, pricelist: bundle as never },
+        ],
+      })
+    );
+    const labels = m.table.columns.map((c) => c.label);
+    const i = labels.indexOf('Wholesale Price');
+    expect(i).toBeGreaterThan(-1);
+    expect(m.table.rows[0][i].text).toContain('54,000');
+  });
 });

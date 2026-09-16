@@ -171,7 +171,8 @@ const CUSTOM_GROUP_KEY = 'dh-inventory-stock-custom-groups';
 // ── Print (stock report) ──────────────────────────────────────────────────────
 
 function printStock(rows: StockRow[], docTitle: string, valuation: boolean) {
-  if (rows.length) requestDocumentExport(buildStockDoc(rows, docTitle, valuation));
+  if (rows.length)
+    requestDocumentExport(buildStockDoc(rows, docTitle, valuation));
 }
 
 function exportStockCsv(rows: StockRow[], prefix: string) {
@@ -185,6 +186,7 @@ function exportStockCsv(rows: StockRow[], prefix: string) {
     'Available',
     'Category',
     'Unit Cost',
+    'Wholesale Price',
     'Selling Price',
     'Value',
     'Method',
@@ -202,6 +204,7 @@ function exportStockCsv(rows: StockRow[], prefix: string) {
       availableOf(r),
       `"${r.categoryName ?? 'Uncategorized'}"`,
       (r.costPrice || 0).toFixed(2),
+      (r.wholesalePrice || 0).toFixed(2),
       (r.sellingPrice || 0).toFixed(2),
       lineValue(r).toFixed(2),
       r.valuationMethod ?? '',

@@ -468,8 +468,8 @@ export const STATUS_BADGE: Record<string, string> = {
 
 export function statusLabel(status: string): string {
   const labels: Record<string, string> = {
-    draft: 'RFQ',
-    confirmed: 'Purchase Order',
+    draft: 'Draft',
+    confirmed: 'Confirmed',
     purchase: 'Purchase Order',
     partially_received: 'Partially Received',
     received: 'Received',
