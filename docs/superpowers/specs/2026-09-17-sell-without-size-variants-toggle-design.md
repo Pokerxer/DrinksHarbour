@@ -48,12 +48,24 @@ Confirmation modal (local state, `rizzui/modal`, same pattern as
   `sellWithoutSizeVariants = true`, closes. Neutral **Keep Size Variants** →
   leaves it off, closes.
 
-### 2. Validation-guard skip — `index.tsx`
+### 2. Validation-guard skip — three layers (amended during planning)
 
-The manual guards at `index.tsx:933-957` early-return when
-`sp.sellWithoutSizeVariants === true` — hidden size rows must never block a save
-in single-item mode. The server already discards the `sizes` payload when the
-flag is ON, so no backend change.
+Planning found the schema also enforces sizes independently of the toggle, so
+"hidden rows never block a save" spans three layers:
+
+1. **Form schema** — `src/validators/sub-product.schema.ts`: the per-row
+   `size` rule (`sizeOptionSchema.size`, currently
+   `z.string(...).min(1, ...)`) is relaxed to `z.string().default('')`, and the
+   `subProductFormSchema` `superRefine` per-row "size is required" check
+   (`:372-381`) is skipped when `sp.sellWithoutSizeVariants === true`. This
+   stops `handleSubmit` from failing on hidden rows.
+2. **Manual save guard** — `index.tsx:933-957` (missing-selection + duplicate
+   checks): replaced by a pure exported helper
+   `validateSizeVariants(sizes, sellWithoutSizeVariants)` returning `string[]`
+   (empty in single-item mode). Needed because auto-save / save-on-leave call
+   `performSave(getValues(), true)` directly, bypassing zod.
+3. **Server** — unchanged: already discards the `sizes` payload when the flag
+   is ON (`subproduct.service.js`).
 
 ### 3. Single-unit inline notice — `sizes.tsx`
 
@@ -96,4 +108,6 @@ Price lives in **Pricing**, stock lives in **Inventory**."*
 | File | Change |
 |---|---|
 | `create-edit/sizes.tsx` | Switch handler (modal gate), confirmation `Modal`, inline notice; import `Modal` from `rizzui/modal`, `useState` |
-| `create-edit/index.tsx` | Skip both size guards when fix `sellWithoutSizeVariants === true` |
+| `create-edit/index.tsx` | Replace inline size guards with shared `validateSizeVariants` helper (skips when `sellWithoutSizeVariants === true`) |
+| `create-edit/validation.ts` | NEW — pure `validateSizeVariants(sizes, sellWithoutSizeVariants): string[]` |
+| `validators/sub-product.schema.ts` | Relax `size` field to `z.string().default('')`; gate the per-row "size is required" `superRefine` on `!sellWithoutSizeVariants` |
