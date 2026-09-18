@@ -59,6 +59,7 @@ import SubProductBasicInfo from './basic-info';
 import SubProductPricing from './pricing';
 import SubProductInventory from './inventory';
 import SubProductSizes from './sizes';
+import { validateSizeVariants } from './validation';
 import SubProductVendor from './vendor';
 import ProductHistoryPanel from './ProductHistoryPanel';
 import SubProductStatusVisibility from './status-visibility';
@@ -929,31 +930,16 @@ export default function CreateEditSubProduct({
         return false;
       }
 
-      // Guard: each size variant must have a size value selected
-      const invalidSizes = (sp.sizes || []).filter(
-        (s: any) => !s.size || s.size.trim() === ''
+      // Guard: size variants are validated only when selling WITH variants.
+      // In single-item mode the rows stay hidden (restorable) and must never
+      // block the save — validateSizeVariants returns [] for that case.
+      const sizeErrors = validateSizeVariants(
+        sp.sizes,
+        sp.sellWithoutSizeVariants === true
       );
-      if (invalidSizes.length > 0) {
-        if (!silent)
-          toast.error(
-            `${invalidSizes.length} size variant(s) are missing a size selection`
-          );
+      if (sizeErrors.length > 0) {
+        if (!silent) toast.error(sizeErrors[0]);
         return false;
-      }
-
-      // Guard: no duplicate size values in the sizes array
-      const seenSizes = new Set<string>();
-      for (const s of sp.sizes || []) {
-        if (!s.size) continue;
-        const key = String(s.size).toLowerCase().trim();
-        if (seenSizes.has(key)) {
-          if (!silent)
-            toast.error(
-              `Duplicate size value "${s.size}". Each size value can only appear once per product.`
-            );
-          return false;
-        }
-        seenSizes.add(key);
       }
 
       const token = sessionRef.current?.user?.token;
