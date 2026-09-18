@@ -4,6 +4,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useFormContext, useFieldArray, Controller } from 'react-hook-form';
 import { Input, Text, Button, Switch, Badge } from 'rizzui';
+import { Modal } from 'rizzui/modal';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import {
   PiPlus,
@@ -439,6 +440,7 @@ export default function SubProductSizes() {
   const sellWithoutSizeVariants = watch?.(
     'subProductData.sellWithoutSizeVariants'
   );
+  const [confirmSingleItem, setConfirmSingleItem] = useState(false);
   const defaultMarkup = watch?.('subProductData.markupPercentage') ?? 25;
   const defaultRoundUp = watch?.('subProductData.roundUp') ?? '100';
   const defaultCostPrice = watch?.('subProductData.costPrice');
@@ -618,6 +620,13 @@ export default function SubProductSizes() {
             <Switch
               checked={field.value ?? false}
               onChange={(checked) => {
+                // Safety gate: turning ON while sizes are configured asks
+                // first, so a seller can't silently lose their variants.
+                // Rows stay hidden (not deleted) — toggling back restores them.
+                if (checked && fields.length > 0) {
+                  setConfirmSingleItem(true);
+                  return;
+                }
                 field.onChange(checked);
                 setValue('subProductData.sellWithoutSizeVariants', checked);
               }}
@@ -625,6 +634,31 @@ export default function SubProductSizes() {
           )}
         />
       </motion.div>
+
+      {sellWithoutSizeVariants && (
+        <motion.div
+          variants={fieldStaggerVariants}
+          custom={2}
+          className="rounded-xl border border-amber-200 bg-amber-50 p-4"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100">
+              <PiInfo className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <Text className="text-sm font-medium text-gray-800">
+                Selling as a single item
+              </Text>
+              <Text className="mt-0.5 text-sm text-gray-500">
+                One price &amp; one stock. Price lives in{' '}
+                <span className="font-semibold text-gray-700">Pricing</span>,
+                stock lives in{' '}
+                <span className="font-semibold text-gray-700">Inventory</span>.
+              </Text>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       <AnimatePresence mode="wait">
         {!sellWithoutSizeVariants && (
@@ -927,6 +961,90 @@ export default function SubProductSizes() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Confirm turning off size variants */}
+      <Modal
+        isOpen={confirmSingleItem}
+        onClose={() => setConfirmSingleItem(false)}
+        size={{ sm: 'max-w-md', md: 'max-w-md', lg: 'max-w-md' }}
+        className="[&>div]:p-0 [&>div]:rounded-2xl overflow-hidden"
+        overlayClassName="bg-black/50 backdrop-blur-sm"
+      >
+        <motion.div
+          variants={cardVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          custom={0}
+          className="overflow-hidden"
+        >
+          {/* Header */}
+          <div className="relative bg-gradient-to-r from-red-600 to-rose-600 px-6 py-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+                  <PiWarning className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-white">
+                    Sell without size variants?
+                  </h2>
+                  <p className="text-xs text-white/70">
+                    Replace your variants with a single Unit item
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setConfirmSingleItem(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-all hover:bg-white/20 hover:text-white"
+              >
+                <PiX className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 py-5">
+            <div className="rounded-xl border border-red-100 bg-red-50/50 p-4">
+              <Text className="text-sm text-gray-700">
+                Your{' '}
+                <span className="font-semibold text-gray-900">
+                  {fields.length} configured size variant
+                  {fields.length !== 1 ? 's' : ''}
+                </span>{' '}
+                will be replaced by a single{' '}
+                <span className="font-semibold text-gray-900">Unit</span> item
+                when you save. They stay in this form until then — turn this
+                back off to restore them.
+              </Text>
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setConfirmSingleItem(false)}
+                className="w-full sm:w-auto"
+              >
+                Keep Size Variants
+              </Button>
+              <Button
+                type="button"
+                className="w-full min-w-[140px] sm:w-auto"
+                onClick={() => {
+                  setValue('subProductData.sellWithoutSizeVariants', true);
+                  setConfirmSingleItem(false);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <PiCheck className="h-4 w-4" />
+                  Sell Without Variants
+                </span>
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      </Modal>
     </motion.div>
   );
 }
