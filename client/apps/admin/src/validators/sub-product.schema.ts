@@ -30,8 +30,7 @@ const optionalPositiveNumber = z.preprocess(
 // Size option schema for sub-product variants
 export const sizeOptionSchema = z.object({
   _id: z.string().optional(),
-  size: z.string({ required_error: 'Size selection is required' })
-    .min(1, 'Please select a size from the dropdown'),
+  size: z.string().default(''),
   displayName: z.string().optional(),
   sizeCategory: z.string().default('standard'),
   unitType: z.string().optional(),
@@ -369,16 +368,20 @@ export const subProductFormSchema = z.object({
     }
   }
 
-  // Each size variant must have a size selected
-  (sp.sizes || []).forEach((size, i) => {
-    if (!size.size || size.size.trim() === '') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Size is required',
-        path: ['subProductData', 'sizes', i, 'size'],
-      });
-    }
-  });
+  // Each size variant must have a size selected — only when selling WITH
+  // variants. In single-item mode the rows stay hidden (restorable) and must
+  // never block the save.
+  if (!sp.sellWithoutSizeVariants) {
+    (sp.sizes || []).forEach((size, i) => {
+      if (!size.size || size.size.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Size is required',
+          path: ['subProductData', 'sizes', i, 'size'],
+        });
+      }
+    });
+  }
 });
 
 export type SubProductInput = z.infer<typeof subProductFormSchema>;
