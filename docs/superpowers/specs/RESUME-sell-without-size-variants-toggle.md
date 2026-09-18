@@ -77,11 +77,19 @@ no segmented mode control).
 - Duplicate-size message now reports the **first-seen** casing of a value
   (e.g. `" 50CL "` first-row) rather than the colliding row — matches the
   plan's approved test; negligible difference from the old inline guard.
+- **Root-cause fix 2026-09-18 (`284bf3bb`)**: rizzui `Switch` forwards
+  `onChange` to a native `<input type="checkbox">` (onChange is spread from
+  props, not destructured — see `node_modules/rizzui/dist/chunk-LBI4SQ2B.mjs`).
+  The toggle handler therefore received a `ChangeEvent`, not a boolean, and
+  `setValue(..., checked)` was persisting the raw event (DOM node) into the
+  form value → toggle stuck ON (truthy object) + autosave circular-JSON crash
+  at `index.tsx` L731. Fixed by reading `event.target.checked` — the same
+  pattern as all 8 sibling Switches in `create-edit/`.
 - Autosave (`performSave(getValues(), true)`, bypasses zod) is why the manual
   guard had to stay toggle-aware — it was extracted to the helper, not removed.
 - Commits: `6ea9d461` (schema), `026eaf16` (helper+index), `dcda843a`
-  (sizes.tsx), `ef5324d7` (trailing-newline style nit); docs commits
-  `321e5346`/`f8c45294`/`7a47dfcc`.
+  (sizes.tsx), `ef5324d7` (style nit), `284bf3bb` (toggle event fix); docs
+  commits `321e5346`/`f8c45294`/`7a47dfcc`.
 
 ## Open follow-ups
 
