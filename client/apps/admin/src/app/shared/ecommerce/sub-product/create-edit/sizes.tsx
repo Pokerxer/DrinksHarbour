@@ -619,7 +619,11 @@ export default function SubProductSizes() {
           render={({ field }) => (
             <Switch
               checked={field.value ?? false}
-              onChange={(checked) => {
+              onChange={(event) => {
+                // rizzui Switch forwards the native checkbox change event —
+                // read the checked boolean (like every other switch here),
+                // never persist the event itself.
+                const checked = event?.target?.checked ?? false;
                 // Safety gate: turning ON while sizes are configured asks
                 // first, so a seller can't silently lose their variants.
                 // Rows stay hidden (not deleted) — toggling back restores them.
