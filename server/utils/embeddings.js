@@ -128,7 +128,7 @@ async function getLocalPipeline() {
     try {
       console.log('🔄 Loading local embedding model (first request - may take a moment)...');
       
-      const { pipeline, env } = require('@xenova/transformers');
+      const { pipeline, env } = await import('@xenova/transformers');
       
       // Configure for server-side usage
       env.allowLocalModels = false;

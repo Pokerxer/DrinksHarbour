@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
 const { computeRatingAggregate } = require('../services/review.helpers');
+const { isBeverageType } = require('../constants/productTypes');
 
 // Reusable MediaItem Schema
 const MediaItemSchema = new Schema({
@@ -784,6 +785,75 @@ const productSchema = new Schema(
     toObject: { virtuals: true },
   }
 );
+
+// ════════════════════════════════════════════════════════════
+// NORMALIZATION
+// ════════════════════════════════════════════════════════════
+// The admin edit form submits whatever its hidden steps left in form state, so
+// a non-beverage product can arrive with a stale `servingsPerContainer: 0` or
+// `volumeMl: 0`. Those paths are `min: 1` — persisting a zero used to throw
+// "less than minimum allowed value" on every write. Normalize before
+// validation instead so no save path can fail on a zero, and so a non-beverage
+// product can never carry beverage-only attributes at all.
+const NON_BEVERAGE_CLEAR_PATHS = [
+  'appellation',
+  'vintage',
+  'age',
+  'ageStatement',
+  'distilleryName',
+  'wineryName',
+  'breweryName',
+  'productionMethod',
+  'caskType',
+  'finish',
+  'servingSize',
+  'servingsPerContainer',
+  'standardSizes',
+  'volumeMl',
+  'abv',
+  'proof',
+  // tastingNotes is a nested object, not a single path — clear each sub-path
+  'tastingNotes.nose',
+  'tastingNotes.aroma',
+  'tastingNotes.palate',
+  'tastingNotes.taste',
+  'tastingNotes.finish',
+  'tastingNotes.mouthfeel',
+  'tastingNotes.appearance',
+  'tastingNotes.color',
+  // servingSuggestions is nested too
+  'servingSuggestions.temperature',
+  'servingSuggestions.glassware',
+  'servingSuggestions.garnish',
+  'servingSuggestions.mixers',
+  'foodPairings',
+  'flavorProfile',
+];
+
+productSchema.pre('validate', function () {
+  const isBeverage = isBeverageType(this.type);
+
+  if (!isBeverage) {
+    for (const path of NON_BEVERAGE_CLEAR_PATHS) {
+      this.set(path, undefined);
+    }
+    this.isAlcoholic = false;
+  } else {
+    // Clamp min-gated numerics so a stale zero can never fail validation.
+    if (this.servingsPerContainer != null && this.servingsPerContainer < 1) {
+      this.servingsPerContainer = undefined;
+    }
+    if (this.volumeMl != null && this.volumeMl < 1) {
+      this.volumeMl = undefined;
+    }
+    if (
+      this.vintage != null &&
+      (this.vintage < 1800 || this.vintage > new Date().getFullYear() + 1)
+    ) {
+      this.vintage = undefined;
+    }
+  }
+});
 
 // ════════════════════════════════════════════════════════════
 // VIRTUALS

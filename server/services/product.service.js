@@ -1436,11 +1436,11 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
 
   if (sku !== undefined) product.sku = sku || undefined;
   if (upc !== undefined) product.upc = upc || undefined;
-  if (volumeMl !== undefined) product.volumeMl = volumeMl;
+  if (volumeMl !== undefined) product.volumeMl = volumeMl > 0 ? volumeMl : undefined;
   if (volume !== undefined) product.volume = volume;
   if (standardSizes !== undefined) product.standardSizes = standardSizes;
   if (servingSize !== undefined) product.servingSize = servingSize;
-  if (servingsPerContainer !== undefined) product.servingsPerContainer = servingsPerContainer;
+  if (servingsPerContainer !== undefined) product.servingsPerContainer = servingsPerContainer > 0 ? servingsPerContainer : undefined;
   if (originCountry !== undefined) product.originCountry = originCountry;
   if (region !== undefined) product.region = region;
   if (appellation !== undefined) product.appellation = appellation;
