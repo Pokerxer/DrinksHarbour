@@ -53,7 +53,10 @@ const categorySchema = new Schema(
         'soft_drink', 'dairy_alternatives', 'functional_drink', 'syrup', 'bitters',
         
         // ACCESSORIES & OTHER
-        'glassware', 'bar_tools', 'accessories', 'gift_set', 'subscription', 'other'
+        'glassware', 'bar_tools', 'accessories', 'gift_set', 'subscription', 'other',
+
+        // GIFT & LIFESTYLE (ckay taxonomy — snacks, beauty & grooming, home & living)
+        'snack', 'beauty', 'home'
       ],
       required: true,
       index: true,

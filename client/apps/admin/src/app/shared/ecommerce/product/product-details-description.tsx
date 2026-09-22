@@ -4,8 +4,52 @@
 import { Collapse, Title, Text } from 'rizzui';
 import cn from '@core/utils/class-names';
 import { PiCaretDownBold, PiTagLight } from 'react-icons/pi';
+import ProductSpecTable from '@/app/shared/ecommerce/product/product-spec-table';
 
-export default function ProductDetailsDescription() {
+export default function ProductDetailsDescription({
+  product,
+}: {
+  product?: any;
+}) {
+  if (product?.isReal) {
+    return (
+      <Collapse
+        className="border-t last-of-type:border-t-0"
+        defaultOpen={true}
+        header={({ open, toggle }) => (
+          <div
+            role="button"
+            onClick={toggle}
+            className="flex w-full cursor-pointer items-center justify-between py-6 font-lexend text-lg font-semibold text-gray-900"
+          >
+            Product Details
+            <div className="flex shrink-0 items-center justify-center">
+              <PiCaretDownBold
+                className={cn(
+                  'h-[18px] w-[18px] transform transition-transform duration-300',
+                  open && 'rotate-180'
+                )}
+              />
+            </div>
+          </div>
+        )}
+      >
+        <div className="-mt-2 pb-7">
+          {product.description ? (
+            <Text as="p" className="pb-4 leading-relaxed">
+              {product.description}
+            </Text>
+          ) : (
+            <Text className="pb-4 text-gray-400">
+              No description has been provided for this product.
+            </Text>
+          )}
+          <ProductSpecTable product={product} />
+        </div>
+      </Collapse>
+    );
+  }
+
   return (
     <Collapse
       className="border-t last-of-type:border-t-0"
@@ -45,26 +89,14 @@ export default function ProductDetailsDescription() {
         </Title>
         <ul className="space-y-2.5 pt-3.5">
           <li>Synthetic Leather</li>
-          <li>EASY WIPE CLEAN</li>
+          <li>Chocolate</li>
+          <li>Timberland Private White</li>
         </ul>
-        <div className="mt-6 flex items-start">
-          <div className="me-3 mt-1 flex shrink-0 items-center font-medium text-gray-900">
-            <PiTagLight className="me-1.5 h-[18px] w-[18px]" /> Tags:
-          </div>
-          <ul className="-m-1 text-gray-900">
-            <li className="m-1 inline-flex rounded bg-gray-100 px-2.5 py-1">
-              Shoe
-            </li>
-            <li className="m-1 inline-flex rounded bg-gray-100 px-2.5 py-1">
-              Fashion
-            </li>
-            <li className="m-1 inline-flex rounded bg-gray-100 px-2.5 py-1">
-              Men
-            </li>
-            <li className="m-1 inline-flex rounded bg-gray-100 px-2.5 py-1">
-              Nike
-            </li>
-          </ul>
+        <div className="mt-6 flex items-center">
+          <PiTagLight className="me-2 h-5 w-5 text-gray-400" />
+          <p className="text-sm text-gray-500">
+            100% brand new and high quality
+          </p>
         </div>
       </div>
     </Collapse>

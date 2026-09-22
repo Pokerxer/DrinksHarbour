@@ -779,6 +779,19 @@ const STANDARD_SIZES = {
   // Non-beverage sizes
   WEIGHT: ['kg-0.25', 'kg-0.5', 'kg-1', 'kg-2'],
   UNITS: ['unit-single', 'unit-pair', 'set-4', 'set-6', 'set-8'],
+  
+  // Gifts, Lifestyle & Snacks — count / piece / set / bar / bag / tin based
+  GIFTS_AND_LIFESTYLE: [
+    'piece-single', 'pair', 'unit-single',
+    'set-2', 'set-3', 'set-4', 'set-6', 'set-12',
+    'gift-set', 'tasting-set', 'variety-pack',
+    'box-single', 'box-5', 'box-10', 'box-20', 'box-24', 'box-25', 'box-50',
+    'pack-2', 'pack-3', 'pack-5',
+    'kit-3', 'kit-5', 'kit-8', 'kit-10',
+    'bar-single', 'bar-2',
+    'bag-100g', 'bag-200g', 'bag-250g', 'bag-500g', 'bag-1kg',
+    'tin-single', 'tin-200g', 'tin-500g',
+  ],
 };
 
 /**
@@ -795,6 +808,7 @@ const ALL_SIZE_ENUMS = [
   ...STANDARD_SIZES.PACKS,
   ...STANDARD_SIZES.WEIGHT,
   ...STANDARD_SIZES.UNITS,
+  ...STANDARD_SIZES.GIFTS_AND_LIFESTYLE,
 ];
 
 // ============================================================
@@ -900,11 +914,33 @@ const getSizesForType = (type) => {
     [PRODUCT_TYPES.ENERGY_DRINK]: STANDARD_SIZES.CANS,
     
     // Accessories
-    [PRODUCT_TYPES.GLASSWARE]: STANDARD_SIZES.UNITS,
-    [PRODUCT_TYPES.SNACK]: STANDARD_SIZES.WEIGHT,
+    [PRODUCT_TYPES.GLASSWARE]: STANDARD_SIZES.GIFTS_AND_LIFESTYLE,
+    [PRODUCT_TYPES.BAR_TOOL]: STANDARD_SIZES.GIFTS_AND_LIFESTYLE,
+    [PRODUCT_TYPES.DECANTER]: STANDARD_SIZES.GIFTS_AND_LIFESTYLE,
+    [PRODUCT_TYPES.COCKTAIL_KIT]: STANDARD_SIZES.GIFTS_AND_LIFESTYLE,
+
+    // Snacks & Pairings
+    [PRODUCT_TYPES.SNACK]: [
+      'bar-single', 'bar-2',
+      'bag-100g', 'bag-200g', 'bag-250g', 'bag-500g', 'bag-1kg',
+      'tin-single', 'tin-200g', 'tin-500g',
+      ...STANDARD_SIZES.WEIGHT,
+    ],
+    [PRODUCT_TYPES.NUTS]: STANDARD_SIZES.WEIGHT,
+    [PRODUCT_TYPES.CHOCOLATE]: [
+      'bar-single', 'bar-2', 'tin-single', 'tin-200g', 'tin-500g',
+    ],
+
+    // Gift & Bundles
+    [PRODUCT_TYPES.GIFT_SET]: STANDARD_SIZES.GIFTS_AND_LIFESTYLE,
+    [PRODUCT_TYPES.GIFT_BASKET]: [
+      'piece-single', 'box-single', 'gift-set', 'set-2', 'set-4', 'set-6',
+    ],
+    [PRODUCT_TYPES.TASTING_SET]: ['tasting-set', 'set-4', 'set-6', 'set-12'],
+    [PRODUCT_TYPES.BUNDLE]: ['piece-single', 'gift-set', 'variety-pack'],
   };
   
-  return sizeMap[type] || ['unit-single'];
+  return sizeMap[type] || STANDARD_SIZES.GIFTS_AND_LIFESTYLE;
 };
 
 // ============================================================

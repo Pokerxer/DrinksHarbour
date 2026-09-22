@@ -27,6 +27,7 @@ import {
 import { PiSparkle, PiSpinner } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
 import { geminiService } from '@/services/gemini.service';
+import { isBeverageProductType } from '@/utils/product-types';
 import { brandService } from '@/services/brand.service';
 import toast from 'react-hot-toast';
 
@@ -151,6 +152,7 @@ export default function ProductOrigin({
   const vintage = watch('vintage');
   const productionMethod = watch('productionMethod');
   const productName = watch('name') || '';
+  const isBeverage = isBeverageProductType(watch('type'));
   const currentYear = new Date().getFullYear();
 
   const hasName = productName.length >= 3;
@@ -485,6 +487,8 @@ export default function ProductOrigin({
           </div>
         </motion.div>
 
+        {isBeverage && (
+          <>
         {/* Appellation */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -786,6 +790,8 @@ export default function ProductOrigin({
             </Text>
           </div>
         </motion.div>
+          </>
+        )}
       </motion.div>
     </FormGroup>
   );

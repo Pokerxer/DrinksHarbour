@@ -7,6 +7,10 @@ const Product = require('../models/Product');
 const SubProduct = require('../models/SubProduct');
 const Brand = require('../models/Brand');
 const {
+  isBeverageType,
+  NON_BEVERAGE_TYPES,
+} = require('../constants/productTypes');
+const {
   researchProduct,
   formatFactsForPrompt,
   applyBriefToProduct,
@@ -54,8 +58,8 @@ const genAI = {
     // JSON-only system instruction and parsed downstream.
     const callClaude = async (content) => {
       const system = wantsJson
-        ? 'You are an expert beverage industry data assistant. Respond with ONLY valid JSON — no markdown code fences, no explanation, no preamble.'
-        : 'You are an expert beverage industry data assistant. Respond with only the requested content, no preamble.';
+        ? 'You are an expert product data assistant for a premium beverage & lifestyle marketplace. Respond with ONLY valid JSON — no markdown code fences, no explanation, no preamble.'
+        : 'You are an expert product data assistant for a premium beverage & lifestyle marketplace. Respond with only the requested content, no preamble.';
       const message = await anthropic.messages.create({
         model: activeModel,
         max_tokens: maxTokens,
@@ -316,12 +320,35 @@ const briefFor = (req, { cacheOnly = false } = {}) =>
  * @param {*} blank       Value to return when nothing confirmed it.
  * @param {string[]} [allowed] Optional schema enum to filter against.
  */
+// Facts that only ever apply to beverages — never generated for gift/lifestyle items.
+const BEVERAGE_ONLY_FACTS = new Set([
+  'appellation',
+  'caskType',
+  'productionMethod',
+  'vintage',
+  'ageStatement',
+]);
+
 const factHandler = (fact, key, blank, allowed) =>
   asyncHandler(async (req, res) => {
     const { name } = req.body;
     if (!name) {
       res.status(400);
       throw new Error('Product name is required');
+    }
+
+    // Facts that only ever apply to beverages — meaningless (and potentially
+    // misleading) on gift/lifestyle items, so skip the research entirely.
+    const type = req.body.type;
+    if (type && !isBeverageType(type) && BEVERAGE_ONLY_FACTS.has(fact)) {
+      res.json({
+        success: true,
+        data: { [key]: blank },
+        unverified: true,
+        sources: [],
+        note: `${key} does not apply to non-beverage products — left blank.`,
+      });
+      return;
     }
 
     const brief = await briefFor(req);
@@ -399,16 +426,19 @@ const generateProductDetails = asyncHandler(async (req, res) => {
 
     const catList = categories.map(c => c.name).join(', ');
     const subCatList = subCategories.map(s => s.name).join(', ');
-    const prompt = `You are a beverage expert. Generate product details for "${name}"${inputCategory ? ` (category: ${inputCategory})` : ''} as compact JSON. Use only values from the lists below. Return ONLY valid JSON, no markdown.
+    const prompt = `You are an expert product data assistant for a premium beverage & lifestyle marketplace. Generate product details for "${name}"${inputCategory ? ` (category: ${inputCategory})` : ''} as compact JSON. Use only values from the lists below. Return ONLY valid JSON, no markdown.
 ${factsBlock}${factsBlock ? '' : `
 NO SOURCES WERE FOUND for this product. Leave every factual field (abv, volumeMl, originCountry, region, appellation, producer, vintage, age, ageStatement, distilleryName, breweryName, wineryName, productionMethod, caskType, standardSizes, ingredients, allergens) empty or null. Do NOT infer them from the product name or category. You may still write the category, type, description and SEO copy.
 `}
 CATEGORIES: ${catList}
 SUBCATEGORIES: ${subCatList}
-TYPES: ${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
+TYPES (beverages): ${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
+NON-BEVERAGE TYPES: ${[...new Set([...NON_BEVERAGE_TYPES, 'accessory', 'gift', 'ice', 'subscription_box', 'other'])].join(', ')}
 SIZES: ${PRODUCT_ENUMS.standardSizes.slice(0, 12).join(', ')}
 FLAVORS: ${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')}
 STYLES: ${GENERATED_STYLES.join(', ')} (pick the single closest "style" value, or "" if none clearly fit)
+
+If "${name}" is NOT a beverage (a NON-BEVERAGE TYPE or otherwise a gift / lifestyle / accessory / snack item), then: pick the closest non-beverage type, set isAlcoholic to false, and leave abv, proof, volumeMl, standardSizes, servingSize, servingsPerContainer, tastingNotes, flavorProfile, foodPairings and servingSuggestions as 0 / [] / null / "". Never invent beverage attributes (ABV, glassware, pour temperature, mixers, tasting notes) for non-beverage products.
 
 Return this JSON (fill all fields accurately):
 {"name":"${name}","slug":"","type":"","subType":"","style":"","categoryName":"","subCategoryName":"","isAlcoholic":true,"abv":0,"proof":0,"volumeMl":750,"standardSizes":[],"servingSize":"","servingsPerContainer":0,"originCountry":"","region":"","appellation":null,"producer":"","brand":"","vintage":null,"age":null,"ageStatement":null,"distilleryName":null,"breweryName":null,"wineryName":null,"productionMethod":null,"caskType":null,"finish":null,"shortDescription":"","description":"","tastingNotes":{"nose":[],"aroma":[],"palate":[],"taste":[],"finish":[],"mouthfeel":[],"appearance":"","color":""},"flavorProfile":[],"foodPairings":[],"servingSuggestions":{"temperature":"","glassware":"","garnish":[],"mixers":[]},"isDietary":{"vegan":false,"vegetarian":false,"glutenFree":false,"dairyFree":false,"organic":false,"kosher":false,"halal":false,"sugarFree":false,"lowCalorie":false,"lowCarb":false},"allergens":[],"ingredients":[],"nutritionalInfo":{"calories":null,"carbohydrates":null,"sugar":null,"protein":null,"fat":null,"sodium":null,"caffeine":null},"metaTitle":"","metaDescription":"","keywords":[],"status":"draft"}`;
@@ -489,6 +519,27 @@ Return this JSON (fill all fields accurately):
     // Additional quality checks
     if (productData.abv && productData.abv > 0 && !productData.isAlcoholic) {
       productData.isAlcoholic = true;
+    }
+
+    // Non-beverage product types must never carry beverage-only attributes.
+    // Whatever the model or the brief produced, strip them here — final word.
+    if (productData.type && !isBeverageType(productData.type)) {
+      productData.isAlcoholic = false;
+      productData.abv = 0;
+      productData.proof = 0;
+      productData.volumeMl = null;
+      productData.standardSizes = [];
+      productData.servingSize = '';
+      productData.servingsPerContainer = 0;
+      productData.tastingNotes = {
+        nose: [], aroma: [], palate: [], taste: [], finish: [],
+        mouthfeel: [], appearance: '', color: '',
+      };
+      productData.flavorProfile = [];
+      productData.foodPairings = [];
+      productData.servingSuggestions = {
+        temperature: '', glassware: '', garnish: [], mixers: [],
+      };
     }
 
     res.json({
@@ -737,13 +788,16 @@ const generateDescription = asyncHandler(async (req, res) => {
       }
     });
 
+    const isBeverage = !type || isBeverageType(type);
+    const descriptionGuidance = isBeverage
+      ? '2. A full description (3-5 paragraphs) with history, production details, and tasting notes\n3. Key flavor profiles (array of descriptors)\n4. Food pairing suggestions (array)'
+      : '2. A full description (3-5 paragraphs) covering what the item is, its materials/contents, what is included in the pack, and what it is used for\n3. Key attributes or use-case descriptors (array)\n4. Buying occasions or gifting ideas where relevant (array)';
+
     const prompt = `Write a compelling product description for "${name}"${type ? `, a ${type}` : ''}${brand ? ` by ${brand}` : ''}.
 
 Include:
 1. A short description (max 280 characters) for product cards
-2. A full description (3-5 paragraphs) with history, production details, and tasting notes
-3. Key flavor profiles (array of descriptors)
-4. Food pairing suggestions (array)
+${descriptionGuidance}
 ${grounding}${COPY_GUARDRAILS}
 Return as JSON:
 {
@@ -859,22 +913,30 @@ const generateSeo = asyncHandler(async (req, res) => {
       }
     });
 
-    const prompt = `You are an SEO expert for DrinksHarbour, a premium beverages e-commerce platform based in Abuja, Nigeria that delivers nationwide across Nigeria (Lagos, Abuja, Port Harcourt, etc.).
+    const seoIsBeverage = !type || isBeverageType(type);
+    const keywordGuidance = seoIsBeverage
+      ? `• "{type} Nigeria", "buy {type} Nigeria", "buy {type} Lagos", "buy {type} Abuja"
+  • "{brand} Nigeria", "{brand} price Nigeria"
+  • "online liquor store Nigeria", "alcohol delivery Nigeria"
+  • For Scotch/Scottish origin: "scotch whisky Nigeria", "import scotch Nigeria"
+  • For wine: "buy wine Nigeria", "wine delivery Lagos"
+  • For beer: "buy beer Nigeria", "beer delivery Nigeria"`
+      : `• "{type} Nigeria", "buy {type} Lagos", "buy {type} Abuja"
+  • "{brand} Nigeria", "{brand} price Nigeria"
+  • "premium {type} store Nigeria", "lifestyle store Nigeria", "gift delivery Nigeria"
+  • If a gift/lifestyle item: "gift set Nigeria", "buy gift set Abuja", "housewarming gift Nigeria"`;
+
+    const prompt = `You are an SEO expert for DrinksHarbour, a premium beverage & lifestyle e-commerce platform based in Abuja, Nigeria that delivers nationwide across Nigeria (Lagos, Abuja, Port Harcourt, etc.).
 
 Generate SEO content for "${name}"${brand ? ` by ${brand}` : ''}${type ? `, a ${type}` : ''}.
 ${shortDescription ? `Product description: ${shortDescription}` : ''}
 
 Requirements:
 - metaTitle: max 45 characters — include product name and type; do NOT add "Nigeria" (wastes chars). We append " | DrinksHarbour" ourselves, so keep it under 45.
-- seoH1: max 70 characters — the on-page headline. Include the product name AND its beverage type (e.g. "Glenfiddich 40 Year Old Single Malt Scotch"). This is the visible H1, so keep it natural, no "Buy"/price/"Nigeria" filler.
+- seoH1: max 70 characters — the on-page headline. Include the product name AND its product type (for beverages e.g. "Glenfiddich 40 Year Old Single Malt Scotch"; for non-beverages e.g. "Crystal Whiskey Tumbler Glass Gift Set"). This is the visible H1, so keep it natural, no "Buy"/price/"Nigeria" filler.
 - metaDescription: max 160 characters — must end with a local hook, e.g. "Available for delivery across Nigeria on DrinksHarbour." or "Order online — delivered to Lagos, Abuja & across Nigeria."
-- metaKeywords: 10-12 relevant keywords (lowercase, no duplicates) — MUST include at least 3 Nigeria/city-specific purchase-intent terms such as:
-  • "{type} Nigeria", "buy {type} Nigeria", "buy {type} Lagos", "buy {type} Abuja"
-  • "{brand} Nigeria", "{brand} price Nigeria"
-  • "online liquor store Nigeria", "alcohol delivery Nigeria"
-  • For Scotch/Scottish origin: "scotch whisky Nigeria", "import scotch Nigeria"
-  • For wine: "buy wine Nigeria", "wine delivery Lagos"
-  • For beer: "buy beer Nigeria", "beer delivery Nigeria"
+- metaKeywords: 10-12 relevant keywords (lowercase, no duplicates) — MUST include at least 3 Nigeria/city-specific purchase-intent terms:
+${keywordGuidance}
 ${grounding}${COPY_GUARDRAILS}
 Return as JSON:
 {

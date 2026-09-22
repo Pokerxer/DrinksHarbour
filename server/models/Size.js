@@ -120,6 +120,13 @@ const sizeSchema = new Schema(
         'pack-2', 'pack-3', 'pack-5',
         'kit-3', 'kit-5', 'kit-8', 'kit-10',
 
+        // Gifts, Lifestyle & Snacks (ckay taxonomy — keepsake boxes, bar-packed
+        // confectionery, weight-based snacks and luxury tins)
+        'bar-single', 'bar-2',
+        'box-single',
+        'bag-100g', 'bag-200g', 'bag-250g', 'bag-500g', 'bag-1kg',
+        'tin-single', 'tin-200g', 'tin-500g',
+
         // Cigars & Smoking
         'cigar-single', 'sampler-5', 'sampler-6',
         'box-5', 'box-10', 'box-20', 'box-24', 'box-25', 'box-50',
@@ -170,6 +177,7 @@ const sizeSchema = new Schema(
         'pod', 'capsule', 'sachet', 'teabag',
         'set', 'piece', 'serving',
         'pair', 'kit', 'box', 'bundle', 'puff', 'pouch',
+        'bag', 'bar', 'tin',
       ],
       default: 'volume_ml',
     },

@@ -22,7 +22,7 @@ const productValidation = [
       'beer', 'wine', 'sparkling_wine', 'fortified_wine', 'spirit',
       'liqueur', 'cocktail_ready_to_drink', 'non_alcoholic', 'other',
       'juice', 'tea', 'coffee', 'energy_drink', 'water', 'mixer',
-      'accessory', 'snack', 'gift'
+      'accessory', 'glassware', 'bar_tool', 'snack', 'gift_set', 'gift'
     ])
     .withMessage('Invalid product type'),
 ];

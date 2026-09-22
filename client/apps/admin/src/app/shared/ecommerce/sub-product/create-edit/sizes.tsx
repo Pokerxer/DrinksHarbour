@@ -159,6 +159,23 @@ const SIZE_PRESETS = {
     { value: 'puffs-600', label: '600 Puffs', quickAdd: true },
     { value: 'pod-4', label: '4 Pods', quickAdd: true },
   ],
+  gifts: [
+    { value: 'piece-single', label: 'Single Piece', quickAdd: true },
+    { value: 'pair', label: 'Pair (2)', quickAdd: true },
+    { value: 'set-2', label: 'Set of 2', quickAdd: true },
+    { value: 'set-4', label: 'Set of 4', quickAdd: true },
+    { value: 'set-6', label: 'Set of 6', quickAdd: true },
+    { value: 'gift-set', label: 'Gift Set', quickAdd: true },
+    { value: 'box-single', label: 'Single Box', quickAdd: true },
+  ],
+  snacks: [
+    { value: 'bar-single', label: 'Single Bar', quickAdd: true },
+    { value: 'bar-2', label: '2-Bar Pack', quickAdd: true },
+    { value: 'bag-250g', label: 'Bag 250g', quickAdd: true },
+    { value: 'bag-500g', label: 'Bag 500g', quickAdd: true },
+    { value: 'tin-single', label: 'Single Tin', quickAdd: true },
+    { value: 'tin-200g', label: 'Tin 200g', quickAdd: true },
+  ],
 };
 
 const BEVERAGE_CATEGORIES = [
@@ -204,6 +221,18 @@ const BEVERAGE_CATEGORIES = [
     label: 'Vapes',
     icon: '💨',
     color: 'bg-cyan-100 text-cyan-700',
+  },
+  {
+    id: 'gifts',
+    label: 'Gifts & Lifestyle',
+    icon: '🎁',
+    color: 'bg-fuchsia-100 text-fuchsia-700',
+  },
+  {
+    id: 'snacks',
+    label: 'Snacks',
+    icon: '🍫',
+    color: 'bg-amber-100 text-amber-700',
   },
 ];
 
@@ -376,6 +405,59 @@ export const SIZE_OPTIONS = [
   { value: 'kit-5', label: '5-Piece Kit', category: 'Glassware & Barware' },
   { value: 'kit-8', label: '8-Piece Kit', category: 'Glassware & Barware' },
   { value: 'kit-10', label: '10-Piece Kit', category: 'Glassware & Barware' },
+
+  // Gifts & Lifestyle
+  { value: 'box-single', label: 'Single Box', category: 'Gifts & Lifestyle' },
+  { value: 'box-5', label: 'Box of 5', category: 'Gifts & Lifestyle' },
+  { value: 'box-10', label: 'Box of 10', category: 'Gifts & Lifestyle' },
+  { value: 'box-20', label: 'Box of 20', category: 'Gifts & Lifestyle' },
+  { value: 'box-24', label: 'Box of 24', category: 'Gifts & Lifestyle' },
+  { value: 'box-25', label: 'Box of 25', category: 'Gifts & Lifestyle' },
+  { value: 'box-50', label: 'Box of 50', category: 'Gifts & Lifestyle' },
+
+  // Snacks & Confectionery
+  {
+    value: 'bar-single',
+    label: 'Single Bar',
+    category: 'Snacks & Confectionery',
+  },
+  { value: 'bar-2', label: '2-Bar Pack', category: 'Snacks & Confectionery' },
+  {
+    value: 'bag-100g',
+    label: 'Bag 100g',
+    category: 'Snacks & Confectionery',
+  },
+  {
+    value: 'bag-200g',
+    label: 'Bag 200g',
+    category: 'Snacks & Confectionery',
+  },
+  {
+    value: 'bag-250g',
+    label: 'Bag 250g',
+    category: 'Snacks & Confectionery',
+  },
+  {
+    value: 'bag-500g',
+    label: 'Bag 500g',
+    category: 'Snacks & Confectionery',
+  },
+  { value: 'bag-1kg', label: 'Bag 1kg', category: 'Snacks & Confectionery' },
+  {
+    value: 'tin-single',
+    label: 'Single Tin',
+    category: 'Snacks & Confectionery',
+  },
+  {
+    value: 'tin-200g',
+    label: 'Tin 200g',
+    category: 'Snacks & Confectionery',
+  },
+  {
+    value: 'tin-500g',
+    label: 'Tin 500g',
+    category: 'Snacks & Confectionery',
+  },
 
   // Cigars & Smoking
   {

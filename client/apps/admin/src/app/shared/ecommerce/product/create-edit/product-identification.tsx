@@ -12,6 +12,7 @@ import { useEffect, useState, Fragment } from 'react';
 import { PiCheck, PiSparkle, PiSpinner, PiPlus } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
 import { geminiService, type AiSource } from '@/services/gemini.service';
+import { isBeverageProductType } from '@/utils/product-types';
 import { categoryService } from '@/services/category.service';
 import { brandService } from '@/services/brand.service';
 import toast from 'react-hot-toast';
@@ -317,6 +318,7 @@ export default function ProductIdentification({ className }: ProductIdentificati
     try {
       const res  = await geminiService.generateProductDetails(productName, token, productType);
       const data = res.data;
+      const isBeverage = isBeverageProductType(data.type);
 
       setSources(res.sources ?? []);
       setUnverified(Array.isArray(res.unverified) ? res.unverified : []);
@@ -342,9 +344,11 @@ export default function ProductIdentification({ className }: ProductIdentificati
         if (subId) setValue('subCategory', subId, { shouldDirty: true });
       }
 
-      setValue('isAlcoholic', data.isAlcoholic ?? false);
-      setValue('abv', data.abv);
-      setValue('volumeMl', data.volumeMl);
+      setValue('isAlcoholic', isBeverage ? (data.isAlcoholic ?? false) : false);
+      if (isBeverage) {
+        setValue('abv', data.abv);
+        setValue('volumeMl', data.volumeMl);
+      }
       setValue('originCountry', data.originCountry || '');
       setValue('region', data.region || '');
       setValue('brand', data.brand || '');
@@ -355,20 +359,22 @@ export default function ProductIdentification({ className }: ProductIdentificati
       setValue('productionMethod', data.productionMethod || '');
       setValue('shortDescription', data.shortDescription || '');
       setValue('description', data.description || '');
-      setValue('tastingNotes.nose', data.tastingNotes?.nose || []);
-      setValue('tastingNotes.aroma', data.tastingNotes?.aroma || []);
-      setValue('tastingNotes.palate', data.tastingNotes?.palate || []);
-      setValue('tastingNotes.taste', data.tastingNotes?.taste || []);
-      setValue('tastingNotes.finish', data.tastingNotes?.finish || []);
-      setValue('tastingNotes.mouthfeel', data.tastingNotes?.mouthfeel || []);
-      setValue('tastingNotes.appearance', data.tastingNotes?.appearance || '');
-      setValue('tastingNotes.color', data.tastingNotes?.color || '');
-      setValue('flavorProfile', data.flavorProfile || []);
-      setValue('foodPairings', data.foodPairings || []);
-      setValue('servingSuggestions.temperature', data.servingSuggestions?.temperature || '');
-      setValue('servingSuggestions.glassware', data.servingSuggestions?.glassware || '');
-      setValue('servingSuggestions.garnish', data.servingSuggestions?.garnish || []);
-      setValue('servingSuggestions.mixers', data.servingSuggestions?.mixers || []);
+      if (isBeverage) {
+        setValue('tastingNotes.nose', data.tastingNotes?.nose || []);
+        setValue('tastingNotes.aroma', data.tastingNotes?.aroma || []);
+        setValue('tastingNotes.palate', data.tastingNotes?.palate || []);
+        setValue('tastingNotes.taste', data.tastingNotes?.taste || []);
+        setValue('tastingNotes.finish', data.tastingNotes?.finish || []);
+        setValue('tastingNotes.mouthfeel', data.tastingNotes?.mouthfeel || []);
+        setValue('tastingNotes.appearance', data.tastingNotes?.appearance || '');
+        setValue('tastingNotes.color', data.tastingNotes?.color || '');
+        setValue('flavorProfile', data.flavorProfile || []);
+        setValue('foodPairings', data.foodPairings || []);
+        setValue('servingSuggestions.temperature', data.servingSuggestions?.temperature || '');
+        setValue('servingSuggestions.glassware', data.servingSuggestions?.glassware || '');
+        setValue('servingSuggestions.garnish', data.servingSuggestions?.garnish || []);
+        setValue('servingSuggestions.mixers', data.servingSuggestions?.mixers || []);
+      }
       setValue('isDietary', data.isDietary || {});
       setValue('allergens', data.allergens || []);
       setValue('ingredients', data.ingredients || []);

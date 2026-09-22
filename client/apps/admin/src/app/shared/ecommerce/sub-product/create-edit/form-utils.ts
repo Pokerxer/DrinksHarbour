@@ -274,6 +274,11 @@ export const productTypes = [
   { value: 'accessory', label: 'Accessory', category: 'Other' },
   { value: 'gift', label: 'Gift', category: 'Other' },
   { value: 'other', label: 'Other', category: 'Other' },
+  
+  // Gifts & Lifestyle
+  { value: 'glassware', label: 'Glassware', category: 'Gifts & Lifestyle' },
+  { value: 'bar_tool', label: 'Bar Tool', category: 'Gifts & Lifestyle' },
+  { value: 'gift_set', label: 'Gift Set', category: 'Gifts & Lifestyle' },
 ];
 
 // Standard sizes options

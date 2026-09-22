@@ -87,6 +87,7 @@ import {
   summarizeProductSearchContext,
 } from '../product-list/search-context';
 import { defaultValues, formParts } from './form-utils';
+import { isBeverageProductType } from '@/utils/product-types';
 import ProductSubProductsPanel from './product-subproducts';
 import { ValidationSummary } from '@/components/validation-summary';
 
@@ -796,6 +797,20 @@ export default function CreateEditProduct({
     ? productName || 'Edit Product'
     : productName || 'Create Product';
 
+  // Non-beverage products (accessory / glassware / gift_set / snack / …) don't
+  // need the Beverage Info step — drop it from navigation so it can't block save.
+  const watchedType = watch('type');
+  const displaySteps = isBeverageProductType(watchedType)
+    ? STEPS
+    : STEPS.filter((step) => step.key !== formParts.beverageInfo);
+
+  useEffect(() => {
+    if (displaySteps.length > 0 && currentStep >= displaySteps.length) {
+      setCurrentStep(displaySteps.length - 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displaySteps.length]);
+
   // Fetch and populate the form when editing an existing product
   useEffect(() => {
     if (!id || !session?.user?.token || product) return; // skip if product already passed as prop
@@ -975,7 +990,7 @@ export default function CreateEditProduct({
 
   const handleNext = () => {
     setCompletedSteps((prev) => new Set([...prev, currentStep]));
-    if (currentStep < STEPS.length - 1) {
+    if (currentStep < displaySteps.length - 1) {
       setDirection(1);
       setCurrentStep((prev) => prev + 1);
     }
@@ -1084,7 +1099,7 @@ export default function CreateEditProduct({
     }
   };
 
-  const progress = ((currentStep + 1) / STEPS.length) * 100;
+  const progress = ((currentStep + 1) / displaySteps.length) * 100;
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
@@ -1705,7 +1720,7 @@ export default function CreateEditProduct({
           {/* Step Navigation - Desktop */}
           <div className="hidden border-t border-gray-100 px-4 py-2 sm:px-6 lg:block lg:px-8">
             <div className="flex items-center gap-1 overflow-x-auto pb-2">
-              {STEPS.map((step, index) => (
+              {displaySteps.map((step, index) => (
                 <button
                   key={step.key}
                   onClick={() => handleStepClick(index)}
@@ -1781,30 +1796,30 @@ export default function CreateEditProduct({
                     className="flex h-6 w-6 items-center justify-center rounded-full text-xs text-white"
                     style={{
                       backgroundColor:
-                        STEPS[currentStep].color === 'blue'
+                        displaySteps[currentStep].color === 'blue'
                           ? '#2563eb'
-                          : STEPS[currentStep].color === 'green'
+                          : displaySteps[currentStep].color === 'green'
                             ? '#16a34a'
-                            : STEPS[currentStep].color === 'orange'
+                            : displaySteps[currentStep].color === 'orange'
                               ? '#ea580c'
-                              : STEPS[currentStep].color === 'purple'
+                              : displaySteps[currentStep].color === 'purple'
                                 ? '#9333ea'
-                                : STEPS[currentStep].color === 'cyan'
+                                : displaySteps[currentStep].color === 'cyan'
                                   ? '#0891b2'
-                                  : STEPS[currentStep].color === 'yellow'
+                                  : displaySteps[currentStep].color === 'yellow'
                                     ? '#ca8a04'
-                                    : STEPS[currentStep].color === 'pink'
+                                    : displaySteps[currentStep].color === 'pink'
                                       ? '#db2777'
-                                      : STEPS[currentStep].color === 'rose'
+                                      : displaySteps[currentStep].color === 'rose'
                                         ? '#e11d48'
-                                        : STEPS[currentStep].color === 'indigo'
+                                        : displaySteps[currentStep].color === 'indigo'
                                           ? '#4f46e5'
                                           : '#6b7280',
                     }}
                   >
                     {currentStep + 1}
                   </span>
-                  {STEPS[currentStep].label}
+                  {displaySteps[currentStep].label}
                 </span>
                 <PiCaretDown className="h-4 w-4" />
               </button>
@@ -1817,7 +1832,7 @@ export default function CreateEditProduct({
                     exit={{ opacity: 0, y: -10 }}
                     className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg"
                   >
-                    {STEPS.map((step, index) => (
+                    {displaySteps.map((step, index) => (
                       <button
                         key={step.key}
                         onClick={() => {
@@ -1863,7 +1878,7 @@ export default function CreateEditProduct({
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
           <FormProvider {...methods}>
             <motion.div
-              key={STEPS[currentStep].key}
+              key={displaySteps[currentStep].key}
               variants={containerVariants}
               initial="hidden"
               animate="visible"
@@ -1874,7 +1889,7 @@ export default function CreateEditProduct({
                 <ValidationSummary
                   errors={formatFormErrorsForSummary(
                     errors,
-                    STEPS[currentStep].label
+                    displaySteps[currentStep].label
                   )}
                   className="mb-4"
                 />
@@ -1885,25 +1900,25 @@ export default function CreateEditProduct({
                 <div
                   className={cn(
                     'flex h-10 w-10 items-center justify-center rounded-xl',
-                    STEPS[currentStep].color === 'blue' &&
+                    displaySteps[currentStep].color === 'blue' &&
                       'bg-blue-100 text-blue-600',
-                    STEPS[currentStep].color === 'green' &&
+                    displaySteps[currentStep].color === 'green' &&
                       'bg-green-100 text-green-600',
-                    STEPS[currentStep].color === 'orange' &&
+                    displaySteps[currentStep].color === 'orange' &&
                       'bg-orange-100 text-orange-600',
-                    STEPS[currentStep].color === 'purple' &&
+                    displaySteps[currentStep].color === 'purple' &&
                       'bg-purple-100 text-purple-600',
-                    STEPS[currentStep].color === 'cyan' &&
+                    displaySteps[currentStep].color === 'cyan' &&
                       'bg-cyan-100 text-cyan-600',
-                    STEPS[currentStep].color === 'yellow' &&
+                    displaySteps[currentStep].color === 'yellow' &&
                       'bg-yellow-100 text-yellow-600',
-                    STEPS[currentStep].color === 'pink' &&
+                    displaySteps[currentStep].color === 'pink' &&
                       'bg-pink-100 text-pink-600',
-                    STEPS[currentStep].color === 'rose' &&
+                    displaySteps[currentStep].color === 'rose' &&
                       'bg-rose-100 text-rose-600',
-                    STEPS[currentStep].color === 'indigo' &&
+                    displaySteps[currentStep].color === 'indigo' &&
                       'bg-indigo-100 text-indigo-600',
-                    STEPS[currentStep].color === 'gray' &&
+                    displaySteps[currentStep].color === 'gray' &&
                       'bg-gray-100 text-gray-600'
                   )}
                 >
@@ -1911,10 +1926,10 @@ export default function CreateEditProduct({
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">
-                    {STEPS[currentStep].label}
+                    {displaySteps[currentStep].label}
                   </h2>
                   <p className="text-sm text-gray-500">
-                    {STEPS[currentStep].description}
+                    {displaySteps[currentStep].description}
                   </p>
                 </div>
               </div>
@@ -1926,7 +1941,7 @@ export default function CreateEditProduct({
                 animate="visible"
               >
                 {(() => {
-                  const Component = COMPONENTS[STEPS[currentStep].key];
+                  const Component = COMPONENTS[displaySteps[currentStep].key];
                   return Component ? <Component /> : null;
                 })()}
               </motion.div>
@@ -1981,14 +1996,14 @@ export default function CreateEditProduct({
                 type="button"
                 variant="solid"
                 onClick={
-                  currentStep === STEPS.length - 1
+                  currentStep === displaySteps.length - 1
                     ? methods.handleSubmit(onSubmit)
                     : handleNext
                 }
                 disabled={isLoading}
                 className="shrink-0"
               >
-                {currentStep === STEPS.length - 1 ? (
+                {currentStep === displaySteps.length - 1 ? (
                   <>
                     <PiFloppyDisk className="h-4 w-4" />
                     {isLoading

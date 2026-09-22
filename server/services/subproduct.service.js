@@ -2479,6 +2479,16 @@ const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId
     'unit-single', 'shot-25ml', 'shot-35ml', 'shot-50ml',
     // Gift Sets
     'set-2', 'set-3', 'set-4', 'set-6', 'set-12', 'gift-set', 'tasting-set', 'variety-pack',
+    // Accessories, Glassware & Barware
+    'piece-single', 'pair', 'set-barware',
+    'set-5', 'set-8', 'set-10', 'set-16', 'set-24',
+    'pack-2', 'pack-3', 'pack-5',
+    'kit-3', 'kit-5', 'kit-8', 'kit-10',
+    'box-single', 'box-5', 'box-10', 'box-20', 'box-24', 'box-25', 'box-50',
+    // Gifts, Lifestyle & Snacks
+    'bar-single', 'bar-2',
+    'bag-100g', 'bag-200g', 'bag-250g', 'bag-500g', 'bag-1kg',
+    'tin-single', 'tin-200g', 'tin-500g',
     // Custom
     'custom', 'variable', 'assorted',
   ];

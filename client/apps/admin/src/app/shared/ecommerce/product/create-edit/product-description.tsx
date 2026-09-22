@@ -25,6 +25,7 @@ import {
 import { PiSparkle, PiSpinner } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
 import { geminiService } from '@/services/gemini.service';
+import { isBeverageProductType } from '@/utils/product-types';
 import toast from 'react-hot-toast';
 
 interface ProductDescriptionProps {
@@ -120,6 +121,7 @@ export default function ProductDescription({ className }: ProductDescriptionProp
   const productName      = watch('name') || '';
   const productType      = watch('type');
   const productBrand     = watch('brand');
+  const isBeverage = isBeverageProductType(productType);
 
   const watchedFlavors = watch('flavorProfile') || [];
   useEffect(() => { setSelectedFlavors(watchedFlavors); }, [watchedFlavors]);
@@ -354,6 +356,8 @@ export default function ProductDescription({ className }: ProductDescriptionProp
           </div>
         </motion.div>
 
+        {isBeverage && (
+          <>
         {/* Flavor Profile */}
         <motion.div variants={itemVariants} className="@2xl:col-span-2">
           <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -533,6 +537,8 @@ export default function ProductDescription({ className }: ProductDescriptionProp
             />
           </div>
         </motion.div>
+          </>
+        )}
 
         {/* Ingredients */}
         <motion.div variants={itemVariants} className="@2xl:col-span-2">

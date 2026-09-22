@@ -86,6 +86,9 @@ const TYPE_OPTIONS = [
   { value: 'bar_tools', label: 'Bar Tools' },
   { value: 'accessories', label: 'Accessories' },
   { value: 'gift_set', label: 'Gift Set' },
+  { value: 'snack', label: 'Snack' },
+  { value: 'beauty', label: 'Beauty' },
+  { value: 'home', label: 'Home' },
   { value: 'subscription', label: 'Subscription' },
   { value: 'other', label: 'Other' },
 ];

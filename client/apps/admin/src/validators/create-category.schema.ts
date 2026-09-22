@@ -46,6 +46,9 @@ const validTypes = [
   'bar_tools',
   'accessories',
   'gift_set',
+  'snack',
+  'beauty',
+  'home',
   'subscription',
   'other',
 ] as const;
