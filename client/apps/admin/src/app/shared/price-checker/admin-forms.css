@@ -1,0 +1,211 @@
+.pc-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  margin-top: 22px;
+}
+.pc-fields-single {
+  grid-template-columns: 1fr;
+}
+.pc-fields label,
+.pc-filter label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pc-fields input:not([type='checkbox']),
+.pc-fields select,
+.pc-fields textarea,
+.pc-filter input,
+.pc-filter select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #8885;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 400;
+}
+.pc-fields input[type='color'] {
+  padding: 5px;
+  height: 44px;
+}
+.pc-fields textarea {
+  min-height: 78px;
+}
+.pc-help {
+  font-size: 12px !important;
+  color: #777;
+  font-weight: 400;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+.pc-toggles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin-top: 22px;
+}
+.pc-toggles label,
+.pc-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.pc-check {
+  margin-top: 20px;
+}
+.pc-admin input[type='checkbox'] {
+  accent-color: #b20202;
+  width: 18px;
+  height: 18px;
+}
+.pc-save {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 24px;
+  margin: 24px 0;
+}
+.pc-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+  border-bottom: 1px solid #8883;
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+}
+.pc-filter label {
+  min-width: 160px;
+}
+.pc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.pc-stats .pc-card {
+  padding: 20px;
+  margin: 0;
+}
+.pc-stats span {
+  font-size: 12px;
+  color: #888;
+}
+.pc-stats strong {
+  display: block;
+  font-size: 30px;
+  margin-top: 8px;
+}
+.pc-table-wrap {
+  overflow: auto;
+  margin-top: 20px;
+}
+.pc-admin table {
+  width: 100%;
+  font-size: 13px;
+  text-align: left;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+.pc-admin th {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #777;
+  font-weight: 600;
+  padding: 12px;
+  background: #8881;
+}
+.pc-admin td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #8882;
+}
+.pc-admin td small {
+  display: block;
+  color: #888;
+  font-size: 11px;
+  margin-top: 4px;
+}
+.pc-hours {
+  height: 170px;
+  display: flex;
+  gap: 5px;
+  padding: 20px 0;
+  margin-bottom: 16px;
+}
+.pc-hours > div {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+}
+.pc-hours span {
+  width: 100%;
+  background: #b20202;
+  border-radius: 4px 4px 0 0;
+  min-width: 3px;
+}
+.pc-hours small {
+  position: absolute;
+  bottom: -22px;
+  width: 100%;
+  text-align: center;
+  font-size: 10px;
+  color: #888;
+}
+.pc-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+}
+.pc-pagination button {
+  border: 1px solid #8885;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+@media (max-width: 900px) {
+  .pc-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .pc-intro {
+    flex-wrap: wrap;
+  }
+  .pc-intro > span {
+    margin-left: 0;
+  }
+  .pc-toggles {
+    grid-template-columns: 1fr 1fr;
+  }
+  .pc-fields {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 500px) {
+  .pc-kiosk-grid {
+    grid-template-columns: 1fr;
+  }
+  .pc-toggles {
+    grid-template-columns: 1fr;
+  }
+  .pc-card {
+    padding: 18px;
+  }
+  .pc-heading h1 {
+    font-size: 25px;
+  }
+  .pc-intro {
+    padding: 22px;
+  }
+  .pc-filter label {
+    width: 100%;
+  }
+}

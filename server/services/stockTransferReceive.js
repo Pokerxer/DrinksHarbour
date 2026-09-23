@@ -20,6 +20,7 @@ async function receiveStockTransferLines(
     batchService = require('./batch.service'),
     WarehouseStock = require('../models/WarehouseStock'),
     WarehouseMovement = require('../models/WarehouseMovement'),
+    InventoryMovement = require('../models/InventoryMovement'),
     recalcSubProductStock = require('./warehouseStock.helpers').recalcSubProductStock,
   } = deps;
 
@@ -81,6 +82,47 @@ async function receiveStockTransferLines(
         balanceAfter: dst.currentQuantity,
         reference: `Transfer ${transfer.transferNumber}`, performedBy: userId },
     ]);
+
+    // Mirror the pair into the unified product ledger (what History tabs read),
+    // matching the lightweight transferStock path in warehouse.service.js. A
+    // history-write failure must not roll back a completed transfer — log only.
+    try {
+      const base = {
+        tenant: tenantId,
+        subProduct: item.subProductId,
+        reference: `Transfer ${transfer.transferNumber}`,
+        referenceType: 'transfer',
+        sourceWarehouse: transfer.sourceWarehouse,
+        destinationWarehouse: transfer.destinationWarehouse,
+        performedBy: userId,
+        performedAt: new Date(),
+        source: 'system',
+      };
+      await InventoryMovement.create([
+        {
+          ...base,
+          warehouse: transfer.sourceWarehouse,
+          size: src.size,
+          type: 'transfer_out',
+          category: 'transfer',
+          quantity: qty,
+          quantityBefore: src.currentQuantity + qty,
+          quantityAfter: src.currentQuantity,
+        },
+        {
+          ...base,
+          warehouse: transfer.destinationWarehouse,
+          size: dst.size,
+          type: 'transfer_in',
+          category: 'transfer',
+          quantity: qty,
+          quantityBefore: dst.currentQuantity - qty,
+          quantityAfter: dst.currentQuantity,
+        },
+      ]);
+    } catch (err) {
+      console.error(`[stockTransferReceive] InventoryMovement mirror failed: ${err.message}`);
+    }
 
     touched.add(String(item.subProductId));
   }

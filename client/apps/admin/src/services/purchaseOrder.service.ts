@@ -68,7 +68,26 @@ export interface PurchaseOrder {
   warehouse?: string | POWarehouseRef | null;
   items: POItem[];
   notes?: string;
-  status: string;
+  status:
+    | 'draft'
+    | 'confirmed'
+    | 'partially_received'
+    | 'received'
+    | 'billed'
+    | 'cancel'
+    | 'validated'
+    | 'done'
+    | 'cancelled';
+  type?: 'rfq' | 'po';
+  rfqStatus?:
+    | 'draft'
+    | 'sent'
+    | 'quoted'
+    | 'approved'
+    | 'rejected'
+    | 'converted'
+    | 'expired'
+    | 'cancelled';
   tenant?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -166,6 +185,27 @@ export interface CreatePOResponse {
   message?: string;
 }
 
+export interface PurchaseOrderListResponse {
+  success: boolean;
+  data: PurchaseOrder[];
+  pagination?: {
+    currentPage?: number;
+    totalPages?: number;
+    totalCount?: number;
+  };
+}
+
+type ApiErrorBody = { message?: string };
+type PurchaseSettingsResponse = {
+  success: boolean;
+  data: { purchaseSettings: PurchaseSettings };
+  message?: string;
+};
+
+function readJson<T>(response: Response): Promise<T> {
+  return response.json() as Promise<T>;
+}
+
 export const purchaseOrderService = {
   async createPurchaseOrder(
     poData: any,
@@ -181,11 +221,11 @@ export const purchaseOrderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to create purchase order');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async updatePurchaseOrderStatus(
@@ -219,13 +259,13 @@ export const purchaseOrderService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(
         error.message || 'Failed to update purchase order status'
       );
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   /**
@@ -263,11 +303,11 @@ export const purchaseOrderService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to record receipt');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async generatePurchaseOrderReceipt(
@@ -284,11 +324,11 @@ export const purchaseOrderService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to generate receipt');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async getPurchaseOrder(id: string, token: string): Promise<CreatePOResponse> {
@@ -299,15 +339,22 @@ export const purchaseOrderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to fetch purchase order');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
-  async getPurchaseOrders(token: string, params: any = {}) {
-    const queryParams = new URLSearchParams(params).toString();
+  async getPurchaseOrders(
+    token: string,
+    params: Record<string, string | number | boolean> = {}
+  ): Promise<PurchaseOrderListResponse> {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      searchParams.set(key, String(value));
+    }
+    const queryParams = searchParams.toString();
     const url = queryParams
       ? `${API_URL}/api/purchase-orders?${queryParams}`
       : `${API_URL}/api/purchase-orders`;
@@ -337,7 +384,7 @@ export const purchaseOrderService = {
         const errorText = await response.text();
         let errorMessage = 'Failed to fetch purchase orders';
         try {
-          const error = JSON.parse(errorText);
+          const error = JSON.parse(errorText) as ApiErrorBody;
           errorMessage = error.message || errorMessage;
         } catch {
           errorMessage = errorText || errorMessage;
@@ -345,7 +392,7 @@ export const purchaseOrderService = {
         throw new Error(errorMessage);
       }
 
-      return response.json();
+      return readJson<PurchaseOrderListResponse>(response);
     } catch (error) {
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
         throw new Error(
@@ -423,7 +470,7 @@ export const purchaseOrderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to delete purchase order');
     }
 
@@ -448,11 +495,11 @@ export const purchaseOrderService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to approve PO');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async rejectPO(
@@ -473,11 +520,11 @@ export const purchaseOrderService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to reject PO');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async lockPO(
@@ -495,11 +542,11 @@ export const purchaseOrderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to lock PO');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async unlockPO(id: string, token: string): Promise<CreatePOResponse> {
@@ -515,11 +562,11 @@ export const purchaseOrderService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to unlock PO');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async createBillFromPO(
@@ -545,11 +592,11 @@ export const purchaseOrderService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to create bill from PO');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async updatePurchaseOrder(
@@ -578,11 +625,11 @@ export const purchaseOrderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to update purchase order');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async returnPurchaseOrder(
@@ -609,11 +656,11 @@ export const purchaseOrderService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to return purchase order items');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
   },
 
   async getPurchaseSettings(token: string): Promise<{
@@ -624,10 +671,10 @@ export const purchaseOrderService = {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to fetch purchase settings');
     }
-    return response.json();
+    return readJson<PurchaseSettingsResponse>(response);
   },
 
   async updatePurchaseSettings(
@@ -646,10 +693,10 @@ export const purchaseOrderService = {
       body: JSON.stringify({ purchaseSettings }),
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to update purchase settings');
     }
-    return response.json();
+    return readJson<PurchaseSettingsResponse>(response);
   },
 
   async getSettings(token: string): Promise<{
@@ -662,7 +709,7 @@ export const purchaseOrderService = {
         Authorization: `Bearer ${token}`,
       },
     });
-    return response.json();
+    return readJson<PurchaseSettingsResponse>(response);
   },
 
   async updateSettings(
@@ -681,7 +728,7 @@ export const purchaseOrderService = {
       },
       body: JSON.stringify({ purchaseSettings }),
     });
-    return response.json();
+    return readJson<PurchaseSettingsResponse>(response);
   },
 
   async sendPOToVendor(
@@ -702,10 +749,30 @@ export const purchaseOrderService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to send PO to vendor');
     }
 
-    return response.json();
+    return readJson<CreatePOResponse>(response);
+  },
+
+  async duplicate(id: string, token: string): Promise<CreatePOResponse> {
+    const response = await fetch(
+      `${API_URL}/api/purchase-orders/${id}/duplicate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const error = await readJson<ApiErrorBody>(response);
+      throw new Error(error.message || 'Failed to duplicate purchase order');
+    }
+
+    return readJson<CreatePOResponse>(response);
   },
 };

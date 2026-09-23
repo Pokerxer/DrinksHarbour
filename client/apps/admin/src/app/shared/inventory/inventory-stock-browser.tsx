@@ -1015,8 +1015,8 @@ export default function InventoryStockBrowser({
     <div className="flex h-[calc(100dvh-47px)] flex-col overflow-hidden bg-gray-50">
       {/* ── Control bar ── */}
       <div className="shrink-0 border-b border-gray-200 bg-white">
-        <div className="flex items-center gap-4 border-b border-gray-100 px-5 pb-3 pt-4">
-          <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-4 pb-2.5 pt-3 sm:px-5 sm:gap-x-4 sm:gap-y-2 sm:pb-3 sm:pt-4">
+          <div className="min-w-0 flex-1 basis-full sm:basis-auto">
             <h1 className="text-lg font-bold leading-tight text-gray-900">
               {meta.title}
             </h1>
@@ -1033,7 +1033,7 @@ export default function InventoryStockBrowser({
           </div>
 
           {/* Status tabs */}
-          <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-0.5">
+          <div className="flex min-w-0 flex-1 items-center overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 p-0.5 sm:flex-none">
             {STATUS_TABS.map((t) => {
               // "All" is lit whenever the selection is not exactly one status —
               // so a multi-status selection made in the panel reads as All here
@@ -1061,7 +1061,7 @@ export default function InventoryStockBrowser({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
             {/* Group-by and saved searches now live in the advanced-search
                 panel below, opened from the search bar itself. */}
             <button
@@ -1417,7 +1417,7 @@ export default function InventoryStockBrowser({
       </div>
 
       {/* ── Summary cards ── */}
-      <div className="grid shrink-0 grid-cols-5 divide-x divide-gray-200 border-b border-gray-200 bg-white">
+      <div className="flex shrink-0 items-stretch gap-px overflow-x-auto border-b border-gray-200 bg-gray-100 sm:grid sm:grid-cols-3 sm:px-0 lg:grid-cols-5">
         {[
           {
             label: 'Stock Lines',
@@ -1455,7 +1455,7 @@ export default function InventoryStockBrowser({
             sub: 'low / out / near expiry',
           },
         ].map(({ label, value, icon, color, sub }) => (
-          <div key={label} className="flex items-start gap-3 px-4 py-3">
+          <div key={label} className="flex min-w-[168px] shrink-0 items-start gap-3 bg-white px-4 py-3 sm:min-w-0">
             <span className={`mt-0.5 ${color}`}>{icon}</span>
             <div className="min-w-0">
               <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-gray-400">
@@ -1471,7 +1471,7 @@ export default function InventoryStockBrowser({
       </div>
 
       {/* ── Body ── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
         {/* Category sidebar */}
         <aside className="hidden w-52 shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white lg:flex">
           <p className="shrink-0 border-b border-gray-100 px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">
@@ -1538,7 +1538,7 @@ export default function InventoryStockBrowser({
         </aside>
 
         <div
-          className={`flex flex-col overflow-hidden border-r border-gray-200 transition-all duration-200 ${selected ? 'w-[58%]' : 'flex-1'}`}
+          className={`flex flex-col overflow-hidden border-b border-gray-200 transition-all duration-200 lg:border-b-0 lg:border-r ${selected ? 'flex-1 lg:flex-none lg:w-[58%]' : 'flex-1'}`}
         >
           {checked.size > 0 && (
             <div className="flex shrink-0 items-center gap-3 border-b-2 border-[#b20202] bg-white px-4 py-2.5">
@@ -1779,7 +1779,7 @@ export default function InventoryStockBrowser({
 
         {/* Detail panel */}
         <div
-          className={`flex flex-col bg-white transition-all duration-200 ${selected ? 'flex-1 overflow-hidden' : 'w-72 shrink-0'}`}
+          className={`flex flex-col bg-white transition-all duration-200 ${selected ? 'flex-1 overflow-hidden' : 'hidden lg:flex lg:w-72 lg:shrink-0'}`}
         >
           {selected ? (
             <StockDetail

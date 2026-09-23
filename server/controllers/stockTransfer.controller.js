@@ -199,6 +199,63 @@ const createStockTransfer = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: transfer });
 });
 
+// POST /api/stock-transfers/:id/duplicate
+// Copy an existing transfer as a new draft: same lines and terms, all workflow
+// and money progress reset, fresh TRF number.
+const duplicateStockTransfer = asyncHandler(async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const userId = req.user._id;
+
+  const transfer = await StockTransfer.findOne({
+    _id: req.params.id,
+    tenant: tenantId,
+  });
+  if (!transfer) throw new NotFoundError("Stock transfer not found");
+
+  const transferNumber = await generateTransferNumber(tenantId);
+
+  const items = (transfer.items || []).map((it) => ({
+    _id: undefined,
+    subProductId: it.subProductId,
+    subProductName: it.subProductName,
+    sku: it.sku,
+    sizeId: it.sizeId,
+    sizeName: it.sizeName,
+    quantity: it.quantity,
+    transferredQty: 0,
+    costPrice: it.costPrice || 0,
+    discountRate: it.discountRate || 0,
+    taxRate: it.taxRate || 0,
+    receivedQty: 0,
+    packSize: Math.max(1, Math.floor(Number(it.packSize) || 1)),
+    shortfallQty: 0,
+  }));
+
+  const draft = { items, deliveryCharge: Number(transfer.deliveryCharge) || 0 };
+  applyTransferMoney(draft);
+
+  const dup = await StockTransfer.create({
+    tenant: tenantId,
+    transferNumber,
+    sourceWarehouse: transfer.sourceWarehouse,
+    destinationWarehouse: transfer.destinationWarehouse,
+    items,
+    notes: transfer.notes,
+    scheduledDate: transfer.scheduledDate,
+    status: "draft",
+    totalValue: draft.totalValue,
+    deliveryCharge: draft.deliveryCharge,
+    subtotal: draft.subtotal,
+    discountAmount: draft.discountAmount,
+    taxAmount: draft.taxAmount,
+    total: draft.total,
+    currency: transfer.currency || "NGN",
+    createdBy: userId,
+  });
+
+  res.status(201).json({ success: true, data: dup });
+});
+
 // GET /api/stock-transfers
 const getStockTransfers = asyncHandler(async (req, res) => {
   const tenantId = resolveTenantId(req);
@@ -622,6 +679,7 @@ module.exports = {
   sendStockTransfer,
   receiveStockTransfer,
   closeStockTransfer,
+  duplicateStockTransfer,
   TRANSITIONS,
   isWarehouseSideUser,
 };

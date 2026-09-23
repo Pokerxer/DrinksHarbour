@@ -19,6 +19,7 @@ const {
   returnPurchaseOrder,
   getPurchaseSettings,
   updatePurchaseSettings,
+  duplicatePurchaseOrder,
   // Analytics
   getPurchaseAnalyticsSummary,
   getPurchaseAnalyticsByVendor,
@@ -87,6 +88,9 @@ router.post("/:id/create-bill", tenantAdminOrSuperAdmin, createBillFromPO);
 
 // Send PO to Vendor
 router.post("/:id/send-to-vendor", tenantAdminOrSuperAdmin, sendPOToVendor);
+
+// Duplicate PO as new draft
+router.post("/:id/duplicate", tenantAdminOrSuperAdmin, duplicatePurchaseOrder);
 
 // Return items to vendor
 router.post("/:id/return", tenantAdminOrSuperAdmin, returnPurchaseOrder);

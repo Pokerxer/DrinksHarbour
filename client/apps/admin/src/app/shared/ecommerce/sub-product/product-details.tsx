@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import ProductDetailsGallery from '@/app/shared/ecommerce/product/product-details-gallery';
 import ProductDetailsDescription from '@/app/shared/ecommerce/product/product-details-description';
 import SubProductDetailsSummary from '@/app/shared/ecommerce/sub-product/product-details-summary';
+import ProductDetailsToolbar from './product-details-toolbar';
 import { subproductService } from '@/services/subproduct.service';
 import { isBeverageProductType } from '@/utils/product-types';
 import { PiSpinner, PiMagnifyingGlassBold } from 'react-icons/pi';
@@ -25,6 +26,7 @@ export default function SubProductDetails() {
     'loading'
   );
   const [errorMsg, setErrorMsg] = useState('');
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     const id = params?.slug;
@@ -53,7 +55,7 @@ export default function SubProductDetails() {
     return () => {
       cancelled = true;
     };
-  }, [params?.slug, session?.user?.token]);
+  }, [params?.slug, session?.user?.token, reload]);
 
   if (status === 'loading') {
     return (
@@ -101,6 +103,7 @@ export default function SubProductDetails() {
     name: product.name || 'Sub-Product',
     type: product.type,
     subType: product.subType,
+    style: product.style || '',
     categoryName: toDisplayName(product.category),
     subCategoryName: toDisplayName(product.subCategory),
     brandName: toDisplayName(product.brand),
@@ -147,6 +150,18 @@ export default function SubProductDetails() {
 
   return (
     <div className="@container">
+      <ProductDetailsToolbar
+        key={viewModel.id}
+        id={viewModel.id}
+        name={viewModel.name}
+        status={viewModel.status}
+        published={viewModel.isPublished}
+        stock={Number(viewModel.stock ?? 0)}
+        price={Number((viewModel.isOnSale ? viewModel.salePrice : undefined) ?? viewModel.baseSellingPrice ?? 0)}
+        currency={currency}
+        token={session?.user?.token}
+        onChanged={() => setReload(value => value + 1)}
+      />
       <div className="@3xl:grid @3xl:grid-cols-12">
         <div className="col-span-7 mb-7 @container @lg:mb-10 @3xl:pe-10">
           <ProductDetailsGallery
@@ -155,7 +170,7 @@ export default function SubProductDetails() {
           />
         </div>
         <div className="col-span-5 @container">
-          <SubProductDetailsSummary product={viewModel} />
+          <SubProductDetailsSummary product={viewModel} showActions={false} />
           <ProductDetailsDescription product={viewModel} />
         </div>
       </div>

@@ -359,9 +359,7 @@ function computePOSPricing(sp, sizeDoc, tenant) {
   const { markupPct, commissionPct } = resolveRevenueRates(tenant, 1);
   // Tenant retail prices are independent of marketplace markup and promotions.
   // Zero on a Size means the price has not been configured.
-  const costPrice = (sizeDoc?.costPrice > 0 ? sizeDoc.costPrice : null) ?? sp.costPrice ?? 0;
-  const sellingPrice = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null)
-    ?? sp.basePriceBeforePricelist ?? sp.baseSellingPrice ?? 0;
+  const { costPrice, sellingPrice } = require('../services/retailPrice.service').retailPriceBasis(sp, sizeDoc);
 
   return {
     sellingPrice,
@@ -2024,7 +2022,22 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   // Configured POS terminals require their bound location. Retail uses its
   // selected location (or the active default); unbound terminals fail closed.
   // Stock is deducted only from WarehouseStock at that resolved location.
-  const warehouseId = await resolveShopWarehouse(req.tenant, tenantId, shopId);
+  //
+  // A sale settling a linked Sales Order must draw stock from the order's own
+  // warehouse (so the tills' movement trail, the order record, and the
+  // fulfilment all name the same location), falling back to the shop's
+  // resolution when the order carries no warehouse.
+  let warehouseId;
+  if (linkedSalesOrderId) {
+    const soWarehouse = await SalesOrder.findOne({ _id: linkedSalesOrderId, tenant: tenantId })
+      .select('warehouseId')
+      .lean();
+    warehouseId = soWarehouse?.warehouseId
+      ? await requirePOSLocation(tenantId, soWarehouse.warehouseId)
+      : await resolveShopWarehouse(req.tenant, tenantId, shopId);
+  } else {
+    warehouseId = await resolveShopWarehouse(req.tenant, tenantId, shopId);
+  }
 
   // Atomic stock deduction with full audit trail
   const deductedItems = [];  // for rollback on failure
@@ -2376,7 +2389,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     linkedSalesOrder: linkedSalesOrderId || null,
     shopId: session.shopId,
     shopName: session.shopName,
-    posWarehouse: session.warehouse,
+    posWarehouse: warehouseId,
     posSessionId: session._id,
     posStaff:      staffId,
     items:         orderItems,
@@ -4121,10 +4134,12 @@ exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
   // called an order 3/10 sold paid in full and erased the rest of the receivable.
   const { order, reconciled, duplicate } = await salesFulfillSvc.reconcileFulfillment({
     salesOrder: so, fulfillLines, userId: req.posUser?._id || req.user?._id, ref,
-    // The terminal's warehouse is the one the sale deducted stock from. Falling
-    // back to the order's own warehouse keeps a fulfilment attributable even
-    // when an older till build sends nothing.
-    warehouseId: warehouseId || so.warehouseId || undefined,
+    // The terminal's warehouse is the one the sale deducted stock from —
+    // and for a POS sale settled against an order, that is the order's own
+    // warehouse (see createPOSOrder). The order's warehouse is server-derived
+    // and authoritative; the body value is only a fallback for older tills
+    // that send nothing.
+    warehouseId: so.warehouseId || warehouseId || undefined,
     paymentMethod,
   });
 

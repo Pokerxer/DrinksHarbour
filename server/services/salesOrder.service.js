@@ -694,7 +694,7 @@ async function duplicateSalesOrderDoc(so) {
     const newDoc = new SalesOrder({
       tenant: so.tenant,
       soNumber,
-      docType: so.docType,
+      docType: 'quotation',
       customer: so.customer,
       customerSnapshot: so.customerSnapshot,
       pricelist: so.pricelist,
@@ -713,8 +713,7 @@ async function duplicateSalesOrderDoc(so) {
       convertedFrom: undefined, convertedTo: undefined, relatedInvoice: undefined,
       paymentStatus: 'unpaid', amountPaid: 0, walletTxRef: undefined,
       loyaltyEarned: 0, loyaltyRedeemed: 0, pointsRedeemed: 0,
-      quoteStatus: so.docType === 'quotation' ? 'draft' : undefined,
-      orderStatus: so.docType === 'order' ? 'draft' : undefined,
+      quoteStatus: 'draft',
     });
     return newDoc.save();
   });

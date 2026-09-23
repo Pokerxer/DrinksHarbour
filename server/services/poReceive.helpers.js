@@ -126,6 +126,10 @@ async function postReceivedStock({
           quantity: quantityToAdd,
           type: 'received',
           notes: `PO Receipt: ${purchaseOrder.poNumber}`,
+          // The dedicated recordMovement below already writes the authoritative
+          // 'purchase_order' history row — never let adjustStock's manual mirror
+          // double-write the product ledger for one receipt.
+          recordHistory: false,
         },
         userId,
         tenantId

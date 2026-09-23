@@ -1,4 +1,3 @@
-// @ts-nocheck
 import CreateTenant from '@/app/shared/ecommerce/tenant/create-tenant';
 import PageHeader from '@/app/shared/page-header';
 import { routes } from '@/config/routes';

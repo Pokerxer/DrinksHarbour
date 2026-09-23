@@ -1,8 +1,13 @@
 // @ts-nocheck
 'use client';
+import PODetail from './purchase-history-detail';
+import SoldDetail from './sales-history-detail';
+
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { salesLine, salesStatus, pageNumbers, matchesChoices } from './history-data';
+import { useHistoryData } from './use-history-data';
 import {
   PiX, PiShoppingCart, PiTrendDown,
   PiCaretDown, PiCaretUp, PiCaretLeft, PiCaretRight, PiCaretRight as PiCaretRightSmall,
@@ -24,15 +29,7 @@ async function apiFetch(url: string, token: string) {
   return body;
 }
 
-const fmt = (n: number) =>
-  `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtDate = (iso: string) => iso
-  ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-  : '—';
-const fmtTime = (iso: string) => iso
-  ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
-  : '';
-const fmtDateTime = (iso: string) => iso ? `${fmtDate(iso)} · ${fmtTime(iso)}` : '—';
+import { fmt, fmtDate, fmtTime, fmtDateTime } from './history-format';
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 function startOfDay(d = new Date()) { const r = new Date(d); r.setHours(0,0,0,0); return r; }
@@ -43,13 +40,13 @@ function isSameDay(a: Date, b: Date) {
 }
 function weekLabel(d: Date) {
   const s = startOfWeek(d); const e = new Date(s); e.setDate(e.getDate()+6);
-  return `W${Math.ceil(d.getDate()/7)} · ${s.toLocaleDateString('en-GB',{month:'short',day:'2-digit'})}–${e.toLocaleDateString('en-GB',{month:'short',day:'2-digit'})}`;
+  return `${s.getFullYear()} · ${s.toLocaleDateString('en-GB',{month:'short',day:'2-digit'})}–${e.toLocaleDateString('en-GB',{month:'short',day:'2-digit'})}`;
 }
 function quarterLabel(d: Date) { return `Q${Math.floor(d.getMonth()/3)+1} ${d.getFullYear()}`; }
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
-function loadSaved<T>(key: string): T[] { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch { return []; } }
-function persistSaved<T>(key: string, list: T[]) { localStorage.setItem(key, JSON.stringify(list)); }
+function loadSaved<T>(key: string): T[] { try { const value = JSON.parse(localStorage.getItem(key)||'[]'); return Array.isArray(value) ? value.filter(entry => entry && typeof entry.name === 'string' && Array.isArray(entry.filters)) : []; } catch { return []; } }
+function persistSaved<T>(key: string, list: T[]) { try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* Searches remain available for this session. */ } }
 
 // ── Filter / Group types ──────────────────────────────────────────────────────
 type SoldFilterKey = 'sales_orders'|'quotations'|'to_invoice'|'fully_invoiced'
@@ -65,7 +62,7 @@ interface SavedSearch<FK extends string, GK extends string> {
 
 const SOLD_FILTER_LABELS: Record<SoldFilterKey,string> = {
   sales_orders:'Sales Orders', quotations:'Quotations',
-  to_invoice:'To Invoice', fully_invoiced:'Fully Invoiced',
+  to_invoice:'Payment Due', fully_invoiced:'Paid',
   date_today:'Order: Today', date_yesterday:'Order: Yesterday',
   date_this_week:'Order: This Week', date_this_month:'Order: This Month',
 };
@@ -231,8 +228,8 @@ const PAGE_SIZE = 50;
 const SOLD_FILTER_SECTIONS = [
   { key:'sales_orders',   label:'Sales Orders' },
   { key:'quotations',     label:'Quotations' },
-  { key:'to_invoice',     label:'To Invoice' },
-  { key:'fully_invoiced', label:'Fully Invoiced' },
+  { key:'to_invoice',     label:'Payment Due' },
+  { key:'fully_invoiced', label:'Paid' },
   { header:'Order Date', children:[
     { key:'date_today',      label:'Today' },
     { key:'date_yesterday',  label:'Yesterday' },
@@ -257,211 +254,15 @@ type SoldStatusPill = 'all'|'paid'|'refunded'|'voided';
 // ── Sold Detail panel — exact POS OrderDetail style ───────────────────────────
 
 // ── Sold Detail panel ─────────────────────────────────────────────────────────
-function SoldDetail({ order, productId, onClose }: { order: any; productId: string; onClose: ()=>void }) {
-  const [tab, setTab] = useState<'details'|'invoice'|'returns'>('details');
 
-  const line     = (order.items||[]).find((i: any) => String(i.subproduct?._id||i.subproduct)===productId);
-  const qty      = line?.quantity || 0;
-  const lineTotal = line ? (line.itemSubtotal ?? (line.priceAtPurchase||0)*qty) : 0;
-  const amount   = order.totalAmount ?? order.total ?? 0;
-  const subtotal = order.subtotal ?? amount;
-  const discount = order.discountTotal ?? 0;
-  const refunded = (order.refunds||[]).reduce((s: number, r: any)=>s+(r.totalRefunded||0), 0);
-  const splits   = order.paymentDetails?.splitPayments ?? [];
-  const change   = order.paymentDetails?.change ?? 0;
-  const custName = order.customer ? `${order.customer.firstName||''} ${order.customer.lastName||''}`.trim()||null : null;
-  const cashier  = order.posStaff ? (order.posStaff.posName||`${order.posStaff.firstName||''} ${order.posStaff.lastName||''}`.trim()) : null;
-  const payLabel = splits.length>0
-    ? splits.map((s: any)=>`${(s.method||'').replace(/_/g,' ').replace(/\b\w/g,(c: string)=>c.toUpperCase())} ${fmt(s.amount)}`).join(' + ')
-    : (order.paymentMethod||'').replace(/_/g,' ').replace(/\b\w/g,(c: string)=>c.toUpperCase());
-
-  // Status badge — mirrors POS statusBadge()
-  const stLabel = order.isVoided ? 'Voided'
-    : refunded >= amount && refunded > 0 ? 'Refunded'
-    : refunded > 0 ? 'Part. Returned'
-    : 'Paid';
-  const stCls = order.isVoided ? 'bg-gray-100 text-gray-500'
-    : refunded >= amount && refunded > 0 ? 'bg-red-50 text-red-600'
-    : refunded > 0 ? 'bg-amber-50 text-amber-600'
-    : 'bg-emerald-50 text-emerald-600';
-
-  const ng = (v: number) => `₦${Number(v||0).toLocaleString('en-NG',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-
-  return (
-    <div className="flex h-full flex-col bg-white">
-      {/* Header */}
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-gray-900">{order.receiptNumber || order.orderNumber || '—'}</span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${stCls}`}>{stLabel}</span>
-          </div>
-          <p className="mt-0.5 text-[11px] text-gray-400">{fmtDateTime(order.placedAt||order.createdAt)}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button type="button" onClick={()=>printInvoice(order)} title="Print invoice"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:bg-gray-50 hover:text-[#b20202]">
-            <PiPrinter className="h-4 w-4"/>
-          </button>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <PiX className="h-5 w-5"/>
-          </button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex shrink-0 border-b border-gray-100 text-xs font-semibold">
-        {([
-          { id:'details', label:'Details',  icon:<PiInfo className="h-3.5 w-3.5"/> },
-          { id:'invoice', label:'Invoice',  icon:<PiReceipt className="h-3.5 w-3.5"/> },
-          { id:'returns', label:`Returns${(order.refunds?.length??0)>0?` (${order.refunds.length})`:''}`, icon:<PiArrowCounterClockwise className="h-3.5 w-3.5"/> },
-        ] as const).map(t=>(
-          <button key={t.id} type="button" onClick={()=>setTab(t.id)}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 transition-colors ${tab===t.id?'border-b-2 border-[#b20202] text-[#b20202]':'border-b-2 border-transparent text-gray-400 hover:text-gray-600'}`}>
-            {t.icon}{t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Details tab */}
-      {tab === 'details' && (
-        <div className="flex-1 overflow-auto">
-          {/* 3-stat row */}
-          <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
-            {[
-              { label:'Total',     value:fmt(amount),              red:true },
-              { label:'This Item', value:fmt(lineTotal) },
-              { label:'Returned',  value:refunded>0?fmt(refunded):'—', amber:refunded>0 },
-            ].map(({label,value,red,amber})=>(
-              <div key={label} className="px-4 py-3 text-center">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
-                <p className={`mt-0.5 text-sm font-bold tabular-nums ${red?'text-[#b20202]':amber?'text-amber-600':'text-gray-900'}`}>{value}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Fields */}
-          <div className="border-b border-gray-100 px-5 py-3 space-y-1.5 text-xs">
-            {([
-              cashier                    && { label:'Cashier',    value: cashier },
-              { label:'Customer',          value: custName || 'Walk-in Customer' },
-              order.session              && { label:'Session',    value: `#${(order.session._id||'').slice(-8)}${order.session.terminalType?' · '+order.session.terminalType:''}` },
-              { label:'Payment',           value: payLabel || '—' },
-              change > 0                 && { label:'Change',     value: fmt(change) },
-              { label:'Receipt #',         value: order.receiptNumber || '—' },
-              { label:'Order #',           value: order.orderNumber || '—' },
-              { label:'Status',            value: order.status || '—' },
-              { label:'Qty (this item)',    value: String(qty) },
-              line && { label:'Unit Price', value: fmt(line.priceAtPurchase||0) },
-              line && line.discountAmount>0 && { label:'Item Discount', value:`−${fmt(line.discountAmount)}` },
-            ] as any[]).filter(Boolean).map(({label,value}: any)=>(
-              <div key={label} className="flex justify-between gap-4">
-                <span className="font-semibold text-gray-500 shrink-0">{label}</span>
-                <span className="font-medium text-gray-800 text-right capitalize truncate">{value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Items table */}
-          {(order.items||[]).length > 0 && (
-            <div>
-              <div className="border-b border-gray-50 bg-gray-50 px-5 py-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Items ({(order.items||[]).length})</p>
-              </div>
-              <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-xs">
-                <thead className="bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                  <tr>
-                    <th className="px-5 py-2 text-left">Product</th>
-                    <th className="px-3 py-2 text-right">Qty</th>
-                    <th className="px-3 py-2 text-right">Price</th>
-                    <th className="px-5 py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {(order.items||[]).map((item: any, i: number)=>{
-                    const isThis = String(item.subproduct?._id||item.subproduct)===productId;
-                    return (
-                      <tr key={i} className={isThis?'bg-[#b20202]/4':''}>
-                        <td className="px-5 py-2.5">
-                          <span className={`font-medium ${isThis?'text-[#b20202]':'text-gray-800'}`}>{item.product?.name||item.name||'—'}</span>
-                          {item.variant && <span className="text-gray-400"> · {item.variant}</span>}
-                          {isThis && <span className="ml-1.5 rounded bg-[#b20202]/10 px-1 py-0.5 text-[9px] font-bold text-[#b20202]">this</span>}
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{item.quantity}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-500">{ng(item.priceAtPurchase||0)}</td>
-                        <td className="px-5 py-2.5 text-right font-semibold tabular-nums text-gray-900">{ng(item.itemSubtotal||(item.priceAtPurchase||0)*(item.quantity||0))}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table></div>
-              <div className="border-t border-gray-100 px-5 py-3 space-y-1 text-xs">
-                {discount>0 && <div className="flex justify-between" style={{color:'#b20202'}}><span>Discount</span><span className="font-semibold tabular-nums">−{ng(discount)}</span></div>}
-                <div className="flex justify-between text-sm font-bold text-gray-900">
-                  <span>Total</span><span className="tabular-nums">{ng(amount)}</span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Invoice tab */}
-      {tab === 'invoice' && (
-        <InvoicePreview order={order} store={DEFAULT_STORE} className="flex-1" />
-      )}
-
-      {/* Returns tab */}
-      {tab === 'returns' && (
-        <div className="flex-1 overflow-auto">
-          {(order.refunds||[]).length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
-              <PiArrowCounterClockwise className="h-8 w-8 text-gray-200"/>
-              <p className="text-sm text-gray-400">No returns for this order</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {(order.refunds||[]).map((r: any, i: number)=>(
-                <div key={i} className="px-5 py-4">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-bold text-gray-800">{r.receiptNumber||`Return ${i+1}`}</span>
-                    <span className="text-sm font-bold tabular-nums" style={{color:'#b20202'}}>−{fmt(r.totalRefunded)}</span>
-                  </div>
-                  {r.refundedAt && <p className="text-[11px] text-gray-400">{fmtDateTime(r.refundedAt)}</p>}
-                  {r.paymentMethod && <p className="text-[11px] text-gray-400 capitalize mt-0.5">via {r.paymentMethod.replace(/_/g,' ')}</p>}
-                  {(r.items||[]).length>0 && (
-                    <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2 space-y-1">
-                      {r.items.map((ri: any, j: number)=>(
-                        <div key={j} className="flex justify-between text-[11px]">
-                          <span className="text-gray-600">Item #{ri.orderItemIndex+1} × {ri.quantity}</span>
-                          <span className="font-semibold text-gray-800 tabular-nums">−{fmt(ri.amount)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div className="flex justify-between border-t border-dashed border-gray-200 px-5 py-3 text-sm font-bold">
-                <span className="text-gray-600">Total Returned</span>
-                <span className="tabular-nums" style={{color:'#b20202'}}>−{fmt(refunded)}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function SoldPanel({ subProductId, productName, token, onClose }: {
   subProductId: string; productName: string; token: string; onClose: ()=>void;
 }) {
-  const [rows,           setRows]          = useState<any[]>([]);
-  const [loading,        setLoading]       = useState(true);
-  const [error,          setError]         = useState('');
+  const { rows, loading, error, fetchData } = useHistoryData(`${API_URL}/api/orders?subProductId=${encodeURIComponent(subProductId)}`, token);
   const [search,         setSearch]        = useState('');
   const [showPanel,      setShowPanel]     = useState(false);
-  const [activeFilters,  setActiveFilters] = useState<Set<SoldFilterKey>>(new Set(['sales_orders']));
+  const [activeFilters,  setActiveFilters] = useState<Set<SoldFilterKey>>(new Set());
   const [groupBy,        setGroupBy]       = useState<SoldGroupKey|null>('month');
   const [savedSearches,  setSavedSearches] = useState<SavedSearch<SoldFilterKey,SoldGroupKey>[]>(()=>loadSaved(SOLD_KEY));
   const [statusPill,     setStatusPill]    = useState<SoldStatusPill>('all');
@@ -472,19 +273,12 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
   const [checked,        setChecked]       = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups]= useState<Set<string>>(new Set());
 
-  const fetchData = useCallback(() => {
-    setLoading(true);
-    apiFetch(`${API_URL}/api/orders?subProductId=${subProductId}&limit=500`, token)
-      .then(body => setRows(body.data?.orders||[]))
-      .catch(e   => setError(e.message))
-      .finally(()=>setLoading(false));
-  }, [subProductId, token]);
-
-  useEffect(()=>{ fetchData(); }, [fetchData]);
   useEffect(()=>{ setExpandedGroups(new Set()); }, [groupBy]);
 
+  useEffect(() => { setPage(1); setSelected(null); setChecked(new Set()); }, [rows, search, activeFilters, statusPill, groupBy]);
+
   function toggleFilter(f: SoldFilterKey) {
-    setActiveFilters(p=>{ const n=new Set(p); n.has(f)?n.delete(f):n.add(f); return n; }); setPage(1);
+    setActiveFilters(p=>{ const n=new Set(p); if(n.has(f)) n.delete(f); else { if(f.startsWith('date_')) for(const key of n) if(key.startsWith('date_')) n.delete(key); n.add(f); } return n; }); setPage(1);
   }
   function removeFilter(f: SoldFilterKey) {
     setActiveFilters(p=>{ const n=new Set(p); n.delete(f); return n; });
@@ -503,7 +297,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
   }
 
   function getLine(order: any) {
-    return (order.items||[]).find((i: any)=>String(i.subproduct?._id||i.subproduct)===subProductId);
+    return salesLine(order, subProductId);
   }
 
   const filtered = useMemo(()=>{
@@ -511,19 +305,22 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
     const now=new Date();
 
     // Status pill
-    if(statusPill==='paid')     list=list.filter(o=>!o.isVoided&&(o.refunds||[]).reduce((s: number,r: any)=>s+(r.totalRefunded||0),0)===0);
+    if(statusPill==='paid')     list=list.filter(o=>salesStatus(o)==='Paid');
     if(statusPill==='refunded') list=list.filter(o=>{const r=(o.refunds||[]).reduce((s: number,r: any)=>s+(r.totalRefunded||0),0);return r>0||o.paymentStatus==='refunded'||o.paymentStatus==='partially_refunded';});
     if(statusPill==='voided')   list=list.filter(o=>o.isVoided);
 
     // Panel filters
-    if(activeFilters.has('sales_orders'))   list=list.filter(o=>['confirmed','delivered','shipped','processing','paid'].includes(o.status));
-    if(activeFilters.has('quotations'))     list=list.filter(o=>['pending','draft'].includes(o.status));
-    if(activeFilters.has('to_invoice'))     list=list.filter(o=>o.paymentStatus==='pending'||o.paymentStatus==='unpaid');
-    if(activeFilters.has('fully_invoiced')) list=list.filter(o=>o.paymentStatus==='paid');
+    list=list.filter(o=>matchesChoices(activeFilters, {
+      sales_orders: ['confirmed','delivered','shipped','partially_shipped','processing','paid'].includes(o.status),
+      quotations: ['pending','draft'].includes(o.status),
+    }) && matchesChoices(activeFilters, {
+      to_invoice: ['pending','unpaid','partially_paid'].includes(o.paymentStatus),
+      fully_invoiced: o.paymentStatus==='paid',
+    }));
     if(activeFilters.has('date_today'))     list=list.filter(o=>isSameDay(new Date(o.placedAt||o.createdAt),now));
     else if(activeFilters.has('date_yesterday')){ const y=new Date(now); y.setDate(y.getDate()-1); list=list.filter(o=>isSameDay(new Date(o.placedAt||o.createdAt),y)); }
-    else if(activeFilters.has('date_this_week'))  list=list.filter(o=>new Date(o.placedAt||o.createdAt)>=startOfWeek(now));
-    else if(activeFilters.has('date_this_month')) list=list.filter(o=>new Date(o.placedAt||o.createdAt)>=startOfMonth(now));
+    else if(activeFilters.has('date_this_week'))  list=list.filter(o=>new Date(o.placedAt||o.createdAt)>=startOfWeek(now)&&new Date(o.placedAt||o.createdAt)<=now);
+    else if(activeFilters.has('date_this_month')) list=list.filter(o=>new Date(o.placedAt||o.createdAt)>=startOfMonth(now)&&new Date(o.placedAt||o.createdAt)<=now);
 
     const q=search.trim().toLowerCase();
     if(q) list=list.filter(o=>(o.orderNumber||'').toLowerCase().includes(q)||(o.receiptNumber||'').toLowerCase().includes(q)||(o.customer?.firstName||'').toLowerCase().includes(q)||(o.customer?.lastName||'').toLowerCase().includes(q)||(o.paymentMethod||'').toLowerCase().replace(/_/g,' ').includes(q));
@@ -532,8 +329,11 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
       let cmp=0;
       switch(sortCol){
         case 'date':    cmp=new Date(a.placedAt||a.createdAt).getTime()-new Date(b.placedAt||b.createdAt).getTime(); break;
-        case 'order':   cmp=(a.receiptNumber||'').localeCompare(b.receiptNumber||''); break;
+        case 'order':   cmp=(a.receiptNumber||a.orderNumber||'').localeCompare(b.receiptNumber||b.orderNumber||''); break;
         case 'customer':{ const ca=a.customer?`${a.customer.firstName||''} ${a.customer.lastName||''}`.trim():'zzz'; const cb=b.customer?`${b.customer.firstName||''} ${b.customer.lastName||''}`.trim():'zzz'; cmp=ca.localeCompare(cb); break; }
+        case 'payment': cmp=(a.paymentMethod||'').localeCompare(b.paymentMethod||''); break;
+        case 'status': cmp=salesStatus(a).localeCompare(salesStatus(b)); break;
+        case 'price': cmp=(getLine(a)?.priceAtPurchase??0)-(getLine(b)?.priceAtPurchase??0); break;
         case 'qty':     cmp=(getLine(a)?.quantity||0)-(getLine(b)?.quantity||0); break;
         case 'total':   { const la=getLine(a),lb=getLine(b); cmp=(la?(la.itemSubtotal??(la.priceAtPurchase||0)*(la.quantity||0)):0)-(lb?(lb.itemSubtotal??(lb.priceAtPurchase||0)*(lb.quantity||0)):0); break; }
       }
@@ -574,7 +374,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
 
   const totalQty   = filtered.reduce((s,o)=>s+(getLine(o)?.quantity||0),0);
   const totalValue = filtered.reduce((s,o)=>{const l=getLine(o);return s+(l?(l.itemSubtotal??(l.priceAtPurchase||0)*(l.quantity||0)):0);},0);
-  const totalRefunds = rows.reduce((s,o)=>s+(o.refunds||[]).reduce((r: number,ref: any)=>r+(ref.totalRefunded||0),0),0);
+  const totalRefunds = filtered.reduce((s,o)=>s+(o.refunds||[]).reduce((r: number,ref: any)=>r+(ref.totalRefunded||0),0),0);
   const avgOrder   = filtered.length ? totalValue/filtered.length : 0;
 
   const hasOptions = activeFilters.size>0||!!groupBy;
@@ -589,7 +389,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
     {col:'customer', label:'Customer'},
     {col:'payment', label:'Method'},
     {col:'qty', label:'Qty', right:true},
-    {col:'price', label:'Unit Price', right:true},
+    {col:'price', label:'Avg. Unit Price', right:true},
     {col:'total', label:'Amount', right:true},
     {col:'status', label:'Status'},
   ];
@@ -601,12 +401,12 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
     const total = line ? (line.itemSubtotal ?? (line.priceAtPurchase||0)*qty) : 0;
     const cust  = order.customer ? `${order.customer.firstName||''} ${order.customer.lastName||''}`.trim()||null : null;
     const refunded = (order.refunds||[]).reduce((s: number,r: any)=>s+(r.totalRefunded||0),0);
-    const stLabel = order.isVoided?'Voided':refunded>=(order.totalAmount??order.total??0)&&refunded>0?'Refunded':refunded>0?'Part. Returned':'Paid';
+    const stLabel = salesStatus(order);
     const stCls   = order.isVoided?'bg-gray-100 text-gray-500':refunded>=(order.totalAmount??order.total??0)&&refunded>0?'bg-red-50 text-red-600':refunded>0?'bg-amber-50 text-amber-600':'bg-emerald-50 text-emerald-600';
 
     return (
       <tr key={order._id} className={`border-b border-gray-100 transition-colors ${
-        isSel?'text-white':''+isChk?' border-l-2':'border-l-2 border-l-transparent'
+        isSel?'text-white':isChk?'border-l-2':'border-l-2 border-l-transparent'
       }`}
         style={isSel?{backgroundColor:'#b20202'}:isChk?{backgroundColor:'rgba(178,2,2,0.05)',borderLeftColor:'#b20202',borderLeftWidth:2}:{}}>
         <td className="w-8 px-2 py-2.5 text-center" onClick={e=>e.stopPropagation()}>
@@ -621,7 +421,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
           <div className={`text-[10px] font-mono ${isSel?'text-red-100':'text-gray-500'}`}>{fmtTime(order.placedAt||order.createdAt)}</div>
         </td>
         <td className={`cursor-pointer px-3 py-2.5 text-xs font-semibold ${isSel?'text-white':'text-gray-800'}`} onClick={()=>setSelected(isSel?null:order)}>
-          {order.receiptNumber||order.orderNumber||'—'}
+          <button type="button" className="text-left underline-offset-2 hover:underline focus-visible:underline" onClick={e=>{e.stopPropagation();setSelected(isSel?null:order);}}>{order.receiptNumber||order.orderNumber||'—'}</button>
         </td>
         <td className={`cursor-pointer px-3 py-2.5 text-xs max-w-[100px] truncate ${isSel?'text-red-100':'text-gray-600'}`} onClick={()=>setSelected(isSel?null:order)}>
           {cust || <span className={isSel?'text-red-200':'text-gray-300'}>Walk-in</span>}
@@ -648,7 +448,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
   return (
     <div className="flex h-full flex-col bg-gray-50">
       {/* Top bar */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 bg-white px-4 py-2.5">
         <button type="button" onClick={onClose}
           className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
           <PiArrowLeft className="h-4 w-4" /> Back
@@ -659,7 +459,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
         </div>
 
         {/* Search */}
-        <div className="relative flex-1 max-w-md">
+        <div className="relative min-w-0 basis-full sm:basis-auto sm:flex-1 sm:max-w-md">
           <div className={`flex overflow-hidden rounded-xl border transition-all bg-white ${showPanel?'ring-1':'border-gray-200'}`}
             style={showPanel?{borderColor:'#b20202',boxShadow:'0 0 0 1px rgba(178,2,2,0.1)'}:{}}>
             <div className="relative flex-1">
@@ -740,14 +540,14 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
       )}
 
       {/* Stats strip */}
-      <div className="flex shrink-0 divide-x divide-gray-100 border-b border-gray-200 bg-white">
+      <div className="flex shrink-0 overflow-x-auto divide-x divide-gray-100 border-b border-gray-200 bg-white">
         {[
-          {label:'Total Orders', value:String(rows.filter(o=>!o.isVoided).length), icon:<PiShoppingCart className="h-4 w-4"/>},
-          {label:'Total Sales',  value:fmt(totalValue), icon:<PiCurrencyNgn className="h-4 w-4"/>, red:true},
-          {label:'Total Refunds', value:fmt(totalRefunds), icon:<PiArrowCounterClockwise className="h-4 w-4"/>, amber:totalRefunds>0},
+          {label:'Matching Orders', value:String(filtered.length), icon:<PiShoppingCart className="h-4 w-4"/>},
+          {label:'Product Order Value',  value:fmt(totalValue), icon:<PiCurrencyNgn className="h-4 w-4"/>, red:true},
+          {label:'Order Refunds', value:fmt(totalRefunds), icon:<PiArrowCounterClockwise className="h-4 w-4"/>, amber:totalRefunds>0},
           {label:'Avg. Order',   value:fmt(avgOrder), icon:<PiReceipt className="h-4 w-4"/>},
         ].map(({label,value,icon,red,amber})=>(
-          <div key={label} className="flex flex-1 items-center gap-3 px-5 py-3">
+          <div key={label} className="flex min-w-[150px] flex-1 items-center gap-3 px-5 py-3">
             <span style={red?{color:'#b20202'}:amber&&totalRefunds>0?{color:'#d97706'}:{color:'#9ca3af'}}>{icon}</span>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
@@ -760,7 +560,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         {/* Table */}
-        <div className={`flex flex-col overflow-hidden border-r border-gray-200 transition-all duration-200 ${selected?'w-[55%]':'flex-1'}`}>
+        <div className={`flex flex-col overflow-hidden border-r border-gray-200 transition-all duration-200 ${selected?'hidden md:flex md:w-[55%]':'min-w-0 flex-1'}`}>
           {/* Selection bar */}
           {checked.size>0 && (
             <div className="shrink-0 flex items-center gap-3 bg-white px-4 py-2.5" style={{borderBottom:'2px solid #b20202'}}>
@@ -776,7 +576,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
             </div>
           ) : error ? (
             <div className="flex flex-1 items-center justify-center gap-2 text-sm text-red-500">
-              <PiWarningCircle className="h-5 w-5 shrink-0"/> {error}
+              <PiWarningCircle className="h-5 w-5 shrink-0"/> <span role="alert">{error}</span><button type="button" onClick={fetchData} className="underline">Retry</button>
             </div>
           ) : filtered.length===0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
@@ -836,8 +636,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
             <div className="shrink-0 flex items-center justify-between border-t border-gray-100 bg-white px-4 py-2.5 text-xs text-gray-500">
               <span>Showing {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE,filtered.length)} of {filtered.length}</span>
               <div className="flex gap-1">
-                {Array.from({length:Math.min(totalPages,7)},(_,i)=>{
-                  const p=totalPages<=7?i+1:i===0?1:i===6?totalPages:page-2+i;
+                {pageNumbers(page,totalPages).map(p=>{
                   return <button key={p} type="button" onClick={()=>setPage(p)}
                     className={`flex h-7 w-7 items-center justify-center rounded-lg border text-[11px] font-semibold ${p===page?'text-white':'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
                     style={p===page?{backgroundColor:'#b20202',borderColor:'#b20202'}:{}}>{p}</button>;
@@ -848,7 +647,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
         </div>
 
         {/* Detail panel */}
-        <div className={`flex flex-col bg-white transition-all duration-200 ${selected?'flex-1 overflow-hidden':'w-72 shrink-0'}`}>
+        <div className={`flex flex-col bg-white transition-all duration-200 ${selected?'min-w-0 flex-1 overflow-hidden':'hidden lg:flex lg:w-72 lg:shrink-0'}`}>
           {selected ? (
             <SoldDetail order={selected} productId={subProductId} onClose={()=>setSelected(null)} />
           ) : (
@@ -895,160 +694,12 @@ const PO_GROUP_SECTIONS = [
 
 type POStatusPill = 'all'|'confirmed'|'received'|'draft';
 
-function PODetail({ po, productId, onClose }: { po: any; productId: string; onClose: ()=>void }) {
-  const [tab, setTab] = useState<'details'|'items'>('details');
 
-  const lines   = (po.items||[]).filter((i: any)=>String(i.subProductId?._id||i.subProductId)===productId);
-  const qty     = lines.reduce((s: number,l: any)=>s+(l.quantity||l.packQty||0),0);
-  const lineTotal = lines.reduce((s: number,l: any)=>s+(l.totalCost||(l.unitPrice||0)*(l.quantity||l.packQty||0)),0);
-  const unitP   = lines[0]?.unitPrice ?? 0;
-  const poTotal = po.totalAmount ?? po.total ?? (po.items||[]).reduce((s: number,l: any)=>s+(l.totalCost||(l.unitPrice||0)*(l.quantity||l.packQty||0)),0);
-  const allQty  = (po.items||[]).reduce((s: number,l: any)=>s+(l.quantity||l.packQty||0),0);
-
-  const stCls = po.status==='received'?'bg-green-50 text-green-600':po.status==='confirmed'||po.status==='approved'?'bg-blue-50 text-blue-600':'bg-gray-100 text-gray-500';
-
-  return (
-    <div className="flex h-full flex-col bg-white">
-      {/* Header */}
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold font-mono text-gray-900">{po.poNumber||po._id?.slice(-8)}</span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${stCls}`}>{po.status||'—'}</span>
-          </div>
-          <p className="mt-0.5 text-[11px] text-gray-400">{fmtDate(po.confirmedAt||po.createdAt)}{po.vendor?.name?` · ${po.vendor.name}`:''}</p>
-        </div>
-        <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600"><PiX className="h-5 w-5"/></button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex shrink-0 border-b border-gray-100 text-xs font-semibold">
-        {([
-          { id:'details', label:'Details', icon:<PiInfo className="h-3.5 w-3.5"/> },
-          { id:'items',   label:`Items (${(po.items||[]).length})`, icon:<PiPackage className="h-3.5 w-3.5"/> },
-        ] as const).map(t=>(
-          <button key={t.id} type="button" onClick={()=>setTab(t.id)}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 transition-colors ${tab===t.id?'border-b-2 border-[#b20202] text-[#b20202]':'border-b-2 border-transparent text-gray-400 hover:text-gray-600'}`}>
-            {t.icon}{t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Details tab */}
-      {tab === 'details' && (
-        <div className="flex-1 overflow-auto">
-          {/* 3-stat row */}
-          <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
-            {[
-              { label:'PO Total',  value:fmt(poTotal), red:true },
-              { label:'This Item', value:fmt(lineTotal) },
-              { label:'All Units', value:String(allQty) },
-            ].map(({label,value,red})=>(
-              <div key={label} className="px-4 py-3 text-center">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
-                <p className="mt-0.5 text-sm font-bold tabular-nums" style={red?{color:'#b20202'}:{color:'#111827'}}>{value}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Fields */}
-          <div className="border-b border-gray-100 px-5 py-3 space-y-1.5 text-xs">
-            {([
-              { label:'Vendor',           value: po.vendor?.name || '—' },
-              po.vendor?.contactPerson  && { label:'Contact',          value: po.vendor.contactPerson },
-              po.vendor?.email          && { label:'Email',            value: po.vendor.email },
-              po.vendor?.phone          && { label:'Phone',            value: po.vendor.phone },
-              { label:'Status',           value: po.status || '—' },
-              { label:'PO Number',        value: po.poNumber || '—' },
-              { label:'Order Date',       value: fmtDate(po.confirmedAt||po.createdAt) },
-              po.expectedDelivery       && { label:'Expected Delivery', value: fmtDate(po.expectedDelivery) },
-              po.receivedAt             && { label:'Received',          value: fmtDate(po.receivedAt) },
-              { label:'Qty (this item)',  value: String(qty) },
-              unitP > 0                 && { label:'Unit Price',        value: fmt(unitP) },
-              lineTotal > 0             && { label:'Item Total',        value: fmt(lineTotal) },
-              po.notes                  && { label:'Notes',             value: po.notes },
-            ] as any[]).filter(Boolean).map(({label,value}: any)=>(
-              <div key={label} className="flex justify-between gap-4">
-                <span className="font-semibold text-gray-500 shrink-0">{label}</span>
-                <span className="font-medium text-gray-800 text-right capitalize truncate">{value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* This-item highlight */}
-          {qty > 0 && (
-            <div className="mx-5 my-4 rounded-xl border border-[#b20202]/20 bg-[#b20202]/4 p-4">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider" style={{color:'#b20202'}}>This Product in PO</p>
-              <div className="flex items-center justify-between text-sm">
-                <div className="space-y-0.5">
-                  <p className="font-semibold text-gray-900">{qty} units</p>
-                  {unitP > 0 && <p className="text-xs text-gray-500">@ {fmt(unitP)} / unit</p>}
-                </div>
-                <p className="text-base font-bold" style={{color:'#b20202'}}>{fmt(lineTotal)}</p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Items tab */}
-      {tab === 'items' && (
-        <div className="flex-1 overflow-auto">
-          {(po.items||[]).length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
-              <PiPackage className="h-8 w-8 text-gray-200"/>
-              <p className="text-sm text-gray-400">No items on this PO</p>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-xs">
-                <thead className="sticky top-0 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-400 shadow-[0_1px_0_#e5e7eb]">
-                  <tr>
-                    <th className="px-5 py-2.5 text-left">Product</th>
-                    <th className="px-3 py-2.5 text-right">Qty</th>
-                    <th className="px-3 py-2.5 text-right">Unit Price</th>
-                    <th className="px-5 py-2.5 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {(po.items||[]).map((item: any, i: number)=>{
-                    const isThis = String(item.subProductId?._id||item.subProductId)===productId;
-                    const itemQty = item.quantity||item.packQty||0;
-                    const itemTotal = item.totalCost||(item.unitPrice||0)*itemQty;
-                    return (
-                      <tr key={i} className={isThis?'bg-[#b20202]/4':''}>
-                        <td className="px-5 py-2.5">
-                          <span className={`font-medium ${isThis?'text-[#b20202]':'text-gray-800'}`}>{item.subProductName||item.name||item.subProductId?.name||'—'}</span>
-                          {isThis && <span className="ml-1.5 rounded bg-[#b20202]/10 px-1 py-0.5 text-[9px] font-bold text-[#b20202]">this</span>}
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{itemQty}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-500">{item.unitPrice>0?fmt(item.unitPrice):'—'}</td>
-                        <td className="px-5 py-2.5 text-right font-semibold tabular-nums text-gray-900">{fmt(itemTotal)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table></div>
-              <div className="border-t border-gray-100 px-5 py-3 text-xs">
-                <div className="flex justify-between text-sm font-bold text-gray-900">
-                  <span>PO Total</span>
-                  <span className="tabular-nums" style={{color:'#b20202'}}>{fmt(poTotal)}</span>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function PurchasedPanel({ subProductId, productName, token, onClose }: {
   subProductId: string; productName: string; token: string; onClose: ()=>void;
 }) {
-  const [rows,           setRows]          = useState<any[]>([]);
-  const [loading,        setLoading]       = useState(true);
-  const [error,          setError]         = useState('');
+  const { rows, loading, error, fetchData } = useHistoryData(`${API_URL}/api/purchase-orders?subProductId=${encodeURIComponent(subProductId)}`, token);
   const [search,         setSearch]        = useState('');
   const [showPanel,      setShowPanel]     = useState(false);
   const [activeFilters,  setActiveFilters] = useState<Set<POFilterKey>>(new Set());
@@ -1062,19 +713,12 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
   const [checked,        setChecked]       = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups]= useState<Set<string>>(new Set());
 
-  const fetchData = useCallback(()=>{
-    setLoading(true);
-    apiFetch(`${API_URL}/api/purchase-orders?subProductId=${subProductId}&limit=500`, token)
-      .then(body=>setRows(body.data||[]))
-      .catch(e=>setError(e.message))
-      .finally(()=>setLoading(false));
-  },[subProductId,token]);
-
-  useEffect(()=>{ fetchData(); },[fetchData]);
   useEffect(()=>{ setExpandedGroups(new Set()); },[groupBy]);
 
+  useEffect(() => { setPage(1); setSelected(null); setChecked(new Set()); }, [rows, search, activeFilters, statusPill, groupBy]);
+
   function toggleFilter(f: POFilterKey) {
-    setActiveFilters(p=>{const n=new Set(p);n.has(f)?n.delete(f):n.add(f);return n;}); setPage(1);
+    setActiveFilters(p=>{const n=new Set(p);if(n.has(f)) n.delete(f); else { if(f.startsWith('date_')) for(const key of n) if(key.startsWith('date_')) n.delete(key); n.add(f); }return n;}); setPage(1);
   }
   function removeFilter(f: POFilterKey) {
     setActiveFilters(p=>{const n=new Set(p);n.delete(f);return n;});
@@ -1106,13 +750,15 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
     if(statusPill==='draft')     list=list.filter(po=>po.status==='draft'||po.status==='rfq');
 
     // Panel filters
-    if(activeFilters.has('confirmed')) list=list.filter(po=>po.status==='confirmed'||po.status==='approved');
-    if(activeFilters.has('received'))  list=list.filter(po=>po.status==='received');
-    if(activeFilters.has('draft'))     list=list.filter(po=>po.status==='draft'||po.status==='rfq');
+    list=list.filter(po=>matchesChoices(activeFilters, {
+      confirmed: ['confirmed','approved'].includes(po.status),
+      received: po.status==='received',
+      draft: ['draft','rfq'].includes(po.status),
+    }));
     if(activeFilters.has('date_today'))     list=list.filter(po=>isSameDay(new Date(po.confirmedAt||po.createdAt),now));
     else if(activeFilters.has('date_yesterday')){ const y=new Date(now);y.setDate(y.getDate()-1);list=list.filter(po=>isSameDay(new Date(po.confirmedAt||po.createdAt),y)); }
-    else if(activeFilters.has('date_this_week'))  list=list.filter(po=>new Date(po.confirmedAt||po.createdAt)>=startOfWeek(now));
-    else if(activeFilters.has('date_this_month')) list=list.filter(po=>new Date(po.confirmedAt||po.createdAt)>=startOfMonth(now));
+    else if(activeFilters.has('date_this_week'))  list=list.filter(po=>new Date(po.confirmedAt||po.createdAt)>=startOfWeek(now)&&new Date(po.confirmedAt||po.createdAt)<=now);
+    else if(activeFilters.has('date_this_month')) list=list.filter(po=>new Date(po.confirmedAt||po.createdAt)>=startOfMonth(now)&&new Date(po.confirmedAt||po.createdAt)<=now);
 
     const q=search.trim().toLowerCase();
     if(q) list=list.filter(po=>(po.poNumber||'').toLowerCase().includes(q)||(po.vendor?.name||'').toLowerCase().includes(q));
@@ -1123,8 +769,10 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
         case 'date':   cmp=new Date(a.confirmedAt||a.createdAt).getTime()-new Date(b.confirmedAt||b.createdAt).getTime(); break;
         case 'order':  cmp=(a.poNumber||'').localeCompare(b.poNumber||''); break;
         case 'vendor': cmp=(a.vendor?.name||'').localeCompare(b.vendor?.name||''); break;
-        case 'qty':    cmp=getLines(a).reduce((s: number,l: any)=>s+(l.quantity||l.packQty||0),0)-getLines(b).reduce((s: number,l: any)=>s+(l.quantity||l.packQty||0),0); break;
-        case 'total':  cmp=getLines(a).reduce((s: number,l: any)=>s+(l.totalCost||(l.unitPrice||0)*(l.quantity||l.packQty||0)),0)-getLines(b).reduce((s: number,l: any)=>s+(l.totalCost||(l.unitPrice||0)*(l.quantity||l.packQty||0)),0); break;
+        case 'status': cmp=(a.status||'').localeCompare(b.status||''); break;
+        case 'price': { const avg=(po: any)=>{ const lines=getLines(po); const qty=lines.reduce((s: number,l: any)=>s+(l.quantity??l.packQty??0),0); return qty ? lines.reduce((s: number,l: any)=>s+(l.unitCost??l.unitPrice??0)*(l.quantity??l.packQty??0),0)/qty : 0; }; cmp=avg(a)-avg(b); break; }
+        case 'qty':    cmp=getLines(a).reduce((s: number,l: any)=>s+(l.quantity??l.packQty??0),0)-getLines(b).reduce((s: number,l: any)=>s+(l.quantity??l.packQty??0),0); break;
+        case 'total':  cmp=getLines(a).reduce((s: number,l: any)=>s+(l.totalCost??(l.unitCost??l.unitPrice??0)*(l.quantity??l.packQty??0)),0)-getLines(b).reduce((s: number,l: any)=>s+(l.totalCost??(l.unitCost??l.unitPrice??0)*(l.quantity??l.packQty??0)),0); break;
       }
       return sortDir==='asc'?cmp:-cmp;
     });
@@ -1156,12 +804,12 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
   const allChecked  = displayList.length>0&&displayList.every(o=>checked.has(o._id));
   const someChecked = checked.size>0&&!allChecked;
   const checkedRows = rows.filter(o=>checked.has(o._id));
-  const checkedTotal = checkedRows.reduce((s,po)=>s+getLines(po).reduce((ls: number,l: any)=>ls+(l.totalCost||(l.unitPrice||0)*(l.quantity||l.packQty||0)),0),0);
+  const checkedTotal = checkedRows.reduce((s,po)=>s+getLines(po).reduce((ls: number,l: any)=>ls+(l.totalCost??(l.unitCost??l.unitPrice??0)*(l.quantity??l.packQty??0)),0),0);
   function toggleAll() { setChecked(allChecked?new Set():new Set(displayList.map(o=>o._id))); }
   function toggleOne(id: string) { setChecked(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;}); }
 
-  const totalQty   = filtered.reduce((s,po)=>s+getLines(po).reduce((ls: number,l: any)=>ls+(l.quantity||l.packQty||0),0),0);
-  const totalValue = filtered.reduce((s,po)=>s+getLines(po).reduce((ls: number,l: any)=>ls+(l.totalCost||(l.unitPrice||0)*(l.quantity||l.packQty||0)),0),0);
+  const totalQty   = filtered.reduce((s,po)=>s+getLines(po).reduce((ls: number,l: any)=>ls+(l.quantity??l.packQty??0),0),0);
+  const totalValue = filtered.reduce((s,po)=>s+getLines(po).reduce((ls: number,l: any)=>ls+(l.totalCost??(l.unitCost??l.unitPrice??0)*(l.quantity??l.packQty??0)),0),0);
   const avgPO      = filtered.length?totalValue/filtered.length:0;
 
   const hasOptions = activeFilters.size>0||!!groupBy;
@@ -1176,16 +824,16 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
     {col:'vendor', label:'Vendor'},
     {col:'status', label:'Status'},
     {col:'qty',    label:'Qty',        right:true},
-    {col:'price',  label:'Unit Price', right:true},
+    {col:'price',  label:'Avg. Unit Price', right:true},
     {col:'total',  label:'Amount',     right:true},
   ];
 
   function renderRow(po: any, isSel: boolean) {
     const isChk = checked.has(po._id);
     const lines = getLines(po);
-    const qty   = lines.reduce((s: number,l: any)=>s+(l.quantity||l.packQty||0),0);
-    const total = lines.reduce((s: number,l: any)=>s+(l.totalCost||(l.unitPrice||0)*(l.quantity||l.packQty||0)),0);
-    const unitP = lines[0]?.unitPrice??0;
+    const qty   = lines.reduce((s: number,l: any)=>s+(l.quantity??l.packQty??0),0);
+    const total = lines.reduce((s: number,l: any)=>s+(l.totalCost??(l.unitCost??l.unitPrice??0)*(l.quantity??l.packQty??0)),0);
+    const unitP = qty ? lines.reduce((sum: number, line: any) => sum + (line.unitCost ?? line.unitPrice ?? 0) * (line.quantity ?? line.packQty ?? 0), 0) / qty : 0;
     return (
       <tr key={po._id} className={`border-b border-gray-100 transition-colors`}
         style={isSel?{backgroundColor:'#b20202'}:isChk?{backgroundColor:'rgba(178,2,2,0.05)',borderLeft:'2px solid #b20202'}:{borderLeft:'2px solid transparent'}}>
@@ -1197,7 +845,7 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
           </button>
         </td>
         <td className={`cursor-pointer px-3 py-2.5 text-xs font-semibold font-mono ${isSel?'text-white':'text-gray-800'}`} onClick={()=>setSelected(isSel?null:po)}>
-          {po.poNumber||po._id?.slice(-8)}
+          <button type="button" className="text-left underline-offset-2 hover:underline focus-visible:underline" onClick={e=>{e.stopPropagation();setSelected(isSel?null:po);}}>{po.poNumber||po._id?.slice(-8)}</button>
         </td>
         <td className={`cursor-pointer px-3 py-2.5 text-[11px] tabular-nums ${isSel?'text-red-100':'text-gray-500'}`} onClick={()=>setSelected(isSel?null:po)}>
           {fmtDate(po.confirmedAt||po.createdAt)}
@@ -1229,7 +877,7 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
   return (
     <div className="flex h-full flex-col bg-gray-50">
       {/* Top bar */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 bg-white px-4 py-2.5">
         <button type="button" onClick={onClose}
           className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
           <PiArrowLeft className="h-4 w-4" /> Back
@@ -1239,7 +887,7 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
           <p className="text-[11px] text-gray-400">{productName} · {rows.length} total · {filtered.length} shown</p>
         </div>
 
-        <div className="relative flex-1 max-w-md">
+        <div className="relative min-w-0 basis-full sm:basis-auto sm:flex-1 sm:max-w-md">
           <div className={`flex overflow-hidden rounded-xl border transition-all bg-white`}
             style={showPanel?{borderColor:'#b20202',boxShadow:'0 0 0 1px rgba(178,2,2,0.1)'}:{borderColor:'#e5e7eb'}}>
             <div className="relative flex-1">
@@ -1318,14 +966,14 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
       )}
 
       {/* Stats strip */}
-      <div className="flex shrink-0 divide-x divide-gray-100 border-b border-gray-200 bg-white">
+      <div className="flex shrink-0 overflow-x-auto divide-x divide-gray-100 border-b border-gray-200 bg-white">
         {[
           {label:'PO Orders', value:String(filtered.length), icon:<PiShoppingCart className="h-4 w-4"/>},
           {label:'Total Value', value:fmt(totalValue), icon:<PiCurrencyNgn className="h-4 w-4"/>, red:true},
           {label:'Units',     value:String(totalQty), icon:<PiPackage className="h-4 w-4"/>},
           {label:'Avg. PO',   value:fmt(avgPO), icon:<PiReceipt className="h-4 w-4"/>},
         ].map(({label,value,icon,red})=>(
-          <div key={label} className="flex flex-1 items-center gap-3 px-5 py-3">
+          <div key={label} className="flex min-w-[150px] flex-1 items-center gap-3 px-5 py-3">
             <span style={red?{color:'#b20202'}:{color:'#9ca3af'}}>{icon}</span>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
@@ -1337,7 +985,7 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
 
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
-        <div className={`flex flex-col overflow-hidden border-r border-gray-200 transition-all duration-200 ${selected?'w-[55%]':'flex-1'}`}>
+        <div className={`flex flex-col overflow-hidden border-r border-gray-200 transition-all duration-200 ${selected?'hidden md:flex md:w-[55%]':'min-w-0 flex-1'}`}>
           {/* Selection bar */}
           {checked.size>0 && (
             <div className="shrink-0 flex items-center gap-3 bg-white px-4 py-2.5" style={{borderBottom:'2px solid #b20202'}}>
@@ -1353,7 +1001,7 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
             </div>
           ) : error ? (
             <div className="flex flex-1 items-center justify-center gap-2 text-sm text-red-500">
-              <PiWarningCircle className="h-5 w-5 shrink-0"/> {error}
+              <PiWarningCircle className="h-5 w-5 shrink-0"/> <span role="alert">{error}</span><button type="button" onClick={fetchData} className="underline">Retry</button>
             </div>
           ) : filtered.length===0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
@@ -1382,7 +1030,7 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
                 <tbody>
                   {grouped ? grouped.map(([gName,gOrders])=>{
                     const isCollapsed=!expandedGroups.has(gName);
-                    const gTotal=gOrders.reduce((s,po)=>s+getLines(po).reduce((ls: number,l: any)=>ls+(l.totalCost||(l.unitPrice||0)*(l.quantity||l.packQty||0)),0),0);
+                    const gTotal=gOrders.reduce((s,po)=>s+getLines(po).reduce((ls: number,l: any)=>ls+(l.totalCost??(l.unitCost??l.unitPrice??0)*(l.quantity??l.packQty??0)),0),0);
                     return (
                       <React.Fragment key={gName}>
                         <tr className="cursor-pointer select-none border-b border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors" onClick={()=>toggleGroup(gName)}>
@@ -1407,8 +1055,7 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
             <div className="shrink-0 flex items-center justify-between border-t border-gray-100 bg-white px-4 py-2.5 text-xs text-gray-500">
               <span>Showing {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE,filtered.length)} of {filtered.length}</span>
               <div className="flex gap-1">
-                {Array.from({length:Math.min(totalPages,7)},(_,i)=>{
-                  const p=totalPages<=7?i+1:i===0?1:i===6?totalPages:page-2+i;
+                {pageNumbers(page,totalPages).map(p=>{
                   return <button key={p} type="button" onClick={()=>setPage(p)}
                     className={`flex h-7 w-7 items-center justify-center rounded-lg border text-[11px] font-semibold ${p===page?'text-white':'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
                     style={p===page?{backgroundColor:'#b20202',borderColor:'#b20202'}:{}}>{p}</button>;
@@ -1418,7 +1065,7 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
           )}
         </div>
 
-        <div className={`flex flex-col bg-white transition-all duration-200 ${selected?'flex-1 overflow-hidden':'w-72 shrink-0'}`}>
+        <div className={`flex flex-col bg-white transition-all duration-200 ${selected?'min-w-0 flex-1 overflow-hidden':'hidden lg:flex lg:w-72 lg:shrink-0'}`}>
           {selected ? (
             <PODetail po={selected} productId={subProductId} onClose={()=>setSelected(null)} />
           ) : (
@@ -1579,26 +1226,17 @@ interface ProductHistoryPanelProps {
 export default function ProductHistoryPanel({
   type, subProductId, productName, token, onClose,
 }: ProductHistoryPanelProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(()=>{
-    setMounted(true);
-    function onKey(e: KeyboardEvent) { if(e.key==='Escape') onClose(); }
-    document.addEventListener('keydown', onKey);
-    return ()=>document.removeEventListener('keydown', onKey);
-  },[onClose]);
-
-  if (!mounted) return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex flex-col" style={{top:0,left:0,right:0,bottom:0,width:'100vw',height:'100vh'}}>
+  return (
+    <Dialog open onClose={onClose} className="relative z-[9999]">
+      <DialogPanel className="fixed inset-0 flex h-[100dvh] flex-col overflow-hidden bg-white">
+        <DialogTitle className="sr-only">{type === 'sold' ? 'Sales history' : type === 'purchased' ? 'Purchase history' : 'Returns history'} — {productName}</DialogTitle>
       {type === 'purchased'
         ? <PurchasedPanel subProductId={subProductId} productName={productName} token={token} onClose={onClose} />
         : type === 'returns'
           ? <VendorReturnsPanel subProductId={subProductId} productName={productName} token={token} onClose={onClose} />
           : <SoldPanel      subProductId={subProductId} productName={productName} token={token} onClose={onClose} />
       }
-    </div>,
-    document.body
+      </DialogPanel>
+    </Dialog>
   );
 }

@@ -33,13 +33,17 @@ export interface WarehouseMovement {
     | 'shipped'
     | 'transfer_in'
     | 'transfer_out'
-    | 'returned';
+    | 'returned'
+    | 'return_out';
   quantity: number;
   balanceAfter: number;
   /** Per-unit buy price captured with the movement (receipts), when known. */
   unitCost?: number | null;
   reference?: string | null;
   transferGroupId?: string | null;
+  /** When this movement undoes another (a transfer/vendor return), the
+   *  movement it unwinds. */
+  parentMovement?: string | null;
   performedBy?: { _id: string; name?: string; email?: string } | null;
   createdAt: string;
 }
@@ -129,12 +133,14 @@ export interface StockRow {
 
 export type AdjustType = 'received' | 'shipped' | 'adjusted';
 
-async function handle(res: Response, fallback: string) {
+async function handle<T>(res: Response, fallback: string): Promise<T> {
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
+    const err = (await res.json().catch(() => ({}))) as {
+      message?: string;
+    };
     throw new Error(err.message || fallback);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const jsonAuth = (token: string) => ({
@@ -146,7 +152,7 @@ export const warehouseStockService = {
   async getAllStock(
     token: string
   ): Promise<{ success: boolean; data: StockRow[] }> {
-    return handle(
+    return handle<{ success: boolean; data: StockRow[] }>(
       await fetch(`${API_URL}/api/warehouses/stock/all`, {
         headers: auth(token),
       }),
@@ -154,7 +160,7 @@ export const warehouseStockService = {
     );
   },
   async getWarehouseStock(warehouseId: string, token: string) {
-    return handle(
+    return handle<unknown>(
       await fetch(`${API_URL}/api/warehouses/${warehouseId}/stock`, {
         headers: auth(token),
       }),
@@ -167,12 +173,12 @@ export const warehouseStockService = {
     token: string
   ): Promise<{ success: boolean; data: LastCost }> {
     const qs = new URLSearchParams({ subProduct, size });
-    return handle(
+    return handle<{ success: boolean; data: LastCost }>(
       await fetch(`${API_URL}/api/warehouses/last-cost?${qs.toString()}`, {
         headers: auth(token),
       }),
       'Failed to load last cost'
-    ) as { success: boolean; data: LastCost };
+    );
   },
   async getWarehouseMovements(
     warehouseId: string,
@@ -184,13 +190,13 @@ export const warehouseStockService = {
     if (params.size) qs.set('size', params.size);
     if (params.limit) qs.set('limit', String(params.limit));
     // handle() is untyped upstream; assert the envelope here.
-    return handle(
+    return handle<{ success: boolean; data: WarehouseMovement[] }>(
       await fetch(
         `${API_URL}/api/warehouses/${warehouseId}/movements${qs.toString() ? `?${qs}` : ''}`,
         { headers: auth(token) }
       ),
       'Failed to load movement history'
-    ) as { success: boolean; data: WarehouseMovement[] };
+    );
   },
   async adjustStock(
     warehouseId: string,
@@ -232,6 +238,20 @@ export const warehouseStockService = {
         body: JSON.stringify(body),
       }),
       'Failed to transfer stock'
+    );
+  },
+  async returnMovement(
+    movementId: string,
+    body: { quantity: number; note?: string },
+    token: string
+  ) {
+    return handle(
+      await fetch(`${API_URL}/api/warehouses/movements/${movementId}/return`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify(body),
+      }),
+      'Failed to return transfer'
     );
   },
   async getStockByWarehouse(subProductId: string, token: string) {

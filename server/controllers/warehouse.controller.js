@@ -210,6 +210,56 @@ const transferStock = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Stock transferred', data });
 });
 
+// POST /api/warehouses/movements/:movementId/return
+// Refund/return a transfer from a warehouse's movement history. The service
+// moves the line's goods back to the originating warehouse and reverses the
+// destination→source money when the movement came from the StockTransfer module.
+const returnTransferFromMovement = asyncHandler(async (req, res) => {
+  const tenantId = requireTenant(req);
+  const { quantity, note } = req.body;
+  const qty = Number(quantity);
+  if (!Number.isSafeInteger(qty) || qty <= 0) throw new ValidationError('quantity must be a positive integer');
+
+  const WarehouseMovement = require('../models/WarehouseMovement');
+  const movement = await WarehouseMovement.findOne({
+    _id: req.params.movementId,
+    tenant: tenantId,
+  }).lean();
+  if (!movement) throw new NotFoundError('Movement not found');
+  if (!['transfer_in', 'transfer_out'].includes(movement.type)) {
+    throw new ValidationError('Only transfer movements can be returned');
+  }
+
+  const stockTransferReturn = require('../services/stockTransferReturn');
+  const ctx = await stockTransferReturn.resolveTransferReturn(
+    { movement, tenantId },
+    {}
+  );
+  await stockTransferReturn.returnTransferStock(
+    ctx,
+    { quantity: qty, tenantId, userId: req.user._id, note },
+    {}
+  );
+  if (ctx.kind === 'module') {
+    await stockTransferReturn.reverseTransferMoney(
+      ctx,
+      { quantity: qty, userId: req.user._id, note },
+      {}
+    );
+  }
+
+  res.json({
+    success: true,
+    message:
+      ctx.kind === 'module' ? 'Transfer returned and refunded' : 'Transfer returned',
+    data: {
+      kind: ctx.kind,
+      transferNumber: ctx.transferNumber || null,
+      transfer: ctx.kind === 'module' ? ctx.transfer : null,
+    },
+  });
+});
+
 // Validate a proposed manager list against this tenant's own users. Exported
 // for unit tests (same pattern as pickValidSettingUpdates): every id must
 // resolve to a User of the tenant, otherwise a caller could hand warehouse
@@ -375,7 +425,7 @@ const updateWarehouseSettings = asyncHandler(async (req, res) => {
 module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, getAllWarehouseStock, getWarehouseBatches, adjustWarehouseStock, transferStock,
-  getWarehouseMovements, getLastCost,
+  getWarehouseMovements, getLastCost, returnTransferFromMovement,
   setWarehouseManagers, validateManagerIds,
   getWarehouseSettings, updateWarehouseSettings, getTenantWarehouseSettings,
   pickValidSettingUpdates, WAREHOUSE_SETTING_VALIDATORS,

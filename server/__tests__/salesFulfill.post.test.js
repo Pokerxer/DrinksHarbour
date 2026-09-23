@@ -53,6 +53,52 @@ test('fulfillOrder posts only the unposted delta and advances postedQty/fulfille
   assert.strictEqual(totalShipped, 100);
 });
 
+test('fulfillOrder repoints the SO warehouse to where the stock actually left', async () => {
+  const adjusted = [];
+  const so = {
+    soNumber: 'SO-WH', _id: 'soWh', tenant: 't1', warehouseId: 'wh-001',
+    items: [{ _id: 'L1', product: 'p1', subproduct: 'sp1', size: 'sz1', quantity: 100, unitPrice: 500, discount: 0, fulfilledQty: 0, postedQty: 0, returnedQty: 0 }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+  const SalesModel = { create: async (rows) => rows };
+  const deps = {
+    adjustStock: async (a) => { adjusted.push(a); return { currentQuantity: 0 }; },
+    SalesModel,
+    getUnitCost: async () => 0,
+  };
+  const revenue = { revenueModel: 'markup' };
+
+  // Created against wh-001 but the goods leave wh-002.
+  await fulfillOrder({ salesOrder: so, tenantId: 't1', warehouseId: 'wh-002', fulfillLines: [{ lineId: 'L1', qty: 60 }], userId: 'u1', deps, revenue, paymentMethod: 'cash' });
+
+  // SO-level warehouse follows the actual outflow warehouse; stock posts to wh-002.
+  assert.strictEqual(so.warehouseId, 'wh-002');
+  assert.strictEqual(String(adjusted[0].warehouseId), 'wh-002');
+  assert.strictEqual(so.fulfillments[0].warehouseId, 'wh-002');
+});
+
+test('fulfillOrder leaves the SO warehouse alone when it already matches', async () => {
+  const adjusted = [];
+  const so = {
+    soNumber: 'SO-WS', _id: 'soWs', tenant: 't1', warehouseId: 'wh1',
+    items: [{ _id: 'L1', product: 'p1', subproduct: 'sp1', size: 'sz1', quantity: 100, unitPrice: 500, discount: 0, fulfilledQty: 0, postedQty: 0, returnedQty: 0 }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+  const SalesModel = { create: async (rows) => rows };
+  const deps = {
+    adjustStock: async (a) => { adjusted.push(a); return { currentQuantity: 0 }; },
+    SalesModel,
+    getUnitCost: async () => 0,
+  };
+  const revenue = { revenueModel: 'markup' };
+
+  await fulfillOrder({ salesOrder: so, tenantId: 't1', warehouseId: 'wh1', fulfillLines: [{ lineId: 'L1', qty: 60 }], userId: 'u1', deps, revenue, paymentMethod: 'cash' });
+
+  assert.strictEqual(so.warehouseId, 'wh1');
+});
+
 test('fulfillOrder gates postedQty/Sales-row on per-line shipping success and rolls back failed lines', async () => {
   const salesRowsCreated = [];
   const so = {

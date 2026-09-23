@@ -2,6 +2,8 @@
 'use client';
 
 import Link from 'next/link';
+import { productTaxonomyLabel as typeLabel } from '@/utils/product-taxonomy-label';
+import DuplicateSubProductButton from './duplicate-button';
 import { Button, Title, Badge } from 'rizzui';
 
 const formatPrice = (value: any, currency: string) => {
@@ -18,13 +20,6 @@ const formatPrice = (value: any, currency: string) => {
     return `${currency || 'NGN'} ${Number(value).toLocaleString()}`;
   }
 };
-
-const typeLabel = (type: string) =>
-  type
-    .split('_')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
 
 const humanizeSize = (code: string) => {
   if (!code) return 'Default';
@@ -60,8 +55,10 @@ const isInStock = (s: any) =>
 
 export default function SubProductDetailsSummary({
   product,
+  showActions = true,
 }: {
   product: any;
+  showActions?: boolean;
 }) {
   const currency = product.currency || 'NGN';
   const headlinePrice = formatPrice(
@@ -82,6 +79,16 @@ export default function SubProductDetailsSummary({
           {product.type && (
             <Badge color="primary" rounded="md">
               {typeLabel(product.type)}
+            </Badge>
+          )}
+          {product.subType && (
+            <Badge color="blue" rounded="md" variant="flat">
+              {typeLabel(product.subType)}
+            </Badge>
+          )}
+          {product.style && (
+            <Badge color="secondary" rounded="md" variant="outline">
+              {typeLabel(product.style)}
             </Badge>
           )}
           {product.isAlcoholic && (
@@ -205,7 +212,7 @@ export default function SubProductDetailsSummary({
           )}
         </div>
 
-        <div className="mt-8">
+        {showActions && <div className="mt-8">
           <Link href={product.editHref || `/sub-products/${product.id}/edit`}>
             <Button
               size="xl"
@@ -214,7 +221,8 @@ export default function SubProductDetailsSummary({
               Edit Sub-Product
             </Button>
           </Link>
-        </div>
+          <DuplicateSubProductButton sourceId={product.id} />
+        </div>}
       </div>
     </>
   );

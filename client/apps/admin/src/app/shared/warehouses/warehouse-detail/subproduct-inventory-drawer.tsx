@@ -5,7 +5,7 @@
 // bin location, batches and the movement audit trail. Everything shown is
 // filtered to THIS warehouse — the drawer never mixes in other locations.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -20,13 +20,17 @@ import {
   PiSlidersHorizontalBold,
   PiArrowsLeftRightBold,
   PiArrowBendDownLeftBold,
+  PiArrowCounterClockwise,
 } from 'react-icons/pi';
 import {
   warehouseStockService,
   type WarehouseMovement,
   type WarehouseStockRow,
 } from '@/services/warehouseStock.service';
-import { warehouseService, type WarehouseBatch } from '@/services/warehouse.service';
+import {
+  warehouseService,
+  type WarehouseBatch,
+} from '@/services/warehouse.service';
 import { routes } from '@/config/routes';
 import {
   skuOf,
@@ -38,12 +42,16 @@ import {
 } from '../warehouse-ref-helpers';
 import { availOf, belowReorderOf, statusOf } from './row-utils';
 import { StatusBadge, ReorderBadge } from './badges';
+import TransferReturnModal from './transfer-return-modal';
 
 // Pricing derivation mirrors the server's stock/all flattening
 // (server/services/warehouse.service.js → getAllStock): size-level prices win
 // when present, falling back to the SubProduct-level fields.
 export const lineCostOf = (r: WarehouseStockRow): number => {
-  if (typeof r.size !== 'object' || !r.size) return r.subProduct && typeof r.subProduct === 'object' ? (r.subProduct.costPrice ?? 0) : 0;
+  if (typeof r.size !== 'object' || !r.size)
+    return r.subProduct && typeof r.subProduct === 'object'
+      ? (r.subProduct.costPrice ?? 0)
+      : 0;
   return r.size.costPrice && r.size.costPrice > 0
     ? r.size.costPrice
     : typeof r.subProduct === 'object' && r.subProduct
@@ -53,7 +61,9 @@ export const lineCostOf = (r: WarehouseStockRow): number => {
 
 export const lineSellOf = (r: WarehouseStockRow): number => {
   if (typeof r.size !== 'object' || !r.size)
-    return typeof r.subProduct === 'object' && r.subProduct ? (r.subProduct.baseSellingPrice ?? 0) : 0;
+    return typeof r.subProduct === 'object' && r.subProduct
+      ? (r.subProduct.baseSellingPrice ?? 0)
+      : 0;
   return r.size.sellingPrice && r.size.sellingPrice > 0
     ? r.size.sellingPrice
     : typeof r.subProduct === 'object' && r.subProduct
@@ -106,6 +116,12 @@ const MOVEMENT_META: Record<
     icon: <PiArrowsLeftRightBold className="h-3 w-3" />,
     signed: '-',
   },
+  return_out: {
+    label: 'Returned to vendor',
+    cls: 'bg-amber-50 text-amber-700',
+    icon: <PiArrowCounterClockwise className="h-3 w-3" />,
+    signed: '-',
+  },
   shipped: {
     label: 'Shipped',
     cls: 'bg-red-50 text-red-600',
@@ -118,6 +134,39 @@ const MOVEMENT_META: Record<
     icon: <PiSlidersHorizontalBold className="h-3 w-3" />,
     signed: '=',
   },
+};
+
+const isTransferRefund = (m: WarehouseMovement): boolean =>
+  (m.type === 'transfer_in' || m.type === 'transfer_out') &&
+  /^Return\b/i.test(m.reference ?? '');
+
+// A transfer refund reads as a return, not a fresh transfer in the ledger.
+const movementMetaOf = (
+  m: WarehouseMovement
+): {
+  label: string;
+  cls: string;
+  icon: React.ReactNode;
+  signed: '+' | '-' | '=';
+} => {
+  if (isTransferRefund(m)) {
+    const out = m.type === 'transfer_out';
+    return {
+      label: out ? 'Return out' : 'Return in',
+      cls: 'bg-amber-50 text-amber-700',
+      icon: <PiArrowCounterClockwise className="h-3 w-3" />,
+      signed: out ? '-' : '+',
+    };
+  }
+  return MOVEMENT_META[m.type];
+};
+
+/** Transfer number a refund unwinds ("Return of transfer TRF-…"), when present. */
+const refundTransferNumber = (m: WarehouseMovement): string | null => {
+  const match = /^Return of (?:transfer\s+)?([A-Za-z0-9][\w-]*)$/i.exec(
+    m.reference ?? ''
+  );
+  return match ? match[1] : null;
 };
 
 const relDate = (iso: string): string => {
@@ -156,6 +205,9 @@ export default function SubProductInventoryDrawer({
   const [tab, setTab] = useState<Tab>('overview');
   const [batches, setBatches] = useState<WarehouseBatch[] | null>(null);
   const [movements, setMovements] = useState<WarehouseMovement[] | null>(null);
+  const [historyLimit, setHistoryLimit] = useState(50);
+  const [returnMovement, setReturnMovement] =
+    useState<WarehouseMovement | null>(null);
 
   const name = nameOf(row) || skuOf(row) || 'Unnamed product';
   const subProductId = subProductIdOf(row);
@@ -163,31 +215,40 @@ export default function SubProductInventoryDrawer({
   const canOperate = !!(subProductId && sizeId);
 
   // Batches + movements are both cheap, line-scoped queries — load together.
-  useEffect(() => {
-    if (!token || !canOperate) return;
+  // Hoisted so a completed return can refresh both without re-mounting.
+  // Size-less products (no variants) still have history: omit the size filter
+  // instead of bailing out (bailing once left the History tab spinning forever).
+  const loadData = useCallback(async () => {
+    if (!token || !subProductId) return;
     let alive = true;
-    warehouseService
-      .getBatches(warehouseId, token, {
-        subProduct: subProductId as string,
-        size: sizeId as string,
-      })
-      .then((res) => alive && setBatches(res.data ?? []))
-      .catch((e) =>
-        alive &&
-        toast.error(e instanceof Error ? e.message : 'Failed to load batches')
-      );
-    warehouseStockService
-      .getWarehouseMovements(warehouseId, token, {
-        subProduct: subProductId as string,
-        size: sizeId as string,
-        limit: 50,
-      })
-      .then((res) => alive && setMovements(res.data ?? []))
-      .catch(() => alive && setMovements([]));
-    return () => {
-      alive = false;
+    const scope: { subProduct: string; size?: string } = {
+      subProduct: subProductId as string,
     };
-  }, [token, warehouseId, subProductId, sizeId, canOperate]);
+    if (sizeId) scope.size = sizeId as string;
+    await Promise.all([
+      warehouseService
+        .getBatches(warehouseId, token, scope)
+        .then((res) => alive && setBatches(res.data ?? []))
+        .catch(
+          (e) =>
+            alive &&
+            toast.error(
+              e instanceof Error ? e.message : 'Failed to load batches'
+            )
+        ),
+      warehouseStockService
+        .getWarehouseMovements(warehouseId, token, {
+          ...scope,
+          limit: historyLimit,
+        })
+        .then((res) => alive && setMovements(res.data ?? []))
+        .catch(() => alive && setMovements([])),
+    ]);
+  }, [token, warehouseId, subProductId, sizeId, historyLimit]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -302,7 +363,10 @@ export default function SubProductInventoryDrawer({
                     value={row.currentQuantity.toLocaleString()}
                     tone="strong"
                   />
-                  <Kpi label="Reserved" value={row.reservedQuantity.toLocaleString()} />
+                  <Kpi
+                    label="Reserved"
+                    value={row.reservedQuantity.toLocaleString()}
+                  />
                   <Kpi
                     label="Available"
                     value={availOf(row).toLocaleString()}
@@ -370,7 +434,10 @@ export default function SubProductInventoryDrawer({
                   <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-100 p-4 text-sm text-gray-700">
                     <PiMapPin className="h-4 w-4 text-[#b20202]" />
                     {loc.map((part, i) => (
-                      <span key={`${part}-${i}`} className="flex items-center gap-2">
+                      <span
+                        key={`${part}-${i}`}
+                        className="flex items-center gap-2"
+                      >
                         {i > 0 && <span className="text-gray-300">·</span>}
                         <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs font-semibold">
                           {part}
@@ -438,7 +505,7 @@ export default function SubProductInventoryDrawer({
             ) : (
               <ol className="relative space-y-0 border-l border-gray-100 pl-4">
                 {movements.map((m) => {
-                  const meta = MOVEMENT_META[m.type];
+                  const meta = movementMetaOf(m);
                   return (
                     <li key={m._id} className="relative pb-4">
                       <span className="absolute -left-[21px] top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-white bg-gray-200" />
@@ -449,7 +516,7 @@ export default function SubProductInventoryDrawer({
                           {meta.icon}
                           {meta.label}
                         </span>
-                        <b className="tabular-nums text-sm text-gray-900">
+                        <b className="text-sm tabular-nums text-gray-900">
                           {meta.signed === '+'
                             ? `+${m.quantity}`
                             : meta.signed === '-'
@@ -464,19 +531,61 @@ export default function SubProductInventoryDrawer({
                         <span className="text-xs text-gray-400">
                           bal. {m.balanceAfter}
                         </span>
+                        {(m.type === 'transfer_in' ||
+                          m.type === 'transfer_out') &&
+                          !/^Return\b/i.test(m.reference ?? '') &&
+                          (m.transferGroupId ||
+                            /^Transfer\s+[A-Z0-9-]+\s*$/i.test(
+                              m.reference ?? ''
+                            )) && (
+                            <button
+                              type="button"
+                              disabled={!!returnMovement}
+                              onClick={() => setReturnMovement(m)}
+                              className="inline-flex items-center gap-1 rounded-md border border-orange-200 px-1.5 py-0.5 text-[11px] font-semibold text-orange-600 hover:bg-orange-50 disabled:opacity-40"
+                            >
+                              <PiArrowCounterClockwise className="h-3 w-3" />
+                              Return / Refund
+                            </button>
+                          )}
                       </div>
                       <p className="mt-0.5 text-xs text-gray-400">
                         {relDate(m.createdAt)}
                         {m.performedBy?.name
                           ? ` · by ${m.performedBy.name}`
                           : ''}
-                        {m.reference ? ` · ${m.reference}` : ''}
+                        {refundTransferNumber(m) ? (
+                          <Link
+                            href={`${routes.eCommerce.stockTransfers}?q=${encodeURIComponent(
+                              refundTransferNumber(m)!
+                            )}`}
+                            className="inline-flex items-center gap-0.5 font-semibold text-amber-600 hover:underline"
+                          >
+                            <PiArrowUpRightBold className="h-3 w-3" />
+                            {refundTransferNumber(m)}
+                          </Link>
+                        ) : m.reference ? (
+                          <span> · {m.reference}</span>
+                        ) : null}
                       </p>
                     </li>
                   );
                 })}
               </ol>
             ))}
+
+          {tab === 'history' &&
+            movements &&
+            movements.length >= historyLimit &&
+            historyLimit < 200 && (
+              <button
+                type="button"
+                onClick={() => setHistoryLimit((n) => Math.min(n + 150, 200))}
+                className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                View older movements
+              </button>
+            )}
         </div>
 
         {/* ── Footer actions ── */}
@@ -492,7 +601,9 @@ export default function SubProductInventoryDrawer({
           <button
             type="button"
             disabled={!canOperate || availOf(row) <= 0}
-            title={availOf(row) <= 0 ? 'Nothing available to transfer' : undefined}
+            title={
+              availOf(row) <= 0 ? 'Nothing available to transfer' : undefined
+            }
             onClick={() => onTransfer(row)}
             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:border-[#b20202] hover:text-[#b20202] disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300 disabled:hover:border-gray-100 disabled:hover:text-gray-300"
           >
@@ -509,6 +620,18 @@ export default function SubProductInventoryDrawer({
           )}
         </div>
       </div>
+
+      {returnMovement && (
+        <TransferReturnModal
+          movement={returnMovement}
+          label={`${name} · ${sizeOf(row)}`}
+          onClose={() => setReturnMovement(null)}
+          onDone={async () => {
+            setReturnMovement(null);
+            await loadData();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -566,13 +689,7 @@ function PriceRow({
   );
 }
 
-function EmptyHint({
-  text,
-  icon,
-}: {
-  text: string;
-  icon?: React.ReactNode;
-}) {
+function EmptyHint({ text, icon }: { text: string; icon?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 py-12 text-center">
       {icon ?? <PiMapPin className="h-6 w-6 text-gray-200" />}

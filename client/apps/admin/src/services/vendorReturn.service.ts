@@ -4,12 +4,18 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 export interface VendorReturn {
   _id: string;
   returnNumber: string;
-  vendor?: string | { _id: string; name?: string; email?: string; phone?: string };
+  vendor?:
+    | string
+    | { _id: string; name?: string; email?: string; phone?: string };
   vendorName: string;
   purchaseOrder?: string | { _id: string; poNumber?: string };
   poNumber?: string;
   vendorBill?: string;
   billNumber?: string;
+  /** Warehouse the returned goods leave from on confirmation (stock deduction). */
+  warehouse?: string | { _id: string; name?: string } | null;
+  /** Idempotency flag: stock was already taken out on confirmation. */
+  stockAdjusted?: boolean;
   currency: string;
   items: ReturnItem[];
   subtotal: number;
@@ -55,6 +61,12 @@ export interface ReturnItem {
   taxRate?: number;
 }
 
+type ApiErrorBody = { message?: string };
+
+function readJson<T>(response: Response): Promise<T> {
+  return response.json() as Promise<T>;
+}
+
 export const vendorReturnService = {
   async createVendorReturn(
     returnData: any,
@@ -70,11 +82,11 @@ export const vendorReturnService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to create vendor return');
     }
 
-    return response.json();
+    return readJson<{ success: boolean; data: VendorReturn }>(response);
   },
 
   async getVendorReturn(
@@ -88,11 +100,11 @@ export const vendorReturnService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to fetch vendor return');
     }
 
-    return response.json();
+    return readJson<{ success: boolean; data: VendorReturn }>(response);
   },
 
   async getVendorReturns(
@@ -133,7 +145,8 @@ export const vendorReturnService = {
     if (params.startDate) queryParams.set('startDate', params.startDate);
     if (params.endDate) queryParams.set('endDate', params.endDate);
     if (params.search) queryParams.set('search', params.search);
-    if (params.purchaseOrder) queryParams.set('purchaseOrder', params.purchaseOrder);
+    if (params.purchaseOrder)
+      queryParams.set('purchaseOrder', params.purchaseOrder);
 
     const response = await fetch(
       `${API_URL}/api/vendor-returns?${queryParams.toString()}`,
@@ -145,11 +158,28 @@ export const vendorReturnService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to fetch vendor returns');
     }
 
-    return response.json();
+    return readJson<{
+      success: boolean;
+      data: VendorReturn[];
+      pagination: {
+        currentPage: number;
+        totalPages: number;
+        totalCount: number;
+      };
+      stats: {
+        totalCount: number;
+        totalValue: number;
+        totalRefunded: number;
+        draftCount: number;
+        confirmedCount: number;
+        refundedCount: number;
+        cancelledCount: number;
+      };
+    }>(response);
   },
 
   async updateVendorReturn(
@@ -167,37 +197,34 @@ export const vendorReturnService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to update vendor return');
     }
 
-    return response.json();
+    return readJson<{ success: boolean; data: VendorReturn }>(response);
   },
 
   async updateReturnStatus(
     id: string,
     status: string,
-    notes?: string,
-    token: string
+    token: string,
+    notes?: string
   ): Promise<{ success: boolean; data: VendorReturn }> {
-    const response = await fetch(
-      `${API_URL}/api/vendor-returns/${id}/status`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status, notes }),
-      }
-    );
+    const response = await fetch(`${API_URL}/api/vendor-returns/${id}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status, notes }),
+    });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to update return status');
     }
 
-    return response.json();
+    return readJson<{ success: boolean; data: VendorReturn }>(response);
   },
 
   async recordRefund(
@@ -210,24 +237,21 @@ export const vendorReturnService = {
     },
     token: string
   ): Promise<{ success: boolean; data: VendorReturn }> {
-    const response = await fetch(
-      `${API_URL}/api/vendor-returns/${id}/refund`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(refundData),
-      }
-    );
+    const response = await fetch(`${API_URL}/api/vendor-returns/${id}/refund`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(refundData),
+    });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to record refund');
     }
 
-    return response.json();
+    return readJson<{ success: boolean; data: VendorReturn }>(response);
   },
 
   async deleteVendorReturn(
@@ -242,11 +266,11 @@ export const vendorReturnService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to delete vendor return');
     }
 
-    return response.json();
+    return readJson<{ success: boolean; message: string }>(response);
   },
 
   async createReturnFromBill(
@@ -274,10 +298,10 @@ export const vendorReturnService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<ApiErrorBody>(response);
       throw new Error(error.message || 'Failed to create return from bill');
     }
 
-    return response.json();
+    return readJson<{ success: boolean; data: VendorReturn }>(response);
   },
 };

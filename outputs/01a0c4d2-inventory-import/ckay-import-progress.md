@@ -1,0 +1,92 @@
+# CKay import progress
+
+Temporary cost equals selling price, authorized by user.
+
+- Dany Home Storage Box / Tea Box: 6ab19634057cb1b9361ef4ee, 2 units, NGN 145000, verified.
+- Gladiator Edition Decanter: 6ab1963d057cb1b9361ef519, 2 units, NGN 145000, verified.
+- The Brew Company Coffee: 6ab1964a057cb1b9361ef544, 1 units, NGN 47000, verified.
+- Dany Home Glass Ice Bucket: 6ab1965b057cb1b9361ef572, 2 units, NGN 145000, verified.
+- Dany Home Shot Board for Shots: 6ab19665057cb1b9361ef59e, 8 units, NGN 30000, verified.
+- Gift Set in a Brown Basket: 6ab1966a057cb1b9361ef5ca, 1 units, NGN 280000, verified.
+- White Teddy Bear: 6ab19670057cb1b9361ef5f6, 1 units, NGN 85000, verified.
+- Lucky Love Mug: 6ab19675057cb1b9361ef622, 6 units, NGN 19500, verified.
+- Red Suede Box (Smallest): 6ab1967c057cb1b9361ef64d, 1 units, NGN 5000, verified.
+- Red Suede Box (Small): 6ab19684057cb1b9361ef67a, 1 units, NGN 10000, verified.
+- Red Suede Box (Medium): 6ab19689057cb1b9361ef6a6, 1 units, NGN 15000, verified.
+- Red Suede Box (Big): 6ab1968f057cb1b9361ef6d2, 1 units, NGN 20000, verified.
+- Whiskey Barrel: 6ab19695057cb1b9361ef6fd, 3 units, NGN 85000, verified.
+- Stormtrooper Decanter: 6ab1969c057cb1b9361ef72a, 2 units, NGN 95000, verified.
+- Entasis Carafe (for spirits): 6ab196a0057cb1b9361ef756, 1 units, NGN 165000, verified.
+- Lacuna Decanter (for wine): 6ab196a8057cb1b9361ef782, 1 units, NGN 145000, verified.
+- Luxury Wash Bag (Baylis & Harding): 6ab196b8057cb1b9361ef7ae, 1 units, NGN 65000, verified.
+- Luxury Wash Bag (The Fuzzy Duck): 6ab196be057cb1b9361ef7da, 1 units, NGN 50000, verified.
+- Baylis & Harding Wellness for Men: 6ab196c6057cb1b9361ef806, 1 units, NGN 41600, verified.
+- Baylis & Harding Elements Luxury Home Care Set: 6ab196cc057cb1b9361ef832, 2 units, NGN 39000, verified.
+- Luxury Tin Set (The Fuzzy Duck): 6ab196d1057cb1b9361ef85e, 2 units, NGN 49900, verified.
+- Keepsake Boxes: 6ab196d9057cb1b9361ef88a, 1 units, NGN 35000, verified.
+- Luxury Pamper Tin: 6ab196e0057cb1b9361ef8b6, 1 units, NGN 44000, verified.
+- Luxury Headband: 6ab196e6057cb1b9361ef8e1, 1 units, NGN 48000, verified.
+- Luxury Body Retreat: 6ab196ef057cb1b9361ef90e, 1 units, NGN 62000, verified.
+- B&H Men's Signature Collection: 6ab196f4057cb1b9361ef93a, 1 units, NGN 38000, verified.
+- B&H Hand Care Set (Black Colour): 6ab196fc057cb1b9361ef966, 1 units, NGN 32000, verified.
+- Pink and Pear Blossom (Soap Flowers): 6ab19702057cb1b9361ef991, 1 units, NGN 18500, verified.
+- B&H Double Set Collection: 6ab19709057cb1b9361ef9be, 1 units, NGN 46500, verified.
+- William Morris Gardening Glove Set: 6ab19710057cb1b9361ef9ea, 1 units, NGN 68000, verified.
+- Heart-Shaped Box (Estella Bartlett): 6ab19718057cb1b9361efa16, 1 units, NGN 68000, verified.
+- Live by the Sun (Dark Blue Box): 6ab19724057cb1b9361efa42, 1 units, NGN 68000, verified.
+- Rainbow Box (Estella Bartlett): 6ab1973e057cb1b9361efa6e, 1 units, NGN 68000, verified.
+- Multi-Purpose 3-in-1 Basin: 6ab19745057cb1b9361efa9a, 1 units, NGN 45000, verified.
+- Whiskey Decanter Set: 6ab19755057cb1b9361efac6, 1 units, NGN 49000, verified.
+- Pink Box: 6ab19763057cb1b9361efaf2, 1 units, NGN 85000, verified.
+- Next Just Pink: 6ab19772057cb1b9361efb1e, 2 units, NGN 75000, verified.
+- Wine Box (Red & Brown): 6ab19788057cb1b9361efb49, 2 units, NGN 50000, verified.
+- B&H Luxury Pamper Gift (Purple): 6ab19790057cb1b9361efb74, 1 units, NGN 62000, verified.
+- B&H Signature Collection: 6ab19799057cb1b9361efba1, 1 units, NGN 59000, verified.
+- Bath Set in Wooden Box: 6ab197b2057cb1b9361efbce, 1 units, NGN 40000, verified.
+- Starbucks Coffee White: 6ab197c3057cb1b9361efbfa, 3 units, NGN 19500, verified.
+- Straw Cup: 6ab197de057cb1b9361efc26, 3 units, NGN 19500, verified.
+- Water Bottle: 6ab197f2057cb1b9361efc52, 3 units, NGN 30000, verified.
+- Stanley Cup: 6ab197f7057cb1b9361efc7e, 2 units, NGN 45000, verified.
+- Conundrum Decanter: 6ab197fe057cb1b9361efcaa, 3 units, NGN 127500, verified.
+- Globe Decanter: 6ab19803057cb1b9361efcd5, 2 units, NGN 125000, verified.
+- The Bourbon Biscuit: 6ab1980b057cb1b9361efd02, 1 units, NGN 35000, verified.
+- Handkerchief (3 in 1): 6ab19813057cb1b9361efd2e, 1 units, NGN 15000, verified.
+- The Essence Diffuser Set: 6ab1981a057cb1b9361efd5a, 1 units, NGN 40000, verified.
+- Wine Glass Jugs (Stainless White): 6ab19822057cb1b9361efd86, 2 units, NGN 50000, verified.
+- Starbucks Coffee Cup Black: 6ab1982d057cb1b9361efdb2, 3 units, NGN 19500, verified.
+- Carafe Glass Container (Dany Home): 6ab19833057cb1b9361efdde, 3 units, NGN 45000, verified.
+- Stormtrooper 3D Decanter: 6ab1983b057cb1b9361efe0a, 2 units, NGN 95000, verified.
+- Twisted Decanter: 6ab19842057cb1b9361efe36, 2 units, NGN 116000, verified.
+- Diamond Decanter: 6ab19852057cb1b9361efe62, 2 units, NGN 118000, verified.
+- Chess Decanter: 6ab19861057cb1b9361efe8e, 1 units, NGN 165000, verified.
+- Baileys Luxury Fudge: 6ab1986d057cb1b9361efeba, 1 units, NGN 48000, verified.
+- Glengoyne Fudge: 6ab1987c057cb1b9361efee6, 1 units, NGN 48000, verified.
+- Guinness Luxury Fudge: 6ab1988f057cb1b9361eff12, 1 units, NGN 48000, verified.
+- Jagermeister: 6ab1989c057cb1b9361eff3e, 1 units, NGN 35000, verified.
+- Jack Daniel's Old No. 7: 6ab198a8057cb1b9361eff6a, 1 units, NGN 35000, verified.
+- Louis Vuitton Mug: 6ab198b3057cb1b9361eff92, 1 units, NGN 17500, verified.
+- Gucci Mug: 6ab198bc057cb1b9361effbe, 1 units, NGN 16500, verified.
+- Dior Mug (Black): 6ab198c3057cb1b9361effea, 3 units, NGN 16500, verified.
+- Dior Mug (Pink): 6ab198cf057cb1b9361f0015, 2 units, NGN 16500, verified.
+- English Breakfast Tea: 6ab198d6057cb1b9361f0042, 4 units, NGN 45000, verified.
+- Cloth Basket: 6ab198e2057cb1b9361f006e, 1 units, NGN 40000, verified.
+- White Woven Basket: 6ab198ea057cb1b9361f009a, 1 units, NGN 35000, verified.
+- Fruit Basket: 6ab19903057cb1b9361f00c6, 1 units, NGN 35000, verified.
+- Brown Basket (Small): 6ab19916057cb1b9361f00f2, 1 units, NGN 15000, verified.
+- Brown Basket (Medium): 6ab19924057cb1b9361f011e, 2 units, NGN 35000, verified.
+- Yu Jing Glass Ware 6pcs (Large): 6ab19930057cb1b9361f014a, 1 units, NGN 35000, verified.
+- Yu Jing Glass Ware 6pcs (Small): 6ab19939057cb1b9361f0176, 4 units, NGN 30000, verified.
+- BlinkMax Glass Cups: 6ab1993f057cb1b9361f01a2, 1 units, NGN 35000, verified.
+- Karaca Pop-Up Dessert Set: 6ab19947057cb1b9361f01ce, 1 units, NGN 35000, verified.
+- Water Set Glass Cups: 6ab1994f057cb1b9361f01fa, 1 units, NGN 25000, verified.
+- Diamond Set Glass Cups: 6ab19954057cb1b9361f0225, 2 units, NGN 30000, verified.
+- Fashion Classic Wine Decanter: 6ab1995b057cb1b9361f0252, 2 units, NGN 58000, verified.
+- Dany Home Crystal Glass: 6ab19962057cb1b9361f027e, 2 units, NGN 25000, verified.
+- Gold Rim Martini Glass: 6ab19968057cb1b9361f02aa, 2 units, NGN 18000, verified.
+- 2-Piece Drink Ware Set: 6ab19972057cb1b9361f02d6, 3 units, NGN 17000, verified.
+- Glassware (Small): 6ab1997a057cb1b9361f0302, 1 units, NGN 25000, verified.
+- Glassware (Big): 6ab19982057cb1b9361f032d, 1 units, NGN 25000, verified.
+- VGR Hair Dryer: 6ab1998b057cb1b9361f035a, 1 units, NGN 125000, verified.
+- VGR Hair Clipper: 6ab19997057cb1b9361f0386, 1 units, NGN 120000, verified.
+- VGR Barber Combo: 6ab199a0057cb1b9361f03b1, 1 units, NGN 55000, verified.
+- VGR Foil Shaver: 6ab199ab057cb1b9361f03de, 1 units, NGN 60000, verified.

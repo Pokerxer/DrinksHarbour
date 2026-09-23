@@ -1,0 +1,163 @@
+.pc-device {
+  transition:
+    box-shadow 0.18s,
+    border-color 0.18s;
+  margin: 0;
+  padding: 24px;
+}
+.pc-device:hover {
+  border-color: #b2020255;
+  box-shadow: 0 6px 20px #32151a08;
+}
+.pc-device[data-enabled='false'] {
+  border-style: dashed;
+}
+.pc-device-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: #b2020209;
+  color: #b20202;
+  font-size: 27px;
+}
+.pc-device h2 {
+  font-size: 20px;
+  letter-spacing: -0.025em;
+  margin-bottom: 6px;
+}
+.pc-device .pc-device-store {
+  font-size: 13px;
+}
+.pc-device-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px !important;
+  margin-top: 7px;
+}
+.pc-device dl {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 0;
+  margin: 12px 0 0;
+  border-bottom: 1px solid #8882;
+}
+.pc-pricing {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 16px 0;
+}
+.pc-pricing span {
+  color: #817575;
+  font-size: 11px;
+}
+.pc-pricing strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.pc-device .pc-url {
+  font-size: 11px !important;
+  padding: 10px;
+  margin-bottom: 18px !important;
+}
+.pc-device-primary {
+  display: flex;
+  gap: 8px;
+}
+.pc-device-primary .pc-button {
+  flex: 1;
+}
+.pc-copy {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  border: 1px solid #8884;
+  border-radius: 8px;
+  font-size: 18px;
+}
+.pc-device-actions {
+  justify-content: space-between;
+  border-top: 1px solid #8882;
+  margin-top: 18px;
+  padding-top: 14px;
+}
+.pc-device-actions > a {
+  min-height: 36px;
+  font-size: 12px;
+}
+.pc-device-actions details {
+  position: relative;
+}
+.pc-device-actions summary {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 10px 0 10px 10px;
+}
+.pc-device-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+  background: rgb(var(--background, 255 255 255));
+  border: 1px solid #8884;
+  padding: 6px;
+  border-radius: 10px;
+  min-width: 155px;
+  box-shadow: 0 8px 30px #0002;
+}
+.pc-device-menu button {
+  width: 100%;
+  padding: 12px;
+  border-radius: 6px;
+  text-align: left;
+}
+.pc-device-menu button:hover {
+  background: #8881;
+}
+.pc-feedback {
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  background: #eaf6ee;
+  border: 1px solid #bddbc5;
+  color: #225b36;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.pc-skeleton {
+  min-height: 330px;
+  border: 1px solid #8883;
+  border-radius: 14px;
+  padding: 28px;
+}
+.pc-skeleton span {
+  display: block;
+  height: 20px;
+  background: #8882;
+  margin-bottom: 24px;
+  border-radius: 6px;
+  animation: pc-pulse 1.5s ease-in-out infinite;
+}
+.pc-skeleton span:first-child {
+  height: 50px;
+  width: 50px;
+}
+.pc-skeleton span:last-child {
+  height: 120px;
+}
+@keyframes pc-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+.dark .pc-summary strong,
+.dark .pc-segments button[aria-pressed='true'] {
+  color: #f4ebeb;
+}
+.dark .pc-summary,
+.dark .pc-segments button[aria-pressed='true'],
+.dark .pc-device-menu {
+  background: #18181b;
+}

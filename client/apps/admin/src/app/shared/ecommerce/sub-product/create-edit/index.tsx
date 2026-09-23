@@ -18,44 +18,22 @@ import {
   PiArrowLeft,
   PiArrowRight,
   PiFloppyDisk,
-  PiCaretDown,
-  PiCaretLeft,
-  PiCaretRight,
-  PiClock,
-  PiGear,
   PiArchive,
-  PiCopy,
   PiTrash,
-  PiPlus,
-  PiSignature,
-  PiChartLine,
   PiTag,
   PiCurrencyNgn,
-  PiPercent,
   PiArchive as PiArchiveBox,
-  PiRuler,
   PiFactory,
   PiToggleRight,
   PiGift,
   PiTrolley,
-  PiWarningCircle,
-  PiWarningDiamond,
-  PiPackage,
-  PiFileText,
-  PiShoppingCart,
-  PiTrendUp,
-  PiTrendDown,
-  PiDotsThree,
-  PiGlobe,
-  PiArrowLineLeft,
-  PiArrowLineRight,
-  PiArrowCounterClockwise,
-  PiList,
-  PiX,
-  PiSparkle,
-  PiMagnifyingGlassBold,
 } from 'react-icons/pi';
 import SubProductBasicInfo from './basic-info';
+import { clearSubProductDraft } from './draft-cleanup';
+import { requestDuplicate } from './duplicate-intent';
+import { subProductSaveTarget } from './save-target';
+import SubProductToolbar from './toolbar';
+import { navigateFromToolbar } from './toolbar-actions';
 import SubProductPricing from './pricing';
 import SubProductInventory from './inventory';
 import SubProductSizes from './sizes';
@@ -358,17 +336,33 @@ function ProductStep({
   );
 }
 
-export default function CreateEditSubProduct({
+interface CreateEditSubProductProps {
+  slug?: string;
+  id?: string;
+  product?: SubProductInput;
+  onStartBlank?: () => void;
+  className?: string;
+}
+
+export default function CreateEditSubProduct(props: CreateEditSubProductProps) {
+  const [generation, setGeneration] = useState(0);
+  return (
+    <SubProductForm
+      key={`${props.id || props.slug || 'create'}:${generation}`}
+      {...props}
+      onStartNew={() => setGeneration((value) => value + 1)}
+    />
+  );
+}
+
+function SubProductForm({
   slug,
   id,
   product,
   className,
-}: {
-  slug?: string;
-  id?: string;
-  product?: SubProductInput;
-  className?: string;
-}) {
+  onStartNew,
+  onStartBlank,
+}: CreateEditSubProductProps & { onStartNew: () => void }) {
   const router = useRouter();
   const { data: session } = useSession();
   const [isLoading, setLoading] = useState(false);
@@ -381,6 +375,8 @@ export default function CreateEditSubProduct({
   const sessionRef = useRef<any>(null);
   // Prevents the unmount auto-save from firing when a save just succeeded
   const hasSavedRef = useRef(false);
+  const saveInFlightRef = useRef(false);
+  const hasCreatedRef = useRef(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -391,12 +387,12 @@ export default function CreateEditSubProduct({
     null
   );
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
-  const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
-  const settingsDropdownRef = useRef<HTMLDivElement>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const navigationInFlightRef = useRef(false);
 
   // Archive / Duplicate / Delete state
   const [actionLoading, setActionLoading] = useState<
-    'archive' | 'restore' | 'duplicate' | 'delete' | null
+    'archive' | 'restore' | 'delete' | null
   >(null);
   const [confirmModal, setConfirmModal] = useState<
     'archive' | 'restore' | 'delete' | null
@@ -410,7 +406,7 @@ export default function CreateEditSubProduct({
   const isEditMode = Boolean(slug || id);
 
   const methods = useForm<SubProductInput>({
-    defaultValues: defaultValues(),
+    defaultValues: defaultValues(product),
     resolver: zodResolver(subProductFormSchema),
     mode: 'onBlur',
   });
@@ -725,53 +721,10 @@ export default function CreateEditSubProduct({
     }
   }, [slug, id, session, isEditMode, methods]);
 
+  // Creation is in-memory only. Never restore another session's product.
   useEffect(() => {
-    if (!isDirty) return;
-
-    const interval = setInterval(() => {
-      const data = watch();
-      localStorage.setItem(
-        'subproduct-draft',
-        JSON.stringify({
-          ...data,
-          _savedAt: new Date().toISOString(),
-        })
-      );
-      setSaveStatus('saved');
-      setLastSaved(new Date());
-      setTimeout(() => setSaveStatus('idle'), 2000);
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [isDirty, watch]);
-
-  useEffect(() => {
-    const draft = localStorage.getItem('subproduct-draft');
-    if (draft && !isEditMode) {
-      try {
-        const parsed = JSON.parse(draft);
-        delete parsed._savedAt;
-        methods.reset(parsed);
-        toast.success('Draft restored from auto-save');
-      } catch (e) {
-        console.error('Failed to restore draft:', e);
-      }
-    }
-  }, [isEditMode, methods]);
-
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        settingsDropdownRef.current &&
-        !settingsDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowSettingsDropdown(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    clearSubProductDraft();
+    return clearSubProductDraft;
   }, []);
 
   const handleGenerate = async () => {
@@ -899,7 +852,10 @@ export default function CreateEditSubProduct({
    * `silent` = true suppresses toasts (used for auto-save).
    */
   const performSave = useCallback(
-    async (data: SubProductInput, silent = false) => {
+    async (data: SubProductInput, silent = false, explicitCreate = false) => {
+      const target = subProductSaveTarget({ isEditMode, id, slug, explicitCreate });
+      if (!target || saveInFlightRef.current) return false;
+      if (target.kind === 'create' && hasCreatedRef.current) return false;
       const sp = data.subProductData || (data as any);
       const productId = sp.product || '';
       const createNew = sp.createNewProduct ?? false;
@@ -956,19 +912,21 @@ export default function CreateEditSubProduct({
         setIsAutoSaving(true);
       }
 
+      saveInFlightRef.current = true;
       try {
         const transformedData = transformFormData(data);
 
         let createdId: string | null = null;
 
-        if (isEditMode && id) {
-          await subproductService.updateSubProduct(id, transformedData, token);
+        if (target.kind === 'update') {
+          await subproductService.updateSubProduct(target.id, transformedData, token);
           if (!silent) toast.success('Sub Product updated successfully!');
         } else {
           const response = await subproductService.createSubProduct(
             transformedData,
             token
           );
+          hasCreatedRef.current = true;
           createdId =
             response?.data?.subProduct?._id ||
             response?.data?.subProduct?.id ||
@@ -983,7 +941,8 @@ export default function CreateEditSubProduct({
 
         // Mark as saved so unmount/beforeunload auto-save doesn't fire again
         hasSavedRef.current = true;
-        localStorage.removeItem('subproduct-draft');
+        clearSubProductDraft();
+        setLastSaved(new Date());
         setSaveStatus('saved');
 
         // After successful create, redirect to the edit page (Odoo-style)
@@ -1017,7 +976,7 @@ export default function CreateEditSubProduct({
               { duration: 5000 }
             );
             // Take the user straight to the existing listing to add the variant.
-            localStorage.removeItem('subproduct-draft');
+            clearSubProductDraft();
             router.replace(routes.eCommerce.editSubProduct(existingId));
             return false;
           } else if (
@@ -1063,16 +1022,17 @@ export default function CreateEditSubProduct({
         }
         return false;
       } finally {
+        saveInFlightRef.current = false;
         if (!silent) setLoading(false);
         else setIsAutoSaving(false);
       }
     },
-    [isEditMode, id]
+    [isEditMode, id, slug]
   );
 
   const onSubmit: SubmitHandler<SubProductInput> = async (data) => {
     console.log('=== FORM DATA SUBMITTED ===', JSON.stringify(data, null, 2));
-    await performSave(data, false);
+    await performSave(data, false, true);
   };
 
   // ── Auto-save on page leave (EDIT MODE ONLY — Odoo-style) ──────────────────
@@ -1082,7 +1042,11 @@ export default function CreateEditSubProduct({
   useEffect(() => {
     const sub = methods.watch((values) => {
       formValuesRef.current = values as SubProductInput;
-      if (hasSavedRef.current) hasSavedRef.current = false;
+      if (hasSavedRef.current) {
+        hasSavedRef.current = false;
+        setSaveStatus('idle');
+        setLastSaved(null);
+      }
     });
     return () => sub.unsubscribe();
   }, [methods]);
@@ -1090,7 +1054,7 @@ export default function CreateEditSubProduct({
   // Unmount auto-save — ONLY for edit mode (updating existing record is safe)
   useEffect(() => {
     return () => {
-      if (!isEditMode || !id) return; // create mode: never auto-save on unmount
+      if (!isEditMode || !id) return;
       if (!isDirtyRef.current || isLoadingRef.current || hasSavedRef.current)
         return;
       performSave(formValuesRef.current, true).catch(() => {});
@@ -1189,16 +1153,10 @@ export default function CreateEditSubProduct({
           <Button
             variant="outline"
             onClick={() => {
-              if (createdSubProductId) {
-                router.push(`/sub-products/create`);
-                setTimeout(() => {
-                  setIsSuccess(false);
-                  setCreatedSubProductId(null);
-                  methods.reset(defaultValues());
-                }, 100);
-              } else {
-                setIsSuccess(false);
-              }
+              clearSubProductDraft();
+              if (onStartBlank) onStartBlank();
+              else if (isEditMode) router.push(routes.eCommerce.createSubProduct);
+              else onStartNew();
             }}
           >
             Create Another
@@ -1227,7 +1185,12 @@ export default function CreateEditSubProduct({
     if (!subProductId || !token) return;
     setActionLoading('archive');
     try {
+      if (isDirtyRef.current && !hasSavedRef.current) {
+        if (!(await methods.trigger())) return;
+        if (!(await performSave(methods.getValues()))) return;
+      }
       await subproductService.archiveSubProduct(subProductId, token);
+      hasSavedRef.current = true;
       invalidateNavCache();
       toast.success('Product archived');
       router.push(routes.eCommerce.subProducts);
@@ -1257,29 +1220,16 @@ export default function CreateEditSubProduct({
   }
 
   async function handleDuplicate() {
-    if (!subProductId || !token) return;
-    setActionLoading('duplicate');
-    setShowSettingsDropdown(false);
-    invalidateNavCache();
-    try {
-      const res = await subproductService.duplicateSubProduct(
-        subProductId,
-        token
-      );
-      const newId = res?.data?.subProduct?._id;
-      toast.success(
-        `Duplicated — ${res?.data?.duplicatedSizes ?? 0} size variants copied`
-      );
-      if (newId) {
-        router.push(routes.eCommerce.editSubProduct(newId));
-      } else {
-        router.push(routes.eCommerce.subProducts);
-      }
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to duplicate');
-    } finally {
-      setActionLoading(null);
+    if (!subProductId || isLoading || isFetching) return;
+    // Wait for current edits so the create page cannot read an older version.
+    if (isDirty) {
+      if (!(await methods.trigger())) return;
+      const saved = await performSave(methods.getValues());
+      if (!saved) return;
     }
+    clearSubProductDraft();
+    requestDuplicate(subProductId);
+    router.push(routes.eCommerce.createSubProduct);
   }
 
   async function handleDelete() {
@@ -1287,6 +1237,7 @@ export default function CreateEditSubProduct({
     setActionLoading('delete');
     try {
       await subproductService.deleteSubProduct(subProductId, token);
+      hasSavedRef.current = true;
       invalidateNavCache();
       toast.success('Product deleted');
       router.push(routes.eCommerce.subProducts);
@@ -1296,6 +1247,32 @@ export default function CreateEditSubProduct({
       setActionLoading(null);
       setConfirmModal(null);
     }
+  }
+
+  const toolbarBusy = isLoading || isAutoSaving || isFetching || isGenerating || isNavigating || actionLoading !== null;
+
+  async function navigateSafely(navigate: () => void) {
+    if (navigationInFlightRef.current || toolbarBusy) return;
+    navigationInFlightRef.current = true;
+    setIsNavigating(true);
+    try {
+      await navigateFromToolbar({
+        busy: saveInFlightRef.current,
+        editing: isEditMode,
+        dirty: isDirtyRef.current && !hasSavedRef.current,
+        validate: () => methods.trigger(),
+        save: () => performSave(methods.getValues()),
+        navigate,
+      });
+    } finally {
+      navigationInFlightRef.current = false;
+      setIsNavigating(false);
+    }
+  }
+
+  function navigateToRecord(index: number) {
+    if (index < 0 || index >= navIds.length || index === navIndex) return;
+    void navigateSafely(() => router.push(routes.eCommerce.editSubProduct(navIds[index])));
   }
 
   return (
@@ -1320,338 +1297,47 @@ export default function CreateEditSubProduct({
             />
           </div>
 
-          {/* Main header row */}
-          <div className="flex items-center gap-3 px-4 py-2.5 sm:px-6">
-            {/* ── Back ── */}
-            <button
-              type="button"
-              onClick={async () => {
-                if (isEditMode && id && isDirty && !isLoading) {
-                  await performSave(methods.getValues(), true);
-                }
-                router.push(routes.eCommerce.subProducts);
-              }}
-              className="flex shrink-0 items-center gap-1 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-              title="Back to Sub Products"
-            >
-              <PiArrowLeft className="h-4 w-4" />
-            </button>
-
-            {/* ── Title + autosave status ── */}
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-sm font-bold text-gray-900">
-                {displayTitle}
-              </h1>
-              <div className="mt-0.5 flex items-center gap-2">
-                {isAutoSaving && (
-                  <span className="flex items-center gap-1 text-[10px] text-blue-500">
-                    <PiSpinner className="h-3 w-3 animate-spin" /> Auto-saving…
-                  </span>
-                )}
-                {saveStatus === 'saved' && !isAutoSaving && (
-                  <span className="flex items-center gap-1 text-[10px] text-green-600">
-                    <PiCheck className="h-3 w-3" /> Saved
-                  </span>
-                )}
-                {saveStatus === 'error' && (
-                  <span className="flex items-center gap-1 text-[10px] text-red-500">
-                    <PiWarningCircle className="h-3 w-3" /> Save failed
-                  </span>
-                )}
-                {lastSaved && saveStatus === 'idle' && (
-                  <span className="hidden items-center gap-1 text-[10px] text-gray-400 sm:flex">
-                    <PiClock className="h-2.5 w-2.5" />
-                    {lastSaved.toLocaleTimeString()}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* ── New + Save — adjacent to product name ── */}
-            <div className="flex shrink-0 items-center gap-1.5">
-              <button
-                type="button"
-                onClick={async () => {
-                  if (isEditMode && id && isDirty && !isLoading) {
-                    await performSave(methods.getValues(), true);
-                  }
-                  localStorage.removeItem('subproduct-draft');
-                  router.push(routes.eCommerce.createSubProduct);
-                }}
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
-                title="Create new sub-product"
-              >
-                <PiPlus className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">New</span>
-              </button>
-              <button
-                type="button"
-                onClick={methods.handleSubmit(onSubmit)}
-                disabled={isLoading}
-                className="flex h-8 items-center gap-1.5 rounded-lg bg-gray-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
-                title="Save"
-              >
-                {isLoading ? (
-                  <PiSpinner className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <PiFloppyDisk className="h-3.5 w-3.5" />
-                )}
-                <span className="hidden sm:inline">
-                  {isLoading ? 'Saving…' : 'Save'}
-                </span>
-              </button>
-            </div>
-
-            {/* ── Archived banner chip ── */}
-            {isArchived && (
-              <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 ring-1 ring-amber-200">
-                <PiArchive className="h-3.5 w-3.5 text-amber-600" />
-                <span className="text-[11px] font-bold text-amber-700">
-                  Archived
-                </span>
-              </div>
-            )}
-
-            {/* ── Stat chips (real data) ── */}
-            <div className="hidden items-center gap-2 sm:flex">
-              {/* Stock */}
-              <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1">
-                <PiPackage className="h-3 w-3 text-gray-400" />
-                <span className="text-[11px] font-semibold tabular-nums text-gray-700">
-                  {Number(watch('subProductData.totalStock')) || 0}
-                </span>
-                <span className="text-[9px] uppercase tracking-wide text-gray-400">
-                  on hand
-                </span>
-              </div>
-              {/* Price */}
-              {Number(watch('subProductData.baseSellingPrice')) > 0 && (
-                <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1">
-                  <PiCurrencyNgn className="h-3 w-3 text-gray-400" />
-                  <span className="text-[11px] font-semibold tabular-nums text-gray-700">
-                    {Number(
-                      watch('subProductData.baseSellingPrice')
-                    ).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-                  </span>
-                </div>
-              )}
-              {/* Returns — clickable */}
-              {isEditMode && (
-                <button
-                  type="button"
-                  onClick={() => setHistoryPanel('returns')}
-                  className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 transition-colors hover:border-orange-300 hover:bg-orange-50"
-                >
-                  <PiArrowCounterClockwise className="h-3 w-3 text-gray-400" />
-                  <span className="text-[9px] uppercase tracking-wide text-gray-400">
-                    returns
-                  </span>
-                </button>
-              )}
-              {/* Purchased — clickable */}
-              {isEditMode && statPurchased !== null && (
-                <button
-                  type="button"
-                  onClick={() => setHistoryPanel('purchased')}
-                  className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 transition-colors hover:border-indigo-300 hover:bg-indigo-50"
-                >
-                  <PiShoppingCart className="h-3 w-3 text-gray-400" />
-                  <span className="text-[11px] font-semibold tabular-nums text-gray-700">
-                    {statPurchased}
-                  </span>
-                  <span className="text-[9px] uppercase tracking-wide text-gray-400">
-                    purchased
-                  </span>
-                </button>
-              )}
-              {/* Sold — clickable */}
-              {isEditMode && statSold !== null && (
-                <button
-                  type="button"
-                  onClick={() => setHistoryPanel('sold')}
-                  className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 transition-colors hover:border-emerald-300 hover:bg-emerald-50"
-                >
-                  <PiTrendDown className="h-3 w-3 text-gray-400" />
-                  <span className="text-[11px] font-semibold tabular-nums text-gray-700">
-                    {statSold}
-                  </span>
-                  <span className="text-[9px] uppercase tracking-wide text-gray-400">
-                    sold
-                  </span>
-                </button>
-              )}
-              {/* Status */}
-              {(() => {
-                const st = watch('subProductData.status') || 'draft';
-                const cls =
-                  st === 'active'
-                    ? 'bg-green-100 text-green-700'
-                    : st === 'draft'
-                      ? 'bg-gray-100 text-gray-600'
-                      : st === 'out_of_stock'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-amber-100 text-amber-700';
-                return (
-                  <span
-                    className={`rounded-lg px-2.5 py-1 text-[10px] font-bold capitalize ${cls}`}
-                  >
-                    {st.replace(/_/g, ' ')}
-                  </span>
-                );
-              })()}
-            </div>
-
-            {/* ── Right actions ── */}
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
-              {/* AI Generate */}
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={isGenerating || isLoading}
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-2.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100 disabled:opacity-50"
-                title="Auto-generate content with AI"
-              >
-                {isGenerating ? (
-                  <PiSpinner className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <PiSparkle className="h-3.5 w-3.5" />
-                )}
-                <span className="hidden sm:inline">
-                  {isGenerating ? 'Generating…' : 'AI'}
-                </span>
-              </button>
-
-              {/* ── Prev / Next navigation ── */}
-              {isEditMode && navIds.length > 1 && navIndex !== -1 && (
-                <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-                  {navContextSummary && (
-                    <span
-                      className="hidden max-w-[10rem] truncate rounded-md bg-[#b20202]/5 px-2 py-1 text-[10px] font-medium text-[#b20202] md:block"
-                      title={`From search: ${navContextSummary}`}
-                    >
-                      <PiMagnifyingGlassBold className="mr-1 inline h-2.5 w-2.5" />
-                      {navContextSummary}
-                    </span>
-                  )}
-                  {navContextSummary && <div className="h-4 w-px bg-gray-200" />}
-                  <button
-                    type="button"
-                    disabled={navIndex <= 0}
-                    title={
-                      navIndex > 0
-                        ? `Previous product (${navIndex} of ${navIds.length})`
-                        : 'No previous product'
-                    }
-                    onClick={async () => {
-                      if (navIndex <= 0) return;
-                      if (isDirty && !isLoading)
-                        await performSave(methods.getValues(), true);
-                      router.push(
-                        routes.eCommerce.editSubProduct(navIds[navIndex - 1])
-                      );
-                    }}
-                    className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <PiCaretLeft className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="min-w-[3rem] text-center text-[10px] font-semibold tabular-nums text-gray-500">
-                    {navIndex + 1} / {navIds.length}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={navIndex >= navIds.length - 1}
-                    title={
-                      navIndex < navIds.length - 1
-                        ? `Next product (${navIndex + 2} of ${navIds.length})`
-                        : 'No next product'
-                    }
-                    onClick={async () => {
-                      if (navIndex >= navIds.length - 1) return;
-                      if (isDirty && !isLoading)
-                        await performSave(methods.getValues(), true);
-                      router.push(
-                        routes.eCommerce.editSubProduct(navIds[navIndex + 1])
-                      );
-                    }}
-                    className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <PiCaretRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
-
-              {/* Settings ⋮ */}
-              <div className="relative" ref={settingsDropdownRef}>
-                <button
-                  type="button"
-                  onClick={() => setShowSettingsDropdown(!showSettingsDropdown)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50"
-                  title="More options"
-                >
-                  <PiDotsThree className="h-4 w-4" />
-                </button>
-                {showSettingsDropdown && (
-                  <div className="absolute right-0 top-full z-50 mt-1.5 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
-                    {isEditMode && (
-                      <>
-                        {isArchived ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowSettingsDropdown(false);
-                              setConfirmModal('restore');
-                            }}
-                            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            <PiArchive className="h-4 w-4 text-gray-400" />{' '}
-                            Restore
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowSettingsDropdown(false);
-                              setConfirmModal('archive');
-                            }}
-                            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            <PiArchive className="h-4 w-4 text-gray-400" />{' '}
-                            Archive
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          disabled={actionLoading === 'duplicate'}
-                          onClick={handleDuplicate}
-                          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          {actionLoading === 'duplicate' ? (
-                            <PiSpinner className="h-4 w-4 animate-spin text-gray-400" />
-                          ) : (
-                            <PiCopy className="h-4 w-4 text-gray-400" />
-                          )}
-                          {actionLoading === 'duplicate'
-                            ? 'Duplicating…'
-                            : 'Duplicate'}
-                        </button>
-                        <div className="my-1 border-t border-gray-100" />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowSettingsDropdown(false);
-                            setConfirmModal('delete');
-                          }}
-                          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                        >
-                          <PiTrash className="h-4 w-4" /> Delete
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <SubProductToolbar
+            title={displayTitle}
+            status={watch('subProductData.status') || 'draft'}
+            editing={isEditMode}
+            dirty={isDirty && !hasSavedRef.current}
+            busy={toolbarBusy}
+            saving={isLoading || isAutoSaving}
+            loading={isFetching}
+            generating={isGenerating}
+            saveStatus={saveStatus}
+            lastSaved={lastSaved}
+            onBack={() => navigateSafely(() => router.push(routes.eCommerce.subProducts))}
+            onNew={() => navigateSafely(() => {
+              clearSubProductDraft();
+              if (onStartBlank) onStartBlank();
+              else if (isEditMode) router.push(routes.eCommerce.createSubProduct);
+              else onStartNew();
+            })}
+            onSave={methods.handleSubmit(onSubmit)}
+            onGenerate={handleGenerate}
+            menu={{
+              onDuplicate: handleDuplicate,
+              onArchive: () => setConfirmModal(isArchived ? 'restore' : 'archive'),
+              onDelete: () => setConfirmModal('delete'),
+            }}
+            stats={{
+              stock: Number(watch('subProductData.totalStock')) || 0,
+              price: Number(watch('subProductData.baseSellingPrice')) || 0,
+              currency: watch('subProductData.currency') || 'NGN',
+              purchased: statPurchased,
+              sold: statSold,
+              onHistory: setHistoryPanel,
+            }}
+            navigation={{
+              index: navIndex,
+              count: navIds.length,
+              context: navContextSummary,
+              onPrevious: () => navigateToRecord(navIndex - 1),
+              onNext: () => navigateToRecord(navIndex + 1),
+            }}
+          />
 
           {/* ── Step tab bar ── */}
           <div className="scrollbar-hide flex overflow-x-auto border-t border-gray-100 px-2">

@@ -13,6 +13,7 @@ const {
   sendStockTransfer,
   receiveStockTransfer,
   closeStockTransfer,
+  duplicateStockTransfer,
 } = require("../controllers/stockTransfer.controller");
 const {
   protect,
@@ -39,6 +40,8 @@ router
   .get(tenantAdminOrSuperAdmin, getStockTransfer)
   .patch(tenantAdminOrSuperAdmin, updateStockTransfer)
   .delete(tenantAdminOrSuperAdmin, deleteStockTransfer);
+
+router.post("/:id/duplicate", tenantAdminOrSuperAdmin, duplicateStockTransfer);
 
 router.patch("/:id/status", tenantAdminOrSuperAdmin, updateStockTransferStatus);
 router.patch("/:id/approve", tenantAdminOrSuperAdmin, approveStockTransfer);

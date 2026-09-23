@@ -7,12 +7,14 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   PiPaperPlaneTilt,
   PiCheck,
   PiX,
   PiArrowsClockwise,
+  PiCopy,
   PiPencilSimple,
   PiPrinter,
   PiWarning,
@@ -105,6 +107,7 @@ export default function SalesQuotationDetail({
   so: SalesOrder;
   onChanged: () => void;
 }) {
+  const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
   const { tenant } = useTenant();
@@ -145,6 +148,19 @@ export default function SalesQuotationDetail({
     if (!window.confirm(`Reject ${so.soNumber}? This closes the quotation.`))
       return;
     void run(() => salesOrderService.reject(so._id, token), 'Quotation rejected');
+  }
+
+  async function handleDuplicate() {
+    setBusy(true);
+    try {
+      const res = await salesOrderService.duplicate(so._id, token);
+      toast.success('Duplicated as new quotation');
+      router.push(routes.eCommerce.salesDetails(res.data._id));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to duplicate');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const status = so.quoteStatus ?? 'draft';
@@ -202,6 +218,13 @@ export default function SalesQuotationDetail({
       label: 'Print',
       icon: <PiPrinter className="h-4 w-4" />,
       onClick: () => handlePrint('quotation'),
+    },
+    {
+      key: 'duplicate',
+      label: 'Duplicate as Quote',
+      icon: <PiCopy className="h-4 w-4" />,
+      onClick: handleDuplicate,
+      disabled: busy,
     },
   ].filter(Boolean) as DetailAction[];
 

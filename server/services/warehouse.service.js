@@ -190,7 +190,7 @@ function adjustmentSplit(type, quantity, balanceAfter, prevBalance) {
   };
 }
 
-async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, unitCost = null, tracksBatch = false, allowNegativeStock = false, fefoPicking = false }, userId, tenantId) {
+async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, unitCost = null, tracksBatch = false, allowNegativeStock = false, fefoPicking = false, recordHistory = true }, userId, tenantId) {
   if (!['received', 'shipped', 'adjusted'].includes(type)) {
     throw new ValidationError('Invalid adjustment type');
   }
@@ -227,27 +227,32 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
   });
 
   // Mirror into the unified ledger so /inventory/movements-based views see it.
-  const split = adjustmentSplit(type, quantity, row.currentQuantity, prevBalance);
-  await mirrorToInventoryLedger([
-    {
-      subProduct, tenant: tenantId, warehouse: warehouseId, size,
-      type: split.type, category: split.category,
-      quantity: Math.abs(split.quantity),
-      quantityBefore: split.quantityBefore,
-      quantityAfter: row.currentQuantity,
-      unitCost: typeof unitCost === 'number' && unitCost > 0 ? unitCost : undefined,
-      totalCost:
-        typeof unitCost === 'number' && unitCost > 0
-          ? unitCost * Math.abs(split.quantity)
-          : undefined,
-      reference: notes ? String(notes).slice(0, 100) : undefined,
-      referenceType: 'manual',
-      reason: notes ? String(notes).slice(0, 200) : undefined,
-      performedBy: userId,
-      performedAt: new Date(),
-      source: 'system',
-    },
-  ]);
+  // Callers that post their own authoritative history row (PO receive → the
+  // dedicated 'purchase_order' recordReceiptMovement) opt out via recordHistory:
+  // false so one event never lands twice.
+  if (recordHistory) {
+    const split = adjustmentSplit(type, quantity, row.currentQuantity, prevBalance);
+    await mirrorToInventoryLedger([
+      {
+        subProduct, tenant: tenantId, warehouse: warehouseId, size,
+        type: split.type, category: split.category,
+        quantity: Math.abs(split.quantity),
+        quantityBefore: split.quantityBefore,
+        quantityAfter: row.currentQuantity,
+        unitCost: typeof unitCost === 'number' && unitCost > 0 ? unitCost : undefined,
+        totalCost:
+          typeof unitCost === 'number' && unitCost > 0
+            ? unitCost * Math.abs(split.quantity)
+            : undefined,
+        reference: notes ? String(notes).slice(0, 100) : undefined,
+        referenceType: 'manual',
+        reason: notes ? String(notes).slice(0, 200) : undefined,
+        performedBy: userId,
+        performedAt: new Date(),
+        source: 'system',
+      },
+    ]);
+  }
 
   await recalcSubProductStock(subProduct);
 

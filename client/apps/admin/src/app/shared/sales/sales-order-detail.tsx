@@ -6,9 +6,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   PiCreditCard,
+  PiCopy,
   PiTrayArrowDown,
   PiArrowUUpLeft,
   PiReceipt,
@@ -98,6 +100,7 @@ export default function SalesOrderDetail({
   so: SalesOrder;
   onChanged: () => void;
 }) {
+  const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
   const { tenant } = useTenant();
@@ -149,6 +152,19 @@ export default function SalesOrderDetail({
       onChanged();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to cancel');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDuplicate() {
+    setBusy(true);
+    try {
+      const res = await salesOrderService.duplicate(so._id, token);
+      toast.success('Duplicated as new quotation');
+      router.push(routes.eCommerce.salesDetails(res.data._id));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to duplicate');
     } finally {
       setBusy(false);
     }
@@ -223,6 +239,13 @@ export default function SalesOrderDetail({
       label: 'Print',
       icon: <PiPrinter className="h-4 w-4" />,
       onClick: () => handlePrint('quotation'),
+    },
+    {
+      key: 'duplicate',
+      label: 'Duplicate as Quote',
+      icon: <PiCopy className="h-4 w-4" />,
+      onClick: handleDuplicate,
+      disabled: busy,
     },
     canCancelOrder(status) &&
       status !== 'draft' && {

@@ -46,6 +46,7 @@ router.route('/:id')
 router.get('/:id/stock', tenantAdminOrSuperAdmin, c.getWarehouseStock);
 router.get('/:id/batches', tenantAdminOrSuperAdmin, c.getWarehouseBatches);
 router.get('/:id/movements', tenantAdminOrSuperAdmin, c.getWarehouseMovements);
+router.post('/movements/:movementId/return', tenantAdminOrSuperAdmin, c.returnTransferFromMovement);
 router.post('/:id/stock/adjust', tenantAdminOrSuperAdmin, c.adjustWarehouseStock);
 router.patch('/:id/managers', tenantAdminOrSuperAdmin, c.setWarehouseManagers);
 

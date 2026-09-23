@@ -16,11 +16,9 @@ import { subproductService } from '@/services/subproduct.service';
 import toast from 'react-hot-toast';
 import {
   PiArrowsClockwiseBold,
-  PiPackageBold,
   PiDownloadBold,
   PiX,
   PiStack,
-  PiPlus,
 } from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -51,6 +49,7 @@ import OdooSearchPanel, {
 } from './components/OdooSearchPanel';
 import GridPagination, { PAGE_SIZE_OPTIONS } from './components/GridPagination';
 import ExpandedSubProductRow from './components/ExpandedSubProductRow';
+import SubProductsHeader from './components/SubProductsHeader';
 import SubProductSearchField from './components/SubProductSearchField';
 import {
   LoadingSkeleton,
@@ -360,6 +359,25 @@ export default function SubProductsTable({
     () => computeStats(allSubProducts, serverStats),
     [allSubProducts, serverStats]
   );
+
+  // ── Real 30-day trends ──────────────────────────────────────────────────────
+  // Counts of sub-products created within the last 30 days, per status bucket.
+  // Computed client-side from the already-fetched catalog, so no backend call.
+  const trends = useMemo(() => {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const inWindow = allSubProducts.filter((p) => {
+      const ts = new Date(p.createdAt).getTime();
+      return Number.isFinite(ts) && ts >= cutoff;
+    });
+    const isLow = (p: SubProductListItem) =>
+      (p.totalStock ?? 0) > 0 && (p.totalStock ?? 0) <= 10;
+    return [
+      inWindow.length,
+      inWindow.filter((p) => p.status === 'active').length,
+      inWindow.filter(isLow).length,
+      inWindow.filter((p) => (p.totalStock ?? 0) === 0).length,
+    ];
+  }, [allSubProducts]);
 
   // ── Grid page window & grouped products for Odoo group-by ───────────────────
   const gridTotalPages = Math.max(
@@ -681,20 +699,32 @@ export default function SubProductsTable({
     setActiveCustomRules(null);
   }, []);
 
+  // ── Page actions ────────────────────────────────────────────────────────────
+  const goCreateSubProduct = useCallback(
+    () => router.push(routes.eCommerce.createSubProduct),
+    [router]
+  );
+  const goAddProduct = useCallback(
+    () => router.push(routes.eCommerce.createProduct),
+    [router]
+  );
+
   // ── Loading / error / empty states ─────────────────────────────────────────
   if (
     sessionStatus === 'loading' ||
     (isLoading && allSubProducts.length === 0)
   ) {
     return (
-      <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-100 p-6">
-          <div className="flex items-center justify-between">
-            <div className="h-10 w-64 animate-pulse rounded-xl bg-gray-200" />
-            <div className="h-10 w-40 animate-pulse rounded-xl bg-gray-200" />
-          </div>
+      <div className="space-y-4 pb-24">
+        <SubProductsHeader
+          total={allSubProducts.length}
+          lowStock={stats.lowStock}
+          onNew={goCreateSubProduct}
+          onAddProduct={goAddProduct}
+        />
+        <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+          <LoadingSkeleton />
         </div>
-        <LoadingSkeleton />
       </div>
     );
   }
@@ -702,10 +732,17 @@ export default function SubProductsTable({
   if (error && allSubProducts.length === 0) {
     return (
       <div className="space-y-6 pb-24">
+        <SubProductsHeader
+          total={stats.total}
+          lowStock={stats.lowStock}
+          onNew={goCreateSubProduct}
+          onAddProduct={goAddProduct}
+        />
         <StatsHeader
           stats={stats}
           activeFilter={statusFilter}
           onFilterChange={handleStatusFilter}
+          trends={trends}
         />
         <ErrorState onRetry={refresh} message={error} />
       </div>
@@ -715,12 +752,25 @@ export default function SubProductsTable({
   if (allSubProducts.length === 0 && !isLoading) {
     return (
       <div className="space-y-6 pb-24">
+        <SubProductsHeader
+          total={stats.total}
+          lowStock={stats.lowStock}
+          onNew={goCreateSubProduct}
+          onAddProduct={goAddProduct}
+        />
         <StatsHeader
           stats={stats}
           activeFilter={statusFilter}
           onFilterChange={handleStatusFilter}
+          trends={trends}
         />
-        <EmptyState onClear={handleResetFilters} />
+        <EmptyState
+          variant="empty"
+          hasActiveFilters={activeFilterCountValue > 0}
+          onClear={handleResetFilters}
+          onAddProduct={goAddProduct}
+          onCreateSubProduct={goCreateSubProduct}
+        />
       </div>
     );
   }
@@ -728,38 +778,24 @@ export default function SubProductsTable({
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-24">
+      <SubProductsHeader
+        total={allSubProducts.length}
+        lowStock={stats.lowStock}
+        onNew={goCreateSubProduct}
+        onAddProduct={goAddProduct}
+      />
+
+      <StatsHeader
+        stats={stats}
+        activeFilter={statusFilter}
+        onFilterChange={handleStatusFilter}
+        trends={trends}
+      />
+
       {/* ── Toolbar ── */}
       <div className="rounded-2xl border border-gray-200 bg-white">
-        {/* Row 1: new | search | actions */}
+        {/* Row 1: search | actions */}
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-3 py-2.5 sm:gap-3 sm:px-4">
-          {/* ── Create actions ──
-              "New" creates a sub-product (this page's record); "Add Product"
-              opens the catalog Product form for when the parent product the
-              sub-product needs doesn't exist yet. Kept in one shrink-0 group
-              so they wrap together rather than splitting across rows. */}
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => router.push(routes.eCommerce.createSubProduct)}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-[#b20202] px-3.5 text-xs font-semibold text-white transition-colors hover:bg-[#7f1d1d]"
-            >
-              <PiPlus className="h-3.5 w-3.5" />
-              <span>New</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => router.push(routes.eCommerce.createProduct)}
-              title="Create a catalog product"
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3.5 text-xs font-semibold text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-800"
-            >
-              <PiPackageBold className="h-3.5 w-3.5" />
-              <span>Add Product</span>
-            </button>
-          </div>
-
-          <div className="hidden h-5 w-px shrink-0 bg-gray-200 lg:block" />
-
           {/* Odoo search bar */}
           <div
             className="relative order-last w-full min-w-0 lg:order-none lg:w-auto lg:max-w-[44rem] lg:flex-1"
@@ -1006,7 +1042,11 @@ export default function SubProductsTable({
 
       {/* ── Main content ── */}
       {filteredSubProducts.length === 0 && allSubProducts.length > 0 ? (
-        <EmptyState onClear={handleResetFilters} />
+        <EmptyState
+          variant="no-results"
+          onClear={handleResetFilters}
+          onAddProduct={() => router.push(routes.eCommerce.createProduct)}
+        />
       ) : viewMode === 'grid' || viewMode === 'compact' ? (
         /* ═══════════════ Grid View ═══════════════ */
         <motion.div

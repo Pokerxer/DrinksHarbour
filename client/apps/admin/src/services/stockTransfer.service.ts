@@ -128,12 +128,18 @@ export interface ListResponse {
   stats: TransferStats;
 }
 
-async function handle(res: Response, fallback: string) {
+export interface StockTransferResponse {
+  success: boolean;
+  data: StockTransfer;
+  message?: string;
+}
+
+async function handle<T>(res: Response, fallback: string): Promise<T> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { message?: string }).message || fallback);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -156,7 +162,7 @@ export const stockTransferService = {
     },
     token: string
   ) {
-    return handle(
+    return handle<StockTransferResponse>(
       await fetch(`${API_URL}/api/stock-transfers`, {
         method: 'POST',
         headers: jsonAuth(token),
@@ -176,14 +182,14 @@ export const stockTransferService = {
     if (params?.limit) qs.set('limit', String(params.limit));
     if (params?.search) qs.set('search', params.search);
     const url = `${API_URL}/api/stock-transfers${qs.toString() ? `?${qs}` : ''}`;
-    return handle(
+    return handle<ListResponse>(
       await fetch(url, { headers: auth(token) }),
       'Failed to load transfers'
-    ) as Promise<ListResponse>;
+    );
   },
 
-  async get(id: string, token: string) {
-    return handle(
+  async get(id: string, token: string): Promise<StockTransferResponse> {
+    return handle<StockTransferResponse>(
       await fetch(`${API_URL}/api/stock-transfers/${id}`, {
         headers: auth(token),
       }),
@@ -288,6 +294,16 @@ export const stockTransferService = {
         headers: jsonAuth(token),
       }),
       'Failed to close transfer'
+    );
+  },
+
+  async duplicate(id: string, token: string): Promise<StockTransferResponse> {
+    return handle<StockTransferResponse>(
+      await fetch(`${API_URL}/api/stock-transfers/${id}/duplicate`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+      }),
+      'Failed to duplicate transfer'
     );
   },
 };

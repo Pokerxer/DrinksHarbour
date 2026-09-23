@@ -4,8 +4,15 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import {
-  PiArrowLeft, PiCheck, PiMagnifyingGlass, PiCaretDown, PiArrowCounterClockwise,
-  PiSquare, PiCheckSquare, PiSelectionInverse,
+  PiArrowLeft,
+  PiCheck,
+  PiMagnifyingGlass,
+  PiCaretDown,
+  PiArrowCounterClockwise,
+  PiSquare,
+  PiCheckSquare,
+  PiSelectionInverse,
+  PiWarehouse,
 } from 'react-icons/pi';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -14,6 +21,7 @@ import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import type { POItem } from '@/services/purchaseOrder.service';
 import { vendorReturnService } from '@/services/vendorReturn.service';
 import type { VendorReturn } from '@/services/vendorReturn.service';
+import { useActiveWarehouses } from './warehouse-select';
 import { fmtCur } from './purchases-analytics-helpers';
 
 const REASONS = [
@@ -50,11 +58,20 @@ function LoadingSkeleton() {
       <div className="mb-5 h-6 w-48 rounded bg-gray-100" />
       <div className="mb-4 h-24 rounded-xl border border-gray-200 bg-white p-4">
         <div className="flex gap-6">
-          <div className="h-10 w-40"><div className="h-4 w-24 rounded bg-gray-100" /><div className="mt-1 h-5 w-32 rounded bg-gray-100" /></div>
+          <div className="h-10 w-40">
+            <div className="h-4 w-24 rounded bg-gray-100" />
+            <div className="mt-1 h-5 w-32 rounded bg-gray-100" />
+          </div>
           <div className="h-8 w-px bg-gray-200" />
-          <div className="h-10 w-36"><div className="h-4 w-16 rounded bg-gray-100" /><div className="mt-1 h-4 w-28 rounded bg-gray-100" /></div>
+          <div className="h-10 w-36">
+            <div className="h-4 w-16 rounded bg-gray-100" />
+            <div className="mt-1 h-4 w-28 rounded bg-gray-100" />
+          </div>
           <div className="h-8 w-px bg-gray-200" />
-          <div className="h-10 w-40"><div className="h-4 w-20 rounded bg-gray-100" /><div className="mt-1 h-4 w-32 rounded bg-gray-100" /></div>
+          <div className="h-10 w-40">
+            <div className="h-4 w-20 rounded bg-gray-100" />
+            <div className="mt-1 h-4 w-32 rounded bg-gray-100" />
+          </div>
         </div>
       </div>
       <div className="mb-4 h-4 w-full rounded bg-gray-100" />
@@ -63,7 +80,13 @@ function LoadingSkeleton() {
   );
 }
 
-function POSelector({ token, onSelect }: { token: string; onSelect: (id: string) => void }) {
+function POSelector({
+  token,
+  onSelect,
+}: {
+  token: string;
+  onSelect: (id: string) => void;
+}) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
@@ -72,7 +95,8 @@ function POSelector({ token, onSelect }: { token: string; onSelect: (id: string)
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setShow(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setShow(false);
     }
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -80,7 +104,10 @@ function POSelector({ token, onSelect }: { token: string; onSelect: (id: string)
 
   async function doSearch(q: string) {
     setQuery(q);
-    if (q.length < 2) { setResults([]); return; }
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
     setSearching(true);
     try {
       const res = await purchaseOrderService.getPurchaseOrders(token, {
@@ -99,7 +126,9 @@ function POSelector({ token, onSelect }: { token: string; onSelect: (id: string)
 
   return (
     <div ref={ref} className="relative">
-      <label className="mb-1 block text-xs font-medium text-gray-600">Search Purchase Order</label>
+      <label className="mb-1 block text-xs font-medium text-gray-600">
+        Search Purchase Order
+      </label>
       <div className="relative">
         <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         <input
@@ -119,14 +148,20 @@ function POSelector({ token, onSelect }: { token: string; onSelect: (id: string)
             <button
               key={po._id}
               type="button"
-              onClick={() => { onSelect(po._id); setShow(false); setQuery(''); }}
-              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm hover:bg-gray-50 first:rounded-t-xl last:rounded-b-xl"
+              onClick={() => {
+                onSelect(po._id);
+                setShow(false);
+                setQuery('');
+              }}
+              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm first:rounded-t-xl last:rounded-b-xl hover:bg-gray-50"
             >
               <div>
                 <span className="font-medium text-gray-900">{po.poNumber}</span>
                 <span className="ml-2 text-gray-500">{po.vendorName}</span>
               </div>
-              <span className="text-xs text-gray-400">{po.currency} {po.totalAmount?.toLocaleString()}</span>
+              <span className="text-xs text-gray-400">
+                {po.currency} {po.totalAmount?.toLocaleString()}
+              </span>
             </button>
           ))}
         </div>
@@ -159,38 +194,52 @@ export default function PurchasesReturnCreate() {
   >(null);
   const [rows, setRows] = useState<RowState[]>([]);
   const [notes, setNotes] = useState('');
-  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [returnDate, setReturnDate] = useState(
+    () => new Date().toISOString().split('T')[0]
+  );
   const [loading, setLoading] = useState(!!poId);
   const [saving, setSaving] = useState(false);
+  const [warehouseId, setWarehouseId] = useState('');
+  const { warehouses: activeWarehouses, loading: warehousesLoading } =
+    useActiveWarehouses(token);
   const [existingReturns, setExistingReturns] = useState<VendorReturn[]>([]);
 
   /* ---------- load PO ---------- */
-  const loadPO = useCallback(async (id: string) => {
-    if (!token || !id) return;
-    setLoading(true);
-    try {
-      const res = await purchaseOrderService.getPurchaseOrder(id, token);
-      setPo(res.data);
-      setRows(
-        (res.data.items ?? []).map(() => ({
-          returnQty: 0,
-          reason: 'defective',
-          condition: 'other',
-        }))
-      );
-      // Fetch existing returns for this PO to compute already-returned qty
+  const loadPO = useCallback(
+    async (id: string) => {
+      if (!token || !id) return;
+      setLoading(true);
       try {
-        const returnsRes = await vendorReturnService.getVendorReturns(token, { purchaseOrder: id, limit: 100 });
-        setExistingReturns(returnsRes.data ?? []);
-      } catch {
-        // non-critical
+        const res = await purchaseOrderService.getPurchaseOrder(id, token);
+        setPo(res.data);
+        const poWh = res.data.warehouse;
+        if (typeof poWh === 'object' && poWh?._id) setWarehouseId(poWh._id);
+        else if (typeof poWh === 'string' && poWh) setWarehouseId(poWh);
+        setRows(
+          (res.data.items ?? []).map(() => ({
+            returnQty: 0,
+            reason: 'defective',
+            condition: 'other',
+          }))
+        );
+        // Fetch existing returns for this PO to compute already-returned qty
+        try {
+          const returnsRes = await vendorReturnService.getVendorReturns(token, {
+            purchaseOrder: id,
+            limit: 100,
+          });
+          setExistingReturns(returnsRes.data ?? []);
+        } catch {
+          // non-critical
+        }
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : 'Failed to load PO');
+      } finally {
+        setLoading(false);
       }
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load PO');
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
+    },
+    [token]
+  );
 
   useEffect(() => {
     if (poId) loadPO(poId);
@@ -243,7 +292,8 @@ export default function PurchasesReturnCreate() {
 
   function maxAvail(item: POItem): number {
     const received = item.receivedQty > 0 ? item.receivedQty : item.quantity;
-    const alreadyReturned = item.returnedQty ?? returnedQtyMap[item.subProductId] ?? 0;
+    const alreadyReturned =
+      item.returnedQty ?? returnedQtyMap[item.subProductId] ?? 0;
     return Math.max(0, received - alreadyReturned);
   }
 
@@ -255,10 +305,13 @@ export default function PurchasesReturnCreate() {
   }
 
   const allSelected = useMemo(
-    () => po && rows.length > 0 && rows.every((r, i) => {
-      if (!po.items[i]) return true;
-      return r.returnQty === maxAvail(po.items[i]);
-    }),
+    () =>
+      po &&
+      rows.length > 0 &&
+      rows.every((r, i) => {
+        if (!po.items[i]) return true;
+        return r.returnQty === maxAvail(po.items[i]);
+      }),
     [po, rows]
   );
 
@@ -314,7 +367,9 @@ export default function PurchasesReturnCreate() {
       const q = itemFilter.toLowerCase();
       list = list.filter(
         ({ item }) =>
-          (item.subProductName ?? item.productName)?.toLowerCase().includes(q) ||
+          (item.subProductName ?? item.productName)
+            ?.toLowerCase()
+            .includes(q) ||
           item.sku?.toLowerCase().includes(q) ||
           item.sizeName?.toLowerCase().includes(q)
       );
@@ -323,7 +378,14 @@ export default function PurchasesReturnCreate() {
   }, [po, itemFilter]);
 
   const summary = useMemo(() => {
-    if (!po) return { totalQty: 0, totalAmount: 0, selectedCount: 0, totalItems: 0, totalReturnable: 0 };
+    if (!po)
+      return {
+        totalQty: 0,
+        totalAmount: 0,
+        selectedCount: 0,
+        totalItems: 0,
+        totalReturnable: 0,
+      };
     let totalQty = 0;
     let totalAmount = 0;
     let selectedCount = 0;
@@ -338,7 +400,13 @@ export default function PurchasesReturnCreate() {
         selectedCount++;
       }
     });
-    return { totalQty, totalAmount, selectedCount, totalItems: po.items.length, totalReturnable };
+    return {
+      totalQty,
+      totalAmount,
+      selectedCount,
+      totalItems: po.items.length,
+      totalReturnable,
+    };
   }, [po, rows]);
 
   /* ---------- create ---------- */
@@ -366,6 +434,11 @@ export default function PurchasesReturnCreate() {
       return;
     }
 
+    if (!warehouseId) {
+      toast.error('Select the warehouse the returned stock will leave from');
+      return;
+    }
+
     setSaving(true);
     try {
       const res = await vendorReturnService.createVendorReturn(
@@ -379,6 +452,7 @@ export default function PurchasesReturnCreate() {
           reason: items[0].reason,
           notes,
           returnDate: new Date(returnDate).toISOString(),
+          warehouse: warehouseId || undefined,
         },
         token
       );
@@ -386,7 +460,9 @@ export default function PurchasesReturnCreate() {
       toast.success('Return created');
       router.push(routes.eCommerce.vendorReturnDetails(res.data._id));
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create return');
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to create return'
+      );
     } finally {
       setSaving(false);
     }
@@ -400,22 +476,34 @@ export default function PurchasesReturnCreate() {
     return (
       <div>
         <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
-          <Link href={routes.eCommerce.vendorReturns} className="flex items-center gap-1 hover:text-gray-700">
+          <Link
+            href={routes.eCommerce.vendorReturns}
+            className="flex items-center gap-1 hover:text-gray-700"
+          >
             <PiArrowLeft className="h-4 w-4" /> Vendor Returns
           </Link>
           <span>/</span>
           <span className="font-medium text-gray-900">New Return</span>
         </div>
         <div className="mb-5">
-          <h1 className="text-xl font-semibold text-gray-900">Create Vendor Return</h1>
-          <p className="mt-1 text-sm text-gray-500">Start by selecting a received Purchase Order</p>
+          <h1 className="text-xl font-semibold text-gray-900">
+            Create Vendor Return
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Start by selecting a received Purchase Order
+          </p>
         </div>
         <div className="mx-auto max-w-lg rounded-xl border border-gray-200 bg-white p-6">
-          <POSelector token={token} onSelect={(id) => {
-            window.history.replaceState(null, '', `?po=${id}`);
-            loadPO(id);
-          }} />
-          <p className="mt-4 text-xs text-gray-400">Only received purchase orders with received stock are shown.</p>
+          <POSelector
+            token={token}
+            onSelect={(id) => {
+              window.history.replaceState(null, '', `?po=${id}`);
+              loadPO(id);
+            }}
+          />
+          <p className="mt-4 text-xs text-gray-400">
+            Only received purchase orders with received stock are shown.
+          </p>
         </div>
       </div>
     );
@@ -426,24 +514,35 @@ export default function PurchasesReturnCreate() {
     return (
       <div className="py-20 text-center text-sm text-gray-500">
         Purchase order not found.{' '}
-        <Link href={routes.eCommerce.vendorReturns} className="text-[#b20202] hover:underline">Back to returns</Link>
+        <Link
+          href={routes.eCommerce.vendorReturns}
+          className="text-[#b20202] hover:underline"
+        >
+          Back to returns
+        </Link>
       </div>
     );
   }
 
   const cur = po.currency ?? 'NGN';
   const hasItems = (po.items ?? []).length > 0;
-  const progressPct = summary.totalItems > 0
-    ? Math.round((summary.selectedCount / summary.totalItems) * 100)
-    : 0;
+  const progressPct =
+    summary.totalItems > 0
+      ? Math.round((summary.selectedCount / summary.totalItems) * 100)
+      : 0;
   const hasReturned = Object.keys(returnedQtyMap).length > 0;
-  const poDetailRoute = poId ? routes.eCommerce.purchaseDetails(poId) : routes.eCommerce.vendorReturns;
+  const poDetailRoute = poId
+    ? routes.eCommerce.purchaseDetails(poId)
+    : routes.eCommerce.vendorReturns;
 
   return (
     <form onSubmit={handleCreate} className="pb-28">
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
-        <Link href={poDetailRoute} className="flex items-center gap-1 hover:text-gray-700">
+        <Link
+          href={poDetailRoute}
+          className="flex items-center gap-1 hover:text-gray-700"
+        >
           <PiArrowLeft className="h-4 w-4" />
           {poId ? 'Purchase Order' : 'Vendor Returns'}
         </Link>
@@ -454,18 +553,27 @@ export default function PurchasesReturnCreate() {
       {/* Header */}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Create Vendor Return</h1>
-          <p className="text-sm text-gray-500">{po.poNumber} &middot; {po.vendorName}</p>
+          <h1 className="text-xl font-semibold text-gray-900">
+            Create Vendor Return
+          </h1>
+          <p className="text-sm text-gray-500">
+            {po.poNumber} &middot; {po.vendorName}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {existingReturns.length > 0 && (
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-700">
-              {existingReturns.filter(r => r.status !== 'cancelled').length} previous return{existingReturns.length > 1 ? 's' : ''}
+              {existingReturns.filter((r) => r.status !== 'cancelled').length}{' '}
+              previous return{existingReturns.length > 1 ? 's' : ''}
             </span>
           )}
           <label className="flex items-center gap-1.5 text-xs text-gray-500">
-            <input type="checkbox" checked={compact} onChange={(e) => setCompact(e.target.checked)}
-              className="rounded border-gray-300 text-[#b20202] focus:ring-[#b20202]/20" />
+            <input
+              type="checkbox"
+              checked={compact}
+              onChange={(e) => setCompact(e.target.checked)}
+              className="rounded border-gray-300 text-[#b20202] focus:ring-[#b20202]/20"
+            />
             Compact
           </label>
         </div>
@@ -477,7 +585,9 @@ export default function PurchasesReturnCreate() {
           <div className="flex flex-wrap items-center gap-4">
             <div>
               <p className="text-xs text-gray-500">Purchase Order</p>
-              <p className="font-mono font-semibold text-gray-900">{po.poNumber}</p>
+              <p className="font-mono font-semibold text-gray-900">
+                {po.poNumber}
+              </p>
             </div>
             <div className="hidden h-8 w-px bg-gray-200 sm:block" />
             <div>
@@ -487,17 +597,29 @@ export default function PurchasesReturnCreate() {
             <div className="hidden h-8 w-px bg-gray-200 sm:block" />
             <div>
               <p className="text-xs text-gray-500">Total Ordered</p>
-              <p className="text-sm font-medium text-gray-700">{fmtCur(po.items?.reduce((s: number, i: POItem) => s + (getUnitPrice(i) * i.quantity), 0) ?? 0, cur)}</p>
+              <p className="text-sm font-medium text-gray-700">
+                {fmtCur(
+                  po.items?.reduce(
+                    (s: number, i: POItem) => s + getUnitPrice(i) * i.quantity,
+                    0
+                  ) ?? 0,
+                  cur
+                )}
+              </p>
             </div>
             {hasReturned && (
               <>
                 <div className="hidden h-8 w-px bg-gray-200 sm:block" />
                 <div>
                   <p className="text-xs text-amber-600">Previously Returned</p>
-                  <p className="text-sm font-medium text-amber-700">{fmtCur(
-                    existingReturns.filter(r => r.status !== 'cancelled').reduce((s, r) => s + (r.totalAmount ?? 0), 0),
-                    cur
-                  )}</p>
+                  <p className="text-sm font-medium text-amber-700">
+                    {fmtCur(
+                      existingReturns
+                        .filter((r) => r.status !== 'cancelled')
+                        .reduce((s, r) => s + (r.totalAmount ?? 0), 0),
+                      cur
+                    )}
+                  </p>
                 </div>
               </>
             )}
@@ -505,8 +627,12 @@ export default function PurchasesReturnCreate() {
           <div className="text-right">
             <label className="text-xs text-gray-500">Return Date</label>
             <input
-              type="date" value={returnDate}
-              onChange={(e) => { setDirty(true); setReturnDate(e.target.value); }}
+              type="date"
+              value={returnDate}
+              onChange={(e) => {
+                setDirty(true);
+                setReturnDate(e.target.value);
+              }}
               max={new Date().toISOString().split('T')[0]}
               className="ml-2 rounded-lg border border-gray-200 px-2 py-1 text-sm focus:border-[#b20202] focus:outline-none"
             />
@@ -514,36 +640,97 @@ export default function PurchasesReturnCreate() {
         </div>
       </div>
 
-      {/* Pre-fill prompt */}
-      {showPrefill && summary.totalReturnable > 0 && summary.selectedCount === 0 && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-[#b20202]/20 bg-[#b20202]/5 px-4 py-3">
-          <div className="flex items-center gap-2 text-sm">
-            <PiSelectionInverse className="h-4 w-4 text-[#b20202]" />
-            <span className="text-gray-700">
-              <strong>{summary.totalReturnable}</strong> item{summary.totalReturnable > 1 ? 's' : ''} available for return.
-              {hasReturned && <span className="ml-1 text-amber-600">({Object.values(returnedQtyMap).reduce((s, v) => s + v, 0)} already returned)</span>}
-            </span>
+      {/* Returning-from warehouse (stock + history) */}
+      <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+              <PiWarehouse className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900">
+                Return from warehouse
+              </p>
+              <p className="text-xs text-gray-500">
+                On confirmation the returned qty is removed from this warehouse
+                and posted to its movement history.
+              </p>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={prefillReceived} className="rounded-lg bg-[#b20202] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#9a0101]">
-              Pre-fill All
-            </button>
-            <button type="button" onClick={() => setShowPrefill(false)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">
-              Dismiss
-            </button>
-          </div>
+          <select
+            value={warehouseId}
+            disabled={warehousesLoading}
+            onChange={(e) => {
+              setDirty(true);
+              setWarehouseId(e.target.value);
+            }}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none"
+          >
+            <option value="">
+              {warehousesLoading
+                ? 'Loading warehouses…'
+                : 'Select a warehouse…'}
+            </option>
+            {activeWarehouses.map((wh) => (
+              <option key={wh._id} value={wh._id}>
+                {wh.name}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
+      </div>
+
+      {/* Pre-fill prompt */}
+      {showPrefill &&
+        summary.totalReturnable > 0 &&
+        summary.selectedCount === 0 && (
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-[#b20202]/20 bg-[#b20202]/5 px-4 py-3">
+            <div className="flex items-center gap-2 text-sm">
+              <PiSelectionInverse className="h-4 w-4 text-[#b20202]" />
+              <span className="text-gray-700">
+                <strong>{summary.totalReturnable}</strong> item
+                {summary.totalReturnable > 1 ? 's' : ''} available for return.
+                {hasReturned && (
+                  <span className="ml-1 text-amber-600">
+                    ({Object.values(returnedQtyMap).reduce((s, v) => s + v, 0)}{' '}
+                    already returned)
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={prefillReceived}
+                className="rounded-lg bg-[#b20202] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#9a0101]"
+              >
+                Pre-fill All
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPrefill(false)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
 
       {/* Progress bar */}
       {hasItems && (
         <div className="mb-4">
           <div className="flex items-center justify-between text-xs text-gray-500">
-            <span>{summary.selectedCount} of {summary.totalItems} items selected</span>
+            <span>
+              {summary.selectedCount} of {summary.totalItems} items selected
+            </span>
             <span>{progressPct}%</span>
           </div>
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-            <div className="h-full rounded-full bg-[#b20202] transition-all duration-300" style={{ width: `${progressPct}%` }} />
+            <div
+              className="h-full rounded-full bg-[#b20202] transition-all duration-300"
+              style={{ width: `${progressPct}%` }}
+            />
           </div>
         </div>
       )}
@@ -551,25 +738,45 @@ export default function PurchasesReturnCreate() {
       {/* Bulk apply bar */}
       {summary.selectedCount > 1 && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5">
-          <span className="text-xs font-medium text-blue-700">Bulk apply to selected:</span>
+          <span className="text-xs font-medium text-blue-700">
+            Bulk apply to selected:
+          </span>
           <div className="relative">
-            <select value={bulkReason} onChange={(e) => setBulkReason(e.target.value)}
-              className="appearance-none rounded-lg border border-blue-200 bg-white px-2 py-1 pr-6 text-xs focus:border-blue-500 focus:outline-none">
+            <select
+              value={bulkReason}
+              onChange={(e) => setBulkReason(e.target.value)}
+              className="appearance-none rounded-lg border border-blue-200 bg-white px-2 py-1 pr-6 text-xs focus:border-blue-500 focus:outline-none"
+            >
               <option value="">Reason…</option>
-              {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              {REASONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
             </select>
             <PiCaretDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-blue-400" />
           </div>
           <div className="relative">
-            <select value={bulkCondition} onChange={(e) => setBulkCondition(e.target.value)}
-              className="appearance-none rounded-lg border border-blue-200 bg-white px-2 py-1 pr-6 text-xs focus:border-blue-500 focus:outline-none">
+            <select
+              value={bulkCondition}
+              onChange={(e) => setBulkCondition(e.target.value)}
+              className="appearance-none rounded-lg border border-blue-200 bg-white px-2 py-1 pr-6 text-xs focus:border-blue-500 focus:outline-none"
+            >
               <option value="">Condition…</option>
-              {CONDITIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              {CONDITIONS.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
             </select>
             <PiCaretDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-blue-400" />
           </div>
-          <button type="button" onClick={applyBulk} disabled={!bulkReason && !bulkCondition}
-            className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40">
+          <button
+            type="button"
+            onClick={applyBulk}
+            disabled={!bulkReason && !bulkCondition}
+            className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+          >
             Apply
           </button>
         </div>
@@ -587,17 +794,27 @@ export default function PurchasesReturnCreate() {
           />
         </div>
         {itemFilter && (
-          <button type="button" onClick={() => setItemFilter('')} className="text-xs text-gray-400 hover:text-gray-600">
+          <button
+            type="button"
+            onClick={() => setItemFilter('')}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
             Clear filter
           </button>
         )}
         <div className="ml-auto flex items-center gap-2">
           {summary.selectedCount > 0 && (
             <span className="text-xs text-gray-400">
-              {itemFilter ? `${itemsToDisplay.filter(({ i }) => rows[i]?.returnQty > 0).length} shown` : ''}
+              {itemFilter
+                ? `${itemsToDisplay.filter(({ i }) => rows[i]?.returnQty > 0).length} shown`
+                : ''}
             </span>
           )}
-          <button type="button" onClick={toggleSelectAll} className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50">
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+          >
             {allSelected ? 'Deselect All' : 'Select All'}
           </button>
         </div>
@@ -609,28 +826,65 @@ export default function PurchasesReturnCreate() {
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
               <th className="w-10 px-2 py-3 text-center" />
-              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500">Product</th>
-              {!compact && <th className="px-2 py-3 text-center text-xs font-medium text-gray-500">Size</th>}
-              <th className="px-2 py-3 text-right text-xs font-medium text-gray-500">Ordered</th>
-              <th className="px-2 py-3 text-right text-xs font-medium text-gray-500">Received</th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500">Return Qty</th>
-              {!compact && <th className="px-2 py-3 text-right text-xs font-medium text-gray-500">Price</th>}
-              {!compact && <th className="px-2 py-3 text-right text-xs font-medium text-gray-500">Amount</th>}
-              {!compact && <th className="px-2 py-3 text-left text-xs font-medium text-gray-500">Reason</th>}
-              {!compact && <th className="px-2 py-3 text-left text-xs font-medium text-gray-500">Condition</th>}
+              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500">
+                Product
+              </th>
+              {!compact && (
+                <th className="px-2 py-3 text-center text-xs font-medium text-gray-500">
+                  Size
+                </th>
+              )}
+              <th className="px-2 py-3 text-right text-xs font-medium text-gray-500">
+                Ordered
+              </th>
+              <th className="px-2 py-3 text-right text-xs font-medium text-gray-500">
+                Received
+              </th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500">
+                Return Qty
+              </th>
+              {!compact && (
+                <th className="px-2 py-3 text-right text-xs font-medium text-gray-500">
+                  Price
+                </th>
+              )}
+              {!compact && (
+                <th className="px-2 py-3 text-right text-xs font-medium text-gray-500">
+                  Amount
+                </th>
+              )}
+              {!compact && (
+                <th className="px-2 py-3 text-left text-xs font-medium text-gray-500">
+                  Reason
+                </th>
+              )}
+              {!compact && (
+                <th className="px-2 py-3 text-left text-xs font-medium text-gray-500">
+                  Condition
+                </th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {itemsToDisplay.length === 0 ? (
               <tr>
-                <td colSpan={compact ? 7 : 11} className="py-12 text-center text-sm text-gray-400">
-                  {itemFilter ? 'No items match your filter' : 'No items in this purchase order'}
+                <td
+                  colSpan={compact ? 7 : 11}
+                  className="py-12 text-center text-sm text-gray-400"
+                >
+                  {itemFilter
+                    ? 'No items match your filter'
+                    : 'No items in this purchase order'}
                 </td>
               </tr>
             ) : (
               itemsToDisplay.map(({ item, i }) => {
                 const avail = maxAvail(item);
-                const row = rows[i] ?? { returnQty: 0, reason: 'defective', condition: 'other' };
+                const row = rows[i] ?? {
+                  returnQty: 0,
+                  reason: 'defective',
+                  condition: 'other',
+                };
                 const selected = row.returnQty > 0;
                 const prevReturned = returnedQtyMap[item.subProductId] ?? 0;
                 return (
@@ -644,48 +898,91 @@ export default function PurchasesReturnCreate() {
                     }`}
                   >
                     {/* Checkbox */}
-                    <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" onClick={() => toggleRow(i)}
-                        className={`rounded ${selected ? 'text-[#b20202]' : 'text-gray-300 hover:text-gray-500'}`}>
-                        {selected ? <PiCheckSquare className="h-4 w-4" /> : <PiSquare className="h-4 w-4" />}
+                    <td
+                      className="px-2 py-3 text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleRow(i)}
+                        className={`rounded ${selected ? 'text-[#b20202]' : 'text-gray-300 hover:text-gray-500'}`}
+                      >
+                        {selected ? (
+                          <PiCheckSquare className="h-4 w-4" />
+                        ) : (
+                          <PiSquare className="h-4 w-4" />
+                        )}
                       </button>
                     </td>
 
                     {/* Product */}
                     <td className="px-2 py-3">
-                      <p className={`font-medium leading-tight ${selected ? 'text-gray-900' : 'text-gray-700'}`}>
+                      <p
+                        className={`font-medium leading-tight ${selected ? 'text-gray-900' : 'text-gray-700'}`}
+                      >
                         {item.subProductName ?? item.productName ?? '—'}
-                        {item.sizeName && compact && <span className="text-gray-400"> · {item.sizeName}</span>}
+                        {item.sizeName && compact && (
+                          <span className="text-gray-400">
+                            {' '}
+                            · {item.sizeName}
+                          </span>
+                        )}
                       </p>
-                      {item.sku && <p className="text-[11px] text-gray-400">{item.sku}</p>}
+                      {item.sku && (
+                        <p className="text-[11px] text-gray-400">{item.sku}</p>
+                      )}
                       {prevReturned > 0 && (
-                        <p className="mt-0.5 text-[10px] text-amber-500">{prevReturned} previously returned</p>
+                        <p className="mt-0.5 text-[10px] text-amber-500">
+                          {prevReturned} previously returned
+                        </p>
                       )}
                     </td>
 
                     {/* Size */}
-                    {!compact && <td className="px-2 py-3 text-center text-xs text-gray-500">{item.sizeName ?? '—'}</td>}
+                    {!compact && (
+                      <td className="px-2 py-3 text-center text-xs text-gray-500">
+                        {item.sizeName ?? '—'}
+                      </td>
+                    )}
 
                     {/* Ordered */}
-                    <td className="px-2 py-3 text-right tabular-nums text-gray-400">{item.quantity}</td>
+                    <td className="px-2 py-3 text-right tabular-nums text-gray-400">
+                      {item.quantity}
+                    </td>
 
                     {/* Received */}
-                    <td className="px-2 py-3 text-right tabular-nums text-gray-600">{item.receivedQty ?? item.quantity}</td>
+                    <td className="px-2 py-3 text-right tabular-nums text-gray-600">
+                      {item.receivedQty ?? item.quantity}
+                    </td>
 
                     {/* Return Qty */}
-                    <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <td
+                      className="px-3 py-3 text-right"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="inline-flex items-center gap-1">
                         <input
-                          type="number" min={0} max={avail}
+                          type="number"
+                          min={0}
+                          max={avail}
                           value={row.returnQty}
                           onChange={(e) =>
-                            updateRow(i, { returnQty: Math.min(avail, Math.max(0, parseInt(e.target.value) || 0)) })
+                            updateRow(i, {
+                              returnQty: Math.min(
+                                avail,
+                                Math.max(0, parseInt(e.target.value) || 0)
+                              ),
+                            })
                           }
                           className="w-14 rounded-lg border border-gray-200 px-2 py-1 text-right text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
                         />
                         <button
                           type="button"
-                          onClick={() => updateRow(i, { returnQty: row.returnQty === avail ? 0 : avail })}
+                          onClick={() =>
+                            updateRow(i, {
+                              returnQty: row.returnQty === avail ? 0 : avail,
+                            })
+                          }
                           className={`rounded px-1.5 py-1 text-[10px] font-medium transition-colors ${
                             row.returnQty === avail
                               ? 'bg-gray-200 text-gray-500'
@@ -700,27 +997,40 @@ export default function PurchasesReturnCreate() {
 
                     {/* Unit Price */}
                     {!compact && (
-                      <td className="px-2 py-3 text-right tabular-nums text-gray-700">{fmtCur(getUnitPrice(item), cur)}</td>
+                      <td className="px-2 py-3 text-right tabular-nums text-gray-700">
+                        {fmtCur(getUnitPrice(item), cur)}
+                      </td>
                     )}
 
                     {/* Amount */}
                     {!compact && (
                       <td className="px-2 py-3 text-right font-medium tabular-nums text-gray-900">
-                        {selected ? fmtCur(row.returnQty * getUnitPrice(item), cur) : '—'}
+                        {selected
+                          ? fmtCur(row.returnQty * getUnitPrice(item), cur)
+                          : '—'}
                       </td>
                     )}
 
                     {/* Reason */}
                     {!compact && (
-                      <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className="px-2 py-3"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="relative min-w-[130px]">
                           <select
                             value={row.reason}
-                            onChange={(e) => updateRow(i, { reason: e.target.value })}
+                            onChange={(e) =>
+                              updateRow(i, { reason: e.target.value })
+                            }
                             disabled={!selected}
                             className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 pr-7 text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20 disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                            {REASONS.map((r) => (
+                              <option key={r.value} value={r.value}>
+                                {r.label}
+                              </option>
+                            ))}
                           </select>
                           <PiCaretDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                         </div>
@@ -729,15 +1039,24 @@ export default function PurchasesReturnCreate() {
 
                     {/* Condition */}
                     {!compact && (
-                      <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className="px-2 py-3"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="relative min-w-[120px]">
                           <select
                             value={row.condition}
-                            onChange={(e) => updateRow(i, { condition: e.target.value })}
+                            onChange={(e) =>
+                              updateRow(i, { condition: e.target.value })
+                            }
                             disabled={!selected}
                             className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 pr-7 text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20 disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            {CONDITIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                            {CONDITIONS.map((c) => (
+                              <option key={c.value} value={c.value}>
+                                {c.label}
+                              </option>
+                            ))}
                           </select>
                           <PiCaretDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                         </div>
@@ -753,8 +1072,15 @@ export default function PurchasesReturnCreate() {
 
       {/* Notes */}
       <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
-        <label className="mb-1 block text-xs font-medium text-gray-600">Notes (optional)</label>
-        <textarea value={notes} onChange={(e) => { setDirty(true); setNotes(e.target.value); }}
+        <label className="mb-1 block text-xs font-medium text-gray-600">
+          Notes (optional)
+        </label>
+        <textarea
+          value={notes}
+          onChange={(e) => {
+            setDirty(true);
+            setNotes(e.target.value);
+          }}
           rows={2}
           className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none"
           placeholder="Reason for return, additional instructions…"
@@ -768,15 +1094,22 @@ export default function PurchasesReturnCreate() {
             {summary.selectedCount > 0 ? (
               <>
                 <span className="text-gray-500">
-                  <strong className="text-gray-900">{summary.selectedCount}</strong>/{summary.totalItems}
+                  <strong className="text-gray-900">
+                    {summary.selectedCount}
+                  </strong>
+                  /{summary.totalItems}
                 </span>
                 <span className="text-gray-400">|</span>
                 <span className="text-gray-500">
-                  Qty: <strong className="text-gray-900">{summary.totalQty}</strong>
+                  Qty:{' '}
+                  <strong className="text-gray-900">{summary.totalQty}</strong>
                 </span>
                 <span className="hidden text-gray-400 sm:inline">|</span>
                 <span className="hidden text-gray-500 sm:inline">
-                  Value: <strong className="text-gray-900">{fmtCur(summary.totalAmount, cur)}</strong>
+                  Value:{' '}
+                  <strong className="text-gray-900">
+                    {fmtCur(summary.totalAmount, cur)}
+                  </strong>
                 </span>
               </>
             ) : (
@@ -784,12 +1117,15 @@ export default function PurchasesReturnCreate() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Link href={poDetailRoute} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <Link
+              href={poDetailRoute}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
               Cancel
             </Link>
             <button
               type="submit"
-              disabled={saving || summary.selectedCount === 0}
+              disabled={saving || summary.selectedCount === 0 || !warehouseId}
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#9a0101] disabled:opacity-50"
             >
               <PiCheck className="h-4 w-4" />

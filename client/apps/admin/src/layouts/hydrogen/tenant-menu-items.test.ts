@@ -18,3 +18,10 @@ test('tenant owner can find document templates in the launcher', () => {
   const links = tiles.flatMap(tile => [tile.href, ...(tile.children ?? []).map(child => child.href)]);
   expect(links).toContain('/settings/document-templates');
 });
+
+test('quotations and orders launcher card opens the sales overview', () => {
+  const tiles = buildTenantGroups('pro', 'tenant_owner').flatMap(group => group.tiles);
+  const salesTile = tiles.find(tile => tile.name === 'Quotations & Orders');
+
+  expect(salesTile?.href).toBe('/sales');
+});

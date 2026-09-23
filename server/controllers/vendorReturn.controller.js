@@ -87,6 +87,7 @@ exports.createVendorReturn = asyncHandler(async (req, res) => {
     shippingCarrier,
     trackingNumber,
     returnAddress,
+    warehouse,
   } = req.body;
 
   // Resolve the header Tax ref (or tenant default). VendorReturn stores only
@@ -141,6 +142,7 @@ exports.createVendorReturn = asyncHandler(async (req, res) => {
     shippingCarrier,
     trackingNumber,
     returnAddress,
+    warehouse,
     createdBy: req.user._id,
   });
 
@@ -246,6 +248,7 @@ exports.getVendorReturn = asyncHandler(async (req, res) => {
     .populate("vendor")
     .populate("purchaseOrder")
     .populate("vendorBill")
+    .populate("warehouse", "name code type")
     .populate("createdBy", "name email")
     .populate("confirmedBy", "name email")
     .populate("receivedBy", "name email");
@@ -269,12 +272,50 @@ exports.getVendorReturn = asyncHandler(async (req, res) => {
 exports.updateVendorReturn = asyncHandler(async (req, res) => {
   const tenantId = req.user.tenant;
   const { id } = req.params;
-  const updates = req.body;
+  const updates = { ...req.body };
+
+  // Workflow and inventory bookkeeping are owned by their dedicated endpoints.
+  // Letting a generic PATCH reset either field can make the document claim the
+  // stock was never deducted and allows the same return to be applied twice.
+  const protectedFields = [
+    "status",
+    "stockAdjusted",
+    "confirmedBy",
+    "confirmedAt",
+    "requestedDate",
+    "shippedDate",
+    "receivedBy",
+    "receivedDate",
+    "refundedDate",
+    "refundStatus",
+    "refundAmount",
+  ];
+  const attemptedProtectedField = protectedFields.find((field) =>
+    Object.prototype.hasOwnProperty.call(updates, field)
+  );
+  if (attemptedProtectedField) {
+    return res.status(400).json({
+      success: false,
+      message: `${attemptedProtectedField} must be changed through the return workflow`,
+    });
+  }
 
   // Remove fields that shouldn't be updated
   delete updates.tenant;
   delete updates.returnNumber;
   delete updates.createdBy;
+
+  // The warehouse must be fixed before stock is taken out; changing it after
+  // confirmation would leave the wrong lot debited in the history.
+  if (updates.warehouse) {
+    const existing = await VendorReturn.findOne({ _id: id, tenant: tenantId });
+    if (existing && existing.stockAdjusted) {
+      return res.status(400).json({
+        success: false,
+        message: "Warehouse cannot change after stock has been deducted from it",
+      });
+    }
+  }
 
   // If items are updated, recalculate totals
   if (updates.items) {
@@ -396,10 +437,29 @@ exports.updateReturnStatus = asyncHandler(async (req, res) => {
     updateData.notes = notes;
   }
 
+  const prevStatus = vendorReturn.status;
+  const stockReturn = require("../services/vendorReturn.stock");
+
+  // Validate and apply the physical stock operation first. In particular, an
+  // insufficient-stock failure must leave PO counters and bills untouched.
+  // The stock service is idempotent, so retrying a request that lost its
+  // response cannot deduct the same return twice.
+  if (prevStatus === 'draft' && status === 'confirmed') {
+    await stockReturn.applyVendorReturnStock(
+      vendorReturn,
+      { tenantId, userId: req.user._id },
+      {}
+    );
+  } else if (status === 'cancelled' && prevStatus !== 'draft') {
+    await stockReturn.reverseVendorReturnStock(
+      vendorReturn,
+      { tenantId, userId: req.user._id },
+      {}
+    );
+  }
+
   // Sync returned quantities to the Purchase Order
   if (vendorReturn.purchaseOrder && vendorReturn.items?.length) {
-    const prevStatus = vendorReturn.status;
-
     // Increment when confirming (draft → confirmed)
     if (prevStatus === 'draft' && status === 'confirmed') {
       const bulkOps = vendorReturn.items
@@ -560,7 +620,7 @@ exports.deleteVendorReturn = asyncHandler(async (req, res) => {
 // @route   POST /api/vendor-returns/from-bill
 // @access  Private (Tenant admin)
 exports.createReturnFromBill = asyncHandler(async (req, res) => {
-  const { billId, items, reason, notes, returnAddress } = req.body;
+  const { billId, items, reason, notes, returnAddress, warehouse } = req.body;
   const tenantId = req.user.tenant;
 
   if (!billId) {
@@ -653,6 +713,7 @@ exports.createReturnFromBill = asyncHandler(async (req, res) => {
     reason,
     notes,
     returnAddress,
+    warehouse,
     status: 'draft',
     refundStatus: 'none',
     createdBy: req.user._id,

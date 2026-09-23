@@ -62,7 +62,18 @@ type CategoryFilter =
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// A stock-out caused by a refund (vendor return, or the giving side of a
+// transfer refund) is still a RETURN in the ledger, just with a minus sign.
+function isRefundOut(m: InventoryMovement): boolean {
+  if (m.type === 'return_out') return true;
+  return (
+    m.type === 'transfer_out' &&
+    /^Return\b/i.test(typeof m.reference === 'string' ? m.reference : '')
+  );
+}
+
 function getCategory(m: InventoryMovement): CategoryFilter {
+  if (isRefundOut(m)) return 'return';
   if (m.type === 'sold' || m.type === 'shipped') return 'sale';
   if (m.type === 'return' || m.type === 'return_in') return 'return';
   if (m.type === 'adjustment_in' || m.type === 'adjustment_out')
@@ -120,14 +131,17 @@ function getCatStyle(cat: CategoryFilter) {
   }
 }
 
-function getQtySign(cat: CategoryFilter) {
-  if (cat === 'in' || cat === 'return') return '+';
+function getQtySign(cat: CategoryFilter, m?: InventoryMovement) {
+  if (cat === 'return') return m && isRefundOut(m) ? '−' : '+';
+  if (cat === 'in') return '+';
   if (cat === 'out' || cat === 'sale') return '−';
   return '~';
 }
 
-function getQtyColor(cat: CategoryFilter) {
-  if (cat === 'in' || cat === 'return') return 'text-green-600';
+function getQtyColor(cat: CategoryFilter, m?: InventoryMovement) {
+  if (cat === 'return')
+    return m && isRefundOut(m) ? 'text-red-600' : 'text-green-600';
+  if (cat === 'in') return 'text-green-600';
   if (cat === 'out' || cat === 'sale') return 'text-red-600';
   return 'text-blue-600';
 }
@@ -259,7 +273,15 @@ function openPrint(
   refund?: any,
   movement?: InventoryMovement
 ) {
-  requestDocumentExport(buildHistoryDocument(order, orderType, tenant?.name || 'DrinksHarbour', refund, movement));
+  requestDocumentExport(
+    buildHistoryDocument(
+      order,
+      orderType,
+      tenant?.name || 'DrinksHarbour',
+      refund,
+      movement
+    )
+  );
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -2565,9 +2587,9 @@ export function MovementDetailPanel({
                   label: 'Qty',
                   value: (
                     <span
-                      className={`text-xl font-bold tabular-nums ${getQtyColor(cat)}`}
+                      className={`text-xl font-bold tabular-nums ${getQtyColor(cat, movement)}`}
                     >
-                      {getQtySign(cat)}
+                      {getQtySign(cat, movement)}
                       {movement.quantity}
                     </span>
                   ),
@@ -2937,9 +2959,9 @@ export function ServerMovementsList({
                   {/* Right */}
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <span
-                      className={`text-sm font-bold tabular-nums ${getQtyColor(cat)}`}
+                      className={`text-sm font-bold tabular-nums ${getQtyColor(cat, m)}`}
                     >
-                      {getQtySign(cat)}
+                      {getQtySign(cat, m)}
                       {m.quantity}
                     </span>
                     {m.quantityBefore !== undefined &&

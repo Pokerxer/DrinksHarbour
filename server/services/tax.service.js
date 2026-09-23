@@ -59,7 +59,7 @@ const EXTRACTORS = {
   vendor_bill: (doc) => [{ taxableBase: doc.subtotal, taxRate: headerRateFrom(doc) }],
   stock_transfer: (doc) =>
     (doc.items || []).map((i) => ({
-      taxableBase: round2((i.quantity || 0) * (i.costPrice || 0) * (1 - (i.discountRate || 0) / 100)),
+      taxableBase: round2(Math.max(0, (i.quantity || 0) - (i.returnedQty || 0)) * (i.costPrice || 0) * (1 - (i.discountRate || 0) / 100)),
       taxRate: i.taxRate,
     })),
   vendor_return: (doc) => [{ taxableBase: doc.subtotal, taxRate: headerRateFrom(doc) }],

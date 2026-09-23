@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { Textarea, Button } from 'rizzui';
 import Rate from '@core/ui/rate';
-import type { Controller, SubmitHandler } from 'react-hook-form';
+import { Controller, type SubmitHandler } from 'react-hook-form';
 import { Form } from '@core/ui/form';
 
 type ReviewFormValues = {

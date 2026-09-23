@@ -38,6 +38,7 @@ import {
 import { fieldStaggerVariants, containerVariants } from './animations';
 import { LatestRequest, isAbortError } from './latest-request';
 import { productService } from '@/services/product.service';
+import { ProductReadError } from '@/services/product-read';
 import { inheritedProductImages } from '../image-utils';
 
 interface SubProductBasicInfoProps {
@@ -110,6 +111,8 @@ export default function SubProductBasicInfo({
   );
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
   const [productNotFound, setProductNotFound] = useState(false);
+  const [productLoadError, setProductLoadError] = useState('');
+  const [productLoadAttempt, setProductLoadAttempt] = useState(0);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const currencyRef = useRef<HTMLDivElement>(null);
@@ -143,82 +146,58 @@ export default function SubProductBasicInfo({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Initialize state from form context on mount - fixes state loss when navigating away and back
+  // Read-only hydration. Keep the selection on outages and ignore stale responses.
   useEffect(() => {
-    const initFromForm = async () => {
-      // Prevent search effect from triggering during init
-      setIsSelectingProduct(true);
+    const controller = new AbortController();
+    setProductLoadError('');
+    setProductNotFound(false);
+    setFetchedProduct(null);
 
-      // Check if there's an existing product selection - use subProductData namespace
+    const initFromForm = async () => {
+      setIsSelectingProduct(true);
       const existingProductId = watch('subProductData.product');
       const existingCreateNew = watch('subProductData.createNewProduct');
       const existingNewProductData = watch('subProductData.newProductData');
-
-      if (existingProductId) {
-        // Product was selected - fetch product details and set search query to show selected product card
-        setIsCreateMode(false);
-        setProductNotFound(false);
-
-        // Fetch product details if we have a session token
-        if (session?.user?.token) {
+      try {
+        if (existingProductId) {
+          setIsCreateMode(false);
+          if (!session?.user?.token) return;
           setIsLoadingProduct(true);
-          try {
-            // Pass includePending=true to fetch pending products (created via SubProduct workflow)
-            const response = await productService.getProductById(
-              existingProductId,
-              session.user.token,
-              true
-            );
-            if (response.success && response.data?.product) {
-              const product = response.data.product;
-              setFetchedProduct(product);
-              setSearchQuery(product.name || 'Selected Product');
-              setProductNotFound(false);
-            } else {
-              setSearchQuery('');
-              setProductNotFound(true);
-              console.warn(
-                `Product with ID ${existingProductId} not found - may have been deleted`
-              );
-            }
-          } catch (error: any) {
-            // Check if it's a 404 error
-            if (
-              error.message?.includes('not found') ||
-              error.message?.includes('404')
-            ) {
-              console.warn(
-                'Linked product not found (may have been deleted or is a stale draft reference) — clearing selection'
-              );
-              setProductNotFound(true);
-              setSearchQuery('');
-            } else {
-              console.error('Error fetching product:', error);
-              setSearchQuery('Selected Product');
-            }
-          } finally {
-            setIsLoadingProduct(false);
+          const response = await productService.getProductById(
+            existingProductId, session.user.token, true, controller.signal
+          );
+          if (controller.signal.aborted) return;
+          if (response.success && response.data?.product) {
+            setFetchedProduct(response.data.product);
+            setSearchQuery(response.data.product.name || 'Selected Product');
+          } else {
+            setProductLoadError('Product details could not be loaded. Please retry.');
           }
-        } else {
-          setSearchQuery('Selected Product');
+        } else if (existingCreateNew && existingNewProductData) {
+          setIsCreateMode(true);
+          setNewProductData(existingNewProductData);
+          setSearchQuery(existingNewProductData.name || '');
         }
-      } else if (existingCreateNew && existingNewProductData) {
-        // Was in create mode - restore new product data
-        setIsCreateMode(true);
-        setNewProductData(existingNewProductData);
-        // Set searchQuery to the name for context
-        if (existingNewProductData.name) {
-          setSearchQuery(existingNewProductData.name);
+      } catch (error: unknown) {
+        if (controller.signal.aborted) return;
+        if (error instanceof ProductReadError && error.status === 404) {
+          setProductNotFound(true);
+          setSearchQuery('');
+        } else {
+          setProductLoadError(error instanceof Error ? error.message : 'Unable to load product details.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingProduct(false);
+          setIsSelectingProduct(false);
         }
       }
-
-      // Allow search effect to run again after initialization
-      setTimeout(() => setIsSelectingProduct(false), 500);
     };
-
-    initFromForm();
+    void initFromForm();
+    return () => controller.abort();
+    // The product ID/token drive loading, not unrelated session-object updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [selectedProductId, session?.user?.token, productLoadAttempt]);
 
   // Keyboard navigation for search results
   useEffect(() => {
@@ -797,6 +776,17 @@ export default function SubProductBasicInfo({
                       </motion.div>
                     )}
                   </AnimatePresence>
+
+                  {productLoadError && (
+                    <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                      <Text className="text-sm font-semibold text-amber-900">Product details unavailable</Text>
+                      <Text className="mt-1 text-xs text-amber-700">{productLoadError} Your selection and entered values are unchanged.</Text>
+                      <Button type="button" size="sm" variant="outline" className="mt-3"
+                        onClick={() => setProductLoadAttempt((attempt) => attempt + 1)}>
+                        Retry loading product
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Product Not Found Warning */}
                   <AnimatePresence>

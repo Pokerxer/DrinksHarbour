@@ -2,13 +2,7 @@
 'use client';
 
 import { Title } from 'rizzui';
-
-const typeLabel = (type: string) =>
-  type
-    .split('_')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+import { productTaxonomyLabel as typeLabel } from '@/utils/product-taxonomy-label';
 
 interface SpecRow {
   label: string;
@@ -22,7 +16,10 @@ export default function ProductSpecTable({ product }: { product: any }) {
     rows.push({ label: 'Type', value: typeLabel(product.type) });
   }
   if (product.subType) {
-    rows.push({ label: 'Sub-Type', value: product.subType });
+    rows.push({ label: 'Sub-Type', value: typeLabel(product.subType) });
+  }
+  if (product.style) {
+    rows.push({ label: 'Style', value: typeLabel(product.style) });
   }
   if (product.categoryName) {
     rows.push({ label: 'Category', value: product.categoryName });

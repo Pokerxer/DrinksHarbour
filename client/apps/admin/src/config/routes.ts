@@ -1,4 +1,5 @@
 export const routes = {
+  priceChecker: { list: '/retail-tools/price-checker', create: '/retail-tools/price-checker/create', analytics: '/retail-tools/price-checker/analytics' },
   // Post-login landing route — the app homepage (the "All Apps" menu screen
   // at /). Kept as `dashboard` because every consumer is the sign-in flow's
   // redirect; the ecommerce dashboard stays reachable via its own menu tile.

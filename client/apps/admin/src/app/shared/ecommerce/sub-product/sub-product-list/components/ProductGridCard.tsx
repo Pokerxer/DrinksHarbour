@@ -129,7 +129,7 @@ export default function ProductGridCard({
         'group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white transition-all duration-200',
         isSelected
           ? 'border-[#b20202]/60 shadow-md shadow-red-100 ring-2 ring-[#b20202]/30'
-          : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+          : 'border-gray-200 hover:border-gray-300 hover:shadow-lg hover:shadow-[#b20202]/10'
       )}
     >
       {/* Image area */}
@@ -146,6 +146,9 @@ export default function ProductGridCard({
           className="h-full w-full object-cover"
           fallback={<BeverageIcon className="h-14 w-14 text-gray-300" />}
         />
+
+        {/* Subtle inner vignette for depth */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/[0.07] via-transparent to-transparent" />
 
         {/* Top badges */}
         <div className="absolute left-2 top-2 flex flex-col gap-1">
@@ -226,7 +229,7 @@ export default function ProductGridCard({
         )}
 
         {/* Name */}
-        <p className="line-clamp-2 text-[13px] font-semibold leading-tight text-gray-900">
+        <p className="line-clamp-2 text-sm font-semibold leading-tight text-gray-900">
           {product.product?.name || 'Unknown Product'}
         </p>
 
@@ -258,7 +261,7 @@ export default function ProductGridCard({
 
         {/* Price + stock */}
         <div className="mt-auto flex items-center justify-between border-t border-gray-100 pt-1">
-          <span className="text-[13px] font-bold tabular-nums text-gray-900">
+          <span className="text-sm font-bold tabular-nums text-gray-900">
             {symbol}
             {price.toLocaleString()}
           </span>
@@ -305,7 +308,7 @@ export function ProductGridCardCompact({
         'group flex cursor-pointer items-center gap-2.5 rounded-xl border bg-white p-2 transition-all duration-150',
         isSelected
           ? 'border-[#b20202]/60 bg-red-50/40 ring-1 ring-[#b20202]/30'
-          : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+          : 'border-gray-200 hover:border-gray-300 hover:shadow-md hover:shadow-[#b20202]/10'
       )}
     >
       {/* Image */}
@@ -331,7 +334,7 @@ export function ProductGridCardCompact({
 
       {/* Content */}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <p className="truncate text-[11px] font-semibold leading-tight text-gray-900">
+        <p className="truncate text-xs font-semibold leading-tight text-gray-900">
           {product.product?.name || 'Unknown'}
         </p>
         {product.product?.brand?.name && (

@@ -25,6 +25,9 @@ export const createUserSchema = z
             'Password needs an uppercase letter, a lowercase letter, a number and a special character',
         }
       ),
+    confirmPassword: z.string().min(1, {
+      message: 'Confirm the temporary password',
+    }),
     role: z
       .string()
       .min(1, { message: messages.roleIsRequired })
@@ -39,7 +42,11 @@ export const createUserSchema = z
     (data) =>
       !TENANT_SCOPED_ROLES.includes(data.role as never) || !!data.tenant,
     { message: 'Select a tenant for this role', path: ['tenant'] }
-  );
+  )
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
 
 // generate form types from zod validation schema
 export type CreateUserInput = z.infer<typeof createUserSchema>;

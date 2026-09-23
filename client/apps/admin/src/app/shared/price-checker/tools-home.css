@@ -1,0 +1,67 @@
+.pc-tools-home {
+  max-width: 1200px;
+  padding-top: 30px;
+}
+.pc-tools-home > header {
+  margin-bottom: 36px;
+}
+.pc-tools-home h1 {
+  font-size: clamp(32px, 4vw, 48px);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  margin: 18px 0;
+}
+.pc-tools-home p {
+  font-size: 14px;
+  color: #817575;
+  line-height: 1.8;
+  max-width: 590px;
+}
+.pc-tools-feature {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  border: 1px solid #8883;
+  border-radius: 20px;
+  padding: 36px;
+  background: #b2020204;
+  margin-bottom: 24px;
+}
+.pc-tools-symbol {
+  display: grid;
+  place-items: center;
+  background: #321b20;
+  color: #f5d9ce;
+  border-radius: 22px;
+  width: 180px;
+  height: 180px;
+  flex-shrink: 0;
+  font-size: 90px;
+}
+.pc-tools-feature h2 {
+  font-size: 26px;
+  letter-spacing: -0.025em;
+  margin: 12px 0;
+}
+.pc-tools-feature .pc-button {
+  margin-top: 22px;
+}
+.pc-tools-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.pc-tools-grid .pc-card > svg {
+  font-size: 32px;
+  color: #b20202;
+  margin-bottom: 20px;
+}
+.pc-tools-grid a {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: #b20202;
+  margin-top: 20px;
+  font-weight: 600;
+}

@@ -1,0 +1,731 @@
+{
+  "database": "drinksharbour",
+  "tenant": {
+    "id": "6aabec2b9294f4afed5ce61f",
+    "slug": "ckay",
+    "status": "approved",
+    "markupPercentage": 40,
+    "revenueModel": "markup"
+  },
+  "user": {
+    "_id": "6aac10a1b3ea6d817d1fc7bb",
+    "role": "tenant_owner",
+    "tenant": "6aabec2b9294f4afed5ce61f"
+  },
+  "skuBudget": 96,
+  "existingSubProducts": 4,
+  "warehouses": [
+    {
+      "_id": "6aac1540739aed42cba07329",
+      "name": "Gift Center",
+      "type": "store",
+      "isDefault": false
+    }
+  ],
+  "matches": [
+    {
+      "name": "Dany Home Storage Box / Tea Box",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Gladiator Edition Decanter",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "The Brew Company Coffee",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Dany Home Glass Ice Bucket",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Dany Home Shot Board for Shots",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Gift Set in a Brown Basket",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "White Teddy Bear",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Lucky Love Mug",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Red Suede Box (Smallest)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Red Suede Box (Small)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Red Suede Box (Medium)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Red Suede Box (Big)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Whiskey Barrel",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Stormtrooper Decanter",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Entasis Carafe (for spirits)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Lacuna Decanter (for wine)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Luxury Wash Bag (Baylis & Harding)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Luxury Wash Bag (The Fuzzy Duck)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Baylis & Harding Wellness for Men",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Baylis & Harding Elements Luxury Home Care Set",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Luxury Tin Set (The Fuzzy Duck)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Signature Collection (Baylis & Harding)",
+      "missingPrice": true,
+      "missingQty": true,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Keepsake Boxes",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Luxury Pamper Tin",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Luxury Headband",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Luxury Body Retreat",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "B&H Men's Signature Collection",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "B&H Hand Care Set (Black Colour)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Pink and Pear Blossom (Soap Flowers)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "B&H Double Set Collection",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "William Morris Gardening Glove Set",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Heart-Shaped Box (Estella Bartlett)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Live by the Sun (Dark Blue Box)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Rainbow Box (Estella Bartlett)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Multi-Purpose 3-in-1 Basin",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Whiskey Decanter Set",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Pink Box",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Next Just Pink",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Wine Box (Red & Brown)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "B&H Luxury Pamper Gift (Purple)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "B&H Signature Collection",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Bath Set in Wooden Box",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Starbucks Coffee White",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Straw Cup",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Water Bottle",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Stanley Cup",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Conundrum Decanter",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Globe Decanter",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Cashew Nut",
+      "missingPrice": true,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "The Bourbon Biscuit",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Handkerchief (3 in 1)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "The Essence Diffuser Set",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Wine Glass Jugs (Stainless White)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Starbucks Coffee Cup Black",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Carafe Glass Container (Dany Home)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Stormtrooper 3D Decanter",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Twisted Decanter",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Diamond Decanter",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Chess Decanter",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Baileys Luxury Fudge",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Glengoyne Fudge",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Guinness Luxury Fudge",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Jagermeister",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Jack Daniels Old No. 7 Brand",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Louis Vuitton Mug",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Gucci Mug",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Dior Mug (Black)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Dior Mug (Pink)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "English Breakfast Tea",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Cloth Basket",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "White Woven Basket",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Fruit Basket",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Brown Basket (Small)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Brown Basket (Medium)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Yu Jing Glass Ware 6pcs (Large)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Yu Jing Glass Ware 6pcs (Small)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "BlinkMax Glass Cups",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Karaca Pop-Up Dessert Set",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Water Set Glass Cups",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Diamond Set Glass Cups",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Fashion Classic Wine Decanter",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Dany Home Crystal Glass",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Gold Rim Martini Glass",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "2-Piece Drink Ware Set",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Glassware (Small)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "Glassware (Big)",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "VGR Hair Dryer",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "VGR Hair Clipper",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "VGR Barber Combo",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    },
+    {
+      "name": "VGR Foil Shaver",
+      "missingPrice": false,
+      "missingQty": false,
+      "products": [],
+      "subproducts": []
+    }
+  ],
+  "candidates": [
+    {
+      "_id": "6a4faf15468dffc496d1ca2b",
+      "name": "Jack Daniels Sinatra Select",
+      "type": "spirit",
+      "status": "approved"
+    },
+    {
+      "_id": "6a4fb07d6ef6c9cf0fe9c0a6",
+      "name": "Kopke Decanter 10 Years Old Tawny Porto",
+      "type": "fortified_wine",
+      "status": "approved"
+    },
+    {
+      "_id": "6a4fb0e06ef6c9cf0fe9c753",
+      "name": "Riedel Decanter Medoc RQ",
+      "type": "glassware",
+      "status": "approved"
+    },
+    {
+      "_id": "6a4fb0e26ef6c9cf0fe9c77c",
+      "name": "Riedel Decanter Ultra",
+      "type": "other",
+      "status": "approved"
+    },
+    {
+      "_id": "6a5a2a3a1d733baa9e914bb1",
+      "name": "Jack Daniels Gentleman Jack",
+      "type": "spirit",
+      "status": "pending"
+    },
+    {
+      "_id": "6a5a2a941d733baa9e91515c",
+      "name": "Jack Daniel's Honey",
+      "type": "liqueur",
+      "status": "approved"
+    },
+    {
+      "_id": "6a5a2a971d733baa9e915185",
+      "name": "Jack Daniels Honey & 1 Rocks Glass",
+      "type": "liqueur",
+      "status": "approved"
+    },
+    {
+      "_id": "6a5a2a991d733baa9e9151b0",
+      "name": "Jack Daniel's Old No. 7",
+      "type": "spirit",
+      "status": "approved"
+    },
+    {
+      "_id": "6a5a2a9c1d733baa9e9151da",
+      "name": "Jack Daniels Old No 7 with 2 Glass Cups",
+      "type": "spirit",
+      "status": "approved"
+    },
+    {
+      "_id": "6a5a2aa41d733baa9e91525c",
+      "name": "Jack Daniel's Single Barrel",
+      "type": "spirit",
+      "status": "approved"
+    },
+    {
+      "_id": "6a5a2aa61d733baa9e915286",
+      "name": "Jack Daniel's Tennessee Fire",
+      "type": "liqueur",
+      "status": "approved"
+    },
+    {
+      "_id": "6a5a2b261d733baa9e915a77",
+      "name": "The Macallan M Decanter",
+      "type": "spirit",
+      "status": "approved"
+    }
+  ]
+}

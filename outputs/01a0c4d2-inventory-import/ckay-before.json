@@ -1,0 +1,38 @@
+[
+  {
+    "_id": "6aac18cbf2af39ec50a0b023",
+    "product": "6aac18c6f2af39ec50a0b013",
+    "sku": "CKA291-CHAME104-HORY1C",
+    "baseSellingPrice": 6500,
+    "costPrice": 4500,
+    "totalStock": 20,
+    "status": "active"
+  },
+  {
+    "_id": "6aac18f7f2af39ec50a0b069",
+    "product": "6aac18f4f2af39ec50a0b056",
+    "sku": "CKA291-MINIA5C6-YBAQ4M",
+    "baseSellingPrice": 3800,
+    "costPrice": 2500,
+    "totalStock": 20,
+    "status": "active"
+  },
+  {
+    "_id": "6aac18fcf2af39ec50a0b086",
+    "product": "6aac18faf2af39ec50a0b07e",
+    "sku": "CKA291-WINEF211-5QNQZ0",
+    "baseSellingPrice": 10500,
+    "costPrice": 7500,
+    "totalStock": 20,
+    "status": "active"
+  },
+  {
+    "_id": "6aac1901f2af39ec50a0b09f",
+    "product": "6aac18fef2af39ec50a0b097",
+    "sku": "CKA291-WINE55E3-FN2SEJ",
+    "baseSellingPrice": 11200,
+    "costPrice": 7900,
+    "totalStock": 20,
+    "status": "active"
+  }
+]

@@ -66,6 +66,13 @@ async function reconcileFulfillment({ salesOrder, fulfillLines, userId, ref, war
 
   settlePayment(salesOrder, lines, byId);
 
+  // Keep the SO's source warehouse aligned with where stock actually left.
+  // Without this, a POS sale from wh-002 while the SO was created against
+  // wh-001 leaves the order displaying the wrong warehouse.
+  if (warehouseId && String(salesOrder.warehouseId) !== String(warehouseId)) {
+    salesOrder.warehouseId = warehouseId;
+  }
+
   await salesOrder.save();
   return { order: salesOrder, reconciled: lines.length, duplicate: false };
 }
@@ -195,6 +202,13 @@ async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, u
   }
   const status = fulfillStatus(salesOrder.items);
   if (status) salesOrder.orderStatus = status;
+
+  // Keep the SO's source warehouse aligned with where stock actually left.
+  // Without this, a fulfill from wh-002 while the SO was created against
+  // wh-001 leaves the order displaying the wrong warehouse.
+  if (warehouseId && String(salesOrder.warehouseId) !== String(warehouseId)) {
+    salesOrder.warehouseId = warehouseId;
+  }
 
   await salesOrder.save();
   return { order: salesOrder, salesRows, posting };

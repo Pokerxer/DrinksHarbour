@@ -122,7 +122,7 @@ function stub(t, { salesOrder = null } = {}) {
   const captured = {};
 
   t.mock.method(Tenant, 'findById', () => chainable(null));
-  t.mock.method(Warehouse, 'findOne', () => chainable({ _id: TENANT }));
+  t.mock.method(Warehouse, 'findOne', (filter) => chainable({ _id: (filter && filter._id) || TENANT }));
   t.mock.method(WarehouseStock, 'findOneAndUpdate', async () => ({ currentQuantity: 90 }));
   t.mock.method(WarehouseStock, 'find', () => chainable([{ currentQuantity: 90, reservedQuantity: 0 }]));
   t.mock.method(WarehouseMovement, 'create', async () => ({}));
@@ -305,4 +305,68 @@ test('two sizes of one product on the same quote are not guessed at', async (t) 
   });
 
   assert.equal(lineFor(doc).priceAtPurchase, POS_PRICE);
+});
+
+test('a linked sales order draws stock from its own warehouse, not the till default', async (t) => {
+  // SO00007-style bug: the order said Cloud Bay but stock left Wyn City,
+  // because the till resolved its own default warehouse and ignored the order.
+  // The sale settling a quoted/ordered line must record the order's warehouse
+  // so the movement trail, the order record, and the fulfilment agree.
+  const soWarehouse = oid();
+  const captured = stub(t, { salesOrder: quotation({ warehouseId: soWarehouse }) });
+  const res = {};
+  res.status = (code) => { res.code = code; return res; };
+  res.json = (payload) => { res.body = payload; return res; };
+
+  await pos.createPOSOrder(
+    {
+      tenant: TENANT_DOC,
+      posUser: { _id: oid() },
+      posPermissions: [],
+      body: {
+        paymentMethod: 'cash',
+        amountTendered: 999999,
+        linkedSalesOrderId: String(SO_ID),
+        items: [{ subProductId: String(SP), quantity: 2, clientPrice: 4000, price: 4000 }],
+      },
+    },
+    res,
+    (err) => { throw err; }
+  );
+
+  assert.ok(captured.doc, 'no order was created');
+  assert.equal(
+    String(captured.doc.posWarehouse), String(soWarehouse),
+    'the linked order\'s warehouse must be the one the sale is recorded on'
+  );
+});
+
+test('an ordinary sale (no linked order) keeps the till\'s resolved warehouse', async (t) => {
+  // With no Sales Order the warehouse must not collapse to null — the till's
+  // resolved location still applies.
+  const captured = stub(t);
+  const res = {};
+  res.status = (code) => { res.code = code; return res; };
+  res.json = (payload) => { res.body = payload; return res; };
+
+  await pos.createPOSOrder(
+    {
+      tenant: TENANT_DOC,
+      posUser: { _id: oid() },
+      posPermissions: [],
+      body: {
+        paymentMethod: 'cash',
+        amountTendered: 999999,
+        items: [{ subProductId: String(SP), quantity: 1, clientPrice: POS_PRICE, price: POS_PRICE }],
+      },
+    },
+    res,
+    (err) => { throw err; }
+  );
+
+  assert.ok(captured.doc, 'no order was created');
+  assert.ok(
+    String(captured.doc.posWarehouse),
+    'an ordinary sale must still carry the till\'s resolved warehouse'
+  );
 });

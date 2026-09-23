@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { PiXBold } from 'react-icons/pi';
-import { Controller, type SubmitHandler } from 'react-hook-form';
+import { type SubmitHandler } from 'react-hook-form';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { Form } from '@core/ui/form';
@@ -13,7 +13,6 @@ import {
   Button,
   ActionIcon,
   Title,
-  Select,
   Text,
 } from 'rizzui';
 import {
@@ -22,36 +21,49 @@ import {
 } from '@/validators/create-user.schema';
 import { useModal } from '@/app/shared/modal-views/use-modal';
 import {
-  ASSIGNABLE_ROLES,
   TENANT_SCOPED_ROLES,
   createAdminUser,
 } from '@/services/adminUser.service';
 import { getAdminTenants, type AdminTenant } from '@/services/tenant.service';
 import { stepUpMfa } from '@/services/mfa.service';
 import type { UserRole } from '@/types/authorization';
-
-const ROLE_LABELS: Record<string, string> = {
-  super_admin: 'Super Admin',
-  admin: 'Admin',
-  tenant_admin: 'Tenant Admin',
-  tenant_owner: 'Tenant Owner',
-  tenant_staff: 'Tenant Staff',
-};
-
-const roleOptions = ASSIGNABLE_ROLES.map((role) => ({
-  label: ROLE_LABELS[role] ?? role,
-  value: role,
-}));
+import {
+  resolveCreateUserAssignment,
+  type FixedUserAssignment,
+} from './create-user-assignment';
+import { CreateUserAssignmentFields } from './create-user-assignment-fields';
 
 /**
  * Creates a user through POST /api/users (super-admin only). This replaced a
  * template stub that only console.logged the form; with public /signup removed,
  * this modal is the only way to create an admin.
  */
-export default function CreateUser() {
+type CreateUserProps = {
+  fixedAssignment?: FixedUserAssignment;
+  title?: string;
+};
+
+function emptyUserForm(fixedAssignment?: FixedUserAssignment): CreateUserInput {
+  return {
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    role: fixedAssignment?.role ?? '',
+    tenant: fixedAssignment?.tenantId ?? '',
+  };
+}
+
+export default function CreateUser({
+  fixedAssignment,
+  title = 'Add a new User',
+}: CreateUserProps = {}) {
   const { closeModal } = useModal();
   const { data: session, update: updateSession } = useSession();
-  const [reset, setReset] = useState({});
+  const [reset, setReset] = useState<CreateUserInput>(() =>
+    emptyUserForm(fixedAssignment)
+  );
   const [isLoading, setLoading] = useState(false);
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   // Set when the API refuses for want of a recent MFA challenge; holds the
@@ -70,6 +82,7 @@ export default function CreateUser() {
   useEffect(() => {
     if (!accessToken) return;
     let cancelled = false;
+    if (fixedAssignment?.tenantId) return;
     getAdminTenants(accessToken)
       .then((res) => {
         if (!cancelled) setTenants(res.tenants ?? []);
@@ -80,10 +93,15 @@ export default function CreateUser() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken]);
+  }, [accessToken, fixedAssignment?.tenantId]);
 
   const submit = async (data: CreateUserInput, mfaToken?: string) => {
     setLoading(true);
+
+    const assignment = resolveCreateUserAssignment(
+      { role: data.role, tenant: data.tenant },
+      fixedAssignment
+    );
 
     const result = await createAdminUser(
       {
@@ -91,8 +109,8 @@ export default function CreateUser() {
         lastName: data.lastName.trim(),
         email: data.email.trim(),
         password: data.password,
-        role: data.role as UserRole,
-        tenant: data.tenant,
+        role: assignment.role as UserRole,
+        tenant: assignment.tenant,
       },
       accessToken,
       mfaToken ?? sessionUser?.mfaToken
@@ -116,14 +134,7 @@ export default function CreateUser() {
 
     toast.success(`${data.firstName} ${data.lastName} can now sign in.`);
     setPendingMfa(null);
-    setReset({
-      firstName: '',
-      lastName: '',
-      email: '',
-      password: '',
-      role: '',
-      tenant: '',
-    });
+    setReset(emptyUserForm(fixedAssignment));
     closeModal();
   };
 
@@ -156,14 +167,14 @@ export default function CreateUser() {
     return (
       <form onSubmit={onVerifyMfa} className="p-6">
         <div className="mb-4 flex items-center justify-between">
-          <Title as="h4" className="font-semibold">
+          <Title as="h4" className="font-semibold text-gray-900 dark:text-white">
             Confirm it&apos;s you
           </Title>
           <ActionIcon size="sm" variant="text" onClick={closeModal}>
             <PiXBold className="h-auto w-5" />
           </ActionIcon>
         </div>
-        <Text className="mb-4 text-sm text-gray-500">
+        <Text className="mb-4 text-sm text-gray-500 dark:text-gray-400">
           Creating a user needs a recent two-factor check. Enter the current
           code from your authenticator app — or a backup code — and we&apos;ll
           finish creating {pendingMfa.firstName} {pendingMfa.lastName}.
@@ -201,19 +212,20 @@ export default function CreateUser() {
   return (
     <Form<CreateUserInput>
       resetValues={reset}
+      useFormProps={{ defaultValues: reset }}
       onSubmit={onSubmit}
       validationSchema={createUserSchema}
-      className="grid grid-cols-1 gap-6 p-6 @container md:grid-cols-2 [&_.rizzui-input-label]:font-medium [&_.rizzui-input-label]:text-gray-900"
+      className="grid grid-cols-1 gap-6 p-6 @container md:grid-cols-2 [&_.rizzui-input-label]:font-medium [&_.rizzui-input-label]:text-gray-900 dark:[&_.rizzui-input-label]:text-gray-200"
     >
       {({ register, control, watch, formState: { errors } }) => {
-        const role = watch('role');
+        const role = fixedAssignment?.role ?? watch('role');
         const needsTenant = TENANT_SCOPED_ROLES.includes(role as never);
 
         return (
           <>
             <div className="col-span-full flex items-center justify-between">
-              <Title as="h4" className="font-semibold">
-                Add a new User
+              <Title as="h4" className="font-semibold text-gray-900 dark:text-white">
+                {title}
               </Title>
               <ActionIcon size="sm" variant="text" onClick={closeModal}>
                 <PiXBold className="h-auto w-5" />
@@ -251,56 +263,23 @@ export default function CreateUser() {
               helperText="Share this with the user; they can change it after signing in."
             />
 
-            <Controller
-              name="role"
-              control={control}
-              render={({ field: { name, onChange, value } }) => (
-                <Select
-                  options={roleOptions}
-                  value={value}
-                  onChange={onChange}
-                  name={name}
-                  label="Role"
-                  className={needsTenant ? '' : 'col-span-full'}
-                  error={errors?.role?.message}
-                  getOptionValue={(option) => option.value}
-                  displayValue={(selected: string) =>
-                    roleOptions.find((option) => option.value === selected)
-                      ?.label ?? ''
-                  }
-                  dropdownClassName="!z-[1]"
-                  inPortal={false}
-                />
-              )}
+            <Password
+              label="Confirm Temporary Password"
+              placeholder="Enter the password again"
+              className="col-span-full"
+              {...register('confirmPassword')}
+              error={errors.confirmPassword?.message}
             />
 
-            {needsTenant && (
-              <Controller
-                name="tenant"
-                control={control}
-                render={({ field: { name, onChange, value } }) => (
-                  <Select
-                    options={tenants.map((t) => ({
-                      label: t.name,
-                      value: t._id,
-                    }))}
-                    value={value}
-                    onChange={onChange}
-                    name={name}
-                    label="Tenant"
-                    error={errors?.tenant?.message}
-                    getOptionValue={(option) => option.value}
-                    displayValue={(selected: string) =>
-                      tenants.find((t) => t._id === selected)?.name ?? ''
-                    }
-                    dropdownClassName="!z-[1] h-auto"
-                    inPortal={false}
-                  />
-                )}
-              />
-            )}
+            <CreateUserAssignmentFields
+              control={control}
+              errors={errors}
+              fixedAssignment={fixedAssignment}
+              needsTenant={needsTenant}
+              tenants={tenants}
+            />
 
-            <Text className="col-span-full -mt-2 text-sm text-gray-500">
+            <Text className="col-span-full -mt-2 text-sm text-gray-500 dark:text-gray-400">
               Permissions follow the role. New users are created active, with
               their email already verified.
             </Text>
@@ -318,7 +297,7 @@ export default function CreateUser() {
                 isLoading={isLoading}
                 className="w-full @xl:w-auto"
               >
-                Create User
+                {fixedAssignment ? 'Create Login' : 'Create User'}
               </Button>
             </div>
           </>

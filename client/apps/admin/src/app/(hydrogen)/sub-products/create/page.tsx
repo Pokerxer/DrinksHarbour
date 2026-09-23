@@ -1,4 +1,4 @@
-import SubProductCreateEdit from '@/app/shared/ecommerce/sub-product/create-edit';
+import SubProductCreateEntry from '@/app/shared/ecommerce/sub-product/create-edit/create-entry';
 import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 
@@ -11,7 +11,7 @@ export default function CreateSubProductPage() {
     <>
       <EcommercePageHeader hideHero />
       <div className="mt-4">
-        <SubProductCreateEdit />
+        <SubProductCreateEntry />
       </div>
     </>
   );

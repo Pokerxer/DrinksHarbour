@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   PiCaretDown,
+  PiList,
   PiBuildingsDuotone,
   PiPackageDuotone,
   PiTagDuotone,
@@ -26,6 +27,9 @@ import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
 import NavDropdownPanel, {
   type NavSubItem,
 } from '@/app/shared/nav-dropdown-panel';
+import MobileNavMenu, {
+  activeMobileNavLabel,
+} from './mobile-nav-menu';
 
 type NavItem =
   | { label: string; href: string; icon: React.ReactNode; items?: never }
@@ -135,17 +139,22 @@ const navItems: NavItem[] = [
 export default function WarehousesNavHeader() {
   const pathname = usePathname();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
   const close = useCallback(() => setOpenMenu(null), []);
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (navRef.current && !navRef.current.contains(e.target as Node)) close();
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        close();
+        closeMobile();
+      }
     }
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
-  }, [close]);
+  }, [close, closeMobile]);
 
   useEffect(() => {
     close();
@@ -174,8 +183,28 @@ export default function WarehousesNavHeader() {
         <span className="hidden min-[480px]:inline text-sm font-semibold text-gray-900">Warehouses</span>
       </Link>
 
-      {/* Nav links */}
-      <div className="flex min-w-0 flex-1 flex-wrap items-center pl-2">
+      {/* Mobile menu button — replaces the wrapping tab strip below md */}
+      <div className="ml-auto flex items-center pr-2 md:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileOpen((v) => !v)}
+          aria-expanded={mobileOpen}
+          aria-controls="warehouse-mobile-menu"
+          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${
+            mobileOpen
+              ? 'border-[#b20202]/30 bg-[#b20202]/5 text-[#b20202]'
+              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <PiList className="h-4 w-4" />
+          <span>
+            {activeMobileNavLabel(navItems, pathname) ?? 'Menu'}
+          </span>
+        </button>
+      </div>
+
+      {/* Desktop / tablet tab strip */}
+      <div className="hidden min-w-0 flex-1 flex-wrap items-center pl-2 md:flex">
         {navItems.map((item) => {
           const isDirectActive = 'href' in item && item.href === pathname;
           const isDropdownActive =
@@ -203,7 +232,7 @@ export default function WarehousesNavHeader() {
                 <span className="[&>svg]:h-[18px] [&>svg]:w-[18px]">
                   {item.icon}
                 </span>
-                {item.label}
+                <span>{item.label}</span>
               </Link>
             );
           }
@@ -222,7 +251,7 @@ export default function WarehousesNavHeader() {
                 <span className="[&>svg]:h-[18px] [&>svg]:w-[18px]">
                   {item.icon}
                 </span>
-                {item.label}
+                <span>{item.label}</span>
                 <PiCaretDown
                   className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}
                 />
@@ -239,6 +268,14 @@ export default function WarehousesNavHeader() {
           );
         })}
       </div>
+
+      {/* Mobile dropdown: all destinations behind the Menu button */}
+      <MobileNavMenu
+        items={navItems}
+        open={mobileOpen}
+        onClose={closeMobile}
+        id="warehouse-mobile-menu"
+      />
     </nav>
   );
 }

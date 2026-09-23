@@ -18,6 +18,9 @@ const StockTransferItemSchema = new Schema(
     discountRate: { type: Number, default: 0, min: 0 },
     taxRate: { type: Number, default: 0, min: 0 },
     receivedQty: { type: Number, default: 0, min: 0 },
+    // Units sent back to the source after receipt (returned via the warehouse
+    // movement history). Money is recomputed over quantity − returnedQty.
+    returnedQty: { type: Number, default: 0, min: 0 },
     // Units per pack snapshot (Size.unitsPerPack at pick time) so printed
     // documents can show "5 packs & 1 bottle" without re-querying Size.
     packSize: { type: Number, default: 1, min: 1 },
@@ -52,6 +55,22 @@ const StockTransferSchema = new Schema(
     confirmedAt: { type: Date },
     cancelledBy: { type: ObjectId, ref: "User" },
     cancelledAt: { type: Date },
+    // ── Returns ────────────────────────────────────────────────────
+    // Destination sends received goods back to the source; each entry holds
+    // the lines that were returned and who/ when it was recorded.
+    returns: [
+      {
+        returnedBy: { type: ObjectId, ref: "User" },
+        returnedAt: { type: Date, default: Date.now },
+        lines: [
+          {
+            itemIndex: { type: Number, required: true },
+            quantity: { type: Number, required: true, min: 1 },
+            note: { type: String, maxlength: 200, trim: true },
+          },
+        ],
+      },
+    ],
     // Approval workflow (gated by tenant warehouseSettings.requireTransferApproval
     // + transferApprovalThreshold). totalValue is the snapshot used to decide
     // whether this transfer needed approval at confirmation time.

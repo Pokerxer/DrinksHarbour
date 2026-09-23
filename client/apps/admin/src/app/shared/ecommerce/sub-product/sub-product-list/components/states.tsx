@@ -11,9 +11,9 @@ import {
   PiWarningBold,
   PiXCircleBold,
   PiTrendUpBold,
-  PiTrendDownBold,
   PiArrowsClockwiseBold,
   PiFunnelBold,
+  PiPlus,
 } from 'react-icons/pi';
 import type { FilterConfig } from './AdvancedFilters';
 
@@ -57,14 +57,19 @@ export function LoadingSkeleton() {
 }
 
 // Stats Header Component
+// Trends are REAL counts of sub-products added in the last 30 days, computed
+// from the fetched catalog (the caller passes them via the `trends` prop in
+// the same order as the cards). No fabricated percentages.
 export function StatsHeader({
   stats,
   activeFilter,
   onFilterChange,
+  trends,
 }: {
   stats: Stats;
   activeFilter: string;
   onFilterChange: (filter: string) => void;
+  trends?: number[];
 }) {
   const statCards = [
     {
@@ -73,8 +78,6 @@ export function StatsHeader({
       value: stats.total,
       icon: PiPackageBold,
       color: 'blue',
-      trend: '+12%',
-      trendUp: true,
     },
     {
       id: 'active',
@@ -82,8 +85,6 @@ export function StatsHeader({
       value: stats.active,
       icon: PiCheckCircleBold,
       color: 'green',
-      trend: '+5%',
-      trendUp: true,
     },
     {
       id: 'low_stock',
@@ -91,8 +92,6 @@ export function StatsHeader({
       value: stats.lowStock,
       icon: PiWarningBold,
       color: 'amber',
-      trend: '-3%',
-      trendUp: false,
     },
     {
       id: 'out_of_stock',
@@ -100,8 +99,6 @@ export function StatsHeader({
       value: stats.outOfStock,
       icon: PiXCircleBold,
       color: 'red',
-      trend: '+2%',
-      trendUp: false,
     },
   ];
 
@@ -194,24 +191,24 @@ export function StatsHeader({
             </Flex>
 
             <Flex
+              justify="between"
               align="center"
-              gap="1"
               className="mt-3 border-t border-black/5 pt-3"
             >
-              {stat.trendUp ? (
-                <PiTrendUpBold className="h-3.5 w-3.5 text-green-500" />
-              ) : (
-                <PiTrendDownBold className="h-3.5 w-3.5 text-red-500" />
-              )}
-              <Text
-                className={cn(
-                  'text-xs font-semibold',
-                  stat.trendUp ? 'text-green-600' : 'text-red-500'
-                )}
-              >
-                {stat.trend}
+              <Text className="text-[11px] font-medium text-gray-400">
+                Added in 30 days
               </Text>
-              <Text className="text-xs text-gray-400">vs last month</Text>
+              {trends !== undefined &&
+                (trends[index] > 0 ? (
+                  <span className="flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-600">
+                    <PiTrendUpBold className="h-3 w-3" />
+                    +{trends[index]}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-400">
+                    0
+                  </span>
+                ))}
             </Flex>
           </motion.button>
         );
@@ -385,7 +382,27 @@ export function BulkActionsBar({
 }
 
 // Empty State
-export function EmptyState({ onClear }: { onClear: () => void }) {
+// Two variants:
+//  - "empty"     → the tenant has no sub-products at all. Primary CTA is
+//                  "Add Product" (create the central catalog product the
+//                  sub-product needs), with a secondary "New Sub-product" that
+//                  goes straight into the create flow.
+//  - "no-results" → a catalog exists but current filters hide everything.
+//                  Primary CTA stays "Clear Filters".
+export function EmptyState({
+  variant = 'no-results',
+  onClear,
+  hasActiveFilters = false,
+  onAddProduct,
+  onCreateSubProduct,
+}: {
+  variant?: 'empty' | 'no-results';
+  onClear?: () => void;
+  hasActiveFilters?: boolean;
+  onAddProduct?: () => void;
+  onCreateSubProduct?: () => void;
+}) {
+  const isTrueEmpty = variant === 'empty';
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
@@ -402,21 +419,55 @@ export function EmptyState({ onClear }: { onClear: () => void }) {
       </motion.div>
 
       <Text className="mb-3 text-2xl font-bold text-gray-700">
-        No sub-products found
+        {isTrueEmpty ? 'No products yet' : 'No sub-products found'}
       </Text>
       <Text className="mx-auto mb-8 max-w-md text-lg text-gray-500">
-        We couldn't find any products matching your criteria.
+        {isTrueEmpty
+          ? 'Your store is empty. Add a product to your catalog to start selling — link an existing one or create a new central product.'
+          : "We couldn't find any products matching your criteria."}
       </Text>
 
-      <motion.button
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        onClick={onClear}
-        className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#b20202] to-[#7f1d1d] px-8 py-3 font-semibold text-white shadow-lg shadow-[#b20202]/30 transition-all hover:shadow-xl"
-      >
-        <PiArrowsClockwiseBold className="h-5 w-5" />
-        Clear Filters
-      </motion.button>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        {onAddProduct && (
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onAddProduct}
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#b20202] to-[#7f1d1d] px-8 py-3 font-semibold text-white shadow-lg shadow-[#b20202]/30 transition-all hover:shadow-xl"
+          >
+            <PiPackageBold className="h-5 w-5" />
+            Add Product
+          </motion.button>
+        )}
+
+        {onCreateSubProduct && (
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onCreateSubProduct}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-8 py-3 font-semibold text-gray-600 shadow-sm transition-all hover:border-gray-400 hover:bg-gray-50 hover:text-gray-800"
+          >
+            <PiPlus className="h-5 w-5" />
+            New Sub-product
+          </motion.button>
+        )}
+
+        {onClear && (!isTrueEmpty || hasActiveFilters) && (
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onClear}
+            className={
+              isTrueEmpty
+                ? 'inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-8 py-3 font-semibold text-gray-600 shadow-sm transition-all hover:border-gray-400 hover:bg-gray-50 hover:text-gray-800'
+                : 'inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#b20202] to-[#7f1d1d] px-8 py-3 font-semibold text-white shadow-lg shadow-[#b20202]/30 transition-all hover:shadow-xl'
+            }
+          >
+            <PiArrowsClockwiseBold className="h-5 w-5" />
+            Clear Filters
+          </motion.button>
+        )}
+      </div>
     </motion.div>
   );
 }

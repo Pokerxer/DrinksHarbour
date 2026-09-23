@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { useTenant } from '@/context/TenantContext';
 import {
   PiArrowLeft,
+  PiCopy,
   PiCheck,
   PiCheckCircle,
   PiPencilSimple,
@@ -198,7 +199,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
     message: string;
     confirmLabel: string;
     confirmColor: string;
-    action: () => Promise<void>;
+    action: () => Promise<unknown>;
   } | null>(null);
   const [sourceStock, setSourceStock] = useState<Record<string, number>>({});
   const [stockLoading, setStockLoading] = useState(false);
@@ -234,7 +235,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
       const res = await fetch(`${API_URL}/api/warehouses/${warehouseId}/stock`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const json = await res.json();
+      const json = (await res.json()) as { data?: unknown[] };
       const list: any[] = json?.data ?? [];
       const map: Record<string, number> = {};
       for (const row of list) {
@@ -278,6 +279,19 @@ export default function StockTransferDetail({ id }: { id: string }) {
     } catch (e) {
       await load();
       toast.error(e instanceof Error ? e.message : 'Action failed');
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function handleDuplicate() {
+    setActing(true);
+    try {
+      const res = await stockTransferService.duplicate(id, token);
+      toast.success('Duplicated as new draft');
+      router.push(routes.eCommerce.stockTransferDetails(res.data._id));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to duplicate');
     } finally {
       setActing(false);
     }
@@ -399,6 +413,14 @@ export default function StockTransferDetail({ id }: { id: string }) {
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <PiPrinter className="h-4 w-4" /> Print
+          </button>
+          <button
+            type="button"
+            disabled={acting}
+            onClick={handleDuplicate}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <PiCopy className="h-4 w-4" /> Duplicate
           </button>
           {canEdit && (
             <Link

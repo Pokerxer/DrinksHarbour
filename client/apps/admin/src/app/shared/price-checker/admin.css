@@ -1,0 +1,214 @@
+.pc-admin {
+  max-width: 1500px;
+  margin: auto;
+  padding-bottom: 48px;
+  color: inherit;
+}
+.pc-admin h1,
+.pc-admin h2 {
+  font-weight: 700;
+}
+.pc-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  margin: 16px 0 30px;
+}
+.pc-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: #8b7777;
+  font-weight: 700;
+}
+.pc-heading h1 {
+  font-size: 30px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+}
+.pc-heading h1 svg {
+  color: #b20202;
+}
+.pc-heading p,
+.pc-card > p {
+  color: #777;
+  font-size: 14px;
+}
+.pc-heading nav {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.pc-heading a,
+.pc-actions a,
+.pc-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
+.pc-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #b20202;
+  color: white !important;
+  border-radius: 8px;
+  padding: 12px 18px;
+  font-weight: 600;
+  min-height: 42px;
+}
+.pc-admin button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pc-admin button:focus-visible,
+.pc-admin a:focus-visible,
+.pc-admin input:focus-visible,
+.pc-admin select:focus-visible,
+.pc-admin textarea:focus-visible {
+  outline: 2px solid #b20202;
+  outline-offset: 3px;
+}
+.pc-intro {
+  background: linear-gradient(115deg, #371010, #810707);
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 28px 32px;
+  border-radius: 16px;
+  margin-bottom: 28px;
+}
+.pc-intro > svg {
+  font-size: 48px;
+  flex-shrink: 0;
+}
+.pc-intro h2 {
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+.pc-intro p {
+  font-size: 14px;
+  color: #f4d3d3;
+}
+.pc-intro > span {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 13px;
+  background: #ffffff19;
+  border: 1px solid #ffffff30;
+  border-radius: 30px;
+  padding: 8px 14px;
+}
+.pc-card {
+  border: 1px solid #8883;
+  background: rgb(var(--background, 255 255 255));
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.dark .pc-card {
+  background: #161619;
+}
+.pc-card h2 {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+.pc-kiosk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 20px;
+}
+.pc-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.pc-card-top > svg {
+  font-size: 32px;
+  color: #b20202;
+}
+.pc-active,
+.pc-paused {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pc-active {
+  background: #e8f5eb;
+  color: #226038;
+}
+.pc-paused {
+  background: #f1ece9;
+  color: #73675f;
+}
+.pc-card dl {
+  display: flex;
+  gap: 30px;
+  margin: 20px 0;
+}
+.pc-card dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #888;
+}
+.pc-card dd {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.pc-url {
+  background: #8881;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 16px 0 !important;
+  font-family: monospace;
+  font-size: 12px !important;
+  overflow-wrap: anywhere;
+}
+.pc-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 8px;
+}
+.pc-danger {
+  color: #b20202;
+}
+.pc-empty {
+  text-align: center;
+  padding: 70px 24px;
+  border: 1px dashed #8886;
+  border-radius: 16px;
+}
+.pc-empty > svg {
+  font-size: 60px;
+  color: #b20202;
+  margin: 0 auto 20px;
+}
+.pc-empty h2 {
+  font-size: 22px;
+}
+.pc-empty p {
+  color: #777;
+  margin: 12px 0 24px;
+}
+.pc-error {
+  padding: 14px 18px;
+  border: 1px solid #e4b1aa;
+  background: #fff0ed;
+  color: #88281e;
+  border-radius: 10px;
+  margin: 18px 0;
+}
+.pc-error button {
+  text-decoration: underline;
+}

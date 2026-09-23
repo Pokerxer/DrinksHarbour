@@ -110,6 +110,7 @@ test('postReceivedStock posts each qualifying line to the chosen warehouse', asy
     quantity: 6,
     type: 'received',
     notes: 'PO Receipt: PO-1001',
+    recordHistory: false,
   });
   assert.strictEqual(calls[1].payload.quantity, 4);
   assert.strictEqual(calls[0].userId, 'u1');
@@ -170,7 +171,8 @@ test('postReceivedStock surfaces a line missing subProductId', async () => {
 
 test('postReceivedStock writes sub-product history for each posted line with size + warehouse balance', async () => {
   const movements = [];
-  const adjustStock = async () => ({ currentQuantity: 16 }); // balance after a +6 receipt
+  const adjustPayloads = [];
+  const adjustStock = async (p) => { adjustPayloads.push(p); return { currentQuantity: 16 }; }; // balance after a +6 receipt
   const recordMovement = async (m) => { movements.push(m); };
   const purchaseOrder = {
     _id: 'po-id',
@@ -193,7 +195,11 @@ test('postReceivedStock writes sub-product history for each posted line with siz
   });
 
   assert.strictEqual(result.successCount, 1);
+  // One receipt → exactly one history write: adjustStock must skip its manual
+  // mirror (recordHistory:false) so the recordMovement row is not duplicated.
   assert.strictEqual(movements.length, 1);
+  assert.strictEqual(adjustPayloads.length, 1);
+  assert.strictEqual(adjustPayloads[0].recordHistory, false);
   const m = movements[0];
   assert.strictEqual(m.subProduct, 'sp1');
   assert.strictEqual(m.size, 'sz1');

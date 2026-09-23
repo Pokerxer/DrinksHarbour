@@ -1236,7 +1236,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
   const populateFields = [
     {
       path: 'product',
-      select: 'name slug type images isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes platformMarkup platformDiscount',
+      select: 'name slug type subType style images isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes platformMarkup platformDiscount',
       populate: [
         { path: 'brand', select: 'name slug logo description' },
         { path: 'category', select: 'name slug type' },

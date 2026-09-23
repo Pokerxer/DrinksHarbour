@@ -1,19 +1,12 @@
 import { headers } from 'next/headers';
-import { Toaster } from 'react-hot-toast';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/auth-options';
-import AuthProvider from '@/app/api/auth/[...nextauth]/auth-provider';
-import GlobalDrawer from '@/app/shared/drawer-views/container';
-import GlobalModal from '@/app/shared/modal-views/container';
-import { JotaiProvider, ThemeProvider } from '@/app/shared/theme-provider';
 import { siteConfig } from '@/config/site.config';
 import { inter, lexendDeca } from '@/app/fonts';
 import cn from '@core/utils/class-names';
-import { TenantProvider, type AdminTenantData } from '@/context/TenantContext';
+import type { AdminTenantData } from '@/context/TenantContext';
+import AdminShell from '@/components/admin-shell';
 import { resolveTenantSlug } from '@/context/tenant-slug';
-import DocumentExportHost from '@/app/shared/document-templates/document-export-host';
-import ExtensionErrorFilter from '@/components/extension-error-filter';
-import EntitlementErrorToast from '@/components/entitlement-error-toast';
 // import NextProgress from '@core/components/next-progress';
 // import ChatbotWidget from '@/components/Chatbot/ChatbotWidget';
 
@@ -146,29 +139,7 @@ export default async function RootLayout({
         <script
           dangerouslySetInnerHTML={{ __html: EXTENSION_NOISE_GUARD_SCRIPT }}
         />
-        {/* Filters wallet-extension (MetaMask etc.) console/overlay noise;
-            renders nothing and never touches app errors. */}
-        <ExtensionErrorFilter />
-        {/* Turns the API's plan/billing 403s — which every service in
-            src/services/ otherwise reduces to a bare message — into an
-            explanation with a route to /settings/billing, on every screen.
-            Renders nothing; wraps window.fetch and passes responses through
-            untouched. */}
-        <EntitlementErrorToast />
-        <AuthProvider session={session}>
-          <TenantProvider initialTenant={initialTenant}>
-            <ThemeProvider>
-              {/* <NextProgress /> */}
-              <JotaiProvider>
-                {children}
-                <DocumentExportHost />
-                <Toaster />
-                <GlobalDrawer />
-                <GlobalModal />
-              </JotaiProvider>
-            </ThemeProvider>
-          </TenantProvider>
-        </AuthProvider>
+        <AdminShell session={session} initialTenant={initialTenant}>{children}</AdminShell>
       </body>
     </html>
   );

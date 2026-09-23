@@ -10,6 +10,7 @@ export type POStatus =
   | 'billed'
   | 'cancel'
   | 'validated'
+  | 'done'
   | 'cancelled';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type BillStatus = 'draft' | 'posted' | 'paid' | 'cancelled';

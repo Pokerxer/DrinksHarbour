@@ -11,7 +11,7 @@ const warehouseMovementSchema = new Schema(
     size: { type: ObjectId, ref: 'Size', required: true },
     type: {
       type: String,
-      enum: ['received', 'adjusted', 'shipped', 'transfer_in', 'transfer_out', 'returned'],
+      enum: ['received', 'adjusted', 'shipped', 'transfer_in', 'transfer_out', 'returned', 'return_out'],
       required: true,
     },
     quantity: { type: Number, required: true },
@@ -22,6 +22,10 @@ const warehouseMovementSchema = new Schema(
     balanceAfter: { type: Number, required: true },
     reference: { type: String, maxlength: 200 },
     transferGroupId: { type: ObjectId },
+    // When this movement UNDOES another (a transfer return, a vendor-return
+    // restock-out), parentMovement points at the movement it unwinds so the
+    // trace is preserved even after the original is edited.
+    parentMovement: { type: ObjectId, ref: 'WarehouseMovement' },
     performedBy: { type: ObjectId, ref: 'User' },
   },
   { timestamps: true }

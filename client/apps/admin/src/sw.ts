@@ -4,6 +4,7 @@ import {
   CacheableResponsePlugin,
   CacheFirst,
   ExpirationPlugin,
+  NetworkOnly,
   Serwist,
   StaleWhileRevalidate,
 } from 'serwist';
@@ -53,6 +54,11 @@ const serwist = new Serwist({
   clientsClaim: true,
   navigationPreload: true,
   runtimeCaching: [
+    {
+      // Kiosk configuration and prices must never be replayed from offline cache.
+      matcher: ({ url }: { url: URL }) => url.pathname.startsWith('/api/price-checker/'),
+      handler: new NetworkOnly(),
+    },
     {
       matcher: /\/_next\/image/,
       handler: new CacheFirst({

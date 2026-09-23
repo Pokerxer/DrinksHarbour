@@ -34,6 +34,18 @@ const VendorReturnSchema = new Schema(
       type: String,
       trim: true,
     },
+    // Warehouse the returned goods leave from on confirmation (drives the
+    // stock deduction + `return_out` movement in the warehouse history).
+    warehouse: {
+      type: ObjectId,
+      ref: "Warehouse",
+    },
+    // Idempotency guard: once stock has been taken out (on confirmation) it is
+    // never applied twice; cleared again if the return is cancelled.
+    stockAdjusted: {
+      type: Boolean,
+      default: false,
+    },
     // Vendor Bill for refund reference
     vendorBill: {
       type: ObjectId,

@@ -19,7 +19,7 @@ const assert = require('node:assert/strict');
 const { receiveStockTransferLines } = require('../services/stockTransferReceive');
 
 function makeDeps() {
-  const calls = { moved: [], stock: [], movements: [], recalcs: [] };
+  const calls = { moved: [], stock: [], movements: [], invMovements: [], recalcs: [] };
 
   // Source warehouse has stock; destination starts with no lot (exercises the
   // create-new-lot branch). currentQuantity defaults to 0 like the real schema.
@@ -53,6 +53,9 @@ function makeDeps() {
       WarehouseStock: FakeWarehouseStock,
       WarehouseMovement: {
         async create(docs) { calls.movements.push(...docs); return docs; },
+      },
+      InventoryMovement: {
+        async create(docs) { calls.invMovements.push(...docs); return docs; },
       },
       recalcSubProductStock: async (id) => calls.recalcs.push(String(id)),
     },
@@ -89,6 +92,29 @@ test('moves batches at each line’s effective unit cost and records movements',
   assert.equal(calls.movements[1].type, 'transfer_in');
   assert.match(calls.movements[1].reference, /Transfer TRF-2026-000001/);
   assert.deepEqual(calls.recalcs, ['sp1']);
+
+  // The pair is mirrored into the unified product ledger (InventoryMovement).
+  assert.equal(calls.invMovements.length, 2);
+  const [outLedger, inLedger] = calls.invMovements;
+  assert.equal(outLedger.type, 'transfer_out');
+  assert.equal(outLedger.category, 'transfer');
+  assert.equal(outLedger.quantity, 6);
+  assert.equal(outLedger.quantityBefore, 999);
+  assert.equal(outLedger.quantityAfter, 993);
+  assert.equal(outLedger.warehouse, 'srcW');
+  assert.equal(outLedger.sourceWarehouse, 'srcW');
+  assert.equal(outLedger.destinationWarehouse, 'dstW');
+  assert.equal(inLedger.type, 'transfer_in');
+  assert.equal(inLedger.quantityBefore, 0);
+  assert.equal(inLedger.quantityAfter, 6);
+  assert.equal(inLedger.warehouse, 'dstW');
+  for (const l of [outLedger, inLedger]) {
+    assert.equal(l.reference, 'Transfer TRF-2026-000001');
+    assert.equal(l.referenceType, 'transfer');
+    assert.equal(l.tenant, 't1');
+    assert.equal(l.performedBy, 'u1');
+    assert.equal(l.source, 'system');
+  }
 });
 
 test('rejects receiving more than outstanding', async () => {

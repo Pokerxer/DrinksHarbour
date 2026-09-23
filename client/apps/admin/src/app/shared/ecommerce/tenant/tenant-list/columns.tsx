@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import DeletePopover from '@core/components/delete-popover';
@@ -66,6 +65,7 @@ export const tenantsColumns = [
       <Checkbox
         aria-label="Select row"
         className="ps-3.5"
+        disabled={!row.getCanSelect()}
         checked={row.getIsSelected()}
         onChange={row.getToggleSelectedHandler()}
       />
@@ -181,11 +181,11 @@ export const tenantsColumns = [
             </ActionIcon>
           </Link>
         </Tooltip>
-        <DeletePopover
+        {row.getCanSelect() && <DeletePopover
           title="Delete tenant"
           description={`Are you sure you want to delete "${row.original.name}"?${row.original.isSystemTenant ? ' This is a system tenant.' : ''}`}
           onDelete={() => meta?.handleDeleteRow?.(row.original)}
-        />
+        />}
       </Flex>
     ),
   }),

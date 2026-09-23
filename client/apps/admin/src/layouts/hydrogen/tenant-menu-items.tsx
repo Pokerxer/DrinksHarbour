@@ -209,6 +209,10 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     // available on all plans
   },
 
+  { label: 'Retail Tools' },
+  { name: 'Price Checker', href: routes.priceChecker.list, icon: <PiCashRegisterDuotone />, minRole: 'tenant_admin',
+    dropdownItems: [ { name: 'Kiosks', href: routes.priceChecker.list }, { name: 'Analytics', href: routes.priceChecker.analytics } ] },
+
   // ─── Point of Sale ──────────────────────────────────────────
   { label: 'Point of Sale' },
   {
@@ -279,7 +283,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
   { label: 'Sales' },
   {
     name: 'Quotations & Orders',
-    href: '#',
+    href: routes.eCommerce.sales,
     icon: <PiFileTextDuotone />,
     dropdownItems: [
       { name: 'Quotations', href: routes.eCommerce.salesQuotations },

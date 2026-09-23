@@ -3,6 +3,7 @@ import { isUnder } from './plan-capabilities';
 
 /** Mirror the existing API audiences; this does not grant new permissions. */
 const MANAGER_PATHS = [
+  '/retail-tools',
   '/employees', '/roles-permissions', '/users', '/accounting', '/purchases',
   '/inventory', '/warehouses', '/contacts', '/pos/pricelists',
   '/point-of-sale/pricelists', '/point-of-sale/cashiers', '/point-of-sale/settings',

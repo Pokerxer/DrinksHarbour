@@ -176,7 +176,10 @@ export default async function middleware(req: NextRequest) {
  * `/store-analytics` and `/profile` were all missing for exactly that reason.
  * When adding a new top-level module, add it here too.
  *
- * ONE ROUTE IS ABSENT ON PURPOSE: `/kiosk/:token`.
+ * PUBLIC KIOSKS ARE ABSENT ON PURPOSE: `/kiosk/:token` (attendance) and
+ * `/kiosk/price-checker/:kioskSlug` (customer price checker).
+ * The customer kiosk uses a separate HttpOnly session scoped to its proxy;
+ * management under /retail-tools still requires an administrator session.
  *
  * It is the attendance clock on a screen in a shop, which by definition nobody
  * signs in to — the whole point of the work that added it. It is not
@@ -193,6 +196,7 @@ export default async function middleware(req: NextRequest) {
  */
 export const config = {
   matcher: [
+    '/retail-tools/:path*',
     '/',
     '/executive/:path*',
     '/financial/:path*',
@@ -234,8 +238,7 @@ export const config = {
     // for the same reason while its three siblings above were listed.
     '/accounting/:path*',
     // Ordinary POS screens, not kiosks: they render a shop's live orders and
-    // price lists to whoever loads the URL. `/kiosk/:token` below is the only
-    // screen that legitimately has no session, and it is not one of these.
+    // price lists to whoever loads the URL. public `/kiosk/*` screens legitimately have no admin session, and it is not one of these.
     // The plan gate redirects here, so it must carry a session check of its own
     // — otherwise the one page a gated tenant is sent to is the one page that
     // does not know who they are.

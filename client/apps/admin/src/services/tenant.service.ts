@@ -1,14 +1,14 @@
-// @ts-nocheck
+import type { TenantFormInput } from '@/validators/create-tenant.schema';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export interface AdminTenant {
   _id: string;
   name: string;
   slug: string;
-  plan: string;
-  subscriptionStatus: string;
-  status: string;
-  revenueModel: string;
+  plan: NonNullable<TenantFormInput['plan']>;
+  subscriptionStatus: NonNullable<TenantFormInput['subscriptionStatus']>;
+  status: NonNullable<TenantFormInput['status']>;
+  revenueModel: NonNullable<TenantFormInput['revenueModel']>;
   markupPercentage?: number;
   commissionPercentage?: number;
   platformMarkupPercentage?: number;
@@ -24,7 +24,7 @@ export interface AdminTenant {
   createdAt: string;
   // full detail fields (from getAdminTenantById)
   customPricingNote?: string;
-  defaultCurrency?: string;
+  defaultCurrency?: TenantFormInput['defaultCurrency'];
   supportedCurrencies?: string[];
   address?: {
     street?: string;
@@ -56,10 +56,10 @@ export interface AdminTenant {
   };
   normalizedState?: string;
   // Business registration & compliance
-  businessType?: string;
+  businessType?: TenantFormInput['businessType'];
   cacNumber?: string;
   tin?: string;
-  idType?: string;
+  idType?: TenantFormInput['idType'];
   idNumber?: string;
   nafdacNumber?: string;
   nafdacRequired?: boolean;
@@ -89,7 +89,7 @@ export interface AdminTenant {
   totalRevenue?: number;
   /** Note the `default` prefix — the schema field is defaultBillControlPolicy */
   purchaseSettings?: {
-    defaultBillControlPolicy?: string;
+    defaultBillControlPolicy?: TenantFormInput['psDefaultBillControlPolicy'];
     enable3WayMatching?: boolean;
     requirePOApproval?: boolean;
     approvalThreshold?: number;
@@ -194,7 +194,7 @@ function authHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}` };
 }
 
-export function buildTenantFormData(data: TenantFormData): FormData {
+export function buildTenantFormData(data: Partial<TenantFormData>): FormData {
   const form = new FormData();
   Object.entries(data).forEach(([k, v]) => {
     if (k === 'logoFile') {
@@ -216,7 +216,7 @@ export function buildTenantFormData(data: TenantFormData): FormData {
 
 async function apiFetch<T>(url: string, options: RequestInit): Promise<T> {
   const res = await fetch(url, options);
-  const json = await res.json();
+  const json = await res.json() as { message?: string; data: T };
   if (!res.ok) throw new Error(json.message || 'Request failed');
   return json.data;
 }
@@ -258,7 +258,7 @@ export async function createAdminTenant(
 export async function updateAdminTenant(
   token: string,
   id: string,
-  data: TenantFormData
+  data: Partial<TenantFormData>
 ): Promise<{ tenant: AdminTenant }> {
   return apiFetch(`${API_URL}/api/tenants/admin/${id}`, {
     method: 'PUT',
@@ -275,6 +275,28 @@ export async function deleteAdminTenant(
     method: 'DELETE',
     headers: authHeaders(token),
   });
-  const json = await res.json();
+  const json = await res.json() as { message?: string };
   if (!res.ok) throw new Error(json.message || 'Delete failed');
+}
+
+/** Keep unsuccessful deletions visible; never submit protected system tenants. */
+export async function deleteAdminTenants(
+  token: string,
+  tenants: Pick<AdminTenant, '_id' | 'isSystemTenant'>[]
+) {
+  const deletedIds: string[] = [];
+  const failures: { id: string; message: string }[] = [];
+  for (const tenant of tenants) {
+    if (tenant.isSystemTenant) {
+      failures.push({ id: tenant._id, message: 'System tenants cannot be deleted' });
+      continue;
+    }
+    try {
+      await deleteAdminTenant(token, tenant._id);
+      deletedIds.push(tenant._id);
+    } catch (error) {
+      failures.push({ id: tenant._id, message: error instanceof Error ? error.message : 'Delete failed' });
+    }
+  }
+  return { deletedIds, failures };
 }

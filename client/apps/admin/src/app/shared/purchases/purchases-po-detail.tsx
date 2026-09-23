@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useTenant } from '@/context/TenantContext';
 import {
   PiArrowLeft,
+  PiCopy,
   PiPencilSimple,
   PiCheck,
   PiCheckCircle,
@@ -39,6 +41,7 @@ import { printPOInvoice, printRFQInvoice } from '@/utils/purchaseInvoice';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 
 export default function PurchasesPODetail({ id }: { id: string }) {
+  const router = useRouter();
   const { data: session } = useSession();
   const { tenant } = useTenant();
   const token = (session?.user as { token?: string })?.token ?? '';
@@ -79,6 +82,19 @@ export default function PurchasesPODetail({ id }: { id: string }) {
       await load();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function handleDuplicate() {
+    setActing(true);
+    try {
+      const res = await purchaseOrderService.duplicate(id, token);
+      toast.success('Duplicated as new draft');
+      router.push(routes.eCommerce.purchaseDetails(res.data._id));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to duplicate');
     } finally {
       setActing(false);
     }
@@ -227,6 +243,14 @@ export default function PurchasesPODetail({ id }: { id: string }) {
           >
             <PiPrinter className="h-4 w-4" />{' '}
             {po.type === 'rfq' ? 'Print RFQ' : 'Print / Download'}
+          </button>
+          <button
+            type="button"
+            disabled={acting}
+            onClick={handleDuplicate}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <PiCopy className="h-4 w-4" /> Duplicate
           </button>
           {canEdit && (
             <Link

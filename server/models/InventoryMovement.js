@@ -38,6 +38,7 @@ const inventoryMovementSchema = new Schema(
         'received',
         'purchase',
         'return',
+        'return_out',
         'adjustment_in',
         'transfer_in',
         'sold',
@@ -82,7 +83,7 @@ const inventoryMovementSchema = new Schema(
     },
     referenceType: {
       type: String,
-      enum: ['order', 'purchase_order', 'transfer', 'return', 'adjustment', 'audit', 'manual', ''],
+      enum: ['order', 'purchase_order', 'vendor_return', 'transfer', 'return', 'adjustment', 'audit', 'manual', ''],
     },
     relatedOrder: {
       type: ObjectId,

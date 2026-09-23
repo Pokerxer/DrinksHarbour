@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import {
   PiPlus,
   PiArrowClockwise,
+  PiCopy,
   PiEye,
   PiTrash,
   PiArrowsLeftRight,
@@ -138,6 +139,7 @@ export default function StockTransfersList() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -214,6 +216,24 @@ export default function StockTransfersList() {
     }
   }
 
+  async function handleDuplicate(id: string) {
+    setDuplicating(id);
+    try {
+      const res = await stockTransferService.duplicate(id, token);
+      const createdId = (res as { data?: { _id?: string } }).data?._id;
+      if (createdId) {
+        toast.success('Duplicated as new draft');
+        router.push(routes.eCommerce.stockTransferDetails(createdId));
+      } else {
+        toast.error('Duplicate failed');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Duplicate failed');
+    } finally {
+      setDuplicating(null);
+    }
+  }
+
   const totalUnits = transfers.reduce(
     (s, t) => s + t.items.reduce((si, it) => si + it.quantity, 0),
     0
@@ -280,14 +300,14 @@ export default function StockTransfersList() {
             {total} transfer{total !== 1 ? 's' : ''} · {totalUnits} total unit{totalUnits !== 1 ? 's' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <PiMagnifyingGlass className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
             <input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search by reference…"
-              className="w-48 rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+              className="w-36 rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20 sm:w-48"
             />
           </div>
           <button
@@ -309,7 +329,7 @@ export default function StockTransfersList() {
       </div>
 
       {/* Tabs */}
-      <div className="mb-4 flex gap-1 border-b border-gray-200">
+      <div className="mb-4 flex gap-1 overflow-x-auto border-b border-gray-200">
         {[
           { key: 'all', label: 'All' },
           { key: 'draft', label: `Draft (${stats.draft})` },
@@ -328,7 +348,7 @@ export default function StockTransfersList() {
             key={t.key}
             type="button"
             onClick={() => handleTabClick(t.key)}
-            className={`relative px-4 py-2.5 text-sm transition-colors ${
+            className={`relative whitespace-nowrap px-4 py-2.5 text-sm transition-colors ${
               tab === t.key
                 ? 'font-semibold text-[#b20202] after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#b20202]'
                 : 'text-gray-500 hover:text-gray-900'
@@ -341,7 +361,7 @@ export default function StockTransfersList() {
 
       {/* Table */}
       {loading ? (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
@@ -385,7 +405,7 @@ export default function StockTransfersList() {
         </div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
@@ -471,6 +491,15 @@ export default function StockTransfersList() {
                           >
                             <PiEye className="h-4 w-4" />
                           </Link>
+                          <button
+                            type="button"
+                            disabled={duplicating === t._id}
+                            onClick={() => handleDuplicate(t._id)}
+                            className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
+                            title="Duplicate"
+                          >
+                            <PiCopy className="h-4 w-4" />
+                          </button>
                           {t.status === 'draft' && (
                             <button
                               type="button"

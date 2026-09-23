@@ -49,6 +49,7 @@ function collectGuards() {
     // allowlist turns the check off, and this endpoint genuinely refuses an
     // unauthenticated caller.
     '../middleware/kiosk.middleware',
+    '../middleware/priceChecker.middleware',
   ]) {
     for (const [name, value] of Object.entries(require(mod))) {
       if (typeof value === 'function' && !NOT_A_GUARD.has(name)) guards.add(value);
@@ -61,6 +62,8 @@ function collectGuards() {
 // Every entry is a mutating endpoint that is unauthenticated ON PURPOSE.
 // Adding a line here is a security decision — say why.
 const PUBLIC_ALLOWLIST = new Set([
+  // Public read-only product-price session bootstrap; no admin or attendance access.
+  'POST priceChecker.routes.js /session',
   // Anonymous analytics beacons. No read path, no PII, write-only counters.
   'POST analytics.routes.js /track',
   'POST analytics.routes.js /track/duration',

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { roleCanAccessRoute } from './route-roles';
-for (const path of ['/accounting', '/purchases/create', '/inventory', '/warehouses/a', '/contacts', '/point-of-sale/settings', '/pos/pricelists']) {
+for (const path of ['/retail-tools/price-checker', '/accounting', '/purchases/create', '/inventory', '/warehouses/a', '/contacts', '/point-of-sale/settings', '/pos/pricelists']) {
   test(`${path} follows the manager-only API audience`, () => {
     expect(roleCanAccessRoute(path, 'tenant_staff')).toBe(false);
     expect(roleCanAccessRoute(path, 'tenant_owner')).toBe(true);

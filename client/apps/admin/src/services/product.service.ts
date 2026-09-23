@@ -1,4 +1,5 @@
 // Services for product API calls
+import { readProduct } from './product-read';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -87,23 +88,11 @@ export const productService = {
     return response.json();
   },
 
-  async getProductById(id: string, token: string, includePending: boolean = false) {
-    const url = includePending 
+  async getProductById(id: string, token: string, includePending: boolean = false, signal?: AbortSignal) {
+    const url = includePending
       ? `${API_URL}/api/products/${id}?includePending=true`
       : `${API_URL}/api/products/${id}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to fetch product');
-    }
-
-    return response.json();
+    return readProduct(url, token, signal);
   },
 
   async updateProduct(id: string, data: Partial<ProductData>, token: string) {

@@ -235,6 +235,53 @@ test('reconcileFulfillment records the warehouse and the tender on the entry', a
   assert.strictEqual(so.fulfillments[0].by, 'u1');
 });
 
+test('reconcileFulfillment repoints the SO warehouse to where the stock actually left', async () => {
+  const so = {
+    soNumber: 'SO-REP', _id: 'soRep', tenant: 't1', warehouseId: 'wh-001',
+    total: 5000, amountPaid: 0,
+    items: [{
+      _id: 'l1', lineType: 'product', quantity: 10, unitPrice: 500,
+      lineTotal: 5000, fulfilledQty: 0, postedQty: 0,
+    }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+
+  await reconcileFulfillment({
+    salesOrder: so,
+    fulfillLines: [{ lineId: 'l1', qty: 4 }],
+    userId: 'u1', ref: 'RCP-REP',
+    warehouseId: 'wh-002', paymentMethod: 'cash',
+  });
+
+  // The SO-level field follows the actual outflow warehouse, not the creation one.
+  assert.strictEqual(so.warehouseId, 'wh-002');
+  assert.strictEqual(typeof so.warehouseId, 'string');
+  assert.strictEqual(so.fulfillments[0].warehouseId, 'wh-002');
+});
+
+test('reconcileFulfillment leaves the SO warehouse alone when it already matches', async () => {
+  const so = {
+    soNumber: 'SO-SAME', _id: 'soSame', tenant: 't1', warehouseId: 'wh-main',
+    total: 5000, amountPaid: 0,
+    items: [{
+      _id: 'l1', lineType: 'product', quantity: 10, unitPrice: 500,
+      lineTotal: 5000, fulfilledQty: 0, postedQty: 0,
+    }],
+    fulfillments: [],
+    save: async function () { return this; },
+  };
+
+  await reconcileFulfillment({
+    salesOrder: so,
+    fulfillLines: [{ lineId: 'l1', qty: 4 }],
+    userId: 'u1', ref: 'RCP-SAME',
+    warehouseId: 'wh-main', paymentMethod: 'cash',
+  });
+
+  assert.strictEqual(so.warehouseId, 'wh-main');
+});
+
 test('two tenders leave two entries, each with its own method', async () => {
   const so = {
     soNumber: 'SO00003', _id: 'so3', tenant: 't1',

@@ -248,7 +248,6 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
       await vendorReturnService.updateReturnStatus(
         id,
         'confirmed',
-        undefined,
         token
       );
       toast.success('Return confirmed');
@@ -269,7 +268,6 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
       await vendorReturnService.updateReturnStatus(
         id,
         'received',
-        undefined,
         token
       );
       toast.success('Return marked as received');
@@ -290,7 +288,6 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
       await vendorReturnService.updateReturnStatus(
         id,
         'cancelled',
-        undefined,
         token
       );
       toast.success('Return cancelled');
@@ -487,6 +484,19 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
           {ret.poNumber && (
             <p className="text-xs text-gray-400">PO: {ret.poNumber}</p>
           )}
+          {typeof ret.warehouse === 'object' && ret.warehouse?.name && (
+            <p className="text-xs text-gray-400">
+              Returning from:{' '}
+              <span className="font-medium text-gray-600">
+                {ret.warehouse.name}
+              </span>
+              {ret.stockAdjusted && (
+                <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                  stock deducted
+                </span>
+              )}
+            </p>
+          )}
           {ret.receivedByName && (
             <p className="text-xs text-gray-400">
               Received by: {ret.receivedByName}
@@ -510,7 +520,11 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
                 onClick={() =>
                   setConfirmAction({
                     title: 'Confirm Return',
-                    message: 'This will mark the return as confirmed.',
+                    message: `Confirming deducts the returned quantities from ${
+                      typeof ret.warehouse === 'object' && ret.warehouse?.name
+                        ? ret.warehouse.name
+                        : 'the warehouse'
+                    } stock and posts them to the movement history. Continue?`,
                     onConfirm: handleConfirm,
                     confirmLabel: 'Confirm',
                     danger: false,
@@ -554,15 +568,13 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
               >
                 <PiPackage className="h-4 w-4" /> Mark Received
               </button>
-              {bill && (
-                <button
-                  type="button"
-                  onClick={() => setShowRefund(true)}
-                  className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700"
-                >
-                  <PiCurrencyDollar className="h-4 w-4" /> Record Refund
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowRefund(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700"
+              >
+                <PiCurrencyDollar className="h-4 w-4" /> Record Refund
+              </button>
               <button
                 type="button"
                 onClick={() =>
@@ -580,7 +592,7 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
               </button>
             </>
           )}
-          {ret.status === 'received' && bill && (
+          {ret.status === 'received' && (
             <button
               type="button"
               onClick={() => setShowRefund(true)}

@@ -231,6 +231,73 @@ const resolvePOWarehouse = async (warehouseId, tenantId) => {
   return owned._id;
 };
 
+// @desc    Duplicate a purchase order as a new draft
+// @route   POST /api/purchase-orders/:id/duplicate
+// @access  Private (Tenant admin)
+const duplicatePurchaseOrder = asyncHandler(async (req, res) => {
+  const tenantId = await resolveTenantId(req);
+  const userId = req.user?._id;
+
+  if (!userId) {
+    throw new ForbiddenError("User context required");
+  }
+
+  const po = await PurchaseOrder.findOne({ _id: req.params.id, tenant: tenantId });
+  if (!po) {
+    throw new NotFoundError("Purchase order not found");
+  }
+
+  // Derive next RFQ number
+  const last = await PurchaseOrder.findOne({
+    tenant: tenantId,
+    poNumber: { $regex: /^RFQ-\d+$/ },
+  })
+    .sort({ poNumber: -1 })
+    .select("poNumber")
+    .lean();
+  const lastSeq = last ? parseInt(last.poNumber.split("-")[1], 10) : 0;
+  const poNumber = `RFQ-${String(lastSeq + 1).padStart(6, "0")}`;
+
+  // Deep-clone items, resetting received/posted/returned counters
+  const items = (po.items || []).map((it) => ({
+    subProductId: it.subProductId,
+    subProductName: it.subProductName,
+    sku: it.sku,
+    sizeId: it.sizeId,
+    sizeName: it.sizeName,
+    quantity: it.quantity,
+    receivedQty: 0,
+    postedQty: 0,
+    uom: it.uom,
+    packagingQty: it.packagingQty,
+    packaging: it.packaging,
+    packPrice: it.packPrice,
+    unitCost: it.unitCost,
+    discount: it.discount,
+    taxRate: it.taxRate,
+    totalCost: it.totalCost,
+  }));
+
+  const newPO = await PurchaseOrder.create({
+    tenant: tenantId,
+    poNumber,
+    vendor: po.vendor,
+    vendorName: po.vendorName,
+    vendorReference: po.vendorReference,
+    currency: po.currency,
+    warehouse: po.warehouse,
+    paymentTerms: po.paymentTerms,
+    notes: po.notes,
+    items,
+    termsConditions: po.termsConditions,
+    billControlPolicy: po.billControlPolicy,
+    createdBy: userId,
+    project: po.project,
+  });
+
+  res.status(201).json({ success: true, data: newPO });
+});
+
 // @desc    Create new purchase order or RFQ
 // @route   POST /api/purchase-orders
 // @access  Private (Tenant admin)
@@ -2166,6 +2233,10 @@ const returnPurchaseOrder = asyncHandler(async (req, res) => {
             type: 'shipped',
             tracksBatch,
             notes: `Vendor return — PO ${po.poNumber}`,
+            // recordReturnMovement below writes the authoritative 'return'
+            // history row — opt out of adjustStock's manual mirror so a return
+            // is not posted to the product ledger twice.
+            recordHistory: false,
           },
           req.user._id,
           tenantId
@@ -2265,6 +2336,7 @@ module.exports = {
   returnPurchaseOrder,
   getPurchaseAnalyticsSummary,
   getPurchaseAnalyticsByVendor,
+  duplicatePurchaseOrder,
   requiresApproval,
   poTotal,
 };

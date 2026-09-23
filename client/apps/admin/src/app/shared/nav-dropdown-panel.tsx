@@ -1,5 +1,6 @@
 'use client';
 
+import { useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { PiSquaresFourDuotone } from 'react-icons/pi';
 
@@ -85,10 +86,27 @@ export default function NavDropdownPanel({
 }) {
   const isSectioned = !!sections?.length;
   const twoCol = isSectioned || columns === 2;
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [shift, setShift] = useState(0);
+
+  // Keep the panel inside the viewport on narrow screens: if it would spill
+  // past the right edge (it is absolutely positioned off the trigger), nudge
+  // it left by exactly the overflow amount.
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const overflow = rect.right - (window.innerWidth - 12);
+    setShift(overflow > 0 ? overflow : 0);
+  }, [isSectioned, items, sections]);
   return (
     <div
+      ref={panelRef}
       className="nav-dd absolute left-0 top-full z-50 mt-2 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-gray-100 bg-white p-2 shadow-2xl shadow-gray-300/40 ring-1 ring-black/[0.04]"
-      style={{ minWidth: twoCol ? 460 : 264 }}
+      style={{
+        minWidth: `min(${twoCol ? 460 : 264}px, calc(100vw - 1.5rem))`,
+        marginLeft: shift ? `${(-shift).toFixed(1)}px` : undefined,
+      }}
     >
       <style>{`
         @keyframes nav-dd-in { from { opacity: 0; transform: translateY(-6px) scale(.98) } to { opacity: 1; transform: none } }

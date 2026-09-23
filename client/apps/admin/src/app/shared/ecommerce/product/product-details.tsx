@@ -93,6 +93,7 @@ export default function ProductDetails() {
     slug: product.slug,
     type: product.type,
     subType: product.subType,
+    style: product.style,
     categoryName: toDisplayName(product.category),
     subCategoryName: toDisplayName(product.subCategory),
     brandName: toDisplayName(product.brand),
