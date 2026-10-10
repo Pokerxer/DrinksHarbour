@@ -1,4 +1,5 @@
 const express = require('express');
+const { cacheReport } = require('../middleware/adminReportCache');
 const router  = express.Router();
 const jwt     = require('jsonwebtoken');
 const {
@@ -55,6 +56,7 @@ const {
   refundPOSOrder,
   voidPOSOrder,
   getAllPOSOrders,
+  getPOSOrderAnalysis,
   // Cashier management
   listCashiers,
   createCashier,
@@ -77,6 +79,9 @@ const {
   createPOSCustomer,
   getPOSCustomer,
   updatePOSCustomerLoyalty,
+  previewPOSCustomerCharge,
+  getPOSCustomerAccount,
+  takePOSCustomerPayment,
   getPOSCustomerDefaultAddress,
   getSalesOrdersForPOS,
   reconcileSalesOrderFromPOS,
@@ -132,6 +137,8 @@ router.get('/notifications',                  protectPOSOrAdmin, getPOSNotificat
 router.get('/products',                       protectPOSOrAdmin, getPOSProducts);
 router.get('/product-meta',                   protectPOSOrAdmin, getPOSProductMeta);
 router.get('/orders',                         protectPOSOrAdmin, getAllPOSOrders);
+// Must precede any /orders/:id route so the literal segment is never captured.
+router.get('/orders/analysis',                protectPOSOrAdmin, getPOSOrderAnalysis);
 router.post('/orders',                        protectPOS, requirePOSPermission('pos:sell'),   createPOSOrder);
 router.post('/orders/hold',                   protectPOS, requirePOSPermission('pos:sell'),   holdPOSOrder);
 router.get('/orders/held',                    protectPOS, getHeldPOSOrders);
@@ -275,6 +282,9 @@ router.post('/customers',                     protectPOS, createPOSCustomer);
 router.get('/customers/:id/default-address', protectPOSOrAdmin, getPOSCustomerDefaultAddress);
 router.get('/customers/:id',                  protectPOS, getPOSCustomer);
 router.patch('/customers/:id/loyalty',        protectPOS, updatePOSCustomerLoyalty);
+router.post('/customers/:id/account/preview', protectPOS, previewPOSCustomerCharge);
+router.get('/customers/:id/account',           protectPOS, getPOSCustomerAccount);
+router.post('/customers/:id/account/payment',  protectPOS, takePOSCustomerPayment);
 
 router.get('/sessions/current',               protectPOS, getCurrentSession);
 router.post('/sessions/open',                 protectPOS, openSession);
@@ -287,8 +297,8 @@ router.get('/sessions/:id/cash-moves',        protectPOS, getCashMoves);
 router.post('/sessions/:id/cash-move',        protectPOS, recordCashMove);
 router.get('/sessions',                       protectPOSOrAdmin, getSessionList);
 router.get('/dashboard',                      protectPOSOrAdmin, getPOSDashboard);
-router.get('/reports/summary',                protectPOSOrAdmin, getReportSummary);
-router.get('/reports/daily',                  protectPOSOrAdmin, getDailyReport);
+router.get('/reports/summary',                protectPOSOrAdmin, cacheReport('pos-reports/summary', { tenantRequired: true }), getReportSummary);
+router.get('/reports/daily',                  protectPOSOrAdmin, cacheReport('pos-reports/daily', { tenantRequired: true }), getDailyReport);
 router.get('/reports/session/:id',            protectPOSOrAdmin, getSessionReport);
 
 // ── Admin-JWT protected ───────────────────────────────────────────────────────

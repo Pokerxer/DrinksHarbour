@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
@@ -14,25 +14,25 @@ import {
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import {
-  inventoryService,
-  type InventoryMovement,
-  type InventoryValuation,
-  type LowStockItem,
-} from '@/services/inventory.service';
-import {
-  warehouseStockService,
-  type StockRow,
-} from '@/services/warehouseStock.service';
-import {
-  FLOW_DAYS,
-  buildFlowData,
   buildHealthSlices,
   buildTopProducts,
   buildWarehouseSlices,
   computeCounts,
-  countOutOfStock,
-  sumUnits,
 } from './inventory-dashboard-data';
+import {
+  buildHistoryFlow,
+  confirmed,
+  emptyInventoryFilters,
+  filterHistory,
+  filterStock,
+  finite,
+  stockHealth,
+  stockTotals,
+} from './inventory-dashboard-analysis';
+import { useInventoryDashboardData } from './use-inventory-dashboard-data';
+import InventoryDashboardFilters from './inventory-dashboard-filters';
+import HistoryTotals from './inventory-dashboard-history-totals';
+import { exportStock } from './inventory-dashboard-export';
 import { KpiCards, KpiCardsSkeleton } from './inventory-dashboard-kpis';
 import ChartSection from './inventory-dashboard-chart-section';
 import OperationsGrid from './inventory-dashboard-operations';
@@ -42,233 +42,189 @@ import InventoryHeader, { ErrorBanner } from './inventory-dashboard-header';
 const ngn = new Intl.NumberFormat('en-NG', {
   style: 'currency',
   currency: 'NGN',
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
-
-type Status = 'loading' | 'refreshing' | 'ready' | 'error';
-
 export default function InventoryDashboard() {
   const { data: session, status: sessionStatus } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
-
-  const [movements, setMovements] = useState<InventoryMovement[]>([]);
-  const [valuation, setValuation] = useState<InventoryValuation | null>(null);
-  const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
-  const [stockRows, setStockRows] = useState<StockRow[]>([]);
-  const [status, setStatus] = useState<Status>('loading');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-
-  // Monotonic request id — only the latest load may commit state.
-  const requestIdRef = useRef(0);
-
-  const load = useCallback(async () => {
-    if (!token) return;
-    const requestId = ++requestIdRef.current;
-    setStatus((s) => (s === 'loading' ? 'loading' : 'refreshing'));
-    try {
-      const flowStart = new Date();
-      flowStart.setDate(flowStart.getDate() - (FLOW_DAYS - 1));
-      flowStart.setHours(0, 0, 0, 0);
-
-      const [movesRes, valRes, lowRes, stockRes] = await Promise.allSettled([
-        inventoryService.getMovements(token, {
-          limit: 500,
-          startDate: flowStart.toISOString(),
-        }),
-        inventoryService.getInventoryValuation(token),
-        inventoryService.getLowStockItems(token),
-        warehouseStockService.getAllStock(token),
-      ]);
-
-      // A newer refresh started; this response is stale — drop it.
-      if (requestId !== requestIdRef.current) return;
-
-      let failures = 0;
-      let firstError: string | null = null;
-      const settle = <T,>(
-        res: PromiseSettledResult<T>,
-        apply: (v: T) => void
-      ) => {
-        if (res.status === 'fulfilled') apply(res.value);
-        else {
-          failures += 1;
-          firstError ??=
-            res.reason instanceof Error
-              ? res.reason.message
-              : 'Some inventory data failed to load';
-        }
-      };
-
-      settle(movesRes, (r) =>
-        setMovements(
-          (r as { data?: { movements?: InventoryMovement[] } }).data
-            ?.movements ?? []
-        )
-      );
-      settle(valRes, (r) =>
-        setValuation((r as { data?: InventoryValuation }).data ?? null)
-      );
-      settle(lowRes, (r) =>
-        setLowStock((r as { data?: LowStockItem[] }).data ?? [])
-      );
-      settle(stockRes, (r) =>
-        setStockRows((r as { data?: StockRow[] }).data ?? [])
-      );
-
-      setStatus(failures === 4 ? 'error' : 'ready');
-      setErrorMsg(failures > 0 ? firstError : null);
-      if (failures === 0) setLastUpdated(new Date().toISOString());
-    } catch {
-      if (requestId === requestIdRef.current) {
-        setStatus('error');
-        setErrorMsg('Failed to load inventory data');
-      }
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (sessionStatus === 'authenticated') load();
-  }, [load, sessionStatus]);
-
-  const counts = useMemo(() => computeCounts(movements), [movements]);
-  const flowData = useMemo(() => buildFlowData(movements), [movements]);
-  const healthSlices = useMemo(() => buildHealthSlices(stockRows), [stockRows]);
-  const warehouseSlices = useMemo(
-    () => buildWarehouseSlices(stockRows),
-    [stockRows]
+  const {
+    movements,
+    stockRows,
+    status,
+    errors,
+    stockAvailable,
+    historyAvailable,
+    incomplete,
+    lastUpdated,
+    load,
+  } = useInventoryDashboardData(token);
+  const [filters, setFilters] = useState(emptyInventoryFilters);
+  const rows = useMemo(() => filterStock(stockRows, filters), [stockRows, filters]);
+  const history = useMemo(
+    () => filterHistory(movements, filters, stockRows),
+    [movements, filters, stockRows],
   );
-  const topProducts = useMemo(() => buildTopProducts(stockRows), [stockRows]);
-  const unitsOnHand = useMemo(() => sumUnits(stockRows), [stockRows]);
-  const outOfStockCount = useMemo(
-    () => countOutOfStock(stockRows),
-    [stockRows]
+  const postedHistory = useMemo(() => history.filter(confirmed), [history]);
+  const counts = useMemo(() => computeCounts(postedHistory), [postedHistory]);
+  const flowData = useMemo(() => buildHistoryFlow(postedHistory), [postedHistory]);
+  const healthSlices = useMemo(() => buildHealthSlices(rows), [rows]);
+  const warehouseSlices = useMemo(() => buildWarehouseSlices(rows), [rows]);
+  const topProducts = useMemo(() => buildTopProducts(rows), [rows]);
+  const totals = useMemo(() => stockTotals(rows), [rows]);
+  const lowStock = useMemo(
+    () =>
+      rows
+        .filter((row) => ['low', 'out'].includes(stockHealth(row)))
+        .map((row) => ({
+          _id: row._id,
+          product: { name: `${row.productName} · ${row.sizeName} · ${row.warehouseName}` },
+          sku: row.sku,
+          availableStock: row.flags?.available ?? finite(row.currentQuantity),
+          reorderPoint: row.flags?.reorderPoint ?? finite(row.minStockLevel),
+          lowStockThreshold: finite(row.minStockLevel),
+        })),
+    [rows],
   );
-
-  if (sessionStatus !== 'loading' && !token) {
+  if (sessionStatus !== 'loading' && !token)
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-3 px-4 py-20 text-center">
         <PiSignInDuotone className="h-10 w-10 text-gray-300" />
         <h1 className="text-lg font-bold text-gray-900">Sign in required</h1>
-        <p className="text-sm text-gray-500">
-          Sign in to your tenant account to view live inventory health,
-          valuation and operations.
-        </p>
+        <p className="text-sm text-gray-500">Sign in to your tenant account to view inventory.</p>
         <Link
           href={routes.signIn}
-          className="mt-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#8f0202]"
+          className="mt-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white"
         >
           Go to sign in
         </Link>
       </div>
     );
-  }
-
-  const initialLoad = status === 'loading' && !valuation;
-  const busy = status === 'loading' || status === 'refreshing';
-
+  const loading = status === 'loading' || sessionStatus === 'loading';
+  const value = (number: number, money = false) =>
+    stockAvailable ? (money ? ngn.format(number) : number.toLocaleString()) : 'Unavailable';
   const kpis = [
     {
       label: 'Stock value',
-      value: valuation ? ngn.format(valuation.totalValue) : '\u2026',
+      value: value(totals.cost, true),
       icon: <PiCoinsDuotone />,
       href: routes.inventory.valuation,
     },
     {
       label: 'Retail value',
-      value: valuation ? ngn.format(valuation.totalRetailValue) : '\u2026',
+      value: value(totals.retail, true),
       icon: <PiChartLineUpDuotone />,
       href: routes.inventory.valuation,
     },
-    {
-      label: 'Potential profit',
-      value: valuation ? ngn.format(valuation.potentialProfit) : '\u2026',
-      icon: <PiTrendUpDuotone />,
-    },
+    { label: 'Potential profit', value: value(totals.profit, true), icon: <PiTrendUpDuotone /> },
     {
       label: 'Units on hand',
-      value: unitsOnHand.toLocaleString(),
+      value: value(totals.units),
       icon: <PiCubeDuotone />,
       href: routes.inventory.stock,
     },
     {
-      label: 'Low stock',
-      value: String(lowStock.length),
+      label: 'Low stock lines',
+      value: value(totals.low),
       icon: <PiWarningCircleDuotone />,
       tone: 'warn' as const,
       href: routes.inventory.procurement,
     },
     {
-      label: 'Out of stock',
-      value: String(outOfStockCount),
+      label: 'Out of stock lines',
+      value: value(totals.out),
       icon: <PiEmptyDuotone />,
       tone: 'danger' as const,
       href: routes.inventory.stock,
     },
   ];
-
   return (
-    <div className="mx-auto max-w-7xl px-4 py-5 sm:px-5 lg:px-6">
+    <main className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <InventoryHeader
-        loading={initialLoad}
+        loading={loading}
         refreshing={status === 'refreshing'}
         lastUpdated={lastUpdated}
         onRefresh={load}
       />
-
-      {errorMsg && (
-        <ErrorBanner
-          message={
-            status === 'error'
-              ? `${errorMsg} — no inventory data could be loaded.`
-              : `Partial load: ${errorMsg}`
-          }
-          onRetry={load}
-        />
+      {errors.length > 0 && <ErrorBanner message={errors.join(' · ')} onRetry={load} />}
+      {incomplete && (
+        <p
+          role="alert"
+          className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+        >
+          Only the most recent {movements.length.toLocaleString()} movement records were loaded.
+          History totals are incomplete. Current stock totals are unaffected.
+        </p>
       )}
-
-      {initialLoad ? (
-        <section className="mb-6">
-          <KpiCardsSkeleton />
-        </section>
-      ) : (
-        <section className="mb-6">
-          <KpiCards data={kpis} />
-        </section>
+      <InventoryDashboardFilters
+        rows={stockRows}
+        movements={movements}
+        filters={filters}
+        change={setFilters}
+      />
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-gray-500">
+          Current stock · {rows.length.toLocaleString()} matching warehouse stock lines · quantities
+          include zero and negative balances
+        </p>
+        <button
+          type="button"
+          onClick={() => exportStock(rows)}
+          disabled={!stockAvailable || loading || status === 'refreshing'}
+          className="rounded-lg border border-[#ece4d6] bg-white px-3 py-2 text-xs font-semibold text-gray-600 disabled:opacity-50"
+        >
+          Export filtered stock
+        </button>
+      </div>
+      <section className="mb-6">
+        {loading ? <KpiCardsSkeleton /> : <KpiCards data={kpis} />}
+      </section>
+      {stockAvailable && rows.length === 0 && (
+        <p className="mb-4 rounded-xl bg-white p-4 text-sm text-gray-500">
+          No stock matches these filters. Clear filters to see all products.
+        </p>
       )}
-
+      {!loading && <HistoryTotals movements={postedHistory} available={historyAvailable} />}
       <section className="mb-6">
         <ChartSection
           flowData={flowData}
           healthSlices={healthSlices}
           warehouseSlices={warehouseSlices}
           topProducts={topProducts}
-          loading={status === 'loading'}
+          loading={loading}
+          stockAvailable={stockAvailable}
+          historyAvailable={historyAvailable}
         />
       </section>
-
       <section className="mb-6">
-        <OperationsGrid
-          counts={counts}
-          loading={busy && movements.length === 0}
-          hrefs={{
-            receipts: routes.inventory.receipts,
-            deliveries: routes.inventory.deliveries,
-            internal: routes.inventory.internal,
-            adjustments: routes.inventory.adjustments,
-            scrap: routes.inventory.scrap,
-            transfers: routes.inventory.transfers,
-          }}
-        />
+        <p className="mb-3 text-xs text-gray-500">
+          Confirmed movement record counts in the selected history. Transfers count distinct
+          references; internal counts include each warehouse leg.
+        </p>
+        {historyAvailable || loading ? (
+          <OperationsGrid
+            counts={counts}
+            loading={loading}
+            hrefs={{
+              receipts: routes.inventory.receipts,
+              deliveries: routes.inventory.deliveries,
+              internal: routes.inventory.internal,
+              adjustments: routes.inventory.adjustments,
+              scrap: routes.inventory.scrap,
+              transfers: routes.inventory.transfers,
+            }}
+          />
+        ) : (
+          <p className="rounded-xl bg-white p-4 text-sm text-gray-500">
+            Movement counts are unavailable until history loads.
+          </p>
+        )}
       </section>
-
-      <section>
-        <DashboardPanels
-          recentMoves={movements.slice(0, 8)}
-          lowStockItems={lowStock}
-          loading={status === 'loading'}
-        />
-      </section>
-    </div>
+      <DashboardPanels
+        recentMoves={postedHistory.slice(0, 8)}
+        lowStockItems={lowStock}
+        loading={loading}
+      />
+    </main>
   );
 }

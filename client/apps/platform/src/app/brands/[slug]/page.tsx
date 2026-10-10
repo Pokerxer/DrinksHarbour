@@ -1,3 +1,4 @@
+import Image from '@/components/UI/OptimizedImage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -494,8 +495,7 @@ export default async function BrandPage({
         }}
       >
         {heroImage && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image fill priority sizes="100vw"
             src={heroImage}
             alt=""
             aria-hidden="true"
@@ -544,8 +544,7 @@ export default async function BrandPage({
               {/* Logo tile */}
               <div className="bp-rise mx-auto mb-6 flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-white p-3 shadow-2xl ring-4 ring-white/10 sm:h-28 sm:w-28">
                 {brand.logo?.url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image width={112} height={112} sizes="112px" priority
                     src={brand.logo.url}
                     alt={brand.logo.alt || `${brand.name} logo`}
                     className="h-full w-full object-contain"
@@ -800,8 +799,7 @@ export default async function BrandPage({
                   >
                     <div className="aspect-square overflow-hidden bg-gray-50">
                       {img ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image width={500} height={500} sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                           src={img}
                           alt={p.name}
                           loading="lazy"
@@ -873,8 +871,7 @@ export default async function BrandPage({
                   >
                     <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-gray-100 bg-gray-50 p-2">
                       {b.logo?.url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image width={64} height={64} sizes="64px"
                           src={b.logo.url}
                           alt=""
                           loading="lazy"

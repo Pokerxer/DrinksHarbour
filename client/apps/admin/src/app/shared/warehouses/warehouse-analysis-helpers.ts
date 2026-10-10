@@ -159,9 +159,14 @@ export function availableQty(r: StockRow): number {
 export type StockStatus = 'in' | 'low' | 'out';
 
 export function stockStatus(r: StockRow): StockStatus {
+  if (r.flags?.status)
+    return r.flags.status === 'out_of_stock'
+      ? 'out'
+      : r.flags.status === 'low_stock'
+        ? 'low'
+        : 'in';
   if ((r.currentQuantity || 0) <= 0) return 'out';
-  if ((r.minStockLevel || 0) > 0 && r.currentQuantity <= r.minStockLevel)
-    return 'low';
+  if ((r.minStockLevel || 0) > 0 && r.currentQuantity <= r.minStockLevel) return 'low';
   return 'in';
 }
 
@@ -182,13 +187,7 @@ export const EXPIRY_LABEL: Record<ExpiryBucket, string> = {
 };
 
 // Ordering used wherever expiry buckets are displayed in a fixed sequence.
-export const EXPIRY_ORDER: ExpiryBucket[] = [
-  'expired',
-  'd30',
-  'd90',
-  'later',
-  'none',
-];
+export const EXPIRY_ORDER: ExpiryBucket[] = ['expired', 'd30', 'd90', 'later', 'none'];
 
 export function expiryBucket(r: StockRow, now = Date.now()): ExpiryBucket {
   if (!r.earliestExpiry) return 'none';
@@ -209,8 +208,7 @@ export function fmtNaira(v: number): string {
 
 export function fmtCompact(v: number): string {
   if (v >= 1_000_000_000) return `₦${(v / 1_000_000_000).toFixed(1)}B`;
-  if (v >= 1_000_000)
-    return `₦${(v / 1_000_000).toFixed(v >= 10_000_000 ? 1 : 2)}M`;
+  if (v >= 1_000_000) return `₦${(v / 1_000_000).toFixed(v >= 10_000_000 ? 1 : 2)}M`;
   if (v >= 1_000) return `₦${(v / 1_000).toFixed(1)}K`;
   return `₦${Math.round(v).toLocaleString()}`;
 }
@@ -269,7 +267,7 @@ export function formatG1Label(key: string, _dim: GroupByKey): string {
 export function getRowKey(
   r: StockRow,
   dim: GroupByKey,
-  prodMeta: Record<string, ProdMeta>
+  prodMeta: Record<string, ProdMeta>,
 ): string {
   const meta = prodMeta[String(r.subProductId)];
   switch (dim) {
@@ -300,18 +298,30 @@ export function applyFilters(
   rows: StockRow[],
   filters: string[],
   prodMeta: Record<string, ProdMeta>,
-  now = Date.now()
+  now = Date.now(),
 ): StockRow[] {
   let r = [...rows];
 
-  if (filters.includes('in_stock'))
-    r = r.filter((x) => (x.currentQuantity || 0) > 0);
-  if (filters.includes('low_stock'))
-    r = r.filter((x) => stockStatus(x) === 'low');
-  if (filters.includes('out_of_stock'))
-    r = r.filter((x) => stockStatus(x) === 'out');
-  if (filters.includes('has_reserved'))
-    r = r.filter((x) => (x.reservedQuantity || 0) > 0);
+  const states = filters.filter((key) => ['in_stock', 'low_stock', 'out_of_stock'].includes(key));
+  if (states.length)
+    r = r.filter((row) =>
+      states.some((key) =>
+        key === 'in_stock'
+          ? (row.currentQuantity || 0) > 0
+          : key === 'low_stock'
+            ? stockStatus(row) === 'low'
+            : stockStatus(row) === 'out',
+      ),
+    );
+  const productIds = filters
+    .filter((key) => key.startsWith('product_') && !key.startsWith('product_search:'))
+    .map((key) => key.slice(8));
+  if (productIds.length) r = r.filter((row) => productIds.includes(String(row.subProductId)));
+  const warehouseIds = filters
+    .filter((key) => key.startsWith('warehouse_') && !key.startsWith('warehouse_search:'))
+    .map((key) => key.slice(10));
+  if (warehouseIds.length) r = r.filter((row) => warehouseIds.includes(String(row.warehouseId)));
+  if (filters.includes('has_reserved')) r = r.filter((x) => (x.reservedQuantity || 0) > 0);
   if (filters.includes('expiring_soon'))
     r = r.filter((x) => {
       const b = expiryBucket(x, now);
@@ -320,29 +330,30 @@ export function applyFilters(
 
   const productVals = filters
     .filter((f) => f.startsWith('product_search:'))
-    .map((f) => f.slice(15).toLowerCase());
+    .map((f) => f.slice(15).trim().toLowerCase())
+    .filter(Boolean);
   if (productVals.length > 0)
     r = r.filter((x) =>
       productVals.some(
         (q) =>
           (x.productName ?? '').toLowerCase().includes(q) ||
-          (x.sku ?? '').toLowerCase().includes(q)
-      )
+          (x.sku ?? '').toLowerCase().includes(q),
+      ),
     );
 
   const warehouseVals = filters
     .filter((f) => f.startsWith('warehouse_search:'))
-    .map((f) => f.slice(17).toLowerCase());
+    .map((f) => f.slice(17).trim().toLowerCase())
+    .filter(Boolean);
   if (warehouseVals.length > 0)
     r = r.filter((x) =>
-      warehouseVals.some((q) =>
-        (x.warehouseName ?? '').toLowerCase().includes(q)
-      )
+      warehouseVals.some((q) => (x.warehouseName ?? '').toLowerCase().includes(q)),
     );
 
   const catNameVals = filters
     .filter((f) => f.startsWith('catname_search:'))
-    .map((f) => f.slice(15).toLowerCase());
+    .map((f) => f.slice(15).trim().toLowerCase())
+    .filter(Boolean);
   if (catNameVals.length > 0)
     r = r.filter((x) => {
       const meta = prodMeta[String(x.subProductId)];
@@ -351,29 +362,17 @@ export function applyFilters(
       return catNameVals.some((q) => cat.includes(q) || sub.includes(q));
     });
 
-  const categoryIds = filters
-    .filter((f) => f.startsWith('category_'))
-    .map((f) => f.slice(9));
+  const categoryIds = filters.filter((f) => f.startsWith('category_')).map((f) => f.slice(9));
   if (categoryIds.length > 0)
-    r = r.filter((x) =>
-      categoryIds.includes(prodMeta[String(x.subProductId)]?.catId || '')
-    );
+    r = r.filter((x) => categoryIds.includes(prodMeta[String(x.subProductId)]?.catId || ''));
 
-  const subcatIds = filters
-    .filter((f) => f.startsWith('subcategory_'))
-    .map((f) => f.slice(12));
+  const subcatIds = filters.filter((f) => f.startsWith('subcategory_')).map((f) => f.slice(12));
   if (subcatIds.length > 0)
-    r = r.filter((x) =>
-      subcatIds.includes(prodMeta[String(x.subProductId)]?.subCatId || '')
-    );
+    r = r.filter((x) => subcatIds.includes(prodMeta[String(x.subProductId)]?.subCatId || ''));
 
-  const brandIds = filters
-    .filter((f) => f.startsWith('brand_'))
-    .map((f) => f.slice(6));
+  const brandIds = filters.filter((f) => f.startsWith('brand_')).map((f) => f.slice(6));
   if (brandIds.length > 0)
-    r = r.filter((x) =>
-      brandIds.includes(prodMeta[String(x.subProductId)]?.brandId || '')
-    );
+    r = r.filter((x) => brandIds.includes(prodMeta[String(x.subProductId)]?.brandId || ''));
 
   return r;
 }
@@ -383,15 +382,13 @@ export function applyFilters(
 export function aggregateMeasure(
   rows: StockRow[],
   measure: Measure,
-  toBase: (amount: number, currency: string) => number
+  toBase: (amount: number, currency: string) => number,
 ): number {
   switch (measure) {
     case 'stock_value':
       return rows.reduce(
-        (s, r) =>
-          s +
-          toBase((r.currentQuantity || 0) * (r.costPrice || 0), BASE_CURRENCY),
-        0
+        (s, r) => s + toBase((r.currentQuantity || 0) * (r.costPrice || 0), BASE_CURRENCY),
+        0,
       );
     case 'on_hand_qty':
       return rows.reduce((s, r) => s + (r.currentQuantity || 0), 0);
@@ -413,9 +410,11 @@ export function aggregateMeasure(
 
 // ── Sorting ────────────────────────────────────────────────────────────────────
 
-export function applySortStack<
-  T extends { label: string; orders: number; isoKey: string },
->(rows: T[], sortStack: SortCriterion[], getValue: (row: T) => number): T[] {
+export function applySortStack<T extends { label: string; orders: number; isoKey: string }>(
+  rows: T[],
+  sortStack: SortCriterion[],
+  getValue: (row: T) => number,
+): T[] {
   const sorted = [...rows];
 
   if (sortStack.length === 0) {
@@ -444,7 +443,7 @@ export function computeGroupData(
   measure: Measure,
   prodMeta: Record<string, ProdMeta>,
   toBase: (amount: number, currency: string) => number,
-  sortStack: SortCriterion[]
+  sortStack: SortCriterion[],
 ): GroupRow[] {
   const groups: Record<string, StockRow[]> = {};
   rows.forEach((r) => {
@@ -472,7 +471,7 @@ export function computeMultiSeries(
   measure: Measure,
   prodMeta: Record<string, ProdMeta>,
   toBase: (amount: number, currency: string) => number,
-  sortStack: SortCriterion[]
+  sortStack: SortCriterion[],
 ): {
   rows: GroupRow2[];
   series: string[];
@@ -540,7 +539,7 @@ export function computeHierarchicalPivot(
   colDims: GroupByKey[],
   measure: Measure,
   prodMeta: Record<string, ProdMeta>,
-  toBase: (amount: number, currency: string) => number
+  toBase: (amount: number, currency: string) => number,
 ): HierPivotResult | null {
   if (rowDims.length === 0) return null;
 
@@ -639,7 +638,7 @@ export function computeHierarchicalPivot(
   rowVals0.forEach((rk) =>
     colVals0.forEach((ck) => {
       maxCellVal = Math.max(maxCellVal, getVal([rk], [ck]));
-    })
+    }),
   );
   if (colVals0.length === 0)
     rowVals0.forEach((rk) => {
@@ -661,7 +660,6 @@ export function computeHierarchicalPivot(
   };
 }
 
-
 // ── KPI rollup (extracted from the page for unit-testability) ──────────────────
 
 export interface AnalysisKpis {
@@ -681,7 +679,7 @@ export interface AnalysisKpis {
  */
 export function computeKpis(
   rows: StockRow[],
-  toBase: (amount: number, currency: string) => number
+  toBase: (amount: number, currency: string) => number,
 ): AnalysisKpis {
   let value = 0;
   let onHand = 0;
@@ -732,7 +730,7 @@ export function buildGroupedTableCSV(
   data: GroupRow[],
   groupLabel: string,
   measureLabel: string,
-  measure: Measure
+  measure: Measure,
 ): string {
   let cumulative = 0;
   const total = data.reduce((s, r) => s + r.value, 0) || 1;
@@ -743,14 +741,7 @@ export function buildGroupedTableCSV(
     cumulative += r.value;
     const share = ((r.value / total) * 100).toFixed(1);
     const cumPct = ((cumulative / total) * 100).toFixed(1);
-    return [
-      i + 1,
-      r.label,
-      r.orders,
-      fmtMeasureVal(r.value, measure),
-      share,
-      cumPct,
-    ]
+    return [i + 1, r.label, r.orders, fmtMeasureVal(r.value, measure), share, cumPct]
       .map(csvEscapeField)
       .join(',');
   });

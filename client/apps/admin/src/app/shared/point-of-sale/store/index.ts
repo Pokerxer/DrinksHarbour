@@ -207,6 +207,21 @@ import {
   computeRewardDiscount,
   BxgyItemDiscount,
 } from './cart-pricing';
+import {
+  computeCartTax,
+  NO_TENANT_TAX,
+  type TenantTaxSetting,
+} from './cart-tax';
+
+/** The tenant's VAT position, as configured server-side. Default: not registered. */
+export function tenantTaxFrom(settings?: {
+  taxEnabled?: boolean;
+  taxRate?: number;
+}): TenantTaxSetting {
+  return settings?.taxEnabled
+    ? { enabled: true, rate: Number(settings.taxRate ?? 0) }
+    : NO_TENANT_TAX;
+}
 
 export type {
   CartCustomer,
@@ -277,7 +292,7 @@ function makeCartRef(existingCount: number) {
 // ─── usePOSCart ───────────────────────────────────────────────────────────────
 
 export const usePOSCart = () => {
-  const { terminal } = usePOSAuth();
+  const { terminal, tenant } = usePOSAuth();
   const { cartAtom, activeCartAtom } = useShopCartAtoms();
   const allPOSProducts = useAtomValue(posProductsAtom);
   // Pricelist is shop-effective (resolved-or-override) so cart totals match the grid.
@@ -321,13 +336,20 @@ export const usePOSCart = () => {
       0
     );
   }, [appliedRewards, items, subtotal, discountAmount]);
+  // VAT is charged when the tenant is registered for it, not only on quotations.
+  // The server recomputes this and refuses a receipt whose total disagrees, so
+  // the two must stay in step — see cart-tax.ts.
+  const taxAmount = useMemo(
+    () => computeCartTax(items, tenantTaxFrom(tenant?.posSettings)),
+    [items, tenant]
+  );
   const total = useMemo(
     () =>
       Math.max(
         0,
-        subtotal - discountAmount - thresholdDiscount - rewardsDiscountTotal
+        subtotal + taxAmount - discountAmount - thresholdDiscount - rewardsDiscountTotal
       ),
-    [subtotal, discountAmount, thresholdDiscount, rewardsDiscountTotal]
+    [subtotal, taxAmount, discountAmount, thresholdDiscount, rewardsDiscountTotal]
   );
   const itemCount = useMemo(
     () => items.reduce((s, i) => s + i.quantity, 0),
@@ -771,6 +793,7 @@ export const usePOSCart = () => {
       note,
       tableBinding,
       subtotal,
+      taxAmount,
       discountAmount,
       thresholdDiscount,
       rewardsDiscountTotal,
@@ -813,6 +836,7 @@ export const usePOSCart = () => {
       note,
       tableBinding,
       subtotal,
+      taxAmount,
       discountAmount,
       thresholdDiscount,
       rewardsDiscountTotal,
@@ -853,6 +877,7 @@ export const usePOSPermissions = () => {
     canVoid: perms.includes('pos:void'),
     canDiscount: perms.includes('pos:discount'),
     canPriceOverride: perms.includes('pos:price_override'),
+    canCreditOverride: perms.includes('pos:credit_override'),
     has: (p: string) => perms.includes(p),
   };
 };
@@ -1233,6 +1258,9 @@ export const usePOSSettings = () => {
     receiptCopies: s.receiptCopies ?? 1,
     basicReceipt: s.basicReceipt ?? false,
     showTaxOnReceipt: s.showTaxOnReceipt ?? false,
+    // VAT the tenant actually charges at the till, as distinct from tax it merely
+    // prints a breakdown of. The receipt must not estimate tax the tenant doesn't owe.
+    taxEnabled: s.taxEnabled ?? false,
     taxRate: s.taxRate ?? 7.5,
     receiptHeader: s.receiptHeader ?? '',
     receiptFooter: s.receiptFooter ?? '',

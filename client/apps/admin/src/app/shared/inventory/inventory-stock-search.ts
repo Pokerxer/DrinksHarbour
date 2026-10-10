@@ -12,12 +12,19 @@
 // to the server as wire params, stock evaluates them here, in memory, because
 // `warehouseStockService.getAllStock` already returned every row.
 
+import { finite } from './inventory-dashboard-analysis';
 import type { StockRow } from '@/services/warehouseStock.service';
 import type {
   FilterConfig,
   FilterValue,
   GroupByOption,
 } from '../advanced-search/advanced-search-types';
+
+const normal = (text: string) =>
+  text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
 
 // ── Status ───────────────────────────────────────────────────────────────────
 
@@ -59,14 +66,18 @@ export function matchesStatusSet(r: StockRow, sel: Set<StatusKey>): boolean {
 
 // ── Money helpers ────────────────────────────────────────────────────────────
 
+export function carryingCostOf(r: StockRow): number {
+  return typeof r.valuationUnitCost === 'number' && Number.isFinite(r.valuationUnitCost) ? r.valuationUnitCost : finite(r.costPrice);
+}
 export function lineValue(r: StockRow): number {
-  return r.currentQuantity * (r.costPrice || 0);
+  return typeof r.stockValue === 'number' && Number.isFinite(r.stockValue)
+    ? r.stockValue : finite(r.currentQuantity) * finite(r.costPrice);
 }
 export function lineRetail(r: StockRow): number {
-  return r.currentQuantity * (r.sellingPrice || 0);
+  return finite(r.currentQuantity) * finite(r.sellingPrice);
 }
 export function availableOf(r: StockRow): number {
-  return r.currentQuantity - r.reservedQuantity;
+  return finite(r.currentQuantity) - finite(r.reservedQuantity);
 }
 export function categoryOf(r: StockRow): string {
   return r.categoryName || 'Uncategorized';
@@ -133,18 +144,17 @@ export function parseStockQuery(raw: string): ParsedQuery {
 
   // Pull `field:"quoted value"` out first — the generic tokenizer would split
   // the prefix away from its own quoted value.
-  const rest = raw.replace(
+  const rest = normal(raw).replace(
     /([A-Za-z_]+):"([^"]*)"/g,
     (whole, rawField: string, value: string) => {
-      const field =
-        SHORTHAND_ALIASES[rawField.toLowerCase()] ?? rawField.toLowerCase();
+      const field = SHORTHAND_ALIASES[rawField.toLowerCase()] ?? rawField.toLowerCase();
       if (value.trim() && SHORTHAND.some((s) => s.key === field)) {
         filters.push({ field, value: value.trim().toLowerCase() });
         return ' ';
       }
       unknownFields.push(rawField.toLowerCase());
       return whole;
-    }
+    },
   );
 
   for (const token of tokenize(rest)) {
@@ -160,11 +170,7 @@ export function parseStockQuery(raw: string): ParsedQuery {
         continue;
       }
       // Looks like a field, names none. Keep it searchable, but say so.
-      if (
-        value &&
-        /^[a-z_]+$/.test(rawField) &&
-        !unknownFields.includes(rawField)
-      ) {
+      if (value && /^[a-z_]+$/.test(rawField) && !unknownFields.includes(rawField)) {
         unknownFields.push(rawField);
       }
     }
@@ -188,16 +194,11 @@ export function parseStockQuery(raw: string): ParsedQuery {
  * an older comment on this page used to claim.
  */
 export function fieldTextFor(r: StockRow): string {
-  return [
-    r.productName,
-    r.sku,
-    r.sizeName,
-    r.warehouseName,
-    categoryOf(r),
-    r.valuationMethod,
-  ]
+  return [r.productName, r.sku, r.sizeName, r.warehouseName, categoryOf(r), r.valuationMethod]
     .filter(Boolean)
     .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 }
 
@@ -244,7 +245,7 @@ export function scoreStockRow(r: StockRow, q: ParsedQuery): number {
 
   for (const f of q.filters) {
     const def = SHORTHAND.find((s) => s.key === f.field);
-    const hay = (def ? def.text(r) : '').toLowerCase();
+    const hay = normal(def ? def.text(r) : '');
     if (!hay.includes(f.value)) return 0;
     score += 40;
   }
@@ -253,7 +254,7 @@ export function scoreStockRow(r: StockRow, q: ParsedQuery): number {
   for (const term of q.terms) {
     if (!text.includes(term)) return 0;
     for (const w of FIELD_WEIGHTS) {
-      const t = w.text(r);
+      const t = normal(w.text(r));
       if (!t.includes(term)) continue;
       score += hasBoundaryHit(t, term) ? w.boundary : w.loose;
     }
@@ -348,11 +349,14 @@ export function parseStockQuerySet(inputs: string[]): StockQuerySet {
   for (const raw of inputs) {
     // A blank chip has no opinion; keeping it would OR in "match everything".
     if (!raw || !raw.trim()) continue;
-    const q = parseStockQuery(raw);
-    if (!q.hasQuery) continue;
-    queries.push(q);
-    for (const f of q.unknownFields) {
-      if (!unknownFields.includes(f)) unknownFields.push(f);
+    // Split multiple products outside quotes; quoted punctuation stays literal.
+    for (const part of raw.split(/[,;\n]+(?=(?:[^"]*"[^"]*")*[^"]*$)/)) {
+      const q = parseStockQuery(part.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+      if (!q.hasQuery) continue;
+      queries.push(q);
+      for (const f of q.unknownFields) {
+        if (!unknownFields.includes(f)) unknownFields.push(f);
+      }
     }
   }
   return {
@@ -372,10 +376,7 @@ export function parseStockQuerySet(inputs: string[]): StockQuerySet {
  * free text. A chip carrying field shorthand (`sku:XXXX`) is a precise
  * question, and answering it with a near-miss would be a wrong answer.
  */
-export function searchStockRowSet(
-  rows: StockRow[],
-  set: StockQuerySet
-): StockSearchResult {
+export function searchStockRowSet(rows: StockRow[], set: StockQuerySet): StockSearchResult {
   const scores = new Map<string, number>();
   if (!set.hasQuery) return { rows: [...rows], scores, approximate: false };
 
@@ -393,9 +394,7 @@ export function searchStockRowSet(
   }
   if (exact.length > 0) return { rows: exact, scores, approximate: false };
 
-  const fuzzyable = set.queries.filter(
-    (q) => !q.hasFilters && q.terms.length > 0
-  );
+  const fuzzyable = set.queries.filter((q) => !q.hasFilters && q.terms.length > 0);
   if (fuzzyable.length === 0) return { rows: [], scores, approximate: false };
 
   const near: StockRow[] = [];
@@ -430,10 +429,7 @@ export function searchStockRowSet(
  * because it is the seam most of the tests exercise; the union logic lives in
  * `searchStockRowSet` so there is only one implementation to be wrong.
  */
-export function searchStockRows(
-  rows: StockRow[],
-  q: ParsedQuery
-): StockSearchResult {
+export function searchStockRows(rows: StockRow[], q: ParsedQuery): StockSearchResult {
   return searchStockRowSet(rows, {
     queries: q.hasQuery ? [q] : [],
     hasQuery: q.hasQuery,
@@ -572,31 +568,25 @@ export const STOCK_FILTER_CONFIGS: FilterConfig[] = [
 const CONFIG_BY_ID = new Map(STOCK_FILTER_CONFIGS.map((c) => [c.id, c]));
 
 /** The one extractor table. A filter id absent here cannot be evaluated. */
-const STOCK_FIELD_VALUES: Record<
-  string,
-  (r: StockRow) => string | number | null
-> = {
+const STOCK_FIELD_VALUES: Record<string, (r: StockRow) => string | number | null> = {
   product: (r) => r.productName ?? '',
   sku: (r) => r.sku ?? '',
   size: (r) => r.sizeName ?? '',
   warehouse: (r) => r.warehouseName ?? '',
   category: (r) => categoryOf(r),
-  onhand: (r) => r.currentQuantity,
-  reserved: (r) => r.reservedQuantity,
+  onhand: (r) => finite(r.currentQuantity),
+  reserved: (r) => finite(r.reservedQuantity),
   available: (r) => availableOf(r),
-  min_stock: (r) => r.minStockLevel ?? 0,
-  cost: (r) => r.costPrice ?? 0,
-  selling: (r) => r.sellingPrice ?? 0,
+  min_stock: (r) => finite(r.minStockLevel),
+  cost: (r) => finite(r.costPrice),
+  selling: (r) => finite(r.sellingPrice),
   line_value: (r) => lineValue(r),
   status: (r) => statusOf(r),
   valuation: (r) => r.valuationMethod ?? '',
   expiry: (r) => r.earliestExpiry ?? '',
 };
 
-export function stockFieldValue(
-  r: StockRow,
-  fieldId: string
-): string | number | null {
+export function stockFieldValue(r: StockRow, fieldId: string): string | number | null {
   const get = STOCK_FIELD_VALUES[fieldId];
   return get ? get(r) : null;
 }
@@ -634,7 +624,7 @@ function asPair(v: FilterValue['value']): [unknown, unknown] | null {
 function matchesNumber(
   actual: number,
   op: FilterValue['operator'],
-  value: FilterValue['value']
+  value: FilterValue['value'],
 ): boolean {
   if (op === 'between') {
     const pair = asPair(value);
@@ -670,7 +660,7 @@ function matchesNumber(
 function matchesText(
   actual: string,
   op: FilterValue['operator'],
-  value: FilterValue['value']
+  value: FilterValue['value'],
 ): boolean {
   const a = actual.toLowerCase();
   if (op === 'in') {
@@ -702,7 +692,7 @@ function matchesText(
 function matchesDate(
   actual: string,
   op: FilterValue['operator'],
-  value: FilterValue['value']
+  value: FilterValue['value'],
 ): boolean {
   const t = toTime(actual);
   if (t === null) return false;
@@ -768,10 +758,7 @@ export function matchesFilter(r: StockRow, fv: FilterValue): boolean {
   }
 }
 
-export function applyStockFilters(
-  rows: StockRow[],
-  filters: FilterValue[]
-): StockRow[] {
+export function applyStockFilters(rows: StockRow[], filters: FilterValue[]): StockRow[] {
   if (filters.length === 0) return [...rows];
   return rows.filter((r) => filters.every((f) => matchesFilter(r, f)));
 }
@@ -800,13 +787,7 @@ export function resolveStockFilters(filters: FilterValue[]): {
 // panel's "Create Date" slot becomes "Expiry" here. `now` is a parameter, not a
 // call to the wall clock, so the ranges are testable on any day.
 
-export const EXPIRY_PRESET_IDS = [
-  'expired',
-  'next7',
-  'next30',
-  'next90',
-  'custom',
-] as const;
+export const EXPIRY_PRESET_IDS = ['expired', 'next7', 'next30', 'next90', 'custom'] as const;
 
 export type ExpiryPresetId = (typeof EXPIRY_PRESET_IDS)[number];
 
@@ -824,10 +805,7 @@ function startOfDay(d: Date): Date {
   return s;
 }
 
-export function expiryRange(
-  presetId: string,
-  now: Date = new Date()
-): [Date, Date] | null {
+export function expiryRange(presetId: string, now: Date = new Date()): [Date, Date] | null {
   const start = startOfDay(now);
   const forward = (days: number): [Date, Date] => [
     start,
@@ -852,10 +830,7 @@ export function expiryRange(
  * not "expires today", and counting it as a hit would make a "next 7 days"
  * answer wrong.
  */
-export function matchesExpiryRange(
-  r: StockRow,
-  range: [Date, Date] | null
-): boolean {
+export function matchesExpiryRange(r: StockRow, range: [Date, Date] | null): boolean {
   if (!range) return true;
   const t = toTime(r.earliestExpiry ?? '');
   if (t === null) return false;
@@ -873,6 +848,7 @@ export type SortCol =
   | 'reserved'
   | 'available'
   | 'cost'
+  | 'method'
   | 'value'
   | 'status';
 
@@ -890,7 +866,8 @@ export function sortStockRows(
   rows: StockRow[],
   col: SortCol,
   dir: SortDir,
-  scores?: Map<string, number>
+  scores?: Map<string, number>,
+  carryingCost = false,
 ): StockRow[] {
   const byName = (a: StockRow, b: StockRow) =>
     (a.productName || '').localeCompare(b.productName || '');
@@ -917,16 +894,19 @@ export function sortStockRows(
         cmp = (a.warehouseName || '').localeCompare(b.warehouseName || '');
         break;
       case 'onhand':
-        cmp = a.currentQuantity - b.currentQuantity;
+        cmp = finite(a.currentQuantity) - finite(b.currentQuantity);
         break;
       case 'reserved':
-        cmp = a.reservedQuantity - b.reservedQuantity;
+        cmp = finite(a.reservedQuantity) - finite(b.reservedQuantity);
         break;
       case 'available':
         cmp = availableOf(a) - availableOf(b);
         break;
+      case 'method':
+        cmp = (a.valuationMethod || 'standard').localeCompare(b.valuationMethod || 'standard');
+        break;
       case 'cost':
-        cmp = (a.costPrice || 0) - (b.costPrice || 0);
+        cmp = carryingCost ? carryingCostOf(a) - carryingCostOf(b) : finite(a.costPrice) - finite(b.costPrice);
         break;
       case 'value':
         cmp = lineValue(a) - lineValue(b);
@@ -944,13 +924,7 @@ export function sortStockRows(
 
 // ── Grouping ─────────────────────────────────────────────────────────────────
 
-export type GroupKey =
-  | 'warehouse'
-  | 'product'
-  | 'category'
-  | 'status'
-  | 'size'
-  | 'valuation';
+export type GroupKey = 'warehouse' | 'product' | 'category' | 'status' | 'size' | 'valuation';
 
 const GROUP_LABEL_OF: Record<GroupKey, (r: StockRow) => string> = {
   warehouse: (r) => r.warehouseName || '—',
@@ -961,10 +935,7 @@ const GROUP_LABEL_OF: Record<GroupKey, (r: StockRow) => string> = {
   valuation: (r) => (r.valuationMethod || 'standard').toUpperCase(),
 };
 
-export function groupStockRows(
-  rows: StockRow[],
-  key: string
-): [string, StockRow[]][] {
+export function groupStockRows(rows: StockRow[], key: string): [string, StockRow[]][] {
   const label = GROUP_LABEL_OF[key as GroupKey];
   if (!label) return [];
   const map = new Map<string, StockRow[]>();

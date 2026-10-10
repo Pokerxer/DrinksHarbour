@@ -59,7 +59,7 @@ const createMovement = asyncHandler(async (req, res) => {
 // @route   GET /api/inventory/movements
 // @access  Private (Tenant admin or Super admin)
 const getMovements = asyncHandler(async (req, res) => {
-  const { subProductId, type, category, startDate, endDate, page, limit, sortBy, sortOrder } = req.query;
+  const { subProductId, type, category, scope, startDate, endDate, page, limit, sortBy, sortOrder } = req.query;
 
   const tenantId = await resolveTenantId(req, subProductId);
   
@@ -67,6 +67,7 @@ const getMovements = asyncHandler(async (req, res) => {
     subProductId,
     type,
     category,
+    scope,
     startDate,
     endDate,
     page: parseInt(page) || 1,
@@ -101,37 +102,10 @@ const getInventorySummary = asyncHandler(async (req, res) => {
 // @route   POST /api/inventory/adjust
 // @access  Private (Tenant admin or Super admin)
 const adjustInventory = asyncHandler(async (req, res) => {
-  console.log('📥 POST /api/inventory/adjust - Body:', JSON.stringify(req.body, null, 2));
-  console.log('👤 User:', req.user?._id, 'tenant:', req.user?.tenant);
-  console.log('🏢 req.tenant:', req.tenant);
-  
-  const { subProductId, adjustment, reason, notes, reference } = req.body;
-
-  if (adjustment === 0) {
-    res.status(400).json({
-      success: false,
-      message: 'Adjustment cannot be zero',
-    });
-    return;
-  }
-
-  const tenantId = await resolveTenantId(req, subProductId);
-  console.log('✅ Resolved tenantId for adjust:', tenantId);
-  
-  const movement = await inventoryService.adjustInventory(
-    subProductId,
-    tenantId,
-    adjustment,
-    reason,
-    req.user._id,
-    notes,
-    reference
-  );
-
-  res.status(201).json({
-    success: true,
-    data: movement,
-  });
+  const { getTenantId } = require('../utils/tenantContext');
+  const { postStockAdjustment } = require('../services/stockAdjustment');
+  const movement = await postStockAdjustment(req.body, req.user._id, getTenantId(req));
+  res.status(201).json({ success: true, data: movement });
 });
 
 // @desc    Record received goods

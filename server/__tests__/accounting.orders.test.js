@@ -51,3 +51,66 @@ test('marketplace refunds without tenant allocation stay visibly pending review'
   assert.equal(update.accountingStatus, 'needs_review');
   assert.match(update.accountingIssue, /settlement breakdown/);
 });
+
+// ── On-account (tab) tender ──
+// A sale the account only partly covers records both legs. The shortfall is a
+// receivable: the revenue is recognised and the money is genuinely owed, so it
+// must land in 1300 rather than in cash or a bank account that never received it.
+
+test('a partly covered account sale debits receivables for the shortfall', () => {
+  const entries = orderPostings({
+    ...order,
+    totalAmount: 2000,
+    tipAmount: 0,
+    paymentMethod: 'split',
+    paymentDetails: { splitPayments: [{ method: 'wallet', amount: 500 }, { method: 'account', amount: 1500 }] },
+  });
+  const sale = entries.find(e => e.entryType === 'sales_revenue');
+  assert.ok(sale, 'the sale still posts revenue');
+  assert.ok(sale.lines.some(l => l.account === '2200' && l.debit === 500), 'the stored-value part spends the wallet');
+  assert.ok(sale.lines.some(l => l.account === '1300' && l.debit === 1500), 'the rest is a receivable');
+  assert.ok(entries.every(e => isBalanced(e.lines)));
+  assert.equal(sale.lines.find(l => l.account === '4000').credit, 2000);
+});
+
+test('an empty account posts the whole sale to receivables', () => {
+  const entries = orderPostings({
+    ...order,
+    totalAmount: 2000,
+    tipAmount: 0,
+    paymentMethod: 'split',
+    paymentDetails: { splitPayments: [{ method: 'account', amount: 2000 }] },
+  });
+  const sale = entries.find(e => e.entryType === 'sales_revenue');
+  assert.ok(sale.lines.some(l => l.account === '1300' && l.debit === 2000));
+  assert.ok(!sale.lines.some(l => l.account === '2200'), 'nothing was spent from a wallet that is empty');
+  assert.ok(entries.every(e => isBalanced(e.lines)));
+});
+
+test('a sale the account fully covers is unchanged and posts no receivable', () => {
+  const entries = orderPostings({
+    ...order,
+    totalAmount: 2000,
+    tipAmount: 0,
+    paymentMethod: 'split',
+    paymentDetails: { splitPayments: [{ method: 'wallet', amount: 2000 }] },
+  });
+  const sale = entries.find(e => e.entryType === 'sales_revenue');
+  assert.ok(sale.lines.some(l => l.account === '2200' && l.debit === 2000));
+  assert.ok(!sale.lines.some(l => l.account === '1300'), 'no debt, so no receivable');
+});
+
+test('tenders that still fail to cover the sale are refused as before', () => {
+  // The account leg must not become a way to post an unbalanced sale: the split
+  // is required to sum to the total, exactly as it was for cash.
+  assert.throws(
+    () => orderPostings({
+      ...order,
+      totalAmount: 2000,
+      tipAmount: 0,
+      paymentMethod: 'split',
+      paymentDetails: { splitPayments: [{ method: 'account', amount: 500 }] },
+    }),
+    /do not cover the sale/,
+  );
+});

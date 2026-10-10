@@ -4,9 +4,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 export interface VendorBill {
   _id: string;
   billNumber: string;
+  originalInvoice?: { items: BillItem[]; subtotal: number; taxAmount: number; totalAmount: number };
+  returnAdjustments?: { vendorReturn: string; active?: boolean; lines: { itemIndex: number; quantity: number }[] }[];
+  returns?: import('./vendorReturn.service').VendorReturn[];
   vendor?: string;
   vendorName: string;
-  purchaseOrder?: string;
+  purchaseOrder?: string | { _id: string; poNumber?: string } | null;
   currency: string;
   items: BillItem[];
   subtotal: number;

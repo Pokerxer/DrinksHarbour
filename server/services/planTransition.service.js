@@ -4,6 +4,7 @@ const Transition = require('../models/BillingTransition');
 const Tenant = require('../models/Tenant');
 const { ERM_PLANS, getPlanConfig, getCommissionRate } = require('../config/erm-plans');
 const { ConflictError, ValidationError } = require('../utils/errors');
+const { recordPlanChange } = require('./subscriptionEvents.service');
 const { BASE, options, fetchSubscription, providerState } = require('./billingReconciliation.service');
 
 // Policy: full next-cycle price, no proration/credit, old entitlements until
@@ -128,7 +129,20 @@ async function reconcilePlanChange(tenant, now = new Date()) {
       trialEndsAt: null, currentPeriodStart: new Date(invoice.period_start), currentPeriodEnd: new Date(invoice.period_end),
       commissionPercentage: getCommissionRate(operation.targetPlan) * 100 }, $inc: { billingRevision: 1 },
   });
-  if (result.matchedCount) await Transition.updateOne({ _id: operation._id, operationId: operation.operationId }, { $set: { state: 'complete' } });
+  if (result.matchedCount) {
+    await Transition.updateOne({ _id: operation._id, operationId: operation.operationId }, { $set: { state: 'complete' } });
+    // Retention ledger. Recorded here, where the plan genuinely changes and the
+    // transition is known to have completed — not when it was scheduled, so an
+    // aborted or superseded transition never shows up as expansion or churn.
+    // `operationId` is the dedupe source, so a retried reconcile is a no-op.
+    await recordPlanChange({
+      tenant: tenant._id,
+      fromPlan: tenant.plan,
+      toPlan: operation.targetPlan,
+      effectiveAt: operation.effectiveAt,
+      source: operation.operationId,
+    });
+  }
   return true;
 }
 module.exports = { effectiveDate, schedulePlanChange, reconcilePlanChange };

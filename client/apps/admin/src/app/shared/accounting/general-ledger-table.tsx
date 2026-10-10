@@ -1,6 +1,7 @@
 'use client';
 
 import type { GeneralLedger } from '@/services/accounting.service';
+import { PiWarningCircle } from 'react-icons/pi';
 import { downloadCsv, fmtDate, fmtMoney, printReport, refDocLabel } from './accounting-helpers';
 import ReportActions from './report-actions';
 
@@ -13,12 +14,16 @@ export default function GeneralLedgerTable({
   subtitle?: string;
 }) {
   const opening = data.openingBalance ?? 0;
+  // With no `from` the service never read prior entries, so the running column is
+  // cumulative movement from zero, not the account's balance.
+  const isBalance = data.openingIncluded !== false;
+  const runningLabel = isBalance ? 'Balance' : 'Movement';
 
   const print = () =>
     printReport({
       title: `General Ledger — ${data.account ? `${data.account.code} ${data.account.name}` : ''}`.trim(),
       subtitle,
-      headers: ['Date', 'Reference', 'Memo', 'Debit', 'Credit', 'Balance'],
+      headers: ['Date', 'Reference', 'Memo', 'Debit', 'Credit', runningLabel],
       rows: [
         ...(opening !== 0
           ? [['', 'Opening balance', '', '', '', fmtMoney(opening)] as [string, string, string, string, string, string]]
@@ -40,6 +45,20 @@ export default function GeneralLedgerTable({
 
   return (
     <div>
+      {!isBalance && (
+        <div
+          role="status"
+          className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <PiWarningCircle size={16} className="mt-0.5 shrink-0" />
+          <p>
+            <span className="font-semibold">No opening balance.</span> The {runningLabel.toLowerCase()}{' '}
+            column starts at zero, so it shows movement inside the window rather than
+            this account&rsquo;s actual balance. Set a from date to include the balance
+            brought forward.
+          </p>
+        </div>
+      )}
       {data.account && (
         <p className="mb-2 text-xs text-gray-500">
           {data.account.code} · {data.account.name}
@@ -59,7 +78,7 @@ export default function GeneralLedgerTable({
               <th className="px-4 py-3">Memo</th>
               <th className="px-4 py-3 text-right">Debit</th>
               <th className="px-4 py-3 text-right">Credit</th>
-              <th className="px-4 py-3 text-right">Balance</th>
+              <th className="px-4 py-3 text-right">{runningLabel}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">

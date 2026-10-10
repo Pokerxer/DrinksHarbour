@@ -39,8 +39,8 @@ export default function AccountingDashboardChart({
       {/* Summary strip */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: '6-mo revenue', value: fmtMoney(totalRevenue) },
-          { label: '6-mo expenses', value: fmtMoney(totalExpenses) },
+          { label: '6-mo income', value: fmtMoney(totalRevenue) },
+          { label: '6-mo costs & expenses', value: fmtMoney(totalExpenses) },
           { label: 'Monthly avg profit', value: fmtMoney(avgProfit) },
         ].map((s) => (
           <div key={s.label} className="rounded-xl bg-gray-50 px-3 py-2.5">
@@ -85,13 +85,13 @@ export default function AccountingDashboardChart({
             <Legend iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
             <Bar
               dataKey="revenue"
-              name="Revenue"
+              name="Income"
               fill="url(#acctRevenueGradient)"
               radius={[4, 4, 0, 0]}
             />
             <Line
               dataKey="expenses"
-              name="Expenses"
+              name="Costs & expenses"
               type="monotone"
               stroke="#64748b"
               strokeWidth={2}

@@ -1,4 +1,5 @@
 'use client';
+import { PurchaseAnalyticsBars, PurchaseAnalyticsStackedBars } from './purchase-analytics-bars';
 
 import {
   useEffect,
@@ -9,8 +10,6 @@ import {
   type SetStateAction,
 } from 'react';
 import {
-  Bar,
-  BarChart,
   Line,
   ComposedChart,
   PieChart,
@@ -21,8 +20,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
-  LabelList,
+  type LabelProps,
 } from 'recharts';
 import {
   PiCaretDown,
@@ -39,8 +37,6 @@ import {
   PALETTE,
   fmtAxisVal,
   fmtMeasureVal,
-  fmtDataLabel,
-  computeAvg,
   formatG1Label,
   ALL_GROUP_ITEMS,
   type GroupRow,
@@ -489,179 +485,7 @@ function LineView({
 
 // ── Custom tooltip for bar charts ──────────────────────────────────────────────
 
-function BarTooltip({
-  active,
-  payload,
-  label,
-  measure,
-  totalValue,
-}: {
-  active?: boolean;
-  payload?: { value: number; payload: GroupRow }[];
-  label?: string;
-  measure: Measure;
-  totalValue: number;
-}) {
-  if (!active || !payload?.length) {
-    return <div style={{ display: 'none' }} />;
-  }
-  const row = payload[0].payload;
-  const val = row.value;
-  const pct =
-    totalValue > 0 && measure !== 'avg_order'
-      ? ((val / totalValue) * 100).toFixed(1)
-      : null;
-  return (
-    <div className="rounded-xl border border-[#ece4d6] bg-white px-3.5 py-2.5 shadow-lg">
-      <p className="text-xs font-semibold text-[#2a2420]">{row.label}</p>
-      <p className="mt-1 text-sm font-bold tabular-nums text-[#b20202]">
-        {fmtMeasureVal(val, measure)}
-      </p>
-      {pct && <p className="text-[11px] text-gray-400">{pct}% of total</p>}
-      {row.orders > 0 && measure !== 'count' && (
-        <p className="text-[10px] text-gray-400">
-          {row.orders} order{row.orders !== 1 ? 's' : ''}
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ── Single group-by: table / pie / line / bar ──────────────────────────────────
-
-function BarView({
-  data,
-  measure,
-  measureLabel,
-  totalValue,
-  onBarClick,
-}: {
-  data: GroupRow[];
-  measure: Measure;
-  measureLabel: string;
-  totalValue: number;
-  onBarClick: (label: string, orders: PurchaseOrder[]) => void;
-}) {
-  const manyItems = data.length > 8;
-  const height = manyItems ? Math.max(320, data.length * 32) : 420;
-  const avg = data.length >= 3 ? computeAvg(data) : 0;
-
-  return (
-    <div className="px-3 py-4" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={data}
-          layout={manyItems ? 'vertical' : 'horizontal'}
-          margin={
-            manyItems
-              ? { top: 8, right: 80, bottom: 8, left: 8 }
-              : { top: 24, right: 24, bottom: 8, left: 8 }
-          }
-        >
-          <defs>
-            {data.map((_, i) => (
-              <linearGradient
-                key={i}
-                id={`bv-grad-${i}`}
-                x1="0"
-                y1="0"
-                x2={manyItems ? '1' : '0'}
-                y2={manyItems ? '0' : '1'}
-              >
-                <stop
-                  offset="0%"
-                  stopColor={PALETTE[i % PALETTE.length]}
-                  stopOpacity={0.65}
-                />
-                <stop
-                  offset="100%"
-                  stopColor={PALETTE[i % PALETTE.length]}
-                  stopOpacity={1}
-                />
-              </linearGradient>
-            ))}
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe3" />
-          {manyItems ? (
-            <>
-              <XAxis
-                type="number"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                tickFormatter={(v: number) => fmtAxisVal(v, measure)}
-              />
-              <YAxis
-                type="category"
-                dataKey="label"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                width={120}
-              />
-            </>
-          ) : (
-            <>
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                tickFormatter={(v: number) => fmtAxisVal(v, measure)}
-              />
-            </>
-          )}
-          <Tooltip
-            content={
-              // BarTooltip renders its own label from the row payload; the
-              // axis label would be redundant.
-              <BarTooltip measure={measure} totalValue={totalValue} />
-            }
-          />
-          {avg > 0 &&
-            measure !== 'avg_order' &&
-            (manyItems ? (
-              <ReferenceLine
-                x={avg}
-                stroke="#b20202"
-                strokeDasharray="4 4"
-                strokeWidth={1.5}
-                label={`Avg ${fmtAxisVal(avg, measure)}`}
-              />
-            ) : (
-              <ReferenceLine
-                y={avg}
-                stroke="#b20202"
-                strokeDasharray="4 4"
-                strokeWidth={1.5}
-                label={`Avg ${fmtAxisVal(avg, measure)}`}
-              />
-            ))}
-          <Bar
-            dataKey="value"
-            radius={manyItems ? [0, 4, 4, 0] : [4, 4, 0, 0]}
-            cursor="pointer"
-            isAnimationActive={false}
-          >
-            {data.map((row, i) => (
-              <Cell
-                key={i}
-                fill={`url(#bv-grad-${i})`}
-                cursor="pointer"
-                onClick={() => onBarClick(row.label, row.orderList)}
-              />
-            ))}
-            <LabelList
-              dataKey="value"
-              position={manyItems ? 'right' : 'top'}
-              offset={4}
-              formatter={(v: number) => (v > 0 ? fmtDataLabel(v, measure) : '')}
-              style={{ fontSize: 11, fontWeight: 600, fill: '#4a3f3a' }}
-            />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
 
 export function MainChart({
   data,
@@ -719,7 +543,7 @@ export function MainChart({
   if (chartType === 'line') {
     return (
       <LineView
-        data={data.slice(0, 30)}
+        data={data}
         measure={measure}
         measureLabel={measureLabel}
         onPointClick={onBarClick}
@@ -728,60 +552,15 @@ export function MainChart({
   }
 
   return (
-    <BarView
-      data={data.slice(0, 30)}
+    <PurchaseAnalyticsBars
+      data={data}
       measure={measure}
-      measureLabel={measureLabel}
-      totalValue={totalValue}
       onBarClick={onBarClick}
     />
   );
 }
 
 // ── Custom tooltip for stacked bars ───────────────────────────────────────────
-
-function StackedTooltip({
-  active,
-  payload,
-  label,
-  measure,
-  hoveredSeg,
-}: {
-  active?: boolean;
-  payload?: {
-    value: number;
-    name: string;
-    dataKey: string;
-    payload: GroupRow2;
-  }[];
-  label?: string;
-  measure: Measure;
-  hoveredSeg: { sk: string; ri: number } | null;
-}) {
-  if (!active || !payload?.length || !hoveredSeg) {
-    return <div style={{ display: 'none' }} />;
-  }
-  const seg = payload.find((p) => p.dataKey === hoveredSeg.sk);
-  if (!seg) {
-    return <div style={{ display: 'none' }} />;
-  }
-
-  return (
-    <div
-      className="rounded-xl border border-[#ece4d6] bg-white px-3.5 py-2.5 shadow-lg"
-      style={{ pointerEvents: 'none' }}
-    >
-      <div className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="font-medium">{seg.name}</span>
-        <span className="font-semibold tabular-nums text-gray-900">
-          {fmtMeasureVal(seg.value, measure)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// ── Two-level group-by: stacked table / pie / line / bar ───────────────────────
 
 function StackedTableView({
   rows,
@@ -963,151 +742,6 @@ function StackedLineView({
   );
 }
 
-function StackedBarView({
-  rows,
-  series,
-  measure,
-  measureLabel,
-  orderMap,
-  onCellClick,
-}: {
-  rows: GroupRow2[];
-  series: string[];
-  measure: Measure;
-  measureLabel: string;
-  orderMap: Record<string, Record<string, PurchaseOrder[]>>;
-  onCellClick: (
-    rowLabel: string,
-    seriesKey: string,
-    orders: PurchaseOrder[]
-  ) => void;
-}) {
-  const manyItems = rows.length > 8;
-  const height = manyItems ? Math.max(320, rows.length * 32) : 420;
-  const [hoveredSeg, setHoveredSeg] = useState<{
-    sk: string;
-    ri: number;
-  } | null>(null);
-
-  return (
-    <div className="px-3 py-4" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={rows}
-          layout={manyItems ? 'vertical' : 'horizontal'}
-          margin={
-            manyItems
-              ? { top: 8, right: 80, bottom: 8, left: 8 }
-              : { top: 24, right: 24, bottom: 8, left: 8 }
-          }
-          onMouseLeave={() => setHoveredSeg(null)}
-        >
-          <defs>
-            {series.map((_, si) => (
-              <linearGradient
-                key={si}
-                id={`sbv-grad-${si}`}
-                x1="0"
-                y1="0"
-                x2={manyItems ? '1' : '0'}
-                y2={manyItems ? '0' : '1'}
-              >
-                <stop
-                  offset="0%"
-                  stopColor={PALETTE[si % PALETTE.length]}
-                  stopOpacity={0.7}
-                />
-                <stop
-                  offset="100%"
-                  stopColor={PALETTE[si % PALETTE.length]}
-                  stopOpacity={1}
-                />
-              </linearGradient>
-            ))}
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe3" />
-          {manyItems ? (
-            <>
-              <XAxis
-                type="number"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                tickFormatter={(v: number) => fmtAxisVal(v, measure)}
-              />
-              <YAxis
-                type="category"
-                dataKey="label"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                width={120}
-              />
-            </>
-          ) : (
-            <>
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                tickFormatter={(v: number) => fmtAxisVal(v, measure)}
-              />
-            </>
-          )}
-          <Tooltip
-            content={
-              <StackedTooltip measure={measure} hoveredSeg={hoveredSeg} />
-            }
-          />
-          {series.map((s, si) => (
-            <Bar
-              key={s}
-              dataKey={s}
-              name={s}
-              stackId="a"
-              fill={`url(#sbv-grad-${si})`}
-              isAnimationActive={false}
-            >
-              {rows.map((row, ri) => {
-                const val = (row[s] as number) ?? 0;
-                if (val <= 0) return null;
-                const isLast = si === series.length - 1;
-                // Only the outermost series rounds the stack's tip. Recharts
-                // types Cell props loosely (string | number), so cast the
-                // tuple through unknown.
-                const cellRadius: [number, number, number, number] | 0 =
-                  isLast ? (manyItems ? [0, 4, 4, 0] : [4, 4, 0, 0]) : 0;
-                return (
-                  <Cell
-                    key={ri}
-                    fill={`url(#sbv-grad-${si})`}
-                    cursor="pointer"
-                    radius={cellRadius as unknown as string}
-                    onMouseEnter={() => setHoveredSeg({ sk: s, ri })}
-                    onClick={() =>
-                      onCellClick(row.label, s, orderMap[row.isoKey]?.[s] ?? [])
-                    }
-                  />
-                );
-              })}
-              {si === series.length - 1 && (
-                <LabelList
-                  dataKey="__total__"
-                  position={manyItems ? 'right' : 'top'}
-                  offset={4}
-                  formatter={(v: number) =>
-                    v > 0 ? fmtDataLabel(v, measure) : ''
-                  }
-                  style={{ fontSize: 11, fontWeight: 600, fill: '#4a3f3a' }}
-                />
-              )}
-            </Bar>
-          ))}
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 export function StackedChart({
   rows,
   series,
@@ -1184,11 +818,10 @@ export function StackedChart({
   }
 
   return (
-    <StackedBarView
+    <PurchaseAnalyticsStackedBars
       rows={rows}
       series={series}
       measure={measure}
-      measureLabel={measureLabel}
       orderMap={orderMap}
       onCellClick={onSegmentClick}
     />

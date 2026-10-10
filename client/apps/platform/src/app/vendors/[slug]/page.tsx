@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, use } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 
@@ -244,7 +244,7 @@ export default function VendorStorePage({ params }: { params: Promise<{ slug: st
       {/* ── Banner ──────────────────────────────────────────────────────── */}
       <div className={`relative h-48 sm:h-60 bg-gradient-to-br ${gradient} overflow-hidden`}>
         {store.logo?.url && (
-          <Image src={store.logo.url} alt={store.logo.alt ?? store.name} fill className="object-cover opacity-20" />
+          <Image src={store.logo.url} alt={store.logo.alt ?? store.name} fill sizes="100vw" className="object-cover opacity-20" />
         )}
         {/* Subtle pattern */}
         <div className="absolute inset-0 opacity-10 pointer-events-none"

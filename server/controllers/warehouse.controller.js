@@ -113,7 +113,9 @@ const getWarehouseStock = asyncHandler(async (req, res) => {
 const getAllWarehouseStock = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
   const settings = await getTenantWarehouseSettings(tenantId);
-  const data = await warehouseService.getAllStock(tenantId, settings);
+  const data = await warehouseService.getAllStock(tenantId, settings, {
+    includeUnstocked: req.query.includeUnstocked === 'true',
+  });
   res.json({ success: true, data });
 });
 
@@ -235,17 +237,14 @@ const returnTransferFromMovement = asyncHandler(async (req, res) => {
     { movement, tenantId },
     {}
   );
-  await stockTransferReturn.returnTransferStock(
-    ctx,
-    { quantity: qty, tenantId, userId: req.user._id, note },
-    {}
-  );
   if (ctx.kind === 'module') {
-    await stockTransferReturn.reverseTransferMoney(
-      ctx,
-      { quantity: qty, userId: req.user._id, note },
-      {}
-    );
+    ctx.transfer = await require('../services/stockTransfer.refund').returnStockTransferLine({
+      id: ctx.transfer._id, tenantId, userId: req.user._id,
+      itemIndex: ctx.itemIndex, quantity: qty, note, requestId: req.body.requestId,
+      authorize: async () => {}, // Existing history route's role/tenant gate applies.
+    });
+  } else {
+    await stockTransferReturn.returnTransferStock(ctx, { quantity: qty, tenantId, userId: req.user._id, note }, {});
   }
 
   res.json({

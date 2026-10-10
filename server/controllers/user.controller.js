@@ -538,7 +538,7 @@ exports.getUserByEmail = asyncHandler(async (req, res) => {
     });
   }
 
-  const user = await userService.getUserByEmail(email);
+  const user = await userService.getUserByEmail(email, req.user?.role?.startsWith('tenant_') ? req.user.tenant : null);
 
   successResponse(res, user, 'User retrieved successfully');
 });

@@ -1,6 +1,7 @@
 // routes/inventory.routes.js
 
 const express = require('express');
+const { cacheReport } = require('../middleware/adminReportCache');
 const router = express.Router();
 const {
   createMovement,
@@ -60,6 +61,6 @@ router.get('/next-po', readInventory, getNextPONumber);
 
 // Reports
 router.get('/low-stock', readInventory, getLowStockItems);
-router.get('/valuation', readInventory, getInventoryValuation);
+router.get('/valuation', readInventory, cacheReport('inventory-valuation', { tenantRequired: true }), getInventoryValuation);
 
 module.exports = router;

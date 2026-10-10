@@ -52,3 +52,8 @@ describe('buildDashboardQuery', () => {
     ]);
   });
 });
+
+it('explicit refresh bypass preserves the selected reporting window', () => {
+  expect(buildDashboardQuery({ period: '7d', refresh: true })).toBe('?period=7d&refresh=true');
+  expect(buildDashboardQuery({ refresh: true })).toBe('?refresh=true');
+});

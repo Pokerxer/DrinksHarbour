@@ -133,9 +133,9 @@ function SalesChart({
   return (
     <div className="space-y-4">
       {/* Summary strip */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
-          { label: '7-day total', value: formatCurrency(totalSales) },
+          { label: '7-day net sales', value: formatCurrency(totalSales) },
           { label: 'Daily average', value: formatCurrency(avgSales) },
           {
             label: 'Best day',
@@ -220,7 +220,7 @@ function SalesChart({
             <Bar
               yAxisId="revenue"
               dataKey="sales"
-              name="Revenue"
+              name="Net Sales"
               fill="url(#posSalesGradient)"
               radius={[4, 4, 0, 0]}
             />
@@ -319,6 +319,7 @@ type TerminalInfo = {
   closingDate: string | null;
   closingBalance: string | null;
   sessionSales?: number;
+  sessionReturns?: number;
   sessionOrders?: number;
   cashierName?: string;
   openedAt?: string;
@@ -396,18 +397,19 @@ function TerminalCard({
         )}
 
         {/* Stats */}
-        <div className="mb-5 grid grid-cols-2 gap-3">
+        <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {info.sessionOpen ? (
             <>
               <div className="rounded-lg bg-gray-50 px-3 py-2.5">
                 <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
-                  Session Sales
+                  Net Session Sales
                 </p>
                 <p className="mt-0.5 text-lg font-bold tabular-nums text-gray-900">
                   {info.sessionSales != null
                     ? formatCurrency(info.sessionSales)
                     : '—'}
                 </p>
+                {!!info.sessionReturns && <p className="mt-1 text-[10px] text-gray-500">After {formatCurrency(info.sessionReturns)} in returns/refunds</p>}
               </div>
               <div className="rounded-lg bg-gray-50 px-3 py-2.5">
                 <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
@@ -494,6 +496,7 @@ function RecentOrderRow({ order }: { order: POSRecentOrder }) {
           {order.orderNumber || '—'}
         </p>
         <p className="text-[10px] text-gray-400">{customer}</p>
+        {order.returnStatus && order.returnStatus !== 'none' && <p className="mt-1 text-[10px] font-medium text-amber-700">{order.returnStatus === 'returned' ? 'Fully returned' : 'Partially returned'}</p>}
       </div>
       <div className="flex items-center gap-3">
         <span className="text-[10px] tabular-nums text-gray-400">
@@ -502,9 +505,11 @@ function RecentOrderRow({ order }: { order: POSRecentOrder }) {
         <span className="hidden text-xs capitalize text-gray-500 sm:inline">
           {METHOD_LABEL[order.paymentMethod] ?? order.paymentMethod}
         </span>
-        <span className="text-sm font-bold tabular-nums text-gray-900">
-          {formatCurrency(order.total)}
-        </span>
+        <div className="text-right">
+          {!!order.returnDeduction && <p className="text-[10px] tabular-nums text-gray-400 line-through">{formatCurrency(order.originalTotal ?? order.total)}</p>}
+          <p className="text-sm font-bold tabular-nums text-gray-900">{formatCurrency(order.total)}</p>
+          {!!order.returnDeduction && <p className="text-[10px] text-gray-500">Net after returns/refunds</p>}
+        </div>
       </div>
     </div>
   );
@@ -550,6 +555,7 @@ export default function POSDashboard() {
     terminalInfo[id] = {
       sessionOpen: !!sess,
       sessionSales: sess?.totalSales,
+      sessionReturns: sess?.returnDeduction,
       sessionOrders: sess?.orderCount,
       cashierName: sess?.activeCashier
         ? sess.activeCashier.posName || `${sess.activeCashier.firstName} ${sess.activeCashier.lastName}`
@@ -704,7 +710,7 @@ export default function POSDashboard() {
             {/* ── Stats row ── */}
             <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
               <StatCard
-                label="Today's Sales"
+                label="Today's Net Sales"
                 value={formatCurrency(today?.totalSales ?? 0)}
                 sub={
                   salesGrowth != null
@@ -725,13 +731,13 @@ export default function POSDashboard() {
                 icon={<PiShoppingCart className="h-5 w-5" />}
               />
               <StatCard
-                label="This Month"
+                label="This Month · Net Sales"
                 value={formatCurrency(month?.totalSales ?? 0)}
                 sub={`${month?.orderCount ?? 0} orders`}
                 icon={<PiCalendar className="h-5 w-5" />}
               />
               <StatCard
-                label="Yesterday"
+                label="Yesterday · Net Sales"
                 value={formatCurrency(yesterday?.totalSales ?? 0)}
                 sub={`${yesterday?.orderCount ?? 0} orders`}
                 icon={<PiTimer className="h-5 w-5" />}
@@ -788,7 +794,7 @@ export default function POSDashboard() {
                           Sales — Last 7 Days
                         </p>
                         <p className="text-[10px] text-gray-400">
-                          Revenue bars · dot = order count · hover for details
+                          Net sales bars · dot = order count · hover for details
                         </p>
                       </div>
                       <PiTrendUp className="h-5 w-5 text-gray-200" />

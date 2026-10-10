@@ -84,12 +84,14 @@ export default function ProductSpecTable({ product }: { product: any }) {
         {rows.map((row) => (
           <div
             key={row.label}
-            className="flex items-start justify-between gap-6 py-2.5 text-sm"
+            className="flex items-start justify-between gap-3 py-2.5 text-sm @sm:gap-6"
           >
             <span className="shrink-0 font-medium text-gray-900">
               {row.label}
             </span>
-            <span className="text-right text-gray-600">{row.value}</span>
+            <span className="min-w-0 break-words text-right text-gray-600">
+              {row.value}
+            </span>
           </div>
         ))}
       </div>

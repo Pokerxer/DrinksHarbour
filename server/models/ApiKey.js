@@ -9,6 +9,7 @@ const schema = new mongoose.Schema({
   scopes: { type: [String], required: true },
   revokedAt: { type: Date, default: null },
   expiresAt: { type: Date, required: true },
+  lastUsedAt: { type: Date, default: null },
   rateWindow: { type: Number, default: 0 },
   rateCount: { type: Number, default: 0 },
 }, { timestamps: true });

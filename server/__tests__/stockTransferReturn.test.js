@@ -378,3 +378,63 @@ test('partial returns reverse the matching share of delivery charges', () => {
   // remains payable: 6,000 goods + 60 delivery.
   assert.equal(result.total, 6060);
 });
+
+test('transactional transfer returns pass one session to stock, batches and both ledgers', async () => {
+  const session = {};
+  const saves = []; const writes = [];
+  class Stock {
+    constructor(doc) { Object.assign(this, doc); }
+    static findOne(q) {
+      return { session: async s => { assert.equal(s, session); return new Stock({ ...q, currentQuantity: q.warehouse === 'dstW' ? 10 : 0 }); } };
+    }
+    async save(options) { assert.equal(options.session, session); saves.push(this.currentQuantity); }
+  }
+  const create = async (docs, options) => { assert.equal(options.session, session); writes.push(...docs); };
+  const movement = moduleMovement();
+  const transfer = baseTransfer();
+  await returnTransferStock({ kind: 'module', transfer, itemIndex: 0, movement,
+    holding: 'dstW', other: 'srcW', transferNumber: transfer.transferNumber, returnable: 10 },
+    { tenantId: 't1', userId: 'u', quantity: 3, session }, {
+      WarehouseStock: Stock, WarehouseMovement: { create }, InventoryMovement: { create },
+      batchService: { transferBatchesFefo: async (data, s) => { assert.equal(s, session); assert.equal(data.quantity, 3); } },
+      recalcSubProductStock: async (id, s) => assert.equal(s, session),
+    });
+  assert.deepEqual(saves, [7, 3]); assert.equal(writes.length, 4);
+});
+
+for (const ledger of ['WarehouseMovement', 'InventoryMovement']) {
+  test(`transactional returns create the ${ledger} pair using real Mongoose create semantics`, async () => {
+    const mongoose = new (require('mongoose').Mongoose)();
+    const Ledger = mongoose.model('ReturnLedger', new mongoose.Schema({}, { strict: false }));
+    class TestSession {}
+    const session = new TestSession();
+    const inserted = [];
+    // Replace only the driver boundary: Mongoose create/save still run, without
+    // connecting to a live database or changing live inventory.
+    Ledger.collection.insertOne = async (doc, options) => {
+      assert.equal(options.session, session);
+      inserted.push(doc);
+      return { acknowledged: true, insertedId: doc._id };
+    };
+    class Stock {
+      constructor(doc) { Object.assign(this, doc); }
+      static findOne(q) {
+        return { session: async () => new Stock({ ...q, currentQuantity: q.warehouse === 'dstW' ? 10 : 0 }) };
+      }
+      async save() {}
+    }
+    const transfer = baseTransfer();
+    await returnTransferStock({ kind: 'module', transfer, itemIndex: 0, movement: moduleMovement(),
+      holding: 'dstW', other: 'srcW', transferNumber: transfer.transferNumber, returnable: 10 },
+      { tenantId: 't1', userId: 'u', quantity: 3, session }, {
+        WarehouseStock: Stock,
+        WarehouseMovement: { create: async () => {} },
+        InventoryMovement: { create: async () => {} },
+        [ledger]: Ledger,
+        batchService: { transferBatchesFefo: async () => {} },
+        recalcSubProductStock: async () => {},
+      });
+    assert.equal(inserted.length, 2);
+    assert.deepEqual(inserted.map(doc => [doc.warehouse, doc.quantity]), [['dstW', 3], ['srcW', 3]]);
+  });
+}

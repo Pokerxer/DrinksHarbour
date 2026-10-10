@@ -8,6 +8,7 @@ const {
   periodOf,
   swapLinesForReversal,
   buildTrialBalance,
+  periodRange,
   buildProfitLoss,
   buildBalanceSheet,
   buildGeneralLedger,
@@ -91,6 +92,8 @@ test('buildProfitLoss groups income/expense with COGS breakout and tax lines', (
     { lines: [{ account: '5000', debit: 400, credit: 0 }, { account: '1200', debit: 0, credit: 400 }] },
     { lines: [{ account: '6000', debit: 150, credit: 0 }, { account: '1000', debit: 0, credit: 150 }] },
   ];
+  // The input VAT summary must have a matching journal asset movement.
+  entries.push({ lines: [{ account: '1400', debit: 20, credit: 0 }, { account: '1000', debit: 0, credit: 20 }] });
   const pl = buildProfitLoss(entries, { collected: 75, paid: 20 });
   assert.equal(pl.revenueTotal, 1000);
   assert.equal(pl.cogs.total, 400);
@@ -219,9 +222,286 @@ test('buildJournalEntryFilter maps valid query params and ignores junk', () => {
   assert.equal(filter['lines.account'], '4000');
   assert.ok(filter.date.$gte instanceof Date);
   assert.ok(filter.date.$lte instanceof Date);
-  assert.equal(filter.$or.length, 2);
+  assert.equal(filter.$or.length, 3);
 
   const junk = buildJournalEntryFilter({ period: 'aug-2026', q: '(.*', from: 'nope' });
-  assert.deepEqual(junk, { $or: [{ memo: /\(\.\*/i }, { source: /\(\.\*/i }] });
+  assert.deepEqual(junk, {
+    $or: [{ memo: /\(\.\*/i }, { source: /\(\.\*/i }, { refDocType: /\(\.\*/i }],
+  });
   assert.deepEqual(buildJournalEntryFilter({}), {});
+});
+
+// ── Audit: /accounting/journal-entries ───────────────────────────────────────
+
+test('journal filter treats `to` as inclusive of the whole final day', () => {
+  // A bare YYYY-MM-DD from <input type="date"> parses to midnight UTC, so
+  // `$lte` that instant silently dropped every entry made later that day.
+  const filter = buildJournalEntryFilter({ from: '2026-08-01', to: '2026-08-31' });
+  assert.equal(filter.date.$lte.getTime(), Date.UTC(2026, 7, 31, 23, 59, 59, 999));
+
+  // A day AFTER the to-date must still be excluded (no over-capture).
+  const boundary = buildJournalEntryFilter({ to: '2026-08-31' });
+  assert.ok(boundary.date.$lte.getTime() > Date.UTC(2026, 7, 31, 12, 0, 0));
+  assert.ok(boundary.date.$lte.getTime() < Date.UTC(2026, 8, 1, 0, 0, 0));
+});
+
+test('journal filter keeps a full timestamp `to` as given', () => {
+  const explicit = buildJournalEntryFilter({ to: '2026-08-31T09:30:00.000Z' });
+  assert.equal(explicit.date.$lte.toISOString(), '2026-08-31T09:30:00.000Z');
+});
+
+test('journal filter drops enum values outside the schema instead of injecting them', () => {
+  // The contract in the docblock is "invalid values are ignored, never 500".
+  // Injecting them verbatim turned a typo into a silent empty list.
+  const filter = buildJournalEntryFilter({
+    entryType: 'not_a_type',
+    status: 'archived',
+  });
+  assert.equal(filter.entryType, undefined);
+  assert.equal(filter.status, undefined);
+
+  const valid = buildJournalEntryFilter({
+    entryType: 'reversal',
+    status: 'draft',
+    refDocType: 'Manual',
+  });
+  assert.equal(valid.entryType, 'reversal');
+  assert.equal(valid.status, 'draft');
+  assert.equal(valid.refDocType, 'Manual');
+});
+
+test('journal filter shape-guards the free-form refDocType', () => {
+  // refDocType is an open String on the schema (each document flow adds its
+  // own), so identifiers must pass — but not an empty or operator-looking one.
+  assert.equal(buildJournalEntryFilter({ refDocType: 'VendorBill' }).refDocType, 'VendorBill');
+  assert.equal(buildJournalEntryFilter({ refDocType: 'OrderRefund' }).refDocType, 'OrderRefund');
+  for (const bad of ['', '   ', '$ne', 'has space', 'x'.repeat(41), '1leading']) {
+    assert.equal(
+      buildJournalEntryFilter({ refDocType: bad }).refDocType,
+      undefined,
+      `expected ${JSON.stringify(bad)} to be rejected`
+    );
+  }
+});
+
+test('monthly series buckets entries whose `period` was never denormalized', () => {
+  // `period` has no schema default, so a legacy/hand-written entry carries only
+  // `date`. Those entries used to vanish from the dashboard chart entirely.
+  const entries = [
+    { date: '2026-03-15T12:00:00Z', lines: [{ account: '4000', debit: 0, credit: 500 }] },
+    { period: '2026-03', date: '2026-03-20T12:00:00Z', lines: [{ account: '6000', debit: 200, credit: 0 }] },
+  ];
+  const series = buildMonthlySeries(entries, '2026-03', 3);
+  const march = series.find((b) => b.period === '2026-03');
+  assert.equal(march.revenue, 500);
+  assert.equal(march.expenses, 200);
+});
+
+test('monthly series prefers a stored `period` over the date', () => {
+  // Backdated postings keep their own period when one is present.
+  const entries = [
+    { period: '2026-01', date: '2026-03-05T00:00:00Z', lines: [{ account: '4000', debit: 0, credit: 100 }] },
+  ];
+  const series = buildMonthlySeries(entries, '2026-03', 3);
+  assert.equal(series.find((b) => b.period === '2026-01').revenue, 100);
+  assert.equal(series.find((b) => b.period === '2026-03').revenue, 0);
+});
+
+test('filter enums stay in sync with the JournalEntry schema', () => {
+  // The helper keeps its own copies so it stays Mongoose-free. This is the
+  // tripwire: if the schema gains or drops an entry type, this fails and the
+  // copies get updated rather than silently rejecting a valid filter.
+  const schema = require('../models/JournalEntry').schema;
+  const enumOf = (path) => {
+    const values = schema.path(path).enumValues;
+    assert.ok(Array.isArray(values), `${path} has no enumValues on the schema`);
+    return values;
+  };
+
+  const accepted = new Set(
+    Array.from({ length: enumOf('entryType').length }, (_, i) =>
+      buildJournalEntryFilter({ entryType: enumOf('entryType')[i] }).entryType)
+  );
+  for (const type of enumOf('entryType')) {
+    assert.equal(accepted.has(type), true, `filter rejects schema entryType "${type}"`);
+  }
+  for (const status of enumOf('status')) {
+    assert.equal(buildJournalEntryFilter({ status }).status, status);
+  }
+});
+
+test('journal filter rejects a bare date that does not exist', () => {
+  // 2026-02-30 would otherwise roll forward into March and quietly return a
+  // March window for a February filter.
+  assert.equal(buildJournalEntryFilter({ to: '2026-02-30' }).date, undefined);
+  assert.equal(buildJournalEntryFilter({ from: '2026-13-01' }).date, undefined);
+  assert.ok(buildJournalEntryFilter({ to: '2028-02-29' }).date.$lte instanceof Date); // leap year
+});
+
+// ── Account classification: metadata first, code prefix only as a fallback ────
+
+// A tenant may create accounts with any code (`coa-form-modal`), so the code
+// prefix cannot be the authority. A revenue account numbered 1500 and an asset
+// numbered 4900 are both reachable through the UI.
+const MIXED_COA = [
+  { code: '1500', name: 'Bottle Shop Revenue', type: 'income' },
+  { code: '4900', name: 'Keg Deposit Asset', type: 'asset' },
+  { code: '1000', name: 'Cash', type: 'asset' },
+  { code: '2100', name: 'VAT Output', type: 'liability' },
+  { code: '5500', name: 'Cider COGS', type: 'expense' },
+  { code: '6900', name: 'Rent', type: 'expense' },
+];
+
+const MIXED_ENTRIES = [
+  // Sale credited to the 1500 revenue account; cash received.
+  { entryType: 'sales_revenue', lines: [
+    { account: '1000', debit: 1150, credit: 0 },
+    { account: '1500', debit: 0, credit: 1000 },
+    { account: '2100', debit: 0, credit: 150 },
+  ] },
+  // Keg deposit is an asset the tenant holds (a 4900 code that looks like revenue).
+  { entryType: 'manual', lines: [
+    { account: '1000', debit: 0, credit: 200 },
+    { account: '4900', debit: 200, credit: 0 },
+  ] },
+  // Costs on non-canonical expense codes, paid from cash.
+  { entryType: 'manual', lines: [
+    { account: '5500', debit: 400, credit: 0 },
+    { account: '6900', debit: 100, credit: 0 },
+    { account: '1000', debit: 0, credit: 500 },
+  ] },
+];
+
+test('profit and loss classifies by Account.type, not by code prefix', () => {
+  const pl = buildProfitLoss(MIXED_ENTRIES, {}, null, MIXED_COA);
+  // 1000 of real revenue, NOT 1200 (the 4900 keg deposit is an asset).
+  assert.equal(pl.revenueTotal, 1000);
+  // 400 of COGS from 5500, 100 of operating expense from 6900.
+  assert.equal(pl.cogs.total, 400);
+  assert.equal(pl.expenseTotal, 100);
+  assert.equal(pl.grossProfit, 600);
+  assert.equal(pl.netProfit, 500);
+});
+
+test('balance sheet classifies by Account.type, not by code prefix', () => {
+  const lifetime = buildProfitLoss(MIXED_ENTRIES, {}, null, MIXED_COA);
+  const bs = buildBalanceSheet(MIXED_ENTRIES, new Date(), lifetime.netProfit, MIXED_COA);
+  // Cash 450 + keg deposit 200. The 1500 revenue account must not be filed here.
+  assert.equal(bs.assets.total, 650);
+  assert.ok(!bs.assets.rows.some((r) => r.code === '1500'), 'revenue account filed as an asset');
+  assert.ok(bs.assets.rows.some((r) => r.code === '4900'), 'asset with a 4xxx code missing from assets');
+  // VAT output 150, and net profit 500 lands in retained earnings.
+  assert.equal(bs.liabilities.total, 150);
+  assert.equal(bs.equity.total, 500);
+  assert.equal(bs.balanced, true, 'assets 650 must equal liabilities 150 + equity 500');
+});
+
+test('profit and loss and the trial balance agree on every account type', () => {
+  // The reconciliation a bookkeeper actually performs: the trial balance is
+  // built from Account.type, so the P&L must classify identically or the two
+  // reports can never tie out.
+  const tb = buildTrialBalance(MIXED_ENTRIES, MIXED_COA);
+  const incomeFromTb = tb.rows.filter((r) => r.type === 'income').reduce((s, r) => s + r.closing, 0);
+  const pl = buildProfitLoss(MIXED_ENTRIES, {}, null, MIXED_COA);
+  assert.equal(pl.revenueTotal, incomeFromTb);
+
+  const assetsFromTb = tb.rows.filter((r) => r.type === 'asset').reduce((s, r) => s + r.closing, 0);
+  const bs = buildBalanceSheet(MIXED_ENTRIES, new Date(), pl.netProfit, MIXED_COA);
+  assert.equal(bs.assets.total, assetsFromTb);
+});
+
+test('canonical-code reports still fall back to prefixes with no Account metadata', () => {
+  // Before a tenant's chart is loaded (or for a legacy entry with an account
+  // that has since been deleted) the prefix heuristic must still classify.
+  const pl = buildProfitLoss([
+    { entryType: 'manual', lines: [
+      { account: '1000', debit: 500, credit: 0 },
+      { account: '4000', debit: 0, credit: 400 },
+      { account: '5000', debit: 60, credit: 0 },
+    ] },
+  ], {}, null, []);
+  assert.equal(pl.revenueTotal, 400);
+  assert.equal(pl.cogs.total, 60);
+  assert.equal(pl.netProfit, 340);
+});
+
+// ── Period attribution: dates are UTC instants, so periods must be too ───────
+
+test('periodOf derives the period in UTC, not the server timezone', () => {
+  // Tenant is UTC+1 (Lagos). A sale at 00:30 local on 1 August is
+  // 2026-07-31T23:30Z. Deriving the period with local getters on a server
+  // running UTC files it under July, so the month's VAT and revenue totals
+  // disagree with the bank statement and the FIRS return.
+  assert.equal(periodOf('2026-07-31T23:30:00Z'), '2026-07');
+  assert.equal(periodOf('2026-08-01T00:30:00Z'), '2026-08');
+  assert.equal(periodOf('2026-01-01T00:00:00Z'), '2026-01'); // year boundary
+  assert.equal(periodOf('2026-12-31T23:59:59Z'), '2026-12');
+  assert.equal(periodOf(null), undefined);
+  assert.equal(periodOf('nonsense'), undefined);
+});
+
+test('period is derived consistently with the series buckets', () => {
+  // periodOf and buildMonthlySeries must agree, or an entry written at the very
+  // start of a month lands in a bucket the chart never renders.
+  const series = buildMonthlySeries([], '2026-08', 3);
+  const periods = series.map((b) => b.period);
+  assert.deepEqual(periods, ['2026-06', '2026-07', '2026-08']);
+  const boundary = { date: '2026-08-01T00:30:00Z', lines: [{ account: '4000', credit: 100, debit: 0 }] };
+  assert.equal(periodOf(boundary.date), '2026-08');
+  assert.equal(buildMonthlySeries([boundary], '2026-08', 3).find((b) => b.period === '2026-08').revenue, 100);
+});
+
+// ── Trial balance: an empty period is not an imbalance ───────────────────────
+
+test('trial balance reports an empty period as empty, not out of balance', () => {
+  // `balanced` required totalDebits > 0 so that an empty set was not called
+  // "balanced" — but the UI reads !balanced as "out of balance" and told the
+  // user to run the journal backfill for a month with simply no activity, at
+  // ₦0.00 vs ₦0.00. It also answered HTTP 207 for a perfectly valid report.
+  const tb = buildTrialBalance([], []);
+  assert.equal(tb.rows.length, 0);
+  assert.equal(tb.totalDebits, 0);
+  assert.equal(tb.totalCredits, 0);
+  assert.equal(tb.isEmpty, true, 'an empty period must be distinguishable from an imbalance');
+  assert.equal(tb.balanced, true, 'debits do equal credits, there is simply nothing posted');
+});
+
+test('trial balance is not "empty" merely because its first account netted to zero', () => {
+  // A posting of 100 to two sides nets the first code to zero; the period still
+  // has activity and a real closing figure to show.
+  const tb = buildTrialBalance(
+    [{ entryType: 'manual', lines: [{ account: '1000', debit: 100, credit: 0 }] }],
+    [{ code: '1000', name: 'Cash', type: 'asset' }]
+  );
+  assert.equal(tb.isEmpty, false);
+  assert.equal(tb.balanced, false, '100 debits vs 0 credits is a genuine imbalance');
+});
+
+// ── Period → date range: month boundaries must not depend on the host TZ ─────
+
+test('periodRange bounds a month in UTC, matching periodOf', () => {
+  // The trial balance filtered on a *local* month range while periodOf() and the
+  // monthly series bucket in UTC. On a UTC+1 host, a document stamped
+  // 2026-07-31T23:30Z was filed under July by periodOf but appeared in the
+  // AUGUST trial balance — the two reports disagreed about the same entry, and
+  // which answer you got depended on the server's timezone.
+  const { $gte, $lt } = periodRange('2026-08');
+  assert.equal($gte.toISOString(), '2026-08-01T00:00:00.000Z');
+  assert.equal($lt.toISOString(), '2026-09-01T00:00:00.000Z');
+
+  const lateJuly = new Date('2026-07-31T23:30:00Z');
+  assert.equal(periodOf(lateJuly), '2026-07');
+  assert.ok(!(lateJuly >= $gte && lateJuly < $lt), 'must not appear in the August trial balance');
+
+  const earlyAug = new Date('2026-08-01T00:30:00Z');
+  assert.equal(periodOf(earlyAug), '2026-08');
+  assert.ok(earlyAug >= $gte && earlyAug < $lt, 'must appear in the August trial balance');
+});
+
+test('periodRange handles month and year edges and rejects junk', () => {
+  assert.equal(periodRange('2026-12').$lt.toISOString(), '2027-01-01T00:00:00.000Z');
+  assert.equal(periodRange('2026-01').$gte.toISOString(), '2026-01-01T00:00:00.000Z');
+  for (const bad of ['2026-13', '2026-00', 'nonsense', '', '26-08']) {
+    assert.throws(() => periodRange(bad), /YYYY-MM/, `expected ${bad} to be rejected`);
+  }
 });

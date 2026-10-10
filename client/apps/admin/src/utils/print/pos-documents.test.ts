@@ -34,3 +34,8 @@ describe('POS document adapters', () => {
     expect(model.totals[0].value).toContain('10,000.00');
   });
 });
+
+it('prints the saved quotation tax separately from subtotal and total', () => {
+  const model = buildPOSCheckout({...order, items: [...order.items], taxAmount: 750});
+  expect(model.totals.find(row => row.label === 'Tax')?.value).toContain('750.00');
+});

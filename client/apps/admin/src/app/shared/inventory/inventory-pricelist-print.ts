@@ -1,3 +1,7 @@
+import {
+  buildPriceColumnGrid,
+  type PriceColumn,
+} from './inventory-pricelist-columns';
 import { buildPricelistDoc } from '@/utils/print/pricelist-print';
 import { requestDocumentExport } from '@/utils/print/document-export';
 import type { StockRow } from '@/services/warehouseStock.service';
@@ -95,6 +99,10 @@ export function pricelistRuleCount(p: PricelistLite): number {
 
 export interface PricelistPrintOptions {
   title: string;
+  /** Explicit ordered output columns; omitted for legacy unit/bundle output. */
+  priceColumns?: PriceColumn[];
+  /** Wording only: does not recalculate tax. */
+  taxNote?: string;
   validUntil?: string;
   groupByCategory: boolean;
   showSku: boolean;
@@ -250,8 +258,8 @@ export function resolveBundlePriceForRow(
   // Split by how specifically each rule targets this line. Mirrors the server's
   // pickBestBundle: a rule aimed at THIS product shadows one aimed at
   // everything, and savings never enter the choice.
-  const specific: Array<{ price: number; qty: number }> = [];
-  const allProducts: Array<{ price: number; qty: number }> = [];
+  const specific: Array<{ price: number; qty: number; total: number }> = [];
+  const allProducts: Array<{ price: number; qty: number; total: number }> = [];
 
   for (const rule of ordered) {
     if (rule.priceType !== 'bundle') continue;
@@ -311,6 +319,17 @@ export function resolveBundlePriceForRow(
     } else {
       unitPrice = Math.max(0, perLinePrice * (1 - Math.min(100, disc) / 100));
     }
+
+    // Formula totals retain precision until the whole bundle is priced.
+    // Percentage/fixed discounts retain checkout's per-unit rounding.
+    const total =
+      Math.round(
+        (dt === 'markup_on_cost'
+          ? unitPrice
+          : Math.round(unitPrice * 100) / 100) *
+          qty *
+          100
+      ) / 100;
     unitPrice = Math.round(unitPrice * 100) / 100;
 
     // NO savings filter here, deliberately. `pickBestBundle` has none either:
@@ -321,7 +340,7 @@ export function resolveBundlePriceForRow(
     // markup_on_cost rule can legitimately price ABOVE the per-line price (its
     // basis is cost/wholesale, not the retail path), and that is exactly the
     // case this used to get wrong.
-    (ruleSp ? specific : allProducts).push({ price: unitPrice, qty });
+    (ruleSp ? specific : allProducts).push({ price: unitPrice, qty, total });
   }
 
   // Specificity, not savings — a rule aimed at THIS product outranks one aimed
@@ -340,9 +359,9 @@ export function resolveBundlePriceForRow(
       bundleLabel: '',
     };
   return {
-    bundlePrice: best.price,
+    bundlePrice: Math.round(best.price * 100) / 100,
     bundleQuantity: best.qty,
-    bundleTotal: Math.round(best.price * best.qty * 100) / 100,
+    bundleTotal: best.total,
     bundleLabel: `${best.qty}+`,
   };
 }
@@ -703,6 +722,20 @@ function lineHtml(
   currency: string,
   showBundle: boolean
 ) {
+  if (o.priceColumns) {
+    const { rows } = buildPriceColumnGrid(
+      [l],
+      o.priceColumns,
+      o.discountPercent
+    );
+    const cells = rows[0].prices
+      .map((q, i) => {
+        const cur = o.priceColumns![i].pricelist?.currency || currency;
+        return `<td class="num"><span class="price">${q.price == null ? '—' : fmtMoney(q.price, cur)}</span>${q.note && q.note !== 'Saved wholesale price' ? `<span class="bundle-label">${escapeHtml(q.note)}</span>` : ''}${q.quantity ? `<span class="bundle-label">${q.quantity} units · ${fmtMoney(q.unitPrice ?? 0, cur)} each</span>` : ''}${o.showWasPrices !== false && q.was != null ? `<span class="was">${fmtMoney(q.was, cur)}</span>` : ''}</td>`;
+      })
+      .join('');
+    return `<tr><td><strong>${escapeHtml(l.productName)}</strong>${o.showSku ? `<span class="sku">${escapeHtml(l.sku)}</span>` : ''}</td><td>${escapeHtml(l.sizeName)}</td>${o.showAvailability ? `<td class="num">${l.currentQuantity > 0 ? l.currentQuantity : '—'}</td>` : ''}${cells}</tr>`;
+  }
   const skuCell = o.showSku
     ? `<span class="sku">${escapeHtml(l.sku)}</span>`
     : '';
@@ -762,8 +795,8 @@ export function buildCustomerPricelistHtml(
   const currency = pricelist?.currency || 'NGN';
   const lines = priceAndSortLines(
     rows,
-    pricelist,
-    options.discountPercent ?? 0
+    options.priceColumns ? null : pricelist,
+    options.priceColumns ? 0 : (options.discountPercent ?? 0)
   );
   const o = options;
 
@@ -791,6 +824,11 @@ export function buildCustomerPricelistHtml(
     .map((c) => `<th class="num">${escapeHtml(c.displayLabel)}</th>`)
     .join('');
 
+  const priceTh = o.priceColumns
+    ? buildPriceColumnGrid(rows, o.priceColumns, o.discountPercent)
+        .columns.map((c) => `<th class="num">${escapeHtml(c.label)}</th>`)
+        .join('')
+    : `<th class="num">Unit Price</th>${bundleTh}${extraTh}`;
   const body = o.groupByCategory
     ? Array.from(
         lines.reduce((map, l) => {
@@ -802,12 +840,12 @@ export function buildCustomerPricelistHtml(
         ([category, catLines]) => `
       <h2><span class="cat">${escapeHtml(category)}</span><span class="rule"></span><span class="count">${catLines.length}</span></h2>
       <table>
-        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th>${bundleTh}${extraTh}</tr></thead>
+        <thead><tr><th>Product</th><th>Size</th>${availTh}${priceTh}</tr></thead>
         <tbody>${catLines.map((l) => lineHtml(l, o, currency, showBundle)).join('')}</tbody>
       </table>`
       ).join('')
     : `<table>
-        <thead><tr><th>Product</th><th>Size</th>${availTh}<th class="num">Unit Price</th>${bundleTh}${extraTh}</tr></thead>
+        <thead><tr><th>Product</th><th>Size</th>${availTh}${priceTh}</tr></thead>
         <tbody>${lines.map((l) => lineHtml(l, o, currency, showBundle)).join('')}</tbody>
       </table>`;
 
@@ -848,6 +886,7 @@ export function buildCustomerPricelistHtml(
   // ── Footer notes ──
   const notes: string[] = [];
   if (pricelist?.name) notes.push(escapeHtml(pricelist.name));
+  if (o.taxNote?.trim()) notes.push(escapeHtml(o.taxNote.trim()));
   if (Number(o.discountPercent) > 0)
     notes.push(`incl. ${o.discountPercent}% trade discount`);
   const footLeft =
@@ -1255,6 +1294,50 @@ export function buildPricelistCsv(
   options: PricelistPrintOptions
 ): string {
   const currency = pricelist?.currency || 'NGN';
+  if (options.priceColumns) {
+    const grid = buildPriceColumnGrid(
+      rows,
+      options.priceColumns,
+      options.discountPercent
+    );
+    const hasNotes = grid.columns.map((_, i) =>
+      grid.rows.some((r) => !!r.prices[i].note)
+    );
+    const headers = [
+      'Category',
+      'Product',
+      'SKU',
+      'Size',
+      ...(options.showAvailability ? ['Available'] : []),
+      ...grid.columns.flatMap((c, i) => [
+        c.label,
+        ...(hasNotes[i] ? [`${c.label} source`] : []),
+      ]),
+      'Currency',
+    ];
+    const body = grid.rows.map(({ line, prices }) =>
+      [
+        ...[line.categoryName, line.productName, line.sku, line.sizeName].map(
+          csvCell
+        ),
+        ...(options.showAvailability ? [line.currentQuantity] : []),
+        ...prices.flatMap((q, i) => [
+          q.price?.toFixed(2) ?? '',
+          ...(hasNotes[i] ? [csvCell(q.note || 'Pricelist rules')] : []),
+        ]),
+        csvCell(
+          grid.columns
+            .map((c) => c.pricelist?.currency || currency)
+            .filter((v, i, a) => a.indexOf(v) === i)
+            .join(' / ')
+        ),
+      ].join(',')
+    );
+    return [
+      headers.map((h) => (/^[\w ]+$/.test(h) ? h : csvCell(h))).join(','),
+      ...body,
+    ].join('\n');
+  }
   const lines = priceAndSortLines(
     rows,
     pricelist,

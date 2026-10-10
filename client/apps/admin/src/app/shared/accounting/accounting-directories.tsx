@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { useDirectory } from './use-accounting-directory';
 import { PiCaretLeft, PiCaretRight, PiMagnifyingGlass } from 'react-icons/pi';
 import {
@@ -9,6 +11,7 @@ import {
   type AccountingVendor,
 } from '@/services/arAp.service';
 import { fmtMoney } from './accounting-helpers';
+import CustomerCreditPanel from './customer-credit-panel';
 
 const SELECT_CLS =
   'rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-400';
@@ -89,6 +92,10 @@ export function CustomersView() {
   } = useDirectory<AccountingCustomer>((t, p) =>
     arApService.customers(t, p as never)
   );
+  const { data: session } = useSession();
+  const token = (session?.user as { token?: string })?.token ?? '';
+  const [creditFor, setCreditFor] = useState<AccountingCustomer | null>(null);
+
   return (
     <div>
       {error && (
@@ -115,6 +122,8 @@ export function CustomersView() {
               <th className="px-4 py-3 text-right">Lifetime</th>
               <th className="px-4 py-3 text-right">Open Invoices</th>
               <th className="px-4 py-3 text-right">Outstanding</th>
+              <th className="px-4 py-3 text-right">Credit Held</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -127,7 +136,7 @@ export function CustomersView() {
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                   No customers found.
                 </td>
               </tr>
@@ -154,12 +163,39 @@ export function CustomersView() {
                 >
                   {fmtMoney(c.outstanding)}
                 </td>
+                {/* Money they are owed back — deliberately a different column
+                    and colour from Outstanding, which is money they owe. */}
+                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
+                  {c.creditBalance > 0 ? (
+                    <span className="text-emerald-700">
+                      {fmtMoney(c.creditBalance)}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => setCreditFor(c)}
+                    className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Credit
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <Pager page={page} pages={pages} setPage={setPage} />
+      {creditFor && (
+        <CustomerCreditPanel
+          token={token}
+          customer={creditFor}
+          onClose={() => setCreditFor(null)}
+        />
+      )}
     </div>
   );
 }
@@ -244,6 +280,13 @@ export function VendorsView() {
         </table>
       </div>
       <Pager page={page} pages={pages} setPage={setPage} />
+      {creditFor && (
+        <CustomerCreditPanel
+          token={token}
+          customer={creditFor}
+          onClose={() => setCreditFor(null)}
+        />
+      )}
     </div>
   );
 }

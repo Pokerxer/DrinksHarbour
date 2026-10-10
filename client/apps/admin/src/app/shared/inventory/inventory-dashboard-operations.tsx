@@ -85,19 +85,51 @@ const OP_CONFIG: Array<{
   hrefKey: keyof OperationsGridProps['hrefs'];
   icon: React.ReactNode;
 }> = [
-  { key: 'receipts', label: 'Receipts', desc: 'Incoming stock', hrefKey: 'receipts', icon: <PiTrayArrowDownDuotone /> },
-  { key: 'deliveries', label: 'Deliveries', desc: 'Outgoing stock', hrefKey: 'deliveries', icon: <PiTruckDuotone /> },
-  { key: 'internalLegs', label: 'Internal', desc: 'Warehouse-to-warehouse moves', hrefKey: 'internal', icon: <PiArrowsClockwiseDuotone /> },
-  { key: 'adjustments', label: 'Adjustments', desc: 'Stock corrections', hrefKey: 'adjustments', icon: <PiSlidersDuotone /> },
-  { key: 'scrap', label: 'Scrap', desc: 'Damaged / expired / written off', hrefKey: 'scrap', icon: <PiTrashDuotone /> },
-  { key: 'transfers', label: 'Transfers', desc: 'Transfer operations', hrefKey: 'transfers', icon: <PiArrowsLeftRightDuotone /> },
+  {
+    key: 'receipts',
+    label: 'Receipts',
+    desc: 'Incoming stock',
+    hrefKey: 'receipts',
+    icon: <PiTrayArrowDownDuotone />,
+  },
+  {
+    key: 'deliveries',
+    label: 'Deliveries',
+    desc: 'Outgoing stock',
+    hrefKey: 'deliveries',
+    icon: <PiTruckDuotone />,
+  },
+  {
+    key: 'internalLegs',
+    label: 'Internal',
+    desc: 'Warehouse-to-warehouse moves',
+    hrefKey: 'internal',
+    icon: <PiArrowsClockwiseDuotone />,
+  },
+  {
+    key: 'adjustments',
+    label: 'Adjustments',
+    desc: 'Stock corrections',
+    hrefKey: 'adjustments',
+    icon: <PiSlidersDuotone />,
+  },
+  {
+    key: 'scrap',
+    label: 'Scrap',
+    desc: 'Damaged / expired / written off',
+    hrefKey: 'scrap',
+    icon: <PiTrashDuotone />,
+  },
+  {
+    key: 'transfers',
+    label: 'Transfers',
+    desc: 'Transfer operations',
+    hrefKey: 'transfers',
+    icon: <PiArrowsLeftRightDuotone />,
+  },
 ];
 
-export default function OperationsGrid({
-  counts,
-  loading = false,
-  hrefs,
-}: OperationsGridProps) {
+export default function OperationsGrid({ counts, loading = false, hrefs }: OperationsGridProps) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -111,12 +143,7 @@ export default function OperationsGrid({
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {OP_CONFIG.map(({ key, hrefKey, ...cfg }) => (
-        <OperationTile
-          key={cfg.label}
-          {...cfg}
-          count={counts[key]}
-          href={hrefs[hrefKey]}
-        />
+        <OperationTile key={cfg.label} {...cfg} count={counts[key]} href={hrefs[hrefKey]} />
       ))}
     </div>
   );

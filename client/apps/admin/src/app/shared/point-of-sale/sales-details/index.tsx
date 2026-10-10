@@ -126,7 +126,7 @@ export default function POSSalesDetails() {
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
       <POSNavHeader />
-      <div className="flex items-center gap-3 border-b bg-white px-5 py-3">
+      <div className="flex flex-wrap items-center gap-3 border-b bg-white px-5 py-3">
         <ShopHistorySelector
           token={token}
           value={historyShop}

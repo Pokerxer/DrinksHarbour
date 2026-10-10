@@ -48,9 +48,19 @@ export function warehouseLabelOf(
     : (warehouse.name ?? '');
 }
 
+export interface PurchaseCreator {
+  _id: string;
+  name?: string;
+  displayName?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+
 export interface PurchaseOrder {
   _id: string;
   poNumber: string;
+  createdBy?: string | PurchaseCreator | null;
   vendor?: string;
   vendorName?: string;
   vendorReference?: string;
@@ -133,7 +143,17 @@ export interface VendorResponse {
   respondedAt?: string;
 }
 
+export interface PurchaseReceiptMetrics {
+  receivedQuantity: number;
+  returnedQuantity: number;
+  netReceivedQuantity: number;
+  receivedValue: number;
+  returnedValue: number;
+  netReceivedValue: number;
+}
+
 export interface POItem {
+  receiptMetrics?: PurchaseReceiptMetrics;
   subProductId: string;
   subProductName?: string;
   productName: string;
@@ -413,7 +433,7 @@ export const purchaseOrderService = {
    */
   async getAllPurchaseOrders(
     token: string,
-    { pageSize = 500, maxPages = 20 }: { pageSize?: number; maxPages?: number } = {}
+    { pageSize = 500, maxPages = 20, analytics = false }: { pageSize?: number; maxPages?: number; analytics?: boolean } = {}
   ): Promise<{
     orders: PurchaseOrder[];
     totalCount: number;
@@ -425,7 +445,7 @@ export const purchaseOrderService = {
 
     for (let page = 1; page <= Math.min(totalPages, maxPages); page++) {
       const response = await fetch(
-        `${API_URL}/api/purchase-orders?page=${page}&limit=${pageSize}`,
+        `${API_URL}/api/purchase-orders?page=${page}&limit=${pageSize}${analytics ? "&analytics=true" : ""}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!response.ok) {

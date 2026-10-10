@@ -11,6 +11,10 @@ router.use(attachTenant);
 // no x-tenant-slug/?tenant= pivot, no client-supplied tenantId, no admin bypass.
 router.use(requireOwnTenant);
 
+router.get('/:id/history/products', tenantAdminOrSuperAdmin, require('../controllers/warehouseHistoryProducts.controller'));
+
+router.get('/:id/history', tenantAdminOrSuperAdmin, require('../controllers/warehouseHistory.controller'));
+
 router.post('/transfer', tenantAdminOrSuperAdmin, c.transferStock);
 
 // Aggregate stock across all warehouses (warehouse-analysis reporting).

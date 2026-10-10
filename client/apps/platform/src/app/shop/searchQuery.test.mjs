@@ -156,3 +156,8 @@ test('an existing page param is replaced, not duplicated', () => {
   assert.equal(shopPageHref(sp('page=7&brand=Ardbeg'), 3), '/shop?page=3&brand=Ardbeg');
   assert.equal(shopPageHref(sp('page=7&brand=Ardbeg'), 1), '/shop?brand=Ardbeg');
 });
+
+test('shop excludes sold-out products even with a text filter', () => {
+  assert.equal(buildShopSearchParams(sp('')).get('inStock'), 'true');
+  assert.equal(buildShopSearchParams(sp('search=wine&inStock=false')).get('inStock'), 'true');
+});

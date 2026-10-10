@@ -2,6 +2,7 @@
  * Search Service Configuration
  */
 const mongoose = require('mongoose');
+const { escapeRegex } = require('../utils/escapeRegex');
 const { 
   resolveCategoryToObjectIds, 
   resolveSubCategoryToObjectIds, 
@@ -184,7 +185,7 @@ async function buildSearchQuery(params) {
   // Text search
   if (query && query.trim()) {
     const searchTerm = query.trim();
-    const searchRegex = new RegExp(searchTerm, 'i');
+    const searchRegex = new RegExp(escapeRegex(searchTerm), 'i');
     
     baseQuery.$or = [
       { name: searchRegex },
@@ -537,8 +538,8 @@ function calculateRelevanceScore(query) {
     };
   }
   
-  const searchRegex = new RegExp(query, 'i');
-  const exactRegex = new RegExp(`^${query}$`, 'i');
+  const searchRegex = new RegExp(escapeRegex(query), 'i');
+  const exactRegex = new RegExp(`^${escapeRegex(query)}$`, 'i');
   
   return {
     $add: [

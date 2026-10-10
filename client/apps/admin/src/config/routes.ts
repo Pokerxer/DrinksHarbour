@@ -1,4 +1,11 @@
 export const routes = {
+  notifications: '/notifications',
+  notificationFeatures: {
+    stock: '/notifications/stock', warehouses: '/notifications/warehouses',
+    performance: '/notifications/performance', forecasts: '/notifications/forecasts',
+    restock: '/notifications/restock', vendorOrders: '/notifications/vendor-orders',
+    products: '/notifications/products', expiry: '/notifications/expiry',
+  },
   priceChecker: { list: '/retail-tools/price-checker', create: '/retail-tools/price-checker/create', analytics: '/retail-tools/price-checker/analytics' },
   // Post-login landing route — the app homepage (the "All Apps" menu screen
   // at /). Kept as `dashboard` because every consumer is the sign-in flow's
@@ -8,6 +15,7 @@ export const routes = {
   warehouses: {
     list: '/warehouses',
     analysis: '/warehouses/analysis',
+    locationAnalysis: (id: string) => `/warehouses/${id}/analysis`,
     detail: (id: string) => `/warehouses/${id}`,
     product: (id: string) => `/warehouses/product/${id}`,
     // Warehouse / inventory settings (sections of the central settings page)

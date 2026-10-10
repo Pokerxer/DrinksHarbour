@@ -15,7 +15,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { startRouter, mockAuthUser, ROLE_USERS } = require('./helpers/routeAuthHarness');
+const { startRouter, mockAuthUser, mockTenantContext, ROLE_USERS } = require('./helpers/routeAuthHarness');
 
 const ABSENT_ID = '000000000000000000000000';
 
@@ -31,6 +31,7 @@ const TENANT_ROLES = ['tenant_owner', 'tenant_admin', 'tenant_staff'];
 async function statusAs(t, router, basePath, method, path, role) {
   const app = await startRouter(router, basePath);
   try {
+    mockTenantContext(t);
     const authorization = mockAuthUser(t, ROLE_USERS[role]);
     const res = await fetch(app.url(path), {
       method,

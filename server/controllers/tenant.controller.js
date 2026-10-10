@@ -1,9 +1,12 @@
+const { platformIdentity } = require('../utils/customerIdentity');
 // controllers/tenant.controller.js
 
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 const asyncHandler = require('../utils/asyncHandler');
+const { ValidationError } = require('../utils/errors');
+const { normalizeBankAccounts, validateBankAccounts } = require('../utils/bankAccounts');
 const Tenant = require('../models/Tenant');
 const User = require('../models/User');
 const cloudinaryService = require('../services/cloudinary.service');
@@ -104,13 +107,13 @@ function buildTenantData(b, isUpdate = false) {
       }
     }
     if (Array.isArray(parsed)) {
-      data.bankAccounts = parsed
-        .map((a) => ({
-          bankName: (a?.bankName || '').trim(),
-          accountNumber: (a?.accountNumber || '').trim(),
-          accountName: (a?.accountName || '').trim(),
-        }))
-        .filter((a) => a.bankName || a.accountNumber || a.accountName);
+      const normalized = normalizeBankAccounts(parsed);
+      // Same rule as the POS settings endpoint and the printed invoice: a row
+      // missing a bank name or account number is not payable, so it must not be
+      // stored as though it were.
+      const problem = validateBankAccounts(normalized);
+      if (problem) throw new ValidationError(problem);
+      data.bankAccounts = normalized;
     }
   }
 
@@ -327,7 +330,7 @@ exports.createAdminTenant = asyncHandler(async (req, res) => {
   // Validate the owner up front — creating the tenant first and failing here
   // would leave an orphaned tenant behind.
   if (ownerEmail) {
-    const existingUser = await User.findOne({ email: ownerEmail }).lean();
+    const existingUser = await User.findOne({ email: ownerEmail, ...platformIdentity() }).lean();
     if (existingUser) {
       return res.status(409).json({
         success: false,
@@ -601,7 +604,7 @@ exports.applyTenant = asyncHandler(async (req, res) => {
   }
 
   // ── 1. Validate email uniqueness ──────────────────────────────────────────
-  const existingUser = await User.findOne({ email: b.email.toLowerCase() });
+  const existingUser = await User.findOne({ email: b.email.toLowerCase(), ...platformIdentity() });
   if (existingUser) {
     return res.status(409).json({
       success: false,

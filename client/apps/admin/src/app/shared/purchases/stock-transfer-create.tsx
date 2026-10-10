@@ -28,6 +28,7 @@ import { fmtCur } from './purchases-analytics-helpers';
 import { computeTransferTotals } from './transfer-money';
 import TransferTotalsCard from './transfer-totals-card';
 import PackSizeInput from './pack-size-input';
+import { useWarehouseTransferPrefill, type PreparedWarehouseTransfer } from './use-warehouse-transfer-prefill';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -352,6 +353,19 @@ export default function StockTransferCreate({
   // Draft hydration for edit mode.
   const [hydrating, setHydrating] = useState(!!editId);
 
+  const resetRecommendation = useCallback(() => {
+    setSourceWarehouse(null); setDestWarehouse(null); setItems([blankItem()]); setNotes('');
+  }, []);
+  const loadRecommendation = useCallback((data: PreparedWarehouseTransfer) => {
+    const source = warehouses.find(w => w._id === data.sourceWarehouseId);
+    const destination = warehouses.find(w => w._id === data.destinationWarehouseId);
+    if (!source || !destination) throw new Error('The recommended warehouse is unavailable. Return to warehouse alerts.');
+    setSourceWarehouse(source); setDestWarehouse(destination);
+    setItems([{...blankItem(),subProductId:data.subProductId,subProductName:data.productName,sizeId:data.sizeId,sizeName:data.sizeName,sku:data.sku,quantity:data.quantity,sourceStock:data.sourceStock,costPrice:data.unitCost,costSourcePrice:data.unitCost,wholesalePrice:data.wholesalePrice,packSize:data.packSize,priceSource:'cost'}]);
+    setNotes('Prepared from warehouse alerts. Review source reserves, pending transfers and arrival arrangements before saving.');
+  }, [warehouses]);
+  const recommendation = useWarehouseTransferPrefill(token, `${session?.user?.id || ''}:${session?.user?.tenantId || ''}`, !!editId || warehousesLoading, loadRecommendation, resetRecommendation);
+
   useEffect(() => {
     if (!token) return;
     setWarehousesLoading(true);
@@ -506,7 +520,7 @@ export default function StockTransferCreate({
           });
         }
         setStockMap(map);
-        setStockRows([...rowMap.values()]);
+        setStockRows(Array.from(rowMap.values()));
         setItems((prev) =>
           prev.map((it) => ({
             ...it,
@@ -561,7 +575,7 @@ export default function StockTransferCreate({
 
   const filledItems = items.filter((it) => it.subProductId.trim());
   // Advisory figures for the UI; the server recomputes every number on save.
-  const money = computeTransferTotals(items, deliveryCharge);
+  const money = computeTransferTotals(items.map(it => ({...it, costPrice: it.costPrice ?? 0})), deliveryCharge);
 
   function getLineErrors(): Record<number, LineError> {
     const errors: Record<number, LineError> = {};
@@ -608,6 +622,9 @@ export default function StockTransferCreate({
 
   async function handleSave(send = false) {
     if (hydrating) return;
+    if (recommendation.loading || recommendation.error || loadingStock) {
+      toast.error(recommendation.error || 'Wait for current transfer stock to load'); return;
+    }
     if (!sourceWarehouse) return toast.error('Select a source warehouse');
     if (!destWarehouse) return toast.error('Select a destination warehouse');
     if (sourceWarehouse._id === destWarehouse._id)
@@ -628,6 +645,7 @@ export default function StockTransferCreate({
     setSaving(true);
     try {
       const payload = {
+        ...(recommendation.reference ? {warehouseRecommendation:recommendation.reference} : {}),
         sourceWarehouse: sourceWarehouse._id,
         destinationWarehouse: destWarehouse._id,
         items: filledItems.map((it) => ({
@@ -688,6 +706,12 @@ export default function StockTransferCreate({
         </span>
       </div>
 
+      {(recommendation.loading || recommendation.error) && (
+        <div role={recommendation.error ? 'alert' : 'status'} className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          {recommendation.error || 'Checking the latest recommendation and source stock…'}
+          {recommendation.error && <Link href="/notifications/warehouses" className="ml-2 underline">Review warehouse alerts</Link>}
+        </div>
+      )}
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -708,7 +732,7 @@ export default function StockTransferCreate({
           <button
             type="button"
             onClick={() => handleSave(false)}
-            disabled={saving || hydrating || filledItems.length === 0}
+            disabled={saving || hydrating || recommendation.loading || !!recommendation.error || loadingStock || filledItems.length === 0}
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             {saving ? (
@@ -722,7 +746,7 @@ export default function StockTransferCreate({
             type="button"
             onClick={() => handleSave(true)}
             disabled={
-              saving || hydrating || filledItems.length === 0 || hasErrors
+              saving || hydrating || recommendation.loading || !!recommendation.error || loadingStock || filledItems.length === 0 || hasErrors
             }
             className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
           >

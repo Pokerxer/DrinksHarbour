@@ -36,6 +36,7 @@ import type { SalesDocVariant } from '@/utils/print/so-print';
 import SalesDetailShell, { type DetailAction } from './sales-detail-shell';
 import SalesQuotationDetailInfo from './sales-quotation-detail-info';
 import SalesQuotationDetailLines from './sales-quotation-detail-lines';
+import SalesPaymentDetails from './sales-payment-details';
 import { quoteExpiry } from './sales-detail-logic';
 
 const QUOTE_STATUS_CONFIG: Record<
@@ -262,6 +263,10 @@ export default function SalesQuotationDetail({
       >
         <SalesQuotationDetailInfo so={so} />
         <SalesQuotationDetailLines so={so} />
+        {/* A quote is commonly converted by paying it, so the account belongs on
+            screen here too — the PDF prints it for the same reason. Omit this
+            and the screen and the PDF disagree about the same document. */}
+        <SalesPaymentDetails so={so} />
       </SalesDetailShell>
     </>
   );

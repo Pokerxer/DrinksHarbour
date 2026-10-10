@@ -9,6 +9,8 @@ export const GRAY_MED: [number, number, number] = [107, 114, 128];
 export const GRAY_LIGHT: [number, number, number] = [243, 244, 246];
 export const TEAL_RGB: [number, number, number] = [13, 148, 136];
 export const ORANGE_RGB: [number, number, number] = [217, 70, 0];
+/** amber-600 — returns and uncosted revenue, which are warnings not failures. */
+export const AMBER_RGB: [number, number, number] = [217, 119, 6];
 export const GREEN_RGB: [number, number, number] = [22, 101, 52];
 export const RED_PALE: [number, number, number] = [254, 249, 249];
 export const WHITE_RGB: [number, number, number] = [255, 255, 255];
@@ -93,6 +95,11 @@ export function drawPdf1Header(
       color: GREEN_RGB,
     },
     {
+      label: 'Returns',
+      value: formatCurrency(meta.summary.returns),
+      color: AMBER_RGB,
+    },
+    {
       label: 'Total Discount',
       value: formatCurrency(meta.summary.discount),
       color: ORANGE_RGB,
@@ -112,7 +119,10 @@ export function drawPdf1Header(
       value: formatCurrency(meta.summary.avgOrder),
       color: GRAY_DARK,
     },
-    ...(meta.summary.profit > 0
+    // Shown whenever there is costed revenue, not only when it is positive: a
+    // loss is the figure a tenant most needs to see, and `profit > 0` printed
+    // nothing at all on a losing period.
+    ...(meta.summary.costedRevenue > 0
       ? [
           {
             label: 'Est. Profit',
@@ -250,6 +260,20 @@ export function drawPdfSummarySection(
         kv(METHOD_LABEL[m] ?? m, formatCurrency(amt))
       );
       kv('Total', formatCurrency(meta.summary.revenue), true, BRAND_RGB, false);
+      const splitCount = new Set(
+        lineRows.filter((r) => !r.isVoided && r.splitPayment).map((r) => r.orderId)
+      ).size;
+      // A split receipt is attributed wholly to the method that took the most
+      // money, so this breakdown deliberately will not tie to a per-tender till
+      // count. Say so rather than let the reader find the difference.
+      if (splitCount > 0)
+        kv(
+          'Note:',
+          `${splitCount} split receipt${splitCount === 1 ? '' : 's'} counted under the largest tender`,
+          false,
+          GRAY_DARK,
+          false
+        );
     }
   }
 
@@ -272,9 +296,13 @@ export function drawPdfSummarySection(
 
   sectionHead('Sales Summary');
   kv('Gross Revenue:', formatCurrency(meta.summary.gross));
+  if (meta.summary.returns > 0)
+    kv('Returns:', `− ${formatCurrency(meta.summary.returns)}`, false, AMBER_RGB);
+  // Stated as already deducted — the net figure below has it taken out, so
+  // presenting it between gross and net would invite a second subtraction.
   if (meta.summary.discount > 0)
     kv(
-      'Total Discounts:',
+      'Total Discounts (already deducted):',
       `− ${formatCurrency(meta.summary.discount)}`,
       false,
       ORANGE_RGB
@@ -283,7 +311,15 @@ export function drawPdfSummarySection(
   kv('Items Sold:', meta.summary.items.toLocaleString());
   kv('Distinct Orders:', meta.summary.orders.toLocaleString());
   kv('Avg Order Value:', formatCurrency(meta.summary.avgOrder));
-  if (meta.summary.profit > 0)
+  if (meta.summary.uncostedRevenue > 0)
+    kv(
+      'Uncosted Revenue:',
+      formatCurrency(meta.summary.uncostedRevenue),
+      false,
+      AMBER_RGB,
+      false
+    );
+  if (meta.summary.costedRevenue > 0)
     kv(
       'Est. Profit:',
       formatCurrency(meta.summary.profit),

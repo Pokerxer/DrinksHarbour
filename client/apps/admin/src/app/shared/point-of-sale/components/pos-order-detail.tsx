@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth, usePOSSettings } from '@/app/shared/point-of-sale/store';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
+import { computeReturnedMap } from '../refund-quantities';
 import type { POSRefundRecord, POSRefundResponse } from '@/app/shared/point-of-sale/types';
 import {
   PiInfo,
@@ -37,6 +38,8 @@ interface HistoryItem {
   quantity: number;
   priceAtPurchase: number;
   itemSubtotal: number;
+  taxRate?: number;
+  taxAmount?: number;
   discountAmount?: number;
   bxgyRole?: 'buy' | 'get'; // BXGY reward item role — for receipt display
   warehouse?: { _id: string; name: string; code: string } | null;
@@ -53,6 +56,7 @@ interface DetailOrder {
   orderNumber?: string;
   total: number;
   subtotal?: number;
+  taxAmount?: number;
   discountTotal?: number;
   paymentMethod: string;
   customer?: { firstName?: string; lastName?: string; phone?: string } | null;
@@ -108,18 +112,6 @@ function formatOrderDate(d: string) {
 }
 
 // ── Helpers: compute already-refunded qty per item index ──────────────────────
-
-function computeRefundedMap(refunds?: POSRefundRecord[]): Record<number, number> {
-  const map: Record<number, number> = {};
-  if (!refunds) return map;
-  for (const r of refunds) {
-    for (const line of r.items) {
-      const idx = line.orderItemIndex;
-      map[idx] = (map[idx] || 0) + line.quantity;
-    }
-  }
-  return map;
-}
 
 // ── Refund badge component ────────────────────────────────────────────────────
 
@@ -178,12 +170,12 @@ function RefundHistoryRow({ refund }: { refund: POSRefundRecord }) {
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold text-gray-900">{refund.receiptNumber || 'Refund'}</p>
           <p className="text-[10px] text-gray-400">
-            {formatOrderDate(refund.refundedAt)} · {cashierName}
+            {refund.source === 'sales' ? 'Stock already returned through Sales' : `${refund.refundedAt ? formatOrderDate(refund.refundedAt) : '—'} · ${cashierName}`}
           </p>
         </div>
         <div className="shrink-0 text-right">
           <p className="text-sm font-bold text-[#b20202]">
-            −{formatCurrency(refund.totalRefunded)}
+            {refund.source === 'sales' ? 'No refund recorded' : `−${formatCurrency(refund.totalRefunded)}`}
           </p>
           {refund.paymentMethod && (
             <p className="text-[10px] capitalize text-gray-400">
@@ -639,13 +631,16 @@ export default function POSOrderDetail({
   // Odoo-style two-step: confirm dialog → return receipt
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [returnResult, setReturnResult] = useState<POSRefundResponse | null>(null);
+  const [localReturns, setLocalReturns] = useState<{ orderId: string; records: POSRefundRecord[] }>({orderId:'', records:[]});
 
   const items = order.items || [];
-  const refunds: POSRefundRecord[] = (order.refunds as POSRefundRecord[]) || [];
+  const savedRefunds: POSRefundRecord[] = (order.refunds as POSRefundRecord[]) || [];
+  const refunds = [...savedRefunds, ...(localReturns.orderId === order._id ? localReturns.records : [])
+    .filter(local => !savedRefunds.some(saved => saved.receiptNumber === local.receiptNumber))];
   const isPaid = !order.isVoided;
 
   // Compute already-refunded qty per item index
-  const refundedMap = computeRefundedMap(refunds);
+  const refundedMap = computeReturnedMap(refunds);
 
   function getRemainingQty(idx: number): number {
     const item = items[idx];
@@ -663,12 +658,12 @@ export default function POSOrderDetail({
   // ── Derived refund lines ──────────────────────────────────────────────────
 
   const refundLines = Object.entries(refundData)
-    .filter(([, d]) => d.qty > 0)
+    .filter(([idx, d]) => d.qty > 0 && getRemainingQty(Number(idx)) > 0)
     .map(([idx]) => {
       const d = refundData[Number(idx)];
       return {
         orderItemIndex: Number(idx),
-        quantity: d.qty,
+        quantity: Math.min(d.qty, getRemainingQty(Number(idx))),
         discPct: d.discPct > 0 ? d.discPct : undefined,
         unitPrice: d.unitPrice > 0 ? d.unitPrice : undefined,
         restock: d.restock,
@@ -680,7 +675,7 @@ export default function POSOrderDetail({
     const item = items[Number(idx)];
     if (!item || d.qty <= 0) return sum;
     const price = d.unitPrice > 0 ? d.unitPrice : item.priceAtPurchase;
-    return sum + price * d.qty * (1 - d.discPct / 100);
+    return sum + price * Math.min(d.qty, getRemainingQty(Number(idx))) * (1 - d.discPct / 100);
   }, 0);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -874,11 +869,11 @@ export default function POSOrderDetail({
         <tr style="${rowBg}border-bottom:1px solid #f0f0f0;${crossed ? 'opacity:0.38;' : ''}">
           <td style="padding:10px 16px;font-size:13px;color:#111;${crossed ? 'text-decoration:line-through;' : ''}">
             <span style="font-weight:500">${it.name}</span>${it.variant ? `<span style="color:#888;font-size:11px"> · ${it.variant}</span>` : ''}${it.bxgyRole === 'get' ? ' <span style="display:inline-block;background:#d1fae5;color:#059669;font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:4px">GET</span>' : ''}
-            ${ret > 0 && !crossed ? `<div style="font-size:10px;color:#dc2626;margin-top:2px;font-weight:600">↩ ${ret} returned</div>` : ''}
+            ${ret > 0 ? `<div style="font-size:10px;color:#dc2626;margin-top:2px;font-weight:600">↩ ${ret} returned</div>` : ''}
           </td>
           <td style="padding:10px 16px;text-align:right;font-size:13px;color:#374151;white-space:nowrap">${it.quantity}.00 Units</td>
           <td style="padding:10px 16px;text-align:right;font-size:13px;color:#374151;font-variant-numeric:tabular-nums">${ng(it.priceAtPurchase)}</td>
-          <td style="padding:10px 16px;text-align:right;font-size:12px;color:#d1d5db">—</td>
+          <td style="padding:10px 16px;text-align:right;font-size:12px;color:#6b7280">${it.taxRate != null ? `${it.taxRate}%` : '—'}</td>
           <td style="padding:10px 16px;text-align:right;font-size:13px;font-weight:700;color:#111;font-variant-numeric:tabular-nums">${ng(it.itemSubtotal)}</td>
         </tr>`;
       })
@@ -1002,6 +997,7 @@ export default function POSOrderDetail({
               <span style="color:#6b7280">Untaxed Amount</span>
               <span style="font-weight:600;color:#111">${ng(_subtotal)}</span>
             </div>
+            ${order.taxAmount != null ? `<div style="display:flex;justify-content:space-between;padding:10px 16px;font-size:13px"><span>Tax</span><span>${ng(order.taxAmount)}</span></div>` : ''}
             <div style="display:flex;justify-content:space-between;padding:13px 16px;background:#b20202">
               <span style="font-size:14px;font-weight:800;color:#fff;letter-spacing:0.02em">Total</span>
               <span style="font-size:14px;font-weight:800;color:#fff">${ng(order.total)}</span>
@@ -1078,6 +1074,9 @@ export default function POSOrderDetail({
       );
       setShowConfirmDialog(false);
       setReturnResult(result);
+      setLocalReturns(previous => ({orderId:order._id, records:[
+        ...(previous.orderId === order._id ? previous.records : []), result.refundRecord,
+      ]}));
       setRefundData({});
       setActiveIdx(null);
       setNumInput('0');
@@ -1101,6 +1100,8 @@ export default function POSOrderDetail({
 
   // Count refunded items for status badge
   const totalRefunded = refunds.reduce((s, r) => s + r.totalRefunded, 0);
+  const allReturned = items.length > 0 && items.every((_, index) => getRemainingQty(index) === 0);
+  const someReturned = items.some((_, index) => (refundedMap[index] || 0) > 0);
   const isPartiallyRefunded = totalRefunded > 0 && totalRefunded < (order.total || 0);
   const isFullyRefundedStatus = totalRefunded > 0 && totalRefunded >= (order.total || 0);
 
@@ -1146,6 +1147,7 @@ export default function POSOrderDetail({
       {/* ══ DETAILS TAB ══ */}
       {activeTab === 'details' && (
         <>
+          {someReturned && <div className="shrink-0 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-700">{allReturned ? 'Fully returned — no units remaining to return' : 'Partially returned — only remaining units can be returned'}</div>}
           {/* Status badge */}
           {isFullyRefundedStatus && (
             <div className="shrink-0 bg-red-50 px-4 py-2 text-xs font-semibold text-[#b20202]">
@@ -1230,21 +1232,21 @@ export default function POSOrderDetail({
                           {/* Odoo-style: original qty | refunded | remaining */}
                           <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
                             {/* Three-part qty display */}
-                            <div className="flex items-center gap-1 text-[11px]">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
                               <span className="tabular-nums text-gray-400">
-                                Ord: {item.quantity}
+                                Sold: {item.quantity}
                               </span>
                               {refunded > 0 && (
-                                <span className="tabular-nums text-[#b20202]">Ret: {refunded}</span>
+                                <span className="tabular-nums text-[#b20202]">Returned: {Math.min(item.quantity, refunded)}</span>
                               )}
-                              {!fullyRefunded && (
+                              {(
                                 <span
                                   className={cn(
                                     'font-semibold tabular-nums',
                                     remaining > 0 ? 'text-emerald-600' : 'text-gray-300'
                                   )}
                                 >
-                                  Rem: {remaining}
+                                  Remaining: {remaining}
                                 </span>
                               )}
                             </div>
@@ -1326,6 +1328,11 @@ export default function POSOrderDetail({
 
           {/* Total row */}
           <div className="shrink-0 border-t border-gray-200 px-5 py-3">
+            {order.taxAmount != null && (
+              <div className="mb-1 flex justify-between text-sm text-gray-500">
+                <span>Tax</span><span>{formatCurrency(order.taxAmount)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-base font-bold text-gray-900">
               <span>Total</span>
               <span>{formatCurrency(order.total)}</span>

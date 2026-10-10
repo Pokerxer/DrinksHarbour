@@ -108,6 +108,8 @@ export interface StockRow {
   warehouseName: string;
   subProductId: string;
   productName: string;
+  /** Tenant override image, then the central catalogue image. */
+  productImage?: string | null;
   /** Central product category (from Product.category), 'Uncategorized' when unset. */
   categoryId?: string | null;
   categoryName?: string;
@@ -117,6 +119,13 @@ export interface StockRow {
   currentQuantity: number;
   reservedQuantity: number;
   costPrice: number;
+  /** Report carrying value, distinct from the next FIFO issue cost. */
+  stockValue?: number;
+  valuationUnitCost?: number;
+  valuationSource?: 'batches' | 'mixed' | 'standard' | 'unpriced';
+  estimatedQuantity?: number;
+  unpricedQuantity?: number;
+  batchQuantityMismatch?: boolean;
   /** Retail price for the line (size sellingPrice, else subProduct sellingPrice). */
   sellingPrice?: number;
   /** Wholesale price for the size — used when a formula rule has markupBase='wholesale' or a bundle rule has bundleMarkupBase='wholesale'. */
@@ -150,12 +159,14 @@ const jsonAuth = (token: string) => ({
 
 export const warehouseStockService = {
   async getAllStock(
-    token: string
+    token: string,
+    options: { includeUnstocked?: boolean } = {}
   ): Promise<{ success: boolean; data: StockRow[] }> {
     return handle<{ success: boolean; data: StockRow[] }>(
-      await fetch(`${API_URL}/api/warehouses/stock/all`, {
-        headers: auth(token),
-      }),
+      await fetch(
+        `${API_URL}/api/warehouses/stock/all${options.includeUnstocked ? '?includeUnstocked=true' : ''}`,
+        { headers: auth(token) }
+      ),
       'Failed to load warehouse stock'
     );
   },

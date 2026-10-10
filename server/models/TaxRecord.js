@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
 const SOURCE_TYPES = [
+  "pos",
   "sales_order",
   "purchase_order",
   "vendor_bill",

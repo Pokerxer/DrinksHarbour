@@ -1,7 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { Button, Input } from 'rizzui';
-import type { NewApiKey } from '@/services/api-key.service';
+import {
+  API_KEY_PERMISSIONS,
+  WEBSITE_SCOPES,
+  type NewApiKey,
+} from '@/services/api-key.service';
 
 export default function CreateKeyForm({
   busy,
@@ -13,7 +17,7 @@ export default function CreateKeyForm({
   onCreate: (input: NewApiKey) => Promise<boolean>;
 }) {
   const [name, setName] = useState('');
-  const [scopes, setScopes] = useState(['inventory:read']);
+  const [scopes, setScopes] = useState([...WEBSITE_SCOPES]);
   const [expiresInDays, setExpiry] = useState(90);
   return (
     <form
@@ -27,12 +31,42 @@ export default function CreateKeyForm({
     >
       <h2 className="text-lg font-semibold">Create an API key</h2>
       <p className="mt-2 text-sm leading-6 text-gray-500">
-        Give each integration its own key so you can manage access separately.
+        Connect a tenant website or an operational integration with its own
+        permissions.
       </p>
       <fieldset disabled={busy} className="mt-6 space-y-5 disabled:opacity-60">
+        <div>
+          <p className="mb-2 text-sm font-medium">Start with a preset</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setScopes([...WEBSITE_SCOPES])}
+            >
+              Tenant website
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setScopes(['storefront:read'])}
+            >
+              Catalogue only
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setScopes(['inventory:read'])}
+            >
+              Stock sync
+            </Button>
+          </div>
+        </div>
         <Input
           label="Integration name"
-          placeholder="e.g. Stock reporting"
+          placeholder="e.g. My ecommerce website"
           maxLength={80}
           required
           value={name}
@@ -40,37 +74,31 @@ export default function CreateKeyForm({
         />
         <fieldset className="space-y-3">
           <legend className="mb-2 text-sm font-medium">Permissions</legend>
-          {['inventory:read', ...(bookings ? ['bookings:read'] : [])].map(
-            (scope) => (
-              <label
-                key={scope}
-                className="flex cursor-pointer items-start gap-3 rounded-lg border border-muted p-3"
-              >
-                <input
-                  className="mt-1 rounded text-primary focus:ring-primary"
-                  type="checkbox"
-                  checked={scopes.includes(scope)}
-                  onChange={(e) =>
-                    setScopes((current) =>
-                      e.target.checked
-                        ? [...current, scope]
-                        : current.filter((s) => s !== scope)
-                    )
-                  }
-                />
-                <span>
-                  <span className="block text-sm font-medium">
-                    {scope === 'inventory:read'
-                      ? 'Read inventory'
-                      : 'Read bookings'}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    View records without changing them
-                  </span>
-                </span>
-              </label>
-            )
-          )}
+          {API_KEY_PERMISSIONS.filter(
+            (permission) => bookings || permission.scope !== 'bookings:read'
+          ).map(({ scope, label, description }) => (
+            <label
+              key={scope}
+              className="flex cursor-pointer items-start gap-3 rounded-lg border border-muted p-3"
+            >
+              <input
+                className="mt-1 rounded text-primary focus:ring-primary"
+                type="checkbox"
+                checked={scopes.includes(scope)}
+                onChange={(e) =>
+                  setScopes((current) =>
+                    e.target.checked
+                      ? [...current, scope]
+                      : current.filter((s) => s !== scope)
+                  )
+                }
+              />
+              <span>
+                <span className="block text-sm font-medium">{label}</span>
+                <span className="text-xs text-gray-500">{description}</span>
+              </span>
+            </label>
+          ))}
         </fieldset>
         <label className="block text-sm font-medium">
           Expires after

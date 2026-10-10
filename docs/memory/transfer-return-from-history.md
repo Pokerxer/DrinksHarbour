@@ -116,3 +116,12 @@ fall back to `ret.totalAmount` via `bill?.paidAmount ?? total`), and the server
 - History was silently capped at the latest 50 movements with no way to page.
   Added a `historyLimit` state + **"View older movements"** button that bumps the
   query to the server cap (200, `MAX_MOVEMENTS_LIMIT`) and reloads.
+
+## 2026-10-02 purchase-module follow-up
+
+See [purchase refund resume](../superpowers/specs/RESUME-purchase-refunds.md).
+Module transfer returns now share a transaction with the new purchase detail
+return action. Receipt counters remain historical; returnedQty alone grows.
+Supplier purchase returns now synchronize net received/posted/returned counters,
+record partial settlements with retry protection/history, and settle the status
+on full refund. This supersedes the older counter description above.

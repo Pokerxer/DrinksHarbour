@@ -71,6 +71,16 @@ export default function SalesReturnDetail({ id }: { id: string }) {
         </Link>
       </div>
 
+      <div className="mb-5 space-y-2">
+        {(so.returnHistory || []).map((entry, index) => (
+          <div key={index} className="rounded-lg border border-gray-200 bg-white p-3 text-sm">
+            <p className="font-medium">{entry.source === 'pos' ? 'POS refund' : 'Sales stock return'} · {entry.reference} · {entry.quantity} units</p>
+            {entry.receiptNumber && <p>Receipt {entry.receiptNumber}</p>}
+            <p className="text-gray-500">{entry.description}</p>
+            <p>{entry.source === 'pos' ? `Refunded: ${fmtCur(entry.refundAmount, so.currency)}` : 'No money refunded by this action'}</p>
+          </div>
+        ))}
+      </div>
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-sm">
           <thead>
@@ -88,7 +98,7 @@ export default function SalesReturnDetail({ id }: { id: string }) {
                 Unit Price
               </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                Refund Value
+                Returned item value
               </th>
             </tr>
           </thead>
@@ -104,7 +114,7 @@ export default function SalesReturnDetail({ id }: { id: string }) {
               </tr>
             ) : (
               returnedLines.map((item) => {
-                const unit = Math.max(0, item.unitPrice - item.discount);
+                const unit = item.quantity > 0 ? Math.max(0, (item.lineTotal - (item.promoDiscount || 0) + (item.taxAmount || 0)) / item.quantity) : 0;
                 return (
                   <tr key={item._id}>
                     <td className="px-4 py-3 text-gray-900">

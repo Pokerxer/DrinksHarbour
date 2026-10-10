@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { PricelistRule, SubProductLite } from './types';
-import ConfirmDialog from '@/app/shared/purchases/pricelists/confirm-dialog';
+import ConfirmDialog from '@/app/shared/confirm-dialog';
 import CreateRuleModal from './create-rule-modal';
 
 interface Props {

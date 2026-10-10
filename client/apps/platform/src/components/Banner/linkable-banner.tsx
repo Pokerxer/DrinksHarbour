@@ -17,7 +17,7 @@
  */
 
 import Link from 'next/link';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import { PiArrowUpRight } from 'react-icons/pi';
 import {
   useEntityBannerTracking,

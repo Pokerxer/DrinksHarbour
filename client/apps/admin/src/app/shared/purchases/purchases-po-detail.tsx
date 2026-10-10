@@ -1,4 +1,5 @@
 'use client';
+import ReturnAllProductsLink from './return-all-products-link';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -22,10 +23,7 @@ import {
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import {
-  purchaseOrderService,
-  warehouseLabelOf,
-} from '@/services/purchaseOrder.service';
+import { purchaseOrderService, warehouseLabelOf } from '@/services/purchaseOrder.service';
 import { vendorReturnService } from '@/services/vendorReturn.service';
 import type { VendorReturn } from '@/services/vendorReturn.service';
 import type { PurchaseOrder } from './types';
@@ -102,18 +100,13 @@ export default function PurchasesPODetail({ id }: { id: string }) {
 
   if (loading)
     return (
-      <div className="flex items-center justify-center py-20 text-sm text-gray-400">
-        Loading…
-      </div>
+      <div className="flex items-center justify-center py-20 text-sm text-gray-400">Loading…</div>
     );
   if (!po)
     return (
       <div className="flex flex-col items-center gap-3 py-20 text-center">
         <p className="text-sm text-gray-500">Purchase order not found</p>
-        <Link
-          href={routes.eCommerce.purchases}
-          className="text-sm text-[#b20202] underline"
-        >
+        <Link href={routes.eCommerce.purchases} className="text-sm text-[#b20202] underline">
           Back to list
         </Link>
       </div>
@@ -128,23 +121,18 @@ export default function PurchasesPODetail({ id }: { id: string }) {
     po.type !== 'rfq' &&
     (!po.approvalStatus || po.approvalStatus === 'pending');
   const canConfirm =
-    po.status === 'draft' &&
-    (po.type === 'rfq' || po.approvalStatus === 'approved');
+    po.status === 'draft' && (po.type === 'rfq' || po.approvalStatus === 'approved');
   // Outstanding per line: ordered - received - returned. A PO stays receivable
   // while any line still has outstanding units (it sits at partially_received).
   const lineOutstanding = (i: (typeof po.items)[number]) =>
-    i.outstandingQty ??
-    Math.max(0, i.quantity - (i.receivedQty ?? 0) - (i.returnedQty ?? 0));
+    i.outstandingQty ?? Math.max(0, i.quantity - (i.receivedQty ?? 0) - (i.returnedQty ?? 0));
   const anyOutstanding = po.items.some((i) => lineOutstanding(i) > 0);
   const canReceive =
-    (po.status === 'confirmed' ||
-      po.status === 'partially_received' ||
-      po.status === 'received') &&
+    (po.status === 'confirmed' || po.status === 'partially_received' || po.status === 'received') &&
     anyOutstanding;
   // Validate posts the not-yet-posted received units; available while there is
   // anything received but not fully validated (received / partially_received).
-  const canValidate =
-    po.status === 'received' || po.status === 'partially_received';
+  const canValidate = po.status === 'received' || po.status === 'partially_received';
   // Confirmed POs can be billed on ordered quantities (policy chosen on the
   // bill-create page); received/validated bill on received quantities.
   const canBill =
@@ -153,16 +141,10 @@ export default function PurchasesPODetail({ id }: { id: string }) {
     po.status === 'received' ||
     po.status === 'validated' ||
     po.status === 'done';
-  const canReturn =
-    po.status !== 'draft' &&
-    po.status !== 'cancel' &&
-    po.status !== 'cancelled';
+  const canReturn = po.status !== 'draft' && po.status !== 'cancel' && po.status !== 'cancelled';
   const totalCost = po.items.reduce(
-    (s, it) =>
-      s +
-      (it.totalCost ??
-        ((it as any).unitCost ?? it.unitPrice ?? 0) * it.quantity),
-    0
+    (s, it) => s + (it.totalCost ?? ((it as any).unitCost ?? it.unitPrice ?? 0) * it.quantity),
+    0,
   );
 
   return (
@@ -181,9 +163,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-gray-900">
-              {po.poNumber}
-            </h1>
+            <h1 className="text-xl font-semibold text-gray-900">{po.poNumber}</h1>
             <span
               className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[po.status] ?? 'bg-gray-100 text-gray-600'}`}
             >
@@ -207,28 +187,19 @@ export default function PurchasesPODetail({ id }: { id: string }) {
               </span>
             )}
           </div>
-          {po.vendorName && (
+          {po.vendorName && <p className="mt-1 text-sm text-gray-500">Vendor: {po.vendorName}</p>}
+          {typeof po.purchaseAgreement === 'object' && po.purchaseAgreement?._id && (
             <p className="mt-1 text-sm text-gray-500">
-              Vendor: {po.vendorName}
+              From agreement:{' '}
+              <Link
+                href={routes.eCommerce.purchaseAgreementDetails(po.purchaseAgreement._id)}
+                className="font-medium text-[#b20202] hover:underline"
+              >
+                {po.purchaseAgreement.agreementNumber ?? 'View agreement'}
+              </Link>
+              {po.purchaseAgreement.name ? ` · ${po.purchaseAgreement.name}` : ''}
             </p>
           )}
-          {typeof po.purchaseAgreement === 'object' &&
-            po.purchaseAgreement?._id && (
-              <p className="mt-1 text-sm text-gray-500">
-                From agreement:{' '}
-                <Link
-                  href={routes.eCommerce.purchaseAgreementDetails(
-                    po.purchaseAgreement._id
-                  )}
-                  className="font-medium text-[#b20202] hover:underline"
-                >
-                  {po.purchaseAgreement.agreementNumber ?? 'View agreement'}
-                </Link>
-                {po.purchaseAgreement.name
-                  ? ` · ${po.purchaseAgreement.name}`
-                  : ''}
-              </p>
-            )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -241,8 +212,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
             }
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            <PiPrinter className="h-4 w-4" />{' '}
-            {po.type === 'rfq' ? 'Print RFQ' : 'Print / Download'}
+            <PiPrinter className="h-4 w-4" /> {po.type === 'rfq' ? 'Print RFQ' : 'Print / Download'}
           </button>
           <button
             type="button"
@@ -266,10 +236,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 type="button"
                 disabled={acting}
                 onClick={() =>
-                  act(
-                    () => purchaseOrderService.approvePO(id, token),
-                    'PO approved and confirmed'
-                  )
+                  act(() => purchaseOrderService.approvePO(id, token), 'PO approved and confirmed')
                 }
                 className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
               >
@@ -279,13 +246,8 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 type="button"
                 disabled={acting}
                 onClick={() => {
-                  if (
-                    confirm('Reject this purchase order? It will be cancelled.')
-                  )
-                    act(
-                      () => purchaseOrderService.rejectPO(id, token),
-                      'PO rejected'
-                    );
+                  if (confirm('Reject this purchase order? It will be cancelled.'))
+                    act(() => purchaseOrderService.rejectPO(id, token), 'PO rejected');
                 }}
                 className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
               >
@@ -299,13 +261,8 @@ export default function PurchasesPODetail({ id }: { id: string }) {
               disabled={acting}
               onClick={() =>
                 act(
-                  () =>
-                    purchaseOrderService.updatePurchaseOrderStatus(
-                      id,
-                      'confirmed',
-                      token
-                    ),
-                  'Purchase order confirmed'
+                  () => purchaseOrderService.updatePurchaseOrderStatus(id, 'confirmed', token),
+                  'Purchase order confirmed',
                 )
               }
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
@@ -345,6 +302,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
               <PiArrowCounterClockwise className="h-4 w-4" /> Return
             </Link>
           )}
+          {canReturn && <ReturnAllProductsLink purchaseOrderId={po._id} />}
           {!po.isLocked &&
             po.status !== 'draft' &&
             po.status !== 'cancel' &&
@@ -352,9 +310,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
               <button
                 type="button"
                 disabled={acting}
-                onClick={() =>
-                  act(() => purchaseOrderService.lockPO(id, token), 'PO locked')
-                }
+                onClick={() => act(() => purchaseOrderService.lockPO(id, token), 'PO locked')}
                 className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
                 <PiLock className="h-4 w-4" /> Lock
@@ -364,12 +320,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
             <button
               type="button"
               disabled={acting}
-              onClick={() =>
-                act(
-                  () => purchaseOrderService.unlockPO(id, token),
-                  'PO unlocked'
-                )
-              }
+              onClick={() => act(() => purchaseOrderService.unlockPO(id, token), 'PO unlocked')}
               className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               <PiLockOpen className="h-4 w-4" /> Unlock
@@ -383,10 +334,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 type="button"
                 disabled={acting}
                 onClick={() =>
-                  act(
-                    () => purchaseOrderService.sendPOToVendor(id, token),
-                    'Sent to vendor'
-                  )
+                  act(() => purchaseOrderService.sendPOToVendor(id, token), 'Sent to vendor')
                 }
                 className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
@@ -399,13 +347,8 @@ export default function PurchasesPODetail({ id }: { id: string }) {
               disabled={acting}
               onClick={() =>
                 act(
-                  () =>
-                    purchaseOrderService.updatePurchaseOrderStatus(
-                      id,
-                      'cancelled',
-                      token
-                    ),
-                  'Cancelled'
+                  () => purchaseOrderService.updatePurchaseOrderStatus(id, 'cancelled', token),
+                  'Cancelled',
                 )
               }
               className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
@@ -422,9 +365,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
           { label: 'Vendor Reference', value: po.vendorReference ?? '—' },
           {
             label: 'Expected Arrival',
-            value: po.expectedArrival
-              ? new Date(po.expectedArrival).toLocaleDateString()
-              : '—',
+            value: po.expectedArrival ? new Date(po.expectedArrival).toLocaleDateString() : '—',
           },
           {
             label: 'Destination',
@@ -434,15 +375,10 @@ export default function PurchasesPODetail({ id }: { id: string }) {
           },
           {
             label: 'Created',
-            value: po.createdAt
-              ? new Date(po.createdAt).toLocaleDateString()
-              : '—',
+            value: po.createdAt ? new Date(po.createdAt).toLocaleDateString() : '—',
           },
         ].map(({ label, value }) => (
-          <div
-            key={label}
-            className="rounded-xl border border-gray-200 bg-white p-4"
-          >
+          <div key={label} className="rounded-xl border border-gray-200 bg-white p-4">
             <p className="text-xs text-gray-500">{label}</p>
             <p className="mt-0.5 font-medium text-gray-900">{value}</p>
           </div>
@@ -456,30 +392,16 @@ export default function PurchasesPODetail({ id }: { id: string }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                Product
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                SKU
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                Qty
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
-                Packs
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                Received
-              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">SKU</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Qty</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Packs</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Received</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
                 Outstanding
               </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                Unit Price
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                Total
-              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Unit Price</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Total</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -487,25 +409,19 @@ export default function PurchasesPODetail({ id }: { id: string }) {
               <tr key={i}>
                 <td className="px-4 py-3 font-medium text-gray-900">
                   {(() => {
-                    const name =
-                      (item as any).subProductName ?? item.productName ?? '';
+                    const name = (item as any).subProductName ?? item.productName ?? '';
                     const size = (item as any).sizeName;
-                    if (size && !name.includes(size))
-                      return `${name} – ${size}`;
+                    if (size && !name.includes(size)) return `${name} – ${size}`;
                     return name;
                   })()}
                 </td>
-                <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                  {item.sku}
-                </td>
-                <td className="px-4 py-3 text-right text-gray-700">
-                  {item.quantity}
-                </td>
+                <td className="px-4 py-3 font-mono text-xs text-gray-500">{item.sku}</td>
+                <td className="px-4 py-3 text-right text-gray-700">{item.quantity}</td>
                 <td className="px-4 py-3 text-center text-xs text-gray-600">
                   {packsLabel(
                     item.quantity,
                     linePackSize(item as any),
-                    packNounOf((item as any).packaging)
+                    packNounOf((item as any).packaging),
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
@@ -523,13 +439,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                   {(() => {
                     const out = lineOutstanding(item);
                     return (
-                      <span
-                        className={
-                          out > 0
-                            ? 'font-medium text-amber-600'
-                            : 'text-gray-400'
-                        }
-                      >
+                      <span className={out > 0 ? 'font-medium text-amber-600' : 'text-gray-400'}>
                         {out}
                       </span>
                     );
@@ -540,17 +450,14 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                   {fmtAmount(
                     (item as any).unitCost ??
                       item.unitPrice ??
-                      (item.quantity
-                        ? (item.totalCost ?? 0) / item.quantity
-                        : 0)
+                      (item.quantity ? (item.totalCost ?? 0) / item.quantity : 0),
                   )}
                 </td>
                 <td className="px-4 py-3 text-right font-medium text-gray-900">
                   {po.currency}{' '}
                   {fmtAmount(
                     item.totalCost ??
-                      ((item as any).unitCost ?? item.unitPrice ?? 0) *
-                        item.quantity
+                      ((item as any).unitCost ?? item.unitPrice ?? 0) * item.quantity,
                   )}
                 </td>
               </tr>
@@ -558,10 +465,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
           </tbody>
           <tfoot>
             <tr className="border-t border-gray-200 bg-gray-50">
-              <td
-                colSpan={7}
-                className="px-4 py-3 text-right text-sm font-semibold text-gray-700"
-              >
+              <td colSpan={7} className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
                 Total
               </td>
               <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
@@ -590,31 +494,17 @@ export default function PurchasesPODetail({ id }: { id: string }) {
       {returns.length > 0 && (
         <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-5 py-3">
-            <h2 className="text-sm font-semibold text-gray-700">
-              Returns ({returns.length})
-            </h2>
+            <h2 className="text-sm font-semibold text-gray-700">Returns ({returns.length})</h2>
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                  Return #
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                  Date
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                  Items
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                  Total
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
-                  Refund
-                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Return #</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Date</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Items</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Total</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Status</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Refund</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -633,13 +523,9 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 };
                 return (
                   <tr key={r._id}>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {r.returnNumber}
-                    </td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{r.returnNumber}</td>
                     <td className="px-4 py-3 text-gray-600">
-                      {r.returnDate
-                        ? new Date(r.returnDate).toLocaleDateString()
-                        : '—'}
+                      {r.returnDate ? new Date(r.returnDate).toLocaleDateString() : '—'}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-700">
                       {r.items.reduce((s, i) => s + i.quantity, 0)}
@@ -694,8 +580,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                   Total Returned
                 </td>
                 <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
-                  {po.currency}{' '}
-                  {fmtAmount(returns.reduce((s, r) => s + r.totalAmount, 0))}
+                  {po.currency} {fmtAmount(returns.reduce((s, r) => s + r.totalAmount, 0))}
                 </td>
                 <td colSpan={3} />
               </tr>

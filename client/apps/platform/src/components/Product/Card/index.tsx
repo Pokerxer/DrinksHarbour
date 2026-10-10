@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,6 +16,7 @@ import { useModalCompareContext } from '@/context/ModalCompareContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { ProductType } from '@/types/product.types';
 import { getInitials, VENDOR_PALETTE, vendorPaletteIndex } from '@/data/vendor-helpers';
+import { isProductInStock } from '@/utils/productStock';
 import { resolveCartLine } from 'commerce-core';
 
 interface BeverageProduct {
@@ -194,6 +195,8 @@ interface BeverageProduct {
 type ProductData = ProductType | BeverageProduct;
 
 interface ProductProps {
+  imageSizes?: string;
+  showOutOfStock?: boolean;
   data: ProductData;
   type: 'grid' | 'list';
   priority?: boolean;
@@ -294,7 +297,7 @@ const VendorAvatar: React.FC<VendorAvatarProps> = ({ vendor, isActive, onClick, 
 
 
 
-const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = false }) => {
+const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = false, showOutOfStock = false, imageSizes = '(max-width: 767px) 50vw, 25vw' }) => {
   const router = useRouter();
   const [activeColor, setActiveColor] = useState<string>('');
   const [activeSize, setActiveSize] = useState<string>('');
@@ -459,13 +462,13 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
           status: data.availability?.status,
           stockLevel: data.availability?.stockLevel,
           totalStock: data.stockInfo?.totalStock || 0,
-          inStock: (data.stockInfo?.totalStock || 0) > 0,
+          inStock: isProductInStock(data),
         },
         thumbImage: imageUrls,
         variation: variations.length > 0 ? variations : [],
         sizes: uniqueSizes,
         sold: data.totalSold || 0,
-        quantity: data.stockInfo?.totalStock || 100,
+        quantity: data.stockInfo?.availableStock ?? data.stockInfo?.totalStock ?? 0,
         price: minPrice,
         originPrice,
         sale: vendorOnSale || hasRealDiscount,
@@ -657,7 +660,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
     return null;
   }, [saleInfo, isFlashSale, isFixedDiscount, data, hasActiveSale]);
 
-  const isOutOfStock = mappedProduct.availability && !mappedProduct.availability.inStock;
+  const isOutOfStock = !isProductInStock(data);
 
   // Use the same vendorWithSale from above
   const vendorToUse = vendorWithSale || firstVendor;
@@ -856,6 +859,8 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
     setImageError(false);
   }, [data?._id]);
 
+  if (isOutOfStock && !showOutOfStock) return null;
+
   return (
     <>
       {type === 'grid' ? (
@@ -989,6 +994,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                       mappedProduct.thumbImage?.[0] ||
                       '/images/product/1000x1000.png'
                     }
+                    sizes={imageSizes}
                     width={500}
                     height={500}
                     priority={priority}
@@ -1428,6 +1434,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                 ) : (
                   <Image
                     src={mappedProduct.thumbImage?.[0] || '/images/product/1000x1000.png'}
+                    sizes="(max-width: 640px) 96px, 128px"
                     width={500}
                     height={500}
                     priority={priority}

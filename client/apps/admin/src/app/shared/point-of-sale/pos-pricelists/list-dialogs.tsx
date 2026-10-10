@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { PiTag } from 'react-icons/pi';
-import ConfirmDialog from '@/app/shared/purchases/pricelists/confirm-dialog';
+import ConfirmDialog from '@/app/shared/confirm-dialog';
 import type { Pricelist } from './types';
 
 interface Props {

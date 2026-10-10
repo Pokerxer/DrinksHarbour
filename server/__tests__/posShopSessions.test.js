@@ -33,11 +33,13 @@ test('two retail-mode shops open independent sessions', async t => {
   assert.equal(rows[0].shopId, shopA); assert.equal(rows[1].shopId, shopB);
 });
 test('current-session lookup cannot select the other shop', async t => {
+  t.mock.method(Order, 'find', () => query([]));
   t.mock.method(POSSession, 'findOne', filter => query(filter.shopId === shopA ? { _id: 'A', shopId: shopA } : { _id: 'B', shopId: shopB }));
   const res = await invoke(pos.getCurrentSession, { query: { shopId: shopA } });
   assert.equal(res.body.data.session._id, 'A');
 });
 test('back-office session history includes closed custom and legacy drawers, scoped to tenant', async t => {
+  t.mock.method(Order, 'find', () => query([]));
   const history = [{ _id: 'old-cbl', shopId: shopA, status: 'closed' }, { _id: 'old-legacy', status: 'closed' }];
   const filters = [];
   t.mock.method(POSSession, 'find', filter => { filters.push(filter); return query(history); });

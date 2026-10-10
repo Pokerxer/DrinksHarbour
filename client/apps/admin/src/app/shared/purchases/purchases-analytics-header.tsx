@@ -66,7 +66,7 @@ export function AnalyticsHeader({
 
       {/* ── KPI cards ── */}
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-6">
-        {/* Hero: Total Spend */}
+        {/* Hero: Ordered Value (incl. tax) */}
         <div
           title={fmtNaira(kpis.totalSpend)}
           className="relative col-span-2 overflow-hidden rounded-2xl bg-gradient-to-br from-[#8a0202] via-[#b20202] to-[#6b0101] p-5 text-white shadow-md lg:col-span-2"
@@ -75,7 +75,7 @@ export function AnalyticsHeader({
           <div className="pointer-events-none absolute -bottom-14 -right-6 h-28 w-28 rounded-full border border-white/10" />
           <div className="relative flex items-center justify-between">
             <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/65">
-              Total Spend
+              Ordered Value (incl. tax)
             </p>
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15">
               <PiCurrencyNgn className="h-4 w-4" />

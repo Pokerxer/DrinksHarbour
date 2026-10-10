@@ -49,7 +49,7 @@ export function LinesTable({
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[1360px] text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-400">
               <th onClick={() => toggleLineSort('date')} className={th('date')}>
@@ -210,10 +210,14 @@ export function LinesTable({
                   </td>
                   {showProfit && hasCostData && (
                     <td className="whitespace-nowrap px-4 py-2.5 text-right text-sm tabular-nums">
-                      {row.profit > 0 ? (
-                        <span className="font-medium text-teal-600">{formatCurrency(row.profit)}</span>
-                      ) : (
+                      {!row.hasCost ? (
+                        // No cost basis: an em dash is honest, not a 0 profit.
                         <span className="text-gray-200">—</span>
+                      ) : row.profit < 0 ? (
+                        // A real loss is the figure a seller most needs to see.
+                        <span className="font-medium text-red-600">−{formatCurrency(-row.profit)}</span>
+                      ) : (
+                        <span className="font-medium text-teal-600">{formatCurrency(row.profit)}</span>
                       )}
                     </td>
                   )}

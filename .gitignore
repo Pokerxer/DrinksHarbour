@@ -56,3 +56,9 @@ server/uploads/tts/
 # Local data artifacts — backups and business spreadsheets stay out of the repo
 .backups/
 *.xlsx
+
+# Disposable operational artifacts — import dumps, screenshots, generated decks
+outputs/
+.pnpm-store/
+docs/tenant-outreach/build/
+docs/tenant-outreach/output/

@@ -20,8 +20,11 @@ export default async function AnalyticsDashboard() {
     if (user?.token) {
       analyticsData = await getWebAnalyticsData(user.token as string);
     }
-  } catch {
-    // components render with null data (fallback to skeletons/static)
+  } catch (error) {
+    // Null data puts the skeletons up, which is right for the reader — but a
+    // silent catch made a failing analytics endpoint indistinguishable from a
+    // slow one, so log the cause. apiFetch names the endpoint that failed.
+    console.error('[analytics] dashboard data unavailable; showing placeholders', error);
   }
 
   return (

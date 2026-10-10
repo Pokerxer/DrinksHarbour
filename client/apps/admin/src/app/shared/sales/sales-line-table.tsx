@@ -41,7 +41,7 @@ import ProductLineSearch, {
 } from './product-line-search';
 import SalesLineSectionRow from './sales-line-section-row';
 import SalesLineNoteRow from './sales-line-note-row';
-import SalesNumberInput from './sales-number-input';
+import NumberInput from '@/components/ui/number-input';
 
 const INLINE_CELL_CLS =
   'w-full border-0 border-b border-transparent bg-transparent px-1 py-1 text-right text-sm text-gray-900 focus:border-brand focus:outline-none focus:ring-0';
@@ -478,7 +478,7 @@ function SalesLineProductRow({
       </td>
       <td className="px-2 py-2 align-top">
         <div className="flex items-center gap-1.5">
-          <SalesNumberInput
+          <NumberInput
             value={line.quantity}
             min={1}
             fallback={1}
@@ -563,7 +563,7 @@ function SalesLineProductRow({
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
             />
           )}
-          <SalesNumberInput
+          <NumberInput
             value={line.unitPrice}
             min={0}
             onCommit={(v) =>
@@ -575,7 +575,7 @@ function SalesLineProductRow({
       </td>
       <td className="px-2 py-2 align-top">
         <div className="flex items-center justify-end gap-1">
-          <SalesNumberInput
+          <NumberInput
             value={line.discount}
             min={0}
             max={line.discountType === 'percentage' ? 100 : undefined}
@@ -609,7 +609,7 @@ function SalesLineProductRow({
         )}
       </td>
       <td className="px-2 py-2 align-top">
-        <SalesNumberInput
+        <NumberInput
           value={line.taxRate}
           min={0}
           max={100}

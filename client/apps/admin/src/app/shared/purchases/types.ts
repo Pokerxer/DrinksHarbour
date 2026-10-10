@@ -1,4 +1,4 @@
-import type { POWarehouseRef } from '@/services/purchaseOrder.service';
+import type { POWarehouseRef, PurchaseCreator } from '@/services/purchaseOrder.service';
 
 export type { POWarehouseRef };
 
@@ -58,6 +58,12 @@ export interface POItem {
   packaging?: string;
   taxRate?: number;
   totalCost?: number;
+  /**
+   * The server's canonical purchase price per unit (default 0). Predates `unitPrice`
+   * in this client type, which is why other call sites reached for `as any` to read
+   * it — declaring it here removes those casts.
+   */
+  unitCost?: number;
   // Parent-product batch-tracking flags, surfaced by the single-PO endpoint so
   // the receiving UI can prompt for batch number + expiry on tracked lines.
   tracksBatch?: boolean;
@@ -67,6 +73,7 @@ export interface POItem {
 export interface PurchaseOrder {
   _id: string;
   poNumber: string;
+  createdBy?: string | PurchaseCreator | null;
   vendor?: string;
   vendorName?: string;
   vendorReference?: string;

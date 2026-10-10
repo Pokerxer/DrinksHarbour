@@ -3,6 +3,7 @@ const VendorReturn = require("../models/VendorReturn");
 const PurchaseOrder = require("../models/PurchaseOrder");
 const SubProduct = require("../models/SubProduct");
 const VendorBill = require("../models/VendorBill");
+const { ValidationError } = require("../utils/errors");
 const asyncHandler = require('../utils/asyncHandler');
 const { captureDocumentTax, reverseDocumentTax, effectiveTaxForFlow } = require("../services/tax.service");
 const { postDocumentEntry, reverseDocumentEntry } = require("../services/accounting.posting");
@@ -21,52 +22,7 @@ async function generateReturnNumber(tenantId) {
   return `${prefix}${String(nextSeq).padStart(5, '0')}`;
 }
 
-async function adjustBillForReturn(tenantId, vendorReturn, action) {
-  const poId = vendorReturn.purchaseOrder;
-  if (!poId) return;
-
-  const bill = await VendorBill.findOne({
-    tenant: tenantId,
-    purchaseOrder: poId,
-    status: { $in: ['draft', 'confirmed'] },
-  }).sort({ createdAt: -1 });
-
-  if (!bill) return;
-
-  let subtotal = 0;
-  let taxAmount = 0;
-  let adjusted = false;
-
-  bill.items = bill.items.map((item) => {
-    const match = vendorReturn.items.find(
-      (ri) =>
-        ri.subProductId &&
-        ri.subProductId.toString() === item.subProductId?.toString() &&
-        ri.sizeId?.toString() === item.sizeId?.toString()
-    );
-    if (match && match.quantity > 0) {
-      const deduct = action === 'deduct';
-      const qtyDelta = deduct ? match.quantity : -match.quantity;
-      const newQty = Math.max(0, deduct ? item.quantity - qtyDelta : item.quantity + qtyDelta);
-      if (newQty !== item.quantity) adjusted = true;
-      const itemSubtotal = newQty * (item.unitPrice || 0);
-      const itemTax = itemSubtotal * ((item.taxRate || 0) / 100);
-      subtotal += itemSubtotal;
-      taxAmount += itemTax;
-      return { ...item.toObject(), quantity: newQty, amount: itemSubtotal + itemTax };
-    }
-    subtotal += item.quantity * (item.unitPrice || 0);
-    taxAmount += (item.quantity * (item.unitPrice || 0)) * ((item.taxRate || 0) / 100);
-    return item;
-  });
-
-  if (adjusted) {
-    bill.subtotal = subtotal;
-    bill.taxAmount = taxAmount;
-    bill.totalAmount = subtotal + taxAmount;
-    await bill.save();
-  }
-}
+const { adjustBillForReturn } = require('../services/vendorReturn.bill');
 
 // @route   POST /api/vendor-returns
 // @desc    Create a new vendor return
@@ -114,7 +70,7 @@ exports.createVendorReturn = asyncHandler(async (req, res) => {
     };
   }) || [];
 
-  if (resolvedTax && resolvedTax.taxRate !== null && !taxAmount) {
+  if (resolvedTax && resolvedTax.taxRate !== null && !items?.some(item => Object.hasOwn(item, "taxRate"))) {
     taxAmount = round2((subtotal * resolvedTax.taxRate) / 100);
   }
 
@@ -251,7 +207,8 @@ exports.getVendorReturn = asyncHandler(async (req, res) => {
     .populate("warehouse", "name code type")
     .populate("createdBy", "name email")
     .populate("confirmedBy", "name email")
-    .populate("receivedBy", "name email");
+    .populate("receivedBy", "name email")
+    .populate("refunds.recordedBy", "name");
 
   if (!vendorReturn) {
     return res.status(404).json({
@@ -274,12 +231,18 @@ exports.updateVendorReturn = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const updates = { ...req.body };
 
+  if (Object.keys(updates).some(field => field.includes('.') || field.startsWith('$'))) {
+    return res.status(400).json({ success: false, message: 'Nested field updates must use the return workflow' });
+  }
+
   // Workflow and inventory bookkeeping are owned by their dedicated endpoints.
   // Letting a generic PATCH reset either field can make the document claim the
   // stock was never deducted and allows the same return to be applied twice.
   const protectedFields = [
     "status",
     "stockAdjusted",
+    "poCountersAdjusted",
+    "poCounterAdjustments",
     "confirmedBy",
     "confirmedAt",
     "requestedDate",
@@ -289,6 +252,13 @@ exports.updateVendorReturn = asyncHandler(async (req, res) => {
     "refundedDate",
     "refundStatus",
     "refundAmount",
+    "refunds",
+    "refundMethod",
+    "refundReference",
+    "refundDate",
+    "subtotal",
+    "taxAmount",
+    "totalAmount",
   ];
   const attemptedProtectedField = protectedFields.find((field) =>
     Object.prototype.hasOwnProperty.call(updates, field)
@@ -298,6 +268,13 @@ exports.updateVendorReturn = asyncHandler(async (req, res) => {
       success: false,
       message: `${attemptedProtectedField} must be changed through the return workflow`,
     });
+  }
+
+  const existingReturn = await VendorReturn.findOne({ _id: id, tenant: tenantId });
+  if (!existingReturn) return res.status(404).json({ success: false, message: 'Vendor return not found' });
+  const stockFields = ['items', 'warehouse', 'purchaseOrder', 'vendorBill', 'vendor', 'vendorName', 'currency', 'taxId'];
+  if (existingReturn.status !== 'draft' && stockFields.some(field => Object.hasOwn(updates, field))) {
+    return res.status(400).json({ success: false, message: 'Stock and value can only be edited on draft returns' });
   }
 
   // Remove fields that shouldn't be updated
@@ -340,7 +317,7 @@ exports.updateVendorReturn = asyncHandler(async (req, res) => {
         amount: amount + tax,
       };
     });
-    if (resolvedTax && resolvedTax.taxRate !== null && !taxAmount) {
+    if (resolvedTax && resolvedTax.taxRate !== null && !updates.items.some(item => Object.hasOwn(item, "taxRate"))) {
       taxAmount = round2((subtotal * resolvedTax.taxRate) / 100);
     }
     updates.subtotal = subtotal;
@@ -409,6 +386,13 @@ exports.updateReturnStatus = asyncHandler(async (req, res) => {
     });
   }
 
+  if (status === 'refunded') {
+    return res.status(400).json({ success: false, message: 'Use Record Refund to settle the remaining balance' });
+  }
+  if (['cancelled', 'rejected'].includes(status) && (vendorReturn.refundAmount || 0) > 0) {
+    return res.status(400).json({ success: false, message: 'A return with recorded refunds cannot be cancelled or rejected' });
+  }
+
   const updateData = { status };
 
   // Set timestamps based on status
@@ -445,6 +429,7 @@ exports.updateReturnStatus = asyncHandler(async (req, res) => {
   // The stock service is idempotent, so retrying a request that lost its
   // response cannot deduct the same return twice.
   if (prevStatus === 'draft' && status === 'confirmed') {
+    await require('../services/vendorReturn.quantities').validatePurchaseReturn(vendorReturn, tenantId);
     await stockReturn.applyVendorReturnStock(
       vendorReturn,
       { tenantId, userId: req.user._id },
@@ -458,43 +443,14 @@ exports.updateReturnStatus = asyncHandler(async (req, res) => {
     );
   }
 
-  // Sync returned quantities to the Purchase Order
   if (vendorReturn.purchaseOrder && vendorReturn.items?.length) {
-    // Increment when confirming (draft → confirmed)
+    const counters = require('../services/vendorReturn.counters');
     if (prevStatus === 'draft' && status === 'confirmed') {
-      const bulkOps = vendorReturn.items
-        .filter(item => item.subProductId && item.quantity > 0)
-        .map(item => ({
-          updateOne: {
-            filter: {
-              _id: vendorReturn.purchaseOrder,
-              'items.subProductId': item.subProductId,
-            },
-            update: { $inc: { 'items.$.returnedQty': item.quantity } },
-          },
-        }));
-      if (bulkOps.length) await PurchaseOrder.bulkWrite(bulkOps);
-
-      // Deduct returned quantities from linked unpaid bills
+      await counters.syncPurchaseReturnCounters(vendorReturn, tenantId, 'deduct');
       await adjustBillForReturn(tenantId, vendorReturn, 'deduct');
     }
-
-    // Decrement when cancelling a previously-confirmed return
     if (status === 'cancelled' && prevStatus !== 'draft') {
-      const bulkOps = vendorReturn.items
-        .filter(item => item.subProductId && item.quantity > 0)
-        .map(item => ({
-          updateOne: {
-            filter: {
-              _id: vendorReturn.purchaseOrder,
-              'items.subProductId': item.subProductId,
-            },
-            update: { $inc: { 'items.$.returnedQty': -item.quantity } },
-          },
-        }));
-      if (bulkOps.length) await PurchaseOrder.bulkWrite(bulkOps);
-
-      // Restore returned quantities on linked unpaid bills
+      await counters.syncPurchaseReturnCounters(vendorReturn, tenantId, 'restore');
       await adjustBillForReturn(tenantId, vendorReturn, 'restore');
     }
   }
@@ -524,62 +480,13 @@ exports.updateReturnStatus = asyncHandler(async (req, res) => {
 // @desc    Record refund for vendor return
 // @access  Private
 exports.recordRefund = asyncHandler(async (req, res) => {
-  const tenantId = req.user.tenant;
-  const { id } = req.params;
-  const { amount, method, reference, notes } = req.body;
-
-  const vendorReturn = await VendorReturn.findOne({
-    _id: id,
-    tenant: tenantId,
+  const updated = await require('../services/vendorReturn.refund').recordVendorRefund({
+    id: req.params.id, tenantId: req.user.tenant, userId: req.user._id, data: req.body,
   });
-
-  if (!vendorReturn) {
-    return res.status(404).json({
-      success: false,
-      message: "Vendor return not found",
-    });
+  if (updated.refundStatus === 'completed') {
+    await captureDocumentTax({ sourceType: 'vendor_return', doc: updated, postedBy: req.user._id });
   }
-
-  if (vendorReturn.status !== "received" && vendorReturn.status !== "confirmed") {
-    return res.status(400).json({
-      success: false,
-      message: "Return must be confirmed or received before recording refund",
-    });
-  }
-
-  const newRefundAmount = (vendorReturn.refundAmount || 0) + amount;
-
-  if (newRefundAmount > vendorReturn.totalAmount) {
-    return res.status(400).json({
-      success: false,
-      message: "Refund amount exceeds return total",
-    });
-  }
-
-  const updateData = {
-    refundAmount: newRefundAmount,
-    refundMethod: method,
-    refundReference: reference,
-    refundDate: new Date(),
-  };
-
-  if (newRefundAmount >= vendorReturn.totalAmount) {
-    updateData.refundStatus = "completed";
-  } else {
-    updateData.refundStatus = "processing";
-  }
-
-  const updated = await VendorReturn.findOneAndUpdate(
-    { _id: id, tenant: tenantId },
-    { $set: updateData },
-    { new: true }
-  );
-
-  res.json({
-    success: true,
-    data: updated,
-    message: "Refund recorded successfully",
-  });
+  res.json({ success: true, data: updated, message: 'Refund recorded successfully' });
 });
 
 // @route   DELETE /api/vendor-returns/:id

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 
@@ -350,13 +350,13 @@ export default function VendorsClient() {
               <span className="text-xs text-gray-400">Filtering by:</span>
               {debouncedSearch && (
                 <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 text-xs font-medium px-2.5 py-1 rounded-full">
-                  Name: "{debouncedSearch}"
+                  Name: &quot;{debouncedSearch}&quot;
                   <button onClick={() => setSearch('')} className="ml-0.5 hover:text-red-900"><Icon.PiX size={11} /></button>
                 </span>
               )}
               {debouncedLocation && (
                 <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-medium px-2.5 py-1 rounded-full">
-                  Location: "{debouncedLocation}"
+                  Location: &quot;{debouncedLocation}&quot;
                   <button onClick={() => setLocationFilter('')} className="ml-0.5 hover:text-blue-900"><Icon.PiX size={11} /></button>
                 </span>
               )}
@@ -420,7 +420,7 @@ export default function VendorsClient() {
                 </button>
               </>
             ) : (
-              <p className="text-gray-400 text-sm">Check back soon — we're adding new vendors.</p>
+              <p className="text-gray-400 text-sm">Check back soon — we&apos;re adding new vendors.</p>
             )}
           </div>
         )}

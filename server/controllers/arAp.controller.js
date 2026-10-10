@@ -44,26 +44,86 @@ exports.listBills = asyncHandler(async (req, res) => {
 // ── Credit notes ─────────────────────────────────────────────────────────────
 
 exports.listCreditNotes = asyncHandler(async (req, res) => {
-  envelope(req, res, await creditNoteService.listCreditNotes(req.tenant._id, { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search }));
+  envelope(req, res, await creditNoteService.listCreditNotes(req.tenant._id, {
+    ...paged(req),
+    status: req.query.status,
+    from: req.query.from,
+    to: req.query.to,
+    customer: req.query.customer,
+  }));
 });
 
 exports.createCreditNote = asyncHandler(async (req, res) => {
-  const { amount, taxAmount } = req.body;
+  const { amount, taxAmount, post } = req.body;
   if (!amount || amount <= 0) {
     return res.status(400).json({ success: false, message: 'amount must be positive' });
   }
-  const creditNote = await creditNoteService.createCreditNote({
+
+  // Creating is a draft by default. `post: true` is the one-step path for a
+  // caller that has already reviewed the split; otherwise nothing reaches the
+  // ledger until an explicit POST /:id/post.
+  const draft = await creditNoteService.createCreditNote({
     tenantId: req.tenant._id,
     data: req.body,
     userId: req.user._id,
   });
-  await logPrivilegedAction(req, 'accounting.credit_note', 'create', {
+  const creditNote = post
+    ? await creditNoteService.postCreditNote({
+      tenantId: req.tenant._id,
+      id: draft._id,
+      userId: req.user._id,
+    })
+    : draft;
+
+  await logPrivilegedAction(req, 'accounting.credit_note', post ? 'post' : 'create', {
     targetType: 'CreditNote',
     targetId: creditNote._id,
     targetTenantId: req.tenant._id,
-    changes: { after: { amount, taxAmount } },
+    changes: { after: { amount, taxAmount, status: creditNote.status, unappliedAmount: creditNote.unappliedAmount } },
   });
   res.status(201).json({ success: true, data: creditNote });
+});
+
+exports.postCreditNote = asyncHandler(async (req, res) => {
+  const creditNote = await creditNoteService.postCreditNote({
+    tenantId: req.tenant._id,
+    id: req.params.id,
+    userId: req.user._id,
+  });
+  await logPrivilegedAction(req, 'accounting.credit_note', 'post', {
+    targetType: 'CreditNote',
+    targetId: req.params.id,
+    targetTenantId: req.tenant._id,
+    changes: { after: { unappliedAmount: creditNote.unappliedAmount, number: creditNote.number } },
+  });
+  res.json({ success: true, data: creditNote });
+});
+
+exports.applyCreditNote = asyncHandler(async (req, res) => {
+  const { salesOrder, amount, customer } = req.body;
+  const result = await creditNoteService.applyCredit({
+    tenantId: req.tenant._id,
+    customer,
+    salesOrder,
+    amount,
+    userId: req.user._id,
+  });
+  // Applying credit moves no journal entry — it only records which invoice the
+  // credit settled — so there is no GL reversal to log, just the allocation.
+  await logPrivilegedAction(req, 'accounting.credit_note_apply', 'update', {
+    targetType: 'SalesOrder',
+    targetId: result.salesOrder,
+    targetTenantId: req.tenant._id,
+    changes: { after: { applied: result.applied, notes: result.notes } },
+  });
+  res.json({ success: true, data: result });
+});
+
+exports.getCustomerCredits = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await creditNoteService.customerCredits(req.tenant._id, req.params.customerId, paged(req)),
+  });
 });
 
 exports.cancelCreditNote = asyncHandler(async (req, res) => {
@@ -177,9 +237,14 @@ exports.cancelBatch = asyncHandler(async (req, res) => {
 // ── Directories ──────────────────────────────────────────────────────────────
 
 exports.listCustomers = asyncHandler(async (req, res) => {
-  const [list, balances] = await Promise.all([
+  const [list, balances, credits] = await Promise.all([
     arApService.customersList(req.tenant._id, { ...paged(req), search: req.query.search }),
     arApService.customerBalances(req.tenant._id),
+    // One aggregate for the whole page, not one per row.
+    creditNoteService.unappliedBalances(
+      req.tenant._id,
+      (list.data || []).map((c) => String(c._id)),
+    ),
   ]);
   const balanceById = new Map(balances.map((b) => [String(b.customerId), b]));
   envelope(req, res, {
@@ -188,6 +253,9 @@ exports.listCustomers = asyncHandler(async (req, res) => {
       ...c,
       outstanding: balanceById.get(String(c._id))?.outstanding ?? 0,
       openInvoices: balanceById.get(String(c._id))?.openInvoices ?? 0,
+      // Credit the customer holds and has not spent. Distinct from
+      // `outstanding`, which is what they owe.
+      creditBalance: credits.get(String(c._id)) ?? 0,
     })),
   });
 });

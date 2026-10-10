@@ -1,8 +1,6 @@
+import { transferReturnSummary } from '@/app/shared/purchases/invoice-return-summary';
 import type { StockTransfer } from '@/services/stockTransfer.service';
-import {
-  linePackSize,
-  packsLabel,
-} from '@/app/shared/purchases/types';
+import { linePackSize, packsLabel } from '@/app/shared/purchases/types';
 import {
   fmtAmt,
   fmtDate,
@@ -16,44 +14,34 @@ import type { DocumentModel, DocCell, DocPartyBox } from './doc-model';
 
 // Same box shape as the PO's Buyer box: a populated warehouse ref prints its
 // address/contact lines; bare ids collapse to their string form.
-function partyBox(
-  ref: StockTransfer['sourceWarehouse'],
-  heading: string
-): DocPartyBox {
+function partyBox(ref: StockTransfer['sourceWarehouse'], heading: string): DocPartyBox {
   const wh = typeof ref === 'object' ? ref : null;
   if (!wh) return { heading, name: String(ref ?? '—') };
   return {
     heading,
     name: wh.code ? `${wh.name} (${wh.code})` : wh.name,
-    lines: [
-      warehouseStreetLine(wh),
-      warehouseLocalityLine(wh),
-      warehouseContactLine(wh),
-    ].filter(Boolean),
+    lines: [warehouseStreetLine(wh), warehouseLocalityLine(wh), warehouseContactLine(wh)].filter(
+      Boolean,
+    ),
   };
 }
 
 const nameOf = (u?: { name?: string } | null) => u?.name ?? undefined;
 
-export function buildTransferInvoice(
-  transfer: StockTransfer,
-  companyName: string
-): DocumentModel {
+export function buildTransferInvoice(transfer: StockTransfer, companyName: string): DocumentModel {
+  const summary = transferReturnSummary(transfer);
   const currency = transfer.currency || 'NGN';
   // The source warehouse supplies the transfer and owns the document header;
   // the destination remains the buying entity in the parties section.
-  const src =
-    typeof transfer.sourceWarehouse === 'object'
-      ? transfer.sourceWarehouse
-      : null;
+  const src = typeof transfer.sourceWarehouse === 'object' ? transfer.sourceWarehouse : null;
   const dst =
-    typeof transfer.destinationWarehouse === 'object'
-      ? transfer.destinationWarehouse
-      : null;
+    typeof transfer.destinationWarehouse === 'object' ? transfer.destinationWarehouse : null;
   // Row money = net + tax only; delivery charge shares live in the totals block.
   const lineTotalOf = (it: StockTransfer['items'][number]) => {
     const net =
-      (it.costPrice ?? 0) * it.quantity * (1 - (it.discountRate ?? 0) / 100);
+      (it.costPrice ?? 0) *
+      Math.max(0, it.quantity - (it.returnedQty ?? 0)) *
+      (1 - (it.discountRate ?? 0) / 100);
     const tax = net * ((it.taxRate ?? 0) / 100);
     return net + tax;
   };
@@ -67,7 +55,14 @@ export function buildTransferInvoice(
     const done = recv >= item.quantity;
     const pending = Math.max(0, item.quantity - recv);
     return [
-      { text: name },
+      {
+        text: name,
+        ...(item.returnedQty
+          ? {
+              sub: `${item.returnedQty} returned · ${Math.max(0, recv - item.returnedQty)} retained`,
+            }
+          : {}),
+      },
       { text: packsLabel(item.quantity, linePackSize(item)) },
       { text: String(item.quantity) },
       done
@@ -85,12 +80,19 @@ export function buildTransferInvoice(
   });
 
   const shortfall = transfer.items.some((it) => (it.shortfallQty ?? 0) > 0);
-  const lastReal = [...(transfer.receipts ?? [])]
-    .reverse()
-    .find((r) => !r.shortagesClosed);
+  const lastReal = [...(transfer.receipts ?? [])].reverse().find((r) => !r.shortagesClosed);
 
   return {
     kind: 'transfer',
+    ...(summary.returned > 0
+      ? {
+          notice: {
+            tone: 'info' as const,
+            title: summary.fullyReturned ? 'Fully returned' : 'Adjusted after returns',
+            body: `${summary.returned} units returned. ${summary.remaining} units remain on this invoice.`,
+          },
+        }
+      : {}),
     companyName: src?.name || companyName,
     head: warehouseHeadOf(src),
     department: 'Stock Transfer',
@@ -128,7 +130,39 @@ export function buildTransferInvoice(
       ],
       rows,
     },
+    miniTables: transfer.returns?.length
+      ? [
+          {
+            title: `Returns (${transfer.returns.length})`,
+            columns: [
+              ['Date', 'left'],
+              ['Returned by', 'left'],
+              ['Products', 'left'],
+              ['Value', 'right'],
+            ],
+            rows: transfer.returns.map((entry) => [
+              { text: fmtDate(entry.returnedAt) },
+              { text: typeof entry.returnedBy === 'object' ? entry.returnedBy?.name || '—' : '—' },
+              {
+                text: entry.lines
+                  .map(
+                    (line) =>
+                      `${transfer.items[line.itemIndex]?.subProductName || 'Product'}: ${line.quantity}${line.note ? ` (${line.note})` : ''}`,
+                  )
+                  .join('; '),
+              },
+              { text: entry.refundedValue != null ? fmtAmt(entry.refundedValue, currency) : '—' },
+            ]),
+          },
+        ]
+      : undefined,
     totals: [
+      ...(summary.returned > 0
+        ? [
+            { label: 'Original invoice', value: fmtAmt(summary.originalTotal, currency) },
+            { label: 'Return credit', value: `− ${fmtAmt(summary.credit, currency)}` },
+          ]
+        : []),
       { label: 'Subtotal', value: fmtAmt(transfer.subtotal ?? 0, currency) },
       ...(transfer.discountAmount
         ? [
@@ -149,9 +183,9 @@ export function buildTransferInvoice(
               value: fmtAmt(
                 transfer.items.reduce(
                   (s, it) => s + (it.shortfallQty ?? 0) * (it.costPrice ?? 0),
-                  0
+                  0,
                 ),
-                currency
+                currency,
               ),
             },
           ]
@@ -160,7 +194,20 @@ export function buildTransferInvoice(
         ? [
             {
               label: 'Delivery / Charges',
-              value: fmtAmt(transfer.deliveryCharge, currency),
+              value: fmtAmt(
+                (() => {
+                  const originalNet = transfer.items.reduce(
+                    (sum, it) =>
+                      sum + (it.costPrice ?? 0) * it.quantity * (1 - (it.discountRate ?? 0) / 100),
+                    0,
+                  );
+                  const remainingNet = (transfer.subtotal ?? 0) - (transfer.discountAmount ?? 0);
+                  return originalNet > 0
+                    ? (transfer.deliveryCharge! * remainingNet) / originalNet
+                    : 0;
+                })(),
+                currency,
+              ),
             },
           ]
         : []),

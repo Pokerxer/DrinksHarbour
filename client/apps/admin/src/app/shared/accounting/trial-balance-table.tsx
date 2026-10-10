@@ -9,6 +9,7 @@ import {
   printReport,
 } from './accounting-helpers';
 import ReportActions from './report-actions';
+import { trialBalanceStatus } from './report-status';
 
 /** Trial Balance — per-account debits/credits/closing with out-of-balance banner. */
 export default function TrialBalanceTable({
@@ -35,13 +36,24 @@ export default function TrialBalanceTable({
       foot: ['Totals', '', '', fmtMoney(data.totalDebits), fmtMoney(data.totalCredits), ''],
     });
 
+  const status = trialBalanceStatus(data);
+
   return (
     <div>
-      {!data.balanced && (
-        <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          ⚠ Out of balance — total debits {fmtMoney(data.totalDebits)} vs credits{' '}
-          {fmtMoney(data.totalCredits)}. Some entries may be missing; run the journal
-          backfill or check for drafts.
+      {status.tone === 'bad' && (
+        <div
+          role="status"
+          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
+          <span className="font-medium">Out of balance</span> — total debits{' '}
+          {fmtMoney(data.totalDebits)} vs credits {fmtMoney(data.totalCredits)}. Some
+          entries may be missing; run the journal backfill or check for drafts.
+        </div>
+      )}
+      {status.tone === 'neutral' && (
+        <div className="mb-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
+          Nothing was posted in {period ? `period ${periodLabel(period)}` : 'this period'}.
+          This is not an imbalance — there were simply no entries to total.
         </div>
       )}
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">

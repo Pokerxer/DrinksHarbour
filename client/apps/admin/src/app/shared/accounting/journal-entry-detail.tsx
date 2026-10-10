@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { PiCaretRight } from 'react-icons/pi';
+import { PiWarning, PiX } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
+import ConfirmDialog from '@/app/shared/confirm-dialog';
 import {
   accountingService,
   type Account,
@@ -34,10 +35,14 @@ export default function JournalEntryDetail({
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
   const [busy, setBusy] = useState(false);
+  const [confirmingReverse, setConfirmingReverse] = useState(false);
 
   const accountName = (code: string) => accountsByCode?.get(code)?.name;
   const totalDebit = entryTotals(entry).debit;
   const totalCredit = entryTotals(entry).credit;
+  const outOfBalanceBy = Math.round(Math.abs(totalDebit - totalCredit) * 100) / 100;
+  const outOfBalance = outOfBalanceBy > 0.01;
+  const canReverse = entry.status === 'posted' && entry.entryType !== 'reversal';
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -46,6 +51,11 @@ export default function JournalEntryDetail({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Never carry a pending confirmation across to a different entry.
+  useEffect(() => {
+    setConfirmingReverse(false);
+  }, [entry._id]);
 
   const run = async (action: () => Promise<unknown>, successMsg: string) => {
     setBusy(true);
@@ -109,7 +119,17 @@ export default function JournalEntryDetail({
   ];
 
   return (
-    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-xl">
+    <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="Journal entry detail">
+      {/* Scrim: the panel is a drawer over the table, so the rows behind it
+          stay visible and look live. A dimmed, click-to-dismiss backdrop says
+          "this is a layer", and gives touch users something to hit. */}
+      <button
+        type="button"
+        aria-label="Close detail"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default bg-black/20"
+      />
+      <div className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-xl">
       <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">
@@ -133,7 +153,7 @@ export default function JournalEntryDetail({
             className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
             aria-label="Close detail"
           >
-            <PiCaretRight size={18} />
+            <PiX size={16} />
           </button>
         </div>
       </div>
@@ -203,20 +223,26 @@ export default function JournalEntryDetail({
               </tr>
             </tfoot>
           </table>
+          {/* An entry whose two sides disagree is broken; saying so here is the
+              difference between a 1-naira typo being caught and being posted. */}
+          {outOfBalance && (
+            <p className="flex items-start gap-1.5 border-t border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800">
+              <PiWarning size={13} className="mt-px shrink-0" />
+              <span>
+                Debits and credits differ by {fmtMoney(outOfBalanceBy)}. This entry
+                is out of balance and will not post cleanly.
+              </span>
+            </p>
+          )}
         </div>
       </div>
 
       <div className="flex items-center gap-2 border-t border-gray-200 px-5 py-3">
-        {entry.status === 'posted' && entry.entryType !== 'reversal' && (
+        {canReverse && (
           <button
             type="button"
             disabled={busy}
-            onClick={() =>
-              run(
-                () => accountingService.reverseJournalEntry(token, entry._id),
-                'Reversal posted'
-              )
-            }
+            onClick={() => setConfirmingReverse(true)}
             className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-black disabled:opacity-50"
           >
             Reverse
@@ -245,32 +271,63 @@ export default function JournalEntryDetail({
           Print
         </button>
       </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmingReverse}
+        title="Reverse this entry?"
+        message={`A mirrored reversal of ${fmtMoney(totalDebit)} will be posted today. The original stays on the ledger, and any VAT this entry captured is unwound at the same time.`}
+        confirmLabel="Post reversal"
+        busy={busy}
+        onConfirm={() =>
+          run(
+            () => accountingService.reverseJournalEntry(token, entry._id),
+            'Reversal posted'
+          )
+        }
+        onCancel={() => setConfirmingReverse(false)}
+      />
     </div>
   );
 }
 
-export function exportEntriesCsv(entries: JournalEntry[]) {
-  downloadCsv(
-    [
+/**
+ * Journal export rows. Pure so the shape can be unit-tested.
+ *
+ * The source document is written as its Mongo id, labelled "Source ID" rather
+ * than "Ref Number": the model stores no human-readable document number, so
+ * calling the ObjectId a reference number gave accountants a column of noise.
+ * The receipt/order number is carried in the memo, which is exported alongside.
+ */
+export function journalEntriesCsv(entries: JournalEntry[]) {
+  return {
+    headers: [
       'Date',
-      'Reference',
-      'Ref Number',
+      'Source',
+      'Source ID',
       'Type',
       'Memo',
       'Debit',
       'Credit',
       'Status',
     ],
-    entries.map((e) => [
-      fmtDate(e.date),
-      refDocLabel(e.refDocType),
-      e.refDoc,
-      entryTypeLabel(e.entryType),
-      e.memo ?? '',
-      entryTotals(e).debit.toFixed(2),
-      entryTotals(e).credit.toFixed(2),
-      e.status,
-    ]),
-    'journal-entries'
-  );
+    rows: entries.map((e) => {
+      const t = entryTotals(e);
+      return [
+        fmtDate(e.date),
+        refDocLabel(e.refDocType),
+        e.refDoc ?? '',
+        entryTypeLabel(e.entryType),
+        e.memo ?? '',
+        t.debit.toFixed(2),
+        t.credit.toFixed(2),
+        e.status,
+      ];
+    }),
+  };
+}
+
+export function exportEntriesCsv(entries: JournalEntry[]) {
+  const { headers, rows } = journalEntriesCsv(entries);
+  downloadCsv(headers, rows, 'journal-entries');
 }

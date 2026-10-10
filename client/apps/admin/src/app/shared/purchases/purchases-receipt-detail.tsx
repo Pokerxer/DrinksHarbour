@@ -130,7 +130,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
     po.items.forEach((item, idx) => {
       const key = (item as any)._id?.toString() ?? String(idx);
       const qty = receivedQtys[key] ?? 0;
-      const unitCost = (item as any).unitCost ?? item.unitPrice ?? 0;
+      const unitCost = item.unitCost ?? item.unitPrice ?? 0;
       const remaining = item.quantity - item.receivedQty;
       const shortfall = remaining - qty;
       unitsReceiving += qty;
@@ -286,7 +286,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
   const isOverdue =
     po.expectedArrival && new Date(po.expectedArrival) < new Date();
   const orderValue = po.items.reduce((sum, item) => {
-    const unitCost = (item as any).unitCost ?? item.unitPrice ?? 0;
+    const unitCost = item.unitCost ?? item.unitPrice ?? 0;
     return sum + unitCost * item.quantity;
   }, 0);
 
@@ -478,7 +478,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
                 const key = (item as any)._id?.toString() ?? String(idx);
                 const remaining = item.quantity - item.receivedQty;
                 const receiving = receivedQtys[key] ?? 0;
-                const unitCost = (item as any).unitCost ?? item.unitPrice ?? 0;
+                const unitCost = item.unitCost ?? item.unitPrice ?? 0;
                 const lineCost = receiving * unitCost;
                 const rowStatus = getRowStatus(remaining, receiving);
 

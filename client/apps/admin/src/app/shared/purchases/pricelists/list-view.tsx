@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { vendorPricelistService, type VendorPricelist } from '@/services/vendorPricelist.service';
 import { PriceCompare } from './price-compare';
 import BulkBar, { deletePricelists, duplicatePayload, exportOverviewCsv, runBulkAction } from './bulk-bar';
-import ConfirmDialog from './confirm-dialog';
+import ConfirmDialog from '@/app/shared/confirm-dialog';
 import type { SortKey } from './constants';
 import {
   computeKpis, filterSortLists, KpiStrip, PageHeader, parseListParams,

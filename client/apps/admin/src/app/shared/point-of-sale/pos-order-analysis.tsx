@@ -1,5 +1,22 @@
 'use client';
 
+import { netSales, returnDeduction } from './report-totals';
+import {
+  applyMeasure,
+  computeKpis,
+  getItemDimKey,
+  getOrderDimKey,
+  getQuarter,
+  getWeekNumber,
+  IS_CURRENCY,
+  ITEM_DIMS,
+  MEASURES,
+  METHOD_LABEL,
+  paymentAttribution,
+  type Measure,
+} from './analysis/measures';
+import { decodeAnalysis, type AnalysisMeta } from './analysis/decode';
+
 import {
   useEffect,
   useState,
@@ -62,6 +79,11 @@ import {
   PiCheckSquare,
   PiSquare,
   PiPrinter,
+  PiWarningDiamond,
+  PiHandCoins,
+  PiPercent,
+  PiChartLineUp,
+  PiCoins,
 } from 'react-icons/pi';
 import { printInvoices, DEFAULT_STORE } from '@/utils/invoice';
 import { posStore } from '@/utils/print/pos-documents';
@@ -75,6 +97,9 @@ import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface OrderItem {
+  netSales?: number;
+  netQuantity?: number;
+  returnedQuantity?: number;
   name: string;
   variant?: string;
   quantity: number;
@@ -84,11 +109,18 @@ interface OrderItem {
   sizeCostPrice?: number;
 }
 interface OrderRefund {
+  receiptNumber?: string;
+  items?: { orderItemIndex: number; quantity: number }[];
+  source?: 'sales' | 'pos';
+  reason?: string;
   totalRefunded: number;
   paymentMethod?: string;
   refundedAt?: string;
 }
 interface PosOrder {
+  netSales?: number;
+  returnDeduction?: number;
+  returnStatus?: string;
   _id: string;
   orderNumber?: string;
   receiptNumber?: string;
@@ -123,17 +155,6 @@ type GroupByKey =
   | 'order_month'
   | 'order_quarter'
   | 'order_year';
-type Measure =
-  | 'total_price'
-  | 'count'
-  | 'avg_price'
-  | 'product_qty'
-  | 'line_count'
-  | 'subtotal'
-  | 'total_discount'
-  | 'profit'
-  | 'delay_validation'
-  | 'subtotal_notax';
 type ChartType = 'bar' | 'line' | 'pie' | 'table';
 type SortField = 'value' | 'label' | 'orders';
 type ViewMode = 'graph' | 'pivot';
@@ -173,15 +194,6 @@ interface ProdMeta {
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-
-const METHOD_LABEL: Record<string, string> = {
-  cash: 'Cash',
-  card: 'Card/POS',
-  bank_transfer: 'Bank Transfer',
-  mobile_money: 'Mobile Money',
-  split: 'Split',
-  other: 'Other',
-};
 
 const PALETTE = [
   '#b20202',
@@ -224,32 +236,6 @@ const GROUP_BY_DATE_ITEMS: { key: GroupByKey; label: string }[] = [
 
 const ALL_GROUP_ITEMS = [...GROUP_BY_ITEMS, ...GROUP_BY_DATE_ITEMS];
 
-const MEASURES: { key: Measure; label: string; separator?: boolean }[] = [
-  { key: 'avg_price', label: 'Average Price' },
-  { key: 'delay_validation', label: 'Delay Validation' },
-  { key: 'profit', label: 'Profit' },
-  { key: 'product_qty', label: 'Product Quantity' },
-  { key: 'line_count', label: 'Sale Line Count' },
-  { key: 'subtotal', label: 'Subtotal w/o Discount' },
-  { key: 'subtotal_notax', label: 'Subtotal w/o Tax' },
-  { key: 'total_discount', label: 'Total Discount' },
-  { key: 'total_price', label: 'Total Price' },
-  { key: 'count', label: 'Count', separator: true },
-];
-
-const IS_CURRENCY: Record<Measure, boolean> = {
-  total_price: true,
-  avg_price: true,
-  subtotal: true,
-  total_discount: true,
-  profit: true,
-  subtotal_notax: true,
-  count: false,
-  product_qty: false,
-  line_count: false,
-  delay_validation: false,
-};
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function cashierLabel(
@@ -284,17 +270,6 @@ function fmtMeasureVal(v: number, measure: Measure): string {
     return `${v.toFixed(1)}m`;
   }
   return IS_CURRENCY[measure] ? formatCurrency(v) : String(Math.round(v));
-}
-
-function getWeekNumber(d: Date): number {
-  const start = new Date(d.getFullYear(), 0, 1);
-  return Math.ceil(
-    ((d.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7
-  );
-}
-
-function getQuarter(d: Date): number {
-  return Math.ceil((d.getMonth() + 1) / 3);
 }
 
 // Generate dynamic date filter sections from current date
@@ -393,14 +368,14 @@ function applyFilters(
   if (filters.includes('invoiced'))
     r = r.filter(
       (o) =>
-        o.paymentStatus === 'paid' ||
+        ['paid', 'partially_refunded', 'refunded'].includes(o.paymentStatus || '') ||
         o.status === 'paid' ||
         o.status === 'completed'
     );
   if (filters.includes('not_invoiced'))
     r = r.filter(
       (o) =>
-        o.paymentStatus !== 'paid' &&
+        !['paid', 'partially_refunded', 'refunded'].includes(o.paymentStatus || '') &&
         o.status !== 'paid' &&
         o.status !== 'completed'
     );
@@ -598,16 +573,10 @@ function computeGroupData(
     if (groupBy === 'cashier') {
       key = cashierLabel(o.posStaff);
     } else if (groupBy === 'payment_method') {
-      if (o.paymentDetails?.splitPayments?.length) {
-        o.paymentDetails.splitPayments.forEach((sp) => {
-          const mk = METHOD_LABEL[sp.method] || sp.method;
-          const b = getBucket(mk);
-          b.orders.add(o._id + sp.method);
-          b.orderList.push({ ...o, total: sp.amount } as PosOrder);
-        });
-        return;
-      }
-      key = METHOD_LABEL[o.paymentMethod] || o.paymentMethod || 'Other';
+      // Credited to a single method. The old code fanned a split receipt across
+      // every method it was split into, which put the same sale in Cash *and*
+      // Card and made revenue-by-method overstate the day's takings.
+      key = getOrderDimKey(o, 'payment_method');
     } else if (groupBy === 'terminal') {
       const t = o.session?.terminalType || 'retail';
       key = t.charAt(0).toUpperCase() + t.slice(1);
@@ -635,102 +604,10 @@ function computeGroupData(
 
   return Object.entries(groups).map(([key, { orderList, items }]) => {
     const ordersForRow = orderList;
-    let value: number;
-    switch (measure) {
-      case 'total_price':
-        value = isItemGroup
-          ? items.reduce(
-              (s, i) => s + (i.itemSubtotal ?? i.priceAtPurchase * i.quantity),
-              0
-            )
-          : orderList.reduce((s, o) => s + (o.total ?? 0), 0);
-        break;
-      case 'count':
-        value = orderList.length;
-        break;
-      case 'avg_price':
-        value = isItemGroup
-          ? items.length > 0
-            ? items.reduce((s, i) => s + i.priceAtPurchase, 0) / items.length
-            : 0
-          : orderList.length > 0
-            ? orderList.reduce((s, o) => s + (o.total ?? 0), 0) /
-              orderList.length
-            : 0;
-        break;
-      case 'product_qty':
-        value =
-          items.length > 0
-            ? items.reduce((s, i) => s + i.quantity, 0)
-            : orderList.reduce(
-                (s, o) =>
-                  s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
-                0
-              );
-        break;
-      case 'line_count':
-        value =
-          items.length > 0
-            ? items.length
-            : orderList.reduce((s, o) => s + (o.items || []).length, 0);
-        break;
-      case 'subtotal':
-        value = orderList.reduce((s, o) => s + (o.subtotal ?? o.total ?? 0), 0);
-        break;
-      case 'subtotal_notax':
-        // No tax tracking in this system — subtotal already excludes tax
-        value = isItemGroup
-          ? items.reduce(
-              (s, i) => s + (i.itemSubtotal ?? i.priceAtPurchase * i.quantity),
-              0
-            )
-          : orderList.reduce((s, o) => s + (o.subtotal ?? o.total ?? 0), 0);
-        break;
-      case 'total_discount':
-        value = orderList.reduce((s, o) => s + (o.discountTotal ?? 0), 0);
-        break;
-      case 'profit': {
-        // Profit = selling price − Size.costPrice × qty
-        // Uses sizeCostPrice populated directly from the Size model.
-        // Items with no cost price set contribute 0 profit.
-        const profitFn = (i: OrderItem): number => {
-          const cost = i.sizeCostPrice ?? 0;
-          if (cost <= 0) return 0;
-          const revenue = i.itemSubtotal ?? i.priceAtPurchase * i.quantity;
-          return revenue - cost * i.quantity;
-        };
-        if (isItemGroup) {
-          value = items.reduce((s, i) => s + profitFn(i), 0);
-        } else {
-          value = orderList.reduce((s, o) => {
-            const lineProfit = (o.items || []).reduce(
-              (cs, i) => cs + profitFn(i),
-              0
-            );
-            const hasCost = (o.items || []).some(
-              (i) => (i.sizeCostPrice ?? 0) > 0
-            );
-            return s + lineProfit - (hasCost ? (o.discountTotal ?? 0) : 0);
-          }, 0);
-        }
-        break;
-      }
-      case 'delay_validation': {
-        // Average minutes from order creation to placement/validation
-        const delays = orderList.map((o) => {
-          const created = new Date(o.createdAt).getTime();
-          const placed = new Date(o.placedAt || o.createdAt).getTime();
-          return Math.max(0, (placed - created) / 60000);
-        });
-        value =
-          delays.length > 0
-            ? delays.reduce((s, d) => s + d, 0) / delays.length
-            : 0;
-        break;
-      }
-      default:
-        value = 0;
-    }
+    // One implementation, shared with the chart series and the pivot. These three
+    // used to carry separate copies of this switch and had already drifted, so the
+    // same measure reported different figures depending on which chart was open.
+    const value = applyMeasure(measure, { orders: ordersForRow, items, isItemGroup });
 
     // Human label + ISO sort key
     let label = key;
@@ -889,68 +766,14 @@ function computeMultiSeries(
     };
     series.forEach((s) => {
       const ords = g2Map[s] || [];
-      let val = 0;
-      switch (measure) {
-        case 'total_price':
-          val = ords.reduce((a, o) => a + (o.total ?? 0), 0);
-          break;
-        case 'count':
-          val = ords.length;
-          break;
-        case 'avg_price':
-          val =
-            ords.length > 0
-              ? ords.reduce((a, o) => a + (o.total ?? 0), 0) / ords.length
-              : 0;
-          break;
-        case 'product_qty':
-          val = ords.reduce(
-            (a, o) => a + (o.items || []).reduce((b, i) => b + i.quantity, 0),
-            0
-          );
-          break;
-        case 'line_count':
-          val = ords.reduce((a, o) => a + (o.items || []).length, 0);
-          break;
-        case 'subtotal':
-          val = ords.reduce((a, o) => a + (o.subtotal ?? o.total ?? 0), 0);
-          break;
-        case 'subtotal_notax':
-          val = ords.reduce((a, o) => a + (o.subtotal ?? o.total ?? 0), 0);
-          break;
-        case 'total_discount':
-          val = ords.reduce((a, o) => a + (o.discountTotal ?? 0), 0);
-          break;
-        case 'profit':
-          val = ords.reduce((a, o) => {
-            const lineProfit = (o.items || []).reduce((b, i) => {
-              const cost = i.sizeCostPrice ?? 0;
-              if (cost <= 0) return b;
-              const revenue = i.itemSubtotal ?? i.priceAtPurchase * i.quantity;
-              return b + revenue - cost * i.quantity;
-            }, 0);
-            const hasCost = (o.items || []).some(
-              (i) => (i.sizeCostPrice ?? 0) > 0
-            );
-            return a + lineProfit - (hasCost ? (o.discountTotal ?? 0) : 0);
-          }, 0);
-          break;
-        case 'delay_validation': {
-          const delays = ords.map((o) =>
-            Math.max(
-              0,
-              (new Date(o.placedAt || o.createdAt).getTime() -
-                new Date(o.createdAt).getTime()) /
-                60000
-            )
-          );
-          val =
-            delays.length > 0
-              ? delays.reduce((a, d) => a + d, 0) / delays.length
-              : 0;
-          break;
-        }
-      }
+      // Shared implementation — see analysis/measures.ts. This chart used to carry
+      // its own copy and dropped item grouping entirely, so a product grouping
+      // silently showed order totals instead.
+      const val = applyMeasure(measure, {
+        orders: ords,
+        items: ords.flatMap((o) => o.items || []),
+        isItemGroup: false,
+      });
       row[s] = val;
       row.__total__ += val;
     });
@@ -972,54 +795,6 @@ function computeMultiSeries(
 
 // ── Pivot helpers ──────────────────────────────────────────────────────────────
 
-const ITEM_DIMS = new Set<GroupByKey>([
-  'product',
-  'product_category',
-  'subcategory',
-  'brand',
-]);
-
-function getOrderDimKey(o: PosOrder, dim: GroupByKey): string {
-  if (dim === 'cashier') return cashierLabel(o.posStaff);
-  if (dim === 'terminal') {
-    const t = o.session?.terminalType || 'retail';
-    return t.charAt(0).toUpperCase() + t.slice(1);
-  }
-  if (dim === 'payment_method')
-    return METHOD_LABEL[o.paymentMethod] || o.paymentMethod || 'Other';
-  if (dim === 'order_day')
-    return new Date(o.placedAt || o.createdAt).toISOString().split('T')[0];
-  if (dim === 'order_week') {
-    const d = new Date(o.placedAt || o.createdAt);
-    return `${d.getFullYear()}-W${String(getWeekNumber(d)).padStart(2, '0')}`;
-  }
-  if (dim === 'order_month') {
-    const d = new Date(o.placedAt || o.createdAt);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  }
-  if (dim === 'order_quarter') {
-    const d = new Date(o.placedAt || o.createdAt);
-    return `${d.getFullYear()}-Q${getQuarter(d)}`;
-  }
-  if (dim === 'order_year')
-    return String(new Date(o.placedAt || o.createdAt).getFullYear());
-  return '—';
-}
-
-function getItemDimKey(
-  item: OrderItem,
-  dim: GroupByKey,
-  prodMeta: Record<string, ProdMeta>
-): string {
-  if (dim === 'product')
-    return item.variant ? `${item.name} · ${item.variant}` : item.name;
-  const m = prodMeta[item.name];
-  if (dim === 'product_category') return m?.catName || 'Unknown';
-  if (dim === 'subcategory') return m?.subCatName || m?.catName || 'Unknown';
-  if (dim === 'brand') return m?.brandName || 'Unknown';
-  return '—';
-}
-
 function fmtDimKey(key: string, dim: GroupByKey): string {
   if (dim === 'order_day')
     return new Date(key).toLocaleDateString('en-US', {
@@ -1039,82 +814,6 @@ function fmtDimKey(key: string, dim: GroupByKey): string {
   }
   if (dim === 'order_quarter') return key.replace('-', ' ');
   return key;
-}
-
-function applyMeasure(
-  orderList: PosOrder[],
-  items: OrderItem[],
-  measure: Measure,
-  isItemGroup: boolean
-): number {
-  switch (measure) {
-    case 'total_price':
-      return isItemGroup
-        ? items.reduce(
-            (s, i) => s + (i.itemSubtotal ?? i.priceAtPurchase * i.quantity),
-            0
-          )
-        : orderList.reduce((s, o) => s + (o.total ?? 0), 0);
-    case 'count':
-      return orderList.length;
-    case 'avg_price':
-      return isItemGroup
-        ? items.length > 0
-          ? items.reduce((s, i) => s + i.priceAtPurchase, 0) / items.length
-          : 0
-        : orderList.length > 0
-          ? orderList.reduce((s, o) => s + (o.total ?? 0), 0) / orderList.length
-          : 0;
-    case 'product_qty':
-      return items.length > 0
-        ? items.reduce((s, i) => s + i.quantity, 0)
-        : orderList.reduce(
-            (s, o) => s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
-            0
-          );
-    case 'line_count':
-      return items.length > 0
-        ? items.length
-        : orderList.reduce((s, o) => s + (o.items || []).length, 0);
-    case 'subtotal':
-    case 'subtotal_notax':
-      return isItemGroup
-        ? items.reduce(
-            (s, i) => s + (i.itemSubtotal ?? i.priceAtPurchase * i.quantity),
-            0
-          )
-        : orderList.reduce((s, o) => s + (o.subtotal ?? o.total ?? 0), 0);
-    case 'total_discount':
-      return orderList.reduce((s, o) => s + (o.discountTotal ?? 0), 0);
-    case 'profit': {
-      const pFn = (i: OrderItem) => {
-        const sp = i.sizeCostPrice ?? 0;
-        const rev = i.itemSubtotal ?? i.priceAtPurchase * i.quantity;
-        return sp > 0 ? rev - sp * i.quantity : 0;
-      };
-      if (isItemGroup) return items.reduce((s, i) => s + pFn(i), 0);
-      return orderList.reduce((s, o) => {
-        const lp = (o.items || []).reduce((cs, i) => cs + pFn(i), 0);
-        const hc = (o.items || []).some((i) => (i.sizeCostPrice ?? 0) > 0);
-        return s + lp - (hc ? (o.discountTotal ?? 0) : 0);
-      }, 0);
-    }
-    case 'delay_validation': {
-      const delays = orderList.map((o) =>
-        Math.max(
-          0,
-          (new Date(o.placedAt || o.createdAt).getTime() -
-            new Date(o.createdAt).getTime()) /
-            60000
-        )
-      );
-      return delays.length > 0
-        ? delays.reduce((s, d) => s + d, 0) / delays.length
-        : 0;
-    }
-    default:
-      return 0;
-  }
 }
 
 interface PivotCell {
@@ -1179,7 +878,7 @@ function computePivot(
     Object.keys(cells[rk]).forEach((ck) => {
       const cell = cells[rk][ck];
       const ol = Array.from(cell.orders.values());
-      valueGrid[rk][ck] = applyMeasure(ol, cell.items, measure, isItemGroup);
+      valueGrid[rk][ck] = applyMeasure(measure, { orders: ol, items: cell.items, isItemGroup });
       ordGrid[rk][ck] = ol.length;
     });
   });
@@ -1355,12 +1054,11 @@ function computeHierarchicalPivot(
       numCache.set(k, 0);
       return 0;
     }
-    const val = applyMeasure(
-      Array.from(e.ords.values()),
-      e.items,
-      measure,
-      isItemGroup
-    );
+    const val = applyMeasure(measure, {
+      orders: Array.from(e.ords.values()),
+      items: e.items,
+      isItemGroup,
+    });
     numCache.set(k, val);
     return val;
   };
@@ -1459,7 +1157,7 @@ function drillFmtTime(d: string) {
   });
 }
 function drillStatusBadge(o: PosOrder) {
-  const ref = (o.refunds || []).reduce((s, r) => s + r.totalRefunded, 0);
+  const ref = returnDeduction(o);
   const amt = o.total ?? 0;
   if (o.isVoided || o.status === 'voided')
     return { label: 'Voided', cls: 'bg-gray-100 text-gray-500' };
@@ -1738,9 +1436,10 @@ function DrillOrderDetail({
                       {r.receiptNumber || `Return ${i + 1}`}
                     </span>
                     <span className="text-sm font-bold tabular-nums text-red-600">
-                      −{formatCurrency(r.totalRefunded)}
+                      {r.source === 'sales' ? 'No refund recorded' : `−${formatCurrency(r.totalRefunded)}`}
                     </span>
                   </div>
+                  {r.source === 'sales' && <p className="text-xs text-gray-500">{(r.items || []).reduce((sum, item) => sum + item.quantity, 0)} units returned through Sales · stock already restored</p>}
                   {r.refundedAt && (
                     <p className="text-[11px] text-gray-400">
                       {drillFmtDate(r.refundedAt)} ·{' '}
@@ -1755,7 +1454,7 @@ function DrillOrderDetail({
                 </div>
               ))}
               <div className="flex justify-between border-t border-dashed border-gray-200 px-6 py-3 text-sm font-bold">
-                <span className="text-gray-600">Total Returned</span>
+                <span className="text-gray-600">Total Refunded</span>
                 <span className="tabular-nums text-red-600">
                   −{formatCurrency(refunded)}
                 </span>
@@ -1826,10 +1525,10 @@ function OrderDrillDrawer({
 
   // KPIs (exclude voided)
   const active = orders.filter((o) => !o.isVoided && o.status !== 'voided');
-  const netRevenue = active.reduce((s, o) => s + (o.total ?? 0), 0);
+  const netRevenue = active.reduce((s, o) => s + netSales(o), 0);
   const avgOrder = active.length > 0 ? netRevenue / active.length : 0;
   const itemQty = active.reduce(
-    (s, o) => s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
+    (s, o) => s + (o.items || []).reduce((si, i) => si + (i.netQuantity ?? i.quantity), 0),
     0
   );
   const voidedCount = orders.length - active.length;
@@ -1849,11 +1548,11 @@ function OrderDrillDrawer({
       list = list.filter(
         (o) =>
           !o.isVoided &&
-          (o.refunds || []).reduce((s, r) => s + r.totalRefunded, 0) === 0
+          returnDeduction(o) === 0
       );
     if (statusFilter === 'refunded')
       list = list.filter((o) => {
-        const r = (o.refunds || []).reduce((s, r) => s + r.totalRefunded, 0);
+        const r = returnDeduction(o);
         return r > 0;
       });
     if (statusFilter === 'voided')
@@ -1922,7 +1621,7 @@ function OrderDrillDrawer({
     filtered.length > 0 && filtered.every((o) => checked.has(o._id));
   const someChecked = checked.size > 0 && !allChecked;
   const checkedOrders = orders.filter((o) => checked.has(o._id));
-  const checkedTotal = checkedOrders.reduce((s, o) => s + (o.total ?? 0), 0);
+  const checkedTotal = checkedOrders.reduce((s, o) => s + netSales(o), 0);
 
   function toggleAll() {
     setChecked(allChecked ? new Set() : new Set(filtered.map((o) => o._id)));
@@ -2280,7 +1979,7 @@ function OrderDrillDrawer({
                               className={`cursor-pointer px-3 py-2.5 text-right font-bold tabular-nums ${o.isVoided ? 'text-gray-300 line-through' : 'text-gray-900'}`}
                               onClick={() => setSelectedOrder(o)}
                             >
-                              {formatCurrency(o.total ?? 0)}
+                              {formatCurrency(netSales(o))}
                             </td>
 
                             {/* Status */}
@@ -4796,6 +4495,9 @@ export default function POSOrderAnalysis() {
   const { data: session, status: sessionStatus } = useSession();
   const token = (session?.user as { token?: string })?.token ?? null;
   const [orders, setOrders] = useState<PosOrder[]>([]);
+  // How many receipts matched, and whether the response was capped. Null until
+  // the first load. The UI must say so out loud when a figure is partial.
+  const [analysisMeta, setAnalysisMeta] = useState<AnalysisMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<CatItem[]>([]);
   const [brands, setBrands] = useState<BrandItem[]>([]);
@@ -4867,12 +4569,21 @@ export default function POSOrderAnalysis() {
   useEffect(() => {
     if (!token) return; // keep spinner while session loads; middleware redirects if truly unauthed
     setLoading(true);
+    // The analysis endpoint, not the paginated order list. This page used to pull
+    // `getAllOrders(limit: 500)` and compute every KPI, chart and pivot from that
+    // one page, so a tenant with more than 500 receipts in the window silently
+    // reported figures computed from the newest 500 — with nothing on screen
+    // saying so. The endpoint returns the whole period and a completeness flag.
     posApi
-      .getAllOrders(token, { limit: 500 })
-      .then((d) => setOrders(Array.isArray(d) ? d : []))
+      .getOrderAnalysis(token)
+      .then((res) => {
+        setAnalysisMeta(res.meta);
+        setOrders(decodeAnalysis(res.data) as unknown as PosOrder[]);
+      })
       .catch((err) => {
         console.error('[OrderAnalysis] fetch failed:', err);
         setOrders([]);
+        setAnalysisMeta(null);
       })
       .finally(() => setLoading(false));
   }, [token]);
@@ -5060,19 +4771,20 @@ export default function POSOrderAnalysis() {
       const filtItems = (o.items || []).filter(itemFilter);
       if (filtItems.length === 0) return o; // matched via cashier/customer — keep full order
       const filtSubtotal = filtItems.reduce(
-        (s, i) => s + (i.itemSubtotal ?? i.priceAtPurchase * i.quantity),
+        (s, i) => s + (i.netSales ?? i.itemSubtotal ?? i.priceAtPurchase * i.quantity),
         0
       );
       const allSubtotal = (o.items || []).reduce(
-        (s, i) => s + (i.itemSubtotal ?? i.priceAtPurchase * i.quantity),
+        (s, i) => s + (i.netSales ?? i.itemSubtotal ?? i.priceAtPurchase * i.quantity),
         0
       );
       const discShare = allSubtotal > 0 ? filtSubtotal / allSubtotal : 0;
       return {
         ...o,
         items: filtItems,
-        total: filtSubtotal,
-        subtotal: filtSubtotal,
+        total: filtItems.reduce((sum, item) => sum + item.itemSubtotal, 0),
+        netSales: filtSubtotal,
+        subtotal: filtItems.reduce((sum, item) => sum + item.itemSubtotal, 0),
         discountTotal:
           Math.round((o.discountTotal ?? 0) * discShare * 100) / 100,
       } as PosOrder;
@@ -5179,88 +4891,78 @@ export default function POSOrderAnalysis() {
 
   // Summary analytics
   const analytics = useMemo(() => {
-    const active = filteredScoped.filter(
-      (o) => !o.isVoided && o.status !== 'voided'
-    );
+    // Headline figures come from the shared implementation so they can never
+    // disagree with the chart built from the same receipts. The inline version
+    // this replaced had three real defects: it counted only the receipt footer
+    // discount and ignored every line discount, it read `subtotal` as "gross"
+    // although subtotal is tax-inclusive, and it keyed customers on phone so
+    // every walk-in collapsed into a single "Walk-in Customer".
+    const kpis = computeKpis(filteredScoped);
+    const {
+      totalRevenue,
+      grossRevenue,
+      totalOrders,
+      avgOrder,
+      itemsSold,
+      avgItemsPerOrder,
+      totalRefunds,
+      totalDiscount,
+      discountRate,
+      uniqueCustomers,
+    } = kpis;
+
     const voided = filteredScoped.filter(
       (o) => o.isVoided || o.status === 'voided'
     );
+    const active = filteredScoped.filter(
+      (o) => !o.isVoided && o.status !== 'voided'
+    );
 
-    const totalRevenue = active.reduce((s, o) => s + (o.total ?? 0), 0);
-    const grossRevenue = active.reduce(
-      (s, o) => s + (o.subtotal ?? o.total ?? 0),
-      0
-    );
-    const totalOrders = active.length;
-    const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-    const totalRefunds = active.reduce(
-      (s, o) =>
-        s + (o.refunds || []).reduce((r, ref) => r + ref.totalRefunded, 0),
-      0
-    );
-    const totalDiscount = active.reduce(
-      (s, o) => s + (o.discountTotal ?? 0),
-      0
-    );
-    const itemsSold = active.reduce(
-      (s, o) => s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
-      0
-    );
-    const avgItemsPerOrder = totalOrders > 0 ? itemsSold / totalOrders : 0;
+    // Share of *orders* that had any return — a rate about receipts, not money.
     const refundRate =
       totalOrders > 0
-        ? (active.filter((o) => (o.refunds?.length ?? 0) > 0).length /
-            totalOrders) *
-          100
+        ? (active.filter((o) => returnDeduction(o) > 0).length / totalOrders) * 100
         : 0;
-    const discountRate =
-      grossRevenue > 0 ? (totalDiscount / grossRevenue) * 100 : 0;
-    const customerKeys = new Set<string>();
-    active.forEach((o) => {
-      if (o.customer?.phone) customerKeys.add(o.customer.phone);
-      else if (o.customer?.firstName)
-        customerKeys.add(`${o.customer.firstName}${o.customer.lastName ?? ''}`);
-    });
-    const uniqueCustomers = customerKeys.size;
 
-    const withRefunds = active.filter((o) => (o.refunds?.length ?? 0) > 0);
+    const withRefunds = active.filter((o) => returnDeduction(o) > 0);
     const clean = active.filter((o) => !o.refunds?.length);
     const statusData = [
       {
         name: 'Paid',
         value: clean.length,
-        revenue: clean.reduce((s, o) => s + o.total, 0),
+        revenue: clean.reduce((s, o) => s + netSales(o), 0),
       },
       {
-        name: 'Refunded',
+        name: 'Returned / refunded',
         value: withRefunds.length,
-        revenue: withRefunds.reduce((s, o) => s + o.total, 0),
+        revenue: withRefunds.reduce((s, o) => s + netSales(o), 0),
       },
       { name: 'Voided', value: voided.length, revenue: 0 },
     ].filter((s) => s.value > 0);
 
-    const methodMap: Record<string, { revenue: number; count: number }> = {};
+    // One attribution rule, shared with the payment-method grouping, so the chart
+    // and the grouping can never disagree. A split receipt is credited to the
+    // method that took the most money and to exactly one of them; the old code
+    // fanned it across every method and divided by `total`, which counted the
+    // sale more than once and under-allocated whenever a tip inflated `total`.
+    const methodMap: Record<
+      string,
+      { revenue: number; count: number; splitCount: number }
+    > = {};
     active.forEach((o) => {
-      if (o.paymentDetails?.splitPayments?.length) {
-        o.paymentDetails.splitPayments.forEach((sp) => {
-          if (!methodMap[sp.method])
-            methodMap[sp.method] = { revenue: 0, count: 0 };
-          methodMap[sp.method].revenue += sp.amount;
-          methodMap[sp.method].count += 1;
-        });
-      } else {
-        const m = o.paymentMethod || 'other';
-        if (!methodMap[m]) methodMap[m] = { revenue: 0, count: 0 };
-        methodMap[m].revenue += o.total ?? 0;
-        methodMap[m].count += 1;
-      }
+      const { method, split } = paymentAttribution(o);
+      if (!methodMap[method]) methodMap[method] = { revenue: 0, count: 0, splitCount: 0 };
+      methodMap[method].revenue += netSales(o);
+      methodMap[method].count += 1;
+      if (split) methodMap[method].splitCount += 1;
     });
     const methodData = Object.entries(methodMap)
-      .map(([method, { revenue, count }]) => ({
+      .map(([method, { revenue, count, splitCount }]) => ({
         method,
         name: METHOD_LABEL[method] || method,
         revenue,
         count,
+        splitCount,
       }))
       .sort((a, b) => b.revenue - a.revenue);
 
@@ -5274,8 +4976,8 @@ export default function POSOrderAnalysis() {
         if (!productMap[key])
           productMap[key] = { name: key, revenue: 0, qty: 0 };
         productMap[key].revenue +=
-          item.itemSubtotal ?? item.priceAtPurchase * item.quantity;
-        productMap[key].qty += item.quantity;
+          item.netSales ?? item.itemSubtotal ?? item.priceAtPurchase * item.quantity;
+        productMap[key].qty += item.netQuantity ?? item.quantity;
       });
     });
     const topProducts = Object.values(productMap)
@@ -5291,7 +4993,7 @@ export default function POSOrderAnalysis() {
     active.forEach((o) => {
       const h = new Date(o.placedAt || o.createdAt).getHours();
       hourOrders[h]++;
-      hourRevenue[h] += o.total ?? 0;
+      hourRevenue[h] += netSales(o);
     });
     const hourData = Array.from({ length: 24 }, (_, h) => ({
       hour: `${h.toString().padStart(2, '0')}:00`,
@@ -5306,7 +5008,7 @@ export default function POSOrderAnalysis() {
     active.forEach((o) => {
       const name = cashierLabel(o.posStaff);
       if (!cashierMap[name]) cashierMap[name] = { name, revenue: 0, orders: 0 };
-      cashierMap[name].revenue += o.total ?? 0;
+      cashierMap[name].revenue += netSales(o);
       cashierMap[name].orders++;
     });
     const cashierData = Object.values(cashierMap)
@@ -5319,7 +5021,7 @@ export default function POSOrderAnalysis() {
     active.forEach((o) => {
       const d = new Date(o.placedAt || o.createdAt).getDay();
       dowBuckets[d].orders++;
-      dowBuckets[d].revenue += o.total ?? 0;
+      dowBuckets[d].revenue += netSales(o);
     });
     const dayOfWeekData = DOW_LABELS.map((day, i) => ({
       day,
@@ -5338,6 +5040,18 @@ export default function POSOrderAnalysis() {
       totalDiscount,
       discountRate,
       uniqueCustomers,
+      // Surfaced so the report can be read honestly rather than conveniently.
+      cashRefunded: kpis.cashRefunded,
+      salesReturnValue: kpis.totalRefunds - kpis.cashRefunded,
+      taxCollected: kpis.taxCollected,
+      totalTips: kpis.totalTips,
+      totalRounding: kpis.totalRounding,
+      totalProfit: kpis.totalProfit,
+      marginPct: kpis.marginPct,
+      uncostedRevenue: kpis.uncostedRevenue,
+      uncostedLines: kpis.uncostedLines,
+      voidedOrders: kpis.voidedOrders,
+      walkInSales: kpis.walkInSales,
       statusData,
       methodData,
       topProducts,
@@ -7410,7 +7124,44 @@ export default function POSOrderAnalysis() {
 
           {/* ── Secondary analytics ─────────────────────────────────────────── */}
           <div className="space-y-5 px-6 py-5">
-            {/* ── KPI cards — 6 metrics ───────────────────────────────────────── */}
+            {/* Completeness banner. This page used to build every figure from a
+                500-order page of the order list, so a busier tenant silently saw
+                numbers computed from a fraction of its sales with nothing saying
+                so. The report now reads the whole period, but if the response is
+                ever capped we say so rather than letting a partial total pass as
+                a real one. */}
+            {analysisMeta?.truncated ? (
+              <div
+                role="alert"
+                className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+              >
+                <PiWarningDiamond className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                <p className="text-sm text-amber-900">
+                  <span className="font-semibold">Partial data.</span> Showing{' '}
+                  {analysisMeta.included.toLocaleString()} of{' '}
+                  {(analysisMeta.matched || analysisMeta.scanned).toLocaleString()}{' '}
+                  receipts — the report is capped at{' '}
+                  {analysisMeta.maxLines.toLocaleString()} line items. Figures
+                  below understate the period. Narrow the filters to read a
+                  complete report.
+                </p>
+              </div>
+            ) : analysisMeta ? (
+              <p className="px-1 text-xs text-gray-400">
+                Based on all {analysisMeta.matched.toLocaleString()} receipts in
+                the current scope
+                {analysisMeta.lines > 0 &&
+                  ` · ${analysisMeta.lines.toLocaleString()} line items`}
+                .
+              </p>
+            ) : null}
+
+            {/* ── KPI cards ────────────────────────────────────────────────────
+                Net revenue leads because a gratuity is not a sale: staff tips
+                were previously folded into "Total Price", inflating revenue by
+                the amount the bar staff earned. Tax is now its own figure instead
+                of the old "Subtotal w/o Tax" column, which duplicated Net
+                Revenue exactly. */}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
               <KpiCard
                 icon={<PiCurrencyNgn className="h-5 w-5" />}
@@ -7428,7 +7179,7 @@ export default function POSOrderAnalysis() {
                 value={analytics.totalOrders.toLocaleString()}
                 sub={
                   analytics.uniqueCustomers > 0
-                    ? `${analytics.uniqueCustomers} unique customer${analytics.uniqueCustomers !== 1 ? 's' : ''}`
+                    ? `${analytics.uniqueCustomers} unique · ${analytics.walkInSales} walk-in`
                     : 'non-voided orders'
                 }
                 accentColor="#4f46e5"
@@ -7447,6 +7198,24 @@ export default function POSOrderAnalysis() {
                 sub={`${analytics.avgItemsPerOrder.toFixed(1)} per order`}
                 accentColor="#f97316"
               />
+              {/* Stock returned through Sales refunds nothing in cash, so
+                  conflating it with a cash refund overstated money paid out. */}
+              <KpiCard
+                icon={<PiArrowCounterClockwise className="h-5 w-5" />}
+                label="Returns & Refunds"
+                value={fmtCompact(analytics.totalRefunds)}
+                badge={
+                  analytics.refundRate > 0
+                    ? `${analytics.refundRate.toFixed(1)}% rate`
+                    : undefined
+                }
+                sub={
+                  analytics.totalRefunds === 0
+                    ? 'None issued'
+                    : `${formatCurrency(analytics.cashRefunded)} cash out`
+                }
+                accentColor="#ef4444"
+              />
               <KpiCard
                 icon={<PiTag className="h-5 w-5" />}
                 label="Discounts Given"
@@ -7464,21 +7233,54 @@ export default function POSOrderAnalysis() {
                 accentColor="#eab308"
               />
               <KpiCard
-                icon={<PiArrowCounterClockwise className="h-5 w-5" />}
-                label="Refunds"
-                value={fmtCompact(analytics.totalRefunds)}
+                icon={<PiChartLineUp className="h-5 w-5" />}
+                label="Gross Profit"
+                value={fmtCompact(analytics.totalProfit)}
                 badge={
-                  analytics.refundRate > 0
-                    ? `${analytics.refundRate.toFixed(1)}% rate`
+                  analytics.marginPct !== 0
+                    ? `${analytics.marginPct.toFixed(1)}% margin`
                     : undefined
                 }
                 sub={
-                  analytics.totalRefunds === 0
-                    ? 'None issued'
-                    : formatCurrency(analytics.totalRefunds)
+                  analytics.uncostedLines > 0
+                    ? `Excludes ${formatCurrency(analytics.uncostedRevenue)} uncosted`
+                    : 'All lines costed'
                 }
-                accentColor="#ef4444"
+                accentColor="#16a34a"
               />
+              <KpiCard
+                icon={<PiHandCoins className="h-5 w-5" />}
+                label="Gratuities"
+                value={fmtCompact(analytics.totalTips)}
+                sub={
+                  analytics.totalTips === 0
+                    ? 'None collected'
+                    : `Not product income · ${formatCurrency(
+                        analytics.totalRounding
+                      )} rounding`
+                }
+                accentColor="#7c3aed"
+              />
+              <KpiCard
+                icon={<PiPercent className="h-5 w-5" />}
+                label="Tax Collected"
+                value={fmtCompact(analytics.taxCollected)}
+                sub={
+                  analytics.taxCollected === 0
+                    ? 'No tax on these receipts'
+                    : formatCurrency(analytics.taxCollected)
+                }
+                accentColor="#0891b2"
+              />
+              {analytics.voidedOrders > 0 && (
+                <KpiCard
+                  icon={<PiWarningDiamond className="h-5 w-5" />}
+                  label="Voided"
+                  value={analytics.voidedOrders.toLocaleString()}
+                  sub="Excluded from every figure above"
+                  accentColor="#64748b"
+                />
+              )}
             </div>
 
             {/* ── Payment methods + Order status ─────────────────────────────── */}

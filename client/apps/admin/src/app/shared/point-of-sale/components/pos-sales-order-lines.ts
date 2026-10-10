@@ -136,6 +136,8 @@ export function salesOrderToCartItems(
       sku: size?.sku || line.sku || product?.sku || '',
       image: product ? getImageUrl(product) : undefined,
       price: agreedUnitPrice(line),
+      quotationLine: true,
+      taxRate: Math.max(0, Number(line.taxRate) || 0),
       quantity: outstanding,
       // The agreed price already IS the negotiated discount; charging the
       // dialpad discount on top of it would give the deal away twice.

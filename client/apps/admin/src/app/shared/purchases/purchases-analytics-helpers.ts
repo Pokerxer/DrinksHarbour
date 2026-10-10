@@ -1,5 +1,7 @@
 // app/shared/purchases/purchases-analytics-helpers.ts
 import type { PurchaseOrder, POItem } from '@/services/purchaseOrder.service';
+import { projectPurchaseLines, filterPurchaseHistory } from './purchase-analytics-filter-logic';
+import { receiptMetrics } from './purchase-analytics-ledger';
 import { BASE_CURRENCY, CURRENCY_SYMBOLS } from './types';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -26,7 +28,9 @@ export type Measure =
   | 'avg_order'
   | 'product_qty'
   | 'received_qty'
-  | 'line_count';
+  | 'line_count'
+  | 'returned_qty' | 'net_received_qty'
+  | 'received_value' | 'returned_value' | 'net_received_value';
 
 export type ChartType = 'bar' | 'line' | 'pie' | 'table';
 
@@ -149,7 +153,12 @@ export const MEASURES: { key: Measure; label: string }[] = [
   { key: 'tax_total', label: 'Tax' },
   { key: 'avg_order', label: 'Average Order Value' },
   { key: 'product_qty', label: 'Product Quantity' },
-  { key: 'received_qty', label: 'Received Quantity' },
+  { key: 'received_qty', label: 'Total Received Quantity' },
+  { key: 'returned_qty', label: 'Total Returned Quantity' },
+  { key: 'net_received_qty', label: 'Purchased Quantity after Returns' },
+  { key: 'received_value', label: 'Total Received Value (incl. tax)' },
+  { key: 'returned_value', label: 'Total Returned Value (incl. tax)' },
+  { key: 'net_received_value', label: 'Purchased Value after Returns (incl. tax)' },
   { key: 'line_count', label: 'Order Line Count' },
   { key: 'count', label: 'Order Count' },
 ];
@@ -163,6 +172,8 @@ export const IS_CURRENCY: Record<Measure, boolean> = {
   product_qty: false,
   received_qty: false,
   line_count: false,
+  returned_qty: false, net_received_qty: false,
+  received_value: true, returned_value: true, net_received_value: true,
 };
 
 export const ITEM_DIMS = new Set<GroupByKey>([
@@ -294,7 +305,8 @@ export function isDateKey(k: string) {
 }
 
 export function itemName(i: POItem): string {
-  return i.subProductName || i.productName || i.sku || 'Unknown';
+  const populated = i.subProductId as unknown as { name?: string; sku?: string } | null;
+  return i.subProductName || i.productName || populated?.name || i.sku || populated?.sku || 'Unknown';
 }
 
 /**
@@ -310,12 +322,47 @@ export function itemSubProductKey(i: POItem): string {
   return String(ref ?? '');
 }
 
+/**
+ * Coerce a possibly-loose API field to a usable number.
+ *
+ * `??` is not enough here. It only steps in for null/undefined, so a field sent as
+ * an empty string — which a form post does all the time — sails straight through
+ * and `'' * 4` is 0. That zeroed the whole line: a blank unitCost masked a
+ * perfectly good unitPrice and the purchase value went unrecorded. It is also the
+ * same blind spot that leaks non-finite values into the chart scale, which is how
+ * a NaN reaches a bar's width and its labels.
+ *
+ * Anything that is not a finite number is treated as absent, so callers can chain
+ * fallbacks and still get a real number at the end.
+ */
+export function toFiniteNumber(...candidates: unknown[]): number {
+  for (const candidate of candidates) {
+    // A blank string has to be rejected explicitly: Number('') is 0, which is a
+    // perfectly finite number, so it would otherwise satisfy the check and defeat
+    // the fallback it was meant to trigger.
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed === '') continue;
+      const n = Number(trimmed);
+      if (Number.isFinite(n)) return n;
+      continue;
+    }
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) return candidate;
+  }
+  return 0;
+}
+
 // Line cost helpers — unitCost is the canonical purchase price
 export function lineUntaxed(i: POItem): number {
-  return (i.unitCost ?? i.unitPrice ?? 0) * (i.quantity ?? 0);
+  // unitCost first because the server keeps it on every line (default 0), then the
+  // older unitPrice. A zero unitCost is a real value and must not fall through to
+  // unitPrice, so the fallback is by position, not by falsiness.
+  const unit = toFiniteNumber(i.unitCost, i.unitPrice);
+  const qty = toFiniteNumber(i.quantity);
+  return toFiniteNumber(i.totalCost, unit * qty);
 }
 export function lineTax(i: POItem): number {
-  return lineUntaxed(i) * ((i.taxRate ?? 0) / 100);
+  return lineUntaxed(i) * (toFiniteNumber(i.taxRate) / 100);
 }
 
 // ── Item / group key resolution ───────────────────────────────────────────────
@@ -437,58 +484,7 @@ export function applyFilters(
       vendorVals.some((q) => (o.vendorName ?? '').toLowerCase().includes(q))
     );
 
-  const productVals = filters
-    .filter((f) => f.startsWith('product_search:'))
-    .map((f) => f.slice(15).toLowerCase());
-  if (productVals.length > 0)
-    r = r.filter((o) =>
-      productVals.some((q) =>
-        (o.items || []).some((i) => itemName(i).toLowerCase().includes(q))
-      )
-    );
-
-  const catNameVals = filters
-    .filter((f) => f.startsWith('catname_search:'))
-    .map((f) => f.slice(16).toLowerCase());
-  if (catNameVals.length > 0)
-    r = r.filter((o) =>
-      (o.items || []).some((i) => {
-        const meta = prodMeta[itemSubProductKey(i)];
-        const cat = (meta?.catName || '').toLowerCase();
-        const sub = (meta?.subCatName || '').toLowerCase();
-        return catNameVals.some((q) => cat.includes(q) || sub.includes(q));
-      })
-    );
-
-  const categoryIds = filters
-    .filter((f) => f.startsWith('category_'))
-    .map((f) => f.slice(9));
-  if (categoryIds.length > 0)
-    r = r.filter((o) =>
-      (o.items || []).some((i) =>
-        categoryIds.includes(prodMeta[itemSubProductKey(i)]?.catId || '')
-      )
-    );
-
-  const subcatIds = filters
-    .filter((f) => f.startsWith('subcategory_'))
-    .map((f) => f.slice(12));
-  if (subcatIds.length > 0)
-    r = r.filter((o) =>
-      (o.items || []).some((i) =>
-        subcatIds.includes(prodMeta[itemSubProductKey(i)]?.subCatId || '')
-      )
-    );
-
-  const brandIds = filters
-    .filter((f) => f.startsWith('brand_'))
-    .map((f) => f.slice(6));
-  if (brandIds.length > 0)
-    r = r.filter((o) =>
-      (o.items || []).some((i) =>
-        brandIds.includes(prodMeta[itemSubProductKey(i)]?.brandId || '')
-      )
-    );
+  r = filterPurchaseHistory(projectPurchaseLines(r, filters, prodMeta), filters);
 
   const dateFilters = filters.filter((f) => isDateKey(f));
   if (dateFilters.length === 0) return r;
@@ -559,9 +555,19 @@ export function aggregateMeasure(
       return orderList.length > 0 ? total / orderList.length : 0;
     }
     case 'product_qty':
-      return items.reduce((s, { item }) => s + (item.quantity ?? 0), 0);
+      return items.reduce((s, { item }) => s + toFiniteNumber(item.quantity), 0);
     case 'received_qty':
-      return items.reduce((s, { item }) => s + (item.receivedQty ?? 0), 0);
+      return items.reduce((s, { item }) => s + receiptMetrics(item).receivedQuantity, 0);
+    case 'returned_qty':
+      return items.reduce((s, { item }) => s + receiptMetrics(item).returnedQuantity, 0);
+    case 'net_received_qty':
+      return items.reduce((s, { item }) => s + receiptMetrics(item).netReceivedQuantity, 0);
+    case 'received_value':
+    case 'returned_value':
+    case 'net_received_value': {
+      const key = { received_value: 'receivedValue', returned_value: 'returnedValue', net_received_value: 'netReceivedValue' } as const;
+      return items.reduce((s, { item, currency }) => s + toBase(receiptMetrics(item)[key[measure]], currency), 0);
+    }
     case 'line_count':
       return items.length;
     default:

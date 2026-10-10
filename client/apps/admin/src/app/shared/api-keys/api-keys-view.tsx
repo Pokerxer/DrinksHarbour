@@ -13,6 +13,7 @@ import {
 import SettingsPageHeader from '@/app/shared/settings/settings-page-header';
 import CreateKeyForm from './create-key-form';
 import KeyList from './key-list';
+import WebsiteApiGuide from './website-api-guide';
 
 export default function ApiKeysView() {
   const { user, checkPermission, role } = useAuthorization();
@@ -118,7 +119,7 @@ function KeyWorkspace({
     <section className="mx-auto max-w-7xl space-y-6">
       <SettingsPageHeader
         title="API keys"
-        description="Connect your business to inventory and reporting tools. Control what each integration can read, and revoke access whenever you need to."
+        description="Build your tenant ecommerce website with REST: products, cart pricing, orders and Paystack checkout. Manage access for each website or integration."
       />
       {hasAccess === false ? (
         <div className="rounded-2xl border border-muted p-8">
@@ -242,12 +243,13 @@ function KeyWorkspace({
                 />
                 <p className="flex gap-2 px-1 text-xs leading-5 text-gray-500">
                   <PiShieldCheckDuotone className="mt-0.5 size-5 shrink-0" />
-                  Keys are read-only and limited to 60 requests per minute. Keep
-                  secrets out of public websites and shared documents.
+                  Keys allow only their selected permissions and are limited to
+                  60 requests per minute. Store secrets on your website server.
                 </p>
               </div>
             )}
           </div>
+          <WebsiteApiGuide />
         </>
       )}
     </section>

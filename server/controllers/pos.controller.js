@@ -1,3 +1,13 @@
+const { platformIdentity } = require('../utils/customerIdentity');
+const { orderReturnTotals } = require('../services/posReturnTotals.service');
+const { orderLineNetTotals, summarizeNetOrders } = require('../services/posAnalyticsNet.service');
+const { mapReportOrder, REPORT_ORDER_FIELDS } = require('../services/posReportOrder.service');
+const { buildAnalysisPayload, DEFAULT_MAX_LINES } = require('../services/posAnalysis.service');
+const { resolveTillTaxSettings, resolveLineTaxRate, lineTaxAmount } = require('../services/posTax.service');
+const { enrichSessionHistory } = require('../services/posSessionHistory.service');
+const { buildPageMeta, resolvePageLimit } = require('../services/posPage.service');
+const linkedReturns = require('../services/linkedReturns.service');
+const { refundRestockPlan } = require('../services/linkedReturns.helpers');
 // controllers/pos.controller.js
 
 const mongoose = require('mongoose');
@@ -6,6 +16,7 @@ const { shopFilter, resolveOpeningShop, resolveSaleSession, assertNoLegacyDrawer
 const Order = require('../models/Order');
 const POSTable = require('../models/POSTable');
 const asyncHandler = require('../utils/asyncHandler');
+const { normalizeBankAccounts, validateBankAccounts } = require('../utils/bankAccounts');
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -23,6 +34,10 @@ const POSCustomer = require('../models/POSCustomer');
 const WalletTransaction = require('../models/WalletTransaction');
 const LoyaltyTransaction = require('../models/LoyaltyTransaction');
 const { mutateWallet } = require('../services/wallet.service');
+const { splitAccountTender } = require('../services/customerAccount.tender');
+const { isAccountTender, normaliseTender } = require('../services/posTender');
+const customerAccount = require('../services/customerAccount.service');
+const { round2 } = require('../services/accounting.helpers');
 const { mutateLoyalty } = require('../services/loyalty.service');
 const { loyaltyDelta } = require('../services/contact.helpers');
 const inventoryService = require('../services/inventory.service');
@@ -404,52 +419,12 @@ function tenantScope(tenantId) {
   return { $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] };
 }
 
-const PAYMENT_METHODS = ['cash', 'card', 'bank_transfer', 'mobile_money', 'split'];
-
 /** Aggregate POS orders by payment method for a time range */
 async function getPOSOrderStats(tenantId, from, to, scope = {}) {
-  const agg = await Order.aggregate([
-    {
-      $match: {
-        'items.tenant': tenantId,   // Order has no top-level tenant; filter via items
-        ...scope,
-        source: 'pos',
-        paymentStatus: 'paid',
-        createdAt: { $gte: from, $lte: to },
-      },
-    },
-    {
-      $group: {
-        _id: '$paymentMethod',
-        total: { $sum: '$totalAmount' },
-        count: { $sum: 1 },
-        tips:     { $sum: { $ifNull: ['$tipAmount', 0] } },
-        rounding: { $sum: { $ifNull: ['$roundingAmount', 0] } },
-      },
-    },
-  ]);
-  let totalSales = 0;
-  let orderCount = 0;
-  // Tips and rounding are already inside totalAmount (it is the payable total).
-  // They are reported separately so the Z-report can show what part of the
-  // drawer is gratuity and what part is the rounding delta, rather than
-  // leaving both buried in takings that no longer reconcile to the goods.
-  let totalTips = 0;
-  let totalRounding = 0;
-  const breakdown = {};
-  agg.forEach((g) => {
-    totalSales += g.total;
-    orderCount += g.count;
-    totalTips += g.tips || 0;
-    totalRounding += g.rounding || 0;
-    breakdown[g._id] = {
-      total: g.total,
-      count: g.count,
-      tips: g.tips || 0,
-      rounding: g.rounding || 0,
-    };
-  });
-  return { totalSales, orderCount, totalTips, totalRounding, breakdown };
+  const orders = await Order.find({ 'items.tenant': tenantId, ...scope, source:'pos',
+    paymentStatus:{$in:['paid','partially_refunded','refunded']}, isVoided:{$ne:true},
+    createdAt:{$gte:from,$lte:to} }).lean();
+  return summarizeNetOrders(await linkedReturns.projectPOSReturns(orders, tenantId));
 }
 
 /** Aggregate orders placed during an open session window */
@@ -553,45 +528,37 @@ exports.getPOSDashboard = asyncHandler(async (req, res) => {
     POSSession.findOne({ tenant: tenantId, ...shopFilter(req), status: 'open' })
       .populate('openedBy activeCashier', 'firstName lastName posName')
       .sort({ openedAt: -1 }),
-    Order.find({ 'items.tenant': tenantId, ...shopFilter(req), source: 'pos', paymentStatus: 'paid' })
-      .select('orderNumber totalAmount paymentMethod placedAt createdAt')
+    Order.find({ 'items.tenant': tenantId, ...shopFilter(req), source: 'pos', paymentStatus: { $in: ['paid', 'partially_refunded', 'refunded'] }, isVoided: { $ne: true } })
+      .select('orderNumber totalAmount tipAmount roundingAmount paymentMethod paymentStatus placedAt createdAt items refunds linkedSalesOrder salesReturns')
       .sort({ createdAt: -1 })
       .limit(10)
       .lean(),
   ]);
 
-  // 7-day chart — single aggregation instead of N+1 loop
+  // Project linked returns once for the seven-day sales performance chart.
   const sevenDaysAgo = new Date(now);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
   sevenDaysAgo.setHours(0, 0, 0, 0);
 
-  const chartAgg = await Order.aggregate([
-    {
-      $match: {
-        ...tenantScope(tenantId),
-        ...shopFilter(req),
-        source: 'pos',
-        paymentStatus: 'paid',
-        isVoided: { $ne: true },
-        placedAt: { $gte: sevenDaysAgo, $lte: endOfDay(now) },
-      },
-    },
-    {
-      $group: {
-        _id: { $dateToString: { format: '%Y-%m-%d', date: '$placedAt' } },
-        sales: { $sum: '$totalAmount' },
-        orders: { $sum: 1 },
-      },
-    },
-    { $sort: { _id: 1 } },
-  ]);
+  const chartOrders = await Order.find({ ...tenantScope(tenantId), ...shopFilter(req), source:'pos',
+    paymentStatus:{$in:['paid','partially_refunded','refunded']}, isVoided:{$ne:true},
+    createdAt:{$gte:sevenDaysAgo,$lte:endOfDay(now)} }).lean();
+  const chartRows = await linkedReturns.projectPOSReturns(chartOrders,tenantId);
+  const dayKey = date => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+  const chartAgg = [];
+  for (let i=6;i>=0;i--) {
+    const date = new Date(now); date.setDate(date.getDate()-i);
+    const from=startOfDay(date), to=endOfDay(date);
+    const stats=summarizeNetOrders(chartRows.filter(row => new Date(row.createdAt)>=from && new Date(row.createdAt)<=to));
+    chartAgg.push({_id:dayKey(from),sales:stats.totalSales,orders:stats.orderCount});
+  }
 
   // Fill in missing days with zeros
   const chartData = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const dateStr = startOfDay(d).toISOString().split('T')[0];
+    const dateStr = dayKey(d);
     const found = chartAgg.find((c) => c._id === dateStr);
     chartData.push({
       date: dateStr,
@@ -603,12 +570,17 @@ exports.getPOSDashboard = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      currentSession,
+      currentSession: currentSession ? (await enrichSessionHistory([currentSession], tenantId))[0] : null,
       today:     todayStats,
       yesterday: yesterdayStats,
       thisMonth: monthStats,
       chartData,
-      recentOrders: recentOrders.map((o) => ({ ...o, total: o.totalAmount })),
+      recentOrders: (await linkedReturns.projectPOSReturns(recentOrders, tenantId)).map(o => {
+        const totals = orderReturnTotals(o);
+        return { _id:o._id, orderNumber:o.orderNumber, paymentMethod:o.paymentMethod,
+          placedAt:o.placedAt, createdAt:o.createdAt, total:totals.netSales,
+          originalTotal:o.totalAmount, returnDeduction:totals.returnDeduction, returnStatus:totals.returnStatus };
+      }),
     },
   });
 });
@@ -709,7 +681,7 @@ exports.createCashier = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'firstName and email are required' });
   }
 
-  const existing = await User.findOne({ email: email.toLowerCase().trim() });
+  const existing = await User.findOne({ email: email.toLowerCase().trim(), ...platformIdentity() });
   if (existing) return res.status(409).json({ success: false, message: 'Email already in use' });
 
   const userData = {
@@ -811,13 +783,16 @@ exports.updateTenantBankAccounts = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'bankAccounts must be an array' });
   }
 
-  const cleaned = bankAccounts
-    .filter((b) => b.bankName || b.accountNumber)
-    .map((b) => ({
-      bankName:      (b.bankName      || '').trim(),
-      accountNumber: (b.accountNumber || '').trim(),
-      accountName:   (b.accountName   || '').trim(),
-    }));
+  // Trim first, then judge. Filtering before trimming let a whitespace-only row
+  // through and stored it as an empty account.
+  const cleaned = normalizeBankAccounts(bankAccounts);
+
+  // An invoice prints an account only when it has a bank AND a number, so
+  // storing a half-filled row means it looks saved in Settings and then never
+  // reaches a customer invoice. Refuse it here rather than accept a value the
+  // printer will silently drop. Mirrors bank-account-rules.ts in the admin app.
+  const problem = validateBankAccounts(cleaned);
+  if (problem) return res.status(400).json({ success: false, message: problem });
 
   const tenant = await Tenant.findByIdAndUpdate(
     tenantId,
@@ -936,6 +911,11 @@ exports.updatePOSSettings = asyncHandler(async (req, res) => {
     allowed['posSettings.receiptFooter'] = posSettings.receiptFooter.trim().slice(0, 200);
   if (typeof posSettings.showTaxOnReceipt === 'boolean')
     allowed['posSettings.showTaxOnReceipt'] = posSettings.showTaxOnReceipt;
+  // Whether `taxRate` is actually charged at the till. Not implied by
+  // showTaxOnReceipt: a tenant can print a breakdown without owing VAT, and
+  // switching charging on must be a deliberate act.
+  if (typeof posSettings.taxEnabled === 'boolean')
+    allowed['posSettings.taxEnabled'] = posSettings.taxEnabled;
   if (typeof posSettings.taxRate === 'number')
     allowed['posSettings.taxRate'] = Math.min(100, Math.max(0, posSettings.taxRate));
   if (typeof posSettings.autoPrintReceipt === 'boolean')
@@ -1411,6 +1391,7 @@ exports.staffLogin = asyncHandler(async (req, res) => {
           receiptHeader:         tenant.posSettings?.receiptHeader ?? '',
           receiptFooter:         tenant.posSettings?.receiptFooter ?? '',
           showTaxOnReceipt:      tenant.posSettings?.showTaxOnReceipt ?? false,
+          taxEnabled:            tenant.posSettings?.taxEnabled ?? false,
           taxRate:               tenant.posSettings?.taxRate ?? 0,
           basicReceipt:          tenant.posSettings?.basicReceipt ?? false,
           autoPrintReceipt:      tenant.posSettings?.autoPrintReceipt ?? false,
@@ -1801,68 +1782,7 @@ exports.getPOSProductMeta = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { meta, total: meta.length } });
 });
 
-/**
- * The agreed unit price of every line on a Sales Order loaded into the cart.
- *
- * A quotation is a negotiated, ISSUED offer, so its line prices have to beat
- * today's POS price, the pricelist and the bundle rules — a 10% deal price, a
- * manually overridden line, a price from a pricelist that has since changed, all
- * sit far outside the 1% band `createPOSOrder` allows a cart price. Widening
- * that band was never the answer: it is the tamper guard on a number that
- * arrived from the client. Instead the client sends an ID and the server looks
- * the prices up here, so an agreed price never crosses the wire and never has to
- * be trusted.
- *
- * The price is NET of the line's agreed discount and promotion, per unit:
- *   (unitPrice·qty − lineDiscount − promoDiscount) / qty
- * The till's own per-line discount is a percentage from the dialpad and cannot
- * express a flat ₦ off a line, and per-unit is the only split of a flat discount
- * that stays right when the cashier sells 3 of a quoted 10. Line tax is NOT
- * folded in — POS lines carry their own taxRate and tax on top of this.
- *
- * @returns {Promise<Map<string, number>>} keyed `subProductId_sizeId`, or
- *   `subProductId` when the line is unsized OR when the order names that
- *   sub-product exactly once (so a cart line whose size is unknown still
- *   matches). Two sizes of one product leave the bare key unset: ambiguity
- *   falls through to ordinary pricing rather than picking the cheaper line.
- */
-async function resolveLinkedSalesOrderPrices(salesOrderId, tenantId) {
-  const prices = new Map();
-  if (!salesOrderId || !tenantId) return prices;
-
-  let so = null;
-  try {
-    so = await SalesOrder.findOne({ _id: salesOrderId, tenant: tenantId })
-      .select('items')
-      .lean();
-  } catch (_) {
-    return prices; // a malformed id is not a reason to fail the sale
-  }
-  if (!so) return prices;
-
-  const { lineTotalOf } = require('../services/salesOrder.service');
-  const bySubProduct = new Map();
-
-  for (const line of so.items || []) {
-    if (line.lineType && line.lineType !== 'product') continue;
-    if (!line.subproduct) continue;
-    const qty = Number(line.quantity) || 0;
-    if (qty <= 0) continue;
-
-    const net  = lineTotalOf(line) - (Number(line.promoDiscount) || 0);
-    const unit = Math.max(0, net / qty);
-    const sub  = String(line.subproduct);
-
-    prices.set(line.size ? `${sub}_${String(line.size)}` : sub, unit);
-    bySubProduct.set(sub, [...(bySubProduct.get(sub) || []), unit]);
-  }
-
-  for (const [sub, units] of bySubProduct) {
-    if (units.length === 1 && !prices.has(sub)) prices.set(sub, units[0]);
-  }
-
-  return prices;
-}
+const { resolveLinkedSalesOrderLines } = require('../services/posLinkedSalesOrder.service');
 
 /**
  * Validate a tab-settlement claim against the table it names.
@@ -1916,10 +1836,16 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   const staffId  = req.posUser._id;
 
+  // VAT at the till is a tenant setting, read server-side. Default off, because
+  // Nigeria levies VAT only above a turnover threshold and charging every tenant
+  // 7.5% by default would overtax small bars.
+  const tillTax = resolveTillTaxSettings(req.tenant?.posSettings);
+
   const {
     items,            // [{ subProductId, sizeId?, quantity, price, discount?, clientPrice? }]
     customer = {},
-    paymentMethod,    // 'cash' | 'card' | 'bank_transfer' | 'mobile_money' | 'split'
+    // paymentMethod is NOT destructured here: it is validated through
+    // normaliseTender() below, so no raw request value reaches the dispatch.
     amountTendered = 0,
     splitPayments = [],
     discountType,     // 'percent' | 'fixed'
@@ -1934,10 +1860,25 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     tipAmount: rawTipAmount = 0,           // gratuity added on top of the total
     tableId = null,      // venue table whose tab this sale settles
     heldOrderId = null,  // the held order this settle consumes
+    creditOverrideReason = '', // why a manager authorised this sale over the customer's credit limit
   } = req.body;
 
   if (!items?.length) return res.status(400).json({ success: false, message: 'No items in order' });
-  if (!paymentMethod)  return res.status(400).json({ success: false, message: 'Payment method required' });
+
+  // Rejected rather than dispatched on best-effort: an unrecognised tender name
+  // used to post a normal-looking order with no cash counted, no wallet debited
+  // and no tab charged. The sale looked right in every report and the money was
+  // simply never collected.
+  let paymentMethod;
+  try {
+    paymentMethod = normaliseTender(req.body.paymentMethod);
+  } catch {
+    return res.status(400).json({
+      success: false,
+      message: `Unknown payment method: ${JSON.stringify(req.body.paymentMethod)}`,
+      code: 'unknown_payment_method',
+    });
+  }
 
   const session = await resolveSaleSession(req);
   const orderTerminal = session.terminalType;
@@ -1945,12 +1886,22 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Held order not found in this shop' });
   }
 
-  // Wallet tender (store credit) needs a saved customer to draw the balance from —
-  // a walk-in has no wallet. The actual debit (with an atomic overdraw guard) runs
-  // once the order total is known, below.
-  if (paymentMethod === 'wallet' && !customer.customerId) {
+  // An account tender needs a saved customer to draw the balance from — a
+  // walk-in has no wallet and no tab. The actual debit (with an atomic overdraw
+  // guard) runs once the order total is known, below.
+  if (isAccountTender(paymentMethod) && !customer.customerId) {
     return res.status(400).json({ success: false, message: 'Wallet payment requires a saved customer' });
   }
+
+  // Authorising a sale past a customer's credit limit is deliberately a different
+  // permission from discounting it: a discount costs the shop money on this sale,
+  // credit moves the loss to every future sale. Admins are trusted implicitly so
+  // the feature is usable before the permission has been granted to anyone.
+  const canCreditOverride = !!creditOverrideReason && (
+    req.posPermissions?.includes('pos:credit_override')
+    || req.user?.role === 'superadmin'
+    || req.user?.role === 'admin'
+  );
 
   // Check price override permission
   const hasOverrides = Object.keys(priceOverrides).length > 0;
@@ -2004,7 +1955,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   } catch (_) { /* non-fatal — fall back to DB pricing */ }
 
   // The agreed price on a loaded quotation, re-read from the database.
-  const soLinePrices = await resolveLinkedSalesOrderPrices(linkedSalesOrderId, tenantId);
+  const soLines = await resolveLinkedSalesOrderLines(linkedSalesOrderId, tenantId);
 
   // Resolve receipt number early so audit records can reference it
   const orderNumber   = await generateOrderNumber();
@@ -2158,12 +2109,11 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       // Beats the pricelist, the bundle rules and the cart — but NOT an explicit
       // cashier override, which is a permissioned, deliberate act. It is safe to
       // apply without a tolerance band because it was read from the database
-      // (resolveLinkedSalesOrderPrices), not sent by the till.
+      // (resolveLinkedSalesOrderLines), not sent by the till.
+      const soLine = soLines.get(overrideKey)
+        ?? (sizeId ? soLines.get(String(subProductId)) : undefined);
       const soUnitPrice = (hasOverrides && priceOverrides[overrideKey] != null)
-        ? null
-        : soLinePrices.get(overrideKey)
-          ?? (sizeId ? soLinePrices.get(String(subProductId)) : undefined)
-          ?? null;
+        ? null : soLine?.unitPrice ?? null;
 
       if (soUnitPrice != null) {
         effectivePrice      = soUnitPrice;
@@ -2204,6 +2154,13 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         ? parseFloat((lineSubtotal * (1 - sizePricing.commissionPct / 100)).toFixed(2))
         : parseFloat((sizePricing.costPrice * quantity).toFixed(2));
 
+      // A quotation's agreed rate wins (including an explicit zero); otherwise
+      // the tenant's registered rate applies, and is 0 while tax is off.
+      const lineTaxRate = resolveLineTaxRate({
+        tenantPosSettings: req.tenant?.posSettings,
+        quotationTaxRate: soLine?.taxRate,
+      });
+
       orderItems.push({
         product:               sp?.product?._id || subProductId,
         subproduct:            subProductId,
@@ -2214,6 +2171,11 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         priceAtPurchase:       effectivePrice,
         originalPriceAtPurchase: originalUnitPrice,
         itemSubtotal:          lineSubtotal,
+        // Tax rates are server-owned — a quotation's agreed rate, else the
+        // tenant's registered rate. Never taken from the cart, which would make
+        // the till an un-auditable discount mechanism.
+        taxRate:               lineTaxRate,
+        taxAmount:             lineTaxAmount(lineSubtotal, lineTaxRate),
         discountAmount:        itemDiscountAmount,
         appliedPricelistRule: appliedPlRuleSnapshot ? {
           ...appliedPlRuleSnapshot,
@@ -2325,7 +2287,23 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     computeCartThresholdDiscount(thresholdRules, subtotal).toFixed(2)
   );
 
-  const total = Math.max(0, subtotal - orderDiscountAmount - cartThresholdDiscount);
+  const taxAmount = orderItems.reduce((sum, item) => sum + (item.taxAmount || 0), 0);
+  // Whether this receipt's tax came only from a quotation, which decides how to
+  // word the mismatch guard below.
+  const taxAmountFromQuotationOnly = !!linkedSalesOrderId && !tillTax.enabled;
+  // Quotation footer adjustments are applied after line tax, as in SalesOrder.
+  const total = Math.max(0, subtotal + taxAmount - orderDiscountAmount - cartThresholdDiscount);
+
+  // Old/offline tills may still display the net-only amount. Do not silently
+  // create a paid receipt for more than the cashier confirmed.
+  if (taxAmount > 0 && req.body.total != null &&
+      (!Number.isFinite(Number(req.body.total)) || Math.abs(Number(req.body.total) - total) > 0.01)) {
+    await rollbackDeductedStock();
+    return res.status(409).json({ success: false,
+      message: taxAmountFromQuotationOnly
+        ? 'Quotation total has changed. Reload the quotation to include its tax before taking payment.'
+        : 'Total has changed. Reload to include this tenant\'s tax before taking payment.' });
+  }
 
   // ── Tip (gratuity) ─────────────────────────────────────────────────────────
   // A tip is money for the staff, not income from the goods. It is added on top
@@ -2352,32 +2330,79 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   }
   const payableTotal = parseFloat((payableBeforeRounding + roundingAmount).toFixed(2));
 
-  // ── Wallet tender ──
-  // Charge the customer's stored-value wallet for the order total. The debit is an
-  // atomic, guarded $inc (see wallet.service) so a balance that's too low blocks
-  // the sale here — after which we roll the just-deducted stock back. A zero-total
-  // sale (fully discounted) charges nothing.
+  // ── Account tender ──
+  // Spend the customer's stored-value balance first; whatever it cannot cover
+  // becomes a tab charge, provided their credit limit allows it. The split is
+  // decided HERE rather than accepted from the client, and recorded on the order
+  // so the journal reflects what actually happened rather than what was asked
+  // for. A sale the balance fully covers is byte-for-byte the old path: one
+  // wallet tender, no statement entry, no limit check.
   let walletTx = null;
-  if (paymentMethod === 'wallet' && payableTotal > 0) {
-    const walletResult = await mutateWallet({
-      owner: {
-        Model: POSCustomer,
-        ownerType: 'POSCustomer',
-        ownerId: customer.customerId,
-        filter: { _id: customer.customerId, tenant: tenantId },
-      },
-      tenantId,
-      value: { type: 'debit', amount: payableTotal, reason: `POS sale — receipt ${receiptNumber}` },
-      reference: receiptNumber,
-      createdBy: staffId,
-    });
-    if (!walletResult.ok) {
+  let accountSplit = null;   // { spend, shortfall, tenders } — null unless charged
+  if (isAccountTender(paymentMethod) && payableTotal > 0) {
+    // Balances and limits are read from the customer, never from req.body: the
+    // body is client-supplied and a cashier could otherwise grant themselves
+    // unlimited credit.
+    const accountCustomer = await POSCustomer.findOne({ _id: customer.customerId, tenant: tenantId })
+      .select('firstName lastName walletBalance creditLimit')
+      .lean();
+    if (!accountCustomer) {
       await rollbackDeductedStock();
-      return res.status(walletResult.status === 404 ? 404 : 409)
-        .json({ success: false, message: walletResult.message });
+      return res.status(404).json({ success: false, message: 'Customer not found in this tenant' });
     }
-    walletTx = walletResult.tx;
+
+    const split = splitAccountTender({
+      payableTotal,
+      availableBalance: accountCustomer.walletBalance,
+      creditLimit: accountCustomer.creditLimit,
+      tabBalance: await customerAccount.balance(tenantId, customer.customerId),
+      allowOverride: canCreditOverride,
+    });
+
+    if (!split.withinLimit) {
+      await rollbackDeductedStock();
+      return res.status(409).json({
+        success: false,
+        message: `This sale would leave ${accountCustomer.firstName || 'the customer'} owing ${Math.round(split.requiredLimit).toLocaleString()}, over their credit limit of ${Math.round(Number(accountCustomer.creditLimit) || 0).toLocaleString()}.`,
+        // The client turns this into a "request authorisation" prompt rather than
+        // a dead end, but only staff holding the permission can honour it.
+        code: 'credit_limit_exceeded',
+        requiresOverride: canCreditOverride,
+        owedAfter: split.requiredLimit,
+        creditLimit: Number(accountCustomer.creditLimit) || 0,
+      });
+    }
+
+    if (split.spend > 0) {
+      const walletResult = await mutateWallet({
+        owner: {
+          Model: POSCustomer,
+          ownerType: 'POSCustomer',
+          ownerId: customer.customerId,
+          filter: { _id: customer.customerId, tenant: tenantId },
+        },
+        tenantId,
+        value: { type: 'debit', amount: split.spend, reason: `POS sale — receipt ${receiptNumber}` },
+        reference: receiptNumber,
+        createdBy: staffId,
+      });
+      if (!walletResult.ok) {
+        await rollbackDeductedStock();
+        return res.status(walletResult.status === 404 ? 404 : 409)
+          .json({ success: false, message: walletResult.message });
+      }
+      walletTx = walletResult.tx;
+    }
+    if (split.charged) accountSplit = split;
   }
+
+  // Once the total is known, an account tender that was only partly covered is
+  // recorded as a genuine split. Declared here, before the order write, so the
+  // order and the journal describe the same money.
+  const recordedPaymentMethod = accountSplit ? 'split' : paymentMethod;
+  const recordedSplitPayments = accountSplit
+    ? accountSplit.tenders
+    : (paymentMethod === 'split' ? splitPayments : undefined);
 
   let order;
   try {
@@ -2394,12 +2419,20 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     posStaff:      staffId,
     items:         orderItems,
     subtotal,
+    taxAmount,
     shippingFee:   0,
     totalAmount:   payableTotal,          // goods total + tip ± cash rounding
     tipAmount,
     roundingAmount,
     discountTotal: (orderDiscountAmount || 0) + (cartThresholdDiscount || 0),
-    paymentMethod,
+    // A sale only partly covered by the customer's balance is a real split, even
+    // when the till sent a single 'wallet' tender: recording it that way is what
+    // makes the journal put the shortfall in receivables instead of inventing cash.
+    paymentMethod: recordedPaymentMethod,
+    // 'paid' here means the TRANSACTION is settled — goods handed over, till
+    // closed. It does not mean the money is in hand; an unpaid part is a
+    // receivable. Changing it would drop these sales out of the POS reports,
+    // which filter on this field.
     paymentStatus: 'paid',
     paymentDetails: {
       reference: receiptNumber,
@@ -2413,7 +2446,10 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         customerId: customer.customerId || null,
       },
       ...(paymentMethod === 'cash'  && { amount: amountTendered, change: Math.max(0, amountTendered - payableTotal) }),
-      ...(paymentMethod === 'split' && { splitPayments }),
+      ...(recordedPaymentMethod === 'split' && { splitPayments: recordedSplitPayments }),
+      // Carried on the order so a receipt, a refund and any later reconciliation
+      // can tell which part of the sale became a debt.
+      ...(accountSplit ? { accountCharge: accountSplit.shortfall } : {}),
       ...(settledTableName ? { tableName: settledTableName } : {}),
     },
     status:                  'confirmed',
@@ -2438,13 +2474,51 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
           filter: { _id: customer.customerId, tenant: tenantId },
         },
         tenantId,
-        value: { type: 'refund', amount: payableTotal, reason: `Reversed — failed POS sale ${receiptNumber}` },
+        // Only what left the balance. The tab was never charged, so reversing
+        // payableTotal here would hand back stored value the customer never had.
+        value: { type: 'refund', amount: accountSplit ? accountSplit.spend : payableTotal, reason: `Reversed — failed POS sale ${receiptNumber}` },
         reference: receiptNumber,
         createdBy: staffId,
       }).catch(() => {});
     }
     await rollbackDeductedStock();
     throw orderErr;
+  }
+
+  // ── Tab charge ──
+  // The debt itself is already in the ledger: the order journal put the shortfall
+  // in receivables (1300). This row is the customer-facing record of it, which is
+  // what the account panel, the credit limit and the AR directory all read.
+  //
+  // Written after the order, because a charge with no sale behind it is worse than
+  // a sale with no charge row. The window is narrow but real, so a failure is
+  // logged with the receipt number for reconciliation and surfaced to the till —
+  // silently swallowing it would leave a customer owing money they cannot see.
+  let accountWarning = null;
+  if (accountSplit) {
+    try {
+      await customerAccount.recordCharge({
+        tenantId,
+        customerId: customer.customerId,
+        amount: accountSplit.shortfall,
+        userId: staffId,
+        receiptNumber,
+        reference: order._id,
+        method: 'account',
+        posSessionId: session._id,
+        note: `POS sale — receipt ${receiptNumber}`,
+        allowOverride: canCreditOverride,
+        overrideReason: creditOverrideReason,
+        occurredAt: order.placedAt || new Date(),
+      });
+    } catch (chargeErr) {
+      // The credit limit can be breached by a concurrent sale between the check
+      // above and this write, so this is a real path, not a theoretical one.
+      console.error('[Account] tab charge failed:', chargeErr.message, {
+        tenantId, receiptNumber, customerId: customer.customerId, amount: accountSplit.shortfall,
+      });
+      accountWarning = 'The sale was recorded but the account charge could not be. Reconcile this receipt before closing the till.';
+    }
   }
 
   // Link the wallet debit to the now-persisted order (best-effort; the receipt
@@ -2491,6 +2565,10 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         if (sp.method === 'card')          sessionInc.cardSales        = (sessionInc.cardSales        || 0) + sp.amount;
         if (sp.method === 'bank_transfer') sessionInc.transferSales    = (sessionInc.transferSales    || 0) + sp.amount;
         if (sp.method === 'mobile_money')  sessionInc.mobileMoneySales = (sessionInc.mobileMoneySales || 0) + sp.amount;
+        // 'account' is deliberately absent from the drawer buckets: no cash was
+        // taken, so counting it as a tender would leave the till short at
+        // closing. It is tracked on its own counter instead.
+        if (sp.method === 'account')       sessionInc.onAccountSales   = (sessionInc.onAccountSales   || 0) + sp.amount;
       }
       delete sessionInc.cashSales; // prevent double-count on non-split path
       // Recalculate from split totals only
@@ -2533,10 +2611,14 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     priceAtPurchase: it.priceAtPurchase,
     itemSubtotal:    it.itemSubtotal,
     discountAmount:  it.discountAmount,
+    taxRate:         it.taxRate,
+    taxAmount:       it.taxAmount,
   }));
 
   res.status(201).json({
     success: true,
+    // Never hide a debt the ledger has recorded but the customer view has not.
+    ...(accountWarning ? { warning: accountWarning } : {}),
     data: {
       order: {
         _id:           order._id,
@@ -2544,6 +2626,10 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         receiptNumber: order.receiptNumber,
         total:         order.totalAmount,
         subtotal:      subtotal,
+        // Report the tax actually charged, whether it came from a quotation or
+        // from the tenant's registered rate. Gating on `linkedSalesOrderId`
+        // hid a tenant-VAT receipt's own tax from the till and the receipt.
+        taxAmount:     taxAmount > 0 ? taxAmount : undefined,
         originalSubtotal:  originalSubtotal,
         pricelistSavings:  pricelistSavings > 0 ? pricelistSavings : undefined,
         pricelistName:     selectedPricelist?.name || undefined,
@@ -2551,14 +2637,23 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         discountTotal: orderDiscountAmount || 0,
         tipAmount:      order.tipAmount || 0,
         roundingAmount: order.roundingAmount || 0,
+        // Read the recorded values, not the request's: a partly-covered account
+        // sale was TENDERED as 'wallet' but was RECORDED as a split, and the
+        // receipt has to show the split the till actually took.
         paymentMethod: order.paymentMethod,
-        splitPayments: paymentMethod === 'split' ? splitPayments : undefined,
-        amountTendered: paymentMethod === 'split'
+        splitPayments: recordedPaymentMethod === 'split' ? recordedSplitPayments : undefined,
+        amountTendered: recordedPaymentMethod === 'split'
           ? (amountTendered || 0)
-          : paymentMethod === 'cash' ? amountTendered : payableTotal,
-        change:        paymentMethod === 'split'
+          : recordedPaymentMethod === 'cash' ? amountTendered : payableTotal,
+        change:        recordedPaymentMethod === 'split'
           ? Math.max(0, (amountTendered || 0) - payableTotal)
-          : paymentMethod === 'cash' ? Math.max(0, amountTendered - payableTotal) : 0,
+          : recordedPaymentMethod === 'cash' ? Math.max(0, amountTendered - payableTotal) : 0,
+        // What became a debt, so the receipt tells the customer what they now owe
+        // rather than leaving them to be surprised at the next visit.
+        ...(accountSplit ? {
+          onAccount: accountSplit.shortfall,
+          accountBalanceAfter: round2((await customerAccount.balance(tenantId, customer.customerId))),
+        } : {}),
         items:         receiptItems,
         note:          note || '',
         tableName:     settledTableName || undefined,
@@ -2672,6 +2767,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
     }
   }
 
+  const salesByItem = await linkedReturns.salesReturnsForReceipt(order, req.tenant?._id);
   const returnNumber = await generateReturnNumber();
   let   totalRefunded = 0;
   const refundLines   = [];
@@ -2684,8 +2780,9 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
 
     // Check quantity is valid
     const alreadyQty  = alreadyRefunded[orderItemIndex] || 0;
-    const maxRefundQty = orderItem.quantity - alreadyQty;
-    if (quantity < 1) { errors.push(`Quantity must be at least 1`); continue; }
+    const salesAlreadyReturned = refundRestockPlan(order, orderItemIndex, orderItem.quantity, salesByItem, refundLines).salesReturnedQuantity;
+    const maxRefundQty = Math.max(0, orderItem.quantity - alreadyQty - salesAlreadyReturned);
+    if (!Number.isFinite(quantity) || quantity < 1) { errors.push(`Quantity must be at least 1`); continue; }
     if (quantity > maxRefundQty) {
       errors.push(
         `Cannot refund ${quantity} of "${orderItem.product?.name || 'item'}" — only ${maxRefundQty} unit(s) remain refundable`
@@ -2711,8 +2808,9 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
     const lineAmount = parseFloat((refundUnitPrice * quantity * (1 - safeDiscPct / 100)).toFixed(2));
     totalRefunded   += lineAmount;
 
-    // Restore stock only if restock flag is true (Odoo-style: cashier controls this)
-    if (restock !== false) {
+    // Eligibility excludes previously returned goods; these are new returns.
+    const plan = { salesReturnedQuantity: 0, restockQuantity: quantity };
+    if (restock !== false && plan.restockQuantity > 0) {
       const lineWarehouseId = orderItem.warehouse ? orderItem.warehouse.toString() : null;
       let lineDefaultSizeId = null;
       if (lineWarehouseId && !orderItem.size) {
@@ -2724,7 +2822,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
       // refunds). WarehouseStock remains the authoritative total either way.
       let refundAllocations = null;
       if (lineWarehouseId && Array.isArray(orderItem.batchAllocations) && orderItem.batchAllocations.length) {
-        let remaining = quantity;
+        let remaining = plan.restockQuantity;
         refundAllocations = [];
         for (const a of orderItem.batchAllocations) {
           if (remaining <= 0) break;
@@ -2737,7 +2835,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
       await restoreStock({
         subProductId: orderItem.subproduct?.toString() || orderItem.subproduct,
         sizeId:       orderItem.size ? orderItem.size.toString() : null,
-        quantity,
+        quantity: plan.restockQuantity,
         tenantId:     req.tenant?._id,
         staffId:      performer._id,
         returnNumber,
@@ -2749,6 +2847,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
       });
     }
 
+    alreadyRefunded[orderItemIndex] = alreadyQty + quantity;
     refundLines.push({
       orderItemIndex,
       quantity,
@@ -2756,6 +2855,8 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
       discPct:   safeDiscPct,
       amount:    lineAmount,
       restock:   restock !== false,
+      salesReturnedQuantity: plan.salesReturnedQuantity,
+      restockedQuantity: restock !== false ? plan.restockQuantity : 0,
       reason:    lineReason || undefined,
     });
   }
@@ -2792,6 +2893,32 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
   const refundToWallet =
     refundPaymentMethod === 'wallet' ||
     (!refundPaymentMethod && order.paymentMethod === 'wallet');
+  // Refunding part of a sale that went on the tab lowers what they owe, with no
+  // money moving. Only the tab portion of this refund, and only the increment not
+  // already credited by an earlier partial refund of the same receipt.
+  const tabChargeOnOrder = Number(order.paymentDetails?.accountCharge) || 0;
+  const tabCustomerId = order.paymentDetails?.customer?.customerId;
+  if (tabChargeOnOrder > 0 && tabCustomerId) {
+    const alreadyCredited = await customerAccount.creditedForReceipt(
+      req.tenant?._id, order.receiptNumber,
+    );
+    const refundableTabPortion = Math.min(totalRefunded, tabChargeOnOrder);
+    const increment = round2(refundableTabPortion - alreadyCredited);
+    if (increment > 0) {
+      await customerAccount.creditStatement({
+        tenantId: req.tenant?._id,
+        customerId: tabCustomerId,
+        amount: increment,
+        userId: req.posUser?._id,
+        method: 'refund',
+        receiptNumber: order.receiptNumber,
+        reference: returnNumber,
+        note: `Refund — ${returnNumber}`,
+        occurredAt: new Date(),
+      });
+    }
+  }
+
   if (refundToWallet) {
     await creditWalletRefund({
       order,
@@ -2901,6 +3028,16 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
       reference: voidNumber,
       reason: `Void — ${voidNumber}`,
       staffId: req.posUser._id,
+    });
+  }
+
+  // Void of a sale that went on the tab must also drop what they owe. Left
+  // out, the customer keeps a debt for goods that were never handed over.
+  // Idempotent: a void that follows a full refund finds nothing left to reverse.
+  const voidedTabCharge = Number(order.paymentDetails?.accountCharge) || 0;
+  if (voidedTabCharge > 0 && order.paymentDetails?.customer?.customerId) {
+    await customerAccount.revertCharge(req.tenant?._id, order.receiptNumber, {
+      userId: req.posUser._id,
     });
   }
 
@@ -3099,6 +3236,9 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
     guests,
   });
 
+  // No `accountWarning` here: a hold books no revenue and charges no account, so
+  // there is no ledger debt it could be hiding. Referencing the createOrder
+  // local threw a ReferenceError and broke holding a cart entirely.
   res.status(201).json({
     success: true,
     data: {
@@ -3565,20 +3705,15 @@ exports.bumpKitchenRound = asyncHandler(async (req, res) => {
  */
 
 
-// ─── All POS Orders (across all sessions) ────────────────────────────────────
-/**
- * GET /api/pos/orders
- * Returns all POS orders for this tenant, newest first.
- * Supports: ?limit=&page=&search=&status=
- */
-exports.getAllPOSOrders = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  const page  = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = Math.min(500, parseInt(req.query.limit) || 200);
-  const skip  = (page - 1) * limit;
-
-  const orders = await Order.find({ 'items.tenant': tenantId, ...shopFilter(req), source: 'pos' })
-    .select('shopId shopName posWarehouse orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails posSessionId')
+// ─── Report order mapping ──────────────────────────────────────────────────────
+// The projection itself lives in services/posReportOrder.service.js so it can be
+// unit tested without a database. These helpers are the shared query + net-total
+// wiring every report surface (order list, session list, analysis endpoint) uses —
+// they used to be hand-duplicated per endpoint and drifted apart.
+// Shared populate chain for report surfaces. Takes the filter so the query can
+// never be assembled apart from its populates.
+function reportOrderQuery(filter) {
+  return Order.find(filter)
     .populate('posStaff', 'firstName lastName posName')
     .populate({ path: 'posSessionId', select: 'shopId shopName terminalType openedAt status', strictPopulate: false })
     .populate({
@@ -3593,44 +3728,104 @@ exports.getAllPOSOrders = asyncHandler(async (req, res) => {
     .populate('items.size', 'displayName costPrice')
     .populate('items.subproduct', 'costPrice')
     .populate('items.warehouse', 'name code')
-    .populate({ path: 'refunds.refundedBy', select: 'firstName lastName posName', strictPopulate: false })
+    .populate({ path: 'refunds.refundedBy', select: 'firstName lastName posName', strictPopulate: false });
+}
+
+async function attachReportNetTotals(orders, tenantId) {
+  const projected = await linkedReturns.projectPOSReturns(orders, tenantId);
+  return projected
+    .map((o) => ({ ...o, lineNetTotals: orderLineNetTotals(o) }))
+    .map(mapReportOrder);
+}
+
+/**
+ * GET /api/pos/orders/analysis
+ *
+ * The full-period dataset behind the order-analysis page. The page used to pull
+ * `GET /api/pos/orders?limit=500` and compute every KPI, chart and pivot from
+ * that one page, so past 500 receipts each figure was silently wrong with no
+ * indication anything was missing. This reads every matching receipt with a
+ * cursor (never `skip`, which degrades on large sets) and returns compact rows
+ * carrying the fields the measures actually read.
+ *
+ * Deliberately *not* pre-aggregated: the net-sales money maths has one authority
+ * (posReturnTotals.service) and the measure/grouping logic has one authority
+ * (the client analysis module). A server-side aggregation would be a third
+ * implementation, and the headline KPI would eventually disagree with the chart
+ * built from the same receipts.
+ *
+ * Supports: ?shopId=&from=&to=
+ */
+exports.getPOSOrderAnalysis = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+  const filter = { 'items.tenant': tenantId, source: 'pos', ...shopFilter(req) };
+  const from = req.query.from ? new Date(req.query.from) : null;
+  const to = req.query.to ? new Date(req.query.to) : null;
+  if (from && !Number.isNaN(from.getTime())) filter.createdAt = { $gte: from };
+  if (to && !Number.isNaN(to.getTime())) {
+    filter.createdAt = { ...(filter.createdAt || {}), $lte: to };
+  }
+
+  const maxLines = Math.max(
+    1000,
+    Math.min(1_000_000, parseInt(req.query.maxLines) || DEFAULT_MAX_LINES)
+  );
+
+  // Read the whole matching period. No limit and no skip: this endpoint exists
+  // precisely so the page is not bounded by a page size.
+  const receipts = await reportOrderQuery(filter)
+    .select(REPORT_ORDER_FIELDS)
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const mapped = await attachReportNetTotals(receipts, tenantId);
+  const payload = buildAnalysisPayload(mapped, { maxLines });
+
+  res.json({
+    success: true,
+    data: payload.orders,
+    meta: { ...payload.meta, matched: receipts.length, shopId: req.query.shopId || null },
+  });
+});
+
+// ─── All POS Orders (across all sessions) ────────────────────────────────────
+/**
+ * GET /api/pos/orders
+ * Returns all POS orders for this tenant, newest first.
+ * Supports: ?limit=&page=&search=&status=
+ */
+exports.getAllPOSOrders = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const page  = Math.max(1, parseInt(req.query.page) || 1);
+  // The granted page size is clamped, but the clamp is now *reported* rather
+  // than applied silently. It used to cap at 500 while the client's "Load all"
+  // asked for 2000 — so the client received 500, cleared its truncation warning,
+  // and told the user it was showing every receipt.
+  const limit = resolvePageLimit(req.query.limit);
+  const skip  = (page - 1) * limit;
+
+  const filter = { 'items.tenant': tenantId, ...shopFilter(req), source: 'pos' };
+
+  const orders = await reportOrderQuery(filter)
+    .select(REPORT_ORDER_FIELDS)
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
     .lean();
 
-  const mapped = orders.map((o) => ({
-    ...o,
-    total:        o.totalAmount,
-    subtotal:     o.subtotal     || o.totalAmount,
-    discountTotal: o.discountTotal || 0,
-    customer:     o.paymentDetails?.customer || null,
-    session:      o.posSessionId && typeof o.posSessionId === 'object'
-      ? { _id: o.posSessionId._id, terminalType: o.posSessionId.terminalType, openedAt: o.posSessionId.openedAt }
-      : o.posSessionId ? { _id: o.posSessionId } : null,
-    paymentDetails: {
-      splitPayments: o.paymentDetails?.splitPayments || [],
-      change:        o.paymentDetails?.change        || 0,
-      amount:        o.paymentDetails?.amount        || 0,
-    },
-    items: (o.items || []).map((it) => ({
-      name:            it._name || it.product?.name || 'Product',
-      variant:         it._variant || it.size?.displayName || '',
-      quantity:        it.quantity,
-      priceAtPurchase: it.priceAtPurchase,
-      itemSubtotal:    it.itemSubtotal,
-      discountAmount:  it.discountAmount || 0,
-      sizeCostPrice:   it.size?.costPrice || it.subproduct?.costPrice || 0,
-      category:        it.product?.category?.name    || '',
-      subcategory:     it.product?.subCategory?.name || '',
-      brand:           it.product?.brand?.name       || '',
-      warehouse:       it.warehouse
-        ? { _id: it.warehouse._id, name: it.warehouse.name, code: it.warehouse.code }
-        : null,
-    })),
-  }));
+  const mapped = await attachReportNetTotals(orders, tenantId);
 
-  res.json({ success: true, data: mapped });
+  // Only meaningful on the first page; a later page cannot say what it missed.
+  const matched =
+    skip === 0 ? await Order.countDocuments(filter) : skip + mapped.length;
+
+  res.json({
+    success: true,
+    data: mapped,
+    meta: buildPageMeta({ matched, included: mapped.length, limit }),
+  });
 });
 
 exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
@@ -3638,53 +3833,13 @@ exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
   const session = await POSSession.findOne({ _id: req.params.id, ...shopFilter(req), tenant: req.tenant?._id });
   if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
 
-  const orders = await Order.find({ posSessionId: req.params.id, ...tenantScope(req.tenant?._id), ...shopFilter(req) })
-    .select('shopId shopName posWarehouse orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails')
-    .populate('posStaff', 'firstName lastName posName')
-    .populate({
-      path: 'items.product',
-      select: 'name brand category subCategory',
-      populate: [
-        { path: 'brand',       select: 'name' },
-        { path: 'category',    select: 'name' },
-        { path: 'subCategory', select: 'name' },
-      ],
-    })
-    .populate('items.size', 'displayName costPrice')
-    .populate('items.subproduct', 'costPrice')
-    .populate('items.warehouse', 'name code')
-    .populate({ path: 'refunds.refundedBy', select: 'firstName lastName posName', strictPopulate: false })
+  const orders = await reportOrderQuery({ posSessionId: req.params.id, ...tenantScope(req.tenant?._id), ...shopFilter(req) })
+    .select(REPORT_ORDER_FIELDS)
     .sort({ createdAt: -1 })
     .limit(200)
     .lean();
 
-  const mapped = orders.map((o) => ({
-    ...o,
-    total:         o.totalAmount,
-    subtotal:      o.subtotal     || o.totalAmount,
-    discountTotal: o.discountTotal || 0,
-    customer:      o.paymentDetails?.customer || null,
-    paymentDetails: {
-      splitPayments: o.paymentDetails?.splitPayments || [],
-      change:        o.paymentDetails?.change        || 0,
-      amount:        o.paymentDetails?.amount        || 0,
-    },
-    items: (o.items || []).map((it) => ({
-      name:            it._name || it.product?.name || 'Product',
-      variant:         it._variant || it.size?.displayName || '',
-      quantity:        it.quantity,
-      priceAtPurchase: it.priceAtPurchase,
-      itemSubtotal:    it.itemSubtotal,
-      discountAmount:  it.discountAmount || 0,
-      sizeCostPrice:   it.size?.costPrice || it.subproduct?.costPrice || 0,
-      category:        it.product?.category?.name    || '',
-      subcategory:     it.product?.subCategory?.name || '',
-      brand:           it.product?.brand?.name       || '',
-      warehouse:       it.warehouse
-        ? { _id: it.warehouse._id, name: it.warehouse.name, code: it.warehouse.code }
-        : null,
-    })),
-  }));
+  const mapped = await attachReportNetTotals(orders, req.tenant?._id);
 
   res.json({ success: true, data: mapped });
 });
@@ -3727,7 +3882,7 @@ exports.searchPOSCustomers = asyncHandler(async (req, res) => {
   const customers = await POSCustomer.find(filter)
     .sort({ updatedAt: -1 })
     .limit(lim)
-    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders pricelist')
+    .select('firstName lastName email phone loyaltyPoints walletBalance creditLimit totalSpent totalOrders pricelist')
     .populate('pricelist', 'name')
     .lean();
 
@@ -3920,9 +4075,186 @@ exports.updatePOSCustomerLoyalty = asyncHandler(async (req, res) => {
   }
 
   const fresh = await POSCustomer.findOne({ _id: customer._id, tenant: tenantId }).select(
-    'firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders notes'
-  );
+    'firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders notes creditLimit'
+  ).lean();
   res.json({ success: true, data: { customer: fresh } });
+});
+
+// ─── POS Customer Tab / Account ────────────────────────────────────────────────
+/**
+ * POST /api/pos/customers/:id/account/preview
+ *
+ * "What happens if I charge this sale to their account?" — answered HERE, against
+ * live balances, never on the client.
+ *
+ * The client already has a `walletBalance`, but not a trustworthy tab balance:
+ * it is not part of the customer search payload, it moves whenever anyone takes
+ * a payment or rings up another on-account sale, and offline it is a stale
+ * guess. A client-side preview would therefore answer confidently and wrongly —
+ * the dangerous case being a sale it says clears the credit limit when the live
+ * balance does not. The limit is on TOTAL owed, so a standing tab of 6,000
+ * against a 10,000 limit leaves no headroom at all, which is exactly the case a
+ * cached-balance preview gets backwards.
+ *
+ * So the split arithmetic has one authority (`splitAccountTender`) and this
+ * endpoint is its read-only front door. It changes nothing: no rows are written
+ * and the sale still re-checks at commit.
+ *
+ * Refuses when the client reports it is offline, rather than answering from a
+ * cached balance — promising a limit decision we cannot keep is worse than
+ * declining to make one.
+ */
+exports.previewPOSCustomerCharge = asyncHandler(async (req, res) => {
+  const POSCustomer = require('../models/POSCustomer');
+  const customerAccount = require('../services/customerAccount.service');
+  const tenantId = req.tenant?._id;
+  if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+  const { amount, offline = false } = req.body;
+
+  if (offline) {
+    return res.status(409).json({
+      success: false,
+      message: 'Cannot check their credit limit while offline — reconnect, or take the sale in cash.',
+      code: 'preview_unavailable',
+    });
+  }
+  if (amount === undefined || amount === null || amount === '') {
+    return res.status(400).json({ success: false, message: 'amount is required' });
+  }
+  // Validated here rather than left to splitAccountTender, which throws. That
+  // throw is correct for a programmer error but surfaces here as a 500 — telling
+  // a cashier the till is broken when they simply typed nothing.
+  const total = Number(amount);
+  if (!Number.isFinite(total) || total <= 0) {
+    return res.status(400).json({ success: false, message: 'amount must be a positive number' });
+  }
+
+  const customer = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId })
+    .select('firstName lastName walletBalance creditLimit')
+    .lean();
+  if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+  const split = splitAccountTender({
+    payableTotal: total,
+    availableBalance: customer.walletBalance,
+    creditLimit: customer.creditLimit,
+    tabBalance: await customerAccount.balance(tenantId, req.params.id),
+  });
+
+  // Deliberately NOT allowOverride here. This endpoint answers "is this sale
+  // within the limit", and the answer to that is independent of who is asking.
+  // Granting it belongs to the commit path, where a reason is recorded.
+  const canOverride = req.posPermissions?.includes('pos:credit_override') || false;
+
+  res.json({
+    success: true,
+    data: {
+      customer: { _id: customer._id, firstName: customer.firstName, lastName: customer.lastName },
+      split: {
+        spend: split.spend,
+        shortfall: split.shortfall,
+        charged: split.charged,
+        withinLimit: split.withinLimit,
+        requiresOverride: split.requiresOverride,
+        requiredLimit: split.requiredLimit,
+        tenders: split.tenders,
+      },
+      walletBalance: Number(customer.walletBalance) || 0,
+      creditLimit: Number(customer.creditLimit) || 0,
+      owedAfter: split.requiredLimit,
+      canOverride,
+    },
+  });
+});
+
+/**
+ * GET /api/pos/customers/:id/account
+ *
+ * Account summary for a POS customer's tab. The account() read combines balances,
+ * credit limit and recent entries without duplicating domain logic — it lives in
+ * the service and is the same source of truth as the AR panel.
+ */
+exports.getPOSCustomerAccount = asyncHandler(async (req, res) => {
+  const POSCustomer = require('../models/POSCustomer');
+  const customerAccount = require('../services/customerAccount.service');
+  const tenantId = req.tenant?._id;
+  if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+  const customer = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId }).lean();
+  if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+  const [summary, entries] = await Promise.all([
+    customerAccount.account(tenantId, req.params.id),
+    customerAccount.listEntries(tenantId, req.params.id, { limit: 50 }),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      customer: {
+        _id: customer._id,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        phone: customer.phone,
+        email: customer.email,
+        creditLimit: customer.creditLimit,
+      },
+      balance: summary.balance,
+      charges: summary.charges,
+      payments: summary.payments,
+      creditLimit: summary.creditLimit,
+      entries,
+    },
+  });
+});
+
+/**
+ * POST /api/pos/customers/:id/account/payment
+ *
+ * Take a payment against a tab. This is the cashier's repayment path: it refuses
+ * wallet tenders and refuses to overpay, and writes the journal entry and
+ * statement row in the same transaction. Both are enforced in the service layer
+ * because a split commit here would show a paid tab while the ledger still shows
+ * what was handed over as unallocated.
+ */
+exports.takePOSCustomerPayment = asyncHandler(async (req, res) => {
+  const customerAccount = require('../services/customerAccount.service');
+  const POSCustomer = require('../models/POSCustomer');
+  const tenantId = req.tenant?._id;
+  const { amount, method = 'cash', reference, note, date } = req.body;
+
+  if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+  if (amount === undefined || amount === null) {
+    return res.status(400).json({ success: false, message: 'amount is required' });
+  }
+
+  const customer = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId }).lean();
+  if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+  const userId = req.posUser?._id || req.user?._id || null;
+  const payment = await customerAccount.takePayment({
+    tenantId,
+    customerId: req.params.id,
+    amount,
+    method,
+    userId,
+    reference,
+    note,
+    date,
+  });
+
+  const summary = await customerAccount.account(tenantId, req.params.id);
+  res.status(201).json({
+    success: true,
+    data: {
+      payment,
+      balance: summary.balance,
+      charges: summary.charges,
+      payments: summary.payments,
+      creditLimit: summary.creditLimit,
+    },
+  });
 });
 
 // ─── POS Notifications — online platform orders for this tenant ───────────────

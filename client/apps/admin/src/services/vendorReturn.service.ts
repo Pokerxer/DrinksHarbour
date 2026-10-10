@@ -10,7 +10,7 @@ export interface VendorReturn {
   vendorName: string;
   purchaseOrder?: string | { _id: string; poNumber?: string };
   poNumber?: string;
-  vendorBill?: string;
+  vendorBill?: string | { _id: string; billNumber?: string };
   billNumber?: string;
   /** Warehouse the returned goods leave from on confirmation (stock deduction). */
   warehouse?: string | { _id: string; name?: string } | null;
@@ -38,6 +38,7 @@ export interface VendorReturn {
   refundMethod?: string;
   refundReference?: string;
   refundDate?: string;
+  refunds?: { _id: string; amount: number; method: string; reference?: string; notes?: string; date: string; recordedBy?: string | { _id: string; name?: string } | null }[];
   createdBy?: string | { _id: string; name?: string; email?: string };
   confirmedBy?: string | { _id: string; name?: string; email?: string };
   confirmedAt?: string;
@@ -230,6 +231,7 @@ export const vendorReturnService = {
   async recordRefund(
     id: string,
     refundData: {
+      requestId?: string;
       amount: number;
       method?: string;
       reference?: string;

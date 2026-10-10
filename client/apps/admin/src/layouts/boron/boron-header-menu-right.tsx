@@ -44,12 +44,6 @@ export default function HeaderMenuRight() {
           )}
         >
           <PiBellRinging className="h-5 w-auto xl:h-5 3xl:h-6" />
-          <Badge
-            renderAsDot
-            color="warning"
-            enableOutlineRing
-            className="absolute right-2.5 top-2.5 -translate-y-1/3 translate-x-1/2"
-          />
         </ActionIcon>
       </NotificationDropdown>
       <ProfileMenu

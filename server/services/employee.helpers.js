@@ -23,6 +23,9 @@ const POS_PERMISSIONS = [
   'pos:refund',
   'pos:void',
   'pos:price_override',
+  // Authorises a sale that breaches a customer's credit limit. Kept separate from
+  // price_override on purpose: one is a discount, the other is a debt.
+  'pos:credit_override',
   'pos:discount',
   'pos:terminal:retail',
   'pos:terminal:wholesale',

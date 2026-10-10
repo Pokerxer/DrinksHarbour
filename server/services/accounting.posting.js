@@ -86,6 +86,9 @@ function linesForVendorBill(doc) {
 
 /** Vendor return refunded → refund: Dr Payables; Cr Inventory + Cr Tax Paid. */
 function linesForVendorReturn(doc) {
+  // Individual settlements are already journaled atomically. The legacy
+  // document/backfill hook must not post the entire return again.
+  if (doc.refunds?.length) return [];
   const subtotal = round2(doc.subtotal);
   const tax = round2(doc.taxAmount);
   const gross = round2(subtotal + tax);

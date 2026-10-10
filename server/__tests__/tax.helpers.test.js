@@ -48,3 +48,13 @@ test('buildSummary sums directions and per-tax breakdown', () => {
   assert.equal(s.netPayable, 50);
   assert.equal(s.byTax.find((t) => t.taxName === 'VAT').collected, 75);
 });
+
+test('supplier returns reduce input VAT rather than increasing recoverable tax', () => {
+  const result = buildSummary([
+    { sourceType: 'vendor_bill', direction: 'paid', taxAmount: 75, taxName: 'VAT', taxRate: 7.5, status: 'posted' },
+    { sourceType: 'vendor_return', direction: 'paid', taxAmount: 15, taxName: 'VAT', taxRate: 7.5, status: 'posted' },
+  ]);
+  assert.equal(result.paid, 60);
+  assert.equal(result.byTax[0].paid, 60);
+  assert.equal(result.netPayable, -60);
+});

@@ -165,6 +165,8 @@ exports.getProfitLoss = asyncHandler(async (req, res) => {
   const data = await accountingService.getProfitLoss(req.tenant._id, {
     from: req.query.from,
     to: req.query.to,
+    // Opt-in: the prior window is a second full report build.
+    compare: req.query.compare === '1' || req.query.compare === 'true',
   });
   res.json({ success: true, data });
 });

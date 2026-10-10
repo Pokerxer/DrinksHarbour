@@ -1,3 +1,4 @@
+import { finite, stockHealth, confirmed, isTransferReturn } from './inventory-dashboard-analysis';
 import type { InventoryMovement } from '@/services/inventory.service';
 import type { StockRow } from '@/services/warehouseStock.service';
 import {
@@ -14,9 +15,9 @@ export const FLOW_DAYS = 14;
 /**
  * Movement counts matching each Operations page's own filter semantics:
  * receipts = category 'in'; deliveries = category 'out' minus scrap;
- * internalLegs = transfer legs (matches Internal browser "All" tab);
- * transfers = distinct operations (one transfer_out per transfer, since every
- * warehouse transfer writes a transfer_out + transfer_in pair);
+ * internalLegs = each confirmed transfer leg, including return legs;
+ * transfers = distinct original outgoing transfer references, so multi-line
+ * warehouse transfers count as one operation rather than one per product;
  * adjustments = category 'adjustment'; scrap = loss types.
  */
 export interface OperationCounts {
@@ -47,14 +48,17 @@ export function computeCounts(movements: InventoryMovement[]): OperationCounts {
     adjustments: 0,
     scrap: 0,
   };
-  for (const m of movements) {
-    if (SCRAP_TYPES.includes(m.type)) c.scrap += 1;
-    else if (m.type === 'transfer_out') c.transfers += 1;
-    else if (m.category === 'in') c.receipts += 1;
-    else if (m.category === 'out') c.deliveries += 1;
-    else if (m.category === 'transfer') c.internalLegs += 1;
-    else if (m.category === 'adjustment') c.adjustments += 1;
+  const transfers = new Set<string>();
+  for (const m of movements.filter(confirmed)) {
+    if (m.category === 'transfer' || isTransferReturn(m)) {
+      c.internalLegs++;
+      if (m.type === 'transfer_out' && !isTransferReturn(m)) transfers.add(m.reference || m._id);
+    } else if (SCRAP_TYPES.includes(m.type)) c.scrap++;
+    else if (m.category === 'in') c.receipts++;
+    else if (m.category === 'out') c.deliveries++;
+    else if (m.category === 'adjustment') c.adjustments++;
   }
+  c.transfers = transfers.size;
   return c;
 }
 
@@ -91,13 +95,7 @@ export function buildFlowData(movements: InventoryMovement[]): FlowPoint[] {
 export function buildHealthSlices(stockRows: StockRow[]): SlicePoint[] {
   const c = { ok: 0, low: 0, out: 0, expiry: 0, over: 0 };
   for (const r of stockRows) {
-    const f = r.flags;
-    if (!f || (!f.outOfStock && !f.lowStock && !f.nearExpiry && !f.overstocked))
-      c.ok += 1;
-    else if (f.outOfStock) c.out += 1;
-    else if (f.lowStock) c.low += 1;
-    else if (f.nearExpiry) c.expiry += 1;
-    else c.over += 1;
+    c[stockHealth(r)] += 1;
   }
   return [
     { name: 'Healthy', value: c.ok, color: CHART_COLORS.in },
@@ -109,37 +107,34 @@ export function buildHealthSlices(stockRows: StockRow[]): SlicePoint[] {
 }
 
 export function buildWarehouseSlices(stockRows: StockRow[]): SlicePoint[] {
-  const map = new Map<string, number>();
-  for (const r of stockRows) {
-    const value = r.currentQuantity * (r.costPrice || 0);
-    if (value > 0)
-      map.set(r.warehouseName, (map.get(r.warehouseName) ?? 0) + value);
+  const map = new Map<string, { name: string; value: number }>();
+  for (const row of stockRows) {
+    const key = row.warehouseId || row.warehouseName;
+    const group = map.get(key) || { name: row.warehouseName || 'Unassigned', value: 0 };
+    group.value += finite(row.currentQuantity) * finite(row.costPrice);
+    map.set(key, group);
   }
-  return Array.from(map.entries(), ([name, value], i) => ({
-    name,
-    value: Math.round(value),
+  return Array.from(map.values(), (row, i) => ({
+    ...row,
     color: PIE_PALETTE[i % PIE_PALETTE.length],
   })).sort((a, b) => b.value - a.value);
 }
 
 export function buildTopProducts(stockRows: StockRow[]): TopProductPoint[] {
-  const map = new Map<string, number>();
-  for (const r of stockRows) {
-    const value = r.currentQuantity * (r.costPrice || 0);
-    if (value > 0) map.set(r.productName, (map.get(r.productName) ?? 0) + value);
+  const map = new Map<string, TopProductPoint>();
+  for (const row of stockRows) {
+    const key = row.subProductId || row.productName;
+    const product = map.get(key) || { id: key, name: row.productName, value: 0 };
+    product.value += finite(row.currentQuantity) * finite(row.costPrice);
+    map.set(key, product);
   }
-  return Array.from(map.entries(), ([name, value]) => ({
-    name: name.length > 22 ? `${name.slice(0, 21)}\u2026` : name,
-    value: Math.round(value),
-  }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
+  return Array.from(map.values()).sort((a, b) => b.value - a.value);
 }
 
 export function sumUnits(stockRows: StockRow[]): number {
-  return stockRows.reduce((s, r) => s + r.currentQuantity, 0);
+  return stockRows.reduce((s, r) => s + finite(r.currentQuantity), 0);
 }
 
 export function countOutOfStock(stockRows: StockRow[]): number {
-  return stockRows.reduce((n, r) => n + (r.flags?.outOfStock ? 1 : 0), 0);
+  return stockRows.reduce((n, r) => n + (stockHealth(r) === 'out' ? 1 : 0), 0);
 }

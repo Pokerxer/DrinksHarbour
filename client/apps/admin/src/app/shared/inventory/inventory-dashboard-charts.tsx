@@ -117,20 +117,12 @@ export function StockFlowChart({ data }: { data: FlowPoint[] }) {
           contentStyle={{ fontSize: 12, borderRadius: 8 }}
         />
         <Legend
-          formatter={(v: string) =>
-            v === 'in' ? 'Units in' : v === 'out' ? 'Units out' : 'Net'
-          }
+          formatter={(v: string) => (v === 'in' ? 'Units in' : v === 'out' ? 'Units out' : 'Net')}
           wrapperStyle={{ fontSize: 12 }}
         />
         <Bar dataKey="in" fill={CHART_COLORS.in} radius={[3, 3, 0, 0]} />
         <Bar dataKey="out" fill={CHART_COLORS.out} radius={[3, 3, 0, 0]} />
-        <Line
-          type="monotone"
-          dataKey="net"
-          stroke={CHART_COLORS.net}
-          strokeWidth={2}
-          dot={false}
-        />
+        <Line type="monotone" dataKey="net" stroke={CHART_COLORS.net} strokeWidth={2} dot={false} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -144,13 +136,7 @@ export interface SlicePoint {
   color: string;
 }
 
-export function DonutChart({
-  data,
-  currency = false,
-}: {
-  data: SlicePoint[];
-  currency?: boolean;
-}) {
+export function DonutChart({ data, currency = false }: { data: SlicePoint[]; currency?: boolean }) {
   const filtered = data.filter((d) => d.value > 0);
   if (filtered.length === 0) return <EmptyChart label="Nothing to chart yet" />;
   return (
@@ -170,9 +156,7 @@ export function DonutChart({
           ))}
         </Pie>
         <Tooltip
-          formatter={(value: number) =>
-            currency ? ngn.format(value) : value.toLocaleString()
-          }
+          formatter={(value: number) => (currency ? ngn.format(value) : value.toLocaleString())}
           contentStyle={{ fontSize: 12, borderRadius: 8 }}
         />
         <Legend
@@ -191,44 +175,44 @@ export function DonutChart({
 // ── Top products by stock value (horizontal bars) ────────────────────────────
 
 export interface TopProductPoint {
+  id?: string;
   name: string;
   value: number;
 }
 
 export function TopProductsChart({ data }: { data: TopProductPoint[] }) {
-  if (data.length === 0) return <EmptyChart label="No valued stock yet" />;
+  if (data.length === 0) return <EmptyChart label="No stock matches these filters" />;
+  const number = (value: number) => (Number.isFinite(value) ? value : 0);
+  const maximum = data.reduce((max, row) => Math.max(max, Math.abs(number(row.value))), 1);
+  const currency = new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart
-        data={data}
-        layout="vertical"
-        margin={{ top: 0, right: 16, left: 8, bottom: 0 }}
-      >
-        <XAxis
-          type="number"
-          tick={{ fontSize: 11, fill: '#9ca3af' }}
-          tickLine={false}
-          axisLine={false}
-          tickFormatter={(v: number) => `₦${compact.format(v)}`}
-        />
-        <YAxis
-          type="category"
-          dataKey="name"
-          width={130}
-          tick={{ fontSize: 11, fill: '#4b5563' }}
-          tickLine={false}
-          axisLine={false}
-        />
-        <Tooltip
-          formatter={(value: number) => [ngn.format(value), 'Stock value']}
-          contentStyle={{ fontSize: 12, borderRadius: 8 }}
-        />
-        <Bar dataKey="value" radius={[0, 3, 3, 0]} barSize={16}>
-          {data.map((d, i) => (
-            <Cell key={d.name} fill={PIE_PALETTE[i % PIE_PALETTE.length]} />
-          ))}
-        </Bar>
-      </ComposedChart>
-    </ResponsiveContainer>
+    <div className="h-full overflow-y-auto pr-2" aria-label="All matching stock values">
+      {data.map((row, index) => {
+        const value = number(row.value);
+        return (
+          <div
+            key={`${row.id || row.name}-${index}`}
+            data-stock-value
+            className="mb-3 grid grid-cols-[minmax(80px,2fr)_minmax(70px,3fr)] items-center gap-2 sm:grid-cols-[minmax(90px,2fr)_minmax(70px,3fr)_minmax(80px,2fr)]"
+          >
+            <span className="break-words text-xs text-gray-600">{row.name}</span>
+            <span className="h-5 overflow-hidden rounded bg-gray-100" aria-hidden="true">
+              <span
+                className={`block h-full rounded ${value < 0 ? 'bg-amber-600' : 'bg-[#b20202]'}`}
+                style={{ width: `${(Math.abs(value) / maximum) * 100}%` }}
+              />
+            </span>
+            <span className="col-span-2 text-right text-xs font-semibold tabular-nums text-gray-700 sm:col-span-1">
+              {currency.format(value)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Fraunces } from 'next/font/google';
@@ -632,8 +632,7 @@ export default async function CategoryPage({
         }}
       >
         {heroImage && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image fill priority sizes="100vw"
             src={heroImage}
             alt=""
             aria-hidden="true"
@@ -682,8 +681,7 @@ export default async function CategoryPage({
             {/* Emblem tile — the category's icon, or its engraved initial */}
             <div className="cp-rise mx-auto mb-6 flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-white p-3 shadow-2xl ring-4 ring-white/10 sm:h-28 sm:w-28">
               {category.thumbnailImage?.url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image width={112} height={112} sizes="112px" priority
                   src={category.thumbnailImage.url}
                   alt={category.thumbnailImage.alt || `${name} category`}
                   className="h-full w-full object-contain"
@@ -892,8 +890,7 @@ export default async function CategoryPage({
                   >
                     <div className="aspect-square overflow-hidden bg-gray-50">
                       {img ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image width={500} height={500} sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                           src={img}
                           alt={p.name}
                           loading="lazy"
@@ -962,8 +959,7 @@ export default async function CategoryPage({
                   >
                     <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-gray-100 bg-gray-50 p-2">
                       {c.thumbnailImage?.url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image width={64} height={64} sizes="64px"
                           src={c.thumbnailImage.url}
                           alt=""
                           loading="lazy"

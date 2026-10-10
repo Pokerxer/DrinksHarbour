@@ -15,6 +15,7 @@ const DIRECTION = {
   vendor_bill: 'paid',
   stock_transfer: 'internal',
   vendor_return: 'paid',
+  pos: 'collected',              // POS receipts collect output VAT
 };
 
 const NUMBER_FIELD = {
@@ -23,23 +24,25 @@ const NUMBER_FIELD = {
   vendor_bill: 'billNumber',
   stock_transfer: 'transferNumber',
   vendor_return: 'returnNumber',
+  pos: 'receiptNumber',
 };
 
 const TAX_TYPE_FOR_SOURCE = {
-  sales_order: 'output', // collected from customers
+  sales_order: 'output',
   purchase_order: 'input',
   vendor_bill: 'input',
   stock_transfer: 'input',
   vendor_return: 'input',
+  pos: 'output',
 };
 
-// Flow name used against Tax.appliesTo
 const FLOW_FOR_SOURCE = {
   sales_order: 'sale',
   purchase_order: 'purchase',
   vendor_bill: 'purchase',
   stock_transfer: 'transfer',
   vendor_return: 'return',
+  pos: 'sale',
 };
 
 // Header-rate derivation for documents that store a single header taxAmount
@@ -53,16 +56,18 @@ const EXTRACTORS = {
   sales_order: (doc) =>
     (doc.items || [])
       .filter((i) => i.lineType === 'product')
-      .map((i) => ({ taxableBase: i.lineTotal, taxRate: i.taxRate })),
+      .map((i) => ({ taxableBase: round2(Math.max(0, (i.lineTotal || 0) - (i.promoDiscount || 0))), taxRate: i.taxRate, ...(i.taxAmount != null ? { taxAmount: i.taxAmount } : {}) })),
   purchase_order: (doc) =>
     (doc.items || []).map((i) => ({ taxableBase: i.totalCost, taxRate: i.taxRate })),
-  vendor_bill: (doc) => [{ taxableBase: doc.subtotal, taxRate: headerRateFrom(doc) }],
+  vendor_bill: (doc) => [{ taxableBase: doc.subtotal, taxRate: headerRateFrom(doc), taxAmount: doc.taxAmount }],
   stock_transfer: (doc) =>
     (doc.items || []).map((i) => ({
       taxableBase: round2(Math.max(0, (i.quantity || 0) - (i.returnedQty || 0)) * (i.costPrice || 0) * (1 - (i.discountRate || 0) / 100)),
       taxRate: i.taxRate,
     })),
-  vendor_return: (doc) => [{ taxableBase: doc.subtotal, taxRate: headerRateFrom(doc) }],
+  vendor_return: (doc) => [{ taxableBase: doc.subtotal, taxRate: headerRateFrom(doc), taxAmount: doc.taxAmount }],
+  pos: (doc) =>
+    (doc.items || []).map((i) => ({ taxableBase: i.itemSubtotal, taxRate: i.taxRate, ...(i.taxAmount != null ? { taxAmount: i.taxAmount } : {}) })),
 };
 
 /**
@@ -88,11 +93,14 @@ function _buildRecordGroups({ sourceType, doc, taxes }) {
 }
 
 /** Idempotent capture: replace any posted records for this source, then insert. */
-async function captureDocumentTax({ sourceType, doc, postedBy }) {
+async function captureDocumentTax({ sourceType, doc, postedBy, strict = false }) {
   try {
     if (!doc?._id || !EXTRACTORS[sourceType]) return [];
     const taxes = await Tax.find({ tenant: doc.tenant }).lean();
     const groups = _buildRecordGroups({ sourceType, doc, taxes });
+    if (sourceType === 'pos') {
+      return await require('./tax.pos-capture').capturePOSTax({ doc, groups, postedBy });
+    }
     await TaxRecord.deleteMany({
       tenant: doc.tenant,
       sourceType,
@@ -108,25 +116,26 @@ async function captureDocumentTax({ sourceType, doc, postedBy }) {
         taxRate: g.taxRate,
         sourceType,
         sourceId: doc._id,
-        sourceNumber: String(doc[NUMBER_FIELD[sourceType]] || ''),
+        sourceNumber: String(doc[NUMBER_FIELD[sourceType]] || doc.soNumber || ''),
         direction: g.direction,
         taxableBase: g.taxableBase,
         taxAmount: g.taxAmount,
         currency: doc.currency || 'NGN',
         status: 'posted',
-        postedAt: new Date(),
+        postedAt: doc.invoiceIssuedAt || doc.billDate || doc.approvedAt || doc.createdAt || new Date(),
         postedBy: postedBy || undefined,
       }))
     );
   } catch (err) {
     // The document stays the source of truth; the backfill script repairs gaps.
     console.error('taxCaptureFailed', { sourceType, sourceId: String(doc?._id), err });
+    if (strict) throw err;
     return [];
   }
 }
 
 /** Mark posted records for this source as reversed (never delete — audit trail). */
-async function reverseDocumentTax({ sourceType, doc, userId }) {
+async function reverseDocumentTax({ sourceType, doc, userId, strict = false }) {
   try {
     if (!doc?._id) return;
     await TaxRecord.updateMany(
@@ -135,6 +144,7 @@ async function reverseDocumentTax({ sourceType, doc, userId }) {
     );
   } catch (err) {
     console.error('taxReverseFailed', { sourceType, sourceId: String(doc?._id), err });
+    if (strict) throw err;
   }
 }
 
@@ -179,7 +189,41 @@ async function getSummary(tenantId, { from, to } = {}) {
   return buildSummary(records);
 }
 
+/**
+ * Map a posted journal entry back to the tax capture that produced it, or null
+ * when the entry never had one.
+ *
+ * TaxRecord is keyed by the *business document* ({tenant, sourceType, sourceId}),
+ * not by the journal entry, so unwinding the VAT when an operator reverses an
+ * entry means translating the entry's refDocType/source back into that source
+ * type. Getting this wrong is how the VAT ledger drifts away from the journal:
+ * the 2100 line gets credited back while the TaxRecord stays `posted`, leaving
+ * output tax overstated for good and `tax.reconciled` permanently false.
+ *
+ * Null is the safe answer whenever the mapping is not certain:
+ *  - no refDoc: a manual entry, which never captured tax;
+ *  - a marketplace Order: only the POS flow captures output VAT;
+ *  - an OrderRefund: refund VAT is reversed against the parent order, not the
+ *    refund document, so reversing here would double-unwind it;
+ *  - a reversal: reversing a reversal re-posts tax, which this ledger cannot do.
+ */
+const TAX_SOURCE_BY_REFDOC_TYPE = {
+  SalesOrder: 'sales_order',
+  PurchaseOrder: 'purchase_order',
+  VendorBill: 'vendor_bill',
+  VendorReturn: 'vendor_return',
+  StockTransfer: 'stock_transfer',
+};
+
+function taxSourceForEntry(entry) {
+  if (!entry || !entry.refDoc || entry.entryType === 'reversal') return null;
+  if (entry.refDocType === 'Order') return entry.source === 'pos' ? 'pos' : null;
+  return TAX_SOURCE_BY_REFDOC_TYPE[entry.refDocType] || null;
+}
+
 module.exports = {
+  TAX_SOURCE_BY_REFDOC_TYPE,
+  taxSourceForEntry,
   DIRECTION,
   NUMBER_FIELD,
   TAX_TYPE_FOR_SOURCE,

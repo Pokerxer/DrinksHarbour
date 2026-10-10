@@ -118,7 +118,7 @@ const authMiddleware = withAuth(
 
     // ── Role-based access control ────────────────────────────────────────────
     let customPermissions: string[] = [];
-    if (role === 'tenant_staff' && (path === '/inventory' || path.startsWith('/inventory/') || path === '/settings/api-keys')) {
+    if (role === 'tenant_staff' && (path === '/inventory' || path.startsWith('/inventory/') || path.startsWith('/notifications/') || path === '/settings/api-keys')) {
       try {
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/users/me/permissions`, {
           headers: { Authorization: `Bearer ${token?.accessToken}` }, cache: 'no-store', signal: AbortSignal.timeout(3000),
@@ -210,6 +210,7 @@ export const config = {
     '/brands/:path*',
     '/tenants/:path*',
     '/banners/:path*',
+    '/banner/:path*',
     '/warehouses/:path*',
     '/purchases/:path*',
     '/sales/:path*',
@@ -219,6 +220,7 @@ export const config = {
     '/bookings/:path*',
     '/store-analytics/:path*',
     '/profile/:path*',
+    '/notifications/:path*',
     '/support/:path*',
     '/file/:path*',
     '/file-manager',

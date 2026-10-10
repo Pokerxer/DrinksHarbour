@@ -100,7 +100,7 @@ export function ControlBar({
 
   return (
     <div className="sticky top-0 z-10 shrink-0 border-b border-gray-200 bg-white shadow-sm">
-      <div className="flex h-14 items-center gap-4 px-5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2 md:h-14 md:flex-nowrap md:py-0">
         <div className="flex min-w-0 shrink-0 flex-col justify-center">
           <h1 className="text-[15px] font-bold tracking-tight text-gray-900">
             Sales Details
@@ -134,7 +134,7 @@ export function ControlBar({
           </p>
         </div>
 
-        <div className="flex flex-1 items-center justify-center">
+        <div className="flex w-full items-center justify-start overflow-x-auto md:w-auto md:flex-1 md:justify-center">
           <StatusTabs
             statusFilter={statusFilter}
             setStatusFilter={setStatusFilter}

@@ -35,6 +35,7 @@ const getMySubProducts = asyncHandler(async (req, res) => {
     order,
     isSuperAdmin: ['super_admin', 'admin'].includes(req.user?.role),
     warehouseId: req.query.warehouseId || null,
+    fresh: req.query.refresh === 'true',
   });
 
   res.status(200).json({
@@ -79,6 +80,7 @@ const getSubProduct = asyncHandler(async (req, res) => {
 
   const subProduct = await subProductService.getSubProduct(id, tenantId, {
     warehouseId: req.query.warehouseId || null,
+    fresh: req.query.refresh === 'true',
     // Platform admins review other tenants' listings from this endpoint.
     anyTenant: ['super_admin', 'admin'].includes(req.user?.role),
   });

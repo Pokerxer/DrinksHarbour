@@ -1,4 +1,5 @@
 import { headers } from 'next/headers';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/auth-options';
 import { siteConfig } from '@/config/site.config';
@@ -140,6 +141,7 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: EXTENSION_NOISE_GUARD_SCRIPT }}
         />
         <AdminShell session={session} initialTenant={initialTenant}>{children}</AdminShell>
+        <SpeedInsights />
       </body>
     </html>
   );

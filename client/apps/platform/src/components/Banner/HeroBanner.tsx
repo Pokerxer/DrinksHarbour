@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence, Variants, useReducedMotion } from 'framer-motion';

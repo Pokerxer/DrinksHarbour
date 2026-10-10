@@ -528,3 +528,36 @@ exports.trackConversion = async (req, res) => {
     return errorResponse(res, 'Failed to record conversion', 500, err);
   }
 };
+
+// ─── Read side ───────────────────────────────────────────────────────────────
+//
+// The dashboard has been calling these ten endpoints since the template landed
+// and none of them were ever registered, so every one answered 404 with an
+// envelope that carries no `data` key. The client unwrapped `json.data`
+// unconditionally, so the failure surfaced as a TypeError inside StatCards
+// rather than as a missing route.
+//
+// The aggregation itself already existed in services/webAnalytics.service.js;
+// what was missing was the wiring. Each handler is a thin adapter so the
+// arithmetic stays in the service where it can be tested.
+
+const readOnly = (name, fn) => async (req, res) => {
+  try {
+    return successResponse(res, await fn(req));
+  } catch (err) {
+    return errorResponse(res, `Failed to load ${name}`, 500, err);
+  }
+};
+
+exports.getWebOverview       = readOnly('web overview',       (req) => webAnalyticsService.getOverview(Number(req.query.period) || 30));
+exports.getAcquisition       = readOnly('acquisition data',   ()    => webAnalyticsService.getAcquisitionData());
+exports.getDeviceSessions    = readOnly('device sessions',    ()    => webAnalyticsService.getDeviceSessions());
+exports.getTrafficSources    = readOnly('traffic sources',    ()    => webAnalyticsService.getTrafficSources());
+exports.getAudienceMetrics   = readOnly('audience metrics',   (req) => webAnalyticsService.getAudienceMetrics(req.query.period));
+exports.getConversionsByLocation = readOnly('conversions',     (req) => webAnalyticsService.getConversionsByLocation(req.query.period));
+exports.getGoals             = readOnly('goals',              ()    => webAnalyticsService.getGoalAccomplished());
+exports.getPageMetrics       = readOnly('page metrics',       ()    => webAnalyticsService.getPageMetrics());
+exports.getAccountRetention  = readOnly('account retention',  (req) => webAnalyticsService.getAccountRetention(req.query.period));
+exports.getWebsiteChannels   = readOnly('website channels',   ()    => webAnalyticsService.getWebsiteChannels());
+
+exports.getWebReport = readOnly('website report', () => require('../services/webAnalyticsReport').getWebAnalyticsReport());

@@ -7,7 +7,7 @@ import { PiTag } from 'react-icons/pi';
 import { BRAND } from '@/app/shared/point-of-sale/pricelist-constants';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
 import { pricelistService } from '@/services/pricelist.service';
-import ConfirmDialog from '@/app/shared/purchases/pricelists/confirm-dialog';
+import ConfirmDialog from '@/app/shared/confirm-dialog';
 import { needsRuleHydration, type Pricelist } from './types';
 import { useDebouncedValue } from './use-debounced-value';
 import ListToolbar from './list-toolbar';

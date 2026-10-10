@@ -1221,9 +1221,9 @@ const sendPurchaseOrderToVendor = async (purchaseOrder, vendor, tenant) => {
 
 // ─── 6. Password reset email ─────────────────────────────────────────────────
 
-const sendPasswordResetEmail = async ({ email, firstName, resetToken }) => {
+const sendPasswordResetEmail = async ({ email, firstName, resetToken, resetUrl: storeResetUrl }) => {
   const frontendUrl = SITE_URL();
-  const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+  const resetUrl = storeResetUrl || `${frontendUrl}/reset-password?token=${resetToken}`;
 
   const html = emailShell({
     accentColor:    '#dc2626',

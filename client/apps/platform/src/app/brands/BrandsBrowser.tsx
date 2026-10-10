@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';

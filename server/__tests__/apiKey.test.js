@@ -36,3 +36,8 @@ test('rate limit is consumed against the unrevoked key in the database', async t
   });
   await assert.rejects(authenticateKey(`dhk_${'a'.repeat(64)}`, 'inventory:read'), e => e.statusCode === 429);
 });
+test('tenant website keys can explicitly grant storefront and checkout scopes', async t => {
+  t.mock.method(ApiKey, 'create', async data => ({ ...data, _id: 'key' }));
+  const result = await issueKey({ _id: 'tenant' }, 'actor', { name: 'Website', scopes: ['storefront:read', 'checkout:write'] });
+  assert.deepEqual(result.key.scopes, ['storefront:read', 'checkout:write']);
+});

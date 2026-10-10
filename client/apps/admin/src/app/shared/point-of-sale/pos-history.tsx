@@ -1,4 +1,6 @@
 'use client';
+
+import { POSStockReturnDetail } from './components/pos-stock-return-detail';
 import { requestDocumentExport } from '@/utils/print/document-export';
 import { buildPOSRefund } from '@/utils/print/pos-documents';
 import { historyAccess } from './shop-entry';
@@ -8,6 +10,7 @@ import { usePOSShopScope } from './store';
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import type { PageMeta } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth, usePOSCart } from '@/app/shared/point-of-sale/store';
 import { useSession } from 'next-auth/react';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -76,13 +79,14 @@ interface HistoryRefundLine {
 }
 
 interface HistoryRefund {
+  source?: 'sales' | 'pos';
   receiptNumber?: string;
   items: HistoryRefundLine[];
   totalRefunded: number;
   reason?: string;
   paymentMethod?: string;
   refundedBy?: { firstName: string; lastName: string; posName?: string };
-  refundedAt: string;
+  refundedAt?: string;
 }
 
 interface HistoryOrder {
@@ -189,7 +193,7 @@ function ReturnDetailPanel({
     ? refund.refundedBy.posName || `${refund.refundedBy.firstName} ${refund.refundedBy.lastName}`
     : '—';
 
-  const refundDate = new Date(refund.refundedAt).toLocaleString('en-GB', {
+  const refundDate = !refund.refundedAt ? 'Not recorded' : new Date(refund.refundedAt).toLocaleString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -202,6 +206,10 @@ function ReturnDetailPanel({
     requestDocumentExport(
       buildPOSRefund(parentOrder as unknown as Parameters<typeof buildPOSRefund>[0], refund, tenant)
     );
+  }
+
+  if (refund.source === 'sales') {
+    return <POSStockReturnDetail refund={refund} order={parentOrder} onClose={onClose} />;
   }
 
   return (
@@ -292,7 +300,7 @@ function ReturnDetailPanel({
       {/* Total */}
       <div className="shrink-0 border-t border-gray-200 px-5 py-3">
         <div className="flex items-baseline justify-between">
-          <span className="text-sm font-bold text-gray-900">Total Returned</span>
+          <span className="text-sm font-bold text-gray-900">Total Refunded</span>
           <span className="text-base font-bold text-[#b20202]">
             −{formatCurrency(refund.totalRefunded)}
           </span>
@@ -343,6 +351,9 @@ export default function POSHistory() {
 
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [truncated, setTruncated] = useState(false);
+  const [pageMeta, setPageMeta] = useState<PageMeta | null>(null);
+  const [loadingAll, setLoadingAll] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -399,8 +410,17 @@ export default function POSHistory() {
     setLoading(true);
     posApi
       .getAllOrders(token, { shopId: historyShop })
-      .then((data) => {
-        if (version === requestVersion.current) setOrders((data || []) as HistoryOrder[]);
+      .then(({ data, meta }) => {
+        if (version === requestVersion.current) {
+          const fresh = (data || []) as HistoryOrder[];
+          setOrders(fresh);
+          // The server states whether this is the whole set. This page previously
+          // said nothing at all, so a tenant with more than one page of history
+          // was shown a silent subset of it as though it were the whole record.
+          setTruncated(meta ? meta.truncated : fresh.length >= 200);
+          setPageMeta(meta);
+          setSelectedOrder(previous => previous ? fresh.find(row => row._id === previous._id) || previous : null);
+        }
       })
       .catch((e: unknown) => {
         if (version === requestVersion.current)
@@ -414,6 +434,27 @@ export default function POSHistory() {
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
+
+  // Ask for the largest page the server will grant. The banner stays up if the
+  // server says there is still more — the point is to let the server be the one
+  // that decides completeness, not to make the button look like a fix.
+  const loadAll = useCallback(async () => {
+    if (!token) return;
+    setLoadingAll(true);
+    try {
+      const { data, meta } = await posApi.getAllOrders(token, {
+        limit: 2000,
+        shopId: historyShop,
+      });
+      setOrders((data || []) as HistoryOrder[]);
+      setTruncated(meta ? meta.truncated : (data || []).length >= 2000);
+      setPageMeta(meta);
+    } catch (e: unknown) {
+      setLoadError(e instanceof Error ? e.message : 'Failed to load all orders');
+    } finally {
+      setLoadingAll(false);
+    }
+  }, [token, historyShop]);
 
   // Helpers for sorting
   function getCashierName(o: HistoryOrder) {
@@ -545,16 +586,32 @@ export default function POSHistory() {
 
   return (
     <div className="flex h-dvh flex-col bg-[#f0f0f0]">
-      <div className="flex items-center gap-3 border-b bg-white p-3">
+      <div className="flex flex-wrap items-center gap-3 border-b bg-white p-3">
         <ShopHistorySelector token={token} value={historyShop} onChange={changeShop} />
         {loadError && (
           <p role="alert" className="text-red-600">
             {loadError}
           </p>
         )}
+        {truncated && (
+          <p className="flex items-center gap-2 text-xs text-amber-700">
+            <span>
+              Showing {pageMeta?.included ?? orders.length} of {pageMeta?.matched ?? '—'} receipts.
+              Older history is not loaded.
+            </span>
+            <button
+              type="button"
+              onClick={loadAll}
+              disabled={loadingAll}
+              className="font-semibold underline underline-offset-2 disabled:opacity-50"
+            >
+              {loadingAll ? 'Loading…' : 'Load more'}
+            </button>
+          </p>
+        )}
       </div>
       {/* ── Top bar ── */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 bg-white px-4 py-2">
         {/* Back */}
         <button
           type="button"
@@ -652,7 +709,8 @@ export default function POSHistory() {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
-              <table className="w-full border-collapse text-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] border-collapse text-sm">
                 <thead className="sticky top-0 z-10 bg-white">
                   <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
                     {[
@@ -847,7 +905,7 @@ export default function POSHistory() {
                               >
                                 {/* Date — refund date */}
                                 <td className="py-2 pl-8 pr-4 text-[11px] text-red-400">
-                                  {formatOrderDate(refund.refundedAt)}
+                                  {refund.refundedAt ? formatOrderDate(refund.refundedAt) : 'Sales return'}
                                 </td>
 
                                 {/* RTN number */}
@@ -877,7 +935,7 @@ export default function POSHistory() {
 
                                 {/* Amount — negative */}
                                 <td className="px-4 py-2 text-xs font-semibold tabular-nums text-[#b20202]">
-                                  −{formatCurrency(refund.totalRefunded)}
+                                  {refund.source === 'sales' ? 'No refund recorded' : `−${formatCurrency(refund.totalRefunded)}`}
                                 </td>
 
                                 {/* Method */}
@@ -902,6 +960,7 @@ export default function POSHistory() {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>

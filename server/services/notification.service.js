@@ -5,6 +5,7 @@ const Notification = require('../models/Notification');
 const Product = require('../models/Product');
 const Tenant = require('../models/Tenant');
 const User = require('../models/User');
+const { getTenantRecipients, allowedTypes } = require('./tenantNotificationRecipients');
 const { sendEmail } = require('./email.service');
 
 const {
@@ -260,23 +261,29 @@ const sendNewProductPendingNotification = async (productId, tenantId) => {
 /**
  * Send notification when a product is approved
  */
-const sendProductApprovedNotification = async (productId, approvedBy) => {
+const sendProductApprovedNotification = async (productId, approvedBy, decisionProduct) => {
   try {
-    const product = await Product.findById(productId).lean();
+    const product = decisionProduct || await Product.findById(productId).lean();
     
     if (!product) {
       throw new NotFoundError('Product not found');
     }
 
+    if (!product.submittingTenant) return { success: true, skipped: true };
+    const recipients = (await getTenantRecipients(product.submittingTenant))
+      .filter(user => allowedTypes(user).includes('product_approved')).map(user => user._id);
+    if (!recipients.length) return { success: true, skipped: true };
     const notification = await createNotification({
+      recipients,
       type: 'product_approved',
       title: 'Product Approved',
       message: `Your product "${product.name}" has been approved and is now visible on the marketplace.`,
       product: product._id,
       tenant: product.submittingTenant,
       priority: 'normal',
-      actionUrl: `/products/${product.slug}`,
+      actionUrl: `/sub-products`,
       actionLabel: 'View Product',
+      metadata: { productName: product.name },
     });
 
     return { success: true, notification };
@@ -289,24 +296,30 @@ const sendProductApprovedNotification = async (productId, approvedBy) => {
 /**
  * Send notification when a product is rejected
  */
-const sendProductRejectedNotification = async (productId, rejectedBy, reason) => {
+const sendProductRejectedNotification = async (productId, rejectedBy, reason, decisionProduct) => {
   try {
-    const product = await Product.findById(productId).lean();
+    const product = decisionProduct || await Product.findById(productId).lean();
     
     if (!product) {
       throw new NotFoundError('Product not found');
     }
 
+    if (!product.submittingTenant) return { success: true, skipped: true };
+    const recipients = (await getTenantRecipients(product.submittingTenant))
+      .filter(user => allowedTypes(user).includes('product_rejected')).map(user => user._id);
+    if (!recipients.length) return { success: true, skipped: true };
     const notification = await createNotification({
+      recipients,
       type: 'product_rejected',
       title: 'Product Rejected',
       message: `Your product "${product.name}" has been rejected. Reason: ${reason || 'Not specified'}`,
       product: product._id,
       tenant: product.submittingTenant,
       priority: 'normal',
-      actionUrl: `/dashboard/products`,
+      actionUrl: `/sub-products`,
       actionLabel: 'View Products',
       metadata: {
+        productName: product.name,
         rejectionReason: reason,
       },
     });

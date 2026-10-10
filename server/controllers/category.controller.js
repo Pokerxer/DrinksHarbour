@@ -2,6 +2,7 @@ const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
 const Product = require('../models/Product');
 const asyncHandler = require('../utils/asyncHandler');
+const { navigationCounts } = require('../services/navigationCounts');
 const cloudinaryService = require('../services/cloudinary.service');
 
 async function uploadCategoryFile(file, altText) {
@@ -36,26 +37,12 @@ const getCategories = asyncHandler(async (req, res) => {
     .sort({ order: 1, name: 1 })
     .lean();
 
-  const categoriesWithCount = await Promise.all(
-    categories.map(async (category) => {
-      try {
-        const productCount = await Product.countDocuments({
-          category: category._id,
-          status: 'approved'
-        });
-        return {
-          ...category,
-          productCount,
-        };
-      } catch (e) {
-        console.error('Error counting products for category:', category.name, e.message);
-        return {
-          ...category,
-          productCount: 0,
-        };
-      }
-    })
-  );
+  // Category records remain live; these display counts may lag by up to 60s.
+  const counts = await navigationCounts('category').catch(() => ({}));
+  const categoriesWithCount = categories.map(category => ({
+    ...category,
+    productCount: counts[String(category._id)] ?? 0,
+  }));
 
   res.status(200).json({
     success: true,

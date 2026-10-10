@@ -22,7 +22,7 @@ const createBanner = async (bannerData, userId) => {
 
     // Set default values
     if (!bannerData.slug) {
-      bannerData.slug = generateSlugFromTitle(bannerData.title, bannerData.placement);
+      bannerData.slug = await generateUniqueSlug(bannerData.title);
     }
 
     // Validate schedule if provided
@@ -63,7 +63,7 @@ const createBanner = async (bannerData, userId) => {
 /**
  * Get all banners with filtering, sorting, and pagination
  */
-const getAllBanners = async (queryParams = {}) => {
+const getAllBanners = async (queryParams = {}, scope = {}) => {
   const {
     page = 1,
     limit = 20,
@@ -184,6 +184,7 @@ const getAllBanners = async (queryParams = {}) => {
   }
 
   // Execute query
+  Object.assign(query, scope);
   const [banners, total] = await Promise.all([
     Banner.find(query)
       .populate('targetProduct', 'name slug images priceRange')
@@ -226,12 +227,12 @@ const getAllBanners = async (queryParams = {}) => {
 /**
  * Get banner by ID
  */
-const getBannerById = async (bannerId) => {
+const getBannerById = async (bannerId, scope = {}) => {
   if (!mongoose.Types.ObjectId.isValid(bannerId)) {
     throw new ValidationError('Invalid banner ID format');
   }
 
-  const banner = await Banner.findById(bannerId)
+  const banner = await Banner.findOne({ _id: bannerId, ...scope })
     .populate('targetProduct', 'name slug images priceRange averageRating reviewCount')
     .populate('targetCategory', 'name slug icon color description')
     .populate('targetBrand', 'name slug logo countryOfOrigin isPremium')
@@ -264,12 +265,12 @@ const getBannerBySlug = async (slug) => {
 /**
  * Update banner
  */
-const updateBanner = async (bannerId, updateData, userId) => {
+const updateBanner = async (bannerId, updateData, userId, scope = {}) => {
   if (!mongoose.Types.ObjectId.isValid(bannerId)) {
     throw new ValidationError('Invalid banner ID format');
   }
 
-  const banner = await Banner.findById(bannerId);
+  const banner = await Banner.findOne({ _id: bannerId, ...scope });
 
   if (!banner) {
     throw new NotFoundError('Banner not found');
@@ -291,7 +292,7 @@ const updateBanner = async (bannerId, updateData, userId) => {
   }
 
   // Auto-generate ctaLink if linkType changed
-  if (updateData.linkType && updateData.linkType !== banner.linkType) {
+  if (updateData.linkType && updateData.linkType !== banner.linkType && !updateData.ctaLink) {
     updateData.ctaLink = generateCtaLink({ ...banner.toObject(), ...updateData });
   }
 
@@ -322,12 +323,12 @@ const updateBanner = async (bannerId, updateData, userId) => {
 /**
  * Delete banner
  */
-const deleteBanner = async (bannerId) => {
+const deleteBanner = async (bannerId, scope = {}) => {
   if (!mongoose.Types.ObjectId.isValid(bannerId)) {
     throw new ValidationError('Invalid banner ID format');
   }
 
-  const banner = await Banner.findById(bannerId);
+  const banner = await Banner.findOne({ _id: bannerId, ...scope });
 
   if (!banner) {
     throw new NotFoundError('Banner not found');
@@ -353,8 +354,8 @@ const deleteBanner = async (bannerId) => {
 /**
  * Soft delete banner (archive)
  */
-const archiveBanner = async (bannerId, userId) => {
-  const banner = await Banner.findById(bannerId);
+const archiveBanner = async (bannerId, userId, scope = {}) => {
+  const banner = await Banner.findOne({ _id: bannerId, ...scope });
 
   if (!banner) {
     throw new NotFoundError('Banner not found');
@@ -390,13 +391,14 @@ const getActiveBannersForPlacement = async (placement, options = {}) => {
   if (tenant) {
     andConditions.push({
       $or: [
-        { tenant: mongoose.Types.ObjectId(tenant) },
-        { isGlobal: true },
-        { tenant: { $exists: false } },
+        { tenant: new mongoose.Types.ObjectId(tenant) },
+        { tenant: null, isGlobal: true },
       ],
     });
   }
-  // No tenant restriction: show all banners regardless of isGlobal
+  if (!tenant) query.tenant = null;
+  // Anonymous browsing cannot infer authenticated/VIP customer audiences.
+  if (!visibleTo) query.visibleTo = { $in: ['all', 'guests'] };
 
   // Visibility filter
   if (visibleTo) {
@@ -481,12 +483,12 @@ const getBannersByType = async (type, options = {}) => {
 /**
  * Track banner impression
  */
-const trackImpression = async (bannerId) => {
+const trackImpression = async (bannerId, scope = {}) => {
   if (!mongoose.Types.ObjectId.isValid(bannerId)) {
     throw new ValidationError('Invalid banner ID format');
   }
 
-  const banner = await Banner.findById(bannerId);
+  const banner = await Banner.findOne({ _id: bannerId, isActive: true, status: 'active', ...scope });
 
   if (!banner) {
     throw new NotFoundError('Banner not found');
@@ -507,12 +509,12 @@ const trackImpression = async (bannerId) => {
 /**
  * Track banner click
  */
-const trackClick = async (bannerId) => {
+const trackClick = async (bannerId, scope = {}) => {
   if (!mongoose.Types.ObjectId.isValid(bannerId)) {
     throw new ValidationError('Invalid banner ID format');
   }
 
-  const banner = await Banner.findById(bannerId);
+  const banner = await Banner.findOne({ _id: bannerId, isActive: true, status: 'active', ...scope });
 
   if (!banner) {
     throw new NotFoundError('Banner not found');
@@ -534,12 +536,12 @@ const trackClick = async (bannerId) => {
 /**
  * Track banner conversion
  */
-const trackConversion = async (bannerId) => {
+const trackConversion = async (bannerId, scope = {}) => {
   if (!mongoose.Types.ObjectId.isValid(bannerId)) {
     throw new ValidationError('Invalid banner ID format');
   }
 
-  const banner = await Banner.findById(bannerId);
+  const banner = await Banner.findOne({ _id: bannerId, isActive: true, status: 'active', ...scope });
 
   if (!banner) {
     throw new NotFoundError('Banner not found');
@@ -585,7 +587,7 @@ const batchTrackImpressions = async (bannerIds) => {
 /**
  * Update banner status
  */
-const updateBannerStatus = async (bannerId, status, userId) => {
+const updateBannerStatus = async (bannerId, status, userId, scope = {}) => {
   if (!mongoose.Types.ObjectId.isValid(bannerId)) {
     throw new ValidationError('Invalid banner ID format');
   }
@@ -596,7 +598,7 @@ const updateBannerStatus = async (bannerId, status, userId) => {
     throw new ValidationError(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
   }
 
-  const banner = await Banner.findById(bannerId);
+  const banner = await Banner.findOne({ _id: bannerId, ...scope });
 
   if (!banner) {
     throw new NotFoundError('Banner not found');
@@ -628,7 +630,9 @@ const updateBannerStatus = async (bannerId, status, userId) => {
 /**
  * Bulk update banner status
  */
-const bulkUpdateBannerStatus = async (bannerIds, status, userId) => {
+const bulkUpdateBannerStatus = async (bannerIds, status, userId, scope = {}) => {
+  if (!Array.isArray(bannerIds) || bannerIds.length > 100) throw new ValidationError('Provide up to 100 banner IDs');
+  if (!['draft', 'scheduled', 'active', 'paused', 'expired', 'archived'].includes(status)) throw new ValidationError('Invalid banner status');
   const validIds = bannerIds.filter(id => mongoose.Types.ObjectId.isValid(id));
 
   if (validIds.length === 0) {
@@ -647,7 +651,7 @@ const bulkUpdateBannerStatus = async (bannerIds, status, userId) => {
   }
 
   const result = await Banner.updateMany(
-    { _id: { $in: validIds } },
+    { _id: { $in: validIds }, ...scope },
     updateData
   );
 
@@ -697,7 +701,7 @@ const getBannerAnalytics = async (bannerId, options = {}) => {
     throw new ValidationError('Invalid banner ID format');
   }
 
-  const banner = await Banner.findById(bannerId);
+  const banner = await Banner.findOne({ _id: bannerId, ...(options.tenant ? { tenant: options.tenant } : {}) });
 
   if (!banner) {
     throw new NotFoundError('Banner not found');
@@ -880,12 +884,12 @@ const getAggregateAnalytics = async (filters = {}) => {
 /**
  * Clone/duplicate banner
  */
-const cloneBanner = async (bannerId, userId) => {
+const cloneBanner = async (bannerId, userId, scope = {}) => {
   if (!mongoose.Types.ObjectId.isValid(bannerId)) {
     throw new ValidationError('Invalid banner ID format');
   }
 
-  const originalBanner = await Banner.findById(bannerId);
+  const originalBanner = await Banner.findOne({ _id: bannerId, ...scope });
 
   if (!originalBanner) {
     throw new NotFoundError('Banner not found');
@@ -1082,6 +1086,7 @@ async function generateUniqueSlug(title, bannerId = null) {
   while (await Banner.findOne(query)) {
     slug = `${baseSlug}-${counter}`;
     counter++;
+    query.slug = slug;
   }
 
   return slug;
@@ -1169,7 +1174,7 @@ function buildAnalyticsQuery(filters) {
   }
   
   if (filters.tenant) {
-    query.tenant = mongoose.Types.ObjectId(filters.tenant);
+    query.tenant = new mongoose.Types.ObjectId(filters.tenant);
   }
   
   if (filters.startDate || filters.endDate) {
@@ -1189,6 +1194,7 @@ function buildAnalyticsQuery(filters) {
  * Get banner statistics
  */
 async function getBannerStatistics(query) {
+  if (query.tenant) query = { ...query, tenant: new mongoose.Types.ObjectId(query.tenant) };
   const stats = await Banner.aggregate([
     { $match: query },
     {
@@ -1243,10 +1249,13 @@ const getBannerTrends = async (options = {}) => {
     if (!mongoose.Types.ObjectId.isValid(bannerId)) {
       throw new ValidationError('Invalid banner ID format');
     }
+    if (options.tenant && !await Banner.exists({ _id: bannerId, tenant: options.tenant })) {
+      throw new NotFoundError('Banner not found');
+    }
     match.banner = new mongoose.Types.ObjectId(bannerId);
-  } else if (placement) {
-    // Resolve banner IDs for this placement, then filter stats by them.
-    const bannerIds = await Banner.find({ placement }).distinct('_id').lean();
+  } else if (placement || options.tenant) {
+    // Resolve only banners owned by the requesting tenant for daily statistics.
+    const bannerIds = await Banner.find({ ...(placement ? { placement } : {}), ...(options.tenant ? { tenant: options.tenant } : {}) }).distinct('_id').lean();
     if (!bannerIds.length) return [];
     match.banner = { $in: bannerIds };
   }
@@ -1284,7 +1293,7 @@ const getBannerTrends = async (options = {}) => {
 const getAnalyticsOverview = async (options = {}) => {
   const [aggregate, trends] = await Promise.all([
     getAggregateAnalytics(options),
-    getBannerTrends({ days: options.days || 30 }),
+    getBannerTrends({ ...options, days: options.days || 30 }),
   ]);
 
   return {

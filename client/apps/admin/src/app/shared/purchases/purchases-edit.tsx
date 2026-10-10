@@ -37,6 +37,7 @@ import {
 import type { Vendor, PurchaseOrder } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 import PackSizeInput from './pack-size-input';
+import NumberInput from '@/components/ui/number-input';
 import { moveItem } from './line-dnd';
 import WarehouseSelect, { useActiveWarehouses } from './warehouse-select';
 import PurchasesScanDrawer from './purchases-scan-drawer';
@@ -1233,13 +1234,11 @@ export default function PurchasesEdit({ id }: { id: string }) {
                       <label className="mb-1 block text-[10px] font-medium text-gray-500">
                         Qty
                       </label>
-                      <input
-                        type="number"
-                        min="1"
+                      <NumberInput
+                        min={1}
+                        step="any"
                         value={item.quantity}
-                        onChange={(e) =>
-                          updateItem(i, { quantity: Number(e.target.value) })
-                        }
+                        onCommit={(v) => updateItem(i, { quantity: v })}
                         className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                       />
                     </div>
@@ -1261,14 +1260,11 @@ export default function PurchasesEdit({ id }: { id: string }) {
                       <label className="mb-1 block text-[10px] font-medium text-gray-500">
                         Unit Price
                       </label>
-                      <input
-                        type="number"
-                        min="0"
+                      <NumberInput
+                        min={0}
                         step="0.01"
                         value={item.unitPrice}
-                        onChange={(e) =>
-                          updateItem(i, { unitPrice: Number(e.target.value) })
-                        }
+                        onCommit={(v) => updateItem(i, { unitPrice: v })}
                         className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                       />
                     </div>
@@ -1276,14 +1272,12 @@ export default function PurchasesEdit({ id }: { id: string }) {
                       <label className="mb-1 block text-[10px] font-medium text-gray-500">
                         Tax %
                       </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
+                      <NumberInput
+                        min={0}
+                        max={100}
+                        step="any"
                         value={item.taxRate}
-                        onChange={(e) =>
-                          updateItem(i, { taxRate: Number(e.target.value) })
-                        }
+                        onCommit={(v) => updateItem(i, { taxRate: v })}
                         className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                       />
                     </div>

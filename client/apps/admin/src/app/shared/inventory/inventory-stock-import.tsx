@@ -30,15 +30,8 @@ interface ProgressStep {
   detail?: string;
 }
 
-function ImportProgress({
-  steps,
-  activeStep,
-}: {
-  steps: ProgressStep[];
-  activeStep: number;
-}) {
-  const pct =
-    steps.length > 1 ? Math.round((activeStep / (steps.length - 1)) * 100) : 0;
+function ImportProgress({ steps, activeStep }: { steps: ProgressStep[]; activeStep: number }) {
+  const pct = steps.length > 1 ? Math.round((activeStep / (steps.length - 1)) * 100) : 0;
   return (
     <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-4">
       {/* Bar */}
@@ -55,10 +48,7 @@ function ImportProgress({
           const done = i < activeStep;
           const current = i === activeStep;
           return (
-            <div
-              key={s.label}
-              className="flex flex-1 flex-col items-center gap-1"
-            >
+            <div key={s.label} className="flex flex-1 flex-col items-center gap-1">
               <div
                 className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold transition-all duration-300 ${
                   done
@@ -78,19 +68,13 @@ function ImportProgress({
               </div>
               <span
                 className={`text-center text-[9px] font-semibold leading-tight transition-colors ${
-                  done
-                    ? 'text-emerald-600'
-                    : current
-                      ? 'text-[#b20202]'
-                      : 'text-gray-400'
+                  done ? 'text-emerald-600' : current ? 'text-[#b20202]' : 'text-gray-400'
                 }`}
               >
                 {s.label}
               </span>
               {current && s.detail && (
-                <span className="text-center text-[8px] text-gray-400">
-                  {s.detail}
-                </span>
+                <span className="text-center text-[8px] text-gray-400">{s.detail}</span>
               )}
             </div>
           );
@@ -136,9 +120,7 @@ async function parseFile(file: File): Promise<ImportRow[]> {
     const row: ImportRow = {};
     for (const col of IMPORT_COLUMNS) {
       // tolerate header case / spacing differences
-      const key = Object.keys(r).find(
-        (k) => k.trim().toLowerCase() === col.toLowerCase()
-      );
+      const key = Object.keys(r).find((k) => k.trim().toLowerCase() === col.toLowerCase());
       row[col] = key ? (r[key] as string | number) : '';
     }
     return row;
@@ -167,9 +149,7 @@ export default function InventoryStockImport({
   const [whList, setWhList] = useState<Warehouse[]>(warehouses);
 
   // Progress tracking
-  const [progressMode, setProgressMode] = useState<'preview' | 'commit' | null>(
-    null
-  );
+  const [progressMode, setProgressMode] = useState<'preview' | 'commit' | null>(null);
   const [progressStep, setProgressStep] = useState(0);
 
   const startProgress = useCallback((mode: 'preview' | 'commit') => {
@@ -246,9 +226,7 @@ export default function InventoryStockImport({
     onDrop,
     accept: {
       'text/csv': ['.csv'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
-        '.xlsx',
-      ],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
     },
     multiple: false,
   });
@@ -257,12 +235,7 @@ export default function InventoryStockImport({
     setBusy(true);
     startProgress('preview');
     try {
-      const res = await subProductImportService.preview(
-        rows,
-        warehouseId || null,
-        token,
-        mode
-      );
+      const res = await subProductImportService.preview(rows, warehouseId || null, token, mode);
       finishProgress();
       setPreview(res.data);
     } catch (e) {
@@ -280,14 +253,14 @@ export default function InventoryStockImport({
       const enrichments = Object.fromEntries(
         (preview?.groups || [])
           .filter((g) => g.action === 'createProduct' && g.enrichment)
-          .map((g) => [g.key, g.enrichment!])
+          .map((g) => [g.key, g.enrichment!]),
       );
       const res = await subProductImportService.commit(
         rows,
         warehouseId || null,
         token,
         enrichments,
-        mode
+        mode,
       );
       const d: CommitResult = res.data;
       finishProgress();
@@ -295,17 +268,16 @@ export default function InventoryStockImport({
         toast.success(
           `Updated ${d.updatedSizes} price${d.updatedSizes === 1 ? '' : 's'} · ${d.stockUpdated} stock line${d.stockUpdated === 1 ? '' : 's'}${
             d.skippedNoMatch ? ` · ${d.skippedNoMatch} unmatched skipped` : ''
-          }`
+          }`,
         );
       } else {
         toast.success(
           `Imported ${d.createdSubProducts} products · ${d.createdSizes} sizes${
             d.updatedSizes ? ` · ${d.updatedSizes} prices updated` : ''
-          } · ${d.stockApplied} stock lines`
+          } · ${d.stockApplied} stock lines`,
         );
       }
-      if (d.errors.length)
-        toast.error(`${d.errors.length} group(s) had errors`);
+      if (d.errors.length) toast.error(`${d.errors.length} group(s) had errors`);
       reset();
       onDone();
     } catch (e) {
@@ -314,17 +286,7 @@ export default function InventoryStockImport({
     } finally {
       setBusy(false);
     }
-  }, [
-    rows,
-    warehouseId,
-    token,
-    mode,
-    preview,
-    reset,
-    onDone,
-    startProgress,
-    finishProgress,
-  ]);
+  }, [rows, warehouseId, token, mode, preview, reset, onDone, startProgress, finishProgress]);
 
   const errorRows = preview?.totals.errorRows ?? 0;
   const canCommit = !!preview && preview.ok && !busy;
@@ -345,12 +307,9 @@ export default function InventoryStockImport({
       >
         <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
           <div>
-            <h2 className="text-sm font-bold text-gray-900">
-              Import products &amp; sizes
-            </h2>
+            <h2 className="text-sm font-bold text-gray-900">Import products &amp; sizes</h2>
             <p className="text-[11px] text-gray-400">
-              Upload a CSV or Excel file to create SubProducts, Sizes and
-              opening stock
+              Upload a CSV or Excel file to create SubProducts, Sizes and opening stock
             </p>
           </div>
           <button
@@ -411,7 +370,7 @@ export default function InventoryStockImport({
             </button>
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                Warehouse for opening stock
+                Warehouse for imported quantities
               </span>
               <select
                 value={warehouseId}
@@ -431,6 +390,13 @@ export default function InventoryStockImport({
             </div>
           </div>
 
+          <p className="text-sm leading-relaxed text-gray-500">
+            Quantities apply only to the selected warehouse. Update mode replaces that warehouse’s
+            count; stock at other locations stays unchanged. Product totals are recalculated across
+            locations. Blank quantities leave stock unchanged; zero clears the selected warehouse’s
+            count in Update mode.
+          </p>
+
           <div
             {...getRootProps()}
             className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors ${isDragActive ? 'border-[#b20202] bg-[#b20202]/5' : 'border-gray-200 hover:border-gray-300'}`}
@@ -441,9 +407,7 @@ export default function InventoryStockImport({
               {fileName || 'Drop a .csv or .xlsx file, or click to browse'}
             </p>
             {rows.length > 0 && (
-              <p className="text-[11px] text-gray-400">
-                {rows.length} rows parsed
-              </p>
+              <p className="text-[11px] text-gray-400">{rows.length} rows parsed</p>
             )}
           </div>
 
@@ -458,10 +422,7 @@ export default function InventoryStockImport({
                 {busy ? 'Working…' : 'Validate & preview'}
               </button>
               {progressMode === 'preview' && (
-                <ImportProgress
-                  steps={PREVIEW_STEPS}
-                  activeStep={progressStep}
-                />
+                <ImportProgress steps={PREVIEW_STEPS} activeStep={progressStep} />
               )}
             </div>
           )}
@@ -501,9 +462,7 @@ export default function InventoryStockImport({
                     key={s.label}
                     className="rounded-xl border border-gray-100 bg-gray-50 px-2 py-3"
                   >
-                    <p className="text-sm font-bold tabular-nums text-gray-900">
-                      {s.value}
-                    </p>
+                    <p className="text-sm font-bold tabular-nums text-gray-900">{s.value}</p>
                     <p className="text-[10px] text-gray-400">{s.label}</p>
                   </div>
                 ))}
@@ -520,10 +479,7 @@ export default function InventoryStockImport({
 
               <div className="max-h-64 overflow-y-auto rounded-xl border border-gray-100">
                 {preview.groups.map((g) => (
-                  <div
-                    key={g.key}
-                    className="border-b border-gray-50 px-3 py-2 last:border-0"
-                  >
+                  <div key={g.key} className="border-b border-gray-50 px-3 py-2 last:border-0">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-gray-800">
                         {g.productName || g.key}
@@ -564,10 +520,7 @@ export default function InventoryStockImport({
                       </p>
                     ))}
                     {g.sizeNotes.map((n, i) => (
-                      <p
-                        key={`n${i}`}
-                        className="mt-0.5 text-[10px] text-gray-400"
-                      >
+                      <p key={`n${i}`} className="mt-0.5 text-[10px] text-gray-400">
                         Row {n.rowNum}: {n.size} — {n.note}
                       </p>
                     ))}
@@ -576,10 +529,7 @@ export default function InventoryStockImport({
               </div>
 
               {progressMode === 'commit' && (
-                <ImportProgress
-                  steps={COMMIT_STEPS}
-                  activeStep={progressStep}
-                />
+                <ImportProgress steps={COMMIT_STEPS} activeStep={progressStep} />
               )}
 
               <div className="flex items-center gap-2">

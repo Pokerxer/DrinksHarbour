@@ -27,7 +27,7 @@ function SearchResultContent() {
     setLoading(true);
     try {
       const response = await fetch(
-        `/api/products/search?q=${encodeURIComponent(searchQuery)}&limit=50`,
+        `${process.env.NEXT_PUBLIC_API_URL || ''}/api/products/search?q=${encodeURIComponent(searchQuery)}&inStock=false&limit=50`,
         {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
@@ -39,6 +39,7 @@ function SearchResultContent() {
         const data = await response.json();
         if (data.success && data.data?.products) {
           setProducts(data.data.products);
+          setCurrentPage(0);
         } else if (Array.isArray(data.products)) {
           setProducts(data.products);
         } else {
@@ -132,7 +133,7 @@ function SearchResultContent() {
                 </div>
                 <div className="grid lg:grid-cols-4 sm:grid-cols-3 grid-cols-2 sm:gap-[30px] gap-[20px]">
                   {currentProducts.map((item) => (
-                    <ProductCard key={item.id || item._id} data={item} type="grid" />
+                    <ProductCard key={item.id || item._id} data={item} type="grid" showOutOfStock />
                   ))}
                 </div>
                 {pageCount > 1 && (

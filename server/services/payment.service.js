@@ -100,6 +100,8 @@ const attachPaymentToOrder = async (orderId, paymentData) => {
       throw new NotFoundError('Order not found');
     }
 
+    if (order.integrationCheckout) throw new ValidationError('Use checkout verification for tenant website payments');
+
     if (order.tableServiceBooking) {
       return await require('./tableCheckout.service').settleTablePayment(order);
     }

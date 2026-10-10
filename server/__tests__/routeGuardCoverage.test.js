@@ -50,6 +50,8 @@ function collectGuards() {
     // unauthenticated caller.
     '../middleware/kiosk.middleware',
     '../middleware/priceChecker.middleware',
+    // Dedicated tenant website keys, never JWT impersonation.
+    '../middleware/integration.middleware',
   ]) {
     for (const [name, value] of Object.entries(require(mod))) {
       if (typeof value === 'function' && !NOT_A_GUARD.has(name)) guards.add(value);

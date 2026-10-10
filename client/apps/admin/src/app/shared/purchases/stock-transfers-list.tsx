@@ -22,6 +22,8 @@ import {
   PiPackage,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
+import StockTransferValueCell from './stock-transfer-value-cell';
+import StockTransferAuthorCell from './stock-transfer-author-cell';
 import { routes } from '@/config/routes';
 import {
   stockTransferService,
@@ -78,7 +80,7 @@ function fmtDate(s?: string) {
 function SkeletonRow() {
   return (
     <tr className="animate-pulse">
-      {Array.from({ length: 7 }).map((_, i) => (
+      {Array.from({ length: 9 }).map((_, i) => (
         <td key={i} className="px-4 py-3">
           <div className="h-4 rounded bg-gray-100" style={{ width: `${40 + Math.random() * 40}%` }} />
         </td>
@@ -421,6 +423,9 @@ export default function StockTransfersList() {
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
                     Total Qty
                   </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                    Total value
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
                     Status
                   </th>
@@ -428,7 +433,7 @@ export default function StockTransfersList() {
                     Created
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                    By
+                    Created by
                   </th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -468,6 +473,9 @@ export default function StockTransfersList() {
                         {qtyTotal}
                       </td>
                       <td className="px-4 py-3">
+                        <StockTransferValueCell transfer={t} />
+                      </td>
+                      <td className="px-4 py-3">
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[t.status] ?? 'bg-gray-100 text-gray-600'}`}
                         >
@@ -478,9 +486,7 @@ export default function StockTransfersList() {
                         {fmtDate(t.createdAt)}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">
-                        {typeof t.createdBy === 'object' && t.createdBy
-                          ? t.createdBy.name
-                          : '—'}
+                        <StockTransferAuthorCell creator={t.createdBy} />
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">

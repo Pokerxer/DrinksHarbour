@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Image, { type ImageProps } from 'next/image';
+import type { ImageProps } from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import * as Icon from 'react-icons/pi';
 
 // A tiny grey shimmer SVG encoded as a data URL — used as the blur

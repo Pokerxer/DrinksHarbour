@@ -88,9 +88,9 @@ export function useSalesAutosave({
     }
   }, [buildPayload]);
 
-  const bgSaveRef = useRef<() => void>(() => {});
+  const bgSaveRef = useRef<() => void | Promise<void>>(() => {});
   useEffect(() => {
-    bgSaveRef.current = () => {
+    bgSaveRef.current = async () => {
       if (!isDirtyRef.current) return;
       const tok = tokenRef.current;
       if (!tok) return;
@@ -104,25 +104,54 @@ export function useSalesAutosave({
       const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
       const existingId = initial?._id ?? draftIdRef.current;
       if (existingId) {
-        fetch(`${BASE}/api/sales-orders/${existingId}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${tok}`,
-          },
-          body: JSON.stringify(payload),
-          keepalive: true,
-        });
+        // PUT, not PATCH: the route registers only
+        // `.get().put().delete()` on /:id, so a PATCH falls through to a 404.
+        // That was silent — this fetch was never awaited and its response
+        // never read, so leaving the page discarded the edit and the status
+        // still said "saved". Awaited now so a failure is visible.
+        try {
+          const res = await fetch(`${BASE}/api/sales-orders/${existingId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${tok}`,
+            },
+            body: JSON.stringify(payload),
+            keepalive: true,
+          });
+          if (!res.ok) {
+            setAutoSaveStatus('error');
+            return;
+          }
+        } catch {
+          setAutoSaveStatus('error');
+          return;
+        }
+        setAutoSaveStatus('saved');
+        isDirtyRef.current = false;
       } else {
-        fetch(`${BASE}/api/sales-orders`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${tok}`,
-          },
-          body: JSON.stringify({ ...payload, docType: 'quotation' }),
-          keepalive: true,
-        });
+        // Same treatment as the update above: an unhandled rejection here lost
+        // the whole draft on navigate-away with no indication it had failed.
+        try {
+          const res = await fetch(`${BASE}/api/sales-orders`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${tok}`,
+            },
+            body: JSON.stringify({ ...payload, docType: 'quotation' }),
+            keepalive: true,
+          });
+          if (!res.ok) {
+            setAutoSaveStatus('error');
+            return;
+          }
+        } catch {
+          setAutoSaveStatus('error');
+          return;
+        }
+        setAutoSaveStatus('saved');
+        isDirtyRef.current = false;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: restarts interval only when token or doc ID changes; form data read from refs

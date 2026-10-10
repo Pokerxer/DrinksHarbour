@@ -6,9 +6,11 @@ const { successResponse, errorResponse } = require('../utils/response');
 // Map a thrown service error to its HTTP status. Typed AppErrors (ValidationError,
 // NotFoundError, …) carry a statusCode; anything else is a 500.
 function fail(res, err, fallbackMsg) {
-  const code = err && err.statusCode ? err.statusCode : 500;
+  const code = err?.statusCode || (['ValidationError', 'CastError'].includes(err?.name) ? 400 : err?.code === 11000 ? 409 : 500);
   return errorResponse(res, err?.message || fallbackMsg, code, err);
 }
+
+const { adminScope, bannerInput, publicScope } = require('../services/bannerOwnership');
 
 const userId = (req) => req.user?._id;
 
@@ -40,7 +42,7 @@ exports.getBannersByPlacement = async (req, res) => {
  */
 exports.listBanners = async (req, res) => {
   try {
-    const data = await bannerService.getAllBanners(req.query);
+    const data = await bannerService.getAllBanners(req.query, adminScope(req));
     return successResponse(res, data, 'Banners fetched');
   } catch (err) {
     return fail(res, err, 'Failed to fetch banners');
@@ -53,7 +55,7 @@ exports.listBanners = async (req, res) => {
  */
 exports.createBanner = async (req, res) => {
   try {
-    const banner = await bannerService.createBanner(req.body, userId(req));
+    const banner = await bannerService.createBanner(bannerInput(req, req.body), userId(req));
     return successResponse(res, banner, 'Banner created', 201);
   } catch (err) {
     return fail(res, err, 'Failed to create banner');
@@ -66,7 +68,7 @@ exports.createBanner = async (req, res) => {
  */
 exports.getBanner = async (req, res) => {
   try {
-    const banner = await bannerService.getBannerById(req.params.id);
+    const banner = await bannerService.getBannerById(req.params.id, adminScope(req));
     return successResponse(res, banner, 'Banner fetched');
   } catch (err) {
     return fail(res, err, 'Failed to fetch banner');
@@ -79,7 +81,7 @@ exports.getBanner = async (req, res) => {
  */
 exports.updateBanner = async (req, res) => {
   try {
-    const banner = await bannerService.updateBanner(req.params.id, req.body, userId(req));
+    const banner = await bannerService.updateBanner(req.params.id, bannerInput(req, req.body), userId(req), adminScope(req));
     return successResponse(res, banner, 'Banner updated');
   } catch (err) {
     return fail(res, err, 'Failed to update banner');
@@ -92,7 +94,7 @@ exports.updateBanner = async (req, res) => {
  */
 exports.deleteBanner = async (req, res) => {
   try {
-    const result = await bannerService.deleteBanner(req.params.id);
+    const result = await bannerService.deleteBanner(req.params.id, adminScope(req));
     return successResponse(res, result, 'Banner deleted');
   } catch (err) {
     return fail(res, err, 'Failed to delete banner');
@@ -105,7 +107,7 @@ exports.deleteBanner = async (req, res) => {
  */
 exports.setBannerStatus = async (req, res) => {
   try {
-    const banner = await bannerService.updateBannerStatus(req.params.id, req.body.status, userId(req));
+    const banner = await bannerService.updateBannerStatus(req.params.id, req.body.status, userId(req), adminScope(req));
     return successResponse(res, banner, 'Banner status updated');
   } catch (err) {
     return fail(res, err, 'Failed to update banner status');
@@ -118,11 +120,11 @@ exports.setBannerStatus = async (req, res) => {
  */
 exports.toggleBannerActive = async (req, res) => {
   try {
-    const current = await bannerService.getBannerById(req.params.id);
+    const current = await bannerService.getBannerById(req.params.id, adminScope(req));
     const banner = await bannerService.updateBanner(
       req.params.id,
       { isActive: !current.isActive },
-      userId(req)
+      userId(req), adminScope(req)
     );
     return successResponse(res, banner, 'Banner active state toggled');
   } catch (err) {
@@ -137,7 +139,7 @@ exports.toggleBannerActive = async (req, res) => {
 exports.bulkUpdateStatus = async (req, res) => {
   try {
     const { bannerIds, status } = req.body;
-    const result = await bannerService.bulkUpdateBannerStatus(bannerIds, status, userId(req));
+    const result = await bannerService.bulkUpdateBannerStatus(bannerIds, status, userId(req), adminScope(req));
     return successResponse(res, result, 'Banners updated');
   } catch (err) {
     return fail(res, err, 'Failed to bulk update banners');
@@ -150,7 +152,7 @@ exports.bulkUpdateStatus = async (req, res) => {
  */
 exports.cloneBanner = async (req, res) => {
   try {
-    const banner = await bannerService.cloneBanner(req.params.id, userId(req));
+    const banner = await bannerService.cloneBanner(req.params.id, userId(req), adminScope(req));
     return successResponse(res, banner, 'Banner cloned', 201);
   } catch (err) {
     return fail(res, err, 'Failed to clone banner');
@@ -163,7 +165,7 @@ exports.cloneBanner = async (req, res) => {
  */
 exports.getBannerAnalytics = async (req, res) => {
   try {
-    const analytics = await bannerService.getBannerAnalytics(req.params.id, req.query);
+    const analytics = await bannerService.getBannerAnalytics(req.params.id, { ...req.query, ...adminScope(req) });
     return successResponse(res, analytics, 'Banner analytics fetched');
   } catch (err) {
     return fail(res, err, 'Failed to fetch banner analytics');
@@ -176,7 +178,7 @@ exports.getBannerAnalytics = async (req, res) => {
  */
 exports.trackImpression = async (req, res) => {
   try {
-    await bannerService.trackImpression(req.params.id);
+    await bannerService.trackImpression(req.params.id, publicScope(req));
     return successResponse(res, null, 'Impression tracked');
   } catch (err) {
     // Never surface tracking failures to the storefront as an error.
@@ -190,7 +192,7 @@ exports.trackImpression = async (req, res) => {
  */
 exports.trackClick = async (req, res) => {
   try {
-    await bannerService.trackClick(req.params.id);
+    await bannerService.trackClick(req.params.id, publicScope(req));
     return successResponse(res, null, 'Click tracked');
   } catch (err) {
     return successResponse(res, null, 'Click ignored');
@@ -203,7 +205,7 @@ exports.trackClick = async (req, res) => {
  */
 exports.trackConversion = async (req, res) => {
   try {
-    await bannerService.trackConversion(req.params.id);
+    await bannerService.trackConversion(req.params.id, publicScope(req));
     return successResponse(res, null, 'Conversion tracked');
   } catch (err) {
     return successResponse(res, null, 'Conversion ignored');
@@ -219,6 +221,7 @@ exports.getAnalyticsOverview = async (req, res) => {
   try {
     const overview = await bannerService.getAnalyticsOverview({
       ...req.query,
+      ...adminScope(req),
       days: parseInt(req.query.days, 10) || 30,
     });
     return successResponse(res, overview, 'Analytics overview fetched');
@@ -264,6 +267,7 @@ exports.trackEntityClick = async (req, res) => {
  */
 exports.getEntityAnalytics = async (req, res) => {
   try {
+    if (adminScope(req).tenant) return errorResponse(res, 'Entity analytics are managed by the platform', 403);
     const analytics = await entityService.getAllEntityAnalytics();
     return successResponse(res, analytics, 'Entity analytics fetched');
   } catch (err) {

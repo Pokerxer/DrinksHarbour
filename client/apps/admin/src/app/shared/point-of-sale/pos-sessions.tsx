@@ -1,4 +1,6 @@
 'use client';
+
+import { PiArrowCounterClockwise } from 'react-icons/pi';
 import { printInvoices } from '@/utils/invoice';
 import { posStore } from '@/utils/print/pos-documents';
 import { historyAccess } from './shop-entry';
@@ -468,6 +470,8 @@ type FilterStatus = 'all' | 'open' | 'closed';
 
 // ── Types for session orders ──────────────────────────────────────────────────
 interface SessionOrder {
+  netSales?: number;
+  returnDeduction?: number;
   _id: string;
   orderNumber?: string;
   receiptNumber?: string;
@@ -491,7 +495,7 @@ interface SessionOrder {
     priceAtPurchase: number;
     itemSubtotal: number;
   }[];
-  refunds?: { totalRefunded: number; receiptNumber?: string }[];
+  refunds?: { totalRefunded: number; receiptNumber?: string; source?: 'sales' | 'pos' }[];
 }
 
 function printOrders(orders: SessionOrder[], tenant?: POSTenant | null) {
@@ -586,7 +590,8 @@ function OrderDrawer({
             <div className="border-b border-gray-50 bg-gray-50 px-4 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Items</p>
             </div>
-            <table className="w-full text-xs">
+<div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-xs">
               <thead className="bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-400">
                 <tr>
                   <th className="px-4 py-2 text-left">Product</th>
@@ -612,7 +617,8 @@ function OrderDrawer({
                   </tr>
                 ))}
               </tbody>
-            </table>
+</table>
+            </div>
           </div>
         )}
 
@@ -629,7 +635,7 @@ function OrderDrawer({
                     {r.receiptNumber || `Return ${i + 1}`}
                   </span>
                   <span className="font-bold tabular-nums text-red-500">
-                    −{formatCurrency(r.totalRefunded)}
+                    {r.source === 'sales' ? 'Stock returned · no refund' : `−${formatCurrency(r.totalRefunded)}`}
                   </span>
                 </div>
               ))}
@@ -710,10 +716,11 @@ function OrdersTab({
     0
   );
 
-  const totalSales = orders
-    .filter((o) => !o.isVoided)
-    .reduce((s, o) => s + (o.total ?? o.totalAmount ?? 0), 0);
-  const totalRefunds = orders.reduce(
+  const settledOrders = orders.filter(o => !o.isVoided && !['hold', 'voided', 'cancelled'].includes(o.status || '')
+    && ['paid', 'partially_refunded', 'refunded'].includes(o.paymentStatus || ''));
+  const totalSales = settledOrders.reduce((sum, order) => sum + (order.netSales ??
+    (order.total ?? order.totalAmount ?? 0) - (order.refunds || []).reduce((n, row) => n + (row.totalRefunded || 0), 0)), 0);
+  const totalRefunds = settledOrders.reduce(
     (s, o) => s + (o.refunds || []).reduce((r, ref) => r + ref.totalRefunded, 0),
     0
   );
@@ -737,7 +744,7 @@ function OrdersTab({
     <div className="flex h-full overflow-hidden">
       {/* ── Table ── */}
       <div
-        className={`flex flex-col overflow-hidden transition-all ${drawerOrder ? 'w-[55%]' : 'w-full'}`}
+        className={`flex flex-col overflow-hidden transition-all ${drawerOrder ? 'max-lg:hidden lg:w-[55%]' : 'w-full'}`}
       >
         {/* Summary strip */}
         <div className="grid shrink-0 grid-cols-3 divide-x divide-gray-100 border-b border-gray-100 bg-gray-50/60">
@@ -748,7 +755,7 @@ function OrdersTab({
             <p className="text-sm font-bold text-gray-900">{orders.length}</p>
           </div>
           <div className="px-3 py-2 text-center">
-            <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Sales</p>
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Net Sales</p>
             <p className="text-sm font-bold tabular-nums text-[#b20202]">
               {formatCurrency(totalSales)}
             </p>
@@ -765,7 +772,8 @@ function OrdersTab({
 
         {/* Table */}
         <div className="flex-1 overflow-y-auto">
-          <table className="w-full border-collapse text-xs">
+<div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] border-collapse text-xs">
             <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_#e5e7eb]">
               <tr className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
                 {/* Select-all checkbox */}
@@ -906,7 +914,8 @@ function OrdersTab({
                 );
               })}
             </tbody>
-          </table>
+</table>
+          </div>
         </div>
 
         {/* ── Selection footer ── */}
@@ -956,7 +965,7 @@ function OrdersTab({
 
       {/* ── Order detail drawer ── */}
       {drawerOrder && (
-        <div className="w-[45%] shrink-0 overflow-hidden">
+        <div className="w-full shrink-0 overflow-hidden lg:w-[45%]">
           <OrderDrawer order={drawerOrder} tenant={tenant} onClose={() => setDrawerOrder(null)} />
         </div>
       )}
@@ -1075,11 +1084,14 @@ function SessionDetail({
                 icon: <PiShoppingCart className="h-4 w-4" />,
               },
               {
-                label: 'Total Sales',
+                label: 'Net Sales',
                 value: formatCurrency(session.totalSales),
                 icon: <PiCurrencyNgn className="h-4 w-4" />,
                 highlight: true,
               },
+              { label: 'Refunds', value: formatCurrency(session.totalRefunds || 0), icon: <PiArrowCounterClockwise className="h-4 w-4" /> },
+              { label: 'Gross Sales', value: formatCurrency(session.grossRevenue ?? session.totalSales), icon: <PiCurrencyNgn className="h-4 w-4" /> },
+              { label: 'Sales returns (stock only)', value: formatCurrency(session.salesReturnValue || 0), icon: <PiArrowCounterClockwise className="h-4 w-4" /> },
               { label: 'Duration', value: dur, icon: <PiTimer className="h-4 w-4" /> },
             ].map(({ label, value, icon, highlight }) => (
               <div key={label} className="px-4 py-3 text-center">
@@ -1357,8 +1369,9 @@ function SessionRow({
             <p
               className={`text-xs font-bold tabular-nums ${selected ? 'text-white' : 'text-gray-900'}`}
             >
-              {formatCurrency(session.totalSales)}
+              {formatCurrency(session.totalSales)} net
             </p>
+            {(session.totalRefunds || 0) > 0 && <p className="text-[10px] text-amber-600">Refunded {formatCurrency(session.totalRefunds || 0)}</p>}
             <p className={`text-[10px] ${selected ? 'text-white/60' : 'text-gray-400'}`}>
               {session.orderCount} order{session.orderCount !== 1 ? 's' : ''}
             </p>
@@ -1444,7 +1457,9 @@ export default function POSSessions({ initialShopId }: { initialShopId?: string 
       .getSessions(token, page, PAGE_SIZE, effectiveStatus, undefined, undefined, historyShop)
       .then((d) => {
         if (version === requestVersion.current) {
-          setSessions(d.sessions || []);
+          const fresh = d.sessions || [];
+          setSessions(fresh);
+          setSelected(previous => previous ? fresh.find(row => row._id === previous._id) || previous : null);
           setTotal(d.total || 0);
         }
       })
@@ -1682,6 +1697,7 @@ export default function POSSessions({ initialShopId }: { initialShopId?: string 
   // Summary counts
   const openCount = sessions.filter((s) => s.status === 'open').length;
   const totalSales = sessions.reduce((s, sess) => s + sess.totalSales, 0);
+  const totalSessionRefunds = sessions.reduce((s, sess) => s + (sess.totalRefunds || 0), 0);
   const totalOrders = sessions.reduce((s, sess) => s + sess.orderCount, 0);
 
   return (
@@ -1853,11 +1869,12 @@ export default function POSSessions({ initialShopId }: { initialShopId?: string 
             icon: <PiShoppingCart className="h-4 w-4" />,
           },
           {
-            label: 'Total Sales',
+            label: 'Net Sales',
             value: formatCurrency(totalSales),
             icon: <PiCurrencyNgn className="h-4 w-4" />,
             highlight: true,
           },
+          { label: 'Refunds', value: formatCurrency(totalSessionRefunds), icon: <PiArrowCounterClockwise className="h-4 w-4" /> },
           {
             label: 'Open Now',
             value: String(openCount),
@@ -1885,10 +1902,13 @@ export default function POSSessions({ initialShopId }: { initialShopId?: string 
       </div>
 
       {/* ── Body ── */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* ── Session list — narrows when detail is open ── */}
+      <div className="relative flex flex-1 overflow-hidden">
+        {/* ── Session list — narrows when detail is open, and hands the
+            viewport to the detail on small screens ── */}
         <div
-          className={`flex flex-col overflow-hidden border-r border-gray-200 transition-all duration-200 ${selected ? 'w-72 shrink-0' : 'flex-1'}`}
+          className={`flex flex-col overflow-hidden border-r border-gray-200 transition-all duration-200 ${
+            selected ? 'w-72 shrink-0 max-lg:hidden' : 'flex-1'
+          }`}
         >
           {loading ? (
             <div className="flex flex-1 items-center justify-center">
@@ -2017,9 +2037,14 @@ export default function POSSessions({ initialShopId }: { initialShopId?: string 
           )}
         </div>
 
-        {/* ── Detail panel — grows to fill remaining space ── */}
+        {/* ── Detail panel — fills the row on wide screens, overlays the list
+            on small ones so a receipt never gets half the window ── */}
         <div
-          className={`flex flex-col transition-all duration-200 ${selected ? 'flex-1 overflow-hidden' : 'w-72 shrink-0'}`}
+          className={`flex flex-col transition-all duration-200 ${
+            selected
+              ? 'max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-20 max-lg:w-full max-lg:bg-white max-lg:shadow-2xl sm:max-lg:w-[440px] lg:flex-1 lg:overflow-hidden'
+              : 'w-72 shrink-0 max-sm:hidden'
+          }`}
         >
           {selected ? (
             <>

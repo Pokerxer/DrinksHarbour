@@ -17,19 +17,13 @@ import {
   ReferenceLine,
   LabelList,
 } from 'recharts';
-import {
-  PiCaretDown,
-  PiCheck,
-  PiWarning,
-  PiX,
-  PiMagnifyingGlass,
-} from 'react-icons/pi';
+import { PiCaretDown, PiCheck, PiWarning, PiX, PiMagnifyingGlass } from 'react-icons/pi';
+import { BarValueLabel } from './warehouse-analysis/bar-label';
 import type { StockRow } from '@/services/warehouseStock.service';
 import {
   PALETTE,
   fmtAxisVal,
   fmtMeasureVal,
-  fmtDataLabel,
   computeAvg,
   formatG1Label,
   ALL_GROUP_ITEMS,
@@ -59,8 +53,7 @@ export function Dropdown({
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -79,9 +72,7 @@ export function Dropdown({
       >
         {icon}
         {label}
-        <PiCaretDown
-          className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
+        <PiCaretDown className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
         <div className="absolute left-0 z-30 mt-1 max-h-96 w-64 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1.5 shadow-xl">
@@ -107,6 +98,7 @@ export function DropItem({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={selected}
       className={`flex w-full items-center justify-between px-3.5 py-2 text-left text-xs transition-colors hover:bg-gray-50 ${
         selected ? 'font-semibold text-[#b20202]' : 'text-gray-700'
       }`}
@@ -160,9 +152,7 @@ export function FilterListSection({
 
   const isOpen = filter ? true : open;
   const visible = showAll ? matched : matched.slice(0, maxVisible);
-  const activeCount = items.filter((it) =>
-    activeFilters.includes(`${prefix}${it._id}`)
-  ).length;
+  const activeCount = items.filter((it) => activeFilters.includes(`${prefix}${it._id}`)).length;
 
   return (
     <div>
@@ -179,9 +169,7 @@ export function FilterListSection({
             </span>
           )}
         </span>
-        <PiCaretDown
-          className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-        />
+        <PiCaretDown className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
       {isOpen && (
         <>
@@ -219,9 +207,7 @@ function EmptyState() {
       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#b20202]/5">
         <PiWarning className="h-5 w-5 text-[#b20202]/40" />
       </span>
-      <p className="text-sm text-gray-500">
-        No stock lines match the current filters
-      </p>
+      <p className="text-sm text-gray-500">No stock lines match the current filters</p>
     </div>
   );
 }
@@ -265,24 +251,12 @@ function TableView({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50 text-xs">
-            <th className="px-4 py-2.5 text-left font-medium text-gray-500">
-              #
-            </th>
-            <th className="px-4 py-2.5 text-left font-medium text-gray-500">
-              {groupLabel}
-            </th>
-            <th className="px-4 py-2.5 text-right font-medium text-gray-500">
-              Lines
-            </th>
-            <th className="px-4 py-2.5 text-right font-medium text-gray-500">
-              {measureLabel}
-            </th>
-            <th className="px-4 py-2.5 text-right font-medium text-gray-500">
-              Share
-            </th>
-            <th className="px-4 py-2.5 text-right font-medium text-gray-500">
-              Cumulative
-            </th>
+            <th className="px-4 py-2.5 text-left font-medium text-gray-500">#</th>
+            <th className="px-4 py-2.5 text-left font-medium text-gray-500">{groupLabel}</th>
+            <th className="px-4 py-2.5 text-right font-medium text-gray-500">Lines</th>
+            <th className="px-4 py-2.5 text-right font-medium text-gray-500">{measureLabel}</th>
+            <th className="px-4 py-2.5 text-right font-medium text-gray-500">Share</th>
+            <th className="px-4 py-2.5 text-right font-medium text-gray-500">Cumulative</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -301,21 +275,15 @@ function TableView({
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ background: PALETTE[i % PALETTE.length] }}
                     />
-                    <span className="font-medium text-gray-900">
-                      {row.label}
-                    </span>
+                    <span className="font-medium text-gray-900">{row.label}</span>
                   </span>
                 </td>
-                <td className="px-4 py-2.5 text-right text-gray-600">
-                  {row.orders}
-                </td>
+                <td className="px-4 py-2.5 text-right text-gray-600">{row.orders}</td>
                 <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-gray-900">
                   {fmtMeasureVal(row.value, measure)}
                 </td>
                 <td className="px-4 py-2.5 text-right text-gray-500">
-                  {totalValue > 0 && true
-                    ? `${((row.value / totalValue) * 100).toFixed(1)}%`
-                    : '—'}
+                  {totalValue > 0 && true ? `${((row.value / totalValue) * 100).toFixed(1)}%` : '—'}
                 </td>
                 <td className="px-4 py-2.5 text-right text-gray-500">
                   {totalValue > 0 && true
@@ -331,9 +299,7 @@ function TableView({
             <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
               <td />
               <td className="px-4 py-2.5 text-gray-700">Total</td>
-              <td className="px-4 py-2.5 text-right text-gray-700">
-                {totalOrders}
-              </td>
+              <td className="px-4 py-2.5 text-right text-gray-700">{totalOrders}</td>
               <td className="px-4 py-2.5 text-right tabular-nums text-gray-900">
                 {fmtMeasureVal(totalValue, measure)}
               </td>
@@ -371,16 +337,10 @@ function PieView({
                 innerRadius={70}
                 outerRadius={140}
                 paddingAngle={2}
-                onClick={(_, index) =>
-                  onSliceClick(data[index].label, data[index].orderList)
-                }
+                onClick={(_, index) => onSliceClick(data[index].label, data[index].orderList)}
               >
                 {data.map((_, i) => (
-                  <Cell
-                    key={i}
-                    fill={PALETTE[i % PALETTE.length]}
-                    className="cursor-pointer"
-                  />
+                  <Cell key={i} fill={PALETTE[i % PALETTE.length]} className="cursor-pointer" />
                 ))}
               </Pie>
               <Tooltip formatter={(v: number) => fmtMeasureVal(v, measure)} />
@@ -440,9 +400,7 @@ function LineView({
           { label: 'Trough', value: trough },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-lg bg-gray-50 px-2 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-400">
-              {label}
-            </p>
+            <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
             <p className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">
               {fmtMeasureVal(value, measure)}
             </p>
@@ -469,12 +427,7 @@ function LineView({
               tick={{ fontSize: 11, fill: '#a39e95' }}
               tickFormatter={(v: number) => fmtAxisVal(v, measure)}
             />
-            <Tooltip
-              formatter={(v: number) => [
-                fmtMeasureVal(v, measure),
-                measureLabel,
-              ]}
-            />
+            <Tooltip formatter={(v: number) => [fmtMeasureVal(v, measure), measureLabel]} />
             <Line
               type="monotone"
               dataKey="value"
@@ -514,10 +467,7 @@ function BarTooltip({
   }
   const row = payload[0].payload;
   const val = row.value;
-  const pct =
-    totalValue > 0 && true
-      ? ((val / totalValue) * 100).toFixed(1)
-      : null;
+  const pct = totalValue > 0 && true ? ((val / totalValue) * 100).toFixed(1) : null;
   return (
     <div className="rounded-xl border border-[#ece4d6] bg-white px-3.5 py-2.5 shadow-lg">
       <p className="text-xs font-semibold text-[#2a2420]">{row.label}</p>
@@ -554,107 +504,49 @@ function BarView({
   totalValue: number;
   onBarClick: (label: string, orders: StockRow[]) => void;
 }) {
-  const manyItems = data.length > 8;
-  const height = manyItems ? Math.max(320, data.length * 32) : 420;
+  const height = Math.max(320, data.length * 40 + 80);
   const avg = data.length >= 3 ? computeAvg(data) : 0;
 
   return (
     <div className="px-3 py-4" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={data}
-          layout={manyItems ? 'vertical' : 'horizontal'}
-          margin={
-            manyItems
-              ? { top: 8, right: 80, bottom: 8, left: 8 }
-              : { top: 24, right: 24, bottom: 8, left: 8 }
-          }
-        >
+      <ResponsiveContainer width="100%" height={height - 32}>
+        <BarChart data={data} layout="vertical" margin={{ top: 8, right: 80, bottom: 8, left: 8 }}>
           <defs>
             {data.map((_, i) => (
-              <linearGradient
-                key={i}
-                id={`bv-grad-${i}`}
-                x1="0"
-                y1="0"
-                x2={manyItems ? '1' : '0'}
-                y2={manyItems ? '0' : '1'}
-              >
-                <stop
-                  offset="0%"
-                  stopColor={PALETTE[i % PALETTE.length]}
-                  stopOpacity={0.65}
-                />
-                <stop
-                  offset="100%"
-                  stopColor={PALETTE[i % PALETTE.length]}
-                  stopOpacity={1}
-                />
+              <linearGradient key={i} id={`bv-grad-${i}`} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor={PALETTE[i % PALETTE.length]} stopOpacity={0.65} />
+                <stop offset="100%" stopColor={PALETTE[i % PALETTE.length]} stopOpacity={1} />
               </linearGradient>
             ))}
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe3" />
-          {manyItems ? (
-            <>
-              <XAxis
-                type="number"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                tickFormatter={(v: number) => fmtAxisVal(v, measure)}
-              />
-              <YAxis
-                type="category"
-                dataKey="label"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                width={120}
-              />
-            </>
-          ) : (
-            <>
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                tickFormatter={(v: number) => fmtAxisVal(v, measure)}
-              />
-            </>
-          )}
+          <XAxis
+            type="number"
+            tick={{ fontSize: 11, fill: '#a39e95' }}
+            tickFormatter={(v: number) => fmtAxisVal(v, measure)}
+          />
+          <YAxis
+            type="category"
+            interval={0}
+            dataKey="label"
+            tick={{ fontSize: 11, fill: '#a39e95' }}
+            width={180}
+          />
           <Tooltip
             content={
-              <BarTooltip
-                measure={measure}
-                measureLabel={measureLabel}
-                totalValue={totalValue}
-              />
+              <BarTooltip measure={measure} measureLabel={measureLabel} totalValue={totalValue} />
             }
           />
-          {avg > 0 &&
-            true &&
-            (manyItems ? (
-              <ReferenceLine
-                x={avg}
-                stroke="#b20202"
-                strokeDasharray="4 4"
-                strokeWidth={1.5}
-                label={`Avg ${fmtAxisVal(avg, measure)}`}
-              />
-            ) : (
-              <ReferenceLine
-                y={avg}
-                stroke="#b20202"
-                strokeDasharray="4 4"
-                strokeWidth={1.5}
-                label={`Avg ${fmtAxisVal(avg, measure)}`}
-              />
-            ))}
-          <Bar
-            dataKey="value"
-            radius={manyItems ? [0, 4, 4, 0] : [4, 4, 0, 0]}
-            cursor="pointer"
-            isAnimationActive={false}
-          >
+          {avg > 0 && (
+            <ReferenceLine
+              x={avg}
+              stroke="#b20202"
+              strokeDasharray="4 4"
+              strokeWidth={1.5}
+              label={`Avg ${fmtAxisVal(avg, measure)}`}
+            />
+          )}
+          <Bar dataKey="value" radius={[0, 4, 4, 0]} cursor="pointer" isAnimationActive={false}>
             {data.map((row, i) => (
               <Cell
                 key={i}
@@ -665,10 +557,11 @@ function BarView({
             ))}
             <LabelList
               dataKey="value"
-              position={manyItems ? 'right' : 'top'}
+              position="right"
               offset={4}
-              formatter={(v: number) => (v > 0 ? fmtDataLabel(v, measure) : '')}
-              style={{ fontSize: 11, fontWeight: 600, fill: '#4a3f3a' }}
+              content={(geometry) => (
+                <BarValueLabel geometry={geometry} measure={measure} horizontal />
+              )}
             />
           </Bar>
         </BarChart>
@@ -728,30 +621,34 @@ export function MainChart({
         orderList: rest.flatMap((r) => r.orderList),
       });
     }
-    return (
-      <PieView data={pieData} measure={measure} onSliceClick={onBarClick} />
-    );
+    return <PieView data={pieData} measure={measure} onSliceClick={onBarClick} />;
   }
 
   if (chartType === 'line') {
     return (
-      <LineView
-        data={data.slice(0, 30)}
-        measure={measure}
-        measureLabel={measureLabel}
-        onPointClick={onBarClick}
-      />
+      <div className="max-w-full overflow-x-auto" tabIndex={0} aria-label="All product line chart">
+        <div style={{ minWidth: data.length > 30 ? data.length * 45 : undefined }}>
+          <LineView
+            data={data}
+            measure={measure}
+            measureLabel={measureLabel}
+            onPointClick={onBarClick}
+          />
+        </div>
+      </div>
     );
   }
 
   return (
-    <BarView
-      data={data.slice(0, 30)}
-      measure={measure}
-      measureLabel={measureLabel}
-      totalValue={totalValue}
-      onBarClick={onBarClick}
-    />
+    <div className="max-h-[640px] overflow-y-auto" tabIndex={0} aria-label="All product bar chart">
+      <BarView
+        data={data}
+        measure={measure}
+        measureLabel={measureLabel}
+        totalValue={totalValue}
+        onBarClick={onBarClick}
+      />
+    </div>
   );
 }
 
@@ -813,31 +710,20 @@ function StackedTableView({
   measure: Measure;
   groupLabel: string;
   orderMap: Record<string, Record<string, StockRow[]>>;
-  onCellClick: (
-    rowLabel: string,
-    seriesKey: string,
-    orders: StockRow[]
-  ) => void;
+  onCellClick: (rowLabel: string, seriesKey: string, orders: StockRow[]) => void;
 }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50 text-xs">
-            <th className="px-4 py-2.5 text-left font-medium text-gray-500">
-              {groupLabel}
-            </th>
+            <th className="px-4 py-2.5 text-left font-medium text-gray-500">{groupLabel}</th>
             {series.map((s) => (
-              <th
-                key={s}
-                className="px-4 py-2.5 text-right font-medium text-gray-500"
-              >
+              <th key={s} className="px-4 py-2.5 text-right font-medium text-gray-500">
                 {s}
               </th>
             ))}
-            <th className="px-4 py-2.5 text-right font-medium text-gray-500">
-              Total
-            </th>
+            <th className="px-4 py-2.5 text-right font-medium text-gray-500">Total</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -856,9 +742,7 @@ function StackedTableView({
                 <td
                   key={s}
                   className="cursor-pointer px-4 py-2.5 text-right tabular-nums text-gray-700 hover:underline"
-                  onClick={() =>
-                    onCellClick(row.label, s, orderMap[row.isoKey]?.[s] ?? [])
-                  }
+                  onClick={() => onCellClick(row.label, s, orderMap[row.isoKey]?.[s] ?? [])}
                 >
                   {fmtMeasureVal((row[s] as number) ?? 0, measure)}
                 </td>
@@ -876,15 +760,9 @@ function StackedTableView({
           <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
             <td className="px-4 py-2.5 text-gray-700">Total</td>
             {series.map((s) => {
-              const colTotal = rows.reduce(
-                (sum, r) => sum + ((r[s] as number) ?? 0),
-                0
-              );
+              const colTotal = rows.reduce((sum, r) => sum + ((r[s] as number) ?? 0), 0);
               return (
-                <td
-                  key={s}
-                  className="px-4 py-2.5 text-right tabular-nums text-gray-700"
-                >
+                <td key={s} className="px-4 py-2.5 text-right tabular-nums text-gray-700">
                   {fmtMeasureVal(colTotal, measure)}
                 </td>
               );
@@ -892,7 +770,7 @@ function StackedTableView({
             <td className="px-4 py-2.5 text-right tabular-nums text-gray-900">
               {fmtMeasureVal(
                 rows.reduce((s, r) => s + r.__total__, 0),
-                measure
+                measure,
               )}
             </td>
           </tr>
@@ -915,11 +793,7 @@ function StackedLineView({
   measure: Measure;
   measureLabel: string;
   orderMap: Record<string, Record<string, StockRow[]>>;
-  onCellClick: (
-    rowLabel: string,
-    seriesKey: string,
-    orders: StockRow[]
-  ) => void;
+  onCellClick: (rowLabel: string, seriesKey: string, orders: StockRow[]) => void;
 }) {
   return (
     <div className="px-3 py-4" style={{ height: 420 }}>
@@ -927,15 +801,10 @@ function StackedLineView({
         <ComposedChart
           data={rows}
           onClick={(e) => {
-            if (e?.activeTooltipIndex == null || !e?.activePayload?.length)
-              return;
+            if (e?.activeTooltipIndex == null || !e?.activePayload?.length) return;
             const row = rows[e.activeTooltipIndex];
             const dataKey = String(e.activePayload[0].dataKey ?? '');
-            onCellClick(
-              row.label,
-              dataKey,
-              orderMap[row.isoKey]?.[dataKey] ?? []
-            );
+            onCellClick(row.label, dataKey, orderMap[row.isoKey]?.[dataKey] ?? []);
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe3" />
@@ -948,9 +817,7 @@ function StackedLineView({
             tick={{ fontSize: 11, fill: '#a39e95' }}
             tickFormatter={(v: number) => fmtAxisVal(v, measure)}
           />
-          <Tooltip
-            formatter={(v: number, name) => [fmtMeasureVal(v, measure), name]}
-          />
+          <Tooltip formatter={(v: number, name) => [fmtMeasureVal(v, measure), name]} />
           {series.map((s, si) => (
             <Line
               key={s}
@@ -981,14 +848,9 @@ function StackedBarView({
   measure: Measure;
   measureLabel: string;
   orderMap: Record<string, Record<string, StockRow[]>>;
-  onCellClick: (
-    rowLabel: string,
-    seriesKey: string,
-    orders: StockRow[]
-  ) => void;
+  onCellClick: (rowLabel: string, seriesKey: string, orders: StockRow[]) => void;
 }) {
-  const manyItems = rows.length > 8;
-  const height = manyItems ? Math.max(320, rows.length * 32) : 420;
+  const height = Math.max(320, rows.length * 40 + 80);
   const [hoveredSeg, setHoveredSeg] = useState<{
     sk: string;
     ri: number;
@@ -996,73 +858,35 @@ function StackedBarView({
 
   return (
     <div className="px-3 py-4" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={height - 32}>
         <BarChart
           data={rows}
-          layout={manyItems ? 'vertical' : 'horizontal'}
-          margin={
-            manyItems
-              ? { top: 8, right: 80, bottom: 8, left: 8 }
-              : { top: 24, right: 24, bottom: 8, left: 8 }
-          }
+          layout="vertical"
+          margin={{ top: 8, right: 80, bottom: 8, left: 8 }}
           onMouseLeave={() => setHoveredSeg(null)}
         >
           <defs>
             {series.map((_, si) => (
-              <linearGradient
-                key={si}
-                id={`sbv-grad-${si}`}
-                x1="0"
-                y1="0"
-                x2={manyItems ? '1' : '0'}
-                y2={manyItems ? '0' : '1'}
-              >
-                <stop
-                  offset="0%"
-                  stopColor={PALETTE[si % PALETTE.length]}
-                  stopOpacity={0.7}
-                />
-                <stop
-                  offset="100%"
-                  stopColor={PALETTE[si % PALETTE.length]}
-                  stopOpacity={1}
-                />
+              <linearGradient key={si} id={`sbv-grad-${si}`} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor={PALETTE[si % PALETTE.length]} stopOpacity={0.7} />
+                <stop offset="100%" stopColor={PALETTE[si % PALETTE.length]} stopOpacity={1} />
               </linearGradient>
             ))}
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe3" />
-          {manyItems ? (
-            <>
-              <XAxis
-                type="number"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                tickFormatter={(v: number) => fmtAxisVal(v, measure)}
-              />
-              <YAxis
-                type="category"
-                dataKey="label"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                width={120}
-              />
-            </>
-          ) : (
-            <>
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: '#a39e95' }}
-                tickFormatter={(v: number) => fmtAxisVal(v, measure)}
-              />
-            </>
-          )}
-          <Tooltip
-            content={
-              <StackedTooltip measure={measure} hoveredSeg={hoveredSeg} />
-            }
+          <XAxis
+            type="number"
+            tick={{ fontSize: 11, fill: '#a39e95' }}
+            tickFormatter={(v: number) => fmtAxisVal(v, measure)}
           />
+          <YAxis
+            type="category"
+            interval={0}
+            dataKey="label"
+            tick={{ fontSize: 11, fill: '#a39e95' }}
+            width={180}
+          />
+          <Tooltip content={<StackedTooltip measure={measure} hoveredSeg={hoveredSeg} />} />
           {series.map((s, si) => (
             <Bar
               key={s}
@@ -1083,21 +907,18 @@ function StackedBarView({
                     cursor="pointer"
                     radius={isLast ? 4 : 0}
                     onMouseEnter={() => setHoveredSeg({ sk: s, ri })}
-                    onClick={() =>
-                      onCellClick(row.label, s, orderMap[row.isoKey]?.[s] ?? [])
-                    }
+                    onClick={() => onCellClick(row.label, s, orderMap[row.isoKey]?.[s] ?? [])}
                   />
                 );
               })}
               {si === series.length - 1 && (
                 <LabelList
                   dataKey="__total__"
-                  position={manyItems ? 'right' : 'top'}
+                  position="right"
                   offset={4}
-                  formatter={(v: number) =>
-                    v > 0 ? fmtDataLabel(v, measure) : ''
-                  }
-                  style={{ fontSize: 11, fontWeight: 600, fill: '#4a3f3a' }}
+                  content={(geometry) => (
+                    <BarValueLabel geometry={geometry} measure={measure} horizontal />
+                  )}
                 />
               )}
             </Bar>
@@ -1125,11 +946,7 @@ export function StackedChart({
   groupLabel: string;
   measureLabel: string;
   orderMap: Record<string, Record<string, StockRow[]>>;
-  onSegmentClick: (
-    rowLabel: string,
-    seriesKey: string,
-    orders: StockRow[]
-  ) => void;
+  onSegmentClick: (rowLabel: string, seriesKey: string, orders: StockRow[]) => void;
 }) {
   if (rows.length === 0) return <EmptyState />;
 
@@ -1184,13 +1001,19 @@ export function StackedChart({
   }
 
   return (
-    <StackedBarView
-      rows={rows}
-      series={series}
-      measure={measure}
-      measureLabel={measureLabel}
-      orderMap={orderMap}
-      onCellClick={onSegmentClick}
-    />
+    <div
+      className="max-h-[640px] overflow-y-auto"
+      tabIndex={0}
+      aria-label="All product stacked bar chart"
+    >
+      <StackedBarView
+        rows={rows}
+        series={series}
+        measure={measure}
+        measureLabel={measureLabel}
+        orderMap={orderMap}
+        onCellClick={onSegmentClick}
+      />
+    </div>
   );
 }

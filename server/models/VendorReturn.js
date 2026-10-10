@@ -42,6 +42,8 @@ const VendorReturnSchema = new Schema(
     },
     // Idempotency guard: once stock has been taken out (on confirmation) it is
     // never applied twice; cleared again if the return is cancelled.
+    poCountersAdjusted: { type: Boolean, default: false },
+    poCounterAdjustments: [{ itemId: ObjectId, quantity: Number, postedQty: Number }],
     stockAdjusted: {
       type: Boolean,
       default: false,
@@ -82,6 +84,7 @@ const VendorReturnSchema = new Schema(
           type: Number,
           default: 0,
         },
+        taxRate: { type: Number, default: 0, min: 0 },
         amount: {
           type: Number,
           default: 0,
@@ -139,6 +142,15 @@ const VendorReturnSchema = new Schema(
       type: String,
       enum: ["credit_note", "bank_transfer", "cash", "cheque", "other"],
     },
+    refunds: [{
+      amount: { type: Number, required: true, min: 0.01 },
+      method: { type: String, required: true, enum: ['credit_note', 'bank_transfer', 'cash', 'cheque', 'other'] },
+      reference: { type: String, maxlength: 200 },
+      notes: { type: String, maxlength: 2000 },
+      requestId: { type: String, maxlength: 100 },
+      recordedBy: { type: ObjectId, ref: 'User' },
+      date: { type: Date, default: Date.now },
+    }],
     refundReference: String,
     refundDate: Date,
     // Notes

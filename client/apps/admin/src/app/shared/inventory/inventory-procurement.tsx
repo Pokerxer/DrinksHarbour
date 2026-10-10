@@ -101,6 +101,11 @@ export default function InventoryProcurement() {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="flex flex-wrap items-center gap-3 border-b bg-indigo-50 p-4 text-sm">
+          <span>History-based warehouse forecasts and supplier plans are now under Notifications.</span>
+          <Link href={routes.notificationFeatures.restock} className="font-bold text-[#b20202] underline">Restock recommendations</Link>
+          <Link href={routes.notificationFeatures.vendorOrders} className="font-bold text-[#b20202] underline">Vendor order plans</Link>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-sm">
             <thead>

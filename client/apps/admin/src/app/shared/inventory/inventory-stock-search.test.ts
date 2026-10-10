@@ -820,3 +820,17 @@ describe('lineValue', () => {
     ).toBe(0);
   });
 });
+
+describe('stock overview parity', () => {
+  it('multi-product comma searches normalize accents while quoted commas remain literal', () => {
+    const wine = row({ productName: 'Monte do Barão', sku: 'W1' });
+    const beer = row({ productName: 'Beer', sku: 'B2' });
+    expect(searchStockRowSet([wine, beer], parseStockQuerySet(['barao, B2'])).rows).toHaveLength(2);
+    expect(parseStockQuerySet(['"Wine, Red"']).queries).toHaveLength(1);
+  });
+  it('invalid numeric fields cannot poison value, availability or ordering', () => {
+    const bad = row({ currentQuantity: NaN, reservedQuantity: Infinity, costPrice: Infinity });
+    expect(lineValue(bad)).toBe(0);
+    expect(stockFieldValue(bad, 'available')).toBe(0);
+  });
+});

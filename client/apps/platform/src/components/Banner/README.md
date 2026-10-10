@@ -703,3 +703,7 @@ All components are fully responsive with:
 - [ ] Drag-and-drop ordering
 - [ ] Bulk import/export
 - [ ] Banner templates library
+
+### Shared image delivery
+
+Banner image components now import `@/components/UI/OptimizedImage`. Versioned, unsigned Cloudinary raster assets use direct responsive CDN URLs; other sources keep the Next image path. Preserve existing `priority`, `sizes`, mobile-image selection and GIF exclusions when editing banners. See the repository's `docs/performance/navigation-redis-images.md` for measured results and loader constraints.

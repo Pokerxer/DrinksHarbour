@@ -43,3 +43,9 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
     return null;
   }
 }
+
+// Article content and its related/previous/next links are independent reads.
+export async function getArticleData(slug: string) {
+  const [post, posts] = await Promise.all([getPostBySlug(slug), getPosts()]);
+  return { post, posts };
+}

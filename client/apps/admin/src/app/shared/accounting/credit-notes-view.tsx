@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { arApService, type CreditNote, type OpenInvoice } from '@/services/arAp.service';
 import { fmtDate, fmtMoney } from './accounting-helpers';
 import CreditNoteFormModal from './credit-note-form-modal';
+import CreditApplyModal from './credit-apply-modal';
 
 const STATUS_STYLES: Record<string, string> = {
   applied: 'bg-emerald-100 text-emerald-700',
@@ -28,6 +29,7 @@ export default function CreditNotesView() {
   const [pages, setPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [applyTarget, setApplyTarget] = useState<CreditNote | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -60,6 +62,24 @@ export default function CreditNotesView() {
       .catch(() => {});
   }, [token]);
 
+  const post = async (id: string) => {
+    setBusyId(id);
+    try {
+      const res = await arApService.postCreditNote(token, id);
+      const unapplied = res.data?.unappliedAmount ?? 0;
+      toast.success(
+        unapplied > 0
+          ? `Posted — ${fmtMoney(unapplied)} held as unapplied customer credit`
+          : 'Credit note posted'
+      );
+      load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const cancel = async (id: string) => {
     setBusyId(id);
     try {
@@ -86,6 +106,7 @@ export default function CreditNotesView() {
           aria-label="Filter by status"
         >
           <option value="">All statuses</option>
+          <option value="draft">Draft</option>
           <option value="applied">Applied</option>
           <option value="cancelled">Cancelled</option>
         </select>
@@ -108,6 +129,7 @@ export default function CreditNotesView() {
               <th className="px-4 py-3">Reason</th>
               <th className="px-4 py-3 text-right">Amount</th>
               <th className="px-4 py-3 text-right">Tax</th>
+              <th className="px-4 py-3 text-right">Unapplied</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
@@ -115,12 +137,12 @@ export default function CreditNotesView() {
           <tbody className="divide-y divide-gray-100">
             {loading && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">Loading…</td>
+                <td colSpan={9} className="px-4 py-8 text-center text-gray-400">Loading…</td>
               </tr>
             )}
             {!loading && notes.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
                   No credit notes yet.
                 </td>
               </tr>
@@ -132,27 +154,57 @@ export default function CreditNotesView() {
               return (
                 <tr key={n._id} className={n.status === 'cancelled' ? 'opacity-50' : ''}>
                   <td className="whitespace-nowrap px-4 py-3">{fmtDate(n.date)}</td>
-                  <td className="px-4 py-3 font-medium">{n.number}</td>
+                  <td className="px-4 py-3 font-medium">{n.number || <span className="text-gray-400">Draft</span>}</td>
                   <td className="px-4 py-3">{name}</td>
                   <td className="max-w-[200px] truncate px-4 py-3 text-gray-500">{n.reason || '—'}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtMoney(n.amount)}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtMoney(n.taxAmount)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                    {n.unappliedAmount > 0 ? (
+                      <span className="font-medium text-emerald-700">
+                        {fmtMoney(n.unappliedAmount)}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[n.status] ?? ''}`}>
                       {n.status}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {n.status === 'applied' && (
-                      <button
-                        type="button"
-                        disabled={busyId === n._id}
-                        onClick={() => cancel(n._id)}
-                        className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40"
-                      >
-                        Cancel
-                      </button>
-                    )}
+                    <div className="flex justify-end gap-1.5">
+                      {n.status === 'draft' && (
+                        <button
+                          type="button"
+                          disabled={busyId === n._id}
+                          onClick={() => post(n._id)}
+                          className="rounded bg-gray-900 px-2 py-1 text-xs font-medium text-white hover:bg-black disabled:opacity-40"
+                        >
+                          Post
+                        </button>
+                      )}
+                      {n.status === 'applied' && n.unappliedAmount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setApplyTarget(n)}
+                          className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Apply
+                        </button>
+                      )}
+                      {n.status === 'applied' && (
+                        <button
+                          type="button"
+                          disabled={busyId === n._id}
+                          onClick={() => cancel(n._id)}
+                          className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -188,6 +240,22 @@ export default function CreditNotesView() {
           invoices={invoices}
           onClose={() => setShowForm(false)}
           onSaved={() => load()}
+        />
+      )}
+
+      {applyTarget && (
+        <CreditApplyModal
+          token={token}
+          customer={applyTarget.customer?._id ?? ''}
+          available={applyTarget.unappliedAmount}
+          // The view loads invoices across all customers, so scope them here —
+          // credit on one account must not be offered against another's invoice.
+          invoices={invoices.filter(
+            (inv) => inv.customer?._id === applyTarget.customer?._id
+          )}
+          caption={applyTarget.number}
+          onClose={() => setApplyTarget(null)}
+          onApplied={() => load()}
         />
       )}
     </div>

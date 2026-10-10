@@ -1,4 +1,7 @@
 'use client';
+import InvoiceReturnCard from './invoice-return-card';
+import { billReturnSummary } from './invoice-return-summary';
+import ReturnAllProductsLink from './return-all-products-link';
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -16,14 +19,8 @@ import {
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import {
-  vendorBillService,
-  type VendorBill,
-} from '@/services/vendorBill.service';
-import {
-  vendorReturnService,
-  type VendorReturn,
-} from '@/services/vendorReturn.service';
+import { vendorBillService, type VendorBill } from '@/services/vendorBill.service';
+import { type VendorReturn } from '@/services/vendorReturn.service';
 import { printBillInvoice } from '@/utils/purchaseInvoice';
 import { fmtPrice } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
@@ -37,10 +34,7 @@ const BILL_STATUS: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-400',
 };
 
-const MATCH_STATUS: Record<
-  string,
-  { cls: string; icon: React.ReactNode; label: string }
-> = {
+const MATCH_STATUS: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
   matched: {
     cls: 'bg-green-50 border-green-200 text-green-700',
     icon: <PiCheckCircle className="h-4 w-4 text-green-500" />,
@@ -92,9 +86,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
   const [acting, setActing] = useState(false);
   const [showPay, setShowPay] = useState(false);
   const [payAmount, setPayAmount] = useState('');
-  const [payDate, setPayDate] = useState(
-    new Date().toISOString().split('T')[0]
-  );
+  const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
   const [payMethod, setPayMethod] = useState('bank_transfer');
   const [payRef, setPayRef] = useState('');
   const [payNotes, setPayNotes] = useState('');
@@ -107,21 +99,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
       const res = await vendorBillService.getVendorBill(id, token);
       setBill(res.data);
 
-      // Fetch returns linked to the same PO
-      // `purchaseOrder` may be an id string, the populated doc, or null when the
-      // PO was deleted (populate resolves a dangling ref to null, and
-      // `typeof null === 'object'`).
-      const po = res.data.purchaseOrder;
-      const poId =
-        po && typeof po === 'object'
-          ? (po as { _id: string; poNumber?: string })._id
-          : po;
-      if (poId) {
-        const retRes = await vendorReturnService
-          .getVendorReturns(token, { purchaseOrder: poId, limit: 10 })
-          .catch(() => null);
-        if (retRes?.data) setReturnsData(retRes.data);
-      }
+      setReturnsData(res.data.returns || []);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to load bill');
     } finally {
@@ -172,7 +150,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
           reference: payRef || undefined,
           notes: payNotes || undefined,
         },
-        token
+        token,
       );
       toast.success('Payment recorded');
       setShowPay(false);
@@ -181,9 +159,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
       setPayNotes('');
       await load();
     } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to record payment'
-      );
+      toast.error(err instanceof Error ? err.message : 'Failed to record payment');
     } finally {
       setActing(false);
     }
@@ -191,22 +167,16 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20 text-sm text-gray-400">
-        Loading…
-      </div>
+      <div className="flex items-center justify-center py-20 text-sm text-gray-400">Loading…</div>
     );
   }
   if (!bill) {
-    return (
-      <div className="py-20 text-center text-sm text-gray-500">
-        Bill not found
-      </div>
-    );
+    return <div className="py-20 text-center text-sm text-gray-500">Bill not found</div>;
   }
 
-  const amountDue = bill.totalAmount - bill.paidAmount;
-  const matchInfo =
-    MATCH_STATUS[bill.matchingStatus] ?? MATCH_STATUS['pending'];
+  const amountDue = Math.max(0, bill.totalAmount - bill.paidAmount);
+  const returnSummary = billReturnSummary(bill, returnsData);
+  const matchInfo = MATCH_STATUS[bill.matchingStatus] ?? MATCH_STATUS['pending'];
 
   return (
     <div className="space-y-5">
@@ -226,9 +196,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold text-gray-900">
-              {bill.billNumber}
-            </h1>
+            <h1 className="text-xl font-semibold text-gray-900">{bill.billNumber}</h1>
             <span
               className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${BILL_STATUS[bill.status] ?? 'bg-gray-100 text-gray-600'}`}
             >
@@ -250,18 +218,22 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
             </span>
           </div>
           {bill.vendorName && (
-            <p className="mt-1 text-sm text-gray-500">
-              Vendor: {bill.vendorName}
-            </p>
+            <p className="mt-1 text-sm text-gray-500">Vendor: {bill.vendorName}</p>
           )}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {bill.status !== 'draft' && bill.status !== 'cancelled' && bill.purchaseOrder && (
+            <ReturnAllProductsLink
+              purchaseOrderId={
+                typeof bill.purchaseOrder === 'object' ? bill.purchaseOrder._id : bill.purchaseOrder
+              }
+              billId={bill._id}
+            />
+          )}
           <button
             type="button"
-            onClick={() =>
-              bill && printBillInvoice(bill, tenant?.name || 'DrinksHarbour')
-            }
+            onClick={() => bill && printBillInvoice(bill, tenant?.name || 'DrinksHarbour')}
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <PiPrinter className="h-4 w-4" /> Print / Download
@@ -297,20 +269,15 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
           <p className="mb-3 text-sm font-medium text-green-800">
             Record Payment — Due: {fmtPrice(amountDue, bill.currency)}
           </p>
-          {bill.dueDate &&
-            new Date(bill.dueDate) < new Date() &&
-            bill.status !== 'paid' && (
-              <div className="mb-3 flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                <PiWarning className="h-4 w-4 shrink-0" />
-                This bill is overdue since{' '}
-                {new Date(bill.dueDate).toLocaleDateString()}
-              </div>
-            )}
+          {bill.dueDate && new Date(bill.dueDate) < new Date() && bill.status !== 'paid' && (
+            <div className="mb-3 flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <PiWarning className="h-4 w-4 shrink-0" />
+              This bill is overdue since {new Date(bill.dueDate).toLocaleDateString()}
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-green-700">
-                Amount *
-              </label>
+              <label className="mb-1 block text-xs font-medium text-green-700">Amount *</label>
               <input
                 type="number"
                 min="0"
@@ -326,9 +293,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                   <button
                     key={pct}
                     type="button"
-                    onClick={() =>
-                      setPayAmount(((amountDue * pct) / 100).toFixed(2))
-                    }
+                    onClick={() => setPayAmount(((amountDue * pct) / 100).toFixed(2))}
                     className="rounded border border-green-300 px-1.5 py-0.5 text-[10px] text-green-700 hover:bg-green-100"
                   >
                     {pct}%
@@ -337,9 +302,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-green-700">
-                Payment Date
-              </label>
+              <label className="mb-1 block text-xs font-medium text-green-700">Payment Date</label>
               <input
                 type="date"
                 value={payDate}
@@ -348,9 +311,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-green-700">
-                Method
-              </label>
+              <label className="mb-1 block text-xs font-medium text-green-700">Method</label>
               <select
                 value={payMethod}
                 onChange={(e) => setPayMethod(e.target.value)}
@@ -364,9 +325,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-green-700">
-                Reference
-              </label>
+              <label className="mb-1 block text-xs font-medium text-green-700">Reference</label>
               <input
                 type="text"
                 value={payRef}
@@ -376,9 +335,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-medium text-green-700">
-                Notes
-              </label>
+              <label className="mb-1 block text-xs font-medium text-green-700">Notes</label>
               <input
                 type="text"
                 value={payNotes}
@@ -419,15 +376,11 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
             {[
               {
                 label: 'Bill Date',
-                value: bill.billDate
-                  ? new Date(bill.billDate).toLocaleDateString()
-                  : '—',
+                value: bill.billDate ? new Date(bill.billDate).toLocaleDateString() : '—',
               },
               {
                 label: 'Due Date',
-                value: bill.dueDate
-                  ? new Date(bill.dueDate).toLocaleDateString()
-                  : '—',
+                value: bill.dueDate ? new Date(bill.dueDate).toLocaleDateString() : '—',
                 overdue: isOverdue,
               },
               { label: 'Currency', value: bill.currency },
@@ -441,8 +394,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
               },
               {
                 label: 'Balance Due',
-                value:
-                  amountDue > 0 ? fmtPrice(amountDue, bill.currency) : 'Paid',
+                value: amountDue > 0 ? fmtPrice(amountDue, bill.currency) : 'Paid',
                 overdue: isOverdue && amountDue > 0,
               },
             ].map(({ label, value, overdue }) => (
@@ -456,9 +408,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                 >
                   {value}
                   {overdue && label === 'Due Date' && (
-                    <span className="ml-1.5 text-[10px] font-normal text-red-500">
-                      (Overdue)
-                    </span>
+                    <span className="ml-1.5 text-[10px] font-normal text-red-500">(Overdue)</span>
                   )}
                 </p>
               </div>
@@ -471,9 +421,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
       {bill.matchingDetails && (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-5 py-3">
-            <h2 className="text-sm font-semibold text-gray-700">
-              3-Way Matching
-            </h2>
+            <h2 className="text-sm font-semibold text-gray-700">3-Way Matching</h2>
           </div>
 
           <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
@@ -539,24 +487,12 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                     {bill.matchingDetails.itemComparisons.map((c, i) => (
                       <tr key={i} className="hover:bg-gray-50">
                         <td className="px-4 py-2.5">
-                          <p className="font-medium text-gray-900">
-                            {c.subProductName}
-                          </p>
-                          {c.sizeName && (
-                            <p className="text-xs text-gray-400">
-                              {c.sizeName}
-                            </p>
-                          )}
+                          <p className="font-medium text-gray-900">{c.subProductName}</p>
+                          {c.sizeName && <p className="text-xs text-gray-400">{c.sizeName}</p>}
                         </td>
-                        <td className="px-4 py-2.5 text-right text-gray-700">
-                          {c.billQty}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-gray-700">
-                          {c.poOrderedQty}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-gray-700">
-                          {c.poReceivedQty}
-                        </td>
+                        <td className="px-4 py-2.5 text-right text-gray-700">{c.billQty}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-700">{c.poOrderedQty}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-700">{c.poReceivedQty}</td>
                         <td className="px-4 py-2.5 text-right text-gray-700">
                           {fmtPrice(c.billPrice, bill.currency)}
                         </td>
@@ -577,6 +513,17 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
         </div>
       )}
 
+      {returnSummary.lines.some((line) => line.returned > 0) && (
+        <InvoiceReturnCard
+          fullyReturned={returnSummary.fullyReturned}
+          originalTotal={returnSummary.originalTotal}
+          credit={returnSummary.credit}
+          currency={bill.currency}
+          total={bill.totalAmount}
+          refundRemaining={returnSummary.refundRemaining}
+          refunds={returnSummary.refunds}
+        />
+      )}
       {/* Bill lines */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="border-b border-gray-100 px-5 py-3">
@@ -585,21 +532,11 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                Product
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                Qty
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                Unit Price
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                Tax %
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
-                Amount
-              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Qty</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Unit Price</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Tax %</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Amount</th>
               {returnsData.length > 0 && (
                 <th className="px-4 py-3 text-right text-xs font-medium text-orange-600">
                   Returned
@@ -609,25 +546,12 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {(() => {
-              const returnMap = new Map<string, number>();
-              for (const r of returnsData) {
-                for (const ri of r.items || []) {
-                  const key = `${ri.subProductId ?? ''}-${ri.sizeId ?? ''}`;
-                  returnMap.set(
-                    key,
-                    (returnMap.get(key) || 0) + (ri.quantity || 0)
-                  );
-                }
-              }
               return bill.items.map((item, i) => {
-                const key = `${item.subProductId ?? ''}-${item.sizeId ?? ''}`;
-                const retQty = returnMap.get(key) || 0;
+                const retQty = returnSummary.lines[i].returned;
                 return (
                   <tr key={i} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">
-                        {item.subProductName ?? '—'}
-                      </p>
+                      <p className="font-medium text-gray-900">{item.subProductName ?? '—'}</p>
                       <div className="flex gap-2 text-xs text-gray-400">
                         {item.sizeName && <span>{item.sizeName}</span>}
                         {item.sku && <span>{item.sku}</span>}
@@ -635,13 +559,16 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                     </td>
                     <td className="px-4 py-3 text-right text-gray-700">
                       {item.quantity}
+                      {returnSummary.lines[i].original != null && retQty > 0 && (
+                        <p className="text-xs text-gray-500">
+                          {returnSummary.lines[i].original} invoiced
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-700">
                       {fmtPrice(item.unitPrice, bill.currency)}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-500">
-                      {item.taxRate ?? 0}%
-                    </td>
+                    <td className="px-4 py-3 text-right text-gray-500">{item.taxRate ?? 0}%</td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900">
                       {fmtPrice(item.amount, bill.currency)}
                     </td>
@@ -673,10 +600,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
               <span>{fmtPrice(bill.totalAmount, bill.currency)}</span>
             </div>
             <div className="flex justify-end">
-              <BaseCurrencyEquivalent
-                amount={bill.totalAmount}
-                currency={bill.currency}
-              />
+              <BaseCurrencyEquivalent amount={bill.totalAmount} currency={bill.currency} />
             </div>
             {bill.paidAmount > 0 && (
               <>
@@ -686,21 +610,12 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                 </div>
                 <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold text-gray-900">
                   <span>Balance Due</span>
-                  <span
-                    className={
-                      amountDue > 0 ? 'text-red-600' : 'text-green-600'
-                    }
-                  >
-                    {amountDue > 0
-                      ? fmtPrice(amountDue, bill.currency)
-                      : 'Paid'}
+                  <span className={amountDue > 0 ? 'text-red-600' : 'text-green-600'}>
+                    {amountDue > 0 ? fmtPrice(amountDue, bill.currency) : 'Paid'}
                   </span>
                 </div>
                 <div className="flex justify-end">
-                  <BaseCurrencyEquivalent
-                    amount={amountDue}
-                    currency={bill.currency}
-                  />
+                  <BaseCurrencyEquivalent amount={amountDue} currency={bill.currency} />
                 </div>
               </>
             )}
@@ -725,18 +640,10 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
                   Return #
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
-                  Date
-                </th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">
-                  Items
-                </th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">
-                  Total
-                </th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">
-                  Status
-                </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Date</th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Items</th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Total</th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-orange-100">
@@ -751,9 +658,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                     </Link>
                   </td>
                   <td className="px-4 py-2.5 text-gray-700">
-                    {r.createdAt
-                      ? new Date(r.createdAt).toLocaleDateString()
-                      : '—'}
+                    {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right text-gray-700">
                     {r.items?.reduce((s, i) => s + (i.quantity || 0), 0) ?? 0}
@@ -778,9 +683,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-5 py-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-700">
-                Payment History
-              </h2>
+              <h2 className="text-sm font-semibold text-gray-700">Payment History</h2>
               <span className="text-xs text-gray-400">
                 Total paid: {fmtPrice(bill.paidAmount, bill.currency)}
               </span>
@@ -789,21 +692,15 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
-                  Date
-                </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
-                  Method
-                </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Date</th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Method</th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
                   Reference
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
                   Recorded By
                 </th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">
-                  Amount
-                </th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Amount</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -815,9 +712,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
                   <td className="px-4 py-2.5 capitalize text-gray-700">
                     {p.method?.replace(/_/g, ' ') ?? '—'}
                   </td>
-                  <td className="px-4 py-2.5 text-gray-500">
-                    {p.reference ?? '—'}
-                  </td>
+                  <td className="px-4 py-2.5 text-gray-500">{p.reference ?? '—'}</td>
                   <td className="px-4 py-2.5 text-gray-500">
                     {p.recordedBy && typeof p.recordedBy === 'object'
                       ? ((p.recordedBy as { name?: string }).name ?? '—')
@@ -844,8 +739,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
       {/* Override banner */}
       {bill.overrideReason && (
         <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800">
-          <span className="font-medium">Override applied:</span>{' '}
-          {bill.overrideReason}
+          <span className="font-medium">Override applied:</span> {bill.overrideReason}
         </div>
       )}
     </div>

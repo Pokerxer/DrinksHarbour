@@ -220,7 +220,7 @@ async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, u
  * InventoryMovement is recorded with referenceType:'return' (valid enum member).
  * deps = { adjustStock, recordMovement }
  */
-async function returnOrder({ salesOrder, tenantId, warehouseId, returnLines, userId, deps }) {
+async function returnOrder({ salesOrder, tenantId, warehouseId, returnLines, userId, deps, posReturnedByLine = {} }) {
   const adjustStock = deps.adjustStock || require('./warehouse.service').adjustStock;
   const recordMovement = deps.recordMovement || null;
 
@@ -230,7 +230,7 @@ async function returnOrder({ salesOrder, tenantId, warehouseId, returnLines, use
   for (const rl of returnLines || []) {
     const item = byId.get(String(rl.lineId));
     if (!item) continue;
-    const maxReturnable = (item.fulfilledQty || 0) - (item.returnedQty || 0);
+    const maxReturnable = (item.fulfilledQty || 0) - (item.returnedQty || 0) - (posReturnedByLine[String(item._id)] || 0);
     const qty = Math.min(Math.max(0, Number(rl.qty) || 0), maxReturnable);
     if (qty <= 0) continue;
 

@@ -64,11 +64,11 @@ export default function AccountingDashboardKpis({
   const profitPositive = data.netProfitMtd >= 0;
   const stats = [
     {
-      label: 'Revenue MTD',
-      value: fmtMoney(data.revenueMtd),
+      label: 'Net Sales MTD',
+      value: fmtMoney(data.salesMtd ?? data.revenueMtd),
       sub:
         data.grossProfitMtd != null
-          ? `Gross ${fmtMoney(data.grossProfitMtd)}`
+          ? `Excl. VAT · Gross profit ${fmtMoney(data.grossProfitMtd)}`
           : undefined,
       icon: <PiTrendUp className="h-5 w-5" />,
       accent: true,
@@ -84,7 +84,7 @@ export default function AccountingDashboardKpis({
     {
       label: 'Net Profit MTD',
       value: fmtMoney(data.netProfitMtd),
-      sub: profitPositive ? 'In the black' : 'Running at a loss',
+      sub: 'After posted costs and expenses; VAT and tips excluded',
       icon: (
         <PiTrendUp
           className={`h-5 w-5 ${profitPositive ? '' : 'rotate-180'}`}
@@ -98,6 +98,20 @@ export default function AccountingDashboardKpis({
       sub: `Collected ${fmtMoney(data.taxCollectedMtd)} · Paid ${fmtMoney(data.taxPaidMtd)}`,
       icon: <PiReceipt className="h-5 w-5" />,
       href: '/accounting/taxes?tab=summary',
+    },
+    {
+      label: 'Sales Reversals MTD',
+      value: fmtMoney(data.salesReversalsMtd ?? 0),
+      sub: 'Refunds, credit notes and reversals posted to sales',
+      icon: <PiArrowsCounterClockwise className="h-5 w-5" />,
+      href: '/accounting/journal-entries',
+    },
+    {
+      label: 'Posted Sales Documents',
+      value: String(data.postedSalesCount ?? 0),
+      sub: 'Invoices and direct receipts posted this month',
+      icon: <PiReceipt className="h-5 w-5" />,
+      href: '/accounting/journal-entries',
     },
     {
       label: 'Unposted Drafts',

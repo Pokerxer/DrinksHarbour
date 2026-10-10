@@ -12,7 +12,7 @@ import {
   type VendorPricelist,
 } from '@/services/vendorPricelist.service';
 import { fraunces } from '../purchases-fonts';
-import ConfirmDialog from './confirm-dialog';
+import ConfirmDialog from '@/app/shared/confirm-dialog';
 import DetailHeader from './detail-header';
 import DetailMetadata, { DATE_RANGE_HINT, dateRangeInvalid } from './detail-metadata';
 import LineItemsEditor from './line-items-editor';

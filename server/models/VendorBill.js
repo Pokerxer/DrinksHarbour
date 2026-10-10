@@ -77,6 +77,18 @@ const VendorBillSchema = new Schema(
       type: Number,
       default: 0,
     },
+    // The original invoice remains available after quantity/value returns.
+    originalInvoice: {
+      items: { type: [Schema.Types.Mixed], default: undefined },
+      subtotal: Number,
+      taxAmount: Number,
+      totalAmount: Number,
+    },
+    returnAdjustments: [{
+      vendorReturn: { type: ObjectId, ref: 'VendorReturn' },
+      active: { type: Boolean, default: true },
+      lines: [{ itemIndex: Number, quantity: Number }],
+    }],
     billDate: {
       type: Date,
       default: Date.now,

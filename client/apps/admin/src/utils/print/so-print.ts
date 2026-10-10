@@ -1,4 +1,4 @@
-import type { SalesOrder, SalesLineItem } from '@/services/salesOrder.service';
+import type { SalesOrder, SalesLineItem, SalesOrderBankAccount } from '@/services/salesOrder.service';
 import { packsLabel } from '@/app/shared/purchases/types';
 import {
   fmtAmt,
@@ -47,6 +47,35 @@ function isNote(i: SalesLineItem) {
 
 /** Same address-lines shape as the PO's warehouse ref (print-shared helpers). */
 type WhRef = NonNullable<SalesOrder['warehouseId']> & object;
+
+export interface PrintableBankAccount {
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+}
+
+/**
+ * The accounts a customer remits an invoice into, cleaned for print.
+ *
+ * The array arrives from the server already narrowed (see `remittanceAccounts`
+ * in the sales-order controller), but it is optional and a half-filled row is
+ * still possible: a tenant can save a bank with no number, or a number with no
+ * bank name. Printing "Bank:" with nothing after it is worse than printing
+ * nothing, so a row only survives if it can be identified AND paid into.
+ * Shared with the on-screen invoice view so the two can never disagree about
+ * which accounts exist.
+ */
+export function printableBankAccounts(
+  so: Pick<SalesOrder, 'issuerBankAccounts'>
+): PrintableBankAccount[] {
+  return (so.issuerBankAccounts ?? [])
+    .map((a: SalesOrderBankAccount) => ({
+      bankName: a.bankName?.trim() ?? '',
+      accountName: a.accountName?.trim() ?? '',
+      accountNumber: a.accountNumber?.trim() ?? '',
+    }))
+    .filter((a) => a.bankName && a.accountNumber);
+}
 
 /**
  * Build a branded sales document (Quotation / Pro-Forma Invoice / Sales Order)
@@ -205,7 +234,43 @@ export function buildSalesDoc(
   });
 
   // ── Sections & meta ──────────────────────────────────────────────────────
+  // ── Payment details ──────────────────────────────────────────────────────
+  // Where the money goes. Printed on every sales document — sales order,
+  // pro-forma AND quotation. The POS receipt has always printed these
+  // (a4-invoice.ts); the sales documents did not, which left the customer to ask.
+  //
+  // Quotations were initially excluded on the reasoning that nothing is owed
+  // until one is accepted. In practice a quote here is commonly converted *by*
+  // paying it, so the customer needs the account at the moment they are
+  // deciding — and with the block simply absent it was indistinguishable from
+  // a bank account that had failed to save. A tenant that has configured an
+  // account wants it on the document they are sending.
+  //
+  // The block is omitted only when the tenant has no usable account, which
+  // printableBankAccounts() has already established.
+  //
+  // A section, not a kvGroup: the body is free text, so two accounts can be
+  // separated by a blank line. kvGroups would run six `label: value` lines into
+  // each other and read as one account with three banks.
+  const accounts = printableBankAccounts(so);
   const sections: DocumentModel['sections'] = [];
+  if (accounts.length) {
+    sections.push({
+      title: 'Payment Details',
+      body: accounts
+        .map((a) =>
+          [
+            a.bankName ? `Bank: ${a.bankName}` : '',
+            a.accountName ? `Account Name: ${a.accountName}` : '',
+            `Account Number: ${a.accountNumber}`,
+          ]
+            .filter(Boolean)
+            .join('\n')
+        )
+        .join('\n\n'),
+    });
+  }
+
   const noteLines = so.items
     .filter(isNote)
     .map((n) => n.description || n.name || '')

@@ -37,6 +37,10 @@ const orderItemSchema = new Schema({
     min: 1,
   },
 
+  // Exclusive line tax snapshot for quotations fulfilled at POS.
+  taxRate: { type: Number, min: 0, default: 0 },
+  taxAmount: { type: Number, min: 0, default: 0 },
+
   priceAtPurchase: {
     type: Number,
     required: true,
@@ -122,6 +126,7 @@ const orderItemSchema = new Schema({
 
 const orderSchema = new Schema(
   {
+    integrationCheckout: { type: String, index: true },
     tableServiceBooking: { type: ObjectId, ref: 'Booking' },
     tableCheckoutUrl: { type: String, select: false },
     tableAccountingStatus: { type: String, enum: ['pending', 'posted'] },
@@ -314,6 +319,7 @@ const orderSchema = new Schema(
       addressLine1: String,
       addressLine2: String,
       city: String,
+      lga: String,
       state: String,
       country: String,
       postalCode: String,
@@ -470,6 +476,23 @@ const orderSchema = new Schema(
       default: null,
     },
 
+    // Evidence of stock returned through Sales, separate from monetary refunds.
+    salesReturns: [{
+      repairKey: String,
+      salesOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesOrder' },
+      reference: String,
+      recordedAt: Date,
+      returnedAt: Date,
+      items: [{
+        orderItemIndex: Number,
+        quantity: { type: Number, min: 0 },
+        movement: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryMovement' },
+        warehouse: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' },
+        returnedAt: Date,
+        returnedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      }],
+    }],
+
     refunds: [{
       receiptNumber:    String,
       items: [{
@@ -479,6 +502,8 @@ const orderSchema = new Schema(
         discPct:        Number,   // deduction % applied (0 = full value)
         amount:         Number,   // final refund amount for this line = unitPrice * qty * (1 - discPct/100)
         restock:        { type: Boolean, default: true },  // whether stock was returned
+        salesReturnedQuantity: { type: Number, min: 0, default: 0 },
+        restockedQuantity: { type: Number, min: 0 },
         reason:         String,   // per-line reason
       }],
       totalRefunded:    Number,

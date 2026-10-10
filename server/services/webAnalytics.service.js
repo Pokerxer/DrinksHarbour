@@ -3,6 +3,7 @@
 const WebAnalytics = require('../models/WebAnalytics');
 const User         = require('../models/User');
 const Order        = require('../models/Order');
+const subscriptionEvents = require('./subscriptionEvents.service');
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
 
@@ -707,102 +708,52 @@ async function getPageMetrics() {
 // ─── 11. getAccountRetention ─────────────────────────────────────────────────
 
 // Fix 1: eliminate N+1 queries, return { data, summary }
-async function getAccountRetention() {
-  const now    = new Date();
-  const start7 = startOf(addDays(now, -6), 'day');
-
-  const days = [];
-  for (let i = 6; i >= 0; i--) {
-    const dayStart = startOf(addDays(now, -i), 'day');
-    const dayEnd   = new Date(dayStart);
-    dayEnd.setHours(23, 59, 59, 999);
-    days.push({ dayStart, dayEnd, label: DAY_NAMES[dayStart.getDay()] });
+/**
+ * Group subscription events into a per-day retention series.
+ *
+ * Pure, so the arithmetic is testable without a database. `contraction` is
+ * deliberately excluded: a downgrade is a tenant choosing to shrink, not churn,
+ * and counting it as a cancellation would overstate it. `payment_failure` is
+ * excluded too — a failed payment is recoverable, and the ledger keeps it for
+ * dunning rather than for this chart.
+ */
+function bucketRetention(events) {
+  const byDay = {};
+  for (const e of events) {
+    const key = new Date(e.effectiveAt).toISOString().slice(0, 10);
+    if (!byDay[key]) byDay[key] = { day: key, expansions: 0, cancellations: 0 };
+    if (e.kind === 'expansion') byDay[key].expansions += 1;
+    else if (e.kind === 'cancellation') byDay[key].cancellations += 1;
   }
-
-  // Step a: Get all orders from last 7 days grouped by user+date
-  const ordersInWindow = await Order.aggregate([
-    { $match: { createdAt: { $gte: start7 }, user: { $ne: null } } },
-    {
-      $group: {
-        _id: {
-          user:    '$user',
-          dateStr: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-        },
-        minCreatedAt: { $min: '$createdAt' },
-      },
-    },
-  ]);
-
-  // Collect unique userIds from the window
-  const userIdSet = new Set();
-  for (const o of ordersInWindow) {
-    userIdSet.add(String(o._id.user));
-  }
-  const userIds = Array.from(userIdSet).map(id => {
-    // Re-use original ObjectId from the aggregation result
-    return ordersInWindow.find(o => String(o._id.user) === id)._id.user;
-  });
-
-  // Step b: Get first-order date for all those users in one query
-  const firstOrderRaw = userIds.length > 0
-    ? await Order.aggregate([
-        { $match: { user: { $in: userIds } } },
-        { $group: { _id: '$user', firstOrder: { $min: '$createdAt' } } },
-      ])
-    : [];
-
-  const firstOrderMap = {};
-  for (const r of firstOrderRaw) {
-    firstOrderMap[String(r._id)] = r.firstOrder;
-  }
-
-  // Build map: dateStr → Set of userIds who ordered that day
-  const dateUserMap = {};
-  for (const o of ordersInWindow) {
-    const ds = o._id.dateStr;
-    if (!dateUserMap[ds]) dateUserMap[ds] = new Set();
-    dateUserMap[ds].add(String(o._id.user));
-  }
-
-  // Step c: Get last-order date for all users (for cancellations)
-  const lastOrderRaw = await Order.aggregate([
-    { $match: { user: { $ne: null } } },
-    { $group: { _id: '$user', lastOrder: { $max: '$createdAt' } } },
-  ]);
-
-  const data = days.map(({ dayStart, dayEnd, label }) => {
-    const dateStr = dayStart.toISOString().slice(0, 10);
-    const usersToday = dateUserMap[dateStr] || new Set();
-
-    // Expansions: users who ordered today AND whose first order was before today's start
-    let expansions = 0;
-    for (const uid of usersToday) {
-      const firstOrder = firstOrderMap[uid];
-      if (firstOrder && firstOrder < dayStart) {
-        expansions++;
-      }
-    }
-
-    // Cancellations: users whose last order is < (dayStart - 60 days)
-    const cutoff = addDays(dayStart, -60);
-    let cancellations = 0;
-    for (const r of lastOrderRaw) {
-      if (r.lastOrder < cutoff) cancellations++;
-    }
-
-    return { day: label, expansions, cancellations };
-  });
-
-  const totalExpansions     = data.reduce((sum, d) => sum + d.expansions, 0);
-  const todayCancellations  = data.length > 0 ? data[data.length - 1].cancellations : 0;
-
+  const data = Object.values(byDay).sort((a, b) => (a.day < b.day ? -1 : 1));
   return {
     data,
     summary: {
-      expansions:    totalExpansions,
-      cancellations: todayCancellations,
+      expansions:    data.reduce((sum, d) => sum + d.expansions, 0),
+      cancellations: data.reduce((sum, d) => sum + d.cancellations, 0),
     },
   };
+}
+
+/**
+ * Subscription retention: expansions and cancellations per day.
+ *
+ * Built from the SubscriptionEvent ledger rather than from Tenant.plan, which
+ * only ever holds a tenant's current plan. An upgrade history cannot be
+ * reconstructed from a current value — there is no record that a tenant was ever
+ * on `starter` — so the ledger is the only source that can answer this.
+ *
+ * Platform-wide by design (the caller is super-admin only), and honest when
+ * empty: no events means `data: []`, never a row of invented zeros.
+ */
+async function getAccountRetention(period = '30d') {
+  const now = new Date();
+  const days = { week: 6, '7d': 6, month: 29, '30d': 29, year: 364, '365d': 364 }[period] ?? 29;
+  const events = await subscriptionEvents.listEvents({
+    from: startOf(addDays(now, -days), 'day'),
+    to: now,
+  });
+  return bucketRetention(events);
 }
 
 // ─── 12. getWebsiteChannels ──────────────────────────────────────────────────
@@ -927,5 +878,6 @@ module.exports = {
   getGoalAccomplished,
   getPageMetrics,
   getAccountRetention,
+  bucketRetention,
   getWebsiteChannels,
 };

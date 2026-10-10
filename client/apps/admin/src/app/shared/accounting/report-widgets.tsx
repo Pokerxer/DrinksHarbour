@@ -5,10 +5,17 @@ import {
   PiArrowDown,
   PiArrowUp,
   PiCheckCircle,
+  PiInfo,
   PiWarningCircle,
 } from 'react-icons/pi';
 import type { BalanceSheet, GeneralLedger, ProfitLoss, TrialBalance } from '@/services/accounting.service';
 import { fmtMoney } from './accounting-helpers';
+import {
+  balanceSheetStatus,
+  netMovementDirection,
+  trialBalanceStatus,
+  type StatusTone,
+} from './report-status';
 
 /** Order-analysis style stat chip: uppercase label over a bold tabular value. */
 export function StatChip({
@@ -20,7 +27,7 @@ export function StatChip({
   label: string;
   value: string;
   sub?: ReactNode;
-  tone?: 'default' | 'good' | 'bad';
+  tone?: StatusTone | 'default';
 }) {
   const toneCls =
     tone === 'good' ? 'text-emerald-600' : tone === 'bad' ? 'text-red-600' : 'text-gray-900';
@@ -41,27 +48,36 @@ const marginOf = (part: number, whole: number) =>
   whole > 0 ? `${((part / whole) * 100).toFixed(1)}% of revenue` : undefined;
 
 export function TBKpis({ data }: { data: TrialBalance }) {
+  const status = trialBalanceStatus(data);
   return (
     <KpiRow>
       <StatChip label="Total Debits" value={fmtMoney(data.totalDebits)} />
       <StatChip label="Total Credits" value={fmtMoney(data.totalCredits)} />
       <StatChip
         label="Status"
-        value={data.balanced ? 'Balanced' : 'Out of balance'}
-        tone={data.balanced ? 'good' : 'bad'}
+        value={status.label}
+        tone={status.tone}
         sub={
-          data.balanced ? (
-            <span className="flex items-center gap-1">
-              <PiCheckCircle size={11} /> debits equal credits
-            </span>
-          ) : (
-            <span className="flex items-center gap-1">
-              <PiWarningCircle size={11} /> run the journal backfill
-            </span>
-          )
+          <span className="flex items-center gap-1">
+            {status.tone === 'good' ? (
+              <PiCheckCircle size={11} />
+            ) : status.tone === 'bad' ? (
+              <PiWarningCircle size={11} />
+            ) : (
+              <PiInfo size={11} />
+            )}
+            {status.detail}
+          </span>
         }
       />
       <StatChip label="Accounts Touched" value={String(data.rows.length)} />
+      {data.entryCount !== undefined && (
+        <StatChip
+          label="Entries Totalled"
+          value={String(data.entryCount)}
+          sub={data.draftsExcluded ? `${data.draftsExcluded} more in drafts` : 'all posted'}
+        />
+      )}
     </KpiRow>
   );
 }
@@ -93,8 +109,12 @@ export function PLKpis({ data }: { data: ProfitLoss }) {
 }
 
 export function BSKpis({ data }: { data: BalanceSheet }) {
-  const le = Math.round((data.liabilities.total + data.equity.total) * 100) / 100;
-  const gap = Math.round((data.assets.total - le) * 100) / 100;
+  const status = balanceSheetStatus({
+    balanced: data.balanced,
+    assets: data.assets.total,
+    liabilities: data.liabilities.total,
+    equity: data.equity.total,
+  });
   return (
     <KpiRow>
       <StatChip label="Total Assets" value={fmtMoney(data.assets.total)} />
@@ -102,9 +122,9 @@ export function BSKpis({ data }: { data: BalanceSheet }) {
       <StatChip label="Equity" value={fmtMoney(data.equity.total)} />
       <StatChip
         label="A − (L + E)"
-        value={fmtMoney(gap)}
-        tone={data.balanced ? 'good' : 'bad'}
-        sub={data.balanced ? 'sheet balances' : 'post opening balances to close the gap'}
+        value={fmtMoney(status.gap)}
+        tone={status.tone}
+        sub={status.detail}
       />
     </KpiRow>
   );
@@ -112,22 +132,45 @@ export function BSKpis({ data }: { data: BalanceSheet }) {
 
 export function GLKpis({ data }: { data: GeneralLedger }) {
   const opening = data.openingBalance ?? 0;
-  const netMovement =
-    Math.round((data.totals.debits - data.totals.credits) * 100) / 100;
+  // Nature-aware: a debit is a rise for an asset or expense and a fall for a
+  // liability, equity or income account.
+  const { delta, rising } = netMovementDirection(data.totals, data.account?.type);
+  // With no `from` the service never read prior entries, so opening is 0 and the
+  // closing figure is the movement inside the window — not the account's
+  // balance. Labelling it "Closing" made an account with ₦5m of prior balance
+  // and ₦100k of movement read as ₦100k.
+  const isBalance = data.openingIncluded !== false;
   return (
     <KpiRow>
-      <StatChip label="Opening" value={fmtMoney(opening)} />
+      {isBalance ? (
+        <StatChip label="Opening" value={fmtMoney(opening)} />
+      ) : (
+        <StatChip
+          label="Opening"
+          value="—"
+          tone="neutral"
+          sub="not included; set a from date"
+        />
+      )}
       <StatChip label={`In (Debits)`} value={fmtMoney(data.totals.debits)} />
       <StatChip label="Out (Credits)" value={fmtMoney(data.totals.credits)} />
       <StatChip
-        label="Closing"
+        label={isBalance ? "Closing" : "Movement"}
         value={fmtMoney(data.totals.closing)}
         tone={data.totals.closing < 0 ? 'bad' : 'default'}
         sub={
-          <span className="flex items-center gap-1">
-            {netMovement >= 0 ? <PiArrowUp size={11} /> : <PiArrowDown size={11} />}
-            {fmtMoney(Math.abs(netMovement))} net movement
-          </span>
+          !isBalance ? (
+            <span className="flex items-center gap-1">
+              <PiWarningCircle size={11} /> window movement, not a balance
+            </span>
+          ) : delta === 0 ? (
+            <span className="flex items-center gap-1">no movement this window</span>
+          ) : (
+            <span className="flex items-center gap-1">
+              {rising ? <PiArrowUp size={11} /> : <PiArrowDown size={11} />}
+              {fmtMoney(Math.abs(delta))} net {rising ? 'increase' : 'decrease'}
+            </span>
+          )
         }
       />
     </KpiRow>

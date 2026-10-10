@@ -94,6 +94,9 @@ const inventoryMovementSchema = new Schema(
       ref: 'PurchaseOrder',
     },
 
+    adjustmentRequestId: { type: String, maxlength: 80 },
+    adjustmentFingerprint: { type: String, maxlength: 64 },
+
     // Cost & Value Tracking
     unitCost: {
       type: Number,
@@ -313,6 +316,9 @@ inventoryMovementSchema.index({ tenant: 1, subProduct: 1, createdAt: -1 });
 inventoryMovementSchema.index({ tenant: 1, type: 1, createdAt: -1 });
 inventoryMovementSchema.index({ tenant: 1, warehouse: 1, createdAt: -1 });
 inventoryMovementSchema.index({ tenant: 1, reference: 1 });
+inventoryMovementSchema.index({ tenant: 1, adjustmentRequestId: 1 }, {
+  unique: true, partialFilterExpression: { adjustmentRequestId: { $type: 'string' } },
+});
 inventoryMovementSchema.index({ subProduct: 1, batchNumber: 1 });
 inventoryMovementSchema.index({ subProduct: 1, expirationDate: 1 });
 inventoryMovementSchema.index({ performedBy: 1, createdAt: -1 });

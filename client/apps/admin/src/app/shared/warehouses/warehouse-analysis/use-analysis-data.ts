@@ -1,97 +1,69 @@
 'use client';
 
-// app/shared/warehouses/warehouse-analysis/use-analysis-data.ts
-//
-// Data layer for the analysis page: the flattened stock feed plus the three
-// metadata sources the filter panel joins against (categories, brands,
-// per-SubProduct category/brand meta). Tracks an explicit phase so the UI can
-// distinguish loading / ready / error instead of rendering an empty report on
-// failure.
-
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import {
-  warehouseStockService,
-  type StockRow,
-} from '@/services/warehouseStock.service';
+import { warehouseStockService, type StockRow } from '@/services/warehouseStock.service';
 import { posApi } from '../../point-of-sale/api';
-import type { BrandItem, CatItem, ProdMeta } from '../warehouse-analysis-helpers';
+import type { ProdMeta } from '../warehouse-analysis-helpers';
 
 export type AnalysisPhase = 'loading' | 'ready' | 'error';
 
-export function useAnalysisData() {
+export function useAnalysisData(warehouseId?: string) {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
-
   const [phase, setPhase] = useState<AnalysisPhase>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [stock, setStock] = useState<StockRow[]>([]);
-  const [categories, setCategories] = useState<CatItem[]>([]);
-  const [brands, setBrands] = useState<BrandItem[]>([]);
   const [prodMeta, setProdMeta] = useState<Record<string, ProdMeta>>({});
+  const request = useRef(0);
 
   const load = useCallback(async () => {
+    const current = ++request.current;
     if (!token) {
-      // Phase starts at 'loading'; clear it when no token ever arrives so a
-      // signed-out visit renders the empty state rather than spinning forever.
-      setPhase((p) => (p === 'loading' ? 'ready' : p));
+      setStock([]);
+      setProdMeta({});
+      setPhase('ready');
       return;
     }
     setPhase('loading');
+    setErrorMessage('');
     try {
-      const res = await warehouseStockService.getAllStock(token);
-      setStock((res?.data as StockRow[]) ?? []);
-      setPhase('ready');
-    } catch (err: unknown) {
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Failed to load warehouse stock'
+      // Category/brand filters must not run against a partially loaded report.
+      const [stockResponse, metadata] = await Promise.all([
+        warehouseStockService.getAllStock(token),
+        posApi.getProductMeta(token),
+      ]);
+      if (current !== request.current) return;
+      const map: Record<string, ProdMeta> = {};
+      for (const row of metadata.meta || []) {
+        if (!row._id) continue;
+        map[String(row._id)] = {
+          catId: row.categoryId || '',
+          catName: row.categoryName || '',
+          subCatId: row.subCategoryId || undefined,
+          subCatName: row.subCategoryName || undefined,
+          brandId: row.brandId || '',
+          brandName: row.brandName || '',
+        };
+      }
+      setStock(
+        (stockResponse.data || []).filter((row) => !warehouseId || row.warehouseId === warehouseId),
       );
+      setProdMeta(map);
+      setPhase('ready');
+    } catch (error: unknown) {
+      if (current !== request.current) return;
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load warehouse analysis');
       setPhase('error');
     }
-  }, [token]);
+  }, [token, warehouseId]);
 
   useEffect(() => {
     load();
+    return () => {
+      ++request.current;
+    };
   }, [load]);
 
-  // Categories & brands (public endpoints) for the filter panel.
-  useEffect(() => {
-    posApi
-      .getCategories()
-      .then((d) => setCategories(d?.categories ?? []))
-      .catch(() => {});
-    posApi
-      .getBrands({ limit: 200 })
-      .then((d) => setBrands(d?.brands ?? []))
-      .catch(() => {});
-  }, []);
-
-  // SubProduct → category/subcategory/brand metadata map, keyed by SubProduct
-  // _id. The /product-meta endpoint is not gated by visibleInPOS, so it covers
-  // non-POS items too. WarehouseStock.subProduct is the join key.
-  useEffect(() => {
-    if (!token) return;
-    posApi
-      .getProductMeta(token)
-      .then((res) => {
-        const rows = (res as { meta?: unknown[] })?.meta ?? [];
-        const map: Record<string, ProdMeta> = {};
-        for (const r of rows as Record<string, string>[]) {
-          if (!r?._id) continue;
-          map[String(r._id)] = {
-            catId: r.categoryId || '',
-            catName: r.categoryName || '',
-            subCatId: r.subCategoryId || undefined,
-            subCatName: r.subCategoryName || undefined,
-            brandId: r.brandId || '',
-            brandName: r.brandName || '',
-          };
-        }
-        setProdMeta(map);
-      })
-      .catch(() => {});
-  }, [token]);
-
-  return { phase, errorMessage, stock, categories, brands, prodMeta, reload: load };
+  return { phase, errorMessage, stock, prodMeta, reload: load };
 }
-

@@ -72,7 +72,10 @@ export default function SubProductDetailsSummary({
   return (
     <>
       <div className="border-b border-muted pb-6 @lg:pb-8">
-        <Title as="h2" className="mb-2.5 font-bold @6xl:text-4xl">
+        <Title
+          as="h2"
+          className="mb-2.5 font-bold @xl:text-3xl @4xl:text-4xl"
+        >
           {product.name}
         </Title>
         <div className="flex flex-wrap items-center gap-2">
@@ -116,7 +119,7 @@ export default function SubProductDetailsSummary({
 
       <div className="pb-8 pt-5">
         <div className="mb-1.5 flex items-end font-lexend text-base">
-          <div className="-mb-0.5 text-2xl font-semibold text-gray-900 lg:text-3xl">
+          <div className="-mb-0.5 text-2xl font-semibold text-gray-900 @xl:text-3xl">
             {headlinePrice || 'Price not set'}
           </div>
         </div>

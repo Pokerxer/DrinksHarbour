@@ -1,7 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { buildSalesDoc } from './so-print';
+import { inflateSync } from 'node:zlib';
+import { buildSalesDoc, printableBankAccounts } from './so-print';
 import { renderDocument } from './pdf-render';
-import type { SalesOrder } from '@/services/salesOrder.service';
+import type { QuoteStatus, SalesOrder } from '@/services/salesOrder.service';
+
+/** Inflate a PDF's page streams so drawn text is greppable. */
+function pageStreams(raw: string): string {
+  return Array.from(raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g))
+    .map((match) => {
+      try {
+        return inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1');
+      } catch {
+        return match[1];
+      }
+    })
+    .join('\n');
+}
 
 const baseOrder: SalesOrder = {
   _id: 'so1',
@@ -148,5 +162,145 @@ describe('buildSalesDoc', () => {
     const raw = Buffer.from(bytes).toString('latin1');
     expect(raw.startsWith('%PDF-')).toBe(true);
     expect(raw).toContain('/Title (Pro-Forma Invoice QT-2026-0007)');
+  });
+});
+
+describe('printableBankAccounts', () => {
+  it('keeps a complete account and trims it', () => {
+    expect(
+      printableBankAccounts({
+        issuerBankAccounts: [
+          { bankName: '  GTBank ', accountName: ' DrinksHarbour Ltd ', accountNumber: '0123456789' },
+        ],
+      })
+    ).toEqual([
+      { bankName: 'GTBank', accountName: 'DrinksHarbour Ltd', accountNumber: '0123456789' },
+    ]);
+  });
+
+  it('drops an account that cannot be paid into', () => {
+    // A bank with no number, and a number with no bank, are both unusable on an
+    // invoice — printing the label with nothing after it is the failure.
+    expect(
+      printableBankAccounts({
+        issuerBankAccounts: [
+          { bankName: 'Zenith', accountNumber: '' },
+          { bankName: '', accountNumber: '999' },
+          {},
+        ],
+      })
+    ).toEqual([]);
+  });
+
+  it('treats an absent list as no accounts', () => {
+    expect(printableBankAccounts({})).toEqual([]);
+    expect(printableBankAccounts({ issuerBankAccounts: undefined })).toEqual([]);
+  });
+});
+
+describe('sales documents — payment details', () => {
+  const payable = {
+    ...baseOrder,
+    docType: 'order' as const,
+    issuerBankAccounts: [
+      { bankName: 'GTBank', accountName: 'DrinksHarbour Ltd', accountNumber: '0123456789' },
+      { bankName: 'Zenith', accountName: 'DrinksHarbour Ltd', accountNumber: '9876543210' },
+    ],
+  };
+  const payment = (doc: ReturnType<typeof buildSalesDoc>) =>
+    doc.sections.find((s) => s.title === 'Payment Details');
+
+  it('prints every remittance account on a sales order', () => {
+    expect(payment(buildSalesDoc(payable, 'DrinksHarbour', 'sales-order'))?.body).toBe(
+      [
+        'Bank: GTBank',
+        'Account Name: DrinksHarbour Ltd',
+        'Account Number: 0123456789',
+        '',
+        'Bank: Zenith',
+        'Account Name: DrinksHarbour Ltd',
+        'Account Number: 9876543210',
+      ].join('\n')
+    );
+  });
+
+  it('separates a single account from a missing account name', () => {
+    const doc = buildSalesDoc(
+      { ...payable, issuerBankAccounts: [{ bankName: 'UBA', accountNumber: '3011223344' }] },
+      'DrinksHarbour',
+      'sales-order'
+    );
+    // No "Account Name:" line with nothing after it.
+    expect(payment(doc)?.body).toBe('Bank: UBA\nAccount Number: 3011223344');
+  });
+
+  it('prints them on a pro-forma, which is issued for advance payment', () => {
+    expect(payment(buildSalesDoc(payable, 'DrinksHarbour', 'proforma'))?.body).toContain(
+      'Account Number: 0123456789'
+    );
+  });
+
+  it('prints them on a quotation — a quote is commonly converted by paying it', () => {
+    // Was deliberately excluded ("nothing is owed until accepted"). That made a
+    // quotation with no payment section indistinguishable from a bank account
+    // that had failed to save, which is how it was reported: a tenant's real,
+    // valid account looked like it had not been saved at all.
+    const doc = buildSalesDoc(
+      { ...payable, docType: 'quotation', quoteStatus: 'sent' },
+      'DrinksHarbour',
+      'quotation'
+    );
+    expect(payment(doc)?.body).toContain('Account Number: 0123456789');
+  });
+
+  it('prints them on a quotation in every quote state', () => {
+    // The block follows the account, not the lifecycle — no state should drop it.
+    for (const quoteStatus of [
+      'draft',
+      'sent',
+      'accepted',
+      'declined',
+      'expired',
+    ] as QuoteStatus[]) {
+      const doc = buildSalesDoc(
+        { ...payable, docType: 'quotation', quoteStatus },
+        'DrinksHarbour',
+        'quotation'
+      );
+      expect(payment(doc)?.body, `quoteStatus=${quoteStatus}`).toContain(
+        'Account Number: 0123456789'
+      );
+    }
+  });
+
+  it('omits them from a quotation only when the tenant has no usable account', () => {
+    const doc = buildSalesDoc(
+      { ...baseOrder, docType: 'quotation', quoteStatus: 'sent' },
+      'DrinksHarbour',
+      'quotation'
+    );
+    expect(payment(doc)).toBeUndefined();
+  });
+
+  it('omits the block entirely when the tenant has no account on file', () => {
+    const doc = buildSalesDoc(baseOrder, 'DrinksHarbour', 'sales-order');
+    expect(payment(doc)).toBeUndefined();
+    // Notes and terms are untouched by the omission.
+    expect(doc.sections.map((s) => s.title)).toEqual(['Notes']);
+  });
+
+  it('puts the account on the page, not just on the model', () => {
+    const doc = renderDocument(buildSalesDoc(payable, 'DrinksHarbour', 'sales-order'));
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1);
+    const bytes = doc.output('arraybuffer') as ArrayBuffer;
+    expect(bytes.byteLength).toBeGreaterThan(1000);
+    // Page content is a compressed stream — inflate it to prove the block is
+    // really drawn, not merely present on the model. The renderer upper-cases
+    // section headings, so the title is matched as it is actually printed.
+    const content = pageStreams(doc.output());
+    expect(content).toContain('PAYMENT DETAILS');
+    expect(content).toContain('Bank: GTBank');
+    expect(content).toContain('Account Number: 0123456789');
+    expect(content).toContain('Account Number: 9876543210');
   });
 });

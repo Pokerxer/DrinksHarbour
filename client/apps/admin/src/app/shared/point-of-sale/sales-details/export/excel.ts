@@ -33,7 +33,11 @@ function getLineCellExcel(r: LineRow, key: LineExportCol): string | number {
     case 'unitPrice':
       return r.unitPrice;
     case 'gross':
-      return r.gross;
+      // The server's commercial allocation, so gross − returns === net in the
+      // sheet exactly as it does on screen.
+      return r.grossShare ?? r.gross;
+    case 'returns':
+      return r.returnedValue ?? 0;
     case 'discount':
       return r.discount;
     case 'net':
@@ -43,11 +47,19 @@ function getLineCellExcel(r: LineRow, key: LineExportCol): string | number {
     case 'profit':
       return r.profit;
     case 'margin':
-      return r.profit > 0 && r.subtotal > 0
-        ? +((r.profit / r.subtotal) * 100).toFixed(1)
-        : 0;
-    case 'payment':
-      return METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod;
+      // "n/a" rather than 0: a line with no cost basis has no margin to report,
+      // and 0 in a spreadsheet column reads as a real measurement.
+      if (!r.hasCost || r.subtotal <= 0) return 'n/a';
+      return +((r.profit / r.subtotal) * 100).toFixed(1);
+    case 'payment': {
+      if (!r.splitPayment || r.paymentShares.length === 0)
+        return METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod;
+      // Name every leg of a split receipt so the export can be reconciled
+      // against the till.
+      return r.paymentShares
+        .map((s) => `${METHOD_LABEL[s.method] ?? s.method} ${s.amount.toFixed(2)}`)
+        .join(' + ');
+    }
     case 'voided':
       return r.isVoided ? 'Yes' : 'No';
     default:
@@ -56,10 +68,9 @@ function getLineCellExcel(r: LineRow, key: LineExportCol): string | number {
 }
 
 function getGroupCellExcel(r: GroupRow, key: GroupExportCol): string | number {
-  const mg =
-    r.profit > 0 && r.revenue > 0
-      ? +((r.profit / r.revenue) * 100).toFixed(1)
-      : 0;
+  // Measured on the group's costed revenue; absent, not zero, when nothing in
+  // the group carries a cost basis.
+  const mg = r.costedRevenue > 0 ? +((r.profit / r.costedRevenue) * 100).toFixed(1) : 'n/a';
   switch (key) {
     case 'key':
       return r.key;
@@ -67,6 +78,8 @@ function getGroupCellExcel(r: GroupRow, key: GroupExportCol): string | number {
       return r.qty;
     case 'gross':
       return r.gross;
+    case 'returns':
+      return r.returns ?? 0;
     case 'discount':
       return r.discount;
     case 'revenue':

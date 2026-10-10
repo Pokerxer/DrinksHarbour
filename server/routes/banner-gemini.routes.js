@@ -169,7 +169,10 @@ const generateImagePromptValidation = [
 // ============================================================
 
 router.use(protect);
-router.use(authorize('super_admin', 'tenant_admin', 'admin'));
+router.use(authorize('super_admin', 'tenant_owner', 'tenant_admin', 'admin'));
+const { resolveTenantContext, requireOwnTenant } = require('../middleware/tenant.middleware');
+router.use(resolveTenantContext);
+router.use((req, res, next) => ['super_admin', 'admin'].includes(req.user.role) ? next() : requireOwnTenant(req, res, next));
 
 /**
  * Get context data for banner generation (categories, products, brands)

@@ -113,11 +113,8 @@ exports.getTaxRecords = asyncHandler(async (req, res) => {
   const filter = { tenant: tenantId };
   if (sourceType) filter.sourceType = sourceType;
   if (status) filter.status = status;
-  if (from || to) {
-    filter.postedAt = {};
-    if (from) filter.postedAt.$gte = new Date(from);
-    if (to) filter.postedAt.$lte = new Date(to);
-  }
+  const date = require('../services/accounting.query').dateRange({ from, to });
+  if (date) filter.postedAt = date;
 
   const [data, total] = await Promise.all([
     TaxRecord.find(filter).sort({ postedAt: -1 }).skip((page - 1) * limit).limit(limit),

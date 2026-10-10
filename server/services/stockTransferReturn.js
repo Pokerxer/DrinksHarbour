@@ -128,7 +128,7 @@ function transferLineEffectiveUnitCost(transfer, itemIndex) {
  * return movements on both sides. Stock-authoritative: checks currentQuantity
  * on the warehouse that physically holds the goods before touching anything.
  */
-async function returnTransferStock(ctx, { quantity, tenantId, userId, note }, deps = {}) {
+async function returnTransferStock(ctx, { quantity, tenantId, userId, note, session }, deps = {}) {
   const {
     WarehouseStock = require("../models/WarehouseStock"),
     WarehouseMovement = require("../models/WarehouseMovement"),
@@ -150,7 +150,8 @@ async function returnTransferStock(ctx, { quantity, tenantId, userId, note }, de
 
   const holdingQuery = { tenant: tenantId, warehouse: holding, subProduct: movement.subProduct };
   if (movement.size) holdingQuery.size = movement.size;
-  const hold = await WarehouseStock.findOne(holdingQuery);
+  const holdQuery = WarehouseStock.findOne(holdingQuery);
+  const hold = await (session ? holdQuery.session(session) : holdQuery);
   const available = hold ? hold.currentQuantity : 0;
   if (available < qty) {
     throw new ValidationError(
@@ -159,11 +160,12 @@ async function returnTransferStock(ctx, { quantity, tenantId, userId, note }, de
   }
 
   hold.currentQuantity -= qty;
-  await hold.save();
+  await hold.save(session ? { session } : undefined);
 
   const recvQuery = { tenant: tenantId, warehouse: other, subProduct: movement.subProduct };
   if (movement.size) recvQuery.size = movement.size;
-  let recv = await WarehouseStock.findOne(recvQuery);
+  const receivingQuery = WarehouseStock.findOne(recvQuery);
+  let recv = await (session ? receivingQuery.session(session) : receivingQuery);
   if (!recv) {
     recv = new WarehouseStock({
       tenant: tenantId,
@@ -174,7 +176,7 @@ async function returnTransferStock(ctx, { quantity, tenantId, userId, note }, de
     recv.currentQuantity = 0;
   }
   recv.currentQuantity += qty;
-  await recv.save();
+  await recv.save(session ? { session } : undefined);
 
   // Batches travel back at the value they were written at on the way out
   // (module transfers revalue the destination lot; lightweight transfers keep
@@ -191,7 +193,7 @@ async function returnTransferStock(ctx, { quantity, tenantId, userId, note }, de
     toWarehouse: other,
     quantity: qty,
     ...(typeof destUnitCost === "number" ? { destUnitCost } : {}),
-  });
+  }, session);
 
   const ref = `Return of ${
     ctx.transferNumber
@@ -215,7 +217,7 @@ async function returnTransferStock(ctx, { quantity, tenantId, userId, note }, de
       balanceAfter: recvAfter, reference: ref, performedBy: userId,
       parentMovement: movement._id,
     },
-  ]);
+  ], session ? { session, ordered: true } : undefined);
 
   // Mirror into the unified ledger so product history/summary sees the return.
   try {
@@ -238,14 +240,15 @@ async function returnTransferStock(ctx, { quantity, tenantId, userId, note }, de
         reason: note ? String(note).slice(0, 200) : undefined,
         performedBy: userId, performedAt: new Date(), source: "system",
       },
-    ]);
+    ], session ? { session, ordered: true } : undefined);
   } catch (err) {
+    if (session) throw err;
     // The warehouse ledger is authoritative; a mirror write must not roll
     // back a completed stock operation. Surface for monitoring.
     console.error("[stockTransferReturn] InventoryMovement mirror failed:", err.message);
   }
 
-  await recalcSubProductStock(movement.subProduct);
+  await recalcSubProductStock(movement.subProduct, session);
 
   return { before: available, holdingAfter: holdAfter, receivingAfter: recvAfter };
 }
@@ -283,11 +286,11 @@ function applyTransferMoneyRemaining(transfer) {
 }
 
 /**
- * Reverse the destination→source liability for the returned lines: drop the
+ * Reverse the destination→source liability for the returned lines: preserve
  * received/transferred counts, record the return, recompute the money snapshot
  * over unreturned quantities and re-capture the tax posting.
  */
-async function reverseTransferMoney(ctx, { quantity, userId, note }, deps = {}) {
+async function reverseTransferMoney(ctx, { quantity, userId, note, session, requestId }, deps = {}) {
   const {
     reverseDocumentTax = require("../services/tax.service").reverseDocumentTax,
     captureDocumentTax = require("../services/tax.service").captureDocumentTax,
@@ -298,12 +301,16 @@ async function reverseTransferMoney(ctx, { quantity, userId, note }, deps = {}) 
 
   // Receipt counters are historical. Returns must not reopen a completed
   // transfer for receiving or subtract the returned units twice.
+  const beforeValue = applyTransferMoneyRemaining(transfer).total;
   item.returnedQty = (item.returnedQty || 0) + qty;
 
   if (!Array.isArray(transfer.returns)) transfer.returns = [];
   transfer.returns.push({
+    requestId,
     returnedBy: userId,
     returnedAt: new Date(),
+    refundedValue: 0,
+    remainingValue: 0,
     lines: [
       {
         itemIndex,
@@ -313,9 +320,13 @@ async function reverseTransferMoney(ctx, { quantity, userId, note }, deps = {}) 
     ],
   });
 
-  applyTransferMoneyRemaining(transfer);
-  await transfer.save();
+  const afterValue = applyTransferMoneyRemaining(transfer).total;
+  const history = transfer.returns[transfer.returns.length - 1];
+  history.refundedValue = Math.round((beforeValue - afterValue) * 100) / 100;
+  history.remainingValue = afterValue;
+  await transfer.save(session ? { session } : undefined);
 
+  if (session) return; // tax snapshot is refreshed after committing inventory
   await reverseDocumentTax({ sourceType: "stock_transfer", doc: transfer, userId });
   await captureDocumentTax({ sourceType: "stock_transfer", doc: transfer, postedBy: userId });
 }

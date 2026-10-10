@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Fraunces } from 'next/font/google';
 import * as Icon from 'react-icons/pi';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
 

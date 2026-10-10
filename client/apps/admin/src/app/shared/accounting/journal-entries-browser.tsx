@@ -9,10 +9,10 @@ import {
   type Account,
   type JournalEntry,
 } from '@/services/accounting.service';
-import { pageWindowLabel } from './accounting-helpers';
+import { pageWindowLabel, EXPORT_PAGE_SIZE, exportPageRequests } from './accounting-helpers';
 import JournalEntriesControls from './journal-entries-controls';
 import JournalEntriesTable from './journal-entries-table';
-import JournalEntryDetail from './journal-entry-detail';
+import JournalEntryDetail, { exportEntriesCsv } from './journal-entry-detail';
 import JournalEntryFormModal from './journal-entry-form-modal';
 
 const PAGE_SIZE = 25;
@@ -48,6 +48,7 @@ export default function JournalEntriesBrowser() {
 
   const [selected, setSelected] = useState<JournalEntry | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Debounce the search box so typing does not fire a request per keystroke.
   useEffect(() => {
@@ -63,21 +64,31 @@ export default function JournalEntriesBrowser() {
     [accounts]
   );
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    try {
+  // One filter definition for both the visible list and the export, so a file
+  // can never quietly disagree with the rows on screen.
+  const buildParams = useCallback(
+    (over: { page?: number; limit?: number } = {}) => {
       const range = presetRange(preset);
       const isAccountCode = /^\d{3,4}$/.test(deferredSearch.trim());
-      const res = await accountingService.journalEntries(token, {
-        page,
-        limit: PAGE_SIZE,
+      return {
         entryType: tabFilter || undefined,
         status: statusFilter || undefined,
         from: range?.from || from || undefined,
         to: range?.to || to || undefined,
         account: isAccountCode ? deferredSearch.trim() : undefined,
         q: deferredSearch.trim() && !isAccountCode ? deferredSearch.trim() : undefined,
+        ...over,
+      };
+    },
+    [deferredSearch, tabFilter, statusFilter, preset, from, to]
+  );
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const res = await accountingService.journalEntries(token, {
+        ...buildParams({ page, limit: PAGE_SIZE }),
       });
       setEntries(res.data ?? []);
       setPages(res.pagination?.pages ?? 1);
@@ -87,7 +98,7 @@ export default function JournalEntriesBrowser() {
     } finally {
       setLoading(false);
     }
-  }, [token, page, tabFilter, statusFilter, deferredSearch, preset, from, to]);
+  }, [token, page, buildParams]);
 
   useEffect(() => {
     load();
@@ -107,6 +118,41 @@ export default function JournalEntriesBrowser() {
     setTo('');
     setPage(1);
   };
+
+  /**
+   * Export every entry matching the filters, not just the page on screen. Paged
+   * at the API's 500-row ceiling, and the toast says plainly when the result was
+   * capped, because a silently short ledger export is worse than no export.
+   */
+  const exportAll = useCallback(async () => {
+    if (!token) return;
+    setExporting(true);
+    try {
+      const first = await accountingService.journalEntries(token, {
+        ...buildParams({ page: 1, limit: EXPORT_PAGE_SIZE }),
+      });
+      const matched = first.pagination?.total ?? 0;
+      const pages = exportPageRequests(matched);
+      const collected = [...(first.data ?? [])];
+      for (const p of pages.slice(1)) {
+        const res = await accountingService.journalEntries(token, {
+          ...buildParams({ page: p, limit: EXPORT_PAGE_SIZE }),
+        });
+        collected.push(...(res.data ?? []));
+      }
+      exportEntriesCsv(collected);
+      const capped = collected.length < matched;
+      toast.success(
+        capped
+          ? `Exported the first ${collected.length} of ${matched} entries — narrow the filters to get the rest`
+          : `Exported ${collected.length} ${collected.length === 1 ? 'entry' : 'entries'}`
+      );
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }, [token, buildParams]);
 
   return (
     <div>
@@ -140,7 +186,9 @@ export default function JournalEntriesBrowser() {
         rangeLabel={pageWindowLabel(page, PAGE_SIZE, total)}
         entries={entries}
         loading={loading}
+        exporting={exporting}
         onRefresh={() => load()}
+        onExport={exportAll}
         onNewEntry={() => setShowForm(true)}
       />
 

@@ -5,8 +5,8 @@ const Tenant = require('../models/Tenant');
 const { resolveEntitlements } = require('./entitlements.service');
 const { ValidationError, UnauthorizedError, ForbiddenError } = require('../utils/errors');
 
-const SCOPES = ['inventory:read', 'bookings:read'];
-const PUBLIC_FIELDS = '_id name prefix scopes createdAt expiresAt revokedAt';
+const SCOPES = ['storefront:read', 'checkout:write', 'inventory:read', 'bookings:read'];
+const PUBLIC_FIELDS = '_id name prefix scopes createdAt expiresAt revokedAt lastUsedAt';
 const hashSecret = secret => crypto.createHash('sha256').update(secret).digest('hex');
 
 async function issueKey(tenant, actor, body = {}) {
@@ -40,13 +40,17 @@ async function authenticateKey(secret, scope, now = new Date()) {
   if (scope === 'bookings:read' && !entitlements.capabilities.includes('table_management')) {
     throw new ForbiddenError('Table management is unavailable');
   }
-  // Shared across processes; never cache revocation or tenant status. Reset and
-  // consume atomically so concurrent requests cannot exceed 60 per UTC minute.
+  // One atomic reset-and-consume, shared across every API process. Authorization
+  // remains uncached; the write rechecks revocation, expiry and scope changes.
   const window = Math.floor(now.getTime() / 60000);
-  await ApiKey.updateOne({ ...filter, rateWindow: { $lt: window } },
-    { $set: { rateWindow: window, rateCount: 0 } });
-  const consumed = await ApiKey.updateOne({ ...filter, rateWindow: window, rateCount: { $lt: 60 } },
-    { $inc: { rateCount: 1 } });
+  const consumed = await ApiKey.updateOne({ ...filter, scopes: scope, $or: [
+    { rateWindow: { $lt: window } },
+    { rateWindow: window, rateCount: { $lt: 60 } },
+  ] }, [{ $set: {
+    rateWindow: window,
+    rateCount: { $cond: [{ $eq: ['$rateWindow', window] }, { $add: ['$rateCount', 1] }, 1] },
+    lastUsedAt: now,
+  } }], { updatePipeline: true });
   if (!consumed.modifiedCount) {
     const error = new ForbiddenError('API key rate limit exceeded or key revoked');
     error.statusCode = 429;

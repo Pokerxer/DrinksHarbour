@@ -370,3 +370,48 @@ test('an ordinary sale (no linked order) keeps the till\'s resolved warehouse', 
     'an ordinary sale must still carry the till\'s resolved warehouse'
   );
 });
+
+test('quoted exclusive tax is charged and saved, ignoring client tax claims', async (t) => {
+  const doc = await sell(t, {
+    linkedSalesOrderId: String(SO_ID), taxAmount: 1,
+    items: [{ subProductId: String(SP), quantity: 10, taxRate: 0 }],
+  }, { salesOrder: quotation({ items: [quoteLine({ taxRate: 7.5 })] }) });
+  assert.equal(doc.subtotal, 40000);
+  assert.equal(doc.taxAmount, 3000);
+  assert.equal(doc.totalAmount, 43000);
+  assert.equal(lineFor(doc).taxRate, 7.5);
+  assert.equal(lineFor(doc).taxAmount, 3000);
+  const stored = new Order(doc);
+  assert.equal(stored.items[0].taxAmount, 3000, 'schema must retain line tax');
+});
+
+test('partial quotation sale taxes only sold quantities after negotiated discounts', async (t) => {
+  const doc = await sell(t, {
+    linkedSalesOrderId: String(SO_ID),
+    items: [{ subProductId: String(SP), quantity: 4 }],
+  }, { salesOrder: quotation({ items: [quoteLine({ discount: 2000, promoDiscount: 500, taxRate: 7.5 })] }) });
+  assert.equal(doc.subtotal, 15000);
+  assert.equal(doc.taxAmount, 1125);
+  assert.equal(doc.totalAmount, 16125);
+});
+
+test('mixed and zero quotation tax rates are preserved per line', async (t) => {
+  const doc = await sell(t, {
+    linkedSalesOrderId: String(SO_ID),
+    items: [{ subProductId: String(SP), quantity: 2 }, { subProductId: String(SODA), quantity: 1, taxRate: 99 }],
+  }, { salesOrder: quotation({ items: [quoteLine({ taxRate: 7.5 }), quoteLine({ subproduct: SODA, taxRate: 0, unitPrice: 1000 })] }) });
+  assert.equal(doc.taxAmount, 600);
+  assert.equal(doc.totalAmount, 9600);
+  assert.equal(lineFor(doc, SODA).taxRate, 0);
+});
+
+test('an older till cannot settle a taxed quotation at its untaxed displayed total', async (t) => {
+  const captured = stub(t, {salesOrder: quotation({items: [quoteLine({taxRate: 7.5})]})});
+  const res = {status(code) {this.code = code; return this;}, json(body) {this.body = body; return this;}};
+  await pos.createPOSOrder({tenant: TENANT_DOC, posUser: {_id: oid()}, posPermissions: [], body: {
+    linkedSalesOrderId: String(SO_ID), paymentMethod: 'cash', amountTendered: 40000, total: 40000,
+    items: [{subProductId: String(SP), quantity: 10}],
+  }}, res, error => {throw error;});
+  assert.equal(res.code, 409);
+  assert.equal(captured.doc, undefined, 'do not persist a paid sale at an unconfirmed amount');
+});

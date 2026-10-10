@@ -5,6 +5,7 @@
 // without a database (same contract as tax.helpers.js).
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const DAY_MS = 86400000;
 
 /** Coerce API lines into schema shape with kobo-precision amounts. */
 function normalizeLines(lines) {
@@ -26,11 +27,44 @@ function isBalanced(lines) {
 }
 
 /** 'YYYY-MM' period key from a date. */
+/**
+ * Accounting period ('YYYY-MM') for a document date.
+ *
+ * UTC, deliberately. Every date in the ledger is a UTC instant, and a tenant's
+ * own month boundary is their midnight — so deriving the period with local
+ * getters makes the answer depend on the server's timezone. On a UTC+1 host a
+ * sale at 00:30 on 1 August is 2026-07-31T23:30Z and was filed under July,
+ * quietly disagreeing with the bank statement and the month's VAT return.
+ * Historical entries keep the `period` they were written with; this only
+ * affects new postings.
+ */
+/**
+ * Mongo date bounds for a `YYYY-MM` accounting period.
+ *
+ * UTC, for the same reason as periodOf(): a month boundary is a fixed instant,
+ * and building it with `new Date(y, m-1, 1)` makes the trial balance's
+ * contents depend on the server's timezone. A document stamped 23:30Z on
+ * 31 July was simultaneously "July" to periodOf and inside the August trial
+ * balance on a UTC+1 host.
+ */
+function periodRange(period) {
+  const value = String(period ?? '');
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);
+  if (!m) {
+    const err = new Error('period must be YYYY-MM');
+    err.status = 400;
+    throw err;
+  }
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  return { $gte: new Date(Date.UTC(year, month - 1, 1)), $lt: new Date(Date.UTC(year, month, 1)) };
+}
+
 function periodOf(date) {
   if (!date) return undefined;
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return undefined;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 /**
@@ -54,6 +88,54 @@ const TYPE_ORDER = { asset: 0, liability: 1, equity: 2, income: 3, expense: 4 };
 // Asset/expense accounts carry debit balances; liability/equity/income carry
 // credit balances.
 const DEBIT_NATURE = new Set(['asset', 'expense']);
+
+// Seeded by chartOfAccounts.service.DEFAULT_COA. These are the codes whose
+// *meaning* the reports key off (the sales line, the two VAT accounts); every
+// other classification comes from the Account document.
+const CANONICAL_SALES = ['4000'];
+const CANONICAL_TAX_COLLECTED = '2100';
+const CANONICAL_TAX_PAID = '1400';
+const RETAINED_EARNINGS = '3100';
+
+/**
+ * code → Account.type for a tenant, so reports classify a line the way the
+ * chart of accounts says it is classified.
+ *
+ * Tenants create their own accounts with any code they like (coa-form-modal),
+ * so a code prefix cannot be the authority: a "1500 Revenue" account and a
+ * "4900 Asset" account are both reachable. The trial balance already read
+ * `type` from the Account document; the P&L and balance sheet read prefixes,
+ * which is how a tenant with a non-standard chart ended up with revenue on the
+ * balance sheet and missing from the P&L, and a trial balance that tied to
+ * neither. Returns null for codes with no Account, leaving the caller to fall
+ * back to the prefix heuristic.
+ */
+function accountTypeResolver(accounts) {
+  const byCode = new Map();
+  for (const a of accounts || []) {
+    if (a && a.code != null) byCode.set(String(a.code), String(a.type || ''));
+  }
+  const resolve = (code) => byCode.get(String(code)) || null;
+  resolve.codes = byCode;
+  return resolve;
+}
+
+/**
+ * Which income codes are "sales" for the gross/reversals/other-income split.
+ * The seeded chart separates 4000 Sales from 4100 Other Income, so the
+ * canonical code wins. A tenant whose only income account is something else
+ * has that account treated as sales rather than reporting no sales at all.
+ */
+function salesCodesFor(resolveType) {
+  const income = new Set();
+  for (const [code, type] of (resolveType.codes || [])) {
+    if (type === 'income') income.add(code);
+  }
+  const canonical = CANONICAL_SALES.filter((c) => income.has(c));
+  if (canonical.length) return new Set(canonical);
+  if (income.size === 1) return income;
+  return new Set();
+}
 
 /** Closing balance per account: debits − credits for debit-nature types. */
 function closingFor(type, debits, credits) {
@@ -106,11 +188,16 @@ function buildTrialBalance(entries, accounts) {
     totalDebits = round2(totalDebits + r.debits);
     totalCredits = round2(totalCredits + r.credits);
   }
+  const isEmpty = list.length === 0;
   return {
     rows: list,
     totalDebits,
     totalCredits,
-    balanced: Math.abs(totalDebits - totalCredits) <= 0.01 && totalDebits > 0,
+    // An empty period trivially agrees, but the UI must be able to say "no
+    // activity" instead of "out of balance, run the backfill" — that false
+    // alarm was the whole reason `balanced` used to require a positive total.
+    isEmpty,
+    balanced: isEmpty || Math.abs(totalDebits - totalCredits) <= 0.01,
   };
 }
 
@@ -135,61 +222,40 @@ function sumType(entries, type, accounts) {
 
 /**
  * P&L: income − expenses over a window. COGS (account 5000 / entryTypes
- * cogs|refund) is broken out of operating expenses. Tax collected/paid come
- * from the TaxRecord summary join, not journal lines.
+ * cogs|refund) is broken out of operating expenses. Tax journal balances are reconciled against
+ * the TaxRecord ledger; differences are exposed rather than silently hidden.
  */
-function buildProfitLoss(entries, taxSummary = {}, movementTotals = null) {
-  // COGS-bearing entries when no COA metadata is available yet.
-  let revenueTotal = 0;
-  let expenseTotal = 0;
-  let cogsTotal = 0;
-  for (const entry of entries || []) {
-    for (const line of entry.lines || []) {
-      const code = String(line.account);
-      const netDebit = round2((Number(line.debit) || 0) - (Number(line.credit) || 0));
-      if (code.startsWith('4')) {
-        revenueTotal = round2(revenueTotal - netDebit); // credits increase revenue
-      } else if (code.startsWith('5')) {
-        cogsTotal = round2(cogsTotal + netDebit);
-      } else if (/^[6789]/.test(code)) {
-        expenseTotal = round2(expenseTotal + netDebit);
-      }
-      // Balance-sheet codes (1xxxx cash/assets, 2xxx payables…) don't hit P&L.
-    }
-  }
-  const hasJournalCosts = (entries || []).some(entry => (entry.lines || []).some(line => String(line.account).startsWith('5')));
-  const finalCogs = hasJournalCosts
-    ? { total: cogsTotal, source: 'journal' }
-    : { total: round2(movementTotals?.cogs || 0), source: movementTotals ? 'derived' : 'journal' };
-  return {
-    revenueTotal,
-    cogs: { total: round2(finalCogs.total || 0), source: finalCogs.source },
-    expenseTotal,
-    grossProfit: round2(revenueTotal - finalCogs.total),
-    netProfit: round2(revenueTotal - finalCogs.total - expenseTotal),
-    tax: {
-      collected: round2(taxSummary.collected || 0),
-      paid: round2(taxSummary.paid || 0),
-    },
-  };
+/**
+ * P&L: income − expenses over a window. COGS (account 5000 / entryTypes
+ * cogs|refund) is broken out of operating expenses. Tax collected/paid come
+ * from the TaxRecord summary join, not journal lines. `accounts` is the
+ * tenant's chart of accounts and drives classification; omit it to fall back to
+ * code prefixes.
+ */
+function buildProfitLoss(entries, taxSummary = {}, movementTotals = null, accounts = []) {
+  return require('./accounting.report-totals').profitLossTotals(
+    entries, taxSummary, movementTotals, accounts
+  );
 }
 
 /**
  * Balance sheet as of a moment. Retained earnings passed in by the service
  * (= cumulative net profit across all time, simple v1 without period close).
+ * `accounts` drives classification exactly as in buildProfitLoss, so a tenant
+ * with a non-standard chart still sees assets = liabilities + equity.
  */
-function buildBalanceSheet(entries, _asOf, retainedEarnings = 0) {
+function buildBalanceSheet(entries, _asOf, retainedEarnings = 0, accounts = []) {
+  const typeOf = accountTypeResolver(accounts);
   const assetsByCode = new Map();
   const liabByCode = new Map();
   const equityByCode = new Map();
   for (const entry of entries || []) {
     for (const line of entry.lines || []) {
       const code = String(line.account);
-      const bucket = code.startsWith('1')
-        ? assetsByCode
-        : code.startsWith('2')
-          ? liabByCode
-          : code.startsWith('3') ? equityByCode : null;
+      // Metadata first; the 1/2/3 prefix split is the no-chart fallback.
+      const type = typeOf(code) || (code.startsWith('1') ? 'asset' : code.startsWith('2') ? 'liability' : code.startsWith('3') ? 'equity' : null);
+      const bucket =
+        type === 'asset' ? assetsByCode : type === 'liability' ? liabByCode : type === 'equity' ? equityByCode : null;
       if (!bucket) continue;
       const row = bucket.get(code) || { code, amount: 0 };
       row.amount = round2(
@@ -204,9 +270,9 @@ function buildBalanceSheet(entries, _asOf, retainedEarnings = 0) {
   const toRows = (m) => [...m.values()].sort((a, b) => a.code.localeCompare(b.code));
   const assets = { rows: toRows(assetsByCode), total: round2([...assetsByCode.values()].reduce((s, r) => s + r.amount, 0)) };
   const liabilities = { rows: toRows(liabByCode), total: round2([...liabByCode.values()].reduce((s, r) => s + r.amount, 0)) };
-  const retained = equityByCode.get('3100') || { code: '3100', amount: 0 };
+  const retained = equityByCode.get(RETAINED_EARNINGS) || { code: RETAINED_EARNINGS, amount: 0 };
   retained.amount = round2(retained.amount + retainedEarnings);
-  equityByCode.set('3100', retained);
+  equityByCode.set(RETAINED_EARNINGS, retained);
   const equity = {
     rows: toRows(equityByCode),
     total: round2([...equityByCode.values()].reduce((sum, row) => sum + row.amount, 0)),
@@ -324,18 +390,25 @@ function validateAllocations({ amount, allocations, outstandingByDoc }) {
  * Dashboard chart series: revenue vs operating expenses bucketed per period,
  * padded to the 6 months ending at `endPeriod` ('YYYY-MM'). Entries outside
  * the window are ignored.
+ *
+ * Buckets by the entry's own `period` when present, else by `periodOf(date)`.
+ * `period` is a denormalized field with no schema default, so a legacy or
+ * hand-imported entry carries only `date` — keying off `period` alone dropped
+ * those entries from the chart and every period-filtered report, which reads
+ * as revenue that silently disappeared.
  */
 function buildMonthlySeries(entries, endPeriod, months = 6) {
   const [ey, em] = String(endPeriod || periodOf(new Date())).split('-').map(Number);
   const buckets = [];
   for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(ey, em - 1 - i, 1);
-    const period = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    buckets.push({ period, label: MONTH_LABELS[d.getMonth()], revenue: 0, expenses: 0 });
+    // UTC month arithmetic so the buckets line up with periodOf().
+    const d = new Date(Date.UTC(ey, em - 1 - i, 1));
+    const period = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    buckets.push({ period, label: MONTH_LABELS[d.getUTCMonth()], revenue: 0, expenses: 0 });
   }
   const byPeriod = new Map(buckets.map((b) => [b.period, b]));
   for (const entry of entries || []) {
-    const bucket = byPeriod.get(String(entry.period));
+    const bucket = byPeriod.get(String(entry.period || periodOf(entry.date)));
     if (!bucket) continue;
     for (const line of entry.lines || []) {
       const code = String(line.account);
@@ -356,31 +429,75 @@ function escapeRegExp(s) {
 
 const PERIOD_RX = /^\d{4}-\d{2}$/;
 
+// Mirrors the JournalEntry schema enums. Held here so this module stays
+// Mongoose-free; `accounting.helpers.test.js` asserts they still match the
+// schema so the two cannot drift.
+const ENTRY_TYPES = new Set([
+  'accrued_revenue', 'sales_revenue', 'refund', 'manual', 'expense_accrual',
+  'cogs', 'tax_collected', 'tax_paid', 'inventory_adjust', 'reversal',
+  'customer_payment', 'vendor_payment',
+]);
+const ENTRY_STATUSES = new Set(['draft', 'posted']);
+
+// refDocType is a free String on the model (document flows add their own), so it
+// is only length-guarded rather than enumerated.
+const REF_DOC_TYPE_RX = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+
+const BARE_DATE_RX = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Turn a filter bound into a Date. A bare `YYYY-MM-DD` (what
+ * `<input type="date">` sends) names a whole calendar day, so an upper bound
+ * resolves to that day's last millisecond. Previously `new Date('2026-08-31')`
+ * gave midnight UTC and `$lte` silently dropped every entry made later that day
+ * — filtering "to today" hid today's own postings. A full timestamp is already
+ * an exact instant and is taken as given.
+ *
+ * A bare date that does not round-trip (2026-02-30) is rejected rather than
+ * rolled forward into March, matching dateRange() in accounting.query.js.
+ */
+function dateBound(value, edge) {
+  if (value == null || value === '') return undefined;
+  const raw = String(value);
+  if (!BARE_DATE_RX.test(raw)) {
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }
+  const [y, m, d] = raw.split('-').map(Number);
+  const start = new Date(Date.UTC(y, m - 1, d));
+  if (start.toISOString().slice(0, 10) !== raw) return undefined;
+  return edge === 'end' ? new Date(start.getTime() + DAY_MS - 1) : start;
+}
+
 /**
  * Pure translation of the journal-entries list query into a Mongo filter
  * (tenant added by the caller). Unknown/invalid values are ignored rather
  * than rejected so a bad filter can never 500 the list view. `q` is a safe
- * literal contains-match over memo and source; `account` matches line codes.
+ * literal contains-match over memo, source and the reference document type;
+ * `account` matches line codes.
  */
 function buildJournalEntryFilter(query = {}) {
   const filter = {};
   if (PERIOD_RX.test(String(query.period || ''))) filter.period = query.period;
-  if (query.entryType) filter.entryType = String(query.entryType);
-  if (query.refDocType) filter.refDocType = String(query.refDocType);
-  if (query.status) filter.status = String(query.status);
+  // A value outside the schema enum used to be passed straight into the query,
+  // so a typo (?entryType=sale) returned a silently empty list instead of the
+  // unfiltered one. Drop it and show everything, which is the safe default.
+  if (ENTRY_TYPES.has(String(query.entryType))) filter.entryType = String(query.entryType);
+  if (ENTRY_STATUSES.has(String(query.status))) filter.status = String(query.status);
+  if (REF_DOC_TYPE_RX.test(String(query.refDocType || ''))) filter.refDocType = String(query.refDocType);
   if (query.account) filter['lines.account'] = String(query.account).trim();
   if (query.from || query.to) {
     filter.date = {};
-    const from = new Date(query.from);
-    const to = new Date(query.to);
-    if (!Number.isNaN(from.getTime())) filter.date.$gte = from;
-    if (!Number.isNaN(to.getTime())) filter.date.$lte = to;
+    const from = dateBound(query.from, 'start');
+    const to = dateBound(query.to, 'end');
+    if (from) filter.date.$gte = from;
+    if (to) filter.date.$lte = to;
     if (!Object.keys(filter.date).length) delete filter.date;
   }
   const q = String(query.q || '').trim();
   if (q) {
     const rx = new RegExp(escapeRegExp(q), 'i');
-    filter.$or = [{ memo: rx }, { source: rx }];
+    filter.$or = [{ memo: rx }, { source: rx }, { refDocType: rx }];
   }
   return filter;
 }
@@ -390,6 +507,14 @@ module.exports = {
   normalizeLines,
   isBalanced,
   periodOf,
+  periodRange,
+  accountTypeResolver,
+  salesCodesFor,
+  dateBound,
+  CANONICAL_SALES,
+  CANONICAL_TAX_COLLECTED,
+  CANONICAL_TAX_PAID,
+  RETAINED_EARNINGS,
   swapLinesForReversal,
   buildTrialBalance,
   buildProfitLoss,

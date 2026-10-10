@@ -16,6 +16,7 @@ function summarizeSessionOrders(orders) {
       : [{ method: order.paymentMethod || 'cash', amount: total }];
     payments.forEach(p => add(p.method, money(p.amount)));
     for (const refund of order.refunds || []) {
+      if (refund.source === 'sales') continue;
       const amount = money(refund.totalRefunded);
       stats.totalRefunds += amount;
       if (refund.paymentMethod && refund.paymentMethod !== 'split') add(refund.paymentMethod, -amount);

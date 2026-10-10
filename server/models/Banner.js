@@ -661,7 +661,7 @@ bannerSchema.pre('save', async function () {
   }
 
   // Update status based on schedule
-  if (this.isScheduled) {
+  if (this.isScheduled && ['active', 'scheduled'].includes(this.status)) {
     const now = new Date();
 
     if (this.startDate && now < this.startDate) {
@@ -669,7 +669,7 @@ bannerSchema.pre('save', async function () {
     } else if (this.endDate && now > this.endDate) {
       this.status = 'expired';
     } else if (this.startDate && now >= this.startDate && (!this.endDate || now <= this.endDate)) {
-      if (this.status === 'draft' || this.status === 'scheduled') {
+      if (this.status === 'scheduled') {
         this.status = 'active';
       }
     }

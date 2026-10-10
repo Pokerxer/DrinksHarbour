@@ -1249,6 +1249,7 @@ const searchProductsPublic = asyncHandler(async (req, res) => {
 
   const searchParams = {
     ...filters,
+    inStock: filters.inStock !== 'false',
     query: query || q || '',
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),

@@ -2,6 +2,7 @@ const SubCategory = require('../models/SubCategory');
 const Category = require('../models/Category'); // registers ref for populate
 const Product = require('../models/Product');
 const asyncHandler = require('../utils/asyncHandler');
+const { navigationCounts } = require('../services/navigationCounts');
 const cloudinaryService = require('../services/cloudinary.service');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -67,26 +68,12 @@ const getSubCategories = asyncHandler(async (req, res) => {
     .populate('parent', 'name slug')
     .lean();
 
-  const subcategoriesWithCount = await Promise.all(
-    subcategories.map(async (subcategory) => {
-      try {
-        const productCount = await Product.countDocuments({
-          subCategory: subcategory._id,
-          status: 'approved'
-        });
-        return {
-          ...subcategory,
-          productCount,
-        };
-      } catch (e) {
-        console.error('Error counting products for subcategory:', subcategory.name, e.message);
-        return {
-          ...subcategory,
-          productCount: 0,
-        };
-      }
-    })
-  );
+  // Category records remain live; these display counts may lag by up to 60s.
+  const counts = await navigationCounts('subCategory').catch(() => ({}));
+  const subcategoriesWithCount = subcategories.map(subcategory => ({
+    ...subcategory,
+    productCount: counts[String(subcategory._id)] ?? 0,
+  }));
 
   res.status(200).json({
     success: true,

@@ -6,6 +6,7 @@ const { fetchSubscription, reconcileSubscription, providerState } = require('./b
 const { reconcilePlanChange } = require('./planTransition.service');
 const { ERM_PLANS, getPlanConfig, getCommissionRate } = require('../config/erm-plans');
 const notifications = require('./billingNotifications.service');
+const { recordEvent } = require('./subscriptionEvents.service');
 
 // Signature verification remains in the controller. Events trigger a fresh
 // provider read; delayed notifications never become authoritative state.
@@ -58,10 +59,22 @@ async function handleProviderEvent(event, data) {
   const update = providerState(remote, { ...(tenant.toObject?.() || tenant),
     paystackSubscriptionCode: code, paystackPlanCode: planCode });
   if (update.subscriptionStatus !== 'active') return;
-  await Tenant.updateOne({ _id: tenant._id, paystackSubscriptionCode: null,
+  const result = await Tenant.updateOne({ _id: tenant._id, paystackSubscriptionCode: null,
     'billingCheckout.targetPlan': target }, { $set: { ...update, plan: target,
       paystackSubscriptionCode: code, paystackPlanCode: planCode,
       trialEndsAt: null, commissionPercentage: getCommissionRate(target) * 100 },
     $unset: { billingCheckout: 1 }, $inc: { billingRevision: 1 } });
+  if (result.matchedCount) {
+    // Retention ledger: the tenant's first paid subscription. Keyed on the
+    // subscription code so a redelivered create event is counted once.
+    await recordEvent({
+      tenant: tenant._id,
+      kind: 'activation',
+      fromPlan: tenant.plan,
+      toPlan: target,
+      effectiveAt: new Date(),
+      source: code,
+    });
+  }
 }
 module.exports = { handleProviderEvent };

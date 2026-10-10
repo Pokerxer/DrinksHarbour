@@ -320,21 +320,22 @@ export const subproductService = {
     });
 
     if (!response.ok) {
-      console.error('SubProduct service error status:', response.status);
-      console.error(
-        'SubProduct service error status text:',
-        response.statusText
-      );
       const errorText = await response.text();
-      console.error('SubProduct service error response:', errorText);
-      let error;
+      let message = errorText;
       try {
-        error = JSON.parse(errorText);
+        const parsed = JSON.parse(errorText) as { message?: string };
+        if (parsed?.message) message = parsed.message;
       } catch {
-        error = { message: errorText };
+        // Non-JSON body (proxy error page, plain text) — use it verbatim.
       }
-      console.error('SubProduct service parsed error:', error);
-      throw new Error(error.message || 'Failed to fetch subproducts');
+      // One line, with the server's own reason attached. The callers swallow
+      // this error (`catch { setInitial([]) }`), so if the status is logged
+      // without the reason, a 500 is undiagnosable from the browser alone.
+      const reason = message || `HTTP ${response.status}`;
+      console.error(
+        `SubProduct service error ${response.status} on ${url}: ${reason}`
+      );
+      throw new Error(reason);
     }
 
     return response.json();

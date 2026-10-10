@@ -16,7 +16,11 @@ function fmtDate(s?: string) {
 function productName(m: InventoryMovement): string {
   const p = m.product as { name?: string } | undefined;
   const sp = m.subProduct as { name?: string; sku?: string } | undefined;
-  return p?.name ?? sp?.name ?? sp?.sku ?? m.reference ?? '\u2014';
+  const product =
+    m.subProduct && typeof m.subProduct === 'object' && typeof m.subProduct.product === 'object'
+      ? m.subProduct.product
+      : null;
+  return p?.name ?? product?.name ?? sp?.name ?? sp?.sku ?? m.reference ?? '\u2014';
 }
 
 function warehouseLabel(m: InventoryMovement): string {
@@ -24,7 +28,7 @@ function warehouseLabel(m: InventoryMovement): string {
     const src = m.sourceWarehouse as { name?: string } | undefined;
     const dst = m.destinationWarehouse as { name?: string } | undefined;
     const pair = [src?.name, dst?.name].filter(Boolean);
-    return pair.length === 2 ? `${pair[0]} → ${pair[1]}` : pair[0] ?? '\u2014';
+    return pair.length === 2 ? `${pair[0]} → ${pair[1]}` : (pair[0] ?? '\u2014');
   }
   const w = m.warehouse as { name?: string } | undefined;
   return w?.name ?? '\u2014';
@@ -33,8 +37,7 @@ function warehouseLabel(m: InventoryMovement): string {
 function qtySign(m: InventoryMovement): '+' | '\u2212' | '' {
   if (m.category === 'in') return '+';
   if (m.category === 'out') return '\u2212';
-  if (m.category === 'adjustment')
-    return m.type.endsWith('_in') ? '+' : '\u2212';
+  if (m.category === 'adjustment') return m.type.endsWith('_in') ? '+' : '\u2212';
   return '';
 }
 
@@ -58,13 +61,7 @@ function PanelSkeleton() {
   );
 }
 
-function RecentMovesPanel({
-  recent,
-  loading,
-}: {
-  recent: InventoryMovement[];
-  loading: boolean;
-}) {
+function RecentMovesPanel({ recent, loading }: { recent: InventoryMovement[]; loading: boolean }) {
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white xl:col-span-3">
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -80,17 +77,14 @@ function RecentMovesPanel({
         <PanelSkeleton />
       ) : recent.length === 0 ? (
         <p className="px-4 py-10 text-center text-sm text-gray-400">
-          No stock moves yet
+          No confirmed moves match the selected history
         </p>
       ) : (
         <ul className="divide-y divide-gray-50">
           {recent.map((m) => {
             const sign = qtySign(m);
             return (
-              <li
-                key={m._id}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm"
-              >
+              <li key={m._id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
                 <span className="w-14 shrink-0 text-xs text-gray-400">
                   {fmtDate(m.performedAt ?? m.createdAt)}
                 </span>
@@ -153,9 +147,7 @@ function LowStockRow({ item }: { item: LowStockItemDisplay }) {
   return (
     <li className="px-4 py-2.5 text-sm">
       <div className="flex items-center gap-3">
-        <span className="min-w-0 flex-1 truncate font-medium text-gray-700">
-          {name}
-        </span>
+        <span className="min-w-0 flex-1 truncate font-medium text-gray-700">{name}</span>
         <span className="hidden shrink-0 text-xs text-gray-400 sm:inline">
           reorder at {threshold}
         </span>
@@ -179,19 +171,12 @@ function LowStockRow({ item }: { item: LowStockItemDisplay }) {
 }
 
 const bySeverity = (a: LowStockItemDisplay, b: LowStockItemDisplay) => {
-  if ((a.availableStock <= 0) !== (b.availableStock <= 0))
-    return a.availableStock <= 0 ? -1 : 1;
+  if (a.availableStock <= 0 !== b.availableStock <= 0) return a.availableStock <= 0 ? -1 : 1;
   return a.availableStock - b.availableStock;
 };
 
-function LowStockPanel({
-  items,
-  loading,
-}: {
-  items: LowStockItemDisplay[];
-  loading: boolean;
-}) {
-  const critical = [...items].sort(bySeverity).slice(0, 8);
+function LowStockPanel({ items, loading }: { items: LowStockItemDisplay[]; loading: boolean }) {
+  const critical = [...items].sort(bySeverity);
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white xl:col-span-2">
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -206,11 +191,9 @@ function LowStockPanel({
       {loading ? (
         <PanelSkeleton />
       ) : critical.length === 0 ? (
-        <p className="px-4 py-10 text-center text-sm text-gray-400">
-          Nothing running low
-        </p>
+        <p className="px-4 py-10 text-center text-sm text-gray-400">Nothing running low</p>
       ) : (
-        <ul className="divide-y divide-gray-50">
+        <ul className="max-h-[384px] overflow-y-auto divide-y divide-gray-50">
           {critical.map((item) => (
             <LowStockRow key={item._id} item={item} />
           ))}

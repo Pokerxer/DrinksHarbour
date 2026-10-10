@@ -18,6 +18,7 @@ import {
   NonProductLineRow,
   sectionSubtotals,
 } from './sales-line-read-rows';
+import SalesPaymentDetails from './sales-payment-details';
 
 export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
   const { tenant } = useTenant();
@@ -244,6 +245,8 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
           </Text>
         </div>
       </div>
+
+      <SalesPaymentDetails so={so} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import DocumentAuthorCell from './document-author-cell';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -208,7 +209,7 @@ function yearKey(s?: string): string | null {
 function SkeletonRow() {
   return (
     <tr className="border-b border-gray-100">
-      {[60, 80, 50, 55, 50, 50, 30].map((w, i) => (
+      {[60, 80, 50, 55, 50, 50, 50, 70, 30].map((w, i) => (
         <td key={i} className="px-4 py-3.5">
           <div
             className="h-3.5 animate-pulse rounded bg-gray-100"
@@ -339,6 +340,10 @@ function OrderCard({
             )}
           </>
         )}
+      </div>
+      <div className="mb-3">
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Created by</p>
+        <DocumentAuthorCell creator={order.createdBy} />
       </div>
       <div
         className="flex items-center justify-between border-t border-gray-100 pt-3"
@@ -1629,7 +1634,7 @@ export default function PurchasesOrders() {
 
       {/* ── List view ───────────────────────────────────────────── */}
       {view === 'list' && (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur">
               <tr className="border-b border-gray-100">
@@ -1651,6 +1656,9 @@ export default function PurchasesOrders() {
                     <Th col="created" label="Created" />
                   </>
                 )}
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">
+                  Created by
+                </th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">
                   Actions
                 </th>
@@ -1661,7 +1669,7 @@ export default function PurchasesOrders() {
                 Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center">
+                  <td colSpan={9} className="py-16 text-center">
                     <EmptyState
                       tab={activeTab}
                       msg={EMPTY_MSGS[activeTab]}
@@ -1765,6 +1773,9 @@ export default function PurchasesOrders() {
                           </td>
                         </>
                       )}
+                      <td className="px-4 py-3.5">
+                        <DocumentAuthorCell creator={order.createdBy} />
+                      </td>
                       <td className="px-4 py-3.5">
                         <div
                           className="flex items-center justify-end gap-1"

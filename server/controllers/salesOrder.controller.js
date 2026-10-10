@@ -1,7 +1,10 @@
+const linkedReturns = require('../services/linkedReturns.service');
 // server/controllers/salesOrder.controller.js
 const asyncHandler = require("express-async-handler");
+const { withDbRetry } = require('../utils/db-retry');
 const crypto = require('crypto');
 const SalesOrder = require('../models/SalesOrder');
+const Tenant = require('../models/Tenant');
 const Activity = require('../models/Activity');
 const CustomField = require('../models/CustomField');
 const svc = require('../services/salesOrder.service');
@@ -14,6 +17,7 @@ const { postDocumentEntry, reverseDocumentEntry } = require('../services/account
 const { logPrivilegedAction } = require('../utils/auditLog');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 const { paginatedResponse } = require('../utils/response');
+const { printableBankAccounts } = require('../utils/bankAccounts');
 
 // Platform roles that can operate across tenants (via ?tenant=/x-tenant-slug).
 const PLATFORM_ROLES = ['super_admin', 'admin'];
@@ -43,6 +47,25 @@ function requireResolvedTenant(tenantId, res) {
   }
   return true;
 }
+
+// Remittance accounts for a printed sales invoice.
+//
+// ONLY the `bankAccounts` array — the "Invoice Bank Accounts" list in Settings.
+// The tenant's other bank fields (`bankName` / `bankAccountName` /
+// `bankAccountNumber`) are the *settlement* account, which the tenant form
+// describes as "where this tenant's payouts are sent" and explicitly keeps
+// "separate from" the invoice accounts. That is the account Paystack pays the
+// tenant OUT to; it is not a place a customer should transfer an invoice
+// payment to, and printing it as one risks directing a large remittance
+// somewhere it does not belong. Same rule as the POS receipt (posStore()).
+//
+// A row needs a bank name AND a number to be payable; half a row would print as
+// "Account Number: 0123456789" with no bank, which is not a usable instruction.
+// Settings enforces the same rule, so this filter is a belt-and-braces guard.
+//
+// The selected fulfilment warehouse is the issuing *entity* on paper but it
+// carries no bank details (see models/Warehouse.js), so the tenant — the
+// merchant of record — is the only source of a remittance account.
 
 exports.createSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
@@ -118,11 +141,17 @@ exports.getSalesOrders = asyncHandler(async (req, res) => {
   }
 
   const { skip, limit: pageLimit, page: pageNum } = parsePagination(page, limit);
-  const [data, total] = await Promise.all([
-    SalesOrder.find(q).sort({ createdAt: -1 }).populate('warehouseId', 'name').skip(skip).limit(pageLimit).lean(),
-    SalesOrder.countDocuments(q),
-  ]);
-  paginatedResponse(res, data, buildPaginationMeta(pageNum, pageLimit, total));
+  // Wrapped because this is the read that a dead `<monitor>` connection used to
+  // turn into a 500: `connection <monitor> to <ip>:27017 closed` means the query
+  // never reached Mongo, so re-sending it cannot duplicate anything. See
+  // utils/db-retry.js for why these error codes and no others are retried.
+  const [data, total] = await withDbRetry(() =>
+    Promise.all([
+      SalesOrder.find(q).sort({ createdAt: -1 }).populate('warehouseId', 'name').skip(skip).limit(pageLimit).lean(),
+      SalesOrder.countDocuments(q),
+    ])
+  );
+  paginatedResponse(res, req.query.includeReturns === '1' ? await linkedReturns.projectSalesReturns(data, tenantId) : data, buildPaginationMeta(pageNum, pageLimit, total));
 });
 
 /**
@@ -166,13 +195,29 @@ exports.getSalesOrder = asyncHandler(async (req, res) => {
     .populate('fulfillments.warehouseId', 'name')
     .populate('fulfillments.by', 'firstName lastName');
   if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
-  res.json({ success: true, data: so });
+  // The remittance accounts the printed invoice tells the customer to pay into.
+  // Read server-side from the already-resolved tenant rather than trusting the
+  // client or the public /slug/:slug branding payload (unauthenticated, kept
+  // narrow on purpose). A sibling key, not a populate on `tenant`, so the
+  // order's own tenant ref stays a ref.
+  const payer = await Tenant.findById(tenantId)
+    .select('bankAccounts')
+    .lean();
+  res.json({
+    success: true,
+    data: { ...(await linkedReturns.projectSalesReturns([so], tenantId))[0], issuerBankAccounts: printableBankAccounts(payer?.bankAccounts) },
+  });
 });
 
 exports.updateSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   if (!requireResolvedTenant(tenantId, res)) return;
-  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId });
+  // Only the lookup is retried. The edit below (applyEdit + save) is deliberately
+  // left alone: by the time it runs we hold a document, and a blind replay of a
+  // save that may already have been acknowledged is how you double-post an order.
+  const so = await withDbRetry(() =>
+    SalesOrder.findOne({ _id: req.params.id, tenant: tenantId })
+  );
   if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
   if (!svc.canEdit(so)) {
     return res.status(409).json({ success: false, message: 'This document can no longer be edited' });
@@ -527,7 +572,9 @@ exports.returnSalesOrder = asyncHandler(async (req, res) => {
     });
   };
 
+  const { posReturnedByLine } = await linkedReturns.posReturnState(so, tenantId);
   const { order, restock } = await salesFulfillSvc.returnOrder({
+    posReturnedByLine,
     salesOrder: so, tenantId, warehouseId, returnLines: returnLines || [],
     userId: req.user?._id || req.posUser?._id, deps: { recordMovement },
   });

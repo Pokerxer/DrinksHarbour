@@ -1,8 +1,15 @@
 'use client';
 
-import { PiBookOpenText } from 'react-icons/pi';
+import { PiBookOpenText, PiWarning } from 'react-icons/pi';
 import type { Account, JournalEntry } from '@/services/accounting.service';
-import { ENTRY_TYPE_LABELS, STATUS_STYLES, entryTotals, fmtDate, fmtMoney } from './accounting-helpers';
+import {
+  ENTRY_TYPE_LABELS,
+  STATUS_STYLES,
+  entryTotals,
+  fmtDate,
+  fmtMoney,
+  summarizePage,
+} from './accounting-helpers';
 
 const COLS = 7;
 
@@ -36,13 +43,8 @@ export default function JournalEntriesTable({
   selectedId?: string;
   onSelect: (entry: JournalEntry) => void;
 }) {
-  const totals = entries.reduce(
-    (acc, e) => {
-      const t = entryTotals(e);
-      return { debit: acc.debit + t.debit, credit: acc.credit + t.credit };
-    },
-    { debit: 0, credit: 0 }
-  );
+  const totals = summarizePage(entries);
+  const withheld = totals.draftCount;
 
   return (
     <div className="max-h-[62vh] overflow-auto rounded-lg border border-gray-200 bg-white">
@@ -72,11 +74,25 @@ export default function JournalEntriesTable({
           {!loading &&
             entries.map((e) => {
               const { debit, credit } = entryTotals(e);
+              const lopsided = Math.abs(debit - credit) > 0.01;
               return (
                 <tr
                   key={e._id}
                   onClick={() => onSelect(e)}
-                  className={`cursor-pointer hover:bg-gray-50 ${
+                  onKeyDown={(ev) => {
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                      ev.preventDefault();
+                      onSelect(e);
+                    }
+                  }}
+                  // Rows open the detail panel, so they must be reachable and
+                  // announceable from the keyboard, not just clickable.
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${e.entryType} entry dated ${fmtDate(e.date)}${
+                    lopsided ? ', out of balance' : ''
+                  }`}
+                  className={`cursor-pointer hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-900 ${
                     selectedId === e._id ? 'bg-[#fef2f2]/60' : ''
                   }`}
                 >
@@ -91,12 +107,21 @@ export default function JournalEntriesTable({
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtMoney(debit)}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtMoney(credit)}</td>
                   <td className="whitespace-nowrap px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
-                        STATUS_STYLES[e.status] ?? 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {e.status}
+                    <span className="inline-flex items-center gap-1">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+                          STATUS_STYLES[e.status] ?? 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {e.status}
+                      </span>
+                      {lopsided && (
+                        <PiWarning
+                          size={13}
+                          className="text-amber-600"
+                          aria-label="Debits and credits do not agree"
+                        />
+                      )}
                     </span>
                   </td>
                 </tr>
@@ -104,10 +129,25 @@ export default function JournalEntriesTable({
             })}
         </tbody>
         {!loading && entries.length > 0 && (
-          <tfoot className="sticky bottom-0 bg-gray-50 text-sm font-semibold text-gray-900">
+          <tfoot className="sticky bottom-0 border-t border-gray-200 bg-gray-50 text-sm font-semibold text-gray-900">
             <tr>
-              <td colSpan={4} className="px-4 py-2.5 text-xs uppercase tracking-wide text-gray-500">
-                Page totals · {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+              <td colSpan={4} className="px-4 py-2.5">
+                <span className="block text-xs uppercase tracking-wide text-gray-500">
+                  Page totals · {totals.postedCount} posted{' '}
+                  {totals.postedCount === 1 ? 'entry' : 'entries'}
+                  {withheld > 0 && (
+                    <span className="normal-case text-gray-400">
+                      {' '}
+                      · {withheld} draft{withheld === 1 ? '' : 's'} excluded
+                    </span>
+                  )}
+                </span>
+                {totals.outOfBalance && (
+                  <span className="mt-0.5 flex items-center gap-1 text-xs font-medium normal-case text-amber-700">
+                    <PiWarning size={12} />
+                    Out of balance by {fmtMoney(totals.outOfBalanceBy)} on this page
+                  </span>
+                )}
               </td>
               <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{fmtMoney(totals.debit)}</td>
               <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{fmtMoney(totals.credit)}</td>

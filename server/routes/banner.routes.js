@@ -9,14 +9,19 @@ const { protect, authorize } = require('../middleware/auth.middleware');
 // {tenant, placement, isActive} index) and plan-gated, so tenant roles keep
 // write access here — unlike the platform taxonomy. tenant_owner, the role
 // that actually owns the tenant, was omitted by mistake.
-const adminOnly = [protect, authorize('super_admin', 'admin', 'tenant_owner', 'tenant_admin')];
+const { resolveTenantContext, requireOwnTenant } = require('../middleware/tenant.middleware');
+const { requirePlan } = require('../middleware/plan.middleware');
+const tenantAccess = (req, res, next) => ['super_admin', 'admin'].includes(req.user.role) ? next() : requireOwnTenant(req, res, next);
+const adminOnly = [protect, resolveTenantContext, tenantAccess, requirePlan('starter'), authorize('super_admin', 'admin', 'tenant_owner', 'tenant_admin')];
 
 // ── Public storefront endpoints ──────────────────────────────────────────────
 // Declared before the generic /:id routes so their static prefixes win.
-router.get('/placement/:placement', ctrl.getBannersByPlacement);
-router.post('/:id/impression', ctrl.trackImpression);
-router.post('/:id/click', ctrl.trackClick);
-router.post('/:id/conversion', ctrl.trackConversion);
+// Public context resolution does not authenticate or authorize visitors.
+const resolvePublicTenant = (req, res, next) => resolveTenantContext(req, res, next);
+router.get('/placement/:placement', resolvePublicTenant, ctrl.getBannersByPlacement);
+router.post('/:id/impression', resolvePublicTenant, ctrl.trackImpression);
+router.post('/:id/click', resolvePublicTenant, ctrl.trackClick);
+router.post('/:id/conversion', resolvePublicTenant, ctrl.trackConversion);
 
 // ── Entity banner tracking (brand / category / subcategory hero banners) ───
 router.post('/entity/:type/:id/impression', ctrl.trackEntityImpression);

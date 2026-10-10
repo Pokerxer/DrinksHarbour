@@ -91,6 +91,7 @@ const PERMISSION_LABELS: Record<PosPermission, string> = {
   'pos:refund': 'Refund',
   'pos:void': 'Void',
   'pos:price_override': 'Price override',
+  'pos:credit_override': 'Credit limit override',
   'pos:discount': 'Discount',
   'pos:terminal:retail': 'Retail terminal',
   'pos:terminal:wholesale': 'Wholesale terminal',

@@ -9,10 +9,32 @@ import { fraunces } from '../../purchases/purchases-fonts';
 export default function AnalysisHeader({
   loading,
   onRefresh,
+  scoped = false,
 }: {
   loading: boolean;
   onRefresh: () => void;
+  scoped?: boolean;
 }) {
+  if (scoped)
+    return (
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-[#2a2420]">Stock analysis</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Stock value, availability and expiry risk at this warehouse.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#ece4d6] bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-[#f8f5f0] disabled:opacity-40"
+        >
+          <PiArrowsClockwise aria-hidden="true" />
+          Refresh stock
+        </button>
+      </div>
+    );
   return (
     <div className="relative mb-6 overflow-hidden rounded-2xl border border-[#ece4d6] bg-white px-6 py-5 shadow-sm">
       <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#b20202] via-[#d9a05b] to-[#b20202]" />

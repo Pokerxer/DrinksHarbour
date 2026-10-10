@@ -29,10 +29,7 @@ import {
   purchaseOrderService,
   type PurchaseOrder,
 } from '@/services/purchaseOrder.service';
-import {
-  purchaseAnalyticsService,
-  type PurchaseAnalyticsSummary,
-} from '@/services/purchaseAnalytics.service';
+import { buildPurchaseSummary } from './purchase-analytics-summary';
 import { useExchangeRates } from '@/hooks/use-exchange-rates';
 import { BASE_CURRENCY } from './types';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -74,6 +71,10 @@ import {
 } from './purchases-analytics-charts';
 import { PODrillDrawer } from './po-drill-drawer';
 import { AnalyticsWidgetsGrid, TopVendorsTable } from './purchases-analytics-widgets';
+import { PurchaseAnalyticsFilters } from './purchase-analytics-filters';
+import { purchaseReceiptTotals, receiptMetrics } from './purchase-analytics-ledger';
+import PurchaseSummary from '../warehouses/warehouse-location-analysis/purchase-summary';
+import { lineUntaxed, lineTax, itemName, itemSubProductKey } from './purchases-analytics-helpers';
 import { AnalyticsHeader } from './purchases-analytics-header';
 import { AnalyticsFilterPanel } from './purchases-analytics-filter-panel';
 
@@ -105,8 +106,9 @@ export default function PurchasesAnalytics() {
   const { getRate } = useExchangeRates();
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-  const [summary, setSummary] = useState<PurchaseAnalyticsSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [incomplete, setIncomplete] = useState(false);
 
   const [categories, setCategories] = useState<CatItem[]>([]);
   const [brands, setBrands] = useState<BrandItem[]>([]);
@@ -114,7 +116,7 @@ export default function PurchasesAnalytics() {
 
   const [filters, setFilters] = useState<string[]>(['not_cancelled']);
   const [groupByStack, setGroupByStack] = useState<GroupByKey[]>(['vendor']);
-  const [measure, setMeasure] = useState<Measure>('total_cost');
+  const [measure, setMeasure] = useState<Measure>('net_received_value');
   const [chartType, setChartType] = useState<ChartType>('bar');
   const [sortStack, setSortStack] = useState<SortCriterion[]>([]);
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
@@ -152,21 +154,21 @@ export default function PurchasesAnalytics() {
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true);
+    setLoadError('');
     try {
       // Walk every page of the ledger — a single capped request would skew
       // every total once the tenant outgrows one page size.
-      const [poRes, sumRes] = await Promise.all([
-        purchaseOrderService.getAllPurchaseOrders(token),
-        purchaseAnalyticsService.getSummary(token).catch(() => null),
-      ]);
+      const poRes = await purchaseOrderService.getAllPurchaseOrders(token, { analytics: true });
       setOrders(poRes.orders);
+      setIncomplete(poRes.truncated);
       if (poRes.truncated)
         toast(
           `Showing the most recent ${poRes.orders.length} purchase orders; older history is excluded.`,
           { icon: '⚠️' }
         );
-      if (sumRes?.data) setSummary(sumRes.data);
     } catch (err: unknown) {
+      setOrders([]);
+      setLoadError(err instanceof Error ? err.message : 'Failed to load purchase data');
       toast.error(
         err instanceof Error ? err.message : 'Failed to load purchase data'
       );
@@ -310,10 +312,7 @@ export default function PurchasesAnalytics() {
         toBase(
           (o.items || []).reduce(
             (a, i) =>
-              a +
-              (i.unitCost ?? i.unitPrice ?? 0) *
-                (i.quantity ?? 0) *
-                (1 + (i.taxRate ?? 0) / 100),
+              a + lineUntaxed(i) + lineTax(i),
             0
           ),
           o.currency || BASE_CURRENCY
@@ -325,7 +324,7 @@ export default function PurchasesAnalytics() {
     live.forEach((o) =>
       (o.items || []).forEach((i) => {
         ordered += i.quantity ?? 0;
-        received += Math.min(i.receivedQty ?? 0, i.quantity ?? 0);
+        received += Math.min(receiptMetrics(i).receivedQuantity, i.quantity ?? 0);
       })
     );
     return {
@@ -335,6 +334,9 @@ export default function PurchasesAnalytics() {
       receiptPct: ordered > 0 ? (received / ordered) * 100 : 0,
     };
   }, [filtered, toBase]);
+
+  const receiptTotals = useMemo(() => purchaseReceiptTotals(filtered), [filtered]);
+  const summary = useMemo(() => buildPurchaseSummary(filtered, toBase), [filtered, toBase]);
 
   const dateItems = useMemo(() => buildDateFilterItems(new Date()), []);
 
@@ -462,6 +464,14 @@ export default function PurchasesAnalytics() {
   );
 
   function getFilterLabel(key: string): string {
+    if (key.startsWith('product_id:')) {
+      const item = orders.flatMap(o => o.items || [])
+        .find(i => itemSubProductKey(i) === key.slice(11));
+      return `Product: ${item ? itemName(item) : key.slice(11)}`;
+    }
+    if (key.startsWith('created_from:')) return `Created from: ${key.slice(13)}`;
+    if (key.startsWith('created_to:')) return `Created to: ${key.slice(11)}`;
+    if (key.startsWith('reference:')) return `Reference: ${key.slice(10)}`;
     if (key.startsWith('vendor_search:')) return `Vendor: ${key.slice(14)}`;
     if (key.startsWith('product_search:')) return `Product: ${key.slice(15)}`;
     if (key.startsWith('catname_search:')) return `Category: ${key.slice(16)}`;
@@ -609,6 +619,11 @@ export default function PurchasesAnalytics() {
     <div>
       {/* ── Header + KPI cards ── */}
       <AnalyticsHeader kpis={kpis} summary={summary} onRefresh={load} />
+
+      {loadError && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{loadError} <button type="button" onClick={load} className="ml-2 underline">Retry</button></div>}
+      {incomplete && !loadError && <p role="alert" className="mb-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Showing {orders.length} purchase orders. Older history is excluded; these totals are incomplete.</p>}
+      <PurchaseAnalyticsFilters orders={orders} filters={filters} change={next => { setFilters(next); setAppliedSearchName(null); }} />
+      {!loadError && <div className="mb-6"><PurchaseSummary summary={receiptTotals} scope="all warehouses" /></div>}
 
       {/* ── Control bar ── */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -1002,7 +1017,7 @@ export default function PurchasesAnalytics() {
         </div>
       )}
 
-      {/* Top vendors quick table (server-computed summary) */}
+      {/* Ordered-value widgets use the same filtered invoice lines. */}
       <TopVendorsTable topVendors={summary?.topVendors} />
 
       {/* ── Additional ledger widgets ── */}

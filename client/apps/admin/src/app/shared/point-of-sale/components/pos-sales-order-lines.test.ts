@@ -227,3 +227,9 @@ describe('salesOrderWarehouseId', () => {
     expect(salesOrderWarehouseId({ warehouseId: null })).toBeUndefined();
   });
 });
+
+test('quotation loading preserves explicit and zero tax rates', () => {
+  const items = salesOrderToCartItems(so({items: [line({taxRate: 7.5}), line({taxRate: 0})]}), catalogue);
+  expect(items.map(item => item.taxRate)).toEqual([7.5, 0]);
+  expect(items.every(item => item.quotationLine)).toBe(true);
+});

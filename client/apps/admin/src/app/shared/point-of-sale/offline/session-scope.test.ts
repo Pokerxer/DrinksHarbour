@@ -5,7 +5,7 @@ vi.mock('./db', () => ({ posDb: {
   orders: { bulkPut: async (rows: Record<string, unknown>[]) => { state.orders.push(...rows); }, orderBy: () => ({ reverse: () => ({ toArray: async () => state.orders }) }) },
   offlineQueue: { where: () => ({ equals: () => ({ toArray: async () => [] }) }) },
 } }));
-vi.mock('../api', () => ({ posApi: { getSessionInfo: async () => ({ currentSession: state.current }), getAllOrders: async () => [{ _id: 'order-a' }] } }));
+vi.mock('../api', () => ({ posApi: { getSessionInfo: async () => ({ currentSession: state.current }), getAllOrders: async () => ({ data: [{ _id: 'order-a' }], meta: { matched: 1, included: 1, limit: 2000, missing: 0, truncated: false } }) } }));
 vi.mock('./image-cache', () => ({ catalogueImageKeys: () => [], POS_IMAGES_UPDATED: 'test' }));
 vi.mock('./image-store', () => ({ precacheImages: async () => ({}), pruneImages: async () => {} }));
 import { getSessionInfo, getAllOrders } from './api';

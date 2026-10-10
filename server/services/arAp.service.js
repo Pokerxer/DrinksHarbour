@@ -10,6 +10,8 @@ const SalesOrder = require('../models/SalesOrder');
 const VendorBill = require('../models/VendorBill');
 const POSCustomer = require('../models/POSCustomer');
 const Vendor = require('../models/Vendor');
+// Required as a module, not destructured, so the fold-in can be stubbed in tests.
+const customerAccount = require('./customerAccount.service');
 const SubProduct = require('../models/SubProduct');
 const { round2, agingBucket } = require('./accounting.helpers');
 
@@ -23,7 +25,22 @@ async function summary(tenantId, side) {
   const docs = await (side === 'ar' ? SalesOrder : VendorBill)
     .find(openFilter(tenantId, side))
     .select('total amountPaid creditedAmount totalAmount paidAmount createdAt billDate dueDate').lean();
-  return summarizeOpenDocs(docs, side);
+  const result = summarizeOpenDocs(docs, side);
+  // Payables are untouched by what customers owe, so only AR is folded in.
+  if (side === 'ar') {
+    const tabs = await customerAccount.tabBalances(tenantId);
+    const onAccount = round2(tabs.reduce((sum, t) => sum + t.balance, 0));
+    if (onAccount > 0) {
+      result.totalOutstanding = round2(result.totalOutstanding + onAccount);
+      // A tab carries no due date, so it is not yet overdue. Filing it as aged
+      // would invent a delinquency the customer has not been given notice of.
+      result.buckets.current = round2(result.buckets.current + onAccount);
+      // Kept visible alongside the total, so the figure can be explained rather
+      // than merely trusted.
+      result.onAccount = onAccount;
+    }
+  }
+  return result;
 }
 
 /** Paged open documents for the Invoices / Bills browsers. */
@@ -67,6 +84,19 @@ async function customerBalances(tenantId) {
     };
     row.outstanding = round2(row.outstanding + outstanding);
     row.openInvoices += 1;
+    byCustomer.set(key, row);
+  }
+  // Tab debt is not a SalesOrder. Fold it in, or a customer who bought something
+  // on their account reads as owing nothing while the Receivables control account
+  // carries their balance — a silent disagreement between the trial balance and
+  // this directory. Added before the ids lookup so a tab-only customer is named
+  // too, not just counted.
+  for (const tab of await customerAccount.tabBalances(tenantId)) {
+    const key = String(tab.customerId);
+    const row = byCustomer.get(key) || { customerId: tab.customerId, name: undefined, outstanding: 0, openInvoices: 0 };
+    row.outstanding = round2(row.outstanding + tab.balance);
+    // Deliberately not counted as an invoice: there is no invoice to open, so
+    // inflating the count would misreport how many documents are outstanding.
     byCustomer.set(key, row);
   }
   const ids = [...byCustomer.keys()].filter((k) => k !== 'walk-in' && mongoose.isValidObjectId(k));

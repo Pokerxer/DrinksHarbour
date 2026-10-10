@@ -516,89 +516,10 @@ async function recordReturnMovement({
 /**
  * Adjust inventory by a signed delta (positive = add, negative = remove).
  */
-async function adjustInventory(subProductId, tenantId, adjustment, reason, performedBy, notes, reference) {
-  if (adjustment === 0) throw new Error('Adjustment cannot be zero');
-
-  const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select(
-    'totalStock availableStock reservedStock lowStockThreshold stockStatus costPrice product tenant sizes sellWithoutSizeVariants'
-  );
-  if (!sp) throw new Error('SubProduct not found');
-
-  const qBefore = sp.availableStock ?? 0;
-
-  sp.totalStock     = Math.max(0, (sp.totalStock     ?? 0) + adjustment);
-  sp.availableStock = Math.max(0, (sp.availableStock ?? 0) + adjustment);
-  sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
-  sp.status         = sp.availableStock <= 0 ? 'out_of_stock'
-                    : sp.availableStock <= (sp.lowStockThreshold ?? 10) ? 'low_stock'
-                    : 'active';
-  await sp.save();
-
-  // Keep Size documents in sync so the POS (which reads per-size availableStock)
-  // matches the inventory page (which reads SubProduct.availableStock).
-  if (sp.sizes?.length > 0 && !sp.sellWithoutSizeVariants) {
-    const sizes = await Size.find({ _id: { $in: sp.sizes } }).select('stock availableStock').lean();
-    if (sizes.length > 0) {
-      const sizeStockSum = sizes.reduce((sum, s) => sum + (s.stock || 0), 0);
-      const target = sp.totalStock;
-      if (sizeStockSum === 0) {
-        const perSize   = Math.floor(target / sizes.length);
-        const remainder = target % sizes.length;
-        await Promise.all(sizes.map((s, i) => {
-          const val = perSize + (i === 0 ? remainder : 0);
-          return Size.findByIdAndUpdate(s._id, { $set: { stock: val, availableStock: val } });
-        }));
-      } else {
-        let remaining = target;
-        await Promise.all(sizes.map((s, i) => {
-          const isLast   = i === sizes.length - 1;
-          const share    = (s.stock || 0) / sizeStockSum;
-          const newStock = isLast
-            ? Math.max(0, remaining)
-            : Math.max(0, Math.min(remaining, Math.round(share * target)));
-          remaining -= newStock;
-          return Size.findByIdAndUpdate(s._id, { $set: { stock: newStock, availableStock: newStock } });
-        }));
-      }
-    }
-  }
-
-  const qAfter = sp.availableStock;
-  const type   = adjustment > 0 ? 'adjustment_in' : 'adjustment_out';
-  const cat    = adjustment > 0 ? 'in' : 'out';
-
-  const movementWarehouse = await resolveMovementWarehouse(tenantId || sp.tenant, undefined);
-
-  const movement = await InventoryMovement.create({
-    subProduct:     subProductId,
-    tenant:         tenantId || sp.tenant,
-    product:        sp.product || undefined,
-    warehouse:      movementWarehouse || undefined,
-    type,
-    category:       cat,
-    quantity:       Math.abs(adjustment),
-    quantityBefore: qBefore,
-    quantityAfter:  qAfter,
-    reference,
-    referenceType:  'adjustment',
-    unitCost:       sp.costPrice ?? 0,
-    totalCost:      (sp.costPrice ?? 0) * Math.abs(adjustment),
-    reason:         reason || (adjustment > 0 ? 'Manual adjustment in' : 'Manual adjustment out'),
-    notes,
-    performedBy,
-    performedAt:    new Date(),
-    source:         'manual',
-    status:         'confirmed',
-    isVerified:     true,
-    verifiedAt:     new Date(),
-  });
-
-  return movement;
+async function adjustInventory(input, tenantId, performedBy) {
+  return require('./stockAdjustment').postStockAdjustment(input, performedBy, tenantId);
 }
 
-/**
- * Record a customer return.
- */
 async function recordReturn(subProductId, tenantId, data, performedBy) {
   const { quantity, reason, notes, reference, relatedOrder, warehouseId } = data;
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
@@ -741,6 +662,9 @@ async function transferStock(data, performedBy, tenantId) {
  * Create a raw InventoryMovement (generic endpoint).
  */
 async function createMovement(data, performedBy, tenantId) {
+  if (['adjustment_in', 'adjustment_out'].includes(data?.type) || data?.category === 'adjustment') {
+    return require('./stockAdjustment').postStockAdjustment(data, performedBy, tenantId);
+  }
   const sp = await SubProduct.findOne({ _id: data.subProductId, tenant: tenantId }).select(
     'availableStock totalStock lowStockThreshold stockStatus costPrice product tenant'
   );
@@ -793,7 +717,7 @@ async function createMovement(data, performedBy, tenantId) {
  */
 async function getMovements(tenantId, options = {}) {
   const {
-    subProductId, type, category, startDate, endDate,
+    subProductId, type, category, scope, startDate, endDate,
     page = 1, limit = 50, sortBy = 'createdAt', sortOrder = 'desc',
   } = options;
 
@@ -805,6 +729,19 @@ async function getMovements(tenantId, options = {}) {
   if (subProductId) query.subProduct = new mongoose.Types.ObjectId(subProductId.toString());
   if (type)         query.type       = type;
   if (category)     query.category   = category;
+  // Return mirrors use category=in/out. Keep the scope in the query so counts,
+  // date bounds and pagination include both sides without loading unrelated stock.
+  if (scope === 'internal') query.$or = [
+    { category: 'transfer' },
+    { type: { $in: ['return', 'return_out'] }, referenceType: 'transfer' },
+    { type: { $in: ['return', 'return_out'] }, reference: /^return of /i,
+      sourceWarehouse: { $ne: null }, destinationWarehouse: { $ne: null } },
+  ];
+  // Manual correction writers use category=in/out; older entries use adjustment.
+  if (scope === 'adjustments') query.$or = [
+    { type: { $in: ['adjustment_in', 'adjustment_out'] } },
+    { category: 'adjustment' },
+  ];
   if (startDate || endDate) {
     query.createdAt = {};
     if (startDate) query.createdAt.$gte = new Date(startDate);

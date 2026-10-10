@@ -3,6 +3,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { resolveSubProductImages } from '../../image-utils';
+import { subProductListImage } from '../../list-image';
 
 interface SubProductImageProps {
   /** The sub-product list item (carries imagesOverride + populated product). */
@@ -27,16 +28,24 @@ export default function SubProductImage({
 }: SubProductImageProps) {
   const candidates = useMemo(() => resolveSubProductImages(sp), [sp]);
   const [idx, setIdx] = useState(0);
+  const [original, setOriginal] = useState(false);
   const src = candidates[idx];
 
   if (!src) return <>{fallback}</>;
 
   return (
     <img
-      src={src}
+      src={original ? src : subProductListImage(src, 320)}
+      srcSet={!original && subProductListImage(src, 320) !== src ? `${subProductListImage(src, 320)} 320w, ${subProductListImage(src, 640)} 640w` : undefined}
+      sizes="(max-width: 640px) 50vw, 320px"
+      loading="lazy"
+      decoding="async"
       alt={alt || 'Product'}
       className={className}
-      onError={() => setIdx((i) => i + 1)}
+      onError={() => {
+        if (!original && subProductListImage(src, 320) !== src) setOriginal(true);
+        else { setIdx(i => i + 1); setOriginal(false); }
+      }}
     />
   );
 }

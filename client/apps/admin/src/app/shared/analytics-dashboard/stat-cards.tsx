@@ -56,6 +56,7 @@ export default function StatCards({ className }: { className?: string }) {
       info: 'Number of the visitors on the website.',
       pct: overview.traffic.pctChange,
       fill: '#015DE1',
+      higherIsBetter: true,
     },
     {
       id: '2',
@@ -64,6 +65,7 @@ export default function StatCards({ className }: { className?: string }) {
       info: 'Number of the visitors turned into user.',
       pct: overview.conversionRate.pctChange,
       fill: '#048848',
+      higherIsBetter: true,
     },
     {
       id: '3',
@@ -72,6 +74,9 @@ export default function StatCards({ className }: { className?: string }) {
       info: 'Number of the visitors went without visiting.',
       pct: overview.bounceRate.pctChange,
       fill: '#B92E5D',
+      // A rising bounce rate is bad news, so the sign of the change cannot
+      // decide the colour here the way it does for the other three.
+      higherIsBetter: false,
     },
     {
       id: '4',
@@ -80,15 +85,19 @@ export default function StatCards({ className }: { className?: string }) {
       info: 'Amount of time users used the website.',
       pct: overview.avgSessionDuration.pctChange,
       fill: '#8200E9',
+      higherIsBetter: true,
     },
   ];
 
   return (
     <div className={cn('grid grid-cols-1 gap-5 3xl:gap-8 4xl:gap-9', className)}>
       {stats.map((stat) => {
-        const increased = stat.pct >= 0;
-        const pctColor = increased ? '#048848' : '#B92E5D';
-        const pctLabel = `${increased ? '+' : ''}${stat.pct.toFixed(2)}%`;
+        const pct = stat.pct ?? 0;
+        const increased = pct >= 0;
+        // Direction of movement for the sign, favourability for the colour.
+        const improved = stat.higherIsBetter ? increased : !increased;
+        const pctColor = improved ? '#048848' : '#B92E5D';
+        const pctLabel = `${increased ? '+' : ''}${pct.toFixed(2)}%`;
 
         return (
           <MetricCard

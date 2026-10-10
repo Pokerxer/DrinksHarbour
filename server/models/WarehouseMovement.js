@@ -20,6 +20,9 @@ const warehouseMovementSchema = new Schema(
     // trail). Nullable — legacy movements and recounts have none.
     unitCost: { type: Number, min: 0, default: null },
     balanceAfter: { type: Number, required: true },
+    // Absolute recount targets are not movement deltas. Preserve both for audit.
+    balanceBefore: { type: Number, default: null },
+    stockChange: { type: Number, default: null },
     reference: { type: String, maxlength: 200 },
     transferGroupId: { type: ObjectId },
     // When this movement UNDOES another (a transfer return, a vendor-return

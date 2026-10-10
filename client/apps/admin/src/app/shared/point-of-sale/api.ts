@@ -1,4 +1,26 @@
 import { scopePOSRequest } from './shop-scope';
+import type { AnalysisMeta, AnalysisPayloadRow } from './analysis/decode';
+
+/** `meta` is nullable only if the server ever omits it; the page treats that as unknown. */
+export type POSAnalysisResponse = {
+  data: AnalysisPayloadRow[];
+  meta: AnalysisMeta | null;
+};
+
+/**
+ * The server's statement of whether a paged order list is the whole set.
+ * `matched` is how many orders the filter actually found, `included` is how many
+ * were sent, and `limit` is the page size actually granted (the server may clamp
+ * what was asked for).
+ */
+export type PageMeta = {
+  matched: number;
+  included: number;
+  limit: number;
+  missing: number;
+  truncated: boolean;
+};
+
 import type {
   POSAuthResponse,
   POSStaff,
@@ -18,6 +40,9 @@ import type {
   POSCombo,
   POSCustomer,
   POSCustomerAddress,
+  AccountChargePreview,
+  AccountPaymentResult,
+  CustomerAccountSummary,
   POSShop,
   POSNotification,
   POSTableSummary,
@@ -41,6 +66,67 @@ function authHeaders(token: string): HeadersInit {
   };
 }
 
+/**
+ * Thrown when the server refuses a sale on credit-limit grounds (409
+ * `credit_limit_exceeded`).
+ *
+ * A distinct type because the screen must react differently to this than to a
+ * generic failure: this is a "get a manager to authorise it" prompt, not an
+ * error worth retrying. The structured fields ride along because the plain
+ * `request` helper keeps only `body.message` — without them the screen could
+ * show a sentence but not the numbers it needs to explain the decision.
+ */
+export class CreditLimitError extends Error {
+  readonly code = 'credit_limit_exceeded' as const;
+  /** Whether THIS cashier holds pos:credit_override. */
+  readonly canOverride: boolean;
+  /** What the customer would owe if the sale went through. */
+  readonly owedAfter: number;
+  readonly creditLimit: number;
+
+  constructor(
+    message: string,
+    init: { canOverride: boolean; owedAfter: number; creditLimit: number }
+  ) {
+    super(message);
+    this.name = 'CreditLimitError';
+    this.canOverride = init.canOverride;
+    this.owedAfter = init.owedAfter;
+    this.creditLimit = init.creditLimit;
+  }
+}
+
+/**
+ * Like `request`, but turns a credit-limit refusal into a typed error carrying
+ * the numbers. Everything else behaves identically, including the 401 rule
+ * (never sign out — a cashier mid-sale would lose the cart).
+ */
+async function requestWithCreditLimitError<T>(
+  url: string,
+  options?: RequestInit
+): Promise<T> {
+  const res = await fetch(scopePOSRequest(url, options), options);
+  const body = (await res.json()) as ApiResponse<T> & {
+    code?: string;
+    requiresOverride?: boolean;
+    owedAfter?: number;
+    creditLimit?: number;
+  };
+  if (res.status === 401) {
+    throw new Error(body.message || 'Unauthorized. Please re-authenticate.');
+  }
+  if (res.status === 409 && body.code === 'credit_limit_exceeded') {
+    throw new CreditLimitError(body.message || 'Over the customer\'s credit limit', {
+      canOverride: !!body.requiresOverride,
+      owedAfter: Number(body.owedAfter) || 0,
+      creditLimit: Number(body.creditLimit) || 0,
+    });
+  }
+  if (!res.ok || !body.success)
+    throw new Error(body.message || 'Request failed');
+  return body.data;
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(scopePOSRequest(url, options), options);
   const body = (await res.json()) as ApiResponse<T>;
@@ -54,6 +140,25 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   if (!res.ok || !body.success)
     throw new Error(body.message || 'Request failed');
   return body.data;
+}
+
+/**
+ * Like `request`, but keeps the full envelope so a caller can read `meta`.
+ * The analysis endpoint reports how many receipts matched and whether the
+ * response was truncated — that is the difference between an honest report and
+ * a quietly wrong one, so it must not be discarded.
+ */
+async function requestWithMeta<T>(
+  url: string,
+  options?: RequestInit
+): Promise<{ data: T; meta: unknown }> {
+  const res = await fetch(scopePOSRequest(url, options), options);
+  const body = (await res.json()) as ApiResponse<T> & { meta?: unknown };
+  if (res.status === 401) {
+    throw new Error(body.message || 'Unauthorized. Please re-authenticate.');
+  }
+  if (!res.ok || !body.success) throw new Error(body.message || 'Request failed');
+  return { data: body.data, meta: body.meta };
 }
 
 export const posApi = {
@@ -447,6 +552,12 @@ export const posApi = {
     }>(`${API_URL}/api/pos/sessions?${qs}`, { headers: authHeaders(token) });
   },
 
+  /**
+   * Returns the page of orders **and the server's statement of whether that page
+   * is the whole set**. Do not infer completeness from the row count: the server
+   * clamps `limit`, so a request for 2000 can come back as 500, and a client
+   * that assumed otherwise would report a partial day as complete.
+   */
   async getAllOrders(
     token: string,
     params?: { page?: number; limit?: number; shopId?: string }
@@ -455,9 +566,30 @@ export const posApi = {
     if (params?.shopId) qs.set('shopId', params.shopId);
     if (params?.page) qs.set('page', String(params.page));
     if (params?.limit) qs.set('limit', String(params.limit));
-    return request<POSRecentOrder[]>(`${API_URL}/api/pos/orders?${qs}`, {
+    const res = await requestWithMeta<POSRecentOrder[]>(`${API_URL}/api/pos/orders?${qs}`, {
       headers: authHeaders(token),
     });
+    return { data: res.data, meta: (res.meta as PageMeta) ?? null };
+  },
+
+  /**
+   * The full-period dataset behind order-analysis. Returns compact rows for every
+   * matching receipt rather than one page, which is what stops the report going
+   * quietly wrong past the old 500-order limit.
+   */
+  async getOrderAnalysis(
+    token: string,
+    params?: { shopId?: string; from?: string; to?: string }
+  ) {
+    const qs = new URLSearchParams();
+    if (params?.shopId) qs.set('shopId', params.shopId);
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    const res = await requestWithMeta<AnalysisPayloadRow[]>(
+      `${API_URL}/api/pos/orders/analysis?${qs}`,
+      { headers: authHeaders(token) }
+    );
+    return { data: res.data, meta: (res.meta as AnalysisMeta) ?? null };
   },
 
   async getSessionOrders(token: string, sessionId: string, shopId?: string) {
@@ -645,6 +777,54 @@ export const posApi = {
         method: 'PATCH',
         headers: authHeaders(token),
         body: JSON.stringify({ earned, redeemed, orderTotal, orderId }),
+      }
+    );
+  },
+
+  /**
+   * "What happens if I charge this sale to their account?" — asked of the server.
+   *
+   * Not computed locally on purpose. The client has no trustworthy tab balance:
+   * it is not in the customer search payload, it moves on every payment and every
+   * other on-account sale, and offline it is stale. Since the credit limit is on
+   * TOTAL owed, a cached-balance preview waves through sales the live balance
+   * rejects — so the split arithmetic stays on the server, where it is also what
+   * actually commits the sale.
+   */
+  async previewAccountCharge(token: string, id: string, amount: number) {
+    return request<AccountChargePreview>(
+      `${API_URL}/api/pos/customers/${id}/account/preview`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ amount }),
+      }
+    );
+  },
+
+  /** What the customer owes, their limit, and the newest statement lines. */
+  async getCustomerAccount(token: string, id: string) {
+    return request<CustomerAccountSummary>(
+      `${API_URL}/api/pos/customers/${id}/account`,
+      { headers: authHeaders(token) }
+    );
+  },
+
+  /**
+   * Take money against a tab. The server refuses an overpayment and refuses to
+   * settle a tab from store credit, both with plain-language messages.
+   */
+  async takeAccountPayment(
+    token: string,
+    id: string,
+    data: { amount: number; method?: string; reference?: string; note?: string }
+  ) {
+    return request<AccountPaymentResult>(
+      `${API_URL}/api/pos/customers/${id}/account/payment`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify(data),
       }
     );
   },

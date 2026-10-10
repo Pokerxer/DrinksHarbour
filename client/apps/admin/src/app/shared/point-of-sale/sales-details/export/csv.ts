@@ -41,7 +41,12 @@ export function getLineCell(
     case 'unitPrice':
       return r.unitPrice.toFixed(2);
     case 'gross':
-      return r.gross.toFixed(2);
+      // The server's commercial allocation, so gross − returns === net in the
+      // export exactly as it does on screen. The pre-discount line value does
+      // not include tax and does not reconcile.
+      return (r.grossShare ?? r.gross).toFixed(2);
+    case 'returns':
+      return (r.returnedValue ?? 0).toFixed(2);
     case 'discount':
       return fmt === 'pdf'
         ? r.discount > 0
@@ -63,14 +68,23 @@ export function getLineCell(
           : '—'
         : r.profit.toFixed(2);
     case 'margin': {
-      if (r.profit > 0 && r.subtotal > 0) {
-        const mg = ((r.profit / r.subtotal) * 100).toFixed(1);
-        return fmt === 'pdf' ? mg + '%' : mg + '%';
-      }
-      return fmt === 'pdf' ? '—' : '0';
+      // A line with no cost basis has no margin to report. Emitting "0" reads
+      // as a measurement — the tenant sold at a loss — when it is a gap in the
+      // data. A real loss is a real negative number and is reported as one.
+      if (!r.hasCost || r.subtotal <= 0) return fmt === 'pdf' ? '—' : 'n/a';
+      return ((r.profit / r.subtotal) * 100).toFixed(1) + '%';
     }
-    case 'payment':
-      return q(METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod);
+    case 'payment': {
+      const label = METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod;
+      if (!r.splitPayment || r.paymentShares.length === 0) return q(label);
+      // A split receipt is not one method. Naming only the dominant leg hid the
+      // other tender from anyone reconciling the till against this export.
+      return q(
+        r.paymentShares
+          .map((s) => `${METHOD_LABEL[s.method] ?? s.method} ${s.amount.toFixed(2)}`)
+          .join(' + ')
+      );
+    }
     case 'voided':
       return r.isVoided ? 'Yes' : 'No';
     default:
@@ -83,10 +97,9 @@ export function getGroupCell(
   key: GroupExportCol,
   fmt: 'csv' | 'pdf'
 ): string {
-  const mg =
-    r.profit > 0 && r.revenue > 0
-      ? ((r.profit / r.revenue) * 100).toFixed(1)
-      : null;
+  // Measured on the group's costed revenue, and absent rather than zero when
+  // nothing in the group carries a cost basis.
+  const mg = r.costedRevenue > 0 ? ((r.profit / r.costedRevenue) * 100).toFixed(1) : null;
   switch (key) {
     case 'key':
       return fmt === 'csv' ? `"${r.key.replace(/"/g, '""')}"` : r.key;
@@ -94,6 +107,8 @@ export function getGroupCell(
       return r.qty.toLocaleString();
     case 'gross':
       return r.gross.toFixed(2);
+    case 'returns':
+      return (r.returns ?? 0).toFixed(2);
     case 'discount':
       return fmt === 'pdf' && r.discount === 0 ? '—' : r.discount.toFixed(2);
     case 'revenue':
@@ -101,7 +116,7 @@ export function getGroupCell(
     case 'profit':
       return fmt === 'pdf' && r.profit === 0 ? '—' : r.profit.toFixed(2);
     case 'margin':
-      return mg ? mg + '%' : fmt === 'pdf' ? '—' : '0';
+      return mg ? mg + '%' : fmt === 'pdf' ? '—' : 'n/a';
     case 'share':
       return r.share.toFixed(1) + '%';
     case 'lineCount':

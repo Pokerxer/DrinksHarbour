@@ -26,7 +26,7 @@ export function computeItemPriceWithPricelist(
   item: POSCartItem,
   pricelist: any
 ): number {
-  if (!pricelist?.rules?.length) return item.price;
+  if (item.quotationLine || !pricelist?.rules?.length) return item.price;
 
   const rules = findMatchingPricelistRules(
     pricelist.rules,
@@ -56,7 +56,7 @@ export function computeItemPriceChain(
   steps: Array<{ label: string; saving: number; toPrice: number }>;
 } {
   const steps: Array<{ label: string; saving: number; toPrice: number }> = [];
-  if (!pricelist?.rules?.length) return { finalPrice: item.price, steps };
+  if (item.quotationLine || !pricelist?.rules?.length) return { finalPrice: item.price, steps };
 
   const rules = findMatchingPricelistRules(
     pricelist.rules,
@@ -99,6 +99,7 @@ export function getBestBundleForItem(
   item: POSCartItem,
   pricelist: any
 ): POSBundleDeal | null {
+  if (item.quotationLine) return null;
   // When a pricelist with price rules (formula/fixed/discount/flash_sale) is active,
   // suppress DB bundles — the pricelist is the authoritative pricing policy.
   const hasPriceRules = pricelist?.rules?.some((r: any) =>
@@ -257,7 +258,7 @@ export function computeSubtotal(items: POSCartItem[], pricelist?: any) {
       pricelist.rules
     )) {
       const item = items[adj.lineIndex];
-      if (!item) continue;
+      if (!item || item.quotationLine) continue;
       if (adj.overridePrice != null && adj.overridePrice > 0) {
         const lineGross = adj.overridePrice * item.quantity;
         const itemDiscAmt =

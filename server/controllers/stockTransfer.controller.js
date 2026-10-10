@@ -17,14 +17,8 @@ const { captureDocumentTax, reverseDocumentTax, effectiveTaxForFlow } = require(
 const { getTenantWarehouseSettings } = require("./warehouse.controller");
 const { NotFoundError, ValidationError, ForbiddenError } = require("../utils/errors");
 
-const resolveTenantId = (req) => {
-  if (req.tenant?._id) return req.tenant._id;
-  if (req.user?.tenant) {
-    const t = req.user.tenant;
-    return typeof t === "object" && t._id ? t._id : t;
-  }
-  throw new ForbiddenError("Tenant context required");
-};
+const resolveTenantId = require('../utils/tenantContext').getTenantId;
+const { CREATOR_FIELDS, withTransferCreatorName } = require('../services/stockTransfer.creator');
 
 // Two-sided workflow: source managers dispatch, destination managers receive.
 // These roles always bypass the per-warehouse manager check.
@@ -132,6 +126,8 @@ const createStockTransfer = asyncHandler(async (req, res) => {
   const settings = await getTenantWarehouseSettings(tenantId);
   if (!settings.allowInterWarehouseTransfers)
     throw new ValidationError("Inter-warehouse transfers are disabled for this tenant");
+
+  await require('../services/restock/transfer-purchase').validateTransferPreparation(tenantId, req.body);
 
   // Resolve the header Tax ref (or tenant default) and stamp every line BEFORE
   // enrichment/money math, so applyTransferMoney's taxAmount picks it up.
@@ -270,7 +266,7 @@ const getStockTransfers = asyncHandler(async (req, res) => {
     StockTransfer.find(query)
       .populate("sourceWarehouse", "name code type address contact managers")
       .populate("destinationWarehouse", "name code type address contact managers")
-      .populate("createdBy", "name")
+      .populate("createdBy", CREATOR_FIELDS)
       .populate("confirmedBy", "name")
       .populate("completedBy", "name")
       .populate("cancelledBy", "name")
@@ -292,7 +288,7 @@ const getStockTransfers = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: transfers,
+    data: transfers.map(withTransferCreatorName),
     pagination: {
       page: Number(page),
       limit: Number(limit),
@@ -312,15 +308,18 @@ const getStockTransfer = asyncHandler(async (req, res) => {
   })
     .populate("sourceWarehouse", "name code type address contact managers")
     .populate("destinationWarehouse", "name code type address contact managers")
-    .populate("createdBy", "name")
+    .populate("createdBy", CREATOR_FIELDS)
     .populate("confirmedBy", "name")
     .populate("completedBy", "name")
     .populate("cancelledBy", "name")
     .populate("approvedBy", "name")
     .populate("rejectedBy", "name")
+    .populate("receipts.receivedBy", "name")
+    .populate("returns.returnedBy", "name")
+    .populate("dispatchedBy", "name")
     .lean();
   if (!transfer) throw new NotFoundError("Stock transfer not found");
-  res.json({ success: true, data: transfer });
+  res.json({ success: true, data: withTransferCreatorName(transfer) });
 });
 
 // PATCH /api/stock-transfers/:id
@@ -667,7 +666,29 @@ const closeStockTransfer = asyncHandler(async (req, res) => {
   res.json({ success: true, data: transfer, message: "Transfer closed" });
 });
 
+const returnStockTransfer = asyncHandler(async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const data = await require('../services/stockTransfer.refund').returnStockTransferLine({
+    id: req.params.id, tenantId, userId: req.user._id,
+    itemIndex: req.body.itemIndex, quantity: req.body.quantity,
+    note: req.body.note, requestId: req.body.requestId,
+    authorize: transfer => assertWarehouseSide(transfer.destinationWarehouse, tenantId, req, 'destination'),
+  });
+  res.json({ success: true, data, message: 'Stock returned and transfer value reduced' });
+});
+
+const returnWholeTransfer = asyncHandler(async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const data = await require('../services/stockTransfer.refund').returnWholeStockTransfer({
+    id: req.params.id, tenantId, userId: req.user._id, note: req.body.note, requestId: req.body.requestId,
+    authorize: transfer => assertWarehouseSide(transfer.destinationWarehouse, tenantId, req, 'destination'),
+  });
+  res.json({ success: true, data, message: 'All remaining received products returned' });
+});
+
 module.exports = {
+  returnWholeTransfer,
+  returnStockTransfer,
   createStockTransfer,
   getStockTransfers,
   getStockTransfer,

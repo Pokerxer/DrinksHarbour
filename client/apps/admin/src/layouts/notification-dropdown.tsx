@@ -1,91 +1,37 @@
-// @ts-nocheck
 'use client';
-
-import { notificationsData } from '@/data/notifications';
-import { useMedia } from '@core/hooks/use-media';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
 import Link from 'next/link';
-import { ReactElement, ReactNode, RefObject, useState } from 'react';
-import { PiCheck } from 'react-icons/pi';
-import { Badge, Checkbox, Popover, Text, Title } from 'rizzui';
-
-dayjs.extend(relativeTime);
-
-function NotificationsList({
-  setIsOpen,
-}: {
-  setIsOpen: React.Dispatch<React.SetStateAction<boolean>>;
-}) {
-  return (
-    <div className="w-[320px] text-left sm:w-[360px] 2xl:w-[420px] rtl:text-right">
-      <div className="mb-3 flex items-center justify-between ps-6">
-        <Title as="h5" fontWeight="semibold">
-          Notifications
-        </Title>
-        <Checkbox
-          size="sm"
-          label="Mark all as read"
-          labelWeight="normal"
-          labelClassName="text-sm"
-        />
-      </div>
-      <div className="custom-scrollbar max-h-[420px] overflow-y-auto scroll-smooth">
-        <div className="grid cursor-pointer grid-cols-1 gap-1 ps-4">
-          {notificationsData.map((item) => (
-            <div
-              key={item.name + item.id}
-              className="group grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-md px-2 py-2 pe-3 transition-colors hover:bg-gray-100 dark:hover:bg-gray-50"
-            >
-              <div className="flex h-9 w-9 items-center justify-center rounded bg-gray-100/70 p-1 dark:bg-gray-50/50 [&>svg]:h-auto [&>svg]:w-5">
-                <item.icon />
-              </div>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
-                <div className="w-full">
-                  <Text className="mb-0.5 w-11/12 truncate text-sm font-semibold text-gray-900 dark:text-gray-700">
-                    {item.name}
-                  </Text>
-                  <Text className="ms-auto whitespace-nowrap pe-8 text-xs text-gray-500">
-                    {dayjs(item.sendTime).fromNow(true)}
-                  </Text>
-                </div>
-                <div className="ms-auto flex-shrink-0">
-                  {item.unRead ? (
-                    <Badge
-                      renderAsDot
-                      size="lg"
-                      color="primary"
-                      className="scale-90"
-                    />
-                  ) : (
-                    <span className="inline-block rounded-full bg-gray-100 p-0.5 dark:bg-gray-50">
-                      <PiCheck className="h-auto w-[9px]" />
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <Link
-        href={'#'}
-        onClick={() => setIsOpen(false)}
-        className="-me-6 block px-6 pb-0.5 pt-3 text-center hover:underline"
-      >
-        View All Activity
-      </Link>
-    </div>
-  );
-}
-
+import {
+  cloneElement,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
+import { Popover } from 'rizzui';
+import { useMedia } from '@core/hooks/use-media';
+import { useNotifications } from '@/app/shared/notifications/use-notifications';
+import NotificationList from '@/app/shared/notifications/notification-list';
 export default function NotificationDropdown({
   children,
 }: {
-  children: ReactElement & { ref?: RefObject<any> };
+  children: ReactElement<{ children?: ReactNode; 'aria-label'?: string }>;
 }) {
-  const isMobile = useMedia('(max-width: 480px)', false);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false),
+    isMobile = useMedia('(max-width: 480px)', false);
+  const inbox = useNotifications({ limit: 8 });
+  const count = inbox.data.unreadCount;
+  const trigger = cloneElement(children, {
+    'aria-label': `Notifications${count ? `, ${count} unread` : ''}`,
+    children: (
+      <>
+        {children.props.children}
+        {count > 0 && (
+          <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
+            {count > 99 ? '99+' : count}
+          </span>
+        )}
+      </>
+    ),
+  });
   return (
     <Popover
       isOpen={isOpen}
@@ -93,9 +39,38 @@ export default function NotificationDropdown({
       shadow="sm"
       placement={isMobile ? 'bottom' : 'bottom-end'}
     >
-      <Popover.Trigger>{children}</Popover.Trigger>
-      <Popover.Content className="z-[9999] px-0 pb-4 pe-6 pt-5 dark:bg-gray-100 [&>svg]:hidden [&>svg]:dark:fill-gray-100 sm:[&>svg]:inline-flex">
-        <NotificationsList setIsOpen={setIsOpen} />
+      <Popover.Trigger>{trigger}</Popover.Trigger>
+      <Popover.Content className="z-[9999] p-0 dark:bg-gray-100">
+        <div className="w-[min(360px,calc(100vw-24px))] text-left rtl:text-right">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <h2 className="text-base font-semibold">Notifications</h2>
+            <button
+              type="button"
+              onClick={inbox.markAllRead}
+              disabled={inbox.busy || !count}
+              className="text-xs font-medium text-gray-600 disabled:opacity-40"
+            >
+              Mark all as read
+            </button>
+          </div>
+          <div className="max-h-[420px] overflow-y-auto">
+            <NotificationList
+              notifications={inbox.data.notifications}
+              loading={inbox.loading}
+              error={inbox.error}
+              busy={inbox.busy}
+              onRetry={inbox.refresh}
+              onRead={inbox.markRead}
+            />
+          </div>
+          <Link
+            href="/notifications"
+            onClick={() => setIsOpen(false)}
+            className="block border-t border-gray-100 p-3 text-center text-sm font-medium hover:underline"
+          >
+            View all notifications
+          </Link>
+        </div>
       </Popover.Content>
     </Popover>
   );

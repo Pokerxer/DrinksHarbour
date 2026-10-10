@@ -86,6 +86,11 @@ const POSSessionSchema = new mongoose.Schema(
     transferSales:    { type: Number, default: 0 },
     mobileMoneySales: { type: Number, default: 0 },
     splitSales:       { type: Number, default: 0 },
+    // Sales the customer will pay for later. Inside totalSales, but NOT in the
+    // drawer's expected cash: recording it as a tender would make the till look
+    // short at closing with no visible cause. Tracked separately so the Z-report
+    // can show what was sold on account.
+    onAccountSales:   { type: Number, default: 0 },
 
     // Gratuity and cash-rounding taken during the session. Both are already
     // inside totalSales (which is the payable total); they are recorded

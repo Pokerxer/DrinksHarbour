@@ -25,6 +25,8 @@ export interface SalesLineItem {
   fulfilledQty: number;
   postedQty: number;
   returnedQty: number;
+  salesReturnedQty?: number;
+  posReturnedQty?: number;
   priceOverridden?: boolean;
 }
 
@@ -33,6 +35,13 @@ export interface SalesOrderCustomerSnapshot {
   phone?: string;
   email?: string;
   customerId?: string;
+}
+
+/** An account the customer remits an invoice into. Issued by the tenant. */
+export interface SalesOrderBankAccount {
+  bankName?: string;
+  accountName?: string;
+  accountNumber?: string;
 }
 
 export interface CartQuoteItem {
@@ -135,6 +144,7 @@ export type OrderStatus =
   | 'cancelled';
 
 export interface SalesOrder {
+  returnHistory?: { source: 'sales' | 'pos'; reference: string; receiptNumber?: string; quantity: number; refundAmount: number; at?: string; description: string }[];
   _id: string;
   tenant?: string;
   soNumber: string;
@@ -147,6 +157,14 @@ export interface SalesOrder {
   salesperson?: string;
   customer?: string;
   customerSnapshot?: SalesOrderCustomerSnapshot;
+  /**
+   * Where the customer pays. Attached server-side to the order-detail payload
+   * (not stored on the order) by reading the tenant's bank accounts, so the
+   * printed invoice cannot be given an account by the client. Absent on the
+   * list endpoint and on a tenant with no account on file — which is why every
+   * consumer has to treat it as optional.
+   */
+  issuerBankAccounts?: SalesOrderBankAccount[];
   pricelist?: string | null;
   appliedPricelist?: { pricelistId?: string; pricelistName?: string };
   currency: string;
@@ -265,6 +283,7 @@ export interface SalesOrderGroup {
 }
 
 export interface SalesOrderListResponse {
+  pagination?: { currentPage: number; totalPages: number; hasNextPage: boolean };
   success: boolean;
   data: SalesOrder[];
   groups?: SalesOrderGroup[];

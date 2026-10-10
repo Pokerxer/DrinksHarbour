@@ -23,20 +23,11 @@ import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { useTenant } from '@/context/TenantContext';
 import { vendorReturnService } from '@/services/vendorReturn.service';
-import { vendorBillService } from '@/services/vendorBill.service';
+import PurchaseRefundPanel, { PurchaseRefundHistory } from './purchases-refund-panel';
 import type { VendorReturn } from '@/services/vendorReturn.service';
-import type { VendorBill } from '@/services/vendorBill.service';
 import { STATUS_BADGE, returnStatusLabel } from './types';
 import { fmtCur } from './purchases-analytics-helpers';
 import { printReturnInvoice } from '@/utils/purchaseInvoice';
-
-const REFUND_METHODS = [
-  { value: 'bank_transfer', label: 'Bank Transfer' },
-  { value: 'cash', label: 'Cash' },
-  { value: 'credit_note', label: 'Credit Note' },
-  { value: 'cheque', label: 'Cheque' },
-  { value: 'other', label: 'Other' },
-];
 
 const CONDITION_BADGE: Record<string, string> = {
   damaged: 'bg-red-100 text-red-700',
@@ -194,10 +185,6 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
   const [acting, setActing] = useState(false);
   const { tenant } = useTenant();
   const [showRefund, setShowRefund] = useState(false);
-  const [refundAmount, setRefundAmount] = useState('');
-  const [refundMethod, setRefundMethod] = useState('bank_transfer');
-  const [refundRef, setRefundRef] = useState('');
-  const [refundNotes, setRefundNotes] = useState('');
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
     message: string;
@@ -205,7 +192,6 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
     confirmLabel: string;
     danger: boolean;
   } | null>(null);
-  const [bill, setBill] = useState<VendorBill | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -214,23 +200,6 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
       const res = await vendorReturnService.getVendorReturn(id, token);
       setRet(res.data);
 
-      // Load linked vendor bill to determine refund eligibility
-      // May be an id string, the populated doc, or null for a deleted PO —
-      // `typeof null === 'object'`, so the truthiness check is load-bearing.
-      const po = res.data.purchaseOrder;
-      const poId =
-        po && typeof po === 'object' ? (po as { _id: string })._id : po;
-      if (poId) {
-        const billsRes = await vendorBillService
-          .getVendorBills(token, { purchaseOrder: poId, limit: 5 })
-          .catch(() => null);
-        if (billsRes?.data?.length) {
-          const paidBill = billsRes.data.find(
-            (b: VendorBill) => b.status === 'paid' || b.status === 'partial'
-          );
-          if (paidBill) setBill(paidBill);
-        }
-      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to load return');
     } finally {
@@ -312,39 +281,6 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
     } catch (err: unknown) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to delete return'
-      );
-    } finally {
-      setActing(false);
-    }
-  }
-
-  async function handleRefund() {
-    const amount = parseFloat(refundAmount);
-    if (!amount || amount <= 0) {
-      toast.error('Enter a valid refund amount');
-      return;
-    }
-    setActing(true);
-    try {
-      await vendorReturnService.recordRefund(
-        id,
-        {
-          amount,
-          method: refundMethod,
-          reference: refundRef || undefined,
-          notes: refundNotes || undefined,
-        },
-        token
-      );
-      toast.success('Refund recorded');
-      setShowRefund(false);
-      setRefundAmount('');
-      setRefundRef('');
-      setRefundNotes('');
-      await load();
-    } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to record refund'
       );
     } finally {
       setActing(false);
@@ -545,7 +481,8 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
                     danger: true,
                   })
                 }
-                className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                disabled={(ret.refundAmount || 0) > 0 || acting}
+                className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
               >
                 <PiTrash className="h-4 w-4" /> Delete
               </button>
@@ -586,13 +523,14 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
                     danger: true,
                   })
                 }
-                className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                disabled={(ret.refundAmount || 0) > 0 || acting}
+                className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
               >
                 <PiX className="h-4 w-4" /> Cancel
               </button>
             </>
           )}
-          {ret.status === 'received' && (
+          {['received', 'requested', 'shipped', 'in_transit'].includes(ret.status) && (
             <button
               type="button"
               onClick={() => setShowRefund(true)}
@@ -604,118 +542,9 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
         </div>
       </div>
 
-      {/* Refund form */}
       {showRefund && (
-        <div className="mb-5 rounded-xl border border-green-200 bg-green-50 p-4">
-          <p className="mb-3 text-sm font-medium text-green-800">
-            Record Refund
-          </p>
-          {bill && (
-            <div className="mb-3 rounded-lg border border-green-200 bg-white px-3 py-2 text-xs text-green-700">
-              Linked Bill: <strong>{bill.billNumber || bill._id}</strong>{' '}
-              &middot; Paid:{' '}
-              <strong>{fmtCur(bill.paidAmount || 0, cur)}</strong>
-              {bill.status === 'paid' ? ' (Fully Paid)' : ' (Partially Paid)'}
-              &middot; Max Refund:{' '}
-              <strong>
-                {fmtCur(Math.min(total, bill.paidAmount || 0), cur)}
-              </strong>
-            </div>
-          )}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-green-700">
-                Amount *
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={refundAmount}
-                onChange={(e) => setRefundAmount(e.target.value)}
-                placeholder={fmtCur(
-                  Math.min(total, bill?.paidAmount ?? total),
-                  cur
-                )}
-                max={Math.min(total, bill?.paidAmount ?? total)}
-                className="w-full rounded-lg border border-green-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none"
-              />
-              <div className="mt-1 flex gap-1">
-                {[25, 50, 75, 100].map((pct) => {
-                  const capped = Math.min(total, bill?.paidAmount ?? total);
-                  return (
-                    <button
-                      key={pct}
-                      type="button"
-                      onClick={() =>
-                        setRefundAmount(((capped * pct) / 100).toFixed(2))
-                      }
-                      className="rounded border border-green-300 px-1.5 py-0.5 text-[10px] text-green-700 hover:bg-green-100"
-                    >
-                      {pct}%
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-green-700">
-                Method
-              </label>
-              <select
-                value={refundMethod}
-                onChange={(e) => setRefundMethod(e.target.value)}
-                className="w-full rounded-lg border border-green-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none"
-              >
-                {REFUND_METHODS.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-green-700">
-                Reference
-              </label>
-              <input
-                type="text"
-                value={refundRef}
-                onChange={(e) => setRefundRef(e.target.value)}
-                placeholder="Transaction / cheque no."
-                className="w-full rounded-lg border border-green-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-green-700">
-                Notes
-              </label>
-              <input
-                type="text"
-                value={refundNotes}
-                onChange={(e) => setRefundNotes(e.target.value)}
-                className="w-full rounded-lg border border-green-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none"
-              />
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRefund}
-              disabled={acting}
-              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-            >
-              {acting ? 'Saving…' : 'Confirm Refund'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowRefund(false)}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        <PurchaseRefundPanel ret={ret} token={token} onCancel={() => setShowRefund(false)}
+          onComplete={async (updated) => { setRet(updated); setShowRefund(false); await load(); }} />
       )}
 
       {/* Content grid: Timeline + Stats + Items */}
@@ -893,6 +722,7 @@ export default function PurchasesReturnDetail({ id }: { id: string }) {
         </div>
       )}
 
+      <PurchaseRefundHistory ret={ret} />
       {/* Refund info */}
       {ret.refundAmount > 0 && (
         <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4">

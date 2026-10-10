@@ -31,3 +31,12 @@ test('returnOrder clamps a return to the fulfilled quantity', async () => {
   await returnOrder({ salesOrder: so, tenantId: 't1', warehouseId: 'wh1', returnLines: [{ lineId: 'L1', qty: 999 }], userId: 'u1', deps });
   assert.strictEqual(so.items[0].returnedQty, 40);
 });
+
+test('Sales does not restock units already returned through POS', async () => {
+  const restocked=[];
+  const so={_id:'so',soNumber:'SO00008',items:[{_id:'line',subproduct:'sp',size:'sz',fulfilledQty:10,returnedQty:2}],save:async()=>{}};
+  await returnOrder({salesOrder:so,tenantId:'t',warehouseId:'wh',returnLines:[{lineId:'line',qty:10}],userId:'u',
+    posReturnedByLine:{line:5}, deps:{adjustStock:async args=>{restocked.push(args.quantity);return {};}}});
+  assert.deepStrictEqual(restocked,[3]);
+  assert.strictEqual(so.items[0].returnedQty,5,'only Sales-origin quantities may be persisted on the SO');
+});

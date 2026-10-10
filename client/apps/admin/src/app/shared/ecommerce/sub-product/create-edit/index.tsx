@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
 import toast from 'react-hot-toast';
@@ -39,7 +40,6 @@ import SubProductInventory from './inventory';
 import SubProductSizes from './sizes';
 import { validateSizeVariants } from './validation';
 import SubProductVendor from './vendor';
-import ProductHistoryPanel from './ProductHistoryPanel';
 import SubProductStatusVisibility from './status-visibility';
 import SubProductPromotions from './promotions';
 import SubProductShipping from './shipping';
@@ -59,6 +59,8 @@ import {
 } from '@/utils/transformers/subProduct.transformer';
 import { defaultValues, formParts } from './form-utils';
 import { ValidationSummary } from '@/components/validation-summary';
+
+const ProductHistoryPanel = dynamic(() => import('./ProductHistoryPanel'), { ssr: false });
 
 const STEPS = [
   {

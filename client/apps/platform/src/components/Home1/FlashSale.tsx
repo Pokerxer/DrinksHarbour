@@ -1,381 +1,21 @@
 "use client";
-
-import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Navigation } from "swiper/modules";
 import { useModalQuickviewContext } from "@/context/ModalQuickviewContext";
-import { StockStatus } from "@/components/StockStatus";
 import { API_URL } from "@/lib/api";
-import {
-  PiLightningFill,
-  PiClock,
-  PiShoppingCartSimple,
-  PiFireSimple,
-  PiArrowRight,
-  PiImageBroken,
-} from "react-icons/pi";
+import type { ProductType } from "@/types/product.types";
+import { PiLightningFill, PiClock, PiArrowRight } from "react-icons/pi";
+import FlashSaleCard from "./FlashSaleCard";
+import CountdownTimer from "./FlashSaleCountdown";
+import type { SaleProduct } from "./flash-sale-types";
+import { getNearestEndTime, isSaleProduct, isActiveFlashSale } from "./flash-sale-helpers";
+import { fetchFlashSaleProducts } from "./flash-sale-data";
+import { fetchSaleProducts } from "./flash-sale-legacy";
 import "swiper/css";
 import "swiper/css/navigation";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface SizeDiscount {
-  hasDiscount?: boolean;
-  type?: string;
-  value?: number;
-  percentage?: number;
-  savings?: number;
-  originalPrice?: number;
-  source?: string;
-  label?: string;
-}
-
-interface SizePricing {
-  websitePrice?: number;
-  originalWebsitePrice?: number;
-  currency?: string;
-  formattedPrice?: string;
-}
-
-interface ProductSize {
-  _id?: string;
-  size: string;
-  volumeMl?: number;
-  stock?: number;
-  pricing?: SizePricing;
-  discount?: SizeDiscount;
-}
-
-interface AvailableAt {
-  _id?: string;
-  tenant?: { _id?: string; name?: string; slug?: string };
-  sizes?: ProductSize[];
-  isOnSale?: boolean;
-  saleType?: string;
-  saleDiscountValue?: number;
-  saleStartDate?: string;
-  saleEndDate?: string;
-  effectiveSalePrice?: number | null;
-  priceRange?: { min: number; max: number };
-}
-
-interface SaleProduct {
-  _id: string;
-  name: string;
-  slug: string;
-  images?: Array<{ url: string; isPrimary?: boolean }>;
-  primaryImage?: { url: string };
-  priceRange?: { min: number; max: number };
-  totalSold?: number;
-  averageRating?: number;
-  reviewCount?: number;
-  availableAt?: AvailableAt[];
-  discount?: SizeDiscount | null;
-  stockInfo?: { totalStock: number; availableStock: number };
-  availability?: { status: string; stockLevel: string };
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getBestSale(product: SaleProduct) {
-  const allAt = product.availableAt || [];
-
-  let bestDiscount: SizeDiscount | null = null;
-  let bestSize: ProductSize | null = null;
-  let bestAt: AvailableAt | null = null;
-
-  for (const at of allAt) {
-    for (const size of at.sizes || []) {
-      const d = size.discount;
-      if (!d?.hasDiscount) continue;
-      if (!bestDiscount || (d.savings ?? 0) > (bestDiscount.savings ?? 0)) {
-        bestDiscount = d;
-        bestSize = size;
-        bestAt = at;
-      }
-    }
-  }
-
-  if (!bestDiscount || !bestSize || !bestAt) {
-    const firstAt = allAt[0];
-    const firstSize = firstAt?.sizes?.[0];
-    const pricing = firstSize?.pricing || {};
-    const current = pricing.websitePrice || product.priceRange?.min || 0;
-    const productDiscount = product.discount;
-    const original = pricing.originalWebsitePrice || productDiscount?.originalPrice || current;
-    const savings = original - current;
-    return {
-      currentPrice: current,
-      originalPrice: original,
-      hasDiscount: Boolean(productDiscount?.hasDiscount || savings > 0) && current > 0,
-      discountPct: productDiscount?.percentage ?? (savings > 0 ? Math.round((savings / original) * 100) : 0),
-      saleType: firstAt?.saleType || productDiscount?.type || null,
-      saleEndDate: firstAt?.saleEndDate || null,
-      stock: firstSize?.stock,
-      discountLabel: productDiscount?.label || null,
-    };
-  }
-
-  return {
-    currentPrice: bestSize.pricing?.websitePrice ?? 0,
-    originalPrice: bestDiscount.originalPrice ?? bestSize.pricing?.websitePrice ?? 0,
-    hasDiscount: true,
-    discountPct: bestDiscount.percentage ?? 0,
-    saleType: bestAt.saleType || null,
-    saleEndDate: bestAt.saleEndDate || null,
-    stock: bestSize.stock,
-    discountLabel: bestDiscount.label || null,
-  };
-}
-
-function getNearestEndTime(products: SaleProduct[]): Date {
-  const now = Date.now();
-  const times = products
-    .flatMap((p) => p.availableAt || [])
-    .filter((at) => at.isOnSale && at.saleEndDate)
-    .map((at) => new Date(at.saleEndDate!).getTime())
-    .filter((t) => t > now);
-
-  times.sort((a, b) => a - b);
-  return times.length > 0 ? new Date(times[0]) : new Date(now + 8 * 60 * 60 * 1000);
-}
-
-// ─── Memoized CountdownTimer ──────────────────────────────────────────────────
-
-interface TimeLeft {
-  days: number;
-  hours: number;
-  minutes: number;
-  seconds: number;
-  isExpired: boolean;
-}
-
-const CountdownTimer = memo(function CountdownTimer({
-  endTime,
-  onExpire,
-}: {
-  endTime: Date;
-  onExpire?: () => void;
-}) {
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => {
-    const diff = endTime.getTime() - Date.now();
-    if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: true };
-    return {
-      days: Math.floor(diff / (1000 * 60 * 60 * 24)),
-      hours: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-      minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
-      seconds: Math.floor((diff % (1000 * 60)) / 1000),
-      isExpired: false,
-    };
-  });
-  const expiredRef = useRef(false);
-
-  useEffect(() => {
-    expiredRef.current = false;
-
-    const calculate = () => {
-      if (document.hidden) return;
-
-      const diff = endTime.getTime() - Date.now();
-      if (diff <= 0) {
-        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: true });
-        if (!expiredRef.current) {
-          expiredRef.current = true;
-          onExpire?.();
-        }
-        return;
-      }
-      setTimeLeft({
-        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
-        hours: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-        minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
-        seconds: Math.floor((diff % (1000 * 60)) / 1000),
-        isExpired: false,
-      });
-    };
-
-    calculate();
-    const timer = setInterval(calculate, 1000);
-    return () => clearInterval(timer);
-  }, [endTime, onExpire]);
-
-  if (timeLeft.isExpired) {
-    return (
-      <div className="flex items-center gap-1.5 text-white/80 text-xs">
-        <PiClock size={14} />
-        <span>Sale Ended</span>
-      </div>
-    );
-  }
-
-  const TimeBox = ({ value, label }: { value: number; label: string }) => (
-    <div className="flex flex-col items-center">
-      <div className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-lg w-7 h-7 sm:w-9 sm:h-9 flex items-center justify-center">
-        <span className="text-white font-black text-xs sm:text-sm tabular-nums leading-none">
-          {String(value).padStart(2, "0")}
-        </span>
-      </div>
-      <span className="text-[9px] text-white/70 font-medium mt-0.5 uppercase tracking-wide">
-        {label}
-      </span>
-    </div>
-  );
-
-  const Colon = () => (
-    <span className="text-white font-black text-sm sm:text-base mb-2 sm:mb-3 opacity-80">:</span>
-  );
-
-  return (
-    <div className="flex items-end gap-0.5 sm:gap-1">
-      {timeLeft.days > 0 && (
-        <>
-          <TimeBox value={timeLeft.days} label="Days" />
-          <Colon />
-        </>
-      )}
-      <TimeBox value={timeLeft.hours} label="Hrs" />
-      <Colon />
-      <TimeBox value={timeLeft.minutes} label="Min" />
-      <Colon />
-      <TimeBox value={timeLeft.seconds} label="Sec" />
-    </div>
-  );
-});
-
-// ─── Memoized FlashSaleCard ───────────────────────────────────────────────────
-
-const FlashSaleCard = memo(function FlashSaleCard({
-  product,
-  onQuickView,
-}: {
-  product: SaleProduct;
-  onQuickView: (product: SaleProduct) => void;
-}) {
-  const [imageError, setImageError] = useState(false);
-  const sale = getBestSale(product);
-
-  const imageUrl = product.primaryImage?.url || product.images?.[0]?.url || "";
-  const isFlashSale = sale.saleType === "flash_sale";
-  const isFixed = sale.saleType === "fixed";
-
-  const totalStock = product.stockInfo?.totalStock ?? 100;
-  const availableStock = product.stockInfo?.availableStock ?? sale.stock ?? 100;
-
-  return (
-    <div className="relative bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100 motion-safe:hover:shadow-lg motion-safe:hover:-translate-y-0.5 transition-all duration-200 group">
-      <Link href={`/product/${product.slug}`} className="block">
-        {/* Image */}
-        <div className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100">
-          {!imageError && imageUrl ? (
-            <Image
-              src={imageUrl}
-              alt={product.name}
-              fill
-              sizes="(max-width: 480px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 20vw, 16vw"
-              className="object-contain p-2 motion-safe:group-hover:scale-105 transition-transform duration-300"
-              onError={() => setImageError(true)}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <PiImageBroken size={44} className="text-gray-300" />
-            </div>
-          )}
-
-          {/* Discount Badge */}
-          {sale.hasDiscount && (
-            <div className="absolute top-0 left-0">
-              <div
-                className={`text-white text-[10px] font-black px-2 py-1 rounded-br-xl flex items-center gap-0.5 ${
-                  isFlashSale
-                    ? "bg-gradient-to-br from-orange-500 to-red-600"
-                    : isFixed
-                      ? "bg-gradient-to-br from-emerald-500 to-teal-600"
-                      : "bg-gradient-to-br from-red-500 to-pink-600"
-                }`}
-              >
-                {isFlashSale && <PiLightningFill size={9} />}
-                {sale.discountLabel ||
-                  (isFixed
-                    ? `₦${(sale.originalPrice - sale.currentPrice).toLocaleString()} OFF`
-                    : `${sale.discountPct}% OFF`)}
-              </div>
-            </div>
-          )}
-
-          {/* Flash Sale type indicator */}
-          {isFlashSale && (
-            <div className="absolute top-0 right-0 m-1">
-              <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center motion-safe:animate-pulse">
-                <PiLightningFill size={12} className="text-white" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Info */}
-        <div className="p-2.5">
-          <h3 className="text-[11px] font-semibold text-gray-800 line-clamp-2 leading-tight min-h-[2rem]">
-            {product.name}
-          </h3>
-
-          {/* Stock progress */}
-          <div className="mt-1.5">
-            <StockStatus
-              stock={sale.stock}
-              totalStock={totalStock}
-              availableStock={availableStock}
-              showProgress
-            />
-          </div>
-
-          {/* Price row */}
-          <div className="mt-2 flex items-center justify-between gap-1">
-            <div className="flex flex-col min-w-0">
-              <span className="text-sm font-black text-red-500 leading-tight">
-                ₦{sale.currentPrice.toLocaleString()}
-              </span>
-              {sale.hasDiscount && sale.originalPrice > sale.currentPrice && (
-                <span className="text-[10px] text-gray-400 line-through leading-tight">
-                  ₦{sale.originalPrice.toLocaleString()}
-                </span>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onQuickView(product);
-              }}
-              className="flex-shrink-0 min-h-10 min-w-10 bg-gradient-to-br from-orange-500 to-red-600 text-white rounded-xl hover:from-orange-600 hover:to-red-700 motion-safe:active:scale-95 transition-all flex items-center justify-center shadow-sm"
-              aria-label={`Quick view ${product.name}`}
-            >
-              <PiShoppingCartSimple size={15} />
-            </button>
-          </div>
-
-          {/* Sold count */}
-          {(product.totalSold ?? 0) > 0 && (
-            <div className="mt-1 flex items-center gap-1">
-              <PiFireSimple size={10} className="text-orange-400" />
-              <span className="text-[9px] text-gray-400">
-                {(product.totalSold! >= 1000
-                  ? `${(product.totalSold! / 1000).toFixed(1)}k`
-                  : product.totalSold
-                )}{" "}
-                sold
-              </span>
-            </div>
-          )}
-        </div>
-      </Link>
-    </div>
-  );
-});
-
+const FLASH_SALE_HREF = "/deals";
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 const SkeletonCard = () => (
@@ -391,134 +31,49 @@ const SkeletonCard = () => (
 
 // ─── FlashSale (main) ─────────────────────────────────────────────────────────
 
-const _saleCache = new Map<string, { data: SaleProduct[]; ts: number }>();
-const SALE_CACHE_TTL = 60_000;
-const SALE_QUERY = "sortBy=discount&limit=100&allPages=true";
-const SALE_CACHE_KEY = SALE_QUERY;
-const FLASH_SALE_HREF = "/deals";
-
-function isActiveDateRange(start?: string, end?: string) {
-  const now = Date.now();
-  return (!start || new Date(start).getTime() <= now) && (!end || new Date(end).getTime() >= now);
-}
-
-function isSaleProduct(product: SaleProduct) {
-  if (product.discount?.hasDiscount || (product.discount?.value ?? 0) > 0) return true;
-
-  return (product.availableAt || []).some((at) => {
-    const activeSale = at.isOnSale && isActiveDateRange(at.saleStartDate, at.saleEndDate);
-    const hasSaleValue = (at.saleDiscountValue ?? 0) > 0;
-    const hasDiscountedSize = (at.sizes || []).some((size) => {
-      const discount = size.discount;
-      const current = size.pricing?.websitePrice ?? 0;
-      const original = size.pricing?.originalWebsitePrice ?? current;
-      return discount?.hasDiscount || (discount?.value ?? 0) > 0 || original > current;
-    });
-    return Boolean((activeSale && hasSaleValue) || hasDiscountedSize);
-  });
-}
-
-async function fetchSaleProducts(saleType?: string): Promise<SaleProduct[]> {
-  const params = new URLSearchParams({
-    sortBy: "discount",
-    // The API applies its on-sale post-filter after pagination. Fetch a wider
-    // window, then walk every page so discounted products later in the
-    // catalogue are not lost.
-    limit: "100",
-  });
-  if (saleType) params.set("saleType", saleType);
-
-  const cached = _saleCache.get(SALE_CACHE_KEY);
-  if (cached && Date.now() - cached.ts < SALE_CACHE_TTL) return cached.data;
-
-  const fetchPage = async (page: number) => {
-    const pageParams = new URLSearchParams(params);
-    pageParams.set("page", String(page));
-    const res = await fetch(`${API_URL}/api/products?${pageParams}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const products = data.success && data.data?.products
-      ? data.data.products
-      : Array.isArray(data.products)
-        ? data.products
-        : Array.isArray(data)
-          ? data
-          : [];
-    const totalPages = Number(data.data?.pagination?.totalPages || data.pagination?.totalPages || (products.length === 100 ? page + 1 : page));
-    return { products, totalPages };
-  };
-
-  // Fetch page one first to learn the catalogue size, then request the
-  // remaining pages concurrently. This still checks every product while
-  // avoiding a full network waterfall.
-  const firstPage = await fetchPage(1);
-  const remainingPages = await Promise.all(
-    Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) => fetchPage(index + 2)),
-  );
-  const products = [firstPage, ...remainingPages].flatMap((pageResult) => pageResult.products);
-
-  _saleCache.set(SALE_CACHE_KEY, { data: products, ts: Date.now() });
-  return products;
-}
-
 interface FlashSaleProps {
   initialProducts?: SaleProduct[];
   /** When true, render only currently active flash-sale offers. */
   flashOnly?: boolean;
+  /** True only for a successful, complete server flash-sale request. */
+  initialProductsComplete?: boolean;
 }
 
-const isActiveFlashSale = (product: SaleProduct) =>
-  (product.availableAt || []).some((at) =>
-    at.saleType === "flash_sale" && at.isOnSale && isActiveDateRange(at.saleStartDate, at.saleEndDate)
-  );
-
-const FlashSale = ({ initialProducts = [], flashOnly = false }: FlashSaleProps) => {
+const FlashSale = ({ initialProducts = [], flashOnly = false, initialProductsComplete = false }: FlashSaleProps) => {
   const filterProducts = useCallback((products: SaleProduct[]) => {
     const eligible = products.filter(isSaleProduct);
     return (flashOnly ? eligible.filter(isActiveFlashSale) : eligible).slice(0, 20);
   }, [flashOnly]);
   const seededProducts = useMemo(() => filterProducts(initialProducts), [filterProducts, initialProducts]);
-  const [products, setProducts] = useState<SaleProduct[]>(() => {
-    const cached = _saleCache.get(SALE_CACHE_KEY);
-    return cached && Date.now() - cached.ts < SALE_CACHE_TTL ? filterProducts(cached.data) : seededProducts;
-  });
-  const [loading, setLoading] = useState(() => {
-    const cached = _saleCache.get(SALE_CACHE_KEY);
-    return !(cached && Date.now() - cached.ts < SALE_CACHE_TTL) && seededProducts.length === 0;
-  });
-  const [isFlashSaleSection, setIsFlashSaleSection] = useState(() => seededProducts.some((p) =>
-    (p.availableAt || []).some((at) => at.saleType === "flash_sale" && at.isOnSale)
-  ));
+  const [products, setProducts] = useState<SaleProduct[]>(seededProducts);
+  const [loading, setLoading] = useState(!initialProductsComplete && seededProducts.length === 0);
+  const isFlashSaleSection = products.some(isActiveFlashSale);
   const { openQuickview } = useModalQuickviewContext() || {};
 
   const load = useCallback(async () => {
     // Seeded deals are already available from the homepage server request.
     // Refresh them in the background without replacing them with a skeleton.
-    setLoading(seededProducts.length === 0);
     try {
-      const items = await fetchSaleProducts();
+      const items = flashOnly ? await fetchFlashSaleProducts(API_URL) : await fetchSaleProducts();
       const withDiscount = filterProducts(items);
-      setIsFlashSaleSection(withDiscount.some((p) =>
-        (p.availableAt || []).some((at) => at.saleType === "flash_sale" && at.isOnSale)
-      ));
       setProducts(withDiscount);
     } catch {
       // silent
     } finally {
       setLoading(false);
     }
-  }, [filterProducts, seededProducts.length]);
+  }, [filterProducts, flashOnly]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!initialProductsComplete) void load();
+  }, [load, initialProductsComplete]);
 
   const handleQuickView = useCallback(
-    (product: SaleProduct) => openQuickview?.(product as any),
+    (product: SaleProduct) => openQuickview?.(product as unknown as ProductType),
     [openQuickview]
   );
 
-  const saleEndTime = products.length > 0 ? getNearestEndTime(products) : new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const saleEndTime = useMemo(() => getNearestEndTime(products), [products]);
 
   if (loading) {
     return (
@@ -588,6 +143,7 @@ const FlashSale = ({ initialProducts = [], flashOnly = false }: FlashSaleProps) 
         {/* ── Products Carousel ── */}
         <Swiper
           modules={[Autoplay, Navigation]}
+          slidesPerView={2}
           autoplay={{ delay: 3500, disableOnInteraction: true, pauseOnMouseEnter: true }}
           loop={products.length > 4}
           spaceBetween={12}

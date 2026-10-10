@@ -17,3 +17,27 @@ The failure was a transient DNS resolver outage. Two nodemon watchers were also 
 Start one backend watcher from `server/` with `npm run dev`. On recovery it must log `New database connection established`, report MongoDB connected, and listen on port 5001. Verify `GET http://127.0.0.1:5001/health` returns `status: OK` and `mongodb: Connected`.
 
 If `ESERVFAIL` recurs, compare the system SRV lookup with a public resolver before changing the URI. Restart nodemon after DNS resolves because a crashed child may remain waiting for a file change.
+
+## Recurrence: 2026-09-28 ETIMEOUT
+
+Sales-order requests failed at the global DB guard with `querySrv ETIMEOUT`.
+The running API reported Disconnected. Fresh SRV queries through system DNS,
+Cloudflare and Google succeeded, so resolver failure was intermittent. Existing
+connection-cache tests already covered retries; increasing query timeouts would
+not address DNS resolution.
+
+`server/config/db.js` now supports opt-in `NODE_DNS_SERVERS`, a comma-separated
+list of resolver IPs applied once at module initialization, before MongoDB DNS
+queries. The ignored local `server/.env` uses `1.1.1.1,8.8.8.8`. The development
+watcher restarted after the source edit. A direct database ping returned `ok: 1`;
+`/health` returned MongoDB Connected, and the quotation endpoint passed its DB
+guard and returned the expected unauthenticated 401 instead of 503.
+
+This is a Node process-wide `dns.promises` override, including driver SRV/TXT
+queries and periodic SRV discovery; it does not change OS DNS or `dns.lookup`.
+Leave it unset for healthy environments and private/VPN DNS. Restart after edits.
+No URI, credential, TLS, database data or tenant-scoping changes were made.
+Reference: https://nodejs.org/api/dns.html#dnspromisessetserversservers
+
+Verification: all 2,928 server tests passed outside the sandbox, including the
+three new DNS regressions and six existing connection-cache tests.

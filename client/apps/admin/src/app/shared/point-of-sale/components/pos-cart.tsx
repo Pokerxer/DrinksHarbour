@@ -365,6 +365,7 @@ export default function POSCart() {
     items,
     total,
     subtotal,
+    taxAmount,
     discountAmount,
     discountType,
     discountValue,
@@ -1476,10 +1477,16 @@ export default function POSCart() {
 
         {/* ── Total ── */}
         <div className="shrink-0 border-t border-gray-200 px-4 py-2.5">
-          {(discountAmount > 0 || thresholdDiscount > 0) && (
+          {(discountAmount > 0 || thresholdDiscount > 0 || taxAmount > 0) && (
             <div className="mb-1 flex justify-between text-sm text-gray-500">
               <span>Subtotal</span>
               <span>{formatCurrency(subtotal)}</span>
+            </div>
+          )}
+          {taxAmount > 0 && (
+            <div className="mb-1 flex justify-between text-sm text-gray-500">
+              <span>Quotation tax</span>
+              <span>{formatCurrency(taxAmount)}</span>
             </div>
           )}
           {discountAmount > 0 && (

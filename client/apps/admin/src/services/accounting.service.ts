@@ -68,15 +68,43 @@ export interface TrialBalance {
   totalDebits: number;
   totalCredits: number;
   balanced: boolean;
+  /**
+   * Nothing was posted in the window. Distinct from `balanced` so a quiet month
+   * is not reported as an imbalance.
+   */
+  isEmpty?: boolean;
+  /** Posted entries totalled into the rows above. */
+  entryCount?: number;
+  /** Draft entries exist but are excluded from these figures. */
+  draftsExcluded?: number;
 }
 
 export interface ProfitLoss {
   revenueTotal: number;
+  sales?: {
+    gross: number;
+    reversals: number;
+    net: number;
+    documentCount: number;
+  };
+  otherIncome?: number;
   cogs: { total: number; source: 'journal' | 'derived' };
   expenseTotal: number;
   grossProfit: number;
   netProfit: number;
-  tax: { collected: number; paid: number };
+  tax: {
+    collected: number;
+    paid: number;
+    ledgerCollected?: number;
+    ledgerPaid?: number;
+    reconciled?: boolean;
+    source?: 'journal' | 'tax_records';
+  };
+  /** Draft entries exist but are excluded from these figures. */
+  draftsExcluded?: number;
+  /** Prior equally long window, when requested via `compare=1`. */
+  previous?: ProfitLoss | null;
+  previousWindow?: { from: string; to: string } | null;
 }
 
 export interface ReportSection {
@@ -89,6 +117,8 @@ export interface BalanceSheet {
   liabilities: ReportSection;
   equity: ReportSection;
   balanced: boolean;
+  /** Draft entries exist but are excluded from these figures. */
+  draftsExcluded?: number;
 }
 
 export interface GeneralLedger {
@@ -104,6 +134,12 @@ export interface GeneralLedger {
   totals: { debits: number; credits: number; closing: number };
   openingBalance?: number;
   account?: { code: string; name: string; type: AccountType };
+  /**
+   * False when no `from` was given: prior entries were never read, so
+   * `totals.closing` is the movement inside the window rather than the
+   * account's balance.
+   */
+  openingIncluded?: boolean;
 }
 
 export interface MonthlyPoint {
@@ -122,6 +158,9 @@ export interface AccountingDashboard {
   }>;
   kpis: {
     revenueMtd: number;
+    salesMtd?: number;
+    salesReversalsMtd?: number;
+    postedSalesCount?: number;
     expensesMtd: number;
     grossProfitMtd?: number;
     netProfitMtd: number;
@@ -329,7 +368,7 @@ class AccountingService {
     );
   }
 
-  profitLoss(token: string, params?: { from?: string; to?: string }) {
+  profitLoss(token: string, params?: { from?: string; to?: string; compare?: boolean }) {
     return this.report<ProfitLoss>(
       token,
       'reports/profit-loss',

@@ -3,6 +3,11 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import {
+  bankAccountErrors,
+  hasBlockingBankAccountError,
+  type BankAccountRow,
+} from '@/app/shared/point-of-sale/bank-account-rules';
 import RetailLocationSettings from '@/app/shared/point-of-sale/components/retail-location-settings';
 import type { POSSettings, POSShop } from '@/app/shared/point-of-sale/types';
 import {
@@ -133,11 +138,7 @@ type PosState = {
   receiptNumberPrefix: string;
 };
 
-type BankAccount = {
-  bankName: string;
-  accountNumber: string;
-  accountName: string;
-};
+type BankAccount = BankAccountRow;
 
 const D_POS: PosState = {
   isBarRestaurant: false,
@@ -533,37 +534,44 @@ const INPUT_CLS =
 
 function BankRow({
   account,
+  error,
   onRemove,
   onChange,
 }: {
   account: BankAccount;
+  /** Set when this row could not be paid into — see bank-account-rules.ts. */
+  error?: string;
   onRemove: () => void;
   onChange: (f: keyof BankAccount, v: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2.5 px-6 py-2.5">
-      {(
-        [
-          ['bankName', 'Bank name', 'text'],
-          ['accountNumber', 'Account number', 'text'],
-          ['accountName', 'Account name (optional)', 'text'],
-        ] as [keyof BankAccount, string, string][]
-      ).map(([field, ph]) => (
-        <input
-          key={field}
-          value={account[field]}
-          onChange={(e) => onChange(field, e.target.value)}
-          placeholder={ph}
-          className={INPUT_CLS}
-        />
-      ))}
-      <button
-        type="button"
-        onClick={onRemove}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
-      >
-        <PiTrash size={15} />
-      </button>
+    <div className="px-6 py-2.5">
+      <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2.5">
+        {(
+          [
+            ['bankName', 'Bank name', 'text'],
+            ['accountNumber', 'Account number', 'text'],
+            ['accountName', 'Account name (optional)', 'text'],
+          ] as [keyof BankAccount, string, string][]
+        ).map(([field, ph]) => (
+          <input
+            key={field}
+            value={account[field]}
+            onChange={(e) => onChange(field, e.target.value)}
+            placeholder={ph}
+            aria-invalid={!!error}
+            className={error ? `${INPUT_CLS} border-red-300` : INPUT_CLS}
+          />
+        ))}
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
+        >
+          <PiTrash size={15} />
+        </button>
+      </div>
+      {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
     </div>
   );
 }
@@ -984,6 +992,12 @@ export default function SettingsPage() {
     objDirty(purch, savedPurch) ||
     objDirty(wh, savedWh);
 
+  // An account the invoice cannot print (no bank, no number, non-numeric, or a
+  // duplicate) must not be savable. Saving it would look fine here and then
+  // quietly never appear on a customer invoice.
+  const bankErrors = bankAccountErrors(banks);
+  const banksBlocked = hasBlockingBankAccountError(banks);
+
   // ── intersection observer for sidebar active anchor ───────────────────────
   useEffect(() => {
     if (
@@ -1172,6 +1186,12 @@ export default function SettingsPage() {
   // ── save / discard ────────────────────────────────────────────────────────
   async function handleSave() {
     if (!token || !dirty) return;
+    // Guard the handler as well as the button — a keyboard or programmatic save
+    // must not slip an unpayable account past the UI.
+    if (banksBlocked) {
+      toast.error('Fix the highlighted bank account before saving');
+      return;
+    }
     setSaving(true);
     try {
       // Only post a module's payload when that module actually changed —
@@ -1450,7 +1470,12 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={!dirty || saving}
+            disabled={!dirty || saving || banksBlocked}
+            title={
+              banksBlocked
+                ? 'Fix the highlighted bank account before saving — invoices cannot print an incomplete account.'
+                : undefined
+            }
             className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#9a0202] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <PiFloppyDisk size={14} />
@@ -2844,6 +2869,7 @@ export default function SettingsPage() {
                           <BankRow
                             key={i}
                             account={b}
+                            error={bankErrors[i]}
                             onRemove={() => removeBank(i)}
                             onChange={(f, v) => updateBank(i, f, v)}
                           />

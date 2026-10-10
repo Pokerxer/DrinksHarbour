@@ -95,9 +95,17 @@ it('keeps size, per-line returns and delivery details when migrating history inv
     notes: 'Call on arrival',
   });
   expect(doc.table.rows[0][0].sub).toContain('330 ml');
-  expect(doc.table.rows[0][0].sub).toContain('1 refunded');
+  expect(doc.table.rows[0][0].sub).toContain('1 returned');
   expect(doc.parties.some((p) => p.lines?.some((line) => line.includes('Delivery street')))).toBe(
     true
   );
   expect(doc.sections.some((s) => s.body === 'Call on arrival')).toBe(true);
+});
+
+it('prints partial Sales returns without double-counting a historic cash settlement', () => {
+ const doc=buildA4Invoice({total:1000,items:[{name:'Wine',quantity:10}],refunds:[
+  {source:'sales',items:[{orderItemIndex:0,quantity:6}]},
+  {items:[{orderItemIndex:0,quantity:4,salesReturnedQuantity:2}]},
+ ]});
+ expect(doc.table.rows[0][0].sub).toContain('8 returned');
 });

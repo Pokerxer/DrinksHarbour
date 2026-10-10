@@ -1,6 +1,9 @@
 // Paid operational Orders feed the tenant journal from stored financial snapshots.
 const { round2 } = require('./accounting.helpers');
-const tenderAccount = method => method === 'cash' ? '1000' : method === 'wallet' ? '2200' : '1100';
+// 'account' is a sale the customer will pay for later. It debits receivables,
+// because the money is owed — booking it to a bank or cash account would record
+// tender that never arrived. Receivables is 1300 throughout this file.
+const tenderAccount = method => method === 'cash' ? '1000' : method === 'wallet' ? '2200' : method === 'account' ? '1300' : '1100';
 const line = (account, debit = 0, credit = 0) => ({ account, debit: round2(debit), credit: round2(credit) });
 
 function orderPostings(order) {
@@ -19,6 +22,7 @@ function orderPostings(order) {
       const total = round2(order.totalAmount);
       const tax = round2(order.taxAmount);
       const tip = round2(order.tipAmount);
+      const rounding = round2(order.roundingAmount);
       if (total <= 0) continue;
       lines = [];
       let remaining = total;
@@ -29,12 +33,13 @@ function orderPostings(order) {
         remaining = round2(remaining - amount);
       }
       if (remaining > 0) throw new Error('Receipt tenders do not cover the sale');
-      if (order.linkedSalesOrder) lines.push(line('1300', 0, total - tip));
+      if (order.linkedSalesOrder) lines.push(line('1300', 0, total - tip - rounding));
       else {
-        lines.push(line('4000', 0, total - tax - tip));
+        lines.push(line('4000', 0, total - tax - tip - rounding));
         if (tax) lines.push(line('2100', 0, tax));
       }
       if (tip) lines.push(line('2300', 0, tip));
+      if (rounding) lines.push(line('4100', rounding < 0 ? -rounding : 0, rounding > 0 ? rounding : 0));
     } else {
       // Marketplace settlements are amounts due from the platform, not cash
       // in the tenant's bank. Use snapshotted shares, never today's commission.
@@ -60,11 +65,15 @@ async function captureOrderAccounting(order) {
     if (order.currency && order.currency !== 'NGN') throw new Error('Foreign currency requires conversion before posting to the NGN ledger');
     const entries = orderPostings(order);
     for (const tenantId of new Set(entries.map(e => e.tenantId))) await ensureDefaultCOA(tenantId);
+    let taxDocument = order;
+    let taxSource = order.source === 'pos' ? 'pos' : null;
     if (order.linkedSalesOrder) {
       let so = await require('../models/SalesOrder').findOne({ _id: order.linkedSalesOrder, tenant: order.tenant });
       if (!so) throw new Error('Linked sales order is not in this tenant');
       if (so.docType === 'quotation' && so.convertedTo) so = await require('../models/SalesOrder').findOne({ _id: so.convertedTo, tenant: order.tenant });
       if (!so || so.docType !== 'order' || so.orderStatus === 'cancelled') throw new Error('Linked quotation must be converted and reconciled before accounting can post');
+      taxDocument = so;
+      taxSource = 'sales_order';
       const entry = await journal.findEntry({ tenantId: so.tenant, refDoc: so._id, entryType: 'sales_revenue' });
       if (!entry) {
         await journal.postJournalEntry({ tenantId: so.tenant, refDoc: so._id, refDocType: 'SalesOrder', entryType: 'sales_revenue', source: 'sales_order',
@@ -75,6 +84,10 @@ async function captureOrderAccounting(order) {
       await journal.postJournalEntry({ ...entry, refDoc: order._id, refDocType: 'Order', source: order.source === 'pos' ? 'pos' : 'marketplace',
         date: order.paidAt || order.placedAt || order.createdAt, postedBy: order.posStaff,
         memo: `${order.source === 'pos' ? 'POS receipt' : 'Marketplace order'} ${order.receiptNumber || order.orderNumber}` });
+    }
+    // A linked receipt settles an invoice: the invoice owns its VAT.
+    if (!order.isVoided && taxSource && (taxDocument.taxTotal > 0 || taxDocument.taxAmount > 0)) {
+      await require('./tax.service').captureDocumentTax({ sourceType: taxSource, doc: taxDocument, postedBy: order.posStaff, strict: true });
     }
     // Full voids reverse the original entries, including inventory/COGS. A
     // partial refund is posted separately by its immutable refund document id.
@@ -98,6 +111,9 @@ async function captureOrderAccounting(order) {
       }
     } else if (['partially_refunded', 'refunded'].includes(order.paymentStatus)) {
       throw new Error('Marketplace refund requires a tenant settlement breakdown before reversal');
+    }
+    if (order.isVoided && taxSource === 'pos') {
+      await require('./tax.service').reverseDocumentTax({ sourceType: 'pos', doc: order, strict: true });
     }
     if (!entries.length) throw new Error('No accounting amounts found in order snapshots');
     await order.constructor.updateOne({ _id: order._id }, { $set: { accountingStatus: 'posted', accountingIssue: '', accountingCheckedAt: new Date() } });

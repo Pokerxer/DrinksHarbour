@@ -1,9 +1,39 @@
+export const WEBSITE_SCOPES = ['storefront:read', 'checkout:write'];
+export const API_KEY_PERMISSIONS = [
+  {
+    scope: 'storefront:read',
+    label: 'Read storefront',
+    description: 'Read your store branding, products, prices and availability.',
+  },
+  {
+    scope: 'checkout:write',
+    label: 'Create and verify checkouts',
+    description: 'Quote carts, create orders and take Paystack payments.',
+  },
+  {
+    scope: 'inventory:read',
+    label: 'Read inventory',
+    description: 'Read operational stock records for reporting and sync.',
+  },
+  {
+    scope: 'bookings:read',
+    label: 'Read bookings',
+    description: 'Read venue bookings without changing them.',
+  },
+];
+export function apiKeyScopeLabel(scope: string) {
+  return (
+    API_KEY_PERMISSIONS.find((permission) => permission.scope === scope)
+      ?.label || scope
+  );
+}
 export type ApiKey = {
   _id: string;
   name: string;
   prefix: string;
   scopes: string[];
   createdAt?: string;
+  lastUsedAt?: string | null;
   expiresAt: string;
   revokedAt: string | null;
 };

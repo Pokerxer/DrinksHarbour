@@ -133,9 +133,10 @@ const getVendorBill = asyncHandler(async (req, res) => {
     throw new NotFoundError("Vendor Bill not found");
   }
 
+  const returns = await require('../services/vendorReturn.bill').getBillReturns(vendorBill, tenantId);
   res.status(200).json({
     success: true,
-    data: vendorBill,
+    data: { ...vendorBill.toObject(), returns },
   });
 });
 

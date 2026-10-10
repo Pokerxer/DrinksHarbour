@@ -4,6 +4,7 @@
 // browser, reports, chart of accounts). No React, no fetch — unit-testable.
 
 import type { Account, JournalEntry, JournalEntryType } from '@/services/accounting.service';
+import { asLocalDate } from './report-status';
 
 export const ENTRY_TYPE_LABELS: Record<JournalEntryType | string, string> = {
   accrued_revenue: 'Accrued Revenue',
@@ -79,6 +80,72 @@ export const entryTotals = (entry: JournalEntry): { debit: number; credit: numbe
   const sum = (key: 'debit' | 'credit') =>
     Math.round(entry.lines.reduce((s, l) => s + (l[key] || 0), 0) * 100) / 100;
   return { debit: sum('debit'), credit: sum('credit') };
+};
+
+/**
+ * Footer figures for the journal-entries page.
+ *
+ * Two things were wrong with summing the page blindly:
+ *  - draft entries were folded into the totals, so the number on screen was
+ *    not any period's movement (drafts never reach the ledger);
+ *  - debits and credits were printed side by side with nothing saying whether
+ *    they agreed, so an entry that missed by a naira looked like a rendering
+ *    bug rather than a broken entry. Posting tolerates a kobo, so this uses the
+ *    same ±0.01 before raising a flag.
+ */
+export const summarizePage = (entries: JournalEntry[]) => {
+  let debit = 0;
+  let credit = 0;
+  let draftDebit = 0;
+  let draftCredit = 0;
+  let postedCount = 0;
+  let draftCount = 0;
+  let unbalancedCount = 0;
+
+  for (const entry of entries || []) {
+    const t = entryTotals(entry);
+    if (Math.abs(t.debit - t.credit) > 0.01) unbalancedCount += 1;
+    if (entry.status === 'draft') {
+      draftCount += 1;
+      draftDebit = Math.round((draftDebit + t.debit) * 100) / 100;
+      draftCredit = Math.round((draftCredit + t.credit) * 100) / 100;
+      continue;
+    }
+    postedCount += 1;
+    debit = Math.round((debit + t.debit) * 100) / 100;
+    credit = Math.round((credit + t.credit) * 100) / 100;
+  }
+
+  const outOfBalanceBy = Math.round(Math.abs(debit - credit) * 100) / 100;
+  return {
+    debit,
+    credit,
+    draftDebit,
+    draftCredit,
+    postedCount,
+    draftCount,
+    unbalancedCount,
+    outOfBalance: outOfBalanceBy > 0.01,
+    outOfBalanceBy,
+  };
+};
+
+/** Server clamps ?limit to 500 on GET /journal-entries. */
+export const EXPORT_PAGE_SIZE = 500;
+
+/**
+ * Page numbers needed to pull an entire filtered result set.
+ *
+ * The export button wrote whatever was on screen, so narrowing the filters to
+ * the 25 rows you could see produced a file that looked like the whole period
+ * and was not. `pageSize` is clamped to the server's 500-row ceiling, so the
+ * count is honest about how many requests the caller must make.
+ */
+export const exportPageRequests = (total: number, pageSize = EXPORT_PAGE_SIZE): number[] => {
+  const rows = Math.max(0, Math.floor(Number(total) || 0));
+  if (!rows) return [];
+  const size = Math.max(1, Math.min(Math.floor(Number(pageSize) || 1), EXPORT_PAGE_SIZE));
+  return Array.from({ length: Math.ceil(rows / size) }, (_, i) => i + 1);
 };
 
 /** "1–25 of 132" window label for paginated toolbars; "" when nothing matches. */
@@ -178,12 +245,16 @@ export function printReport({
 
 /** Human label for a from/to date window, e.g. "1 Aug – 26 Aug 2026". */
 export const dateWindowLabel = (from?: string, to?: string): string => {
-  const fmt = (iso?: string) =>
-    iso
-      ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-      : '…';
+  const fmt = (iso?: string) => {
+    // `asLocalDate` keeps a bare YYYY-MM-DD on the calendar day the user
+    // picked; `new Date(iso)` would read it as UTC midnight and caption a
+    // filter of 1 Aug as 31 Jul in negative-offset timezones.
+    const d = asLocalDate(iso);
+    return d ? d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '…';
+  };
   if (!from && !to) return 'All time';
-  return `${from ? fmt(from) : 'Start'} – ${to ? `${fmt(to)} ${new Date(to).getFullYear()}` : 'Today'}`;
+  const endYear = asLocalDate(to)?.getFullYear();
+  return `${from ? fmt(from) : 'Start'} – ${to ? `${fmt(to)}${endYear ? ` ${endYear}` : ''}` : 'Today'}`;
 };
 
 /** Month label for YYYY-MM period keys, e.g. "August 2026". */

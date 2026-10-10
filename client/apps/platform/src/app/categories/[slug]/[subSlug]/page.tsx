@@ -1,3 +1,4 @@
+import Image from '@/components/UI/OptimizedImage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -553,8 +554,7 @@ export default async function SubCategoryPage({
         }}
       >
         {heroImage && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image fill priority sizes="100vw"
             src={heroImage}
             alt=""
             aria-hidden="true"
@@ -609,8 +609,7 @@ export default async function SubCategoryPage({
             {/* Emblem tile — the subcategory's icon, or its engraved initial */}
             <div className="sp-rise mx-auto mb-6 flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-white p-3 shadow-2xl ring-4 ring-white/10 sm:h-28 sm:w-28">
               {sub.thumbnailImage?.url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image width={112} height={112} sizes="112px" priority
                   src={sub.thumbnailImage.url}
                   alt={sub.thumbnailImage.alt || `${name} category`}
                   className="h-full w-full object-contain"
@@ -781,8 +780,7 @@ export default async function SubCategoryPage({
                   >
                     <div className="aspect-square overflow-hidden bg-gray-50">
                       {img ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image width={500} height={500} sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                           src={img}
                           alt={p.name}
                           loading="lazy"
@@ -852,8 +850,7 @@ export default async function SubCategoryPage({
                   >
                     <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-gray-100 bg-gray-50 p-2">
                       {s.thumbnailImage?.url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image width={64} height={64} sizes="64px"
                           src={s.thumbnailImage.url}
                           alt=""
                           loading="lazy"

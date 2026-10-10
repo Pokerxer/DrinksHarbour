@@ -1,5 +1,6 @@
 // routes/purchaseOrder.routes.js
 const express = require("express");
+const { cacheReport } = require("../middleware/adminReportCache");
 const router = express.Router();
 const {
   createPurchaseOrder,
@@ -43,8 +44,8 @@ router.use(requireOwnTenant);
 router.use(require('../middleware/plan.middleware').requireCapability('purchase_orders'));
 
 // Analytics routes MUST be before /:id to avoid Express treating "analytics" as an id param
-router.get("/analytics/summary", tenantAdminOrSuperAdmin, getPurchaseAnalyticsSummary);
-router.get("/analytics/by-vendor", tenantAdminOrSuperAdmin, getPurchaseAnalyticsByVendor);
+router.get("/analytics/summary", tenantAdminOrSuperAdmin, cacheReport("purchase-summary", { tenantRequired: true }), getPurchaseAnalyticsSummary);
+router.get("/analytics/by-vendor", tenantAdminOrSuperAdmin, cacheReport("purchase-vendors", { tenantRequired: true }), getPurchaseAnalyticsByVendor);
 
 // Tenant purchase settings — also before /:id ("settings" is not an id)
 router.get("/settings", tenantAdminOrSuperAdmin, getPurchaseSettings);

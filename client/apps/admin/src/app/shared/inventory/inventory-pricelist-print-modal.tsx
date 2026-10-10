@@ -1,173 +1,72 @@
 'use client';
-
-'use client';
-
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import {
-  PiCheckCircle,
-  PiDownloadSimple,
-  PiFilePdf,
-  PiPrinter,
-  PiSpinner,
-  PiTag,
-  PiX,
-} from 'react-icons/pi';
-import { routes } from '@/config/routes';
+import { PiTag, PiX } from 'react-icons/pi';
 import { useTenant } from '@/context/TenantContext';
 import type { StockRow } from '@/services/warehouseStock.service';
-import { pricelistService } from '@/services/pricelist.service';
-import { subproductService } from '@/services/subproduct.service';
-import { warehouseService, type Warehouse } from '@/services/warehouse.service';
-import ScopePicker from './inventory-pricelist-scope-picker';
 import { downloadPricelistPdf } from '@/utils/print/pricelist-print';
 import {
   downloadPricelistCsv,
-  explainPricelistCoverage,
   printCustomerPricelist,
-  priceAndSortLines,
-  pricelistRuleCount,
-  resolveCatalogLines,
   resolvePricelistOrigin,
-  applyAvailabilityFromStock,
-  scopeIsEmpty,
-  type CatalogProduct,
-  type PricelistLite,
   type ScopeSelection,
+  type PricelistPrintOptions,
 } from './inventory-pricelist-print';
+import { resolveExportRows } from './inventory-pricelist-data';
+import { useInventoryPricelistData } from './use-inventory-pricelist-data';
+import {
+  defaultPricelistSettings,
+  restorePricelistSettings,
+  type PricelistSettings,
+} from './inventory-pricelist-settings';
+import type { PriceColumn } from './inventory-pricelist-columns';
+import ScopePicker from './inventory-pricelist-scope-picker';
+import ColumnPicker from './inventory-pricelist-column-picker';
+import DocumentOptions from './inventory-pricelist-document-options';
+import Preview from './inventory-pricelist-preview';
 
-function plusDays(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-// ── Persisted modal settings ──────────────────────────────────────────────────
-
-const STORE_KEY = 'dh-inventory-pricelist-print';
-
-interface StoredSettings {
-  plId: string;
-  title: string;
-  validUntil: string;
-  groupByCategory: boolean;
-  showSku: boolean;
-  showAvailability: boolean;
-  showBundleQuantity: boolean;
-  showWasPrices: boolean;
-  discountPercent: number;
-  businessName: string;
-  additionalColumns: Array<{ label: string; plId: string }>;
-}
-
-const DEFAULTS: StoredSettings = {
-  plId: '',
-  title: 'Price List',
-  validUntil: plusDays(30),
-  groupByCategory: true,
-  showSku: false,
-  showAvailability: false,
-  showBundleQuantity: true,
-  showWasPrices: true,
-  discountPercent: 0,
-  businessName: '',
-  additionalColumns: [],
-};
-
-function loadStored(): StoredSettings {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return DEFAULTS;
-    const s = JSON.parse(raw) as Partial<StoredSettings>;
-    return {
-      plId: typeof s.plId === 'string' ? s.plId : '',
-      title:
-        typeof s.title === 'string' && s.title.trim()
-          ? s.title
-          : DEFAULTS.title,
-      validUntil:
-        typeof s.validUntil === 'string' && s.validUntil
-          ? s.validUntil
-          : DEFAULTS.validUntil,
-      groupByCategory: s.groupByCategory ?? DEFAULTS.groupByCategory,
-      showSku: s.showSku ?? DEFAULTS.showSku,
-      showAvailability: s.showAvailability ?? DEFAULTS.showAvailability,
-      showBundleQuantity: s.showBundleQuantity ?? DEFAULTS.showBundleQuantity,
-      showWasPrices: s.showWasPrices ?? DEFAULTS.showWasPrices,
-      discountPercent:
-        typeof s.discountPercent === 'number' &&
-        s.discountPercent >= 0 &&
-        s.discountPercent <= 90
-          ? s.discountPercent
-          : 0,
-      businessName: typeof s.businessName === 'string' ? s.businessName : '',
-      additionalColumns: Array.isArray(s.additionalColumns)
-        ? s.additionalColumns
-            .filter(
-              (c) =>
-                c && typeof c.label === 'string' && typeof c.plId === 'string'
-            )
-            .slice(0, 3)
-        : [],
-    };
-  } catch {
-    return DEFAULTS;
-  }
-}
-
-// ── Modal ─────────────────────────────────────────────────────────────────────
-
-interface PricelistPrintModalProps {
+interface Props {
   open: boolean;
   rows: StockRow[];
   onClose: () => void;
 }
+/** Scope changes and closing discard outstanding requests, caches and form state. */
+export default function PricelistPrintModal(props: Props) {
+  const { data: session } = useSession();
+  const { tenant } = useTenant();
+  const user = session?.user as
+    | { token?: string; id?: string; _id?: string; email?: string }
+    | undefined;
+  const token = user?.token ?? '';
+  const storageKey = `dh-inventory-pricelist-print-v2:${tenant?._id ?? 'platform'}:${user?.id ?? user?._id ?? user?.email ?? 'anonymous'}`;
+  if (!props.open) return null;
+  return (
+    <PricelistModalContents
+      key={`${storageKey}:${token}`}
+      {...props}
+      token={token}
+      storageKey={storageKey}
+    />
+  );
+}
 
-export default function PricelistPrintModal({
-  open,
+function PricelistModalContents({
   rows,
   onClose,
-}: PricelistPrintModalProps) {
-  const { data: session } = useSession();
-  const token = (session?.user as { token?: string })?.token ?? '';
+  token,
+  storageKey,
+}: Props & { token: string; storageKey: string }) {
   const { tenant } = useTenant();
-
-  const [pricelists, setPricelists] = useState<PricelistLite[]>([]);
-  const [loadingLists, setLoadingLists] = useState(false);
-  // The full pricelist document (with its rules) for the currently selected
-  // pricelist. The list endpoint strips rules for size, so this is fetched via
-  // GET /pricelists/:id on selection — the pricing source for Print/PDF/CSV.
-  const [plDetail, setPlDetail] = useState<PricelistLite | null>(null);
-  const [additionalDetails, setAdditionalDetails] = useState<
-    Record<string, PricelistLite>
-  >({});
-  const [plDetailLoading, setPlDetailLoading] = useState(false);
-
-  const [plId, setPlId] = useState(DEFAULTS.plId);
-  const [title, setTitle] = useState(DEFAULTS.title);
-  const [validUntil, setValidUntil] = useState(DEFAULTS.validUntil);
-  const [groupByCategory, setGroupByCategory] = useState(
-    DEFAULTS.groupByCategory
-  );
-  const [showSku, setShowSku] = useState(DEFAULTS.showSku);
-  const [showAvailability, setShowAvailability] = useState(
-    DEFAULTS.showAvailability
-  );
-  const [showBundleQuantity, setShowBundleQuantity] = useState(
-    DEFAULTS.showBundleQuantity
-  );
-  const [showWasPrices, setShowWasPrices] = useState(DEFAULTS.showWasPrices);
-  const [discountPercent, setDiscountPercent] = useState(
-    DEFAULTS.discountPercent
-  );
-  const [businessName, setBusinessName] = useState(DEFAULTS.businessName);
-  const [additionalColumns, setAdditionalColumns] = useState(
-    DEFAULTS.additionalColumns
-  );
-
-  // Scope selection ("What's on the list")
+  const [settings, setSettings] = useState<PricelistSettings>(() => {
+    try {
+      return restorePricelistSettings(
+        JSON.parse(localStorage.getItem(storageKey) || 'null')
+      );
+    } catch {
+      return defaultPricelistSettings();
+    }
+  });
   const [scopeMode, setScopeMode] = useState<'current' | 'select'>('current');
   const [scope, setScope] = useState<ScopeSelection>({
     categories: [],
@@ -175,378 +74,93 @@ export default function PricelistPrintModal({
     brands: [],
     productIds: [],
   });
-  const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const catalogRequestedRef = useRef(false);
-
-  // The tenant's warehouses, for the letterhead only: the stock rows carry a
-  // warehouse *name* and nothing else, so the issuing warehouse's own address
-  // and contact have to be looked up here. Without it the sheet named the
-  // warehouse and then printed the platform's address underneath it.
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const warehousesRequestedRef = useRef(false);
-
-  // Restore last-used settings once per mount.
+  const data = useInventoryPricelistData(
+    token,
+    settings.columns.map((c) => c.plId),
+    scopeMode === 'select'
+  );
   useEffect(() => {
-    const stored = loadStored();
-    setPlId(stored.plId);
-    setTitle(stored.title);
-    setValidUntil(stored.validUntil);
-    setGroupByCategory(stored.groupByCategory);
-    setShowSku(stored.showSku);
-    setShowAvailability(stored.showAvailability);
-    setShowBundleQuantity(stored.showBundleQuantity);
-    setShowWasPrices(stored.showWasPrices);
-    setDiscountPercent(stored.discountPercent);
-    setBusinessName(stored.businessName);
-    setAdditionalColumns(stored.additionalColumns);
-  }, []);
-
-  // Persist on every change while open.
-  useEffect(() => {
-    if (!open) return;
     try {
-      const s: StoredSettings = {
-        plId,
-        title,
-        validUntil,
-        groupByCategory,
-        showSku,
-        showAvailability,
-        showBundleQuantity,
-        showWasPrices,
-        discountPercent,
-        businessName,
-        additionalColumns,
-      };
-      localStorage.setItem(STORE_KEY, JSON.stringify(s));
+      localStorage.setItem(storageKey, JSON.stringify(settings));
     } catch {
-      /* storage unavailable — settings simply won't persist */
+      /* Optional persistence. */
     }
-  }, [
-    open,
-    plId,
-    title,
-    validUntil,
-    groupByCategory,
-    showSku,
-    showAvailability,
-    showBundleQuantity,
-    showWasPrices,
-    discountPercent,
-    businessName,
-    additionalColumns,
-  ]);
-
+  }, [settings, storageKey]);
   useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoadingLists(true);
-    pricelistService
-      .list(token)
-      .then((res: unknown) => {
-        if (cancelled) return;
-        // API shape: { data: { pricelists: [...], total } } — normalise
-        // defensively so a non-array can never reach state (crashed the modal).
-        const payload = (res as { data?: unknown }).data;
-        const list = Array.isArray(payload)
-          ? (payload as PricelistLite[])
-          : Array.isArray(
-                (payload as { pricelists?: PricelistLite[] })?.pricelists
-              )
-            ? (payload as { pricelists: PricelistLite[] }).pricelists
-            : [];
-        setPricelists(list);
-      })
-      .catch(() => {
-        if (!cancelled) toast.error('Failed to load pricelists');
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingLists(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, token]);
-
-  // Only keep a stored pricelist id if it still exists.
-  useEffect(() => {
-    if (!loadingLists && plId && !pricelists.some((p) => p._id === plId)) {
-      setPlId('');
-    }
-  }, [loadingLists, pricelists, plId]);
-
-  // Fetch the full pricelist (rules included) whenever one is selected. The
-  // list endpoint strips `rules`, so pricing from the list row alone would
-  // silently fall back to retail — the print/PDF/CSV sheets must price from
-  // the full document, exactly as the POS does. Once a pricelist's detail is
-  // cached, subsequent opens of the same modal don't refetch it.
-  useEffect(() => {
-    if (!open || !plId || !token) {
-      setPlDetail(null);
-      setPlDetailLoading(false);
-      return;
-    }
-    if (plDetail?._id === plId) {
-      setPlDetailLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setPlDetailLoading(true);
-    pricelistService
-      .get(plId, token)
-      .then((res: unknown) => {
-        if (cancelled) return;
-        const d = (res as { data?: PricelistLite }).data;
-        setPlDetail(Array.isArray(d?.rules) ? d : (d ?? null));
-      })
-      .catch(() => {
-        // Keep name/currency from the list row; pricing just stays retail.
-        if (!cancelled) setPlDetail(null);
-      })
-      .finally(() => {
-        if (!cancelled) setPlDetailLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, plId, token, plDetail]);
-
-  useEffect(() => {
-    const ids = additionalColumns
-      .map((c) => c.plId)
-      .filter(Boolean)
-      .filter((id) => id !== plId && !additionalDetails[id]);
-    if (!open || !token || ids.length === 0) return;
-    Promise.all(
-      ids.map((id) =>
-        pricelistService
-          .get(id, token)
-          .then(
-            (res: unknown) =>
-              [id, (res as { data?: PricelistLite }).data] as const
-          )
-          .catch(() => null)
-      )
-    ).then((items) =>
-      setAdditionalDetails((prev) => {
-        const next = { ...prev };
-        items.forEach((item) => {
-          if (item?.[1]) next[item[0]] = item[1];
-        });
-        return next;
-      })
-    );
-  }, [open, token, plId, additionalColumns, additionalDetails]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
+    const escape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  const selectedPl = useMemo(
-    () => pricelists.find((p) => p._id === plId) ?? null,
-    [pricelists, plId]
-  );
-
-  // Actual pricing source: the full document (with rules) once fetched, else
-  // the lean list row (name/currency only) while it loads or on failure.
-  const pricingSource = useMemo<PricelistLite | null>(() => {
-    if (!plId) return null;
-    return plDetail ?? selectedPl;
-  }, [plId, plDetail, selectedPl]);
-
-  // Catalog loads lazily, once, when the user switches to product selection.
-  useEffect(() => {
-    if (scopeMode !== 'select' || catalogRequestedRef.current || !token) return;
-    catalogRequestedRef.current = true;
-    setCatalogLoading(true);
-    subproductService
-      .getSubProducts(token, { limit: 500 })
-      .then((res: unknown) => {
-        setCatalog(
-          ((res as { data?: { subProducts?: CatalogProduct[] } }).data
-            ?.subProducts ??
-            (res as { subProducts?: CatalogProduct[] }).subProducts ??
-            []) as CatalogProduct[]
-        );
-      })
-      .catch(() => toast.error('Failed to load the product catalogue'))
-      .finally(() => setCatalogLoading(false));
-  }, [scopeMode, token]);
-
-  // Warehouse directory loads lazily, once per mount, when the modal opens.
-  // A failure is silent by design: the letterhead simply keeps the platform
-  // contact block it has always used — no export is blocked over a letterhead.
-  useEffect(() => {
-    if (!open || warehousesRequestedRef.current || !token) return;
-    warehousesRequestedRef.current = true;
-    warehouseService
-      .getWarehouses(token)
-      .then((res: unknown) => {
-        // API shape: { success, data: [...] }. Normalised defensively, as the
-        // pricelist fetch above is, so a changed envelope cannot crash print.
-        const payload = (res as { data?: unknown }).data;
-        setWarehouses(
-          Array.isArray(payload)
-            ? (payload as Warehouse[])
-            : Array.isArray(
-                  (payload as { warehouses?: Warehouse[] })?.warehouses
-                )
-              ? (payload as { warehouses: Warehouse[] }).warehouses
-              : []
-        );
-      })
-      .catch(() => {
-        /* letterhead falls back to the platform block */
-      });
-  }, [open, token]);
-
-  // Lines to print: passed-in stock rows (current view) or scope-resolved
-  // catalogue lines joined against stock for availability.
-  const effectiveRows = useMemo(() => {
-    if (scopeMode === 'current' || scopeIsEmpty(scope)) return rows;
-    return applyAvailabilityFromStock(
-      resolveCatalogLines(catalog, scope),
-      rows
-    );
-  }, [scopeMode, scope, catalog, rows]);
-
-  const effectiveDiscount =
-    Number.isFinite(discountPercent) && discountPercent > 0
-      ? Math.min(90, discountPercent)
-      : 0;
-
-  // Letterhead issuer: source warehouse, or the tenant when lines mix
-  // warehouses (or none carry one — catalogue-resolved lists).
-  const origin = useMemo(
-    () => resolvePricelistOrigin(effectiveRows, tenant?.name, warehouses),
-    [effectiveRows, tenant?.name, warehouses]
-  );
-
-  const summary = useMemo(() => {
-    if (!open || effectiveRows.length === 0)
-      return { products: 0, lines: 0, changed: 0, bundled: 0, inert: [] };
-    const lines = priceAndSortLines(
-      effectiveRows,
-      pricingSource,
-      effectiveDiscount
-    );
-    // A rule can match every line and still move no price — most often because
-    // it marks up a wholesale basis the lines don't carry. Without this the
-    // sheet is indistinguishable from "no pricelist selected".
-    const coverage = explainPricelistCoverage(lines, pricingSource);
-    return {
-      products: new Set(lines.map((l) => l.subProductId)).size,
-      lines: lines.length,
-      changed: coverage.repriced,
-      bundled: coverage.bundled,
-      inert: coverage.inert,
     };
-  }, [open, effectiveRows, pricingSource, effectiveDiscount]);
-
-  const buildOptions = useCallback(
-    () => ({
-      title: title.trim() || 'Price List',
-      validUntil: validUntil || undefined,
-      groupByCategory,
-      showSku,
-      showAvailability,
-      showBundleQuantity,
-      showWasPrices,
-      discountPercent: effectiveDiscount,
-      businessName: businessName.trim() || undefined,
-      additionalPriceColumns: additionalColumns
-        .map((c) => {
-          const pricelist =
-            (c.plId === plId ? plDetail : additionalDetails[c.plId]) ??
-            pricelists.find((p) => p._id === c.plId);
-          return { label: pricelist?.name ?? '', pricelist };
-        })
-        .filter(
-          (c): c is { label: string; pricelist: PricelistLite } => !!c.pricelist
-        ),
-      originName: origin.name,
-      originWarehouseCount: origin.warehouseCount,
-      originHead: origin.head,
-    }),
-    // Every value read above is listed: an omitted one leaves the callback
-    // holding a stale letterhead while the sheet shows the new one.
-    [
-      title,
-      validUntil,
-      groupByCategory,
-      showSku,
-      showAvailability,
-      showBundleQuantity,
-      showWasPrices,
-      effectiveDiscount,
-      businessName,
-      additionalColumns,
-      pricelists,
-      additionalDetails,
-      plDetail,
-      plId,
-      origin.name,
-      origin.warehouseCount,
-      origin.head,
-    ]
+    window.addEventListener('keydown', escape);
+    return () => window.removeEventListener('keydown', escape);
+  }, [onClose]);
+  const effectiveRows = useMemo(
+    () => resolveExportRows(scopeMode, scope, data.catalog, rows),
+    [scopeMode, scope, data.catalog, rows]
   );
-
-  // Hold exports until the selected pricelist's rules have loaded, so a
-  // quick click can't silently produce a retail-priced sheet instead.
-  const additionalRulesBusy = additionalColumns.some(
-    (c) => !!c.plId && c.plId !== plId && !additionalDetails[c.plId]
+  const origin = resolvePricelistOrigin(
+    effectiveRows,
+    tenant?.name,
+    data.warehouses
   );
-  const rulesBusy = (!!plId && plDetailLoading) || additionalRulesBusy;
-
-  if (!open) return null;
-
-  function handlePrint() {
-    const ok = printCustomerPricelist(
-      effectiveRows,
-      pricingSource,
-      buildOptions()
-    );
-    if (!ok) toast.error('Nothing to print — pick at least one line first');
-  }
-
-  function handlePdf() {
+  const columns: PriceColumn[] = settings.columns.map((c) => {
+    const pricelist = c.plId ? (data.details[c.plId]?.data ?? null) : null;
+    return {
+      label:
+        c.label.trim() ||
+        pricelist?.name ||
+        (c.plId
+          ? data.pricelists.find((p) => p._id === c.plId)?.name ||
+            'Unavailable pricelist'
+          : 'Recommended Sales Price'),
+      pricelist,
+      mode: c.mode,
+    };
+  });
+  const canExport =
+    data.ready && effectiveRows.length > 0 && columns.length > 0;
+  const options: PricelistPrintOptions = {
+    ...settings,
+    title: settings.title.trim() || 'Price List',
+    priceColumns: columns,
+    originName: origin.name,
+    originWarehouseCount: origin.warehouseCount,
+    originHead:
+      origin.head ??
+      (tenant
+        ? {
+            address: tenant.address?.formatted || tenant.address?.street || '',
+            city: [
+              tenant.address?.city,
+              tenant.address?.state,
+              tenant.address?.country,
+            ]
+              .filter(Boolean)
+              .join(', '),
+            email: tenant.contactEmail || tenant.email || '',
+            phone: tenant.contactPhone || tenant.phone || '',
+          }
+        : undefined),
+  };
+  function exportList(kind: 'print' | 'pdf' | 'csv') {
+    if (!canExport) {
+      toast.error(
+        'Load the selected rules and choose products and price columns first'
+      );
+      return;
+    }
     try {
-      downloadPricelistPdf(effectiveRows, pricingSource, buildOptions());
-    } catch {
-      toast.error('Could not generate the PDF');
+      if (kind === 'csv') downloadPricelistCsv(effectiveRows, null, options);
+      else if (kind === 'pdf')
+        downloadPricelistPdf(effectiveRows, null, options);
+      else printCustomerPricelist(effectiveRows, null, options);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not generate the pricelist'
+      );
     }
   }
-
-  function handleCsv() {
-    try {
-      downloadPricelistCsv(effectiveRows, pricingSource, buildOptions());
-    } catch {
-      toast.error('Could not generate the CSV');
-    }
-  }
-
-  const toggleRow = (
-    label: string,
-    checked: boolean,
-    set: (v: boolean) => void
-  ) => (
-    <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-600">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => set(e.target.checked)}
-        className="h-3.5 w-3.5 accent-[#b20202]"
-      />
-      {label}
-    </label>
-  );
-
   return (
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center bg-gray-900/50 p-4"
@@ -554,500 +168,126 @@ export default function PricelistPrintModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#fef2f2] text-[#b20202]">
-              <PiTag className="h-5 w-5" />
-            </span>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pricelist-title"
+        className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+      >
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <PiTag className="h-5 w-5 text-[#b20202]" />
             <div>
-              <h2 className="text-sm font-bold text-gray-900">
-                Print customer pricelist
+              <h2
+                id="pricelist-title"
+                className="text-sm font-bold text-gray-900"
+              >
+                Generate customer pricelist
               </h2>
-              <p className="text-[11px] text-gray-400">
-                {summary.products} product{summary.products === 1 ? '' : 's'}
-                {' \u00b7 '}
-                {summary.lines} line{summary.lines === 1 ? '' : 's'}
-                {summary.changed > 0 && (
-                  <span className="text-emerald-600">
-                    {' '}
-                    · {summary.changed} repriced
-                  </span>
-                )}
-                {summary.bundled > 0 && (
-                  <span className="text-blue-600">
-                    {' '}
-                    · {summary.bundled} bundled
-                  </span>
-                )}
+              <p className="text-xs text-gray-500">
+                {effectiveRows.length} stock lines · {columns.length} price
+                columns
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-          >
+          <button type="button" aria-label="Close" onClick={onClose}>
             <PiX className="h-5 w-5" />
           </button>
         </div>
-
-        <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
-          {/* Scope — what's on the list */}
-          <div>
-            <p className="mb-1.5 text-xs font-semibold text-gray-600">
+        <div className="max-h-[70vh] space-y-5 overflow-y-auto px-5 py-4">
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold text-gray-700">
               What&apos;s on the list
-            </p>
-            <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-gray-50 p-1">
-              {[
-                {
-                  key: 'current' as const,
-                  label:
-                    rows.length > 0
-                      ? `Current view (${rows.length} line${rows.length === 1 ? '' : 's'})`
-                      : 'Current view',
-                },
-                { key: 'select' as const, label: 'Choose products…' },
-              ].map((m) => (
+            </h3>
+            <div className="flex gap-2">
+              {(
+                [
+                  {
+                    key: 'current',
+                    label: `Current selection / view (${rows.length})`,
+                  },
+                  { key: 'select', label: 'Choose products…' },
+                ] as const
+              ).map((m) => (
                 <button
                   key={m.key}
                   type="button"
                   aria-pressed={scopeMode === m.key}
                   onClick={() => setScopeMode(m.key)}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
-                    scopeMode === m.key
-                      ? 'bg-[#b20202] text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-800'
-                  }`}
+                  className={`rounded-lg px-3 py-2 text-xs ${scopeMode === m.key ? 'bg-[#b20202] text-white' : 'bg-gray-100 text-gray-600'}`}
                 >
                   {m.label}
                 </button>
               ))}
             </div>
             {scopeMode === 'select' && (
-              <div className="mt-2">
+              <>
                 <ScopePicker
-                  catalog={catalog}
-                  loading={catalogLoading}
+                  catalog={data.catalog}
+                  loading={data.catalogLoading}
                   selection={scope}
                   onChange={setScope}
                 />
-                {scopeIsEmpty(scope) ? (
-                  <p className="mt-1.5 text-[11px] text-amber-600">
-                    Pick at least one category, sub-category, brand or product
-                    to build the list — or switch back to the current view.
-                  </p>
-                ) : (
-                  <p className="mt-1.5 text-[11px] text-gray-400">
-                    Selections combine: matching any chosen category,
-                    sub-category, brand or product includes it.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Price source — selectable cards */}
-          <div>
-            <div className="mb-1.5 flex items-baseline justify-between">
-              <p className="text-xs font-semibold text-gray-600">
-                Price source
-              </p>
-              <Link
-                href={routes.pos.pricelists}
-                className="text-[11px] font-medium text-[#b20202] hover:underline"
-              >
-                Manage pricelists →
-              </Link>
-            </div>
-            <p className="mb-2 text-[11px] text-gray-400">
-              Select one pricelist for Unit Price, then select up to three more
-              to add as price columns.
-            </p>
-            {loadingLists ? (
-              <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-4 py-5 text-xs text-gray-400">
-                <PiSpinner className="h-4 w-4 animate-spin" /> Loading
-                pricelists…
-              </div>
-            ) : (
-              <div className="grid max-h-44 grid-cols-1 gap-1.5 overflow-y-auto rounded-xl bg-gray-50 p-1.5 sm:grid-cols-2">
-                <button
-                  type="button"
-                  aria-pressed={plId === ''}
-                  onClick={() => {
-                    setPlId('');
-                    setAdditionalColumns([]);
-                  }}
-                  className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                    plId === ''
-                      ? 'border-[#b20202] bg-white shadow-sm'
-                      : 'border-transparent bg-white/60 hover:border-gray-200'
-                  }`}
-                >
-                  <PiTag
-                    className={`mt-0.5 h-4 w-4 shrink-0 ${plId === '' ? 'text-[#b20202]' : 'text-gray-300'}`}
-                  />
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-semibold text-gray-800">
-                      Standard retail
-                    </span>
-                    <span className="block text-[10px] text-gray-400">
-                      Catalogue selling prices · NGN
-                    </span>
-                  </span>
-                  {plId === '' && (
-                    <PiCheckCircle className="ml-auto h-4 w-4 shrink-0 text-[#b20202]" />
-                  )}
-                </button>
-                {pricelists.map((p) => {
-                  const active =
-                    p._id === plId ||
-                    additionalColumns.some((c) => c.plId === p._id);
-                  const ruleCount = pricelistRuleCount(p);
-                  return (
-                    <button
-                      key={p._id}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => {
-                        if (p._id === plId) {
-                          const [next, ...rest] = additionalColumns;
-                          setPlId(next?.plId ?? '');
-                          setAdditionalColumns(rest);
-                          return;
-                        }
-                        if (additionalColumns.some((c) => c.plId === p._id)) {
-                          setAdditionalColumns((v) =>
-                            v.filter((c) => c.plId !== p._id)
-                          );
-                          return;
-                        }
-                        if (!plId) setPlId(p._id);
-                        else if (additionalColumns.length < 3)
-                          setAdditionalColumns((v) => [
-                            ...v,
-                            { label: '', plId: p._id },
-                          ]);
-                      }}
-                      className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                        active
-                          ? 'border-[#b20202] bg-white shadow-sm'
-                          : 'border-transparent bg-white/60 hover:border-gray-200'
-                      }`}
-                    >
-                      <PiTag
-                        className={`mt-0.5 h-4 w-4 shrink-0 ${active ? 'text-[#b20202]' : 'text-gray-300'}`}
-                      />
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-semibold text-gray-800">
-                          {p.name}
-                        </span>
-                        <span className="block text-[10px] text-gray-400">
-                          {ruleCount > 0
-                            ? `${ruleCount} rule${ruleCount === 1 ? '' : 's'}`
-                            : 'No rules'}
-                          {p.currency && p.currency !== 'NGN'
-                            ? ` · ${p.currency}`
-                            : ''}
-                        </span>
-                      </span>
-                      {active && (
-                        <PiCheckCircle className="ml-auto h-4 w-4 shrink-0 text-[#b20202]" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {plId && plDetailLoading && (
-              <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600">
-                <PiSpinner className="h-3 w-3 animate-spin" />
-                <span>
-                  Loading rules for{' '}
-                  <b>{selectedPl?.name || 'this pricelist'}</b>…
-                </span>
-              </div>
-            )}
-            {/* Why a selected pricelist changed nothing. The sheet matches POS
-                checkout exactly — including when that means no change at all —
-                so the only honest thing to do is say why. */}
-            {!plDetailLoading && summary.inert.length > 0 && (
-              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-amber-800">
-                  {summary.changed === 0 && summary.bundled === 0
-                    ? 'This pricelist changes no price on this list'
-                    : 'Some rules did not apply to this list'}
+                <p className="text-[11px] text-gray-500">
+                  Choose categories, sub-categories, brands or products.
+                  Matching any selection includes the product.
                 </p>
-                <ul className="mt-1 space-y-0.5">
-                  {summary.inert.map((i, index) => (
-                    <li
-                      key={`${i.label}-${i.reason}-${index}`}
-                      className="text-[11px] leading-relaxed text-amber-700"
-                    >
-                      <b className="font-semibold">{i.label}</b> — {i.reason}.
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-1.5 text-[10px] leading-relaxed text-amber-600">
-                  These prices still match POS checkout exactly. Set the missing
-                  price on the size, or edit the rule, to change what prints.
-                </p>
-              </div>
+              </>
             )}
-            <p className="mt-1 text-[11px] text-gray-400">
-              Prices follow the same rules the POS applies at checkout.
-            </p>
-          </div>
-
-          {/* Trade discount */}
-          <div className="flex items-end justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/60 px-4 py-3">
-            <div>
-              <p className="text-xs font-semibold text-gray-700">
-                Trade discount
+            {!effectiveRows.length && (
+              <p className="text-xs text-amber-700">
+                Choose at least one product or return to the current view.
               </p>
-              <p className="text-[11px] text-gray-400">
-                Optional % off applied on top of the price source
-              </p>
-            </div>
-            <div className="relative w-24 shrink-0">
-              <input
-                type="number"
-                min={0}
-                max={90}
-                step={1}
-                value={discountPercent === 0 ? '' : discountPercent}
-                placeholder="0"
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setDiscountPercent(v === '' ? 0 : Number(v));
-                }}
-                aria-label="Trade discount percent"
-                className="h-[34px] w-full rounded-lg border border-gray-200 bg-white pr-6 text-right text-xs tabular-nums text-gray-800 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
-              />
-              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-                %
-              </span>
-            </div>
-          </div>
-
-          {/* Document options */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-gray-600">
-                Title
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Price List"
-                className="h-[34px] w-full rounded-lg border border-gray-200 px-3 text-xs text-gray-800 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-gray-600">
-                Business name (optional)
-              </label>
-              <input
-                type="text"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                placeholder="Shown above the title"
-                className="h-[34px] w-full rounded-lg border border-gray-200 px-3 text-xs text-gray-800 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-gray-600">
-                Valid until (optional)
-              </label>
-              <input
-                type="date"
-                value={validUntil}
-                onChange={(e) => setValidUntil(e.target.value)}
-                className="h-[34px] w-full rounded-lg border border-gray-200 px-3 text-xs text-gray-800 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
-              />
-            </div>
-            <div className="flex flex-wrap items-end gap-x-4 gap-y-2 pb-1.5">
-              {toggleRow(
-                'Group by category',
-                groupByCategory,
-                setGroupByCategory
-              )}
-              {toggleRow('Show SKU codes', showSku, setShowSku)}
-              {toggleRow(
-                'Show availability',
-                showAvailability,
-                setShowAvailability
-              )}
-              {toggleRow(
-                'Show bundle quantity column',
-                showBundleQuantity,
-                setShowBundleQuantity
-              )}
-              {toggleRow('Show “was” prices', showWasPrices, setShowWasPrices)}
-            </div>
-            <div className="mt-3 space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-gray-600">
-                  Additional price columns
-                </p>
-                {additionalColumns.length < 3 && (
-                  <button
-                    type="button"
-                    className="text-[11px] font-semibold text-[#b20202]"
-                    onClick={() =>
-                      setAdditionalColumns((v) => [
-                        ...v,
-                        { label: '', plId: plId || pricelists[0]?._id || '' },
-                      ])
-                    }
-                  >
-                    + Add column
-                  </button>
-                )}
-              </div>
-              {additionalColumns.map((column, index) => (
-                <div
-                  key={`${index}-${column.plId}`}
-                  className="flex items-center gap-2"
-                >
-                  <span className="min-w-0 flex-1 truncate text-xs text-gray-700">
-                    {pricelists.find((p) => p._id === column.plId)?.name ??
-                      'Choose a pricelist'}
-                  </span>
-                  <select
-                    className="h-8 min-w-0 flex-1 rounded border border-gray-200 px-2 text-xs"
-                    value={column.plId}
-                    onChange={(e) =>
-                      setAdditionalColumns((v) =>
-                        v.map((c, i) =>
-                          i === index ? { ...c, plId: e.target.value } : c
-                        )
-                      )
-                    }
-                  >
-                    <option value="">Choose pricelist</option>
-                    {pricelists.map((p) => (
-                      <option key={p._id} value={p._id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="px-1 text-xs text-gray-400 disabled:opacity-30"
-                    disabled={index === 0}
-                    onClick={() =>
-                      setAdditionalColumns((v) => {
-                        const next = [...v];
-                        [next[index - 1], next[index]] = [
-                          next[index],
-                          next[index - 1],
-                        ];
-                        return next;
-                      })
-                    }
-                    aria-label="Move column up"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="px-1 text-xs text-gray-400 disabled:opacity-30"
-                    disabled={index === additionalColumns.length - 1}
-                    onClick={() =>
-                      setAdditionalColumns((v) => {
-                        const next = [...v];
-                        [next[index], next[index + 1]] = [
-                          next[index + 1],
-                          next[index],
-                        ];
-                        return next;
-                      })
-                    }
-                    aria-label="Move column down"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    className="px-1 text-xs text-gray-400"
-                    onClick={() =>
-                      setAdditionalColumns((v) =>
-                        v.filter((_, i) => i !== index)
-                      )
-                    }
-                    aria-label="Remove column"
-                  >
-                    ×
-                  </button>
-                </div>
+            )}
+          </section>
+          <ColumnPicker
+            pricelists={data.pricelists}
+            loading={data.listLoading}
+            columns={settings.columns}
+            onChange={(columns) => setSettings((s) => ({ ...s, columns }))}
+          />
+          {!!data.errors.length && (
+            <div
+              role="alert"
+              className="space-y-1 rounded-lg bg-red-50 p-3 text-xs text-red-700"
+            >
+              {data.errors.map((error, i) => (
+                <p key={i}>{error}</p>
               ))}
+              <button
+                type="button"
+                onClick={data.retry}
+                className="font-semibold underline"
+              >
+                Retry loading
+              </button>
             </div>
-          </div>
-
-          <p className="text-[11px] leading-relaxed text-gray-400">
-            Letterhead:{' '}
-            <span className="font-semibold text-gray-600">
-              {origin.name ?? 'DrinksHarbour'}
-            </span>
-            {origin.warehouseCount > 1 && (
-              <> — products drawn from {origin.warehouseCount} warehouses</>
-            )}
-            . Selected lines merge per product and size across warehouses. Print
-            opens the browser dialog; Download PDF saves the branded file
-            directly.
+          )}
+          <DocumentOptions settings={settings} onChange={setSettings} />
+          <Preview
+            rows={effectiveRows}
+            columns={columns}
+            discountPercent={settings.discountPercent}
+            ready={data.ready}
+          />
+          <p className="text-[11px] text-gray-500">
+            Letterhead: {origin.name || 'DrinksHarbour'}. Stock merges per
+            product and size across locations. PDF and print open the document
+            preview.
           </p>
         </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-2 border-t border-gray-100 px-5 py-3.5">
-          <div className="flex items-center gap-2">
+        <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-3">
+          {(['csv', 'pdf', 'print'] as const).map((kind) => (
             <button
+              key={kind}
               type="button"
-              onClick={handleCsv}
-              disabled={effectiveRows.length === 0 || rulesBusy}
-              title={
-                rulesBusy ? 'Applying the selected pricelist rules…' : undefined
-              }
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
+              disabled={!canExport}
+              onClick={() => exportList(kind)}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold disabled:opacity-40 ${kind === 'print' ? 'bg-[#b20202] text-white' : 'border border-gray-200 text-gray-600'}`}
             >
-              <PiDownloadSimple className="h-3.5 w-3.5" /> CSV
+              {kind === 'print' ? 'Preview & Print' : kind.toUpperCase()}
             </button>
-            <button
-              type="button"
-              onClick={handlePdf}
-              disabled={effectiveRows.length === 0 || rulesBusy}
-              title={
-                rulesBusy ? 'Applying the selected pricelist rules…' : undefined
-              }
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40"
-            >
-              <PiFilePdf className="h-3.5 w-3.5" /> PDF
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={effectiveRows.length === 0 || rulesBusy}
-              title={
-                rulesBusy ? 'Applying the selected pricelist rules…' : undefined
-              }
-              className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#9a0101] disabled:opacity-50"
-            >
-              <PiPrinter className="h-4 w-4" /> Print
-            </button>
-          </div>
+          ))}
         </div>
       </div>
     </div>

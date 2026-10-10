@@ -135,6 +135,7 @@ export function useSubProducts(
         if (!clientSideMode && debouncedSearch.trim())
           params.search = debouncedSearch.trim();
         if (!clientSideMode && status) params.status = status;
+        if (showRefresh) params.refresh = 'true';
 
         const response = await subproductService.getSubProducts(token, params);
 

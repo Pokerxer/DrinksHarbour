@@ -15,13 +15,15 @@ function groupLinesByRate(lines) {
   for (const line of lines || []) {
     const rate = Math.max(0, Number(line?.taxRate) || 0);
     const base = Math.max(0, round2(line?.taxableBase));
-    const bucket = byRate.get(rate) || { taxRate: rate, taxableBase: 0 };
+    const bucket = byRate.get(rate) || { taxRate: rate, taxableBase: 0, snapshotTax: 0, calculatedBase: 0 };
+    if (line.taxAmount != null) bucket.snapshotTax = round2(bucket.snapshotTax + Math.max(0, Number(line.taxAmount) || 0));
+    else bucket.calculatedBase = round2(bucket.calculatedBase + base);
     bucket.taxableBase = round2(bucket.taxableBase + base);
     byRate.set(rate, bucket);
   }
   return [...byRate.values()]
     .sort((a, b) => a.taxRate - b.taxRate)
-    .map((g) => ({ ...g, taxAmount: round2((g.taxableBase * g.taxRate) / 100) }));
+    .map((g) => ({ taxRate: g.taxRate, taxableBase: g.taxableBase, taxAmount: round2(g.snapshotTax + (g.calculatedBase * g.taxRate) / 100) }));
 }
 
 /** Find the tenant's active configured tax matching a document's rate snapshot. */
@@ -43,7 +45,7 @@ function buildSummary(records) {
   const perTax = new Map();
   for (const r of records || []) {
     if (r.status !== 'posted') continue;
-    const amount = Math.max(0, Number(r.taxAmount) || 0);
+    const amount = Math.max(0, Number(r.taxAmount) || 0) * (r.sourceType === 'vendor_return' ? -1 : 1);
     if (r.direction === 'collected') collected += amount;
     else if (r.direction === 'paid') paid += amount;
     else internal += amount;

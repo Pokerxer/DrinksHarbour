@@ -1,6 +1,8 @@
 // services/user.service.js
 
+const { escapeRegex } = require('../utils/escapeRegex');
 const User = require('../models/User');
+const { platformIdentity, customerIdentity } = require('../utils/customerIdentity');
 const Role = require('../models/Role');
 const Tenant = require('../models/Tenant'); // Changed from '../models/tenant' to '../models/Tenant' for consistency
 const RefreshToken = require('../models/RefreshToken');
@@ -35,7 +37,6 @@ const registerUser = async (userData, options = {}) => {
     firstName,
     lastName,
     phoneNumber,
-    tenant,
     dateOfBirth,
   } = userData;
 
@@ -48,7 +49,7 @@ const registerUser = async (userData, options = {}) => {
   }
 
   // Check if user already exists
-  const existingUser = await User.findOne({ email: email.toLowerCase() });
+  const existingUser = await User.findOne({ email: email.toLowerCase(), ...platformIdentity() });
   if (existingUser) {
     throw new ValidationError('User with this email already exists');
   }
@@ -86,10 +87,7 @@ const registerUser = async (userData, options = {}) => {
     isAgeVerified: false,
   };
 
-  // Add tenant if provided
-  if (tenant) {
-    newUserData.tenant = tenant;
-  }
+  // Tenant customers register through the API-key-authoritative storefront route.
 
   // Add date of birth if provided
   if (dateOfBirth) {
@@ -205,7 +203,7 @@ const createUserAsAdmin = async (userData, actor) => {
     throw new ValidationError('Please provide a valid email address');
   }
 
-  const existingUser = await User.findOne({ email: email.toLowerCase() });
+  const existingUser = await User.findOne({ email: email.toLowerCase(), ...(role === 'customer' && tenant ? customerIdentity(tenant) : platformIdentity()) });
   if (existingUser) {
     throw new ValidationError('User with this email already exists');
   }
@@ -277,7 +275,7 @@ const loginUser = async (email, password, options = {}) => {
   const { ipAddress, userAgent } = options;
 
   // Find user
-  const user = await User.findOne({ email: email.toLowerCase() })
+  const user = await User.findOne({ email: email.toLowerCase(), ...platformIdentity() })
     .select('+passwordHash')
     .populate('tenant', 'name slug status subscriptionStatus logo primaryColor');
 
@@ -400,6 +398,7 @@ const completeMfaLogin = async (userId, options = {}) => {
   const user = await User.findById(userId)
     .populate('tenant', 'name slug status subscriptionStatus logo primaryColor');
   if (!user) throw new NotFoundError('User not found');
+  if (user.role === 'customer' && user.tenant) throw new AuthorizationError('Sign in through your store');
 
   // Update login metadata (the pending-mfa phase already updated lastLogin, but
   // we refresh the timestamp to mark the actual successful login completion)
@@ -464,6 +463,7 @@ const refreshAuthToken = async (refreshToken, req) => {
     const user = await User.findById(decoded.userId)
       .populate('tenant', 'name slug status subscriptionStatus');
 
+    if (user?.role === 'customer' && user.tenant) throw new AuthorizationError('Sign in through your store');
     if (!user) {
       throw new NotFoundError('User not found');
     }
@@ -554,7 +554,7 @@ const getAllUsers = async (queryParams = {}) => {
   }
 
   if (search) {
-    const searchRegex = new RegExp(search, 'i');
+    const searchRegex = new RegExp(escapeRegex(search), 'i');
     query.$or = [
       { email: searchRegex },
       { firstName: searchRegex },
@@ -639,8 +639,8 @@ const getUserById = async (userId) => {
 /**
  * Get user by email
  */
-const getUserByEmail = async (email) => {
-  const user = await User.findOne({ email: email.toLowerCase() })
+const getUserByEmail = async (email, tenantId = null) => {
+  const user = await User.findOne({ email: email.toLowerCase(), ...(tenantId ? customerIdentity(tenantId) : platformIdentity()) })
     .populate('tenant', 'name slug logo')
     .select('-passwordHash -emailVerificationToken -passwordResetToken')
     .lean();
@@ -658,7 +658,7 @@ const getUserByEmail = async (email) => {
  * @returns {Object|null} User object or null
  */
 const findUserByEmail = async (email) => {
-  const user = await User.findOne({ email: email.toLowerCase() })
+  const user = await User.findOne({ email: email.toLowerCase(), ...platformIdentity() })
     .select('_id email')
     .lean();
   
@@ -742,6 +742,7 @@ const updateUser = async (userId, updateData, requestingUserId, requestingUserRo
   // Don't allow updating sensitive fields directly
   const protectedFields = [
     'passwordHash',
+    'loginScope',
     'emailVerificationToken',
     'passwordResetToken',
     'failedLoginAttempts',
@@ -756,6 +757,7 @@ const updateUser = async (userId, updateData, requestingUserId, requestingUserRo
   if (updateData.email && updateData.email !== user.email) {
     const emailExists = await User.findOne({ 
       email: updateData.email.toLowerCase(),
+      ...(user.role === 'customer' && user.tenant ? customerIdentity(user.tenant) : platformIdentity()),
       _id: { $ne: userId },
     });
     
@@ -922,7 +924,7 @@ const changePassword = async (userId, currentPassword, newPassword) => {
  * Request password reset
  */
 const requestPasswordReset = async (email) => {
-  const user = await User.findOne({ email: email.toLowerCase() });
+  const user = await User.findOne({ email: email.toLowerCase(), ...platformIdentity() });
 
   if (!user) {
     // Don't reveal if user exists (security best practice)
@@ -982,6 +984,7 @@ const resetPassword = async (resetToken, newPassword) => {
 
   // Find user with valid token
   const user = await User.findOne({
+    ...platformIdentity(),
     passwordResetToken: hashedToken,
     passwordResetExpires: { $gt: Date.now() },
   }).select('+passwordHash');
@@ -1027,7 +1030,7 @@ const verifyEmail = async (email, code) => {
     throw new ValidationError(result.message);
   }
 
-  const user = await User.findOne({ email: normalizedEmail });
+  const user = await User.findOne({ email: normalizedEmail, ...platformIdentity() });
   if (!user) {
     throw new NotFoundError('User not found');
   }
@@ -1067,7 +1070,7 @@ const verifyEmail = async (email, code) => {
 const resendEmailVerification = async (email) => {
   const normalizedEmail = email.toLowerCase();
 
-  const user = await User.findOne({ email: normalizedEmail });
+  const user = await User.findOne({ email: normalizedEmail, ...platformIdentity() });
 
   if (!user) {
     // Don't reveal whether the user exists
@@ -1505,7 +1508,7 @@ const bulkUpdateUsers = async (userIds, updateData, requestingUserId, requesting
 const searchUsers = async (searchTerm, options = {}) => {
   const { limit = 10, role, status, tenant } = options;
 
-  const searchRegex = new RegExp(searchTerm, 'i');
+  const searchRegex = new RegExp(escapeRegex(searchTerm), 'i');
   
   const query = {
     $or: [

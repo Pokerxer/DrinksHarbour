@@ -13,8 +13,6 @@ const SHOP_CACHE_TTL = 30_000;
 import Shop from '@/components/Shop';
 import ShopHeroBanner from '@/components/Shop/ShopHeroBanner';
 import ShopHeroCarousel from '@/components/Shop/ShopHeroCarousel';
-import PlacementBanner from '@/components/Banner/PlacementBanner';
-import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 import { viewItemListEvent, type GTagItem } from '@/lib/gtag';
@@ -275,8 +273,9 @@ function ShopPageContent({
   }, [searchParams, serverPaged]);
 
   // ── Fetch ────────────────────────────────────────────────────────────────
-  const fetchProducts = useCallback(async () => {
+  const fetchProducts = useCallback(async (signal: AbortSignal) => {
     const url = buildApiUrl();
+    setError(null);
 
     // Serve from cache if fresh
     const cached = _shopCache.get(url);
@@ -292,22 +291,24 @@ function ShopPageContent({
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const parsed = parseProductsResponse(await res.json());
+      if (signal.aborted) return;
       _shopCache.set(url, { ...parsed, data: parsed.products, ts: Date.now() });
       setProducts(parsed.products);
       setTotalProducts(parsed.total);
       setTotalPages(parsed.totalPages);
       setFacetCounts(parsed.facetCounts);
     } catch {
+      if (signal.aborted) return;
       setError('Failed to load products. Please try again later.');
       setProducts([]);
       setTotalProducts(0);
       setTotalPages(1);
       setFacetCounts(EMPTY_FACET_COUNTS);
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, [buildApiUrl]);
 
@@ -316,8 +317,9 @@ function ShopPageContent({
     // Skip the first fetch when the server already seeded matching products.
     if (skipNextFetchRef.current) { skipNextFetchRef.current = false; return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => { fetchProducts(); }, 200);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    const controller = new AbortController();
+    debounceRef.current = setTimeout(() => { fetchProducts(controller.signal); }, 200);
+    return () => { controller.abort(); if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [fetchProducts]);
 
   // Navigate to another page of the series. The URL is the state, so the
@@ -442,13 +444,14 @@ function ShopPageContent({
     !maxABVParam &&
     !minRatingParam;
 
-  // Filters that carry their own themed banner in the storefront: category,
+  // Entity selections resolve uploaded artwork in ShopHeroBanner, which uses
+  // the main shop banners when no artwork is available. Category,
   // subcategory and brand each render an individual hero (their bannerImage /
   // bannerLink) via ShopHeroBanner. Every other filter (origin, flavor, size,
   // volume, price, ABV, rating) and any keyword search has no banner of its
   // own, so it falls back to the main admin `shop` carousel.
-  const hasOwnBanner = !!(categoryParam || subcategoryParam || brandParam);
-  const useShopCarousel = isPlainShop || !hasOwnBanner;
+  const hasEntitySelection = !!(categoryParam || subcategoryParam || brandParam);
+  const useShopCarousel = isPlainShop || !hasEntitySelection;
 
   const TABS = useMemo(() => [
     {
@@ -478,44 +481,12 @@ function ShopPageContent({
   ], [byType.percentage.length, byType.fixed.length, byType.flash_sale.length]);
 
   // ── Loading / error ──────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-white">
-        {isSalePage && (
-          <div className="h-40 bg-gradient-to-br from-red-950 via-red-800 to-rose-700 animate-pulse" />
-        )}
-        {/* Render the hero (and its keyword <h1>) even while the grid loads or
-            when a filter returns no products, so indexable filter pages always
-            expose their heading to crawlers instead of a bare spinner. */}
-        {!isSalePage && (useShopCarousel ? (
-          <ShopHeroCarousel
-            category={categoryParam}
-            subcategory={subcategoryParam}
-            brand={brandParam}
-            heroSeed={heroSeed}
-          />
-        ) : (
-          <ShopHeroBanner
-            category={categoryParam}
-            subcategory={subcategoryParam}
-            brand={brandParam}
-            totalProducts={totalProducts}
-            seed={heroSeed}
-          />
-        ))}
-        <div className="min-h-[50vh] flex items-center justify-center">
-          <LoadingSpinner variant="bounce" color="rose" size="lg" text={isSalePage ? 'Loading deals…' : 'Finding the best drinks…'} />
-        </div>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-red-50 to-white">
         <div className="text-red-700 text-lg font-medium">{error}</div>
         <button
-          onClick={() => router.refresh()}
+          onClick={() => fetchProducts(new AbortController().signal)}
           className="px-5 py-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white rounded-xl font-semibold hover:from-red-800 hover:to-red-950 transition-all shadow-md"
         >
           Retry
@@ -723,7 +694,7 @@ function ShopPageContent({
 
       {/* ── Hero banner ────────────────────────────────────────────────────
           Filters that have their own themed banner (category / subcategory /
-          brand) render an individual hero (ShopHeroBanner + category_top).
+          brand) resolve their artwork or the main shop carousel in ShopHeroBanner.
           Everything else — plain/shop, pagination, and any filter or search
           without its own banner — falls back to the main shop carousel. */}
       {!isSalePage && (useShopCarousel ? (
@@ -742,15 +713,7 @@ function ShopPageContent({
             totalProducts={totalProducts}
             seed={heroSeed}
           />
-          {/* Category Top — admin-managed banner for category browsing */}
-          {(categoryParam || subcategoryParam) && (
-            <PlacementBanner
-              placement="category_top"
-              variant="hero"
-              limit={1}
-              className="container mx-auto px-3 pt-4 sm:px-4"
-            />
-          )}
+
         </>
       ))}
 
@@ -760,7 +723,7 @@ function ShopPageContent({
           <div className="container mx-auto px-3 sm:px-4 flex items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
               <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">
-                "{searchQuery}"
+                &quot;{searchQuery}&quot;
               </h1>
               <p className="text-gray-500 text-sm">
                 {totalProducts} product{totalProducts !== 1 ? 's' : ''} found
@@ -815,6 +778,7 @@ function ShopPageContent({
         <Shop
           productPerPage={SHOP_PAGE_SIZE}
           data={visibleProducts}
+          isLoading={loading}
           productStyle="style-1"
           searchQuery={searchQuery}
           layoutCol={layoutCol}

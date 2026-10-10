@@ -1,4 +1,17 @@
 const mongoose = require('mongoose');
+const dns = require('node:dns').promises;
+
+// Opt-in process-wide resolver override for networks with unreliable SRV/TXT
+// DNS. Apply once before connecting, never during in-flight DNS queries. The
+// driver also uses this resolver for periodic Atlas SRV discovery.
+if (process.env.NODE_DNS_SERVERS?.trim()) {
+  const servers = process.env.NODE_DNS_SERVERS.split(',').map((value) => value.trim());
+  try {
+    dns.setServers(servers);
+  } catch (cause) {
+    throw new Error('NODE_DNS_SERVERS must be a comma-separated list of DNS server IP addresses', { cause });
+  }
+}
 
 // Global cache for the connection promise to handle serverless environments
 // efficiently. Held on `global` so it survives across warm invocations of the
@@ -17,6 +30,11 @@ if (!cached) {
 // the whole invocation budget, and overridable per-environment.
 const SERVER_SELECTION_TIMEOUT_MS =
   Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS) || 10000;
+
+// How often the driver pings each replica-set node. See the note where it is used:
+// this exists to notice a closed `<monitor>` connection quickly, not to add load.
+const HEARTBEAT_FREQUENCY_MS =
+  Number(process.env.MONGO_HEARTBEAT_FREQUENCY_MS) || 5000;
 
 // Connection budget for an M0 (free-tier) Atlas cluster, whose hard ceiling is
 // 500 concurrent connections. Exceeding it is what produced the intermittent
@@ -105,6 +123,13 @@ async function connectDB() {
       bufferCommands: false, // Disable buffering for serverless
       serverSelectionTimeoutMS: SERVER_SELECTION_TIMEOUT_MS,
       socketTimeoutMS: 45000, // Socket timeout
+      // The driver's default heartbeat is 10s, so a dead monitor goes unnoticed
+      // for up to a full cycle and server selection has to start from scratch
+      // inside `serverSelectionTimeoutMS` — which is only 10s too. Halving the
+      // heartbeat means a closed `<monitor>` connection is detected and replaced
+      // in about 5s, comfortably inside the selection budget. The extra heartbeats
+      // are part of the ~6 monitoring connections already accounted for above.
+      heartbeatFrequencyMS: HEARTBEAT_FREQUENCY_MS,
       family: 4, // Prefer IPv4
       maxPoolSize: MAX_POOL_SIZE, // Cap sockets per warm container — see the M0 budget above
       minPoolSize: MIN_POOL_SIZE, // 0: never pin a socket in an idle container

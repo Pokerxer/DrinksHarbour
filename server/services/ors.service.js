@@ -18,19 +18,19 @@ const getKey = () => process.env.GOOGLE_PLACES_API_KEY || '';
  * Used when there is only one vendor or vendor locations are unavailable.
  * @returns {Promise<number>} road distance in km
  */
-async function getRoadDistanceKm(customerLat, customerLon) {
+async function getRoadDistanceKm(customerLat, customerLon, origin = WAREHOUSE) {
   const apiKey = getKey();
   if (!apiKey) throw new Error('GOOGLE_PLACES_API_KEY not set');
 
   const params = new URLSearchParams({
-    origins:      `${WAREHOUSE.lat},${WAREHOUSE.lon}`,
+    origins:      origin.address || `${origin.lat},${origin.lon}`,
     destinations: `${customerLat},${customerLon}`,
     mode:         'driving',
     units:        'metric',
     key:          apiKey,
   });
 
-  const res = await fetch(`${DISTANCE_BASE}?${params}`);
+  const res = await fetch(`${DISTANCE_BASE}?${params}`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`Google Distance Matrix error ${res.status}`);
 
   const data = await res.json();
@@ -43,7 +43,9 @@ async function getRoadDistanceKm(customerLat, customerLon) {
     throw new Error(`No route found: ${element?.status || 'unknown'}`);
   }
 
-  return element.distance.value / 1000;
+  const metres = element.distance?.value;
+  if (!Number.isFinite(metres) || metres < 0) throw new Error('Invalid road distance');
+  return metres / 1000;
 }
 
 /**

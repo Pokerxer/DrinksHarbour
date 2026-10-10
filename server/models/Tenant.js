@@ -517,6 +517,11 @@ const tenantSchema = new Schema(
       receiptHeader:          { type: String, default: '', trim: true, maxlength: 200 },
       receiptFooter:          { type: String, default: '', trim: true, maxlength: 200 },
       showTaxOnReceipt:       { type: Boolean, default: false },
+      // Whether `taxRate` below is actually charged at the till. Default off:
+      // Nigeria levies VAT only above a turnover threshold, so charging every
+      // tenant 7.5% by default would overtax small bars. Turn on once a tenant
+      // is registered for VAT.
+      taxEnabled:             { type: Boolean, default: false },
       taxRate:                { type: Number,  default: 7.5, min: 0, max: 100 },
       autoPrintReceipt:       { type: Boolean, default: false },
       receiptCopies:          { type: Number,  default: 1, min: 1, max: 5 },

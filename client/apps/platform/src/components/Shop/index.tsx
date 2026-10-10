@@ -10,6 +10,18 @@ import ProductGrid from './ProductGrid';
 import PaginationSection from './PaginationSection';
 import OnSaleHighlight from './OnSaleHighlight';
 import RecentlyViewed from './RecentlyViewed';
+import { readShopFilters, readCatalogFacets } from './filterQuery';
+
+// filter-state key → URL param name for everything the server understands
+const FILTER_URL_KEYS: Partial<Record<keyof FilterState, string>> = {
+  categoryType: 'category',
+  subCategoryType: 'subcategory',
+  brand: 'brand',
+  originCountry: 'origin',
+  flavorCategory: 'flavor',
+  sortOption: 'sort',
+  minRating: 'minRating',
+};
 
 const SORT_OPTIONS: SortOption[] = [
   { value: '', label: 'Sort by', disabled: true },
@@ -166,12 +178,6 @@ const CLEAR_ALL_SVG = (
   </svg>
 );
 
-const EMPTY_PRODUCTS_SVG = (
-  <svg className="w-10 h-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-  </svg>
-);
-
 interface ServerFacetCounts {
   brands: Record<string, number>;
   origins: Record<string, number>;
@@ -301,18 +307,7 @@ const Shop: React.FC<Props> = ({
   // selection (e.g. brand "The Macallan") survives a navigation to
   // ?brand=Ardbeg and client-side filtering zeroes out the results.
   useEffect(() => {
-    const parse = (param: string | null) =>
-      param ? (param.includes(',') ? param.split(',') : param) : null;
-
-    const fromUrl: Partial<FilterState> = {
-      categoryType: parse(searchParams.get('category')),
-      subCategoryType: parse(searchParams.get('subcategory')),
-      brand: parse(searchParams.get('brand')),
-      originCountry: parse(searchParams.get('origin')),
-      flavorCategory: parse(searchParams.get('flavor')),
-      sortOption: searchParams.get('sort') || '',
-      showOnlySale: searchParams.get('sale') === 'true',
-    };
+    const fromUrl = readShopFilters(new URLSearchParams(searchParams.toString()), filterOptions.priceRange);
 
     setFilters(prev => {
       const changed = (Object.keys(fromUrl) as (keyof FilterState)[]).some(
@@ -322,7 +317,7 @@ const Shop: React.FC<Props> = ({
       urlStateRef.current = { ...urlStateRef.current, ...fromUrl };
       return { ...prev, ...fromUrl };
     });
-  }, [searchParams]);
+  }, [searchParams, filterOptions.priceRange]);
 
   const offset = currentPage * productPerPage;
 
@@ -360,7 +355,7 @@ const Shop: React.FC<Props> = ({
     const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
     const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 100000;
 
-    setFilterOptions({
+    setFilterOptions(prev => ({
       size: sizes,
       color: [] as string[],
       brand: brands,
@@ -369,17 +364,17 @@ const Shop: React.FC<Props> = ({
       subCategoryType: subCategoryTypes,
       flavorCategory: flavorCategories,
       priceRange: { min: minPrice, max: maxPrice },
-      abvRanges: filterOptions.abvRanges,
-      volumes: filterOptions.volumes,
-    });
+      abvRanges: prev.abvRanges,
+      volumes: prev.volumes,
+    }));
 
     setFilters(prev => ({
       ...prev,
-      priceRange: { min: minPrice, max: maxPrice }
+      priceRange: readShopFilters(new URLSearchParams(searchParams.toString()), { min: minPrice, max: maxPrice }).priceRange!
     }));
 
     filterOptionsInitialized.current = true;
-  }, [data, allProducts]);
+  }, [data, allProducts, searchParams]);
 
   // Catalog-wide facets — the page-derived options above only see the loaded
   // (already filtered, first-page) products, so brands/origins/categories not
@@ -393,10 +388,12 @@ const Shop: React.FC<Props> = ({
       .then((json) => {
         if (!alive || !json?.success) return;
         const d = json.data || {};
+        const catalogFacets = readCatalogFacets(d);
         setFilterOptions((prev: any) => ({
           ...prev,
           ...(d.brands?.length ? { brand: d.brands.map((b: any) => b.name) } : {}),
-          ...(d.origins?.length ? { originCountry: d.origins } : {}),
+          ...(catalogFacets.originCountry.length ? { originCountry: catalogFacets.originCountry } : {}),
+          ...(catalogFacets.flavorCategory.length ? { flavorCategory: catalogFacets.flavorCategory } : {}),
           ...(d.categories?.length ? { categoryType: d.categories.map((c: any) => c.slug) } : {}),
           ...(d.subCategories?.length ? { subCategoryType: d.subCategories.map((s: any) => s.slug) } : {}),
           ...(d.priceRange?.max > 0 ? { priceRange: d.priceRange } : {}),
@@ -675,23 +672,12 @@ const Shop: React.FC<Props> = ({
     [filterCounts]
   );
 
-  const hasProducts = data && data.length > 0;
   const hasFilteredResults = sortedProducts.length > 0;
 
   // ref that tracks filter state for the URL-building closure so updateFilter
   // doesn't need [filters] as a dependency (stabilizes the callback ref)
   const urlStateRef = useRef(filters);
 
-  // filter-state key → URL param name for everything the server understands
-  const FILTER_URL_KEYS: Partial<Record<keyof FilterState, string>> = {
-    categoryType: 'category',
-    subCategoryType: 'subcategory',
-    brand: 'brand',
-    originCountry: 'origin',
-    flavorCategory: 'flavor',
-    sortOption: 'sort',
-    minRating: 'minRating',
-  };
 
   const updateFilter = useCallback(<K extends keyof FilterState>(key: K, value: FilterState[K]) => {
     urlStateRef.current = { ...urlStateRef.current, [key]: value };
@@ -823,7 +809,7 @@ const Shop: React.FC<Props> = ({
                 isLoading={true}
               />
             </div>
-          ) : hasProducts ? (
+          ) : (
             <div className="list-product-block relative">
               <FilterHeader
                 onOpenSidebar={() => setOpenSidebar(true)}
@@ -871,14 +857,6 @@ const Shop: React.FC<Props> = ({
                   </button>
                 </div>
               )}
-            </div>
-          ) : (
-            <div className="text-center py-20 animate-fade-in">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-100 rounded-full mb-6">
-                {EMPTY_PRODUCTS_SVG}
-              </div>
-              <h3 className="text-2xl font-semibold text-gray-900 mb-3">No products available</h3>
-              <p className="text-gray-600">Check back later for new arrivals.</p>
             </div>
           )}
         </div>

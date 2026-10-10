@@ -9,6 +9,7 @@ export const POS_PERMISSIONS = [
   'pos:refund',
   'pos:void',
   'pos:price_override',
+  'pos:credit_override',
   'pos:discount',
   'pos:terminal:retail',
   'pos:terminal:wholesale',

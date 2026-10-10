@@ -115,7 +115,7 @@ export default function InvoicePreview({ order, store = DEFAULT_STORE, onPrint, 
                       </td>
                       <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 12, color: '#374151', whiteSpace: 'nowrap' }}>{qty}.00 Units</td>
                       <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 12, color: '#374151', fontVariantNumeric: 'tabular-nums' }}>{fmt(price)}</td>
-                      <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, color: '#d1d5db' }}>—</td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, color: '#6b7280' }}>{it.taxRate != null ? `${it.taxRate}%` : '—'}</td>
                       <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111', fontVariantNumeric: 'tabular-nums' }}>{fmt(total)}</td>
                     </tr>
                   );
@@ -136,6 +136,11 @@ export default function InvoicePreview({ order, store = DEFAULT_STORE, onPrint, 
                   <span style={{ color: '#6b7280' }}>Untaxed Amount</span>
                   <span style={{ fontWeight: 600, color: '#111' }}>{fmt(d.subtotal)}</span>
                 </div>
+                {order.taxAmount != null && (
+                  <div style={{display: 'flex', justifyContent: 'space-between', padding: '9px 14px'}}>
+                    <span>Tax</span><span>{fmt(order.taxAmount)}</span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', background: '#b20202' }}>
                   <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '0.02em' }}>Total</span>
                   <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{fmt(d.amount)}</span>

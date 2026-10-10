@@ -6,7 +6,18 @@ status: local implementation; rollout reconciliation required
 
 # Accounting workflows
 
+Latest corrections (2026-09-30): see [accounting-vat-reconciliation.md](accounting-vat-reconciliation.md)
+for POS VAT capture, exact tax snapshots, refund/void handling and P&L disclosures.
+The older rollout notes below remain historical context.
+
 ## Scope and files
+
+Menu access (2026-10-04): Accounting belongs in both Hydrogen menu definitions
+under `client/apps/admin/src/layouts/hydrogen/`. The tenant entry links to
+`routes.accounting.index` and requires `tenant_admin`; the existing route gate
+enforces `advanced_reports`. The platform entry belongs under Your Store.
+The home page and app launcher consume these same menu definitions.
+Verified with the full admin suite: 221 files / 2,369 tests passed on 2026-10-04.
 
 The accounting workspace now uses responsive navigation, a common page shell,
 mobile invoice/bill cards, desktop tables, source links, actionable AR/AP balances,

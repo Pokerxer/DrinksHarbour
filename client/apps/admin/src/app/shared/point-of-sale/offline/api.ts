@@ -195,7 +195,12 @@ export async function getSessionInfo(token: string, shopId = readActiveShop()): 
 export async function getAllOrders(token: string, shopId = readActiveShop()): Promise<OrderRecord[]> {
   const scope = await catalogueScope(token, shopId);
   if (isOnline()) {
-    const data = await posApi.getAllOrders(token, { shopId });
+    // This is a cache fill, not a report: the page it backs (pos-history) now
+    // asks the server directly for completeness, so a bounded cache here is a
+    // cache size decision rather than a silently wrong figure. Ask for the
+    // largest page the server will grant so the offline copy is as useful as
+    // possible.
+    const { data } = await posApi.getAllOrders(token, { shopId, limit: 2000 });
     const records: OrderRecord[] = (data ?? []).map(o => ({ ...orderToRecord(o), scope }));
     await posDb.orders.bulkPut(records);
     return records;
@@ -232,6 +237,8 @@ function orderToRecord(o: any): OrderRecord {
     sessionId: o.session?._id || o.posSessionId,
     receiptNumber: o.receiptNumber,
     total: o.total ?? 0,
+    subtotal: o.subtotal,
+    taxAmount: o.taxAmount,
     paymentMethod: o.paymentMethod ?? '',
     paymentStatus: o.paymentStatus,
     items: o.items,
@@ -257,6 +264,8 @@ function mapPayloadItems(items: any[]): any[] {
       priceAtPurchase: unitPrice,
       itemSubtotal: lineGross - discAmt,
       discountAmount: discAmt,
+      taxRate: item.taxRate,
+      taxAmount: item.taxAmount,
       bxgyRole: item.bxgyRole,
     };
   });
@@ -269,6 +278,8 @@ function queueToFakeOrders(queue: QueueEntry[]): OrderRecord[] {
       _id: `offline-${q.id}`,
       receiptNumber: q.tempReceiptNumber,
       total: p.total ?? 0,
+      subtotal: p.subtotal,
+      taxAmount: p.taxAmount,
       paymentMethod: p.paymentMethod ?? '',
       paymentStatus: 'pending_sync',
       items: mapPayloadItems(p.items),
@@ -341,6 +352,8 @@ export async function createOrder(
       receiptNumber: tempReceipt,
       total: orderTotal,
       subtotal: p.subtotal,
+      taxAmount: p.taxAmount,
+      thresholdDiscount: p.thresholdDiscount,
       discountTotal: p.discountValue ?? 0,
       paymentMethod: p.paymentMethod ?? '',
       amountTendered,

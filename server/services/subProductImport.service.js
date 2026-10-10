@@ -1,3 +1,5 @@
+const { applyWarehouseImportStock } = require('./warehouseImportStock');
+const { ValidationError } = require('../utils/errors');
 const RealSize = require('../models/Size');
 const RealProduct = require('../models/Product');
 const RealSubProduct = require('../models/SubProduct');
@@ -234,7 +236,7 @@ async function validateImport(rawRows, opts, tenantId, deps) {
     const rowErrors = [];
     const sizeNotes = [];
     for (const r of g.rows) {
-      if (r.openingQty && r.openingQty > 0) anyQty = true;
+      if (r.openingQty != null) anyQty = true;
       if (!r.productName) rowErrors.push({ rowNum: r._rowNum, field: 'productName', message: 'productName is required' });
       if (!r.size) {
         rowErrors.push({ rowNum: r._rowNum, field: 'size', message: 'size is required' });
@@ -290,7 +292,7 @@ async function validateImport(rawRows, opts, tenantId, deps) {
   }
 
   if (anyQty && !warehouseId) {
-    blocking.push('Select a target warehouse — some rows have an opening quantity.');
+    blocking.push('Select a target warehouse — quantities, including zero, apply only to that location.');
   }
   const ok = blocking.length === 0 && totals.errorRows === 0;
   return { ok, groups: groupReports, totals, blocking };
@@ -300,14 +302,14 @@ function defaultServiceDeps(deps = {}) {
   const base = defaultDeps(deps);
   const sp = require('./subproduct.service');
   const wh = require('./warehouse.service');
-  const invSvc = require('./inventory.service');
   const enrichSvc = require('./productEnrich.service');
   return {
     ...base,
     createSubProduct: deps.createSubProduct || sp.createSubProduct,
     addSize: deps.addSize || sp.addSize,
     adjustStock: deps.adjustStock || wh.adjustStock,
-    recordReceiptMovement: deps.recordReceiptMovement || invSvc.recordReceiptMovement,
+    WarehouseStock: deps.WarehouseStock || require('../models/WarehouseStock'),
+    startSession: deps.startSession || (() => require('mongoose').startSession()),
     enrich: deps.enrich || enrichSvc.enrichProductFromName,
     getCategoryOptions: deps.getCategoryOptions || enrichSvc.getCategoryOptions,
     getProductNames: deps.getProductNames || enrichSvc.getProductNames,
@@ -344,46 +346,11 @@ function sizePayload(r, fallbackMarkupPct) {
   };
 }
 
-// Set a size's on-hand stock to an ABSOLUTE quantity (a stock-take correction),
-// used by Update-mode imports. Mirrors the reliability pattern of the create path:
-// the warehouse ledger is best-effort, but Size.stock (the shop's inStock source
-// of truth) always ends up at `qty`.
-//
-// recordReceiptMovement $inc's Size.stock itself, so exactly ONE writer may run:
-// the movement (which also files the audit trail) when it succeeds, a direct
-// $set only when it doesn't. Running both is what doubled every imported size.
-async function applyAbsoluteStock(d, { subProductId, productId, sizeId, qty, before, warehouseId, tenantId, user, unitCost }) {
-  if (warehouseId) {
-    try {
-      await d.adjustStock(
-        { warehouseId, subProduct: subProductId, size: sizeId, quantity: qty, type: 'adjusted', notes: 'Bulk import stock update' },
-        user?._id, tenantId
-      );
-    } catch (_) { /* Size.stock is set below regardless */ }
-  }
-  let recorded = false;
-  try {
-    await d.recordReceiptMovement({
-      subProduct: subProductId, product: productId, tenant: tenantId, size: sizeId,
-      warehouse: warehouseId || undefined, quantity: qty - before,
-      balanceBefore: before, balanceAfter: qty,
-      unitCost, notes: 'Bulk import stock update (absolute)', reference: 'bulk-import-update',
-      performedBy: user?._id,
-    });
-    recorded = true;
-  } catch (_) { /* audit trail is non-fatal — the $set below still lands */ }
-  await Promise.resolve(
-    d.Size.findByIdAndUpdate(sizeId, recorded
-      // Movement already moved stock by (qty - before); only the derived flag
-      // needs correcting (it always claims 'in_stock', even for a zeroing count).
-      ? { $set: { availability: qty > 0 ? 'in_stock' : 'out_of_stock' } }
-      : { $set: { stock: qty, availableStock: qty, availability: qty > 0 ? 'in_stock' : 'out_of_stock' } })
-  ).catch(() => {});
-}
-
 async function commitImport(rawRows, opts, tenantId, user, deps) {
   const d = defaultServiceDeps(deps);
   const warehouseId = opts?.warehouseId || null;
+  if (!warehouseId && normalizeRows(rawRows).some((row) => row.openingQty != null))
+    throw new ValidationError('Select a target warehouse for imported quantities, including zero.');
   // 'update' = touch existing products only (cost/selling/stock); 'create' (default)
   // = the original additive behavior (create new, skip existing sizes).
   const mode = opts?.mode === 'update' ? 'update' : 'create';
@@ -558,9 +525,9 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
 
             // Absolute stock set (stock-take) when the row supplies an opening qty.
             if (r.openingQty != null && r.openingQty >= 0) {
-              await applyAbsoluteStock(d, {
+              await applyWarehouseImportStock(d, {
                 subProductId, productId, sizeId: ex._id, qty: r.openingQty,
-                before: Number(ex.stock) || 0, warehouseId, tenantId, user,
+                warehouseId, tenantId, user, mode: 'update',
                 unitCost: (r.sizeCostPrice ?? r.costPrice ?? ex.costPrice) ?? undefined,
               });
               out.stockUpdated += 1;
@@ -641,47 +608,10 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         const qty = s._row.openingQty;
         if (!(qty > 0)) continue;
 
-        // WarehouseStock ledger — only when a warehouse was selected.
-        if (warehouseId) {
-          await d.adjustStock(
-            { warehouseId, subProduct: subProductId, size: s._id, quantity: qty, type: 'received', notes: 'Bulk import opening stock' },
-            user?._id, tenantId
-          );
-        }
-
-        // InventoryMovement audit trail — it also $inc's Size.stock (the shop's
-        // inStock source of truth), so it is the ONLY writer when it succeeds.
-        // A newly created size starts at stock 0 (see sizePayload), so the $inc
-        // lands on exactly `qty`. Writing an absolute $set as well doubled every
-        // imported size.
-        let recorded = false;
-        try {
-          await d.recordReceiptMovement({
-            subProduct: subProductId,
-            product: productId,
-            tenant: tenantId,
-            size: s._id,
-            warehouse: warehouseId || undefined,
-            quantity: qty,
-            balanceBefore: 0,
-            balanceAfter: qty,
-            unitCost: s._row.sizeCostPrice ?? s._row.costPrice ?? undefined,
-            notes: 'Bulk import opening stock',
-            reference: 'bulk-import',
-            performedBy: user?._id,
-          });
-          recorded = true;
-        } catch (_) { /* fall back to setting Size.stock directly below */ }
-
-        // Fallback only: keep the shop's inStock filter correct even when the
-        // audit-trail write fails.
-        if (!recorded) {
-          await Promise.resolve(
-            d.Size.findByIdAndUpdate(s._id, {
-              $set: { stock: qty, availableStock: qty, availability: 'in_stock' },
-            })
-          ).catch(() => {});
-        }
+        await applyWarehouseImportStock(d, {
+          subProductId, productId, sizeId: s._id, qty, warehouseId, tenantId, user, mode: 'create',
+          unitCost: s._row.sizeCostPrice ?? s._row.costPrice ?? undefined,
+        });
 
         out.stockApplied += 1;
       }

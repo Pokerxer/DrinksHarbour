@@ -60,9 +60,19 @@ export interface TransferItem {
   discountRate?: number;
   taxRate?: number;
   receivedQty?: number;
+  returnedQty?: number;
   shortfallQty?: number;
   /** Units per pack snapshot for the "5 packs & 1 bottle" breakdown. */
   packSize?: number;
+}
+
+export interface TransferCreator {
+  _id: string;
+  name?: string;
+  displayName?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
 }
 
 export interface StockTransfer {
@@ -79,7 +89,7 @@ export interface StockTransfer {
   confirmedAt?: string;
   createdAt?: string;
   updatedAt?: string;
-  createdBy?: { _id: string; name: string };
+  createdBy?: TransferCreator | null;
   confirmedBy?: { _id: string; name: string };
   completedBy?: { _id: string; name: string };
   cancelledBy?: { _id: string; name: string };
@@ -103,6 +113,7 @@ export interface StockTransfer {
   dispatchedAt?: string;
   closedWithShortage?: boolean;
   receipts?: TransferReceipt[];
+  returns?: { _id?: string; returnedAt: string; returnedBy?: string | { _id: string; name?: string } | null; refundedValue?: number; remainingValue?: number; lines: { itemIndex: number; quantity: number; note?: string }[] }[];
 }
 
 export interface TransferStats {
@@ -159,6 +170,7 @@ export const stockTransferService = {
       deliveryCharge?: number;
       status?: 'draft' | 'confirmed';
       currency?: string;
+      warehouseRecommendation?: {key: string; coverDays: number};
     },
     token: string
   ) {
@@ -210,7 +222,7 @@ export const stockTransferService = {
     }>,
     token: string
   ) {
-    return handle(
+    return handle<StockTransferResponse>(
       await fetch(`${API_URL}/api/stock-transfers/${id}`, {
         method: 'PATCH',
         headers: jsonAuth(token),
@@ -285,6 +297,18 @@ export const stockTransferService = {
       }),
       'Failed to record receipt'
     );
+  },
+
+  async returnAll(id: string, body: { note?: string; requestId?: string }, token: string): Promise<StockTransferResponse> {
+    return handle<StockTransferResponse>(await fetch(`${API_URL}/api/stock-transfers/${id}/return-all`, {
+      method: 'POST', headers: jsonAuth(token), body: JSON.stringify(body),
+    }), 'Failed to return all transfer products');
+  },
+
+  async returnLine(id: string, body: { itemIndex: number; quantity: number; note?: string; requestId?: string }, token: string): Promise<StockTransferResponse> {
+    return handle<StockTransferResponse>(await fetch(`${API_URL}/api/stock-transfers/${id}/return`, {
+      method: 'POST', headers: jsonAuth(token), body: JSON.stringify(body),
+    }), 'Failed to return transfer stock');
   },
 
   async close(id: string, token: string) {

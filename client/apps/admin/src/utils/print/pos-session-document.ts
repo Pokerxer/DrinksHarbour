@@ -1,3 +1,4 @@
+import { computeReturnedMap } from '@/app/shared/point-of-sale/refund-quantities';
 import type { POSSession } from '@/app/shared/point-of-sale/types';
 import type { InvoiceOrder } from '../invoice';
 import type { DocumentModel, DocCell } from './doc-model';
@@ -13,26 +14,31 @@ export function buildPOSSessionDocument(
   const section = (text: string) => rows.push([{ text, strong: true }, { text: '' }]);
   const row = (label: string, value: string) => rows.push([{ text: label }, { text: value }]);
   section('Sales summary');
-  row('Total sales', money(session.totalSales));
+  row('Net sales', money(session.totalSales));
+  row('Returns and refunds deduction', money(session.returnDeduction));
+  row('Net collections', money(session.netCollections ?? session.totalSales));
   row('Transactions', String(session.orderCount));
   if (orders.length)
     row(
       'Items sold',
       String(
         orders.reduce(
-          (sum, order) =>
-            sum + (order.items ?? []).reduce((n, item) => n + (item.quantity ?? 0), 0),
+          (sum, order) => {
+            if (order.isVoided) return sum;
+            const returned = computeReturnedMap((order.refunds || []).map(row => ({ ...row, items: row.items || [] })));
+            return sum + (order.items ?? []).reduce((n, item, index) => n + Math.max(0, (item.quantity ?? 0) - (returned[index] || 0)), 0);
+          },
           0
         )
       )
     );
   section('Payment breakdown');
   for (const [label, value] of [
-    ['Cash', session.cashSales],
-    ['Card / POS', session.cardSales],
-    ['Bank transfer', session.transferSales],
-    ['Mobile money', session.mobileMoneySales],
-    ['Split', session.splitSales],
+    ['Cash', session.currentPaymentTotals?.cash?.total ?? session.cashSales],
+    ['Card / POS', session.currentPaymentTotals?.card?.total ?? session.cardSales],
+    ['Bank transfer', session.currentPaymentTotals?.bank_transfer?.total ?? session.transferSales],
+    ['Mobile money', session.currentPaymentTotals?.mobile_money?.total ?? session.mobileMoneySales],
+    ['Split', session.currentPaymentTotals ? 0 : session.splitSales],
   ] as [string, number][])
     row(label, money(value));
   if (orders.length) {
@@ -51,7 +57,7 @@ export function buildPOSSessionDocument(
           .reduce((sum, o) => sum + (o.total ?? o.totalAmount ?? 0), 0)
       )
     );
-    row('Refunded orders', String(orders.filter((o) => o.refunds?.length).length));
+    row('Refunded orders', String(orders.filter((o) => o.refunds?.some(r => r.source !== 'sales' && (r.totalRefunded ?? 0) > 0)).length));
     row(
       'Refunded amount',
       money(

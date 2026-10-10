@@ -2,6 +2,11 @@ import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
 export default defineConfig({
+  // Next.js compiles TSX with the automatic JSX runtime, so component files in
+  // `src/` do not import React. Without this, esbuild under Vitest would transform
+  // them with the classic runtime and every render would throw "React is not
+  // defined" — which is about the test harness, not the component.
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],

@@ -2,8 +2,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PiCaretLeft, PiCaretRight } from 'react-icons/pi';
 import toast from 'react-hot-toast';
-import { taxService, type TaxRecord, type LedgerSourceType } from '@/services/tax.service';
-import { DIRECTION_LABELS, SOURCE_LABELS, fmtDate, fmtMoney } from './tax-helpers';
+import {
+  taxService,
+  type TaxRecord,
+  type LedgerSourceType,
+} from '@/services/tax.service';
+import {
+  DIRECTION_LABELS,
+  SOURCE_LABELS,
+  fmtDate,
+  fmtMoney,
+} from './tax-helpers';
 
 const SELECT_CLS =
   'rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-400';
@@ -138,18 +147,36 @@ export default function TaxLedgerTable({ token }: { token: string }) {
               </tr>
             )}
             {records.map((r) => (
-              <tr key={r._id} className={r.status === 'reversed' ? 'opacity-50 line-through' : ''}>
-                <td className="whitespace-nowrap px-4 py-3">{fmtDate(r.postedAt)}</td>
+              <tr
+                key={r._id}
+                className={
+                  r.status === 'reversed' ? 'line-through opacity-50' : ''
+                }
+              >
+                <td className="whitespace-nowrap px-4 py-3">
+                  {fmtDate(r.postedAt)}
+                </td>
                 <td className="px-4 py-3">
-                  <span className="font-medium">{SOURCE_LABELS[r.sourceType] ?? r.sourceType}</span>
-                  <span className="block text-xs text-gray-500">{r.sourceNumber || r.sourceId}</span>
+                  <span className="font-medium">
+                    {SOURCE_LABELS[r.sourceType] ?? r.sourceType}
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    {r.sourceNumber || r.sourceId}
+                  </span>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   {r.taxName} @ {r.taxRate}%
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-right">{fmtMoney(r.taxableBase, r.currency)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right">
+                  {fmtMoney(r.taxableBase, r.currency)}
+                </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right font-medium">
-                  {fmtMoney(r.taxAmount, r.currency)}
+                  {fmtMoney(
+                    r.sourceType === 'vendor_return'
+                      ? -r.taxAmount
+                      : r.taxAmount,
+                    r.currency
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -157,7 +184,9 @@ export default function TaxLedgerTable({ token }: { token: string }) {
                       DIRECTION_STYLES[r.direction] ?? DIRECTION_STYLES.internal
                     }`}
                   >
-                    {DIRECTION_LABELS[r.direction] ?? r.direction}
+                    {r.sourceType === 'vendor_return'
+                      ? 'Input VAT reversal'
+                      : (DIRECTION_LABELS[r.direction] ?? r.direction)}
                   </span>
                 </td>
                 <td className="px-4 py-3 capitalize">{r.status}</td>

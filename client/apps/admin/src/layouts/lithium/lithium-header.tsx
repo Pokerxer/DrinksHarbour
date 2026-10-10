@@ -51,12 +51,6 @@ function HeaderMenuRight() {
           )}
         >
           <PiBellSimpleRingingDuotone className="h-6 w-auto" />
-          <Badge
-            renderAsDot
-            color="warning"
-            enableOutlineRing
-            className="absolute right-1 top-2.5 -translate-x-1 -translate-y-1/4"
-          />
         </ActionIcon>
       </NotificationDropdown>
       <SettingsButton className="rounded-full text-gray-700 shadow-none backdrop-blur-none hover:text-gray-1000 dark:bg-gray-100/0 3xl:h-10 3xl:w-10">

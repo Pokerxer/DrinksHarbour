@@ -15,6 +15,8 @@ const {
   ConflictError 
 } = require('../utils/errors');
 const { generateSKU } = require('../utils/skuGenerator');
+const { escapeRegex } = require('../utils/escapeRegex');
+const { subProductPageCache } = require('./subProductPageCache');
 const { assessSubProductDeletion } = require('./warehouseStock.helpers');
 const { calculateSubProductPricing, calculateSizePricing, isDiscountActive, resolveRevenueRates, calcPlatformCostPrice } = require('../utils/pricing');
 
@@ -159,6 +161,7 @@ const getMySubProducts = async (tenantId, options) => {
     order = 'desc',
     isSuperAdmin = false,
     warehouseId = null,
+    fresh = false,
   } = options;
 
   // Validate pagination
@@ -179,7 +182,7 @@ const getMySubProducts = async (tenantId, options) => {
   // Search across product name and SKU. Product name lives on the populated
   // Product ref, so resolve matching product ids first, then OR them with SKU.
   if (search && search.trim().length > 0) {
-    const term = new RegExp(search.trim(), 'i');
+    const term = new RegExp(escapeRegex(search.trim()), 'i');
     // Products are platform-level (no tenant field); the outer query.tenant
     // already scopes the SubProduct results, so match product name globally.
     const matchingProductIds = await Product.find({ name: term })
@@ -248,8 +251,10 @@ const getMySubProducts = async (tenantId, options) => {
     });
   }
 
-  // Execute queries in parallel
-  const [total, subProducts] = await Promise.all([
+  const referenceSpecs = populateOptions[0].populate;
+  if (subProductPageCache.isEnabled()) delete populateOptions[0].populate;
+  // Operational records and filtered count are live; summary counts use Redis.
+  const [total, subProducts, summary] = await Promise.all([
     SubProduct.countDocuments(query),
     SubProduct.find(query)
       .populate(populateOptions)
@@ -258,7 +263,12 @@ const getMySubProducts = async (tenantId, options) => {
       .skip(skip)
       .limit(limitNum)
       .lean(),
+    subProductPageCache.statistics(tenantId, { fresh }),
   ]);
+
+  if (subProductPageCache.isEnabled()) {
+    await subProductPageCache.populateReferences(subProducts.map(sp => sp.product).filter(Boolean), referenceSpecs, { fresh });
+  }
 
   // Enrich sizes with warehouse-specific stock when a warehouse is selected
   if (warehouseId && tenantId && subProducts.length > 0) {
@@ -284,23 +294,7 @@ const getMySubProducts = async (tenantId, options) => {
     }
   }
 
-  // Build stats query base
-  const statsQueryBase = tenantId ? { tenant: tenantId } : {};
-
-  // Calculate statistics
-  const stats = {
-    total,
-    active: await SubProduct.countDocuments({ ...statsQueryBase, status: 'active' }),
-    lowStock: await SubProduct.countDocuments({
-      ...statsQueryBase,
-      status: 'active',
-      'sizes.stock': { $lte: 10 },
-    }),
-    outOfStock: await SubProduct.countDocuments({
-      ...statsQueryBase,
-      status: 'out_of_stock',
-    }),
-  };
+  const stats = { total, ...summary };
 
   return {
     subProducts,
@@ -1195,7 +1189,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
   if (!/^[0-9a-fA-F]{24}$/.test(subProductId)) {
     throw new ValidationError('Invalid SubProduct ID');
   }
-  const { warehouseId = null, anyTenant = false } = options;
+  const { warehouseId = null, anyTenant = false, fresh = false } = options;
 
   // The platform admin's review drawer opens listings that by definition belong
   // to OTHER tenants, so it passes anyTenant. Every tenant-facing caller stays
@@ -1224,11 +1218,11 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
   // Log and fix corrupt data if found (only for non-object values)
   if (rawSubProduct.shipping && !hasValidShipping && !isShippingObject) {
     console.warn(`⚠️ SubProduct ${subProductId} has invalid shipping value: ${JSON.stringify(rawSubProduct.shipping).slice(0, 100)}. Clearing field.`);
-    await SubProduct.updateOne({ _id: subProductId }, { $unset: { shipping: 1 } });
+    await SubProduct.updateOne({ _id: subProductId, ...ownership }, { $unset: { shipping: 1 } });
   }
   if (rawSubProduct.warehouse && !hasValidWarehouse) {
     console.warn(`⚠️ SubProduct ${subProductId} has invalid warehouse value: ${rawSubProduct.warehouse}. Clearing field.`);
-    await SubProduct.updateOne({ _id: subProductId }, { $unset: { warehouse: 1 } });
+    await SubProduct.updateOne({ _id: subProductId, ...ownership }, { $unset: { warehouse: 1 } });
   }
 
   // Build populate array dynamically, excluding corrupt fields
@@ -1276,13 +1270,14 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
     });
   }
 
-  // Re-fetch with safe populates
-  const subProduct = await SubProduct.findOne({
-    _id: subProductId,
-    ...ownership,
-  })
-    .populate(populateFields)
-    .lean();
+  const referenceSpecs = populateFields[0].populate;
+  if (subProductPageCache.isEnabled()) delete populateFields[0].populate;
+  // Populate the already authorized snapshot instead of reading it twice.
+  const subProduct = await SubProduct.populate(rawSubProduct,
+    populateFields.map(field => ({ ...field, options: { lean: true } })));
+  if (subProductPageCache.isEnabled() && subProduct.product) {
+    await subProductPageCache.populateReferences([subProduct.product], referenceSpecs, { fresh });
+  }
 
   // Ensure shipping/warehouse are null if they were corrupt (just cleaned)
   // But preserve embedded shipping objects

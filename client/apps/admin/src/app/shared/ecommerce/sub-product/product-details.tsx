@@ -35,7 +35,7 @@ export default function SubProductDetails() {
     let cancelled = false;
     setStatus('loading');
     subproductService
-      .getSubProduct(id, session.user.token)
+      .getSubProduct(id, session.user.token, reload ? { refresh: 'true' } : undefined)
       .then((res) => {
         if (cancelled) return;
         const sp = res?.data?.subProduct;
@@ -163,13 +163,13 @@ export default function SubProductDetails() {
         onChanged={() => setReload(value => value + 1)}
       />
       <div className="@3xl:grid @3xl:grid-cols-12">
-        <div className="col-span-7 mb-7 @container @lg:mb-10 @3xl:pe-10">
+        <div className="@container mb-7 @lg:mb-10 @3xl:col-span-7 @3xl:mb-0 @3xl:pe-10">
           <ProductDetailsGallery
             images={viewModel.images}
             productName={viewModel.name}
           />
         </div>
-        <div className="col-span-5 @container">
+        <div className="@container @3xl:col-span-5">
           <SubProductDetailsSummary product={viewModel} showActions={false} />
           <ProductDetailsDescription product={viewModel} />
         </div>

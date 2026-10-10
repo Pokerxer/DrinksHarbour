@@ -5,6 +5,7 @@
 // → requirePlan('pro')  [Accounting is gated to Pro and above].
 
 const express = require('express');
+const { cacheReport } = require('../middleware/adminReportCache');
 const router = express.Router();
 const ctrl = require('../controllers/accounting.controller');
 const arAp = require('../controllers/arAp.controller');
@@ -40,12 +41,12 @@ router.post('/accounts', ctrl.createAccount);
 router.put('/accounts/:id', ctrl.updateAccount);
 router.delete('/accounts/:id', ctrl.deleteAccount);
 
-router.get('/reports/trial-balance', ctrl.getTrialBalance);
-router.get('/reports/profit-loss', ctrl.getProfitLoss);
-router.get('/reports/balance-sheet', ctrl.getBalanceSheet);
+router.get('/reports/trial-balance', cacheReport('accounting-reports/trial-balance', { tenantRequired: true }), ctrl.getTrialBalance);
+router.get('/reports/profit-loss', cacheReport('accounting-reports/profit-loss', { tenantRequired: true }), ctrl.getProfitLoss);
+router.get('/reports/balance-sheet', cacheReport('accounting-reports/balance-sheet', { tenantRequired: true }), ctrl.getBalanceSheet);
 router.get('/reports/general-ledger', ctrl.getGeneralLedger);
 
-router.get('/dashboard', ctrl.getDashboard);
+router.get('/dashboard', cacheReport('accounting-dashboard', { tenantRequired: true }), ctrl.getDashboard);
 
 // ── Customers / Vendors (AR/AP layer) ────────────────────────────────────────
 // Static segments before any :id routes.
@@ -57,6 +58,10 @@ router.get('/payables/bills', arAp.listBills);
 
 router.get('/credit-notes', arAp.listCreditNotes);
 router.post('/credit-notes', arAp.createCreditNote);
+// Literal `apply` before any `/:id` route, so the path can never be captured as
+// an id by a later declaration.
+router.post('/credit-notes/apply', arAp.applyCreditNote);
+router.post('/credit-notes/:id/post', arAp.postCreditNote);
 router.post('/credit-notes/:id/cancel', arAp.cancelCreditNote);
 
 router.get('/payments', arAp.listPayments); // ?side=customer|vendor
@@ -70,6 +75,7 @@ router.post('/batch-payments/:id/deposit', arAp.depositBatch);
 router.post('/batch-payments/:id/cancel', arAp.cancelBatch);
 
 router.get('/customers', arAp.listCustomers);
+router.get('/customer-credits/:customerId', arAp.getCustomerCredits);
 router.get('/vendors', arAp.listVendors);
 router.get('/products', arAp.listProducts);
 

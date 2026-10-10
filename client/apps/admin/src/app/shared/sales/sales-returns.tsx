@@ -8,9 +8,9 @@ import { PiArrowClockwise, PiArrowUUpLeft, PiPlus } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import {
-  salesOrderService,
   type SalesOrder,
 } from '@/services/salesOrder.service';
+import { loadReturnOrders } from './load-return-orders';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 
 function returnedUnits(so: SalesOrder): number {
@@ -29,17 +29,7 @@ export default function SalesReturns() {
     setLoading(true);
     try {
       // Returns can exist on partially_fulfilled or fulfilled orders.
-      const [fulfilled, partial] = await Promise.all([
-        salesOrderService.list(token, {
-          docType: 'order',
-          status: 'fulfilled',
-        }),
-        salesOrderService.list(token, {
-          docType: 'order',
-          status: 'partially_fulfilled',
-        }),
-      ]);
-      setOrders([...(fulfilled.data ?? []), ...(partial.data ?? [])]);
+      setOrders(await loadReturnOrders(token));
     } catch (err: unknown) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to load returns'
@@ -64,7 +54,7 @@ export default function SalesReturns() {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Sales Returns</h1>
           <p className="text-sm text-gray-500">
-            Orders with restocked / reversed units
+            Returns recorded through Sales or POS
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -1,7 +1,11 @@
 import React from 'react';
 import { Button } from 'rizzui';
 import { PiKeyDuotone } from 'react-icons/pi';
-import { getKeyStatus, type ApiKey } from '@/services/api-key.service';
+import {
+  getKeyStatus,
+  apiKeyScopeLabel,
+  type ApiKey,
+} from '@/services/api-key.service';
 export default function KeyList({
   keys,
   loading,
@@ -78,14 +82,15 @@ export default function KeyList({
                       key={scope}
                       className="rounded-md bg-gray-50 px-2 py-1 text-xs text-gray-600"
                     >
-                      {scope === 'inventory:read'
-                        ? 'Read inventory'
-                        : scope === 'bookings:read'
-                          ? 'Read bookings'
-                          : scope}
+                      {apiKeyScopeLabel(scope)}
                     </span>
                   ))}
                 </div>
+                <p className="text-xs text-gray-500">
+                  {key.lastUsedAt
+                    ? `Last used ${new Date(key.lastUsedAt).toLocaleString('en-NG')}`
+                    : 'Not used yet'}
+                </p>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-xs text-gray-500">
                     {status === 'Expired' ? 'Expired' : 'Expires'}{' '}

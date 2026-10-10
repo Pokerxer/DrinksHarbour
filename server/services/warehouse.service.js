@@ -1,13 +1,16 @@
 // services/warehouse.service.js
 const mongoose = require('mongoose');
 const Warehouse = require('../models/Warehouse');
+const { stockProductImage } = require('./stockProductImage');
 const WarehouseStock = require('../models/WarehouseStock');
+const { stockMinimumFields } = require('./restock/minimum');
 const WarehouseMovement = require('../models/WarehouseMovement');
 // The unified audit trail the inventory history/summary reads. Warehouse-side
 // operations write BOTH ledgers so no movement is invisible to either view.
 const InventoryMovement = require('../models/InventoryMovement');
 const { recalcSubProductStock, computeStockFlags } = require('./warehouseStock.helpers');
 const { valuationCost } = require('./batch.helpers');
+const { stockValuation } = require('./stockValuation');
 const batchService = require('./batch.service');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 
@@ -100,6 +103,7 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
   const WarehouseBatch = require('../models/WarehouseBatch');
   const [rows, batches] = await Promise.all([
     WarehouseStock.find({ tenant: tenantId, warehouse: warehouseId })
+      .select('+automaticMinimum')
       .populate({
         path: 'subProduct',
         // Prices included so the warehouse-detail drawer can show cost/price
@@ -131,12 +135,14 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
 
   const now = new Date();
   return rows.map((r) => {
+    const { automaticMinimum, ...publicStock } = r;
     const spId = String(typeof r.subProduct === 'object' && r.subProduct ? r.subProduct._id : r.subProduct);
     const szId = String(typeof r.size === 'object' && r.size ? r.size._id : r.size);
     const exp = expMap.get(`${spId}|${szId}`);
     const earliestExpiry = exp != null ? new Date(exp).toISOString() : null;
     return {
-      ...r,
+      ...publicStock,
+      ...stockMinimumFields(r, now),
       earliestExpiry,
       flags: computeStockFlags({ ...r, earliestExpiry }, settings || {}, now),
     };
@@ -158,8 +164,10 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
 async function mirrorToInventoryLedger(entries, session = null) {
   if (!entries.length) return;
   try {
-    await InventoryMovement.create(entries, session ? { session } : {});
+    await InventoryMovement.create(entries, session ? { session, ordered: true } : {});
   } catch (err) {
+    // A transaction owner can roll back stock and both ledgers together.
+    if (session) throw err;
     // The warehouse ledger is authoritative for stock levels; a mirror write
     // must not roll back a completed stock operation. Surface for monitoring.
     console.error('[warehouse] InventoryMovement mirror failed:', err.message);
@@ -190,13 +198,15 @@ function adjustmentSplit(type, quantity, balanceAfter, prevBalance) {
   };
 }
 
-async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, unitCost = null, tracksBatch = false, allowNegativeStock = false, fefoPicking = false, recordHistory = true }, userId, tenantId) {
+async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, unitCost = null, tracksBatch = false, allowNegativeStock = false, fefoPicking = false, recordHistory = true, session = null, auditContext = {} }, userId, tenantId) {
   if (!['received', 'shipped', 'adjusted'].includes(type)) {
     throw new ValidationError('Invalid adjustment type');
   }
-  let row = await WarehouseStock.findOne({
+  const stockQuery = WarehouseStock.findOne({
     tenant: tenantId, warehouse: warehouseId, subProduct, size,
   });
+  if (session) stockQuery.session(session);
+  let row = await stockQuery;
   if (!row) {
     row = new WarehouseStock({ tenant: tenantId, warehouse: warehouseId, subProduct, size });
   }
@@ -214,17 +224,20 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
     row.currentQuantity = Math.max(0, before - quantity);
   } else if (type === 'adjusted') row.currentQuantity = Math.max(0, quantity);
   const prevBalance = before; // captured before mutation above
-  await row.save();
+  await row.save(session ? { session } : undefined);
 
-  await WarehouseMovement.create({
+  const movement = {
     tenant: tenantId, warehouse: warehouseId, subProduct, size,
     type, quantity, balanceAfter: row.currentQuantity, reference: notes,
+    balanceBefore: prevBalance, stockChange: row.currentQuantity - prevBalance,
     // Cost rides along on receipts (the buy price); other types leave null
     // unless the caller explicitly supplies one.
     unitCost:
       typeof unitCost === 'number' && unitCost >= 0 ? unitCost : null,
     performedBy: userId,
-  });
+  };
+  if (session) await WarehouseMovement.create([movement], { session, ordered: true });
+  else await WarehouseMovement.create(movement);
 
   // Mirror into the unified ledger so /inventory/movements-based views see it.
   // Callers that post their own authoritative history row (PO receive → the
@@ -235,6 +248,7 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
     await mirrorToInventoryLedger([
       {
         subProduct, tenant: tenantId, warehouse: warehouseId, size,
+        product: auditContext.product,
         type: split.type, category: split.category,
         quantity: Math.abs(split.quantity),
         quantityBefore: split.quantityBefore,
@@ -245,16 +259,16 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
             ? unitCost * Math.abs(split.quantity)
             : undefined,
         reference: notes ? String(notes).slice(0, 100) : undefined,
-        referenceType: 'manual',
+        referenceType: auditContext.referenceType || 'manual',
         reason: notes ? String(notes).slice(0, 200) : undefined,
         performedBy: userId,
         performedAt: new Date(),
-        source: 'system',
+        source: auditContext.source || 'system',
       },
-    ]);
+    ], session);
   }
 
-  await recalcSubProductStock(subProduct);
+  await recalcSubProductStock(subProduct, session, tenantId);
 
   // Reconcile batches on a downward correction: deplete the shortfall FEFO. An
   // upward adjustment lands in untracked slack (no batch context to attribute it to).
@@ -267,7 +281,7 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
       await batchService.depleteBatchesFefo({
         tenantId, warehouseId, subProduct, size, quantity: removed,
         order: fefoPicking ? 'fefo' : 'fifo',
-      });
+      }, session);
     }
   }
   return row;
@@ -483,16 +497,18 @@ async function getMovements(
  * earliest expiry among its still-stocked batches, so the client can attribute
  * stock value and expiry buckets without extra round-trips.
  */
-async function getAllStock(tenantId, settings = null) {
+async function getAllStock(tenantId, settings = null, { includeUnstocked = false } = {}) {
   const WarehouseBatch = require('../models/WarehouseBatch');
   const [rows, batches] = await Promise.all([
     WarehouseStock.find({ tenant: tenantId })
+      .select('+automaticMinimum')
       .populate({
         path: 'subProduct',
-        select: 'sku costPrice baseSellingPrice product',
+        match: { tenant: tenantId },
+        select: 'sku costPrice baseSellingPrice product imagesOverride',
         populate: {
           path: 'product',
-          select: 'name category',
+          select: 'name category images',
           populate: { path: 'category', select: 'name' },
         },
       })
@@ -502,9 +518,8 @@ async function getAllStock(tenantId, settings = null) {
     WarehouseBatch.find({
       tenant: tenantId,
       quantity: { $gt: 0 },
-      quarantined: { $ne: true },
     })
-      .select('warehouse subProduct size expiryDate quantity unitCost receivedDate')
+      .select('warehouse subProduct size expiryDate quantity unitCost receivedDate quarantined')
       .lean(),
   ]);
 
@@ -516,7 +531,7 @@ async function getAllStock(tenantId, settings = null) {
   const lotsMap = new Map();
   for (const b of batches) {
     const key = `${b.warehouse}|${b.subProduct}|${b.size}`;
-    if (b.expiryDate) {
+    if (b.expiryDate && !b.quarantined) {
       const t = new Date(b.expiryDate).getTime();
       const cur = expMap.get(key);
       if (cur == null || t < cur) expMap.set(key, t);
@@ -526,7 +541,7 @@ async function getAllStock(tenantId, settings = null) {
   }
 
   const now = new Date();
-  return rows.map((r) => {
+  const stockRows = rows.map((r) => {
     const sp = r.subProduct || {};
     const sz = r.size || {};
     const wh = r.warehouse || {};
@@ -536,7 +551,8 @@ async function getAllStock(tenantId, settings = null) {
     const szId = String(sz._id || r.size || '');
     // Cost basis honours the tenant's valuationMethod, falling back to the
     // product/size standard cost when no batch carries a captured unit cost.
-    const cost = valuationCost(lotsMap.get(`${whId}|${spId}|${szId}`), valuationMethod, standardCost);
+    const lineLots = lotsMap.get(`${whId}|${spId}|${szId}`) || [];
+    const cost = valuationCost(lineLots.filter(lot => !lot.quarantined), valuationMethod, standardCost);
     const exp = expMap.get(`${whId}|${spId}|${szId}`);
     const earliestExpiry = exp != null ? new Date(exp).toISOString() : null;
     return {
@@ -545,6 +561,7 @@ async function getAllStock(tenantId, settings = null) {
       warehouseName: wh.name || 'Unknown Warehouse',
       subProductId: spId,
       productName: sp.product?.name || sp.sku || 'Unknown Product',
+      productImage: stockProductImage(sp),
       categoryId: sp.product?.category?._id ? String(sp.product.category._id) : null,
       categoryName: sp.product?.category?.name || 'Uncategorized',
       sku: sp.sku || '',
@@ -553,6 +570,7 @@ async function getAllStock(tenantId, settings = null) {
       currentQuantity: r.currentQuantity || 0,
       reservedQuantity: r.reservedQuantity || 0,
       costPrice: cost,
+      ...stockValuation(lineLots, valuationMethod, r.currentQuantity, standardCost),
       sellingPrice: (sz.sellingPrice > 0 ? sz.sellingPrice : null) ?? sp.baseSellingPrice ?? 0,
       // Bundle markup_on_cost (bundleMarkupBase='wholesale') and formula rules
       // (markupBase='wholesale') need the size's wholesale price to compute
@@ -560,21 +578,25 @@ async function getAllStock(tenantId, settings = null) {
       wholesalePrice: Number(sz.wholesalePrice) || 0,
       unitsPerPack: Number(sz.unitsPerPack) || 1,
       valuationMethod,
-      minStockLevel: r.minStockLevel || 0,
+      ...stockMinimumFields(r, now),
       earliestExpiry,
       flags: computeStockFlags(
-        { currentQuantity: r.currentQuantity, reservedQuantity: r.reservedQuantity, minStockLevel: r.minStockLevel, earliestExpiry },
+        { currentQuantity: r.currentQuantity, reservedQuantity: r.reservedQuantity, minStockLevel: r.minStockLevel, automaticMinimum:r.automaticMinimum, earliestExpiry },
         settings || {},
         now
       ),
     };
   });
+  return includeUnstocked
+    ? require('./inventoryStockCatalog').includeUnstockedRows(stockRows, tenantId, settings)
+    : stockRows;
 }
 
 async function getStockByWarehouse(subProductId, tenantId) {
   // Prices + product identity included so product-level inventory views can
   // show names, last/standard cost and stock value without extra round-trips.
-  return WarehouseStock.find({ tenant: tenantId, subProduct: subProductId })
+  const rows = await WarehouseStock.find({ tenant: tenantId, subProduct: subProductId })
+    .select('+automaticMinimum')
     .populate({
       path: 'subProduct',
       select: 'sku costPrice baseSellingPrice currency',
@@ -583,6 +605,11 @@ async function getStockByWarehouse(subProductId, tenantId) {
     .populate('warehouse', 'name code type')
     .populate('size', 'size costPrice sellingPrice')
     .lean();
+  const now = new Date();
+  return rows.map(({ automaticMinimum, ...row }) => ({
+    ...row,
+    ...stockMinimumFields({ ...row, automaticMinimum }, now),
+  }));
 }
 
 /**

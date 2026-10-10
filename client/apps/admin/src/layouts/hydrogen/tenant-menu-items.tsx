@@ -2,6 +2,7 @@ import React from 'react';
 import { routes } from '@/config/routes';
 import {
   PiCashRegisterDuotone,
+  PiBooksDuotone,
   PiChartBarDuotone,
   PiChartLineUpDuotone,
   PiShieldCheckDuotone,
@@ -251,6 +252,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
   },
   {
     name: 'Banners',
+    minRole: 'tenant_admin',
     href: routes.eCommerce.banners,
     icon: <PiImageDuotone />,
     requiredPlan: 'starter',
@@ -300,6 +302,27 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     name: 'Sales Returns',
     href: routes.eCommerce.salesReturns,
     icon: <PiArrowUUpLeftDuotone />,
+  },
+
+  // ─── Accounting ─────────────────────────────────────────────
+  { label: 'Accounting' },
+  {
+    name: 'Accounting',
+    href: routes.accounting.index,
+    icon: <PiBooksDuotone />,
+    minRole: 'tenant_admin',
+    dropdownItems: [
+      { name: 'Overview', href: routes.accounting.index },
+      { name: 'Journal Entries', href: routes.accounting.journalEntries },
+      { name: 'Reports', href: routes.accounting.reports },
+      { name: 'Invoices', href: routes.accounting.invoices },
+      { name: 'Bills', href: routes.accounting.bills },
+      { name: 'Credit Notes', href: routes.accounting.creditNotes },
+      { name: 'Payments', href: routes.accounting.payments },
+      { name: 'Batch Payments', href: routes.accounting.batchPayments },
+      { name: 'Chart of Accounts', href: routes.accounting.chartOfAccounts },
+      { name: 'Taxes', href: routes.accounting.taxes },
+    ],
   },
 
   // ─── Logistics ──────────────────────────────────────────────

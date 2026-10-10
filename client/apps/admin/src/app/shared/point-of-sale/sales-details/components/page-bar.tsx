@@ -19,7 +19,7 @@ export function PageBar({
     return page - 3 + i;
   });
   return (
-    <div className="flex items-center justify-between border-t border-gray-100 px-4 py-2.5">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-4 py-2.5">
       <p className="text-xs text-gray-500">
         {start.toLocaleString()}–{end.toLocaleString()} of {totalItems.toLocaleString()}
       </p>

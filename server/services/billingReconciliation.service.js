@@ -2,6 +2,7 @@
 const axios = require('axios');
 const Tenant = require('../models/Tenant');
 const { ConflictError } = require('../utils/errors');
+const { recordEvent } = require('./subscriptionEvents.service');
 const BASE = 'https://api.paystack.co';
 const options = () => ({ headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }, timeout: 15000 });
 const revisionFilter = tenant => tenant.billingRevision ? { billingRevision: tenant.billingRevision }
@@ -42,6 +43,19 @@ async function reconcileSubscription(tenant, fetch = fetchSubscription) {
     ...revisionFilter(tenant),
   }, { $set: update, $inc: { billingRevision: 1 } });
   if (!result.matchedCount) throw new ConflictError('Billing changed during reconciliation; retry');
+  // Retention ledger. Keyed on the subscription code, so the nightly sweep and a
+  // redelivered webhook collapse onto one row instead of reporting the same
+  // cancellation every day.
+  if (update.subscriptionStatus === 'canceled' || update.subscriptionStatus === 'past_due') {
+    await recordEvent({
+      tenant: tenant._id,
+      kind: update.subscriptionStatus === 'canceled' ? 'cancellation' : 'payment_failure',
+      fromPlan: tenant.plan,
+      toPlan: tenant.plan,
+      effectiveAt: new Date(),
+      source: tenant.paystackSubscriptionCode,
+    });
+  }
   return update;
 }
 

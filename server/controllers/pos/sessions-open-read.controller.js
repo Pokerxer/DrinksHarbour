@@ -1,3 +1,4 @@
+const { enrichSessionHistory } = require('../../services/posSessionHistory.service');
 const POSSession = require('../../models/POSSession');
 const asyncHandler = require('../../utils/asyncHandler');
 const { emitToTerminal } = require('../../services/pos.realtime');
@@ -69,7 +70,7 @@ exports.getCurrentSession = asyncHandler(async (req, res) => {
     .populate('openedBy activeCashier', 'firstName lastName email posName avatar')
     .sort({ openedAt: -1 });
 
-  res.json({ success: true, data: { session: session || null } });
+  res.json({ success: true, data: { session: session ? (await enrichSessionHistory([session], tenantId))[0] : null } });
 });
 
 exports.getSessionList = asyncHandler(async (req, res) => {
@@ -100,7 +101,7 @@ exports.getSessionList = asyncHandler(async (req, res) => {
     POSSession.countDocuments(filter),
   ]);
 
-  res.json({ success: true, data: { sessions, total, page, limit } });
+  res.json({ success: true, data: { sessions: await enrichSessionHistory(sessions, tenantId), total, page, limit } });
 });
 
 exports.getPOSSessionInfo = asyncHandler(async (req, res) => {
@@ -121,11 +122,13 @@ exports.getPOSSessionInfo = asyncHandler(async (req, res) => {
       .lean(),
   ]);
 
+  const enriched = await enrichSessionHistory([openSession, lastClosed].filter(Boolean), tenantId);
+  const byId = new Map(enriched.map(row => [String(row._id), row]));
   res.json({
     success: true,
     data: {
-      currentSession: openSession || null,
-      lastSession:    lastClosed  || null,
+      currentSession: openSession ? byId.get(String(openSession._id)) : null,
+      lastSession: lastClosed ? byId.get(String(lastClosed._id)) : null,
     },
   });
 });

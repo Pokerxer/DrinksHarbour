@@ -1,3 +1,4 @@
+const { platformIdentity } = require('../utils/customerIdentity');
 // server/controllers/employee.controller.js
 //
 // Tenant staff (employee) management. Broader than POS cashier CRUD: covers
@@ -158,7 +159,7 @@ exports.createEmployee = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: built.message });
   }
 
-  const existing = await User.findOne({ email: built.value.email });
+  const existing = await User.findOne({ email: built.value.email, ...platformIdentity() });
   if (existing) {
     return res.status(409).json({ success: false, message: 'Email already in use' });
   }

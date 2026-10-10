@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 
@@ -223,7 +223,7 @@ const FooterBanner: React.FC<FooterBannerProps> = ({
                 </form>
               ) : (
                 <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="p-4 rounded-xl bg-green-500/20 border border-green-500/30 max-w-md mx-auto">
-                  <p className="text-green-400 font-semibold">✓ You're subscribed! Check your email for your welcome discount.</p>
+                  <p className="text-green-400 font-semibold">✓ You&apos;re subscribed! Check your email for your welcome discount.</p>
                 </motion.div>
               )}
 

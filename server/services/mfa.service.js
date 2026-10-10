@@ -191,6 +191,7 @@ const disableMfa = async (userId, code) => {
 const verifyLoginMfa = async (userId, code) => {
   const user = await User.findById(userId).select('+mfaSecret +mfaBackupCodes');
   if (!user) throw new NotFoundError('User not found');
+  if (user.role === 'customer' && user.tenant) throw new ValidationError('Sign in through your store');
 
   if (!user.mfaEnabled) {
     throw new ValidationError('MFA is not enabled for this account');

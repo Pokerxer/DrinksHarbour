@@ -60,8 +60,11 @@ const StockTransferSchema = new Schema(
     // the lines that were returned and who/ when it was recorded.
     returns: [
       {
+        requestId: { type: String, maxlength: 100 },
         returnedBy: { type: ObjectId, ref: "User" },
         returnedAt: { type: Date, default: Date.now },
+        refundedValue: { type: Number, min: 0 },
+        remainingValue: { type: Number, min: 0 },
         lines: [
           {
             itemIndex: { type: Number, required: true },

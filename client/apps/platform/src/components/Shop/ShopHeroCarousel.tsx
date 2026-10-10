@@ -6,7 +6,7 @@
  * When admins publish `shop` placement banners this renders the same autoscroll
  * full-width HeroBanner carousel the homepage uses (one 2:1 slide at a time,
  * auto-advancing, with controls + indicators). If the placement is empty it
- * falls back to the standard themed gradient hero + category chip rail via
+ * falls back to a compact shop heading + category chip rail via
  * ShopHeroBanner, so the bare shop page never shows a blank slab or the
  * homepage's demo slides.
  *
@@ -30,8 +30,7 @@ export default function ShopHeroCarousel({
   brand,
   heroSeed,
 }: ShopHeroCarouselProps) {
-  // Becomes true when the `shop` placement has no banners; the themed hero then
-  // takes over so the slot isn't a hole.
+  // Empty placements keep a compact heading and category navigation.
   const [empty, setEmpty] = useState(false);
 
   const handleEmpty = useCallback(() => setEmpty(true), []);
@@ -43,6 +42,7 @@ export default function ShopHeroCarousel({
         subcategory={subcategory}
         brand={brand}
         seed={heroSeed}
+        skipShopFallback
       />
     );
   }

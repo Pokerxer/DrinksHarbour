@@ -27,6 +27,7 @@ import {
   soItemToDraftLine,
 } from '../sales-create-pricing-helpers';
 import type { DraftLine, PricedLine } from '../sales-line-table';
+import { clearableSalesFields } from '../sales-clearable-fields';
 import type { ProductLineSelection } from '../product-line-search';
 import type { CreateTab } from '../sales-stage-pill';
 import { subproductService } from '@/services/subproduct.service';
@@ -670,13 +671,14 @@ export function useSalesCreateForm({
       appliedPricelist: pricelist
         ? { pricelistId: pricelist._id, pricelistName: pricelist.name }
         : null,
-      validUntil: validUntil || undefined,
       paymentTerms,
       invoiceAddress,
       deliveryAddress: deliverDifferent ? deliveryAddress : invoiceAddress,
-      notes: notes || undefined,
-      terms: terms || undefined,
-      warehouseId: warehouseId || undefined,
+      // These four are the form's own to set, so an emptied box has to reach
+      // the server as an empty value. `x || undefined` sent the one signal the
+      // server reads as "leave this alone", so a cleared note came straight
+      // back and the save reported success. See sales-clearable-fields.ts.
+      ...clearableSalesFields({ notes, terms, validUntil, warehouseId: warehouseIdStr }),
       shippingFee,
       plannedRedeemPoints,
     };
@@ -692,7 +694,7 @@ export function useSalesCreateForm({
     deliverDifferent,
     notes,
     terms,
-    warehouseId,
+    warehouseIdStr,
     shippingFee,
     plannedRedeemPoints,
   ]);

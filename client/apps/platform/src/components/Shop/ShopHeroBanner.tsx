@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import Link from 'next/link';
+import HeroBanner from '@/components/Banner/HeroBanner';
+import { resolveShopArtwork } from './bannerArtwork';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   fetchAllCategories,
@@ -356,6 +358,7 @@ const DEFAULT_CONFIG: CategoryConfig = {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ShopHeroBannerProps {
+  skipShopFallback?: boolean;
   category?: string | string[] | null;
   subcategory?: string | string[] | null;
   brand?: string | string[] | null;
@@ -516,6 +519,7 @@ export default function ShopHeroBanner({
   subcategory,
   brand,
   seed,
+  skipShopFallback = false,
 }: ShopHeroBannerProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -536,8 +540,8 @@ export default function ShopHeroBanner({
   // Active filter slugs from the URL (single or multi-select).
   const activeCats = useMemo(() => new Set(toList(category)), [category]);
   const activeSubs = useMemo(() => new Set(toList(subcategory)), [subcategory]);
-  const catList = useMemo(() => [...activeCats], [activeCats]);
-  const subList = useMemo(() => [...activeSubs], [activeSubs]);
+  const catList = useMemo(() => Array.from(activeCats), [activeCats]);
+  const subList = useMemo(() => Array.from(activeSubs), [activeSubs]);
   const brandList = useMemo(() => toList(brand), [brand]);
 
   // ── Brand details — fetched when exactly one brand is selected ──
@@ -614,36 +618,19 @@ export default function ShopHeroBanner({
   // <h1>, the banner's aria-label, and the chip rail's accessible name.
   const displayLabel = brandLabel ?? dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? seed?.label ?? DEFAULT_CONFIG.label;
 
-  // Featured image background — brand image first, then a single active
-  // subcategory's image, else the category's.
-  const heroImage =
-    (brandOnly ? dbBrand?.bannerImage?.url ?? dbBrand?.featuredImage?.url : null) ??
-    (subList.length === 1 ? dbSub?.featuredImage?.url ?? dbSub?.bannerImage?.url : null) ??
-    dbCat?.featuredImage?.url ?? dbCat?.bannerImage?.url ?? null;
-
-  // ── Banner click-through ───────────────────────────────────────────────────
-  // Admin-set per category / subcategory / brand (see the "Banner Link" field in
-  // the admin forms). Same source precedence as the artwork above, so the link
-  // always belongs to whichever record supplied the image. Empty = not clickable.
-  const bannerLinkSource = brandOnly
-    ? dbBrand
-    : subList.length === 1 && dbSub?.bannerLink
-      ? dbSub
-      : dbCat;
-  const bannerLink = (bannerLinkSource as any)?.bannerLink?.trim() || null;
-  const bannerLinkExternal = (bannerLinkSource as any)?.bannerLinkType === 'external';
-
-  // ── Image fit ──────────────────────────────────────────────────────────────
-  // Landscape (or unknown) artwork covers the 2:1 frame edge-to-edge like the
-  // homepage HeroBanner in its cover mode — no letterbox bars, ad art fills the
-  // whole hero. Portrait / near-square uploads fall back to contain so a tall
-  // bottle shot isn't decapitated. Newer uploads persist Cloudinary's width and
-  // height, so we use those when present and otherwise sample the loaded <img>
-  // (older records predate that and have no dimensions stored).
-  const heroDims =
-    (brandOnly ? dbBrand?.bannerImage ?? dbBrand?.featuredImage : null) ??
-    (subList.length === 1 ? dbSub?.featuredImage ?? dbSub?.bannerImage : null) ??
-    dbCat?.featuredImage ?? dbCat?.bannerImage ?? null;
+  // Dedicated banner artwork — brand first, then a single active subcategory,
+  // then its parent category. Missing banners use the main shop placement.
+  const artwork = resolveShopArtwork([
+    brandOnly ? dbBrand : null,
+    subList.length === 1 ? dbSub : null,
+    dbCat,
+  ]);
+  const heroImage = artwork?.image.url ?? null;
+  const bannerLink = artwork?.entity?.bannerLink?.trim() || null;
+  const bannerLinkExternal = artwork?.entity?.bannerLinkType === 'external';
+  const heroDims = artwork?.image;
+  const [shopBannersEmpty, setShopBannersEmpty] = useState(false);
+  const handleShopEmpty = useCallback(() => setShopBannersEmpty(true), []);
   const knownOrientation =
     heroDims?.width && heroDims?.height
       ? heroDims.width / heroDims.height >= 1.2 ? 'landscape' : 'portrait'
@@ -656,6 +643,7 @@ export default function ShopHeroBanner({
   // Subcategory chip URL
   const makeSubUrl = (slug: string | null) => {
     const p = new URLSearchParams(searchParams.toString());
+    p.delete('page');
     if (!slug) {
       p.delete('subcategory');
     } else {
@@ -667,7 +655,7 @@ export default function ShopHeroBanner({
 
   const makeCategoryUrl = (slug: string) => `${pathname}?category=${slug}`;
 
-  const { dark, mid, glow, accent } = theme;
+  const { dark, glow, accent } = theme;
 
   // ── Entity banner analytics ─────────────────────────────────────────────────
   // Track impressions and clicks on the hero banner for the resolved entity
@@ -677,15 +665,15 @@ export default function ShopHeroBanner({
   const ENTITY_API = process.env.NEXT_PUBLIC_API_URL || '';
 
   const analyticsEntity = useMemo(() => {
-    if (brandOnly && dbBrand?._id) return { entityType: 'brand' as const, entityId: String(dbBrand._id) };
-    if (subList.length === 1 && dbSub?.bannerLink && dbSub?._id) return { entityType: 'subcategory' as const, entityId: String(dbSub._id) };
-    if (dbCat?._id) return { entityType: 'category' as const, entityId: String(dbCat._id) };
+    if (artwork?.entity === dbBrand && dbBrand?._id) return { entityType: 'brand' as const, entityId: String(dbBrand._id) };
+    if (artwork?.entity === dbSub && dbSub?._id) return { entityType: 'subcategory' as const, entityId: String(dbSub._id) };
+    if (artwork?.entity === dbCat && dbCat?._id) return { entityType: 'category' as const, entityId: String(dbCat._id) };
     return null;
-  }, [brandOnly, dbBrand, dbSub, subList, dbCat]);
+  }, [artwork?.entity, dbBrand, dbSub, dbCat]);
 
   // Fire impression beacon once when the hero scrolls into view.
   useEffect(() => {
-    if (!analyticsEntity || !heroRef.current) return;
+    if (!heroImage || !analyticsEntity || !heroRef.current) return;
     const el = heroRef.current;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && !hasTrackedImpression.current) {
@@ -699,7 +687,7 @@ export default function ShopHeroBanner({
     }, { threshold: 0.3 });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [analyticsEntity, ENTITY_API]);
+  }, [heroImage, analyticsEntity, ENTITY_API]);
 
   const trackHeroClick = useCallback(() => {
     if (!analyticsEntity) return;
@@ -719,7 +707,14 @@ export default function ShopHeroBanner({
           category/brand page needs — the same sr-only pattern the homepage uses.
           aspect-[2/1] matches the homepage hero at every breakpoint; the whole
           frame becomes a link when the record has a Banner Link set. */}
-      <BannerFrame
+      {!heroImage ? (
+        <>
+          <h1 className={shopBannersEmpty || skipShopFallback ? 'container py-6 text-2xl font-semibold' : 'sr-only'}>{displayLabel}</h1>
+          {!skipShopFallback && !shopBannersEmpty && (
+            <HeroBanner placement="shop" limit={5} autoPlay showControls showIndicators onEmpty={handleShopEmpty} />
+          )}
+        </>
+      ) : <BannerFrame
         href={bannerLink}
         external={bannerLinkExternal}
         label={`${displayLabel} — view offer`}
@@ -731,7 +726,6 @@ export default function ShopHeroBanner({
             screen readers so the category/brand page keeps its main <h1>. */}
         <h1 className="sr-only">{displayLabel}</h1>
 
-        {heroImage ? (
           <Image
             src={heroImage}
             alt={displayLabel}
@@ -753,28 +747,7 @@ export default function ShopHeroBanner({
               setImgOrientation(w / h >= 1.2 ? 'landscape' : 'portrait');
             }}
           />
-        ) : (
-          // No artwork — a themed gradient panel so the slot isn't a flat black
-          // rectangle. Nothing is drawn on top of a real banner.
-          <>
-            <div
-              aria-hidden="true"
-              className="absolute inset-0"
-              style={{ background: `linear-gradient(115deg, ${dark} 0%, ${mid} 45%, ${dark} 100%)` }}
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute -top-20 -right-20 w-[500px] h-[500px] rounded-full blur-3xl"
-              style={{ background: glow, opacity: 0.18 }}
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute -bottom-24 -left-24 w-72 h-72 rounded-full blur-3xl"
-              style={{ background: glow, opacity: 0.08 }}
-            />
-          </>
-        )}
-      </BannerFrame>
+      </BannerFrame>}
 
       {/* ── Subcategory chip rail ─────────────────────────────────────────────── */}
       <nav

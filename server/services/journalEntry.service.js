@@ -129,7 +129,7 @@ async function reverseEntry({ tenantId, entryId, userId, session }) {
   if (alreadyReversed) return alreadyReversed;
 
   const swapped = swapLinesForReversal(original);
-  return JournalEntry.findOneAndUpdate(
+  const reversal = await JournalEntry.findOneAndUpdate(
     { tenant: tenantId, refDoc: original._id, entryType: 'reversal' },
     { $setOnInsert: {
     tenant: tenantId,
@@ -144,6 +144,38 @@ async function reverseEntry({ tenantId, entryId, userId, session }) {
     postedBy: userId,
     status: 'posted',
   } }, { upsert: true, new: true, runValidators: true, ...(session ? { session } : {}) });
+
+  // Unwind the tax capture that produced the original, in the same breath.
+  //
+  // The journal and the tax ledger are two views of one event; reversing one
+  // without the other leaves the tenant's output VAT overstated permanently
+  // (the 2100 line is credited back but the TaxRecord stays `posted`) and
+  // `tax.reconciled` can never return to true. Doing it here rather than at
+  // each call site is the point: the call sites are exactly what drifted apart
+  // in the first place.
+  //
+  // A tax write failing must not lose the journal reversal — the reversal is
+  // the record of what happened, and the tax ledger is repairable by the
+  // backfill script.
+  const { taxSourceForEntry, reverseDocumentTax } = require('./tax.service');
+  const taxSource = taxSourceForEntry(original);
+  if (taxSource) {
+    try {
+      await reverseDocumentTax({
+        sourceType: taxSource,
+        doc: { _id: original.refDoc, tenant: tenantId },
+        userId,
+      });
+    } catch (err) {
+      console.error('taxReverseFailed', {
+        sourceType: taxSource,
+        sourceId: String(original.refDoc),
+        message: err?.message,
+      });
+    }
+  }
+
+  return reversal;
 }
 
 module.exports = {

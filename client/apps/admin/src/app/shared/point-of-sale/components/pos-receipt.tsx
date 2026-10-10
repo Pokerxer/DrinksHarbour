@@ -1,4 +1,5 @@
 'use client';
+import { receiptTax } from './pos-receipt-tax';
 
 import { useEffect, useRef } from 'react';
 import { PiCheckCircle, PiPrinter } from 'react-icons/pi';
@@ -79,6 +80,7 @@ export default function ReceiptScreen({
   const hasCustomer = !!customer.customerId;
   const custName = hasCustomer ? `${customer.firstName} ${customer.lastName}`.trim() : null;
 
+  const displayedTax = receiptTax(order, settings);
   const displaySubtotal = order.subtotal ?? cartSubtotal;
   const displayDiscount = order.discountTotal ?? cartDiscount;
   const displayNote = order.note || cartNote;
@@ -623,24 +625,8 @@ export default function ReceiptScreen({
 
             <div style={R.rule} />
 
-            {/* Tax line (estimated — prices assumed VAT-inclusive).
-                Computed on the goods only: a tip is a gratuity, not a taxable
-                supply, and the rounding delta is not consideration for goods
-                either. Using order.total here would overstate the VAT by a
-                fraction of whatever the customer chose to leave. */}
-            {settings.showTaxOnReceipt && settings.taxRate > 0 && (
-              <>
-                <div style={R.divider} />
-                <Row
-                  label={`VAT ${settings.taxRate}%`}
-                  value={formatCurrency(
-                    ((order.total - (order.tipAmount ?? 0) - (order.roundingAmount ?? 0)) *
-                      settings.taxRate) /
-                      (100 + settings.taxRate)
-                  )}
-                  vStyle={R.muted}
-                />
-              </>
+            {displayedTax && (
+              <Row label={displayedTax.label} value={formatCurrency(displayedTax.amount)} />
             )}
 
             {/* Footer */}

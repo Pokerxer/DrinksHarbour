@@ -30,6 +30,9 @@ const {
 /**
  * Helper to get tenant ID
  */
+const { withPurchaseReceiptMetrics } = require('../services/purchaseAnalyticsLedger');
+const { CREATOR_FIELDS, withDocumentCreatorName } = require('../services/documentCreator');
+
 const resolveTenantId = async (req) => {
   if (req.tenant?._id) return req.tenant._id;
 
@@ -368,6 +371,7 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
 
   // Validate subProducts exist in tenant's catalog
   await validateSubProducts(items, tenantId);
+  await require('../services/restock/purchase').validateRestockPurchase(tenantId, req.body);
 
   // Snapshot the effective taxRate for lines carrying a configured Tax ref —
   // enrichPOItems spreads each item, so the rate set here flows into persistence.
@@ -467,7 +471,7 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
     tenant: tenantId,
   })
     .populate("vendor", "name email phone address bankDetails")
-    .populate("createdBy", "name email")
+    .populate("createdBy", CREATOR_FIELDS)
     .populate({
       path: "items.subProductId",
       select: "name sku imageUrl product",
@@ -484,7 +488,7 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
 
   // Surface each line's parent-product batch-tracking flags so the receiving UI
   // can conditionally prompt for batch number + expiry date.
-  const data = purchaseOrder.toObject();
+  const data = withDocumentCreatorName(purchaseOrder);
   data.items = (data.items || []).map((item) => {
     const product = item.subProductId && item.subProductId.product;
     return {
@@ -531,16 +535,20 @@ const getPurchaseOrders = asyncHandler(async (req, res) => {
     .skip((page - 1) * limit)
     .limit(limit)
     .populate("vendor", "name email")
-    .populate("createdBy", "name")
+    .populate("createdBy", CREATOR_FIELDS)
     .populate("items.subProductId", "name sku")
     .populate("items.sizeId", "size volume")
     .populate("warehouse", "name code type address contact");
 
   const totalCount = await PurchaseOrder.countDocuments(filter);
 
+  const documents = purchaseOrders.map(withDocumentCreatorName);
+  const data = req.query.analytics === 'true'
+    ? await withPurchaseReceiptMetrics(documents, tenantId)
+    : documents;
   res.status(200).json({
     success: true,
-    data: purchaseOrders,
+    data,
     pagination: {
       currentPage: page,
       totalPages: Math.ceil(totalCount / limit),

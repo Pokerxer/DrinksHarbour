@@ -1,3 +1,4 @@
+import { computeReturnedMap } from '@/app/shared/point-of-sale/refund-quantities';
 import { requestDocumentExport } from './print/document-export';
 import { buildA4Invoice } from './print/a4-invoice';
 /**
@@ -20,6 +21,8 @@ export interface InvoiceItem {
   quantity?: number;
   priceAtPurchase?: number;
   itemSubtotal?: number;
+  taxRate?: number;
+  taxAmount?: number;
   discountAmount?: number;
   /** per-item refunded qty, used by POS order-detail */
   refundedQty?: number;
@@ -33,6 +36,7 @@ export interface InvoiceOrder {
   total?: number;
   totalAmount?: number;
   subtotal?: number;
+  taxAmount?: number;
   discountTotal?: number;
   isVoided?: boolean;
   paymentMethod?: string;
@@ -43,7 +47,7 @@ export interface InvoiceOrder {
   posStaff?: { firstName?: string; lastName?: string; posName?: string } | null;
   staff?: { name?: string } | null;
   customer?: { firstName?: string; lastName?: string; phone?: string } | null;
-  refunds?: { totalRefunded?: number; items?: { orderItemIndex: number; quantity: number }[] }[];
+  refunds?: { source?: 'sales' | 'pos'; totalRefunded?: number; items?: { orderItemIndex: number; quantity: number; salesReturnedQuantity?: number }[] }[];
   shipping?: { address?: string; city?: string; state?: string };
   notes?: string;
   items?: InvoiceItem[];
@@ -108,13 +112,14 @@ export function deriveInvoiceData(order: InvoiceOrder, store: InvoiceStore = DEF
     : totalRefunded > 0 ? '#d97706'
     : '#16a34a';
 
+  const returned = computeReturnedMap((order.refunds || []).map(row => ({...row, items:row.items || []})));
   const receiptRef = order.receiptNumber || order.orderNumber || '—';
 
   return {
     storeName, logoSrc, address, amount, subtotal, discount,
     totalRefunded, change, cashier, customerName, customerPhone,
     payLabel, dateStr, statusLabel, statusColor, receiptRef,
-    items: order.items ?? [],
+    items: (order.items ?? []).map((item, index) => ({...item, refundedQty: Math.min(item.quantity || 0, Math.max(item.refundedQty || 0, returned[index] || 0))})),
     hasOrderNum: !!(order.orderNumber && order.receiptNumber),
     orderNumber: order.orderNumber,
     bankAccounts: store.bankAccounts ?? [],
@@ -146,7 +151,7 @@ export function buildInvoice(order: InvoiceOrder, store: InvoiceStore = DEFAULT_
         </td>
         <td style="padding:10px 16px;text-align:right;font-size:13px;color:#374151;white-space:nowrap">${qty}.00 Units</td>
         <td style="padding:10px 16px;text-align:right;font-size:13px;color:#374151;font-variant-numeric:tabular-nums">${ng(price)}</td>
-        <td style="padding:10px 16px;text-align:right;font-size:12px;color:#d1d5db">—</td>
+        <td style="padding:10px 16px;text-align:right;font-size:12px;color:#6b7280">${it.taxRate != null ? `${it.taxRate}%` : '—'}</td>
         <td style="padding:10px 16px;text-align:right;font-size:13px;font-weight:700;color:#111;font-variant-numeric:tabular-nums">${ng(total)}</td>
       </tr>`;
   }).join('');
@@ -231,6 +236,7 @@ export function buildInvoice(order: InvoiceOrder, store: InvoiceStore = DEFAULT_
           <span style="color:#6b7280">Untaxed Amount</span>
           <span style="font-weight:600;color:#111">${ng(d.subtotal)}</span>
         </div>
+        ${order.taxAmount != null ? `<div style="display:flex;justify-content:space-between;padding:10px 16px;font-size:13px"><span>Tax</span><span>${ng(order.taxAmount)}</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;padding:13px 16px;background:#b20202">
           <span style="font-size:14px;font-weight:800;color:#fff;letter-spacing:0.02em">Total</span>
           <span style="font-size:14px;font-weight:800;color:#fff">${ng(d.amount)}</span>

@@ -204,6 +204,14 @@ test('transferStock moves batches with the stock when tracksBatch is true', asyn
   let call = 0;
   t.mock.method(WarehouseStock, 'findOne', () => ({ session: () => (call++ === 0 ? src : dest) }));
   t.mock.method(WarehouseMovement, 'create', async () => {});
+  // Both audit ledgers are transaction writes; don't hit the real model with
+  // these deliberately synthetic ids or rely on a swallowed validation error.
+  const inventoryAudits = [];
+  t.mock.method(require('../models/InventoryMovement'), 'create', async (entries, options) => {
+    assert.strictEqual(options.session, fakeSession);
+    assert.strictEqual(options.ordered, true);
+    inventoryAudits.push(...entries);
+  });
   let transferred = null;
   t.mock.method(batchService, 'transferBatchesFefo', async (p) => { transferred = p; return []; });
 
@@ -213,4 +221,5 @@ test('transferStock moves batches with the stock when tracksBatch is true', asyn
   );
   assert.strictEqual(transferred.quantity, 6);
   assert.strictEqual(transferred.toWarehouse, 'w2');
+  assert.deepStrictEqual(inventoryAudits.map((row) => row.type), ['transfer_out', 'transfer_in']);
 });

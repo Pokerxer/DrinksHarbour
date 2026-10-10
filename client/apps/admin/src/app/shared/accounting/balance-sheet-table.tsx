@@ -3,6 +3,7 @@
 import type { BalanceSheet } from '@/services/accounting.service';
 import { downloadCsv, fmtMoney, printReport } from './accounting-helpers';
 import ReportActions from './report-actions';
+import { balanceSheetStatus } from './report-status';
 
 function Section({ title, data }: { title: string; data: BalanceSheet['assets'] }) {
   return (
@@ -36,7 +37,15 @@ function Section({ title, data }: { title: string; data: BalanceSheet['assets'] 
 /** Balance Sheet — assets = liabilities + equity (incl. retained earnings). */
 export default function BalanceSheetTable({ data, subtitle }: { data: BalanceSheet; subtitle?: string }) {
   const le = Math.round((data.liabilities.total + data.equity.total) * 100) / 100;
-  const diff = Math.round((data.assets.total - le) * 100) / 100;
+  // Tone follows the gap, not the server's `balanced` flag: that flag is also
+  // false when assets are a net credit, which produced "gap ₦0.00" advice to
+  // post opening balances for a sheet with no gap to close.
+  const status = balanceSheetStatus({
+    balanced: data.balanced,
+    assets: data.assets.total,
+    liabilities: data.liabilities.total,
+    equity: data.equity.total,
+  });
 
   const print = () =>
     printReport({
@@ -56,10 +65,14 @@ export default function BalanceSheetTable({ data, subtitle }: { data: BalanceShe
 
   return (
     <div>
-      {!data.balanced && (
-        <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          ⚠ Assets do not equal liabilities + equity yet (gap {fmtMoney(diff)}) — post
-          opening-balance entries (e.g. cash/equity) or run the journal backfill.
+      {status.tone === 'bad' && (
+        <div
+          role="status"
+          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
+          <span className="font-medium">Assets do not equal liabilities + equity</span>{' '}
+          (gap {fmtMoney(status.gap)}) — post opening-balance entries (e.g. cash/equity)
+          or run the journal backfill.
         </div>
       )}
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">

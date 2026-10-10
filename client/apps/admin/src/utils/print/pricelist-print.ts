@@ -1,3 +1,4 @@
+import { buildPriceColumnGrid } from '@/app/shared/inventory/inventory-pricelist-columns';
 // Customer price list as a branded PDF via the shared DocumentModel pipeline —
 // same renderer every other invoice in the app uses, saved directly to disk
 // (no browser print dialog). Content pricing comes from the SAME engine as the
@@ -41,7 +42,14 @@ export function buildPricelistDoc(
 ): DocumentModel {
   const o = options;
   const currency = pricelist?.currency || 'NGN';
-  const lines = priceAndSortLines(rows, pricelist, o.discountPercent ?? 0);
+  const grid = o.priceColumns
+    ? buildPriceColumnGrid(rows, o.priceColumns, o.discountPercent)
+    : null;
+  const lines = priceAndSortLines(
+    rows,
+    grid ? null : pricelist,
+    grid ? 0 : (o.discountPercent ?? 0)
+  );
   const extraColumns = (o.additionalPriceColumns ?? []).map((c) => {
     const sample = lines.find(
       (l) => l.bundleTotal != null && l.bundleQuantity != null
@@ -64,8 +72,10 @@ export function buildPricelistDoc(
     ...(o.showAvailability
       ? [{ label: 'Available', align: 'right' as const }]
       : []),
-    { label: 'Unit Price', align: 'right' },
-    ...(linesHaveBundlePrices(lines)
+    ...(grid
+      ? grid.columns.map((c) => ({ label: c.label, align: 'right' as const }))
+      : [{ label: 'Unit Price', align: 'right' as const }]),
+    ...(!grid && linesHaveBundlePrices(lines)
       ? [
           {
             label:
@@ -79,7 +89,7 @@ export function buildPricelistDoc(
             : [{ label: 'Bundle Qty', align: 'right' as const }]),
         ]
       : []),
-    ...extraColumns.map((c) => ({
+    ...(grid ? [] : extraColumns).map((c) => ({
       label: c.displayLabel,
       align: 'right' as const,
     })),
@@ -88,6 +98,36 @@ export function buildPricelistDoc(
   const showBundle = linesHaveBundlePrices(lines);
 
   const lineCells = (l: (typeof lines)[number]): DocCell[] => {
+    if (grid) {
+      const entry = grid.rows.find(
+        (r) =>
+          r.line.subProductId === l.subProductId && r.line.sizeId === l.sizeId
+      )!;
+      return [
+        { text: l.productName, sub: o.showSku && l.sku ? l.sku : undefined },
+        { text: l.sizeName },
+        ...(o.showAvailability
+          ? [{ text: l.currentQuantity > 0 ? String(l.currentQuantity) : '—' }]
+          : []),
+        ...entry.prices.map((q, i) => {
+          const cur = grid.columns[i].pricelist?.currency || currency;
+          const details = [
+            q.note === 'Saved wholesale price' ? '' : q.note || '',
+            q.quantity
+              ? `${q.quantity} units · ${fmtAmt(q.unitPrice ?? 0, cur)} each`
+              : '',
+            o.showWasPrices !== false && q.was != null
+              ? `was ${fmtAmt(q.was, cur)}`
+              : '',
+          ].filter(Boolean);
+          return {
+            text: q.price == null ? '—' : fmtAmt(q.price, cur),
+            strong: q.price != null,
+            sub: details.join(' · ') || undefined,
+          };
+        }),
+      ];
+    }
     const cells: DocCell[] = [
       {
         text: l.productName,
@@ -120,9 +160,13 @@ export function buildPricelistDoc(
                   sub: `${o.showWasPrices !== false && l.bundleWas != null ? `was ${fmtAmt(l.bundleWas, currency)} · ` : ''}${fmtAmt(l.bundlePrice ?? 0, currency)} each`,
                 }
               : { text: '—', color: MUTED },
-            o.showBundleQuantity !== false && l.bundleQuantity != null
-              ? { text: String(l.bundleQuantity) }
-              : { text: '' },
+            ...(o.showBundleQuantity === false
+              ? []
+              : [
+                  l.bundleQuantity != null
+                    ? { text: String(l.bundleQuantity) }
+                    : { text: '' },
+                ]),
           ]
         : []),
       ...extraColumns.map((c) => {
@@ -176,6 +220,7 @@ export function buildPricelistDoc(
   if (pricelist?.name) notes.push(pricelist.name);
   if (o.validUntil) notes.push(`Prices valid until ${fmtDay(o.validUntil)}.`);
   notes.push('Subject to stock availability.');
+  if (o.taxNote?.trim()) notes.push(o.taxNote.trim());
 
   const meta: [string, string][] = [
     ['Generated', fmtDay(iso)],

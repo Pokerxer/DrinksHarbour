@@ -12,6 +12,7 @@ import FeatureFlagInit from "@/components/Analytics/FeatureFlagInit";
 import GoogleAnalytics from "@/components/Analytics/GoogleAnalytics";
 import SocialPixels from "@/components/Analytics/SocialPixels";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import GoogleAdSense, { ADSENSE_CLIENT_ID } from "@/components/Analytics/GoogleAdSense";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
@@ -288,6 +289,7 @@ export default async function RootLayout({
             <FeatureFlagInit />
             <AnalyticsTracker />
             <Analytics />
+            <SpeedInsights />
             <ClientOverlays />
             <Header variant="default" showAnnouncement={false} />
             <main id="main-content">{children}</main>

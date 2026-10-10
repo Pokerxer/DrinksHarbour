@@ -55,6 +55,8 @@ export interface SessionRecord {
 }
 
 export interface OrderRecord {
+  subtotal?: number;
+  taxAmount?: number;
   scope?: string;
   sessionId?: string;
   _id: string;

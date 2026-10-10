@@ -25,7 +25,10 @@ export type SortCol =
   | 'reference'
   | 'qty'
   | 'cost'
-  | 'by';
+  | 'by'
+  | 'supplier'
+  | 'source'
+  | 'reason';
 export type SortDir = 'asc' | 'desc';
 export type TypeFilter = 'all' | 'received' | 'purchase' | 'return' | 'other';
 export type GroupKey =
@@ -96,11 +99,7 @@ export function qtySign(m: InventoryMovement): '+' | '−' | '' {
 }
 export function qtyCls(m: InventoryMovement): string {
   const s = qtySign(m);
-  return s === '+'
-    ? 'text-emerald-600'
-    : s === '−'
-      ? 'text-red-600'
-      : 'text-gray-700';
+  return s === '+' ? 'text-emerald-600' : s === '−' ? 'text-red-600' : 'text-gray-700';
 }
 
 export const GROUP_LABELS: Record<GroupKey, string> = {
@@ -119,10 +118,7 @@ export const GROUP_LABELS: Record<GroupKey, string> = {
 
 /** Warehouse cell label; transfers render "source → destination". */
 export function whCell(m: InventoryMovement): string {
-  if (
-    m.category === 'transfer' &&
-    (m.sourceWarehouse || m.destinationWarehouse)
-  ) {
+  if (m.category === 'transfer' && (m.sourceWarehouse || m.destinationWarehouse)) {
     return `${warehouseLabel(m.sourceWarehouse)} → ${warehouseLabel(m.destinationWarehouse)}`;
   }
   return warehouseLabel(m.warehouse);
@@ -130,18 +126,21 @@ export function whCell(m: InventoryMovement): string {
 
 // ── Quick date presets ────────────────────────────────────────────────────────
 
+function localDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return localDate(new Date());
 }
 function offsetDay(n: number) {
   const d = new Date();
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return localDate(d);
 }
 function weekStartStr() {
   const d = new Date();
   d.setDate(d.getDate() - d.getDay());
-  return d.toISOString().slice(0, 10);
+  return localDate(d);
 }
 function monthStartStr() {
   const d = new Date();
@@ -149,11 +148,11 @@ function monthStartStr() {
 }
 function lastMonthStart() {
   const d = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
-  return d.toISOString().slice(0, 10);
+  return localDate(d);
 }
 function lastMonthEnd() {
   const d = new Date(new Date().getFullYear(), new Date().getMonth(), 0);
-  return d.toISOString().slice(0, 10);
+  return localDate(d);
 }
 
 export const DATE_PRESETS = [
@@ -238,23 +237,16 @@ export function productLabel(m: InventoryMovement): string {
         product?: { name?: string } | string;
       }
     | undefined;
-  const spProduct =
-    typeof sp?.product === 'object' ? sp?.product?.name : undefined;
-  return (
-    p?.name ?? spProduct ?? sp?.name ?? sp?.sku ?? m.reference ?? '—'
-  );
+  const spProduct = typeof sp?.product === 'object' ? sp?.product?.name : undefined;
+  return p?.name ?? spProduct ?? sp?.name ?? sp?.sku ?? m.reference ?? '—';
 }
 export function sizeLabel(m: InventoryMovement): string | null {
   return (
     m.sizeName ??
-    (typeof m.size === 'object'
-      ? (m.size?.displayName ?? m.size?.size ?? null)
-      : null)
+    (typeof m.size === 'object' ? (m.size?.displayName ?? m.size?.size ?? null) : null)
   );
 }
-export function warehouseLabel(
-  w?: { name?: string; code?: string } | string | null
-): string {
+export function warehouseLabel(w?: { name?: string; code?: string } | string | null): string {
   if (!w) return '—';
   if (typeof w === 'string') return w;
   return w.name ?? w.code ?? '—';
@@ -267,7 +259,15 @@ export function byLabel(m: InventoryMovement): string {
 }
 export function referenceLabel(m: InventoryMovement): string {
   const po = m.relatedPurchaseOrder as { poNumber?: string } | undefined;
-  return po?.poNumber ?? m.reference ?? m.batchNumber ?? '—';
+  const order = typeof m.relatedOrder === 'object' ? m.relatedOrder : null;
+  return (
+    po?.poNumber ||
+    m.reference ||
+    order?.receiptNumber ||
+    order?.orderNumber ||
+    m.batchNumber ||
+    '—'
+  );
 }
 export function typeFamily(m: InventoryMovement): TypeFilter {
   if (m.type === 'received') return 'received';
@@ -310,15 +310,12 @@ export function persistSaved(list: SavedSearch[], key: string = SAVED_KEY) {
 
 // ── Print (Goods Receipt Note) ────────────────────────────────────────────────
 
-export function printMoves(
-  moves: InventoryMovement[],
-  docTitle = 'Goods Receipt Note'
-) {
+export function printMoves(moves: InventoryMovement[], docTitle = 'Goods Receipt Note') {
   if (moves.length === 0) return;
   const totalQty = moves.reduce((s, m) => s + Math.abs(m.quantity), 0);
   const totalCost = moves.reduce(
     (s, m) => s + (m.totalCost ?? (m.unitCost ?? 0) * Math.abs(m.quantity)),
-    0
+    0,
   );
   const rows = moves
     .map((m) => {
@@ -391,10 +388,7 @@ function csvCell(v: string | number | null | undefined): string {
   return `"${guarded.replace(/"/g, '""')}"`;
 }
 
-export function exportCsv(
-  rows: InventoryMovement[],
-  prefix = 'inventory-receipts'
-) {
+export function exportCsv(rows: InventoryMovement[], prefix = 'inventory-receipts') {
   const headers = [
     'Date',
     'Time',
@@ -431,7 +425,7 @@ export function exportCsv(
       csvCell(m.notes ?? ''),
       csvCell(byLabel(m)),
       m.status,
-    ].join(',')
+    ].join(','),
   );
   const csv = [headers.join(','), ...lines].join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -466,13 +460,13 @@ export function DateTimeRange({
   onTimeTo: (v: string) => void;
   onClear: () => void;
 }) {
-  const hasRange = dateFrom || dateTo;
+  const hasRange = dateFrom || dateTo || timeFrom !== '00:00' || timeTo !== '23:59';
   const box = (
     dv: string,
     tv: string,
     onD: (v: string) => void,
     onT: (v: string) => void,
-    label: string
+    label: string,
   ) => (
     <div className="flex flex-col gap-0.5">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
@@ -483,6 +477,7 @@ export function DateTimeRange({
           <PiCalendar className="h-3.5 w-3.5 shrink-0 text-gray-400" />
           <input
             type="date"
+            aria-label={`${label} date`}
             value={dv}
             onChange={(e) => onD(e.target.value)}
             className="w-[116px] bg-transparent text-xs text-gray-800 outline-none"
@@ -492,9 +487,10 @@ export function DateTimeRange({
           <PiClock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
           <input
             type="time"
+            aria-label={`${label} time`}
             value={tv}
             onChange={(e) => onT(e.target.value)}
-            className="w-[72px] bg-transparent text-xs text-gray-800 outline-none"
+            className="w-[112px] min-w-[112px] bg-transparent text-xs text-gray-800 outline-none"
           />
         </div>
       </div>
@@ -502,7 +498,7 @@ export function DateTimeRange({
   );
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-end gap-2">
       {box(dateFrom, timeFrom, onDateFrom, onTimeFrom, 'From')}
       <span className="mt-5 text-sm text-gray-300">→</span>
       {box(dateTo, timeTo, onDateTo, onTimeTo, 'To')}
@@ -511,6 +507,7 @@ export function DateTimeRange({
           type="button"
           onClick={onClear}
           title="Clear date range"
+          aria-label="Clear date range"
           className="mt-5 flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
         >
           <PiX className="h-3.5 w-3.5" />
@@ -573,7 +570,7 @@ export function GroupPanel({
             />
             <GroupItem
               gkey="type"
-              label="Receipt Type"
+              label="Movement type"
               active={groupBy === 'type'}
               onToggle={onSetGroupBy}
             />
@@ -667,8 +664,7 @@ export function GroupPanel({
                 onClick={() => setShowSaveInput(true)}
                 className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-gray-600 hover:bg-gray-50"
               >
-                <PiFloppyDisk className="h-3.5 w-3.5 text-gray-400" /> Save
-                current search
+                <PiFloppyDisk className="h-3.5 w-3.5 text-gray-400" /> Save current search
               </button>
             ) : (
               <div className="space-y-2 px-3 py-2">

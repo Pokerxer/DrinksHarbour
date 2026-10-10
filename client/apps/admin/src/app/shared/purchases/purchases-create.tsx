@@ -22,6 +22,9 @@ import {
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import { useRestockPrefill, forgetRestockDraft } from './use-restock-prefill';
+import { preparedPurchaseReference } from './restock-preparation';
+import type { RestockDraft } from '../notifications/vendor-orders/order-draft';
 import { vendorService } from '@/services/vendor.service';
 import { subproductService } from '@/services/subproduct.service';
 import {
@@ -32,6 +35,7 @@ import {
 import type { Vendor } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 import PackSizeInput from './pack-size-input';
+import NumberInput from '@/components/ui/number-input';
 import { moveItem } from './line-dnd';
 import WarehouseSelect, {
   useActiveWarehouses,
@@ -644,6 +648,23 @@ export default function PurchasesCreate() {
   // Destination warehouse: where this order's goods are expected to land. Seeded
   // from the tenant's default receiving warehouse, then the isDefault flag.
   const [warehouseId, setWarehouseId] = useState('');
+  const loadRestock = useCallback((draft: RestockDraft) => {
+    setVendor({ _id: draft.vendorId, name: draft.vendorName });
+    setCurrency(draft.currency);
+    setWarehouseId(draft.warehouseId);
+    setExpectedArrival(draft.expectedArrival || '');
+    setItems(draft.items);
+    setNotes('Prepared from Notifications restock recommendations. Review quantities and receiving warehouse before saving.');
+  }, []);
+  const resetRestock = useCallback(() => {
+    setVendor(null);
+    setCurrency('NGN');
+    setWarehouseId('');
+    setExpectedArrival('');
+    setItems([blankItem()]);
+    setNotes('');
+  }, []);
+  const restock = useRestockPrefill(token, `${session?.user?.id || ''}:${tenantId}`, loadRestock, resetRestock);
   const [settingWarehouse, setSettingWarehouse] = useState<
     string | undefined
   >();
@@ -742,6 +763,10 @@ export default function PurchasesCreate() {
   const hasItems = items.some((it) => it.productName.trim());
 
   async function handleSave(confirm = false) {
+    if (restock.loading || restock.error) {
+      toast.error(restock.error || 'Wait for current supplier terms to load');
+      return;
+    }
     const filled = items.filter((it) => it.productName.trim());
     if (filled.length === 0) {
       toast.error('Add at least one product line');
@@ -767,7 +792,11 @@ export default function PurchasesCreate() {
     }
     setSaving(true);
     try {
+      const reference = restock.prepared ? preparedPurchaseReference(restock.prepared, {
+        vendorId: vendor._id, currency, warehouseId, items: filled,
+      }) : null;
       const payload = {
+        ...(reference ? { restockPlan: reference } : {}),
         vendor: vendor?._id,
         vendorName: vendor?.name,
         vendorReference: vendorReference || undefined,
@@ -794,6 +823,7 @@ export default function PurchasesCreate() {
         payload,
         token
       );
+      if (restock.reference) forgetRestockDraft(`${session?.user?.id || ''}:${tenantId}`);
       toast.success(
         confirm ? 'Purchase order confirmed' : 'Saved as draft RFQ'
       );
@@ -807,6 +837,9 @@ export default function PurchasesCreate() {
 
   return (
     <div className="pb-24">
+      {restock.loading && <p role="status" className="mb-4 rounded-xl bg-indigo-50 p-4 text-sm text-indigo-700">Checking current supplier terms for this restock preparation…</p>}
+      {restock.error && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">{restock.error} <Link href="/notifications/vendor-orders" className="font-bold underline">Review vendor orders</Link></p>}
+      {restock.notice && <p role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{restock.notice}</p>}
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
         <Link
@@ -1110,13 +1143,11 @@ export default function PurchasesCreate() {
                         <label className="mb-1 block text-[10px] font-medium text-gray-500">
                           Qty
                         </label>
-                        <input
-                          type="number"
-                          min="1"
+                        <NumberInput
+                          min={1}
+                          step="any"
                           value={item.quantity}
-                          onChange={(e) =>
-                            updateItem(i, { quantity: Number(e.target.value) })
-                          }
+                          onCommit={(v) => updateItem(i, { quantity: v })}
                           className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                         />
                       </div>
@@ -1138,14 +1169,11 @@ export default function PurchasesCreate() {
                         <label className="mb-1 block text-[10px] font-medium text-gray-500">
                           Unit Price
                         </label>
-                        <input
-                          type="number"
-                          min="0"
+                        <NumberInput
+                          min={0}
                           step="0.01"
                           value={item.unitPrice}
-                          onChange={(e) =>
-                            updateItem(i, { unitPrice: Number(e.target.value) })
-                          }
+                          onCommit={(v) => updateItem(i, { unitPrice: v })}
                           className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                         />
                       </div>
@@ -1153,14 +1181,12 @@ export default function PurchasesCreate() {
                         <label className="mb-1 block text-[10px] font-medium text-gray-500">
                           Tax %
                         </label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
+                        <NumberInput
+                          min={0}
+                          max={100}
+                          step="any"
                           value={item.taxRate}
-                          onChange={(e) =>
-                            updateItem(i, { taxRate: Number(e.target.value) })
-                          }
+                          onCommit={(v) => updateItem(i, { taxRate: v })}
                           className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                         />
                       </div>

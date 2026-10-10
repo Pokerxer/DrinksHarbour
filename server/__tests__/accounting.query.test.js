@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { dateRange, openFilter, normalizeOpenDoc, summarizeOpenDocs } = require('../services/accounting.query');
+const { dateRange, openFilter, normalizeOpenDoc, summarizeOpenDocs , previousWindow } = require('../services/accounting.query');
 test('date ranges include the last day and reject invalid/reversed dates', () => {
   assert.equal(dateRange({ to: '2026-09-13' }).$lt.toISOString(), '2026-09-14T00:00:00.000Z');
   assert.throws(() => dateRange({ from: 'bad' }), /date/i);
@@ -35,4 +35,39 @@ test('applied credits reduce receivables without claiming cash was received', ()
   const row = normalizeOpenDoc({ total: 100, amountPaid: 20, creditedAmount: 30 }, 'ar');
   assert.equal(row.outstanding, 50);
   assert.equal(row.amountPaid, 20);
+});
+
+// ── previousWindow: the comparison a P&L is read against ────────────────────
+
+test('previousWindow is the equally long window immediately before', () => {
+  // "How did this month do?" is only answerable against a real comparison
+  // period. Shifting by a calendar month instead would compare 31 days to 28.
+  const w = previousWindow('2026-08-01', '2026-08-31');
+  assert.equal(w.from.toISOString(), '2026-07-01T00:00:00.000Z');
+  assert.equal(w.to.toISOString(), '2026-07-31T23:59:59.999Z');
+  assert.equal(w.fromISO, '2026-07-01T00:00:00.000Z');
+  assert.equal(w.toISO, '2026-07-31T23:59:59.999Z');
+});
+
+test('previousWindow keeps the span, not the calendar month', () => {
+  const a = previousWindow('2026-08-01', '2026-08-15');
+  const b = previousWindow('2026-07-17', '2026-07-31');
+  assert.equal(
+    a.to.getTime() - a.from.getTime(),
+    b.to.getTime() - b.from.getTime()
+  );
+  assert.equal(b.from.toISOString(), '2026-07-02T00:00:00.000Z');
+});
+
+test('previousWindow returns null for an open-ended window', () => {
+  // "All time" has no preceding period, and inventing one (e.g. all time before
+  // the epoch) would put a fabricated figure next to the real one.
+  assert.equal(previousWindow(undefined, undefined), null);
+  assert.equal(previousWindow('2026-08-01', undefined), null);
+  assert.equal(previousWindow(undefined, '2026-08-31'), null);
+  assert.equal(previousWindow('', ''), null);
+});
+
+test('previousWindow rejects a reversed window rather than returning a future range', () => {
+  assert.throws(() => previousWindow('2026-08-31', '2026-08-01'), /before/);
 });

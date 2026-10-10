@@ -4,7 +4,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const { authenticateKey } = require('../services/apiKey.service');
 const { listBookings } = require('../services/booking.service');
 const SubProduct = require('../models/SubProduct');
-// API keys are deliberately accepted only on these explicit read actions.
+router.use('/v1', require('./storefrontIntegration.routes'));
+// Legacy API keys remain accepted only on these explicit read actions.
 // They cannot impersonate a JWT user or reach platform/admin endpoints.
 const scoped = scope => asyncHandler(async (req, res, next) => {
   const { tenant } = await authenticateKey(req.headers.authorization?.replace(/^Bearer /, ''), scope);

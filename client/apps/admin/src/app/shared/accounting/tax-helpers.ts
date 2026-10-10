@@ -6,6 +6,7 @@
 import type { Tax } from '@/services/tax.service';
 
 export const SOURCE_LABELS: Record<string, string> = {
+  pos: 'POS Receipt',
   sales_order: 'Sales Order',
   purchase_order: 'Purchase Order',
   vendor_bill: 'Vendor Bill',
@@ -20,10 +21,13 @@ export const DIRECTION_LABELS: Record<string, string> = {
 };
 
 export const fmtMoney = (n: number, currency = 'NGN') =>
-  `${currency === 'NGN' ? '₦' : currency} ${(Number(n) || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  `${currency === 'NGN' ? '₦' : currency} ${(Number(n) || 0).toLocaleString(
+    undefined,
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }
+  )}`;
 
 export const fmtDate = (iso: string) =>
   iso
@@ -37,7 +41,11 @@ export const fmtDate = (iso: string) =>
 export const appliesToLabel = (flows: Tax['appliesTo']) =>
   flows.length === 4 ? 'All flows' : flows.join(', ');
 
-export const isValidTaxForm = (t: { name: string; rate: string; type: string }) =>
+export const isValidTaxForm = (t: {
+  name: string;
+  rate: string;
+  type: string;
+}) =>
   t.name.trim().length > 0 &&
   t.name.trim().length <= 100 &&
   Number.isFinite(Number(t.rate)) &&

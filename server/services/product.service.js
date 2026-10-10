@@ -1,6 +1,7 @@
 // services/product.service.js
 
 const Brand = require('../models/Brand');
+const { buildActiveSaleMatch } = require('./productSaleFilter');
 const mongoose = require('mongoose');
 const { searchProducts: searchProductsNew } = require('./search.service');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, calcPlatformMargin, resolveRevenueRates, isDiscountActive, applyDiscount, roundUpTo100, DEFAULT_PLATFORM_MARKUP, DEFAULT_PACK_RATE_MIN_UNITS } = require('../utils/pricing');
@@ -2425,6 +2426,7 @@ const approveProduct = async (productId, user) => {
   product.rejectedReason = undefined; // Clear rejection reason if previously rejected
 
   await product.save();
+  await require('./productDecisionNotification').notifyProductDecision(product, user._id);
 
   // Update counts on related collections
   const updates = [];
@@ -2463,11 +2465,6 @@ const approveProduct = async (productId, user) => {
     .populate('approvedBy', 'firstName lastName email')
     .lean();
 
-  // TODO: Notify submitting tenant of approval
-  // if (product.submittingTenant) {
-  //   await notifyTenantOfApproval(product.submittingTenant, approvedProduct);
-  // }
-
   return approvedProduct;
 };
 
@@ -2503,6 +2500,7 @@ const rejectProduct = async (productId, reason, user) => {
   product.publishedAt = undefined;
 
   await product.save();
+  await require('./productDecisionNotification').notifyProductDecision(product, user._id);
 
   // Populate and return
   const rejectedProduct = await Product.findById(product._id)
@@ -2510,11 +2508,6 @@ const rejectProduct = async (productId, reason, user) => {
     .populate('category', 'name slug')
     .populate('submittingTenant', 'name slug')
     .lean();
-
-  // TODO: Notify submitting tenant of rejection
-  // if (product.submittingTenant) {
-  //   await notifyTenantOfRejection(product.submittingTenant, rejectedProduct, reason);
-  // }
 
   return rejectedProduct;
 };
@@ -4206,6 +4199,8 @@ const searchProducts = async (searchParams = {}) => {
   // ============================================================
   // STEP 3: Build Aggregation Pipeline
   // ============================================================
+  const saleNow = new Date();
+  const activeSaleMatch = buildActiveSaleMatch(saleType, saleNow);
   const pipeline = [
     // Match base criteria
     { $match: matchQuery },
@@ -4261,8 +4256,12 @@ const searchProducts = async (searchParams = {}) => {
                 {
                   $match: {
                     status: 'active',
-                    availability: { $in: ['available', 'in_stock', 'low_stock'] },
-                    ...(inStock ? { stock: { $gt: 0 } } : {}),
+                    availability: { $in: inStock
+                      ? ['available', 'in_stock', 'low_stock']
+                      : ['available', 'in_stock', 'low_stock', 'out_of_stock'] },
+                    ...(inStock ? {
+                      $expr: { $gt: [{ $ifNull: ['$availableStock', '$stock'] }, 0] },
+                    } : {}),
                     // Size / volume filter. Restricting the sizes here means
                     // the "subproduct must have at least one size" match below
                     // drops non-matching products for free. The shop sends
@@ -4352,6 +4351,9 @@ const searchProducts = async (searchParams = {}) => {
       },
     },
     
+    // Typed sales must be selected before $skip/$limit, including the count.
+    ...(activeSaleMatch ? [activeSaleMatch] : []),
+
     // Lookup brand with complete info
     {
       $lookup: {
@@ -4658,7 +4660,7 @@ const searchProducts = async (searchParams = {}) => {
       const productDiscountActive = isDiscountActive(productDiscount);
 
       // Determine if subProduct sale is active — only constrain by dates that are actually set
-      const _saleNow = new Date();
+      const _saleNow = saleNow;
       const _saleStart = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
       const _saleEnd = subProduct.saleEndDate ? new Date(subProduct.saleEndDate) : null;
       const saleActive = subProduct.isOnSale &&
@@ -4756,7 +4758,7 @@ const searchProducts = async (searchParams = {}) => {
           isDefault: size.isDefault,
 
           // Stock
-          stock: size.availableStock || size.stock || 0,
+          stock: size.availability === 'out_of_stock' ? 0 : (size.availableStock ?? size.stock ?? 0),
           availability: size.availability,
 
           // Pricing Breakdown
@@ -5103,16 +5105,15 @@ const searchProducts = async (searchParams = {}) => {
   // totalResults 24 / totalPages 1 / hasNextPage false, so no caller could
   // paginate and the shop had to fetch the whole catalog to know its own size.
   //
-  // Caveat, stated rather than hidden: the price / on-sale / saleType filters
+  // Caveat, stated rather than hidden: price and untyped on-sale filters
   // in STEP 9 run in JS over the current page only, because they depend on
   // per-tenant pricing computed after the aggregation. When one of those is
   // active the count is an upper bound, flagged by `isExactCount: false`.
+  // Typed sales are matched in Mongo before pagination, so their count is exact.
   const isExactCount = !(
     minPrice !== undefined ||
     maxPrice !== undefined ||
-    effectiveOnSale === true ||
-    effectiveOnSale === 'true' ||
-    Boolean(saleType)
+    (!saleType && (effectiveOnSale === true || effectiveOnSale === 'true'))
   );
   const totalPages = Math.ceil(totalResults / limit);
 
@@ -9997,10 +9998,9 @@ const getBestsellers = async (page = 1, limit = 12) => {
 
 
 // ────────────────────────────────────────────────────────────────────────────
-// Sellability rule — the single definition of "this product has a buyable
-// detail page". getProductBySlug enforces it per-slug; getSellableProductSlugs
-// enforces the same thing in bulk for the sitemap. Both must agree, or the
-// sitemap advertises URLs that 404.
+// Discovery gates: the sitemap advertises sellable listings. Product details
+// also retain active sold-out sizes so search results remain reachable and
+// display Out of Stock. Product publication and tenant eligibility still apply.
 // ────────────────────────────────────────────────────────────────────────────
 
 /** A product is only reachable at /product/[slug] in these states. */
@@ -10047,7 +10047,7 @@ const getProductBySlug = async (slug) => {
   // ══════════════════════════════════════════════════════════════════════════
   const subProducts = await SubProduct.find({
     product: product._id,
-    status: 'active',
+    status: { $in: ['active', 'low_stock', 'out_of_stock'] },
   })
     .populate({
       path: 'tenant',
@@ -10057,7 +10057,10 @@ const getProductBySlug = async (slug) => {
     })
     .populate({
       path: 'sizes',
-      match: SELLABLE_SIZE_MATCH,
+      match: {
+        status: 'active',
+        availability: { $in: [...SELLABLE_SIZE_MATCH.availability.$in, 'out_of_stock'] },
+      },
       select:
         'size displayName sellingPrice costPrice wholesalePrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
     })
@@ -10255,7 +10258,7 @@ const getProductBySlug = async (slug) => {
         isDefault: size.isDefault,
 
         // Stock
-        stock: size.availableStock || size.stock || 0,
+        stock: size.availability === 'out_of_stock' ? 0 : (size.availableStock ?? size.stock ?? 0),
         availability: size.availability,
 
         // Pricing Breakdown
@@ -10713,8 +10716,8 @@ const sellableListingStages = () => [
 /**
  * Every slug whose /product/[slug] page will actually render, for the sitemap.
  *
- * Applies the same three gates getProductBySlug does — product state, a selling
- * tenant, and a buyable size — in one aggregation rather than N round trips.
+ * Applies product publication, selling-tenant eligibility, and buyable-size
+ * gates in one aggregation. Details additionally allow sold-out sizes for search.
  * Listing a slug that fails any of them puts a 404 in the sitemap, which is
  * exactly what this endpoint used to do by filtering on `status` alone.
  *

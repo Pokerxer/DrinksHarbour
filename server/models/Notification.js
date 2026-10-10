@@ -17,6 +17,8 @@ const notificationSchema = new Schema(
         'new_tenant_registration',
         'tenant_subscription_expiring',
         'low_stock_alert',
+        'product_performance',
+        'product_suggestion',
         'batch_expiry_alert',
         'new_order',
         'order_status_update',
@@ -26,6 +28,9 @@ const notificationSchema = new Schema(
       ],
       index: true,
     },
+
+    dedupKey: { type: String, maxlength: 250 },
+    forecastValidUntil: { type: Date },
 
     title: {
       type: String,
@@ -159,6 +164,10 @@ const notificationSchema = new Schema(
     toObject: { virtuals: true },
   }
 );
+
+notificationSchema.index({ tenant: 1, recipient: 1, dedupKey: 1 }, {
+  unique: true, partialFilterExpression: { dedupKey: { $type: 'string' } },
+});
 
 notificationSchema.index({ recipient: 1, isRead: 1, createdAt: -1 });
 notificationSchema.index({ type: 1, createdAt: -1 });

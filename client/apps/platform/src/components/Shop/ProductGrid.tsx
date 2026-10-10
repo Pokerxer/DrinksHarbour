@@ -52,7 +52,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ products, layoutCol, productS
           </svg>
         </div>
         <h3 className="text-lg sm:text-2xl font-semibold text-gray-900 mb-2 sm:mb-3">No products found</h3>
-        <p className="text-gray-600 text-sm sm:text-base max-w-md mx-auto">Try adjusting your filters or search criteria to find what you're looking for.</p>
+        <p className="text-gray-600 text-sm sm:text-base max-w-md mx-auto">Try adjusting your filters or search criteria to find what you&apos;re looking for.</p>
       </div>
     );
   }
@@ -70,7 +70,15 @@ const ProductGrid: React.FC<ProductGridProps> = ({ products, layoutCol, productS
           className="animate-fade-in-up"
           style={{ animationDelay: `${Math.min(index, 7) * 30}ms` }}
         >
-          <ProductCard data={item as any} type="grid" priority={index < 4} />
+          <ProductCard
+            data={item as any}
+            type="grid"
+            priority={index < 4}
+            imageSizes={layoutCol === 2 ? '50vw' : layoutCol === 3
+              ? '(max-width: 639px) 50vw, 33vw' : layoutCol === 5
+                ? '(max-width: 639px) 50vw, (max-width: 767px) 33vw, 20vw'
+                : '(max-width: 767px) 50vw, 25vw'}
+          />
         </div>
       ))}
     </div>

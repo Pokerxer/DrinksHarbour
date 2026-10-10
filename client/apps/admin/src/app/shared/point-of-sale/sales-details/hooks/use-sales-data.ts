@@ -6,6 +6,7 @@ import { posApi } from '@/app/shared/point-of-sale/api';
 import { isTokenExpired, toTsUtc } from '../helpers';
 import { flattenOrders } from '../lib/flatten-orders';
 import { groupRows } from '../lib/group-rows';
+import { summariseLines } from '../lib/summarise-lines';
 import type {
   PosOrder,
   LineRow,
@@ -14,7 +15,7 @@ import type {
   LineSortField,
   GroupSortField,
   StatusFilter,
-  SalesSummary,
+  LinesSummary,
   VoidSummary,
   SelectOption,
 } from '../types';
@@ -64,10 +65,15 @@ export function useSalesData(params: UseSalesDataParams) {
       setError('');
       posApi
         .getAllOrders(token, { limit: all ? 2000 : 500, shopId: historyShop ?? undefined })
-        .then((data) => {
+        .then(({ data, meta }) => {
           const rows = (data || []) as PosOrder[];
           setOrders(rows);
-          setTruncated(!all && rows.length === 500);
+          // The server states whether this is the whole set. It used to be
+          // guessed with `!all && rows.length === 500`, so pressing "Load all"
+          // cleared the warning even though the server had clamped 2000 to 500
+          // and the day was still missing receipts. Absent `meta` means unknown,
+          // so fall back to the conservative reading.
+          setTruncated(meta ? meta.truncated : rows.length >= 500);
         })
         .catch(() => setError('Failed to load orders. Please try again.'))
         .finally(() => setLoading(false));
@@ -185,25 +191,10 @@ export function useSalesData(params: UseSalesDataParams) {
   );
 
   // ── FIX 2: summary computed from activeRows only ──
-  const summary = useMemo<SalesSummary>(() => {
-    const rows = activeRows;
-    const revenue = rows.reduce((s, r) => s + r.subtotal, 0);
-    const items = rows.reduce((s, r) => s + r.qty, 0);
-    const discount = rows.reduce((s, r) => s + r.discount, 0);
-    const gross = rows.reduce((s, r) => s + r.gross, 0);
-    const profit = rows.reduce((s, r) => s + r.profit, 0);
-    const orderIds = new Set(rows.map((r) => r.orderId));
-    const cnt = orderIds.size;
-    return {
-      revenue,
-      items,
-      discount,
-      gross,
-      profit,
-      orders: cnt,
-      avgOrder: cnt > 0 ? revenue / cnt : 0,
-    };
-  }, [activeRows]);
+  // One place computes the strip figures, so gross − returns === revenue and the
+  // margin is measured on costed revenue. These used to be six inline reduces
+  // that reported a margin over uncosted revenue and never disclosed a return.
+  const summary = useMemo<LinesSummary>(() => summariseLines(activeRows), [activeRows]);
 
   const voidSummary = useMemo<VoidSummary>(
     () => ({

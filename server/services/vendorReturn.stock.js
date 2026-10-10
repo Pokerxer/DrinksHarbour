@@ -198,6 +198,7 @@ async function reverseVendorReturnStock(vendorReturn, { tenantId, userId }, deps
 }
 
 module.exports = {
+  returnLines,
   applyVendorReturnStock,
   reverseVendorReturnStock,
 };

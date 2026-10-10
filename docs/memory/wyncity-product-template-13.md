@@ -1,0 +1,13 @@
+# Wyncity template 13 prepared, not imported
+
+## LIVE IMPORT COMPLETE — 10October2026
+
+After WH001 recovery,user resumed "import it". Canonical importer created4pending/alcoholic RTD Products,4Wyncity SubProducts,4sizes and101bottles inoriginalWH001 through3positiveopening movements. Mojito26,Orange0,Pineapple37,Tonic38,all27.5cl. Costs/prices/barcodes exact, Tonic blankbarcode and Orangezero retained. Verified original1123listings' stock/prices,1159Sizes,1179WarehouseStocks unchanged. Apple/Lemon and all olderimports untouched. No ABV guesses, approvals or appchanges. Do NOT reimport workbook. Evidence outputs/wyncity-2026-10-09-template13/wyncity-template13-live-result.json and -verification.json; fullspec RESUME-wyncity-template13.md. Older deferred/preparation notes below are superseded.
+
+WH001 subsequently recovered at user's request10October2026 under original ID. No need for alternate target choice. Verified all pre-existing inventory/history unchanged; four MG rows not imported during recovery. See RESUME-wyncity-wh001-recovery.md. Resume original guarded import only when user resumes that task, with fresh duplicate/actor/budget check.
+
+10 October2026 user authorized import, but read-only live preflight found old WH-001 missing (direct ID lookup null). No DB writes or import attempt occurred. Wyncity now has activeWH-002 Cloud Bay Wyn City Enterprise Limited andWH-003 Cloud Bay Wyn City Enterprise Limited UK. Await user's target choice; do not automatically switch or recreate warehouse. Four unmatched product names still absent. See RESUME for exact IDs and guarded helper.
+
+9 October2026: user authorized comparison and unmatched-only file preparation, not live import. Six MG Spirit27.5cl rows. Apple and Lemon already exist in Wyncity at same size. Four unmatched entries prepared: Mojito26, Orange0, Pineapple37,Tonic38,101bottles. No case conversions. Exact costs/prices/counts and three text barcodes preserved. Missing Tonic barcode left blank, allowed by app validator. Alcoholic RTD classification, not70cl spirits or non-alcoholic tonic water. Before any future import verify alcohol/age flags and fresh duplicates.
+
+Output outputs/wyncity-2026-10-09-template13/Wyncity_unmatched_stock_import_template_13.xlsx. Only Stock Import importable; Match Review preserves all original rows. Canonical read-only validator4newproducts/4sizes/0updates/errors. Saved-file, source-value, text-barcode, zero/blank and visual checks passed. No database or application changes. Full evidence and instructions: docs/superpowers/specs/RESUME-wyncity-template13.md. Prior template12 and11 imports complete; never reimport those batches.

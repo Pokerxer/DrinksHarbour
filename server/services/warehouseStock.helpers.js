@@ -1,4 +1,5 @@
 // server/services/warehouseStock.helpers.js
+const {freshMinimum}=require('./restock/minimum');
 const WarehouseStock = require('../models/WarehouseStock');
 const SubProduct = require('../models/SubProduct');
 
@@ -16,14 +17,15 @@ function computeRollup(rows) {
  * DB wrapper: recompute and persist SubProduct rollups from its WarehouseStock rows.
  * Pass an optional Mongoose session for transactional writes.
  */
-async function recalcSubProductStock(subProductId, session = null) {
-  const q = WarehouseStock.find({ subProduct: subProductId }).select(
+async function recalcSubProductStock(subProductId, session = null, tenantId = null) {
+  const scoped = tenantId ? { tenant: tenantId } : {};
+  const q = WarehouseStock.find({ subProduct: subProductId, ...scoped }).select(
     'currentQuantity reservedQuantity'
   );
   if (session) q.session(session);
   const rows = await q.lean();
   const rollup = computeRollup(rows);
-  const update = SubProduct.updateOne({ _id: subProductId }, { $set: rollup });
+  const update = SubProduct.updateOne({ _id: subProductId, ...scoped }, { $set: rollup });
   if (session) update.session(session);
   await update;
   return rollup;
@@ -47,9 +49,10 @@ function computeStockFlags(row = {}, settings = {}, now = new Date()) {
   const reserved = num(row.reservedQuantity, 0);
   const available = Math.max(0, onHand - reserved);
 
-  const lowStockThreshold = num(settings.lowStockThreshold, 10);
+  const auto=freshMinimum(row.automaticMinimum,now);
+  const lowStockThreshold = auto?.units ?? num(settings.lowStockThreshold, 10);
   // A per-line minStockLevel overrides the tenant-global reorder point.
-  const reorderPoint = num(row.minStockLevel, 0) > 0 ? row.minStockLevel : num(settings.reorderPoint, 0);
+  const reorderPoint = auto?.units ?? (num(row.minStockLevel, 0) > 0 ? row.minStockLevel : num(settings.reorderPoint, 0));
   const overstockCeiling = num(settings.overstockCeiling, 0);
   const nearExpiryDays = num(settings.nearExpiryDays, 30);
 

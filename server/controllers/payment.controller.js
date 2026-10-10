@@ -314,61 +314,15 @@ const handleStripeWebhook = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const handlePaystackWebhook = asyncHandler(async (req, res) => {
-  // Always respond 200 immediately so Paystack doesn't retry
-  res.sendStatus(200);
-
-  if (!process.env.PAYSTACK_SECRET_KEY) return;
-
-  const hash = crypto
-    .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY)
-    .update(JSON.stringify(req.body))
-    .digest('hex');
-
-  if (hash !== req.headers['x-paystack-signature']) {
-    console.warn('[Paystack] Webhook signature mismatch — ignoring');
-    return;
+  const webhook = require('../services/paystackWebhook');
+  if (!process.env.PAYSTACK_SECRET_KEY) return res.sendStatus(503);
+  if (!webhook.validSignature(req.rawBody, req.headers['x-paystack-signature'], process.env.PAYSTACK_SECRET_KEY)) {
+    return res.status(401).json({ success: false, message: 'Invalid webhook signature' });
   }
-
-  const event = req.body;
-
-  switch (event.event) {
-    case 'charge.success': {
-      const data = event.data || {};
-      const ref = data.reference;
-      console.log(`[Paystack] charge.success — ref: ${ref}, amount: ₦${(data.amount || 0) / 100}`);
-      // Safety net: if the frontend redirect already created/updated the order, this is a no-op.
-      // If the redirect failed (e.g. user closed browser), this webhook marks the order as paid.
-      try {
-        const order = await Order.findOne({ paymentReference: ref });
-        if (order) {
-          if (order.paymentStatus !== 'paid') {
-            await paymentService.attachPaymentToOrder(order._id.toString(), {
-              method: 'paystack',
-              transactionId: String(data.id || ''),
-              reference: ref,
-              amount: (data.amount || 0) / 100,
-              currency: (data.currency || 'NGN').toUpperCase(),
-              paidAt: data.paid_at ? new Date(data.paid_at) : new Date(),
-              channel: data.channel,
-            });
-            console.log(`[Paystack] Order ${order.orderNumber} marked as paid via webhook`);
-          } else {
-            console.log(`[Paystack] Order ${order.orderNumber} already paid — webhook skipped`);
-          }
-        } else {
-          console.warn(`[Paystack] No order found for reference ${ref} — may be created by frontend redirect`);
-        }
-      } catch (err) {
-        console.error('[Paystack] Failed to process charge.success webhook:', err.message);
-      }
-      break;
-    }
-    case 'charge.failed':
-      console.error('[Paystack] charge.failed:', event.data?.reference, event.data?.gateway_response);
-      break;
-    default:
-      console.log(`[Paystack] Unhandled event: ${event.event}`);
-  }
+  // Processing failures must reach Paystack so it retries; acknowledge only
+  // after settlement commits. The signed bytes come from the global parser.
+  await webhook.processEvent(req.body);
+  res.json({ received: true });
 });
 
 /**

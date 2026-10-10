@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { CATEGORY_COLORS } from '../data';
-import { getPosts, getPostBySlug } from '../api';
+import { getArticleData } from '../api';
 import { renderBlock, buildToc } from '../blog-content';
 import {
   AuthorCard,
@@ -33,7 +33,7 @@ export default async function BlogPostPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const post = await getPostBySlug(slug);
+  const { post, posts: all } = await getArticleData(slug);
 
   // A deleted or renamed post must answer 404, not 200 with a "not found" body.
   // Rendering the message inline made these soft 404s: Google kept the URLs
@@ -42,7 +42,6 @@ export default async function BlogPostPage({
     notFound();
   }
 
-  const all = await getPosts();
   const related = all
     .filter((p) => p.slug !== slug && p.category === post.category)
     .slice(0, 3);

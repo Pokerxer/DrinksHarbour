@@ -69,6 +69,16 @@ Product-supplied `baseSellingPrice` is honored over `calculatePriceFromRevenueMo
   main marketplace.
 - Platform app Vercel: add `*.drinksharbour.com` wildcard domain.
 
+### Wildcard status rechecked 2026-09-24
+
+- `drinksharbour.com` redirects to `www.drinksharbour.com`, which returns 200.
+- `admin.drinksharbour.com` reaches the admin app and redirects to sign-in.
+- `ckay.drinksharbour.com` still returns Vercel's
+  `404 DEPLOYMENT_NOT_FOUND` before application middleware runs.
+- The remaining fix is still to attach `*.drinksharbour.com` to the same
+  Vercel project serving `www.drinksharbour.com`. There is no repository code
+  change that can attach a custom domain to a Vercel project.
+
 ## Subsequent session — sub-product page empty state (2026-09-17)
 
 Improvement to `client/apps/admin` sub-product list page:

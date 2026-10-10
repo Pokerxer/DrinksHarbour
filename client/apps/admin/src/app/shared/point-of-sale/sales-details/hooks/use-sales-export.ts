@@ -6,7 +6,7 @@ import type {
   GroupRow,
   LineExportCol,
   GroupExportCol,
-  SalesSummary,
+  LinesSummary,
   StatusFilter,
 } from '../types';
 import { LINE_EXPORT_COLS, GROUP_EXPORT_COLS } from '../constants';
@@ -22,7 +22,7 @@ interface UseSalesExportParams {
   hasCostData: boolean;
   showProfit: boolean;
   viewMode: 'lines' | 'grouped';
-  summary: SalesSummary;
+  summary: LinesSummary;
   dateFrom: string;
   dateTo: string;
   timeFrom: string;

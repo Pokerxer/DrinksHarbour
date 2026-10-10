@@ -1,3 +1,4 @@
+const { escapeRegex } = require('../utils/escapeRegex');
 // server/services/salesOrder.service.js
 const SalesOrder = require('../models/SalesOrder');
 const { generateSalesOrderNumber } = require('../utils/orderUtils');
@@ -1055,23 +1056,24 @@ async function getCustomerCartForQuote({ tenantId, posCustomerId, email }) {
 
   const directEmail = email ? String(email).trim().toLowerCase() : '';
   if (directEmail) {
-    user = await User.findOne({ email: directEmail }).lean();
+    user = await User.findOne({ email: directEmail, tenant: tenantId, role: 'customer' }).lean();
     if (user) matchBy = 'email';
   }
   if (!user && customer?.email) {
     user = await User.findOne({
-      email: String(customer.email).toLowerCase(),
+      email: String(customer.email).toLowerCase(), tenant: tenantId, role: 'customer',
     }).lean();
     if (user) matchBy = 'email';
   }
   if (!user && customer?.phone) {
-    user = await User.findOne({ phone: customer.phone }).lean();
+    user = await User.findOne({ phone: customer.phone, tenant: tenantId, role: 'customer' }).lean();
     if (user) matchBy = 'phone';
   }
   if (!user && customer?.firstName && customer?.lastName) {
     const candidates = await User.find({
-      firstName: new RegExp(`^${customer.firstName.trim()}$`, 'i'),
-      lastName: new RegExp(`^${customer.lastName.trim()}$`, 'i'),
+      tenant: tenantId,
+      firstName: new RegExp(`^${escapeRegex(customer.firstName.trim())}$`, 'i'),
+      lastName: new RegExp(`^${escapeRegex(customer.lastName.trim())}$`, 'i'),
       role: 'customer',
     }).lean();
     // Only accept an unambiguous hit — common names are too risky to guess.

@@ -52,7 +52,7 @@ async function updateAllocations(docs, direction, payment, session, sign = 1) {
   }
 }
 
-async function createPayment({ tenantId, direction, data, userId }) {
+async function createPayment({ tenantId, direction, data, userId, session: outerSession }) {
   const clean = validatePayment(data, direction);
   // Wallet movement must use the wallet service; recording it here would leave
   // the stored-value balance unchanged while claiming it had been consumed.
@@ -60,7 +60,11 @@ async function createPayment({ tenantId, direction, data, userId }) {
   const date = data.date ? new Date(data.date) : new Date();
   if (Number.isNaN(date.getTime())) throw bad('Invalid payment date');
   await ensureDefaultCOA(tenantId);
-  return mongoose.connection.transaction(async session => {
+  // An outer session lets a caller commit this payment TOGETHER with any other
+  // record it produces. Without one, the payment is journaled and its sub-ledger
+  // row may not be written — leaving a customer looking like they still owe money
+  // they have already handed over.
+  const run = async session => {
     const docs = await loadAllocations(tenantId, direction, clean.allocations, session);
     const partyKey = direction === 'customer' ? 'customer' : 'vendor';
     const partyIds = new Set(docs.map(({ doc }) => String(doc[partyKey] || doc.customerSnapshot?.customerId || '')).filter(Boolean));
@@ -86,7 +90,8 @@ async function createPayment({ tenantId, direction, data, userId }) {
       refDocType: direction === 'customer' ? 'CustomerPayment' : 'VendorPayment',
       entryType: `${direction}_payment`, memo: `Payment ${payment.number}`, postedBy: userId, session });
     return payment;
-  });
+  };
+  return outerSession ? run(outerSession) : mongoose.connection.transaction(run);
 }
 
 async function cancelPayment({ tenantId, direction, id, userId }) {

@@ -110,6 +110,7 @@ export function buildShopSearchParams(
   // page's payload, shipped 24 at a time. Opt-in, so other callers of
   // /api/products/search are unaffected.
   p.set('fields', 'card');
+  p.set('inStock', 'true');
 
   return p;
 }

@@ -1,4 +1,6 @@
 'use client';
+
+import { netSales, returnDeduction } from './report-totals';
 import { requestDocumentExport } from '@/utils/print/document-export';
 import { buildPOSSessionDocument } from '@/utils/print/pos-session-document';
 import { ShopHistorySelector } from './components/shop-history-selector';
@@ -105,6 +107,9 @@ const METHOD_COLORS: Record<string, string> = {
 // ── Extended order type ───────────────────────────────────────────────────────
 
 interface SessionOrder {
+  netSales?: number;
+  returnDeduction?: number;
+  returnStatus?: string;
   _id: string;
   orderNumber?: string;
   receiptNumber?: string;
@@ -127,13 +132,15 @@ interface SessionOrder {
   items?: {
     name: string;
     variant?: string;
+    netQuantity?: number;
+    netSales?: number;
     quantity: number;
     priceAtPurchase: number;
     itemSubtotal: number;
     discountAmount?: number;
     warehouse?: { _id: string; name: string; code: string } | null;
   }[];
-  refunds?: { totalRefunded?: number }[];
+  refunds?: { totalRefunded?: number; source?: 'sales' | 'pos' }[];
 }
 
 function getOrderWarehouse(order: { items?: SessionOrder['items'] }) {
@@ -280,11 +287,8 @@ function DataRow({
 function OrderRow({ order }: { order: SessionOrder }) {
   const [open, setOpen] = useState(false);
   const isVoided = order.isVoided;
-  const hasRefund = (order.refunds?.length ?? 0) > 0;
-  const refundAmt = (order.refunds || []).reduce(
-    (s, r) => s + (r.totalRefunded ?? 0),
-    0
-  );
+  const hasRefund = returnDeduction(order) > 0;
+  const refundAmt = returnDeduction(order);
   const methodColor = METHOD_COLORS[order.paymentMethod] ?? '#6b7280';
 
   return (
@@ -351,17 +355,17 @@ function OrderRow({ order }: { order: SessionOrder }) {
           </span>
         </td>
         <td className="px-3 py-2.5 text-right text-xs tabular-nums text-gray-500">
-          {(order.items || []).reduce((s, i) => s + i.quantity, 0) || '—'}
+          {(order.items || []).reduce((s, i) => s + (i.netQuantity ?? i.quantity), 0) || '—'}
         </td>
         <td className="px-4 py-2.5 text-right">
           <span
             className={`text-xs font-semibold tabular-nums ${isVoided ? 'text-gray-400 line-through' : 'text-gray-800'}`}
           >
-            {formatCurrency(order.total)}
+            {formatCurrency(netSales(order))}
           </span>
           {hasRefund && !isVoided && refundAmt > 0 && (
             <div className="text-[10px] text-orange-500">
-              −{formatCurrency(refundAmt)}
+              Returns/refunds: {formatCurrency(refundAmt)}
             </div>
           )}
         </td>
@@ -408,9 +412,9 @@ function OrdersTab({
   loading: boolean;
 }) {
   const voidCount = orders.filter((o) => o.isVoided).length;
-  const refundCount = orders.filter((o) => (o.refunds?.length ?? 0) > 0).length;
+  const refundCount = orders.filter((o) => (o.refunds || []).some(r => r.source !== 'sales')).length;
   const totalItems = orders.reduce(
-    (s, o) => s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
+    (s, o) => s + (o.items || []).reduce((si, i) => si + (i.netQuantity ?? i.quantity), 0),
     0
   );
 
@@ -433,7 +437,7 @@ function OrdersTab({
 
   return (
     <div>
-      <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/80 px-5 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gray-50/80 px-3 py-2.5 sm:gap-3 sm:px-5">
         <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-700 ring-1 ring-gray-200">
           {orders.length} orders
         </span>
@@ -451,35 +455,37 @@ function OrdersTab({
           </span>
         )}
       </div>
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-gray-200 bg-white">
-            <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Receipt
-            </th>
-            <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Time
-            </th>
-            <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Cashier
-            </th>
-            <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Method
-            </th>
-            <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Items
-            </th>
-            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Total
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((o) => (
-            <OrderRow key={o._id} order={o} />
-          ))}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-white">
+              <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Receipt
+              </th>
+              <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Time
+              </th>
+              <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Cashier
+              </th>
+              <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Method
+              </th>
+              <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Items
+              </th>
+              <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((o) => (
+              <OrderRow key={o._id} order={o} />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -498,7 +504,7 @@ function ZReportTab({
   const { tenant } = useTenant();
   const storeName = tenant?.name || 'DrinksHarbour';
   const voids = orders.filter((o) => o.isVoided);
-  const refunds = orders.filter((o) => (o.refunds?.length ?? 0) > 0);
+  const refunds = orders.filter((o) => (o.refunds || []).some(r => r.source !== 'sales'));
   const refundAmt = refunds.reduce(
     (s, o) =>
       s + (o.refunds || []).reduce((a, r) => a + (r.totalRefunded ?? 0), 0),
@@ -506,7 +512,7 @@ function ZReportTab({
   );
   const voidAmt = voids.reduce((s, o) => s + (o.total || 0), 0);
   const totalItems = orders.reduce(
-    (s, o) => s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
+    (s, o) => s + (o.items || []).reduce((si, i) => si + (i.netQuantity ?? i.quantity), 0),
     0
   );
   const cashMethod = (session.methodBalances || []).find(
@@ -518,20 +524,20 @@ function ZReportTab({
       : null;
 
   const paymentMethods = [
-    { key: 'cash', label: 'Cash', amount: session.cashSales || 0 },
-    { key: 'card', label: 'Card / POS', amount: session.cardSales || 0 },
+    { key: 'cash', label: 'Cash', amount: session.currentPaymentTotals?.cash?.total ?? session.cashSales ?? 0 },
+    { key: 'card', label: 'Card / POS', amount: session.currentPaymentTotals?.card?.total ?? session.cardSales ?? 0 },
     {
       key: 'bank_transfer',
       label: 'Bank Transfer',
-      amount: session.transferSales || 0,
+      amount: session.currentPaymentTotals?.bank_transfer?.total ?? session.transferSales ?? 0,
     },
     {
       key: 'mobile_money',
       label: 'Mobile Money',
-      amount: session.mobileMoneySales || 0,
+      amount: session.currentPaymentTotals?.mobile_money?.total ?? session.mobileMoneySales ?? 0,
     },
-    { key: 'split', label: 'Split', amount: (session as any).splitSales || 0 },
-  ].filter((m) => m.amount > 0);
+    { key: 'split', label: 'Split', amount: session.currentPaymentTotals ? 0 : session.splitSales ?? 0 },
+  ].filter((m) => m.amount !== 0);
 
   if (loading && orders.length === 0) {
     return (
@@ -574,8 +580,8 @@ function ZReportTab({
   );
 
   return (
-    <div className="mx-auto max-w-xl px-6 py-6">
-      <div className="mb-6 flex items-start justify-between">
+    <div className="mx-auto max-w-xl px-3 py-6 sm:px-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-lg font-black tracking-tight text-gray-900">
             Z-Report
@@ -596,141 +602,143 @@ function ZReportTab({
         </button>
       </div>
 
-      <table className="w-full border-collapse text-sm">
-        <tbody>
-          <ZSection label="Sales Summary" />
-          <ZRow
-            label="Total Sales"
-            value={formatCurrency(session.totalSales || 0)}
-            bold
-            valueClass="text-[#b20202]"
-          />
-          <ZRow
-            label="Total Transactions"
-            value={String(session.orderCount || 0)}
-          />
-          <ZRow
-            label="Total Items Sold"
-            value={loading ? '—' : String(totalItems)}
-          />
-          <ZRow
-            label="Session Duration"
-            value={duration(session.openedAt, session.closedAt)}
-          />
-          <ZRow label="Opened By" value={staffName(session.openedBy as any)} />
-          {session.closedBy && (
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[420px] border-collapse text-sm">
+          <tbody>
+            <ZSection label="Sales Summary" />
             <ZRow
-              label="Closed By"
-              value={staffName(session.closedBy as any)}
+              label="Total Sales"
+              value={formatCurrency(session.totalSales || 0)}
+              bold
+              valueClass="text-[#b20202]"
             />
-          )}
-
-          <tr>
-            <td colSpan={2} className="pt-1" />
-          </tr>
-          <ZSection label="Payment Breakdown" />
-          {paymentMethods.map((m) => (
             <ZRow
-              key={m.key}
-              label={m.label}
-              value={formatCurrency(m.amount)}
+              label="Total Transactions"
+              value={String(session.orderCount || 0)}
             />
-          ))}
-          {paymentMethods.length === 0 && (
-            <tr>
-              <td colSpan={2} className="px-5 py-2 text-xs text-gray-400">
-                No payments recorded
-              </td>
-            </tr>
-          )}
-          <ZRow
-            label="Total"
-            value={formatCurrency(session.totalSales || 0)}
-            bold
-            valueClass="text-[#b20202]"
-          />
-
-          <tr>
-            <td colSpan={2} className="pt-1" />
-          </tr>
-          <ZSection label="Voids &amp; Refunds" />
-          <tr className="border-b border-gray-50">
-            <td className="px-5 py-2 text-sm text-gray-500">Voided Orders</td>
-            <td
-              className={`px-5 py-2 text-right text-sm tabular-nums ${voids.length > 0 ? 'font-semibold text-red-600' : 'text-gray-800'}`}
-            >
-              {loading ? '—' : String(voids.length)}
-            </td>
-          </tr>
-          <tr className="border-b border-gray-50">
-            <td className="px-5 py-2 text-sm text-gray-500">Voided Amount</td>
-            <td
-              className={`px-5 py-2 text-right text-sm tabular-nums ${voidAmt > 0 ? 'font-semibold text-red-600' : 'text-gray-800'}`}
-            >
-              {loading ? '—' : formatCurrency(voidAmt)}
-            </td>
-          </tr>
-          <ZRow
-            label="Refunded Orders"
-            value={loading ? '—' : String(refunds.length)}
-          />
-          <ZRow
-            label="Refunded Amount"
-            value={loading ? '—' : formatCurrency(refundAmt)}
-          />
-
-          <tr>
-            <td colSpan={2} className="pt-1" />
-          </tr>
-          <ZSection label="Cash Reconciliation" />
-          <ZRow
-            label="Opening Cash"
-            value={formatCurrency(session.openingCash || 0)}
-          />
-          {cashMethod ? (
-            <>
+            <ZRow
+              label="Total Items Sold"
+              value={loading ? '—' : String(totalItems)}
+            />
+            <ZRow
+              label="Session Duration"
+              value={duration(session.openedAt, session.closedAt)}
+            />
+            <ZRow label="Opened By" value={staffName(session.openedBy as any)} />
+            {session.closedBy && (
               <ZRow
-                label="Expected Cash"
-                value={formatCurrency(cashMethod.theoretical)}
+                label="Closed By"
+                value={staffName(session.closedBy as any)}
               />
-              {cashMethod.counted !== null && (
-                <>
-                  <ZRow
-                    label="Counted Cash"
-                    value={formatCurrency(cashMethod.counted ?? 0)}
-                  />
-                  <tr className="border-b border-gray-50">
-                    <td className="px-5 py-2 text-sm text-gray-500">
-                      Difference
-                    </td>
-                    <td
-                      className={`px-5 py-2 text-right text-sm font-bold tabular-nums ${
-                        cashDiff === null
-                          ? 'text-gray-400'
-                          : Math.abs(cashDiff) < 0.01
-                            ? 'text-emerald-600'
-                            : 'text-red-600'
-                      }`}
-                    >
-                      {cashDiff === null
-                        ? '—'
-                        : (cashDiff >= 0 ? '+' : '') + formatCurrency(cashDiff)}
-                    </td>
-                  </tr>
-                </>
-              )}
-            </>
-          ) : (
+            )}
+
             <tr>
-              <td colSpan={2} className="px-5 py-2 text-xs text-gray-400">
-                {session.status === 'open'
-                  ? 'Cash reconciliation available after session is closed.'
-                  : 'No cash balance data recorded.'}
+              <td colSpan={2} className="pt-1" />
+            </tr>
+            <ZSection label="Payment Breakdown" />
+            {paymentMethods.map((m) => (
+              <ZRow
+                key={m.key}
+                label={m.label}
+                value={formatCurrency(m.amount)}
+              />
+            ))}
+            {paymentMethods.length === 0 && (
+              <tr>
+                <td colSpan={2} className="px-5 py-2 text-xs text-gray-400">
+                  No payments recorded
+                </td>
+              </tr>
+            )}
+            <ZRow
+              label="Net Collections"
+              value={formatCurrency(session.netCollections ?? session.totalSales ?? 0)}
+              bold
+              valueClass="text-[#b20202]"
+            />
+
+            <tr>
+              <td colSpan={2} className="pt-1" />
+            </tr>
+            <ZSection label="Voids &amp; Refunds" />
+            <tr className="border-b border-gray-50">
+              <td className="px-5 py-2 text-sm text-gray-500">Voided Orders</td>
+              <td
+                className={`px-5 py-2 text-right text-sm tabular-nums ${voids.length > 0 ? 'font-semibold text-red-600' : 'text-gray-800'}`}
+              >
+                {loading ? '—' : String(voids.length)}
               </td>
             </tr>
-          )}
-        </tbody>
-      </table>
+            <tr className="border-b border-gray-50">
+              <td className="px-5 py-2 text-sm text-gray-500">Voided Amount</td>
+              <td
+                className={`px-5 py-2 text-right text-sm tabular-nums ${voidAmt > 0 ? 'font-semibold text-red-600' : 'text-gray-800'}`}
+              >
+                {loading ? '—' : formatCurrency(voidAmt)}
+              </td>
+            </tr>
+            <ZRow
+              label="Refunded Orders"
+              value={loading ? '—' : String(refunds.length)}
+            />
+            <ZRow
+              label="Money Refunded"
+              value={loading ? '—' : formatCurrency(refundAmt)}
+            />
+
+            <tr>
+              <td colSpan={2} className="pt-1" />
+            </tr>
+            <ZSection label="Cash Reconciliation" />
+            <ZRow
+              label="Opening Cash"
+              value={formatCurrency(session.openingCash || 0)}
+            />
+            {cashMethod ? (
+              <>
+                <ZRow
+                  label="Expected Cash"
+                  value={formatCurrency(cashMethod.theoretical)}
+                />
+                {cashMethod.counted !== null && (
+                  <>
+                    <ZRow
+                      label="Counted Cash"
+                      value={formatCurrency(cashMethod.counted ?? 0)}
+                    />
+                    <tr className="border-b border-gray-50">
+                      <td className="px-5 py-2 text-sm text-gray-500">
+                        Difference
+                      </td>
+                      <td
+                        className={`px-5 py-2 text-right text-sm font-bold tabular-nums ${
+                          cashDiff === null
+                            ? 'text-gray-400'
+                            : Math.abs(cashDiff) < 0.01
+                              ? 'text-emerald-600'
+                              : 'text-red-600'
+                        }`}
+                      >
+                        {cashDiff === null
+                          ? '—'
+                          : (cashDiff >= 0 ? '+' : '') + formatCurrency(cashDiff)}
+                      </td>
+                    </tr>
+                  </>
+                )}
+              </>
+            ) : (
+              <tr>
+                <td colSpan={2} className="px-5 py-2 text-xs text-gray-400">
+                  {session.status === 'open'
+                    ? 'Cash reconciliation available after session is closed.'
+                    : 'No cash balance data recorded.'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -887,11 +895,12 @@ export default function POSSessionReport() {
   }, [sessions, search]);
 
   const totalSales = selected?.totalSales ?? 0;
+  const netCollections = selected?.netCollections ?? totalSales;
   const orderCount = selected?.orderCount ?? 0;
   const itemsSold = useMemo(
     () =>
       orders.reduce(
-        (s, o) => s + (o.items || []).reduce((si, i) => si + i.quantity, 0),
+        (s, o) => s + (o.items || []).reduce((si, i) => si + (i.netQuantity ?? i.quantity), 0),
         0
       ),
     [orders]
@@ -909,24 +918,24 @@ export default function POSSessionReport() {
   const paymentMethods = useMemo(
     () =>
       [
-        { key: 'cash', label: 'Cash', amount: selected?.cashSales ?? 0 },
-        { key: 'card', label: 'Card / POS', amount: selected?.cardSales ?? 0 },
+        { key: 'cash', label: 'Cash', amount: selected?.currentPaymentTotals?.cash?.total ?? selected?.cashSales ?? 0 },
+        { key: 'card', label: 'Card / POS', amount: selected?.currentPaymentTotals?.card?.total ?? selected?.cardSales ?? 0 },
         {
           key: 'bank_transfer',
           label: 'Bank Transfer',
-          amount: selected?.transferSales ?? 0,
+          amount: selected?.currentPaymentTotals?.bank_transfer?.total ?? selected?.transferSales ?? 0,
         },
         {
           key: 'mobile_money',
           label: 'Mobile Money',
-          amount: selected?.mobileMoneySales ?? 0,
+          amount: selected?.currentPaymentTotals?.mobile_money?.total ?? selected?.mobileMoneySales ?? 0,
         },
         {
           key: 'split',
           label: 'Split',
-          amount: (selected as any)?.splitSales ?? 0,
+          amount: selected?.currentPaymentTotals ? 0 : selected?.splitSales ?? 0,
         },
-      ].filter((m) => m.amount > 0),
+      ].filter((m) => m.amount !== 0),
     [selected]
   );
 
@@ -960,12 +969,14 @@ export default function POSSessionReport() {
       <POSNavHeader />
 
       <div
-        className="flex flex-1 overflow-hidden"
+        className="flex flex-1 flex-col overflow-hidden lg:flex-row"
         style={{ height: 'calc(100vh - 49px)' }}
       >
         {/* ── Left panel ── */}
-        <div className="flex w-[300px] shrink-0 flex-col border-r border-gray-200 bg-white">
-          <div className="border-b border-gray-100 px-4 py-3">
+        {/* Full width and height-capped below lg: side by side, a 260px list
+            left only ~130px for the report on a phone. */}
+        <div className="flex max-h-[45vh] w-full shrink-0 flex-col border-b border-gray-200 bg-white lg:max-h-none lg:w-[300px] lg:border-b-0 lg:border-r">
+          <div className="shrink-0 border-b border-gray-100 px-4 py-3">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-bold text-gray-900">Sessions</p>
           <ShopHistorySelector token={token} value={historyShop} onChange={value => { setSelected(null); setOrders([]); setSessions([]); setHistoryShop(value); }} />
@@ -1019,18 +1030,18 @@ export default function POSSessionReport() {
                   </button>
                 )}
               </div>
-              <div className="flex gap-1.5">
+              <div className="flex min-w-0 gap-1.5">
                 <input
                   type="date"
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
-                  className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-700 outline-none focus:border-[#b20202]"
+                  className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-700 outline-none focus:border-[#b20202]"
                 />
                 <input
                   type="date"
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
-                  className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-700 outline-none focus:border-[#b20202]"
+                  className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-700 outline-none focus:border-[#b20202]"
                 />
               </div>
             </div>
@@ -1147,7 +1158,7 @@ export default function POSSessionReport() {
           ) : (
             <div className="flex flex-1 flex-col overflow-hidden">
               {/* Toolbar */}
-              <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-5 py-3">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-5 py-3">
                 <div>
                   <div className="flex items-center gap-2">
                     <span
@@ -1208,7 +1219,7 @@ export default function POSSessionReport() {
               </div>
 
               {/* Tab bar */}
-              <div className="flex shrink-0 border-b border-gray-200 bg-white px-5">
+              <div className="flex shrink-0 items-center overflow-x-auto border-b border-gray-200 bg-white px-3 sm:px-5">
                 {(
                   [
                     { key: 'report', label: 'Report', icon: PiFileText },
@@ -1227,7 +1238,7 @@ export default function POSSessionReport() {
                     key={tab.key}
                     type="button"
                     onClick={() => setActiveTab(tab.key)}
-                    className={`flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                    className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-semibold transition-colors sm:px-4 ${
                       activeTab === tab.key
                         ? 'border-[#b20202] text-[#b20202]'
                         : 'border-transparent text-gray-400 hover:text-gray-600'
@@ -1242,8 +1253,9 @@ export default function POSSessionReport() {
               {/* Tab body */}
               <div className="flex-1 overflow-y-auto bg-white">
                 {activeTab === 'report' && (
-                  <div className="mx-auto max-w-2xl px-6 py-6">
-                    <table className="w-full border-collapse text-sm">
+                  <div className="mx-auto max-w-2xl px-3 py-6 sm:px-6">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px] border-collapse text-sm">
                       <thead>
                         <tr className="border-b-2 border-t border-[#b20202] border-gray-200">
                           <th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400"></th>
@@ -1263,9 +1275,7 @@ export default function POSSessionReport() {
                           <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-700">
                             {itemsSold > 0
                               ? itemsSold.toLocaleString()
-                              : ordersLoading
-                                ? '—'
-                                : orderCount.toLocaleString()}
+                              : ordersLoading ? '—' : '0'}
                           </td>
                           <td className="px-5 py-3 text-right text-base font-extrabold tabular-nums text-[#b20202]">
                             {formatCurrency(totalSales)}
@@ -1308,7 +1318,7 @@ export default function POSSessionReport() {
                         )}
                         <DataRow
                           label="Total"
-                          right={formatCurrency(totalSales)}
+                          right={formatCurrency(netCollections)}
                           bold
                           rightColor="text-[#b20202]"
                         />
@@ -1531,6 +1541,7 @@ export default function POSSessionReport() {
                         )}
                       </tbody>
                     </table>
+                  </div>
                   </div>
                 )}
 

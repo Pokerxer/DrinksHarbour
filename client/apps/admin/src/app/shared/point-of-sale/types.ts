@@ -61,6 +61,91 @@ export interface POSCustomerAddress {
   country?: string;
 }
 
+/**
+ * One line of a customer's tab, from the append-only statement.
+ *
+ * `amount` is always positive on the wire; `entryType` says which way it moves.
+ * The running balance is deliberately NOT carried per row — it is computed from
+ * the whole statement, so a client that showed a per-row balance could drift
+ * from the server's figure depending on which page it had loaded.
+ */
+export interface AccountStatementEntry {
+  _id: string;
+  entryType: 'charge' | 'payment' | 'credit';
+  amount: number;
+  method?: string;
+  reference?: string;
+  receiptNumber?: string;
+  note?: string;
+  occurredAt: string;
+  /** Present when a manager authorised this charge past the credit limit. */
+  overrideReason?: string;
+  voided?: boolean;
+}
+
+/** What a customer currently owes, and how much more they may owe. */
+export interface CustomerAccountSummary {
+  customer: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    email?: string;
+  };
+  /** What they owe now. Never negative — see recordPayment. */
+  balance: number;
+  charges: number;
+  payments: number;
+  creditLimit: number;
+  availableCredit: number;
+  entries: AccountStatementEntry[];
+  pagination: { page: number; limit: number; total: number; pages: number };
+}
+
+/**
+ * The server's answer to "what happens if I charge this sale to their account?".
+ *
+ * Mirrors `splitAccountTender`'s shape on purpose. The client must NOT compute
+ * this locally: it has no trustworthy tab balance, and the limit is on total
+ * owed, so a cached-balance preview would wave through sales that the live
+ * balance rejects.
+ */
+export interface AccountChargePreview {
+  customer: { _id: string; firstName: string; lastName: string };
+  split: {
+    /** Store credit applied to this sale. */
+    spend: number;
+    /** The part that becomes a tab charge. */
+    shortfall: number;
+    charged: boolean;
+    withinLimit: boolean;
+    /** True when the limit blocked it and only an override can clear it. */
+    requiresOverride: boolean;
+    /** What they would owe in total afterwards, standing debt included. */
+    requiredLimit: number;
+    tenders: Array<{ method: 'wallet' | 'account'; amount: number }>;
+  };
+  walletBalance: number;
+  creditLimit: number;
+  owedAfter: number;
+  /** Whether THIS cashier holds pos:credit_override. */
+  canOverride: boolean;
+}
+
+export interface AccountPaymentResult {
+  payment: {
+    _id: string;
+    number: string;
+    amount: number;
+    method: string;
+    date: string;
+  };
+  balance: number;
+  charges: number;
+  payments: number;
+  creditLimit: number;
+}
+
 export interface POSTenantBankAccount {
   bankName: string;
   accountNumber: string;
@@ -270,6 +355,8 @@ export interface POSSettings {
   receiptHeader?: string;
   receiptFooter?: string;
   showTaxOnReceipt?: boolean;
+  /** Charge VAT at the till. Off unless the tenant is VAT-registered. */
+  taxEnabled?: boolean;
   taxRate?: number;
   autoPrintReceipt?: boolean;
   receiptCopies?: number;
@@ -416,6 +503,9 @@ export interface POSSize {
 }
 
 export interface POSCartItem {
+  /** Quoted tax-exclusive price and rate, preserved when loaded into the till. */
+  quotationLine?: boolean;
+  taxRate?: number;
   subProductId: string;
   productId: string;
   sizeId?: string;
@@ -464,6 +554,8 @@ export interface POSOrderItem {
 }
 
 export interface POSReceiptItem {
+  taxRate?: number;
+  taxAmount?: number;
   name: string;
   variant: string;
   sku: string;
@@ -504,6 +596,8 @@ export interface POSOrderResponse {
   receiptNumber: string;
   total: number;
   subtotal?: number;
+  /** Actual exclusive quotation tax, already included in total; zero is authoritative. */
+  taxAmount?: number;
   originalSubtotal?: number;
   pricelistSavings?: number;
   pricelistName?: string;
@@ -586,6 +680,12 @@ export interface POSRefundResponse {
 }
 
 export interface POSSession {
+  currentPaymentTotals?: Record<string, { total: number; count: number }>;
+  netCollections?: number;
+  returnDeduction?: number;
+  grossRevenue?: number;
+  totalRefunds?: number;
+  salesReturnValue?: number;
   shopId?: string;
   shopName?: string;
   warehouse?: string;
@@ -686,6 +786,9 @@ export interface POSDashboardData {
 }
 
 export interface POSRecentOrder {
+  originalTotal?: number;
+  returnDeduction?: number;
+  returnStatus?: 'none' | 'returned' | 'partially_returned';
   shopId?: string;
   shopName?: string;
   _id: string;
@@ -711,6 +814,7 @@ export interface POSSessionInfo {
 // ── Refund types (Odoo-style) ──────────────────────────────────────────────
 
 export interface POSRefundLineItem {
+  salesReturnedQuantity?: number;
   orderItemIndex: number;
   quantity: number;
   unitPrice: number;
@@ -721,6 +825,7 @@ export interface POSRefundLineItem {
 }
 
 export interface POSRefundRecord {
+  source?: 'sales' | 'pos';
   receiptNumber: string;
   items: POSRefundLineItem[];
   totalRefunded: number;
@@ -731,7 +836,7 @@ export interface POSRefundRecord {
     lastName: string;
     posName?: string;
   };
-  refundedAt: string;
+  refundedAt?: string;
   paymentMethod?: string;
 }
 

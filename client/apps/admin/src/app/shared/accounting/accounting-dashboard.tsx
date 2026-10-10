@@ -124,7 +124,7 @@ export default function AccountingDashboard() {
               <div className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 backdrop-blur-sm">
                 <div className="text-center">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-red-200">
-                    Revenue MTD
+                    Total Income MTD
                   </p>
                   <p className="text-xl font-black tabular-nums text-white">
                     {fmtMoney(data.kpis.revenueMtd)}
@@ -238,10 +238,10 @@ export default function AccountingDashboard() {
                     <div className="mb-4 flex items-center justify-between">
                       <div>
                         <p className="text-sm font-bold text-gray-800">
-                          Revenue vs Expenses — Last 6 Months
+                          Income vs Costs & Expenses — Last 6 Months
                         </p>
                         <p className="text-[10px] text-gray-400">
-                          Revenue bars · line = expenses · hover for details
+                          Income bars · line = costs and expenses · hover for details
                         </p>
                       </div>
                       <PiTrendUp className="h-5 w-5 text-gray-200" />

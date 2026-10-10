@@ -28,15 +28,19 @@ import {
   usePOSActiveShop,
   usePOSWarehouse,
   usePOSLinkedSalesOrder,
+  tenantTaxFrom,
 } from '@/app/shared/point-of-sale/store';
-import { posApi } from '@/app/shared/point-of-sale/api';
+import { posApi, CreditLimitError } from '@/app/shared/point-of-sale/api';
+import { AccountTenderButton } from './pos-account-tender';
+import { CustomerAccountPanel } from './pos-customer-account-panel';
 import {
   createOrder as createOrderOffline,
   reconcileSalesOrder as reconcileSalesOrderOffline,
 } from '@/app/shared/point-of-sale/offline/api';
 import { useOnlineStatus } from '@/app/shared/point-of-sale/offline/use-online-status';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
-import { computeSubtotal } from '@/app/shared/point-of-sale/store/cart-pricing';
+import { computeCartTax } from '../store/cart-tax';
+import { computeSubtotal, computeThresholdDiscount } from '@/app/shared/point-of-sale/store/cart-pricing';
 import { posItemKey } from './pos-table-helpers';
 import { POSOrderResponse } from '@/app/shared/point-of-sale/types';
 import cn from '@core/utils/class-names';
@@ -268,6 +272,11 @@ export default function POSPaymentModal() {
 
   const [lines, setLines] = useState<PaymentLine[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Manager's reason for selling past the customer's credit limit. Recorded on the
+  // statement row by the server, so it is an audit fact — not cleared by a re-render.
+  const [creditOverrideReason, setCreditOverrideReason] = useState('');
+  // The customer's tab, opened over the payment screen.
+  const [showAccount, setShowAccount] = useState(false);
   const [inputStr, setInputStr] = useState('0');
   const [freshInput, setFreshInput] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -335,6 +344,11 @@ export default function POSPaymentModal() {
   const walletBalance = customer.walletBalance ?? 0;
   const walletEligible =
     hasCustomer && payableTotal > 0 && walletBalance >= payableTotal;
+  // Unlike the wallet button, this does NOT require the balance to cover the
+  // total: the server spends what is there and charges the rest to the tab, which
+  // is the whole point. Its limit check is the server's, and the button waits for
+  // that answer before offering anything.
+  const accountEligible = hasCustomer && payableTotal > 0;
 
   // Build AppliedDiscount list from appliedRewards for the breakdown UI + receipt
   const autoDiscounts: AppliedDiscount[] = appliedRewards.map((r) => ({
@@ -398,6 +412,24 @@ export default function POSPaymentModal() {
     setActiveId(id);
     setInputStr(amt === 0 ? '0' : String(amt));
     setFreshInput(true);
+  }
+
+  // "Charge to account" is also a whole-order single tender: the server spends
+  // stored value first and charges the remainder to the tab, so the line must
+  // cover the entire total and cannot be one row of a split.
+  function selectAccount(selection: {
+    method: 'account';
+    amount: number;
+    creditOverrideReason?: string;
+  }) {
+    const id = `ln-account-${Date.now()}`;
+    setCreditOverrideReason(selection.creditOverrideReason ?? '');
+    setLines([
+      { id, method: 'account', label: 'Account', amount: selection.amount },
+    ]);
+    setActiveId(null);
+    setInputStr('0');
+    setFreshInput(false);
   }
 
   // Wallet pays the entire order as a single fixed tender. Clear any other lines
@@ -565,6 +597,8 @@ export default function POSPaymentModal() {
         sku: item.sku,
         variant: item.variant,
         name: item.name,
+        taxRate: item.quotationLine ? item.taxRate : undefined,
+        taxAmount: computeCartTax([item], tenantTaxFrom(tenant?.posSettings)),
         bxgyRole: item.bxgyRef?.role, // 'buy' | 'get' — for receipt display
       };
     });
@@ -603,9 +637,11 @@ export default function POSPaymentModal() {
       return s + unitPrice * i.quantity;
     }, 0);
 
+    const taxAmount = computeCartTax(itemSubset, tenantTaxFrom(tenant?.posSettings));
+    const subsetThresholdDiscount = computeThresholdDiscount(subsetNet, selectedPricelist ?? undefined);
     const clientTotal = Math.max(
       0,
-      Math.round((subsetNet - totalDisc) * 100) / 100
+      Math.round((subsetNet + taxAmount - totalDisc - subsetThresholdDiscount) * 100) / 100
     );
 
     return {
@@ -615,6 +651,9 @@ export default function POSPaymentModal() {
         customer,
         paymentMethod: tender.paymentMethod,
         total: clientTotal,
+        subtotal: subsetNet,
+        thresholdDiscount: subsetThresholdDiscount,
+        taxAmount: linkedSalesOrderId ? taxAmount : undefined,
         amountTendered: tender.amountTendered,
         splitPayments: tender.splitPayments ?? [],
         discountType: totalDisc > 0 ? ('fixed' as const) : undefined,
@@ -623,6 +662,12 @@ export default function POSPaymentModal() {
         note: note || undefined,
         terminalType: terminal ?? 'retail',
         pricelistId: selectedPricelist?._id ?? undefined,
+        // Only when an account tender is actually going over the limit. Sent for
+        // an in-limit sale the server would record an empty reason against a
+        // charge that needed none.
+        ...(tender.paymentMethod === 'account' && creditOverrideReason
+          ? { creditOverrideReason }
+          : {}),
         // Quotation link rides every payload so quoted prices hold per payer.
         linkedSalesOrderId: linkedSalesOrderId ?? undefined,
         shopId: activeShop?._id ?? shopKey,
@@ -655,6 +700,21 @@ export default function POSPaymentModal() {
       if (!ok) {
         toast.error(
           'Wallet must cover the full order total as the only payment method.'
+        );
+        return;
+      }
+    }
+
+    // An account tender settles the WHOLE order — the server spends stored value
+    // and charges the remainder to the tab in one step — so it cannot be one row
+    // of a split, nor cover part of the total. Enforced here so the cashier sees
+    // it before the request rather than after.
+    if (lines.some((l) => l.method === 'account')) {
+      const ok =
+        lines.length === 1 && Math.abs(lines[0].amount - payableTotal) < 0.01;
+      if (!ok) {
+        toast.error(
+          'Charging an account must be the only payment method, covering the full total.'
         );
         return;
       }
@@ -820,6 +880,18 @@ export default function POSPaymentModal() {
         setNextOrderCode(generateNextOrderCode(noc.codePrefix ?? 'NOC-'));
       }
     } catch (err: unknown) {
+      // The limit can still be breached between the preview and the commit — a
+      // concurrent sale on the same account moves the live balance. So the sale
+      // itself is the authority, and its refusal is a prompt for a manager rather
+      // than a generic failure the cashier would simply retry.
+      if (err instanceof CreditLimitError) {
+        toast.error(err.message, { duration: 8000 });
+        // Drop the tender so the cashier is not left holding a button that can
+        // never succeed, and re-open the account panel's override path.
+        setLines([]);
+        setCreditOverrideReason('');
+        return;
+      }
       toast.error(err instanceof Error ? err.message : 'Payment failed');
     } finally {
       setLoading(false);
@@ -1050,6 +1122,18 @@ export default function POSPaymentModal() {
                 </button>
               );
             })()}
+
+          {/* Account — spends stored value first, charges the rest to the tab.
+              Offered for any saved customer with a positive total; the server
+              decides the split and whether the limit allows it. */}
+          {accountEligible && (
+            <AccountTenderButton
+              customerId={customer.customerId}
+              payableTotal={payableTotal}
+              selected={lines.some((l) => l.method === 'account')}
+              onSelect={selectAccount}
+            />
+          )}
         </div>
 
         {/* Tips — a tip raises the amount owed; it is not a tender, so it sets
@@ -1120,7 +1204,47 @@ export default function POSPaymentModal() {
               </span>
             )}
           </button>
+
+          {/* Their tab: statement and taking a payment. Separate from the customer
+              picker above — that swaps who the sale is for, this reads and settles
+              what they already owe. */}
+          {hasCustomer && (
+            <button
+              type="button"
+              onClick={() => setShowAccount(true)}
+              className={cn(
+                'mt-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-gray-50',
+                showAccount
+                  ? 'border-[#b20202]/40 bg-red-50 text-[#b20202]'
+                  : 'border-gray-200 bg-white text-gray-600'
+              )}
+            >
+              <PiWallet className="h-3.5 w-3.5 shrink-0" />
+              <span className="flex-1 text-left">Customer account &amp; tab</span>
+            </button>
+          )}
         </div>
+
+        {showAccount && customer.customerId && (
+          <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={() => setShowAccount(false)}>
+            <div
+              className="h-full w-full max-w-md bg-white shadow-xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <CustomerAccountPanel
+                customerId={customer.customerId}
+                customerName={customerLabel}
+                onClose={() => setShowAccount(false)}
+                onBalanceChanged={() => {
+                  // The cart holds a cached walletBalance; a payment changes the
+                  // account, so let the caller re-read it rather than trusting
+                  // what is on screen now.
+                  setShowAccount(false);
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* ── Calculator display ── */}
         <div className="mx-3 mb-2 overflow-hidden rounded-xl bg-gray-900">

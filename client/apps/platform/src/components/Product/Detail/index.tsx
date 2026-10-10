@@ -1,7 +1,9 @@
 'use client';
 
+import { isSizeInStock } from '@/utils/productStock';
+
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import Image from 'next/image';
+import Image from '@/components/UI/OptimizedImage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Swiper, SwiperSlide } from 'swiper/react';
@@ -261,7 +263,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     return 0;
   }, [selectedSizeData, displayOriginalPrice, displayPrice, showDetailDiscount]);
 
-  const inStock = (selectedSizeData?.stock || 0) > 0;
+  const inStock = isSizeInStock(selectedSizeData);
   const isLowStock = (selectedSizeData?.stock ?? 0) > 0 && (selectedSizeData?.stock ?? 0) <= 5;
   const hasDiscount = showDetailDiscount;
   const isFixedDiscount = selectedSizeData?.discount?.type === 'fixed';
@@ -794,15 +796,15 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                         <span>Adding...</span>
                       </>
-                    ) : !effectiveSize ? (
-                      <>
-                        <Icon.PiWarningCircle size={20} />
-                        <span>Select a Size</span>
-                      </>
                     ) : !inStock ? (
                       <>
                         <Icon.PiProhibit size={20} />
                         <span>Out of Stock</span>
+                      </>
+                    ) : !effectiveSize ? (
+                      <>
+                        <Icon.PiWarningCircle size={20} />
+                        <span>Select a Size</span>
                       </>
                     ) : packRateActive ? (
                       <>

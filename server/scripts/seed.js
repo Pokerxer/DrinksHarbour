@@ -1,3 +1,4 @@
+const { platformIdentity } = require('../utils/customerIdentity');
 // Load environment variables FIRST
 require('dotenv').config();
 
@@ -6457,7 +6458,7 @@ async function createTenants() {
       }
       
       // Check if owner already exists
-      let owner = await User.findOne({ email: ownerEmail });
+      let owner = await User.findOne({ email: ownerEmail, ...platformIdentity() });
       
       if (!owner) {
         // Create owner user (temporarily as customer to bypass validation)

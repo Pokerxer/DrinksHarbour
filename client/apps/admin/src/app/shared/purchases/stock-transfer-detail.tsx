@@ -1,4 +1,9 @@
 'use client';
+import TransferHistory from './transfer-history';
+import InvoiceReturnCard from './invoice-return-card';
+import { transferReturnSummary } from './invoice-return-summary';
+import TransferReturnPanel from './transfer-return-panel';
+import { isManagerOf } from './transfer-receive-panel-helpers';
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -26,13 +31,8 @@ import {
 import { printTransferInvoice } from '@/utils/purchaseInvoice';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import {
-  stockTransferService,
-  type StockTransfer,
-} from '@/services/stockTransfer.service';
-import TransferReceivePanel, {
-  type ReceiveLineInput,
-} from './transfer-receive-panel';
+import { stockTransferService, type StockTransfer } from '@/services/stockTransfer.service';
+import TransferReceivePanel, { type ReceiveLineInput } from './transfer-receive-panel';
 import {
   canCloseOperation,
   canReceiveTransfer,
@@ -100,15 +100,21 @@ function fmtDateTime(s?: string) {
   if (diffDays === 0) return `Today at ${time}`;
   if (diffDays === 1) return `Yesterday at ${time}`;
   if (diffDays < 7) return `${diffDays} days ago`;
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  }) + ` ${time}`;
+  return (
+    d.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }) + ` ${time}`
+  );
 }
 
 function fmtDate(s?: string) {
   if (!s) return '—';
   return new Date(s).toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
   });
 }
 
@@ -210,7 +216,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
   // assertWarehouseSide — the server remains authoritative.
   const uid = session?.user?.id ?? '';
   const isAdminRole = ['super_admin', 'tenant_owner', 'tenant_admin'].includes(
-    session?.user?.role ?? ''
+    session?.user?.role ?? '',
   );
 
   const load = useCallback(async () => {
@@ -226,44 +232,50 @@ export default function StockTransferDetail({ id }: { id: string }) {
     }
   }, [id, token]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const fetchSourceStock = useCallback(async (warehouseId: string, items: StockTransfer['items']) => {
-    if (!token) return;
-    setStockLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/api/warehouses/${warehouseId}/stock`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = (await res.json()) as { data?: unknown[] };
-      const list: any[] = json?.data ?? [];
-      const map: Record<string, number> = {};
-      for (const row of list) {
-        const spId = typeof row.subProduct === 'string' ? row.subProduct : row.subProduct?._id;
-        const szId = typeof row.size === 'string' ? row.size : row.size?._id;
-        if (spId) {
-          const k = `${spId}::${szId || ''}`;
-          map[k] = (map[k] || 0) + (row.currentQuantity || 0);
+  const fetchSourceStock = useCallback(
+    async (warehouseId: string, items: StockTransfer['items']) => {
+      if (!token) return;
+      setStockLoading(true);
+      try {
+        const res = await fetch(`${API_URL}/api/warehouses/${warehouseId}/stock`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = (await res.json()) as { data?: unknown[] };
+        const list: any[] = json?.data ?? [];
+        const map: Record<string, number> = {};
+        for (const row of list) {
+          const spId = typeof row.subProduct === 'string' ? row.subProduct : row.subProduct?._id;
+          const szId = typeof row.size === 'string' ? row.size : row.size?._id;
+          if (spId) {
+            const k = `${spId}::${szId || ''}`;
+            map[k] = (map[k] || 0) + (row.currentQuantity || 0);
+          }
         }
+        const stockMap: Record<string, number> = {};
+        for (const item of items) {
+          const k = `${item.subProductId}::${item.sizeId || ''}`;
+          stockMap[item.subProductId] = map[k] ?? 0;
+        }
+        setSourceStock(stockMap);
+      } catch {
+        // silent
+      } finally {
+        setStockLoading(false);
       }
-      const stockMap: Record<string, number> = {};
-      for (const item of items) {
-        const k = `${item.subProductId}::${item.sizeId || ''}`;
-        stockMap[item.subProductId] = map[k] ?? 0;
-      }
-      setSourceStock(stockMap);
-    } catch {
-      // silent
-    } finally {
-      setStockLoading(false);
-    }
-  }, [token]);
+    },
+    [token],
+  );
 
   useEffect(() => {
     if (transfer && (transfer.status === 'draft' || transfer.status === 'confirmed')) {
-      const whId = typeof transfer.sourceWarehouse === 'string'
-        ? transfer.sourceWarehouse
-        : transfer.sourceWarehouse?._id;
+      const whId =
+        typeof transfer.sourceWarehouse === 'string'
+          ? transfer.sourceWarehouse
+          : transfer.sourceWarehouse?._id;
       if (whId) fetchSourceStock(whId, transfer.items);
     }
   }, [transfer, fetchSourceStock]);
@@ -353,7 +365,14 @@ export default function StockTransferDetail({ id }: { id: string }) {
     transfer.status === 'pending_approval';
   const totalUnits = transfer.items.reduce((s, it) => s + it.quantity, 0);
   const totalTransferred = transfer.items.reduce((s, it) => s + it.transferredQty, 0);
-  const totalCost = transfer.items.reduce((s, it) => s + (it.costPrice ?? 0) * it.quantity, 0);
+  const invoiceSummary = transferReturnSummary(transfer);
+  const totalCost =
+    transfer.total ??
+    transfer.totalValue ??
+    transfer.items.reduce(
+      (s, it) => s + (it.costPrice ?? 0) * Math.max(0, it.quantity - (it.returnedQty || 0)),
+      0,
+    );
   const hasPartial = totalTransferred > 0 && totalTransferred < totalUnits;
 
   return (
@@ -386,19 +405,17 @@ export default function StockTransferDetail({ id }: { id: string }) {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-gray-900">
-              {transfer.transferNumber}
-            </h1>
-            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${style.badge}`}>
+            <h1 className="text-xl font-semibold text-gray-900">{transfer.transferNumber}</h1>
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${style.badge}`}
+            >
               <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
               {style.label}
             </span>
           </div>
           <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
             <PiWarehouse className="h-4 w-4 shrink-0 text-gray-400" />
-            <span className="font-medium text-gray-700">
-              {whName(transfer.sourceWarehouse)}
-            </span>
+            <span className="font-medium text-gray-700">{whName(transfer.sourceWarehouse)}</span>
             <PiArrowsLeftRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
             <span className="font-medium text-gray-700">
               {whName(transfer.destinationWarehouse)}
@@ -434,16 +451,22 @@ export default function StockTransferDetail({ id }: { id: string }) {
             <button
               type="button"
               disabled={acting}
-              onClick={() => setConfirmAction({
-                title: 'Confirm Transfer',
-                message: `Move ${totalUnits} unit${totalUnits !== 1 ? 's' : ''} from ${whName(transfer.sourceWarehouse)} to ${whName(transfer.destinationWarehouse)}? Stock availability will be validated.`,
-                confirmLabel: 'Confirm',
-                confirmColor: 'bg-blue-600 hover:bg-blue-700',
-                action: () => stockTransferService.updateStatus(id, 'confirmed', token),
-              })}
+              onClick={() =>
+                setConfirmAction({
+                  title: 'Confirm Transfer',
+                  message: `Move ${totalUnits} unit${totalUnits !== 1 ? 's' : ''} from ${whName(transfer.sourceWarehouse)} to ${whName(transfer.destinationWarehouse)}? Stock availability will be validated.`,
+                  confirmLabel: 'Confirm',
+                  confirmColor: 'bg-blue-600 hover:bg-blue-700',
+                  action: () => stockTransferService.updateStatus(id, 'confirmed', token),
+                })
+              }
               className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiCheck className="h-4 w-4" />}
+              {acting ? (
+                <PiSpinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <PiCheck className="h-4 w-4" />
+              )}
               Confirm Transfer
             </button>
           )}
@@ -451,16 +474,22 @@ export default function StockTransferDetail({ id }: { id: string }) {
             <button
               type="button"
               disabled={acting}
-              onClick={() => setConfirmAction({
-                title: 'Approve Transfer',
-                message: `Approve transfer ${transfer.transferNumber} (value ${(transfer.totalValue ?? totalCost).toLocaleString()})? It will move to Confirmed.`,
-                confirmLabel: 'Approve',
-                confirmColor: 'bg-emerald-600 hover:bg-emerald-700',
-                action: () => stockTransferService.approve(id, token),
-              })}
+              onClick={() =>
+                setConfirmAction({
+                  title: 'Approve Transfer',
+                  message: `Approve transfer ${transfer.transferNumber} (value ${(transfer.totalValue ?? totalCost).toLocaleString()})? It will move to Confirmed.`,
+                  confirmLabel: 'Approve',
+                  confirmColor: 'bg-emerald-600 hover:bg-emerald-700',
+                  action: () => stockTransferService.approve(id, token),
+                })
+              }
               className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
             >
-              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiCheckCircle className="h-4 w-4" />}
+              {acting ? (
+                <PiSpinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <PiCheckCircle className="h-4 w-4" />
+              )}
               Approve
             </button>
           )}
@@ -469,7 +498,8 @@ export default function StockTransferDetail({ id }: { id: string }) {
               type="button"
               disabled={acting}
               onClick={() => {
-                const reason = window.prompt('Reason for rejecting this transfer (optional):') ?? '';
+                const reason =
+                  window.prompt('Reason for rejecting this transfer (optional):') ?? '';
                 setConfirmAction({
                   title: 'Reject Transfer',
                   message: `Reject transfer ${transfer.transferNumber}? It cannot be confirmed afterwards.`,
@@ -480,7 +510,11 @@ export default function StockTransferDetail({ id }: { id: string }) {
               }}
               className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"
             >
-              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiX className="h-4 w-4" />}
+              {acting ? (
+                <PiSpinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <PiX className="h-4 w-4" />
+              )}
               Reject
             </button>
           )}
@@ -488,16 +522,22 @@ export default function StockTransferDetail({ id }: { id: string }) {
             <button
               type="button"
               disabled={acting}
-              onClick={() => setConfirmAction({
-                title: 'Dispatch Transfer',
-                message: `Mark ${totalUnits} unit${totalUnits !== 1 ? 's' : ''} as dispatched from ${whName(transfer.sourceWarehouse)}? ${whName(transfer.destinationWarehouse)} will then be able to receive stock against this transfer.`,
-                confirmLabel: 'Dispatch',
-                confirmColor: 'bg-[#b20202] hover:bg-[#9a0101]',
-                action: () => stockTransferService.send(id, token),
-              })}
+              onClick={() =>
+                setConfirmAction({
+                  title: 'Dispatch Transfer',
+                  message: `Mark ${totalUnits} unit${totalUnits !== 1 ? 's' : ''} as dispatched from ${whName(transfer.sourceWarehouse)}? ${whName(transfer.destinationWarehouse)} will then be able to receive stock against this transfer.`,
+                  confirmLabel: 'Dispatch',
+                  confirmColor: 'bg-[#b20202] hover:bg-[#9a0101]',
+                  action: () => stockTransferService.send(id, token),
+                })
+              }
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
             >
-              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiArrowsLeftRight className="h-4 w-4" />}
+              {acting ? (
+                <PiSpinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <PiArrowsLeftRight className="h-4 w-4" />
+              )}
               Dispatch
             </button>
           )}
@@ -521,7 +561,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
               disabled={acting}
               onClick={async () => {
                 const ok = window.confirm(
-                  `Close ${transfer.transferNumber} with shortages? Outstanding units will no longer be expected — nothing is returned automatically and the transfer is completed as-is.`
+                  `Close ${transfer.transferNumber} with shortages? Outstanding units will no longer be expected — nothing is returned automatically and the transfer is completed as-is.`,
                 );
                 if (!ok) return;
                 setActing(true);
@@ -538,7 +578,11 @@ export default function StockTransferDetail({ id }: { id: string }) {
               }}
               className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
             >
-              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiWarningCircle className="h-4 w-4" />}
+              {acting ? (
+                <PiSpinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <PiWarningCircle className="h-4 w-4" />
+              )}
               Close with shortage
             </button>
           )}
@@ -546,16 +590,22 @@ export default function StockTransferDetail({ id }: { id: string }) {
             <button
               type="button"
               disabled={acting}
-              onClick={() => setConfirmAction({
-                title: 'Cancel Transfer',
-                message: `Cancel transfer ${transfer.transferNumber}? This cannot be undone.`,
-                confirmLabel: 'Cancel Transfer',
-                confirmColor: 'bg-red-600 hover:bg-red-700',
-                action: () => stockTransferService.updateStatus(id, 'cancelled', token),
-              })}
+              onClick={() =>
+                setConfirmAction({
+                  title: 'Cancel Transfer',
+                  message: `Cancel transfer ${transfer.transferNumber}? This cannot be undone.`,
+                  confirmLabel: 'Cancel Transfer',
+                  confirmColor: 'bg-red-600 hover:bg-red-700',
+                  action: () => stockTransferService.updateStatus(id, 'cancelled', token),
+                })
+              }
               className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
             >
-              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiX className="h-4 w-4" />}
+              {acting ? (
+                <PiSpinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <PiX className="h-4 w-4" />
+              )}
               Cancel
             </button>
           )}
@@ -563,19 +613,25 @@ export default function StockTransferDetail({ id }: { id: string }) {
             <button
               type="button"
               disabled={acting}
-              onClick={() => setConfirmAction({
-                title: 'Delete Draft',
-                message: `Delete draft transfer ${transfer.transferNumber}? This cannot be undone.`,
-                confirmLabel: 'Delete',
-                confirmColor: 'bg-gray-700 hover:bg-gray-800',
-                action: async () => {
-                  await stockTransferService.remove(id, token);
-                  router.push(routes.eCommerce.stockTransfers);
-                },
-              })}
+              onClick={() =>
+                setConfirmAction({
+                  title: 'Delete Draft',
+                  message: `Delete draft transfer ${transfer.transferNumber}? This cannot be undone.`,
+                  confirmLabel: 'Delete',
+                  confirmColor: 'bg-gray-700 hover:bg-gray-800',
+                  action: async () => {
+                    await stockTransferService.remove(id, token);
+                    router.push(routes.eCommerce.stockTransfers);
+                  },
+                })
+              }
               className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
             >
-              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiTrash className="h-4 w-4" />}
+              {acting ? (
+                <PiSpinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <PiTrash className="h-4 w-4" />
+              )}
               Delete
             </button>
           )}
@@ -585,12 +641,54 @@ export default function StockTransferDetail({ id }: { id: string }) {
       {/* Stat cards */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: 'From', value: whName(transfer.sourceWarehouse), icon: <PiWarehouse className="h-4 w-4" />, color: 'bg-blue-100 text-blue-600' },
-          { label: 'To', value: whName(transfer.destinationWarehouse), icon: <PiWarehouse className="h-4 w-4" />, color: 'bg-emerald-100 text-emerald-600' },
-          { label: 'Total Units', value: `${totalTransferred}/${totalUnits}`, icon: <PiCheckCircle className="h-4 w-4" />, color: totalTransferred === totalUnits && transfer.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600' },
-          { label: transfer.status === 'completed' ? 'Completed' : transfer.confirmedAt ? 'Confirmed' : 'Scheduled', value: fmtDateTime(transfer.completedDate ?? transfer.confirmedAt ?? transfer.scheduledDate) ?? '—', icon: transfer.status === 'completed' ? <PiCalendarCheck className="h-4 w-4" /> : <PiClock className="h-4 w-4" />, color: transfer.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-500' },
+          {
+            label: 'From',
+            value: whName(transfer.sourceWarehouse),
+            icon: <PiWarehouse className="h-4 w-4" />,
+            color: 'bg-blue-100 text-blue-600',
+          },
+          {
+            label: 'To',
+            value: whName(transfer.destinationWarehouse),
+            icon: <PiWarehouse className="h-4 w-4" />,
+            color: 'bg-emerald-100 text-emerald-600',
+          },
+          {
+            label: 'Total Units',
+            value: `${totalTransferred}/${totalUnits}`,
+            icon: <PiCheckCircle className="h-4 w-4" />,
+            color:
+              totalTransferred === totalUnits && transfer.status === 'completed'
+                ? 'bg-emerald-100 text-emerald-600'
+                : 'bg-amber-100 text-amber-600',
+          },
+          {
+            label:
+              transfer.status === 'completed'
+                ? 'Completed'
+                : transfer.confirmedAt
+                  ? 'Confirmed'
+                  : 'Scheduled',
+            value:
+              fmtDateTime(
+                transfer.completedDate ?? transfer.confirmedAt ?? transfer.scheduledDate,
+              ) ?? '—',
+            icon:
+              transfer.status === 'completed' ? (
+                <PiCalendarCheck className="h-4 w-4" />
+              ) : (
+                <PiClock className="h-4 w-4" />
+              ),
+            color:
+              transfer.status === 'completed'
+                ? 'bg-emerald-100 text-emerald-600'
+                : 'bg-gray-100 text-gray-500',
+          },
         ].map(({ label, value, icon, color }) => (
-          <div key={label} className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+          <div
+            key={label}
+            className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
+          >
             <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${color}`}>
               {icon}
             </div>
@@ -614,6 +712,19 @@ export default function StockTransferDetail({ id }: { id: string }) {
         </div>
       )}
 
+      <TransferReturnPanel
+        transfer={transfer}
+        token={token}
+        canReturn={
+          ['completed', 'partially_received'].includes(transfer.status) &&
+          (isAdminRole || isManagerOf(transfer.destinationWarehouse, uid))
+        }
+        onComplete={async (updated) => {
+          setTransfer(updated);
+          await load();
+        }}
+      />
+
       {/* Sent / received discrepancy strip */}
       {(transfer.status === 'partially_received' ||
         transfer.closedWithShortage ||
@@ -621,7 +732,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
         (() => {
           const received = transfer.items.reduce(
             (s, it) => s + (it.receivedQty ?? it.transferredQty ?? 0),
-            0
+            0,
           );
           const short = Math.max(0, totalUnits - received);
           return (
@@ -629,13 +740,22 @@ export default function StockTransferDetail({ id }: { id: string }) {
               <PiWarningCircle className="h-4 w-4 shrink-0" />
               <span>
                 Discrepancy — Sent <strong>{totalUnits}</strong> · Received{' '}
-                <strong>{received}</strong> · Short{' '}
-                <strong>{short}</strong> unit{short !== 1 ? 's' : ''}
+                <strong>{received}</strong> · Short <strong>{short}</strong> unit
+                {short !== 1 ? 's' : ''}
               </span>
             </div>
           );
         })()}
 
+      {invoiceSummary.returned > 0 && (
+        <InvoiceReturnCard
+          fullyReturned={invoiceSummary.fullyReturned}
+          originalTotal={invoiceSummary.originalTotal}
+          credit={invoiceSummary.credit}
+          total={totalCost}
+          currency={transfer.currency || 'NGN'}
+        />
+      )}
       {/* Items table */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="border-b border-gray-100 px-5 py-3">
@@ -654,13 +774,25 @@ export default function StockTransferDetail({ id }: { id: string }) {
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">SKU</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Qty Requested</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                  Qty Requested
+                </th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Packs</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Cost Price</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Qty Transferred</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                  Cost Price
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                  Qty Transferred
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Returned</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                  Remaining
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Progress</th>
                 {transfer.status !== 'completed' && (
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Source Stock</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                    Source Stock
+                  </th>
                 )}
               </tr>
             </thead>
@@ -668,9 +800,10 @@ export default function StockTransferDetail({ id }: { id: string }) {
               {transfer.items.map((item, i) => {
                 const done = item.transferredQty >= item.quantity;
                 const pct = Math.min(100, Math.round((item.transferredQty / item.quantity) * 100));
-                const name = item.sizeName && !item.subProductName.includes(item.sizeName)
-                  ? `${item.subProductName} – ${item.sizeName}`
-                  : item.subProductName;
+                const name =
+                  item.sizeName && !item.subProductName.includes(item.sizeName)
+                    ? `${item.subProductName} – ${item.sizeName}`
+                    : item.subProductName;
                 const srcStock = sourceStock[item.subProductId];
                 const stockOk = srcStock !== undefined && srcStock >= item.quantity;
                 return (
@@ -678,9 +811,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
                     <td className="px-4 py-3 font-medium text-gray-900">
                       <span className="truncate">{name}</span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                      {item.sku || '—'}
-                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500">{item.sku || '—'}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-gray-700">
                       {item.quantity}
                     </td>
@@ -697,21 +828,25 @@ export default function StockTransferDetail({ id }: { id: string }) {
                         {item.transferredQty}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-right text-orange-700">
+                      {item.returnedQty || 0}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {Math.max(0, item.quantity - (item.returnedQty || 0))}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-20 overflow-hidden rounded-full bg-gray-100">
                           <div
                             className={`h-full rounded-full transition-all ${
-                              done
-                                ? 'bg-emerald-500'
-                                : hasPartial
-                                  ? 'bg-amber-400'
-                                  : 'bg-gray-300'
+                              done ? 'bg-emerald-500' : hasPartial ? 'bg-amber-400' : 'bg-gray-300'
                             }`}
                             style={{ width: `${pct}%` }}
                           />
                         </div>
-                        <span className={`text-[11px] tabular-nums ${done ? 'font-medium text-emerald-600' : 'text-gray-400'}`}>
+                        <span
+                          className={`text-[11px] tabular-nums ${done ? 'font-medium text-emerald-600' : 'text-gray-400'}`}
+                        >
                           {pct}%
                         </span>
                       </div>
@@ -735,7 +870,10 @@ export default function StockTransferDetail({ id }: { id: string }) {
             </tbody>
             <tfoot>
               <tr className="border-t border-gray-200 bg-gray-50">
-                <td colSpan={2} className="px-4 py-3 text-right text-xs font-semibold text-gray-500">
+                <td
+                  colSpan={2}
+                  className="px-4 py-3 text-right text-xs font-semibold text-gray-500"
+                >
                   Total
                 </td>
                 <td className="px-4 py-3" />
@@ -746,10 +884,16 @@ export default function StockTransferDetail({ id }: { id: string }) {
                   {totalCost > 0 ? fmtCur(totalCost, transfer.currency ?? 'NGN') : '—'}
                 </td>
                 <td className="px-4 py-3 text-right text-sm font-bold tabular-nums">
-                  <span className={transfer.status === 'completed' ? 'text-emerald-600' : 'text-gray-400'}>
+                  <span
+                    className={
+                      transfer.status === 'completed' ? 'text-emerald-600' : 'text-gray-400'
+                    }
+                  >
                     {totalTransferred}
                   </span>
                 </td>
+                <td className="px-4 py-3 text-right text-orange-700">{invoiceSummary.returned}</td>
+                <td className="px-4 py-3 text-right">{invoiceSummary.remaining}</td>
                 <td colSpan={transfer.status !== 'completed' ? 2 : 1} className="px-4 py-3" />
               </tr>
             </tfoot>
@@ -768,69 +912,7 @@ export default function StockTransferDetail({ id }: { id: string }) {
         </p>
       </div>
 
-      {/* Timeline */}
-      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h3 className="mb-4 text-xs font-medium text-gray-500">Timeline</h3>
-        <div className="space-y-0">
-          {[
-            { label: 'Draft created', date: transfer.createdAt, user: transfer.createdBy, dotColor: 'bg-gray-400' },
-            ...(transfer.approvedAt
-              ? [{ label: 'Approved', date: transfer.approvedAt, user: transfer.approvedBy, dotColor: 'bg-emerald-500' }]
-              : []),
-            ...(transfer.rejectedAt
-              ? [{ label: transfer.rejectionReason ? `Rejected — ${transfer.rejectionReason}` : 'Rejected', date: transfer.rejectedAt, user: transfer.rejectedBy, dotColor: 'bg-rose-500' }]
-              : []),
-            ...(transfer.confirmedAt
-              ? [{ label: 'Confirmed', date: transfer.confirmedAt, user: transfer.confirmedBy, dotColor: 'bg-blue-500' }]
-              : []),
-            ...(transfer.dispatchedAt
-              ? [{ label: 'Dispatched', date: transfer.dispatchedAt, user: transfer.dispatchedBy, dotColor: 'bg-indigo-500' }]
-              : []),
-            ...(transfer.receipts ?? [])
-              .filter((r) => !r.shortagesClosed)
-              .map((r) => ({
-                label: r.lines.length
-                  ? r.lines
-                      .map(
-                        (l) =>
-                          `${l.quantity} × ${
-                            transfer.items[l.itemIndex]?.subProductName ?? 'item'
-                          }${l.note ? ` — ${l.note}` : ''}`
-                      )
-                      .join(', ')
-                  : 'Receipt recorded',
-                date: r.receivedAt,
-                user: r.receivedBy,
-                dotColor: 'bg-emerald-500',
-              })),
-            ...(transfer.closedWithShortage
-              ? [{ label: 'Closed with shortages', date: transfer.completedDate, user: transfer.completedBy, dotColor: 'bg-amber-500' }]
-              : []),
-            ...(transfer.completedDate
-              ? [{ label: 'Completed', date: transfer.completedDate, user: transfer.completedBy, dotColor: 'bg-emerald-500' }]
-              : []),
-            ...(transfer.cancelledAt
-              ? [{ label: 'Cancelled', date: transfer.cancelledAt, user: transfer.cancelledBy, dotColor: 'bg-red-500' }]
-              : []),
-          ].map((entry, idx, arr) => (
-            <div key={`${entry.label}-${idx}`} className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <div className={`h-2.5 w-2.5 rounded-full ring-2 ring-white ${entry.dotColor}`} />
-                {idx < arr.length - 1 && <div className="mt-0.5 h-full w-px bg-gray-200" />}
-              </div>
-              <div className={`pb-5 ${idx < arr.length - 1 ? '' : ''}`}>
-                <p className="text-sm font-medium text-gray-700">{entry.label}</p>
-                <p className="text-xs text-gray-500">
-                  {fmtDateTime(entry.date)}
-                  {entry.user && (
-                    <span className="ml-1 text-gray-400">by {entry.user.name}</span>
-                  )}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <TransferHistory transfer={transfer} />
     </div>
   );
 }

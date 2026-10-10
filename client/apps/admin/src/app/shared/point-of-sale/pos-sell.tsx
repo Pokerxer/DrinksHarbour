@@ -182,14 +182,16 @@ export default function POSSell() {
       <POSTableStrip />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT: cart + dialpad */}
-        <div className="flex w-[480px] shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white xl:w-[540px]">
+        {/* LEFT: cart + dialpad. A fixed 480px left the product grid unusably
+            thin on a tablet or a narrow window, so the panel scales with the
+            viewport and only pins to its full width on wide screens. */}
+        <div className="flex w-[min(480px,45vw)] shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white xl:w-[540px]">
           {activeView === 'payment' ? <POSPaymentModal /> : <POSCart />}
         </div>
 
         {/* RIGHT: product grid */}
         <div
-          className={`relative flex-1 overflow-y-auto bg-gray-50 p-4${settings.largeScrollbars ? '[&::-webkit-scrollbar]:w-3' : ''}`}
+          className={`relative min-w-0 flex-1 overflow-y-auto bg-gray-50 p-4${settings.largeScrollbars ? '[&::-webkit-scrollbar]:w-3' : ''}`}
         >
           {/* Notification bell — top-right of product grid */}
           <div className="absolute right-4 top-3 z-10">

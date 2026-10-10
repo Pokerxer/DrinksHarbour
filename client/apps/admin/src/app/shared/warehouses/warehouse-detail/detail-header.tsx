@@ -4,6 +4,7 @@
 // Identity hero: name, code, type, location, contact, active/default chips —
 // plus the page-level actions (Edit, Export, Refresh).
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   PiArrowLeft,
@@ -88,6 +89,14 @@ export default function DetailHeader({
         <div className="flex flex-wrap items-center gap-2">
           {/* Rendered by the parent so it can pass live filter context */}
           {exportSlot}
+          {warehouse && (
+            <Link
+              href={routes.warehouses.locationAnalysis(warehouse._id)}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold hover:bg-gray-50"
+            >
+              Analysis
+            </Link>
+          )}
           <button
             type="button"
             onClick={onEdit}

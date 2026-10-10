@@ -38,6 +38,8 @@ import AnalysisHeader from './analysis-header';
 import KpiCards from './kpi-cards';
 import ControlBar from './control-bar';
 import FilterPanel from './filter-panel';
+import StockProductFilter from './stock-product-filter';
+import { analysisFilterLabel, analysisFilterOptions } from './filter-options';
 import FilterChips from './filter-chips';
 import { AnalysisSkeleton } from './skeletons';
 import { AnalysisEmptyState, AnalysisErrorState } from './states';
@@ -56,7 +58,8 @@ function downloadTextFile(content: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function WarehouseAnalysis() {
+export default function WarehouseAnalysis({ warehouseId }: { warehouseId?: string } = {}) {
+  const savedKey = warehouseId ? `${SAVED_KEY}:${warehouseId}` : SAVED_KEY;
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
   const { getRate } = useExchangeRates();
@@ -65,15 +68,19 @@ export default function WarehouseAnalysis() {
     phase,
     errorMessage,
     stock,
-    categories,
-    brands,
+
     prodMeta,
     reload,
-  } = useAnalysisData();
+  } = useAnalysisData(warehouseId);
+
+  const filterOptions = useMemo(() => analysisFilterOptions(stock, prodMeta), [stock, prodMeta]);
+  const { products, warehouses, categories, brands } = filterOptions;
 
   // ── View state ──
   const [filters, setFilters] = useState<string[]>([]);
-  const [groupByStack, setGroupByStack] = useState<GroupByKey[]>(['warehouse']);
+  const [groupByStack, setGroupByStack] = useState<GroupByKey[]>(
+    warehouseId ? ['product'] : ['warehouse'],
+  );
   const [measure, setMeasure] = useState<Measure>('stock_value');
   const [chartType, setChartType] = useState<ChartType>('bar');
   const [sortStack, setSortStack] = useState<SortCriterion[]>([]);
@@ -88,7 +95,9 @@ export default function WarehouseAnalysis() {
   } | null>(null);
 
   const [viewMode, setViewMode] = useState<ViewMode>('graph');
-  const [pivotRowDims, setPivotRowDims] = useState<GroupByKey[]>(['warehouse']);
+  const [pivotRowDims, setPivotRowDims] = useState<GroupByKey[]>(
+    warehouseId ? ['product'] : ['warehouse'],
+  );
   const [pivotColDims, setPivotColDims] = useState<GroupByKey[]>([]);
   const [pivotHeatMap, setPivotHeatMap] = useState(true);
   const [pivotShowOrders, setPivotShowOrders] = useState(false);
@@ -102,18 +111,19 @@ export default function WarehouseAnalysis() {
   // Saved searches (localStorage)
   useEffect(() => {
     try {
-      setSavedSearches(
-        JSON.parse(localStorage.getItem(SAVED_KEY) || '[]') as SavedSearch[]
-      );
+      setSavedSearches(JSON.parse(localStorage.getItem(savedKey) || '[]') as SavedSearch[]);
     } catch {
       /* ignore malformed saved-search storage */
     }
-  }, []);
+  }, [savedKey]);
 
-  const persistSearches = useCallback((list: SavedSearch[]) => {
-    setSavedSearches(list);
-    localStorage.setItem(SAVED_KEY, JSON.stringify(list));
-  }, []);
+  const persistSearches = useCallback(
+    (list: SavedSearch[]) => {
+      setSavedSearches(list);
+      localStorage.setItem(savedKey, JSON.stringify(list));
+    },
+    [savedKey],
+  );
 
   // Stock costs are stored in the NGN base; kept for purchases-analytics
   // parity and future multi-currency cost support.
@@ -123,13 +133,13 @@ export default function WarehouseAnalysis() {
       const rate = getRate(currency, BASE_CURRENCY);
       return rate ? amount * rate : amount;
     },
-    [getRate]
+    [getRate],
   );
 
   // ── Derived data ──
   const filtered = useMemo(
     () => applyFilters(stock, filters, prodMeta),
-    [stock, filters, prodMeta]
+    [stock, filters, prodMeta],
   );
 
   const kpis = useMemo(() => computeKpis(filtered, toBase), [filtered, toBase]);
@@ -141,15 +151,7 @@ export default function WarehouseAnalysis() {
 
   const multiSeries = useMemo(() => {
     if (!groupBy || !groupBy2) return null;
-    return computeMultiSeries(
-      filtered,
-      groupBy,
-      groupBy2,
-      measure,
-      prodMeta,
-      toBase,
-      sortStack
-    );
+    return computeMultiSeries(filtered, groupBy, groupBy2, measure, prodMeta, toBase, sortStack);
   }, [filtered, groupBy, groupBy2, measure, prodMeta, toBase, sortStack]);
 
   const pivotData = useMemo(() => {
@@ -160,7 +162,7 @@ export default function WarehouseAnalysis() {
       pivotColDims,
       measure,
       prodMeta,
-      toBase
+      toBase,
     );
   }, [viewMode, filtered, pivotRowDims, pivotColDims, measure, prodMeta, toBase]);
 
@@ -169,11 +171,18 @@ export default function WarehouseAnalysis() {
     () => ({
       topProducts: computeGroupData(filtered, 'product', 'stock_value', prodMeta, toBase, []),
       byWarehouse: computeGroupData(filtered, 'warehouse', 'stock_value', prodMeta, toBase, []),
-      topCategories: computeGroupData(filtered, 'product_category', 'on_hand_qty', prodMeta, toBase, []),
+      topCategories: computeGroupData(
+        filtered,
+        'product_category',
+        'on_hand_qty',
+        prodMeta,
+        toBase,
+        [],
+      ),
       statusRows: computeGroupData(filtered, 'stock_status', 'stock_value', prodMeta, toBase, []),
       expiryRows: computeGroupData(filtered, 'expiry', 'stock_value', prodMeta, toBase, []),
     }),
-    [filtered, prodMeta, toBase]
+    [filtered, prodMeta, toBase],
   );
 
   const groupLabel = groupBy
@@ -182,8 +191,7 @@ export default function WarehouseAnalysis() {
   const groupLabel2 = groupBy2
     ? (ALL_GROUP_ITEMS.find((g) => g.key === groupBy2)?.label ?? groupBy2)
     : null;
-  const measureLabel =
-    MEASURES.find((m) => m.key === measure)?.label ?? measure;
+  const measureLabel = MEASURES.find((m) => m.key === measure)?.label ?? measure;
 
   const totalValue = multiSeries
     ? multiSeries.rows.reduce((s, r) => s + r.__total__, 0)
@@ -192,21 +200,19 @@ export default function WarehouseAnalysis() {
   // ── Handlers ──
   function toggleFilter(key: string) {
     setAppliedSearchId(null);
-    setFilters((prev) =>
-      prev.includes(key) ? prev.filter((f) => f !== key) : [...prev, key]
-    );
+    setFilters((prev) => (prev.includes(key) ? prev.filter((f) => f !== key) : [...prev, key]));
   }
 
   function toggleGroupBy(key: GroupByKey) {
     setAppliedSearchId(null);
     setGroupByStack((prev) =>
-      prev.includes(key) ? prev.filter((g) => g !== key) : [...prev, key]
+      prev.includes(key) ? prev.filter((g) => g !== key) : [...prev, key],
     );
   }
 
   const addSort = useCallback((field: SortField) => {
     setSortStack((prev) =>
-      prev.some((s) => s.field === field) ? prev : [...prev, { field, dir: 'desc' }]
+      prev.some((s) => s.field === field) ? prev : [...prev, { field, dir: 'desc' }],
     );
   }, []);
 
@@ -216,9 +222,7 @@ export default function WarehouseAnalysis() {
 
   const toggleSortDir = useCallback((field: SortField) => {
     setSortStack((prev) =>
-      prev.map((s) =>
-        s.field === field ? { ...s, dir: s.dir === 'desc' ? 'asc' : 'desc' } : s
-      )
+      prev.map((s) => (s.field === field ? { ...s, dir: s.dir === 'desc' ? 'asc' : 'desc' } : s)),
     );
   }, []);
 
@@ -237,7 +241,16 @@ export default function WarehouseAnalysis() {
       };
       persistSearches([...savedSearches, s]);
     },
-    [filters, groupByStack, measure, sortStack, chartType, viewMode, savedSearches, persistSearches]
+    [
+      filters,
+      groupByStack,
+      measure,
+      sortStack,
+      chartType,
+      viewMode,
+      savedSearches,
+      persistSearches,
+    ],
   );
 
   const applySavedSearch = useCallback((s: SavedSearch) => {
@@ -259,7 +272,7 @@ export default function WarehouseAnalysis() {
       persistSearches(savedSearches.filter((s) => s.id !== id));
       if (appliedSearchId === id) setAppliedSearchId(null);
     },
-    [savedSearches, appliedSearchId, persistSearches]
+    [savedSearches, appliedSearchId, persistSearches],
   );
 
   // A favorite is "active" when its core definition matches the current view.
@@ -271,35 +284,15 @@ export default function WarehouseAnalysis() {
           norm(s.filters) === norm(filters) &&
           (s.groupBy ?? null) === (groupByStack[0] ?? null) &&
           (s.groupBy2 ?? null) === (groupByStack[1] ?? null) &&
-          s.measure === measure
+          s.measure === measure,
       )?.id ?? null
     );
   }, [savedSearches, filters, groupByStack, measure]);
 
   const appliedSearchName = useMemo(
     () => savedSearches.find((s) => s.id === appliedSearchId)?.name ?? null,
-    [savedSearches, appliedSearchId]
+    [savedSearches, appliedSearchId],
   );
-
-  function getFilterLabel(key: string): string {
-    if (key.startsWith('product_search:')) return `Product: ${key.slice(15)}`;
-    if (key.startsWith('warehouse_search:'))
-      return `Warehouse: ${key.slice(17)}`;
-    if (key.startsWith('catname_search:')) return `Category: ${key.slice(15)}`;
-    if (key.startsWith('category_')) {
-      const id = key.slice(9);
-      return categories.find((c) => c._id === id)?.name || 'Category';
-    }
-    if (key.startsWith('subcategory_')) {
-      const id = key.slice(12);
-      return categories.find((c) => c._id === id)?.name || 'Subcategory';
-    }
-    if (key.startsWith('brand_')) {
-      const id = key.slice(6);
-      return brands.find((b) => b._id === id)?.name || 'Brand';
-    }
-    return key;
-  }
 
   function openDrill(label: string, list: StockRow[], seriesKey?: string) {
     if (list.length === 0) return;
@@ -321,7 +314,7 @@ export default function WarehouseAnalysis() {
   if (phase === 'error') {
     return (
       <div>
-        <AnalysisHeader loading={false} onRefresh={reload} />
+        <AnalysisHeader loading={false} onRefresh={reload} scoped={!!warehouseId} />
         <AnalysisErrorState message={errorMessage} onRetry={reload} />
       </div>
     );
@@ -330,15 +323,15 @@ export default function WarehouseAnalysis() {
   if (stock.length === 0) {
     return (
       <div>
-        <AnalysisHeader loading={false} onRefresh={reload} />
+        <AnalysisHeader loading={false} onRefresh={reload} scoped={!!warehouseId} />
         <AnalysisEmptyState />
       </div>
     );
   }
 
   return (
-    <div>
-      <AnalysisHeader loading={false} onRefresh={reload} />
+    <div className='mx-8'>
+      <AnalysisHeader loading={false} onRefresh={reload} scoped={!!warehouseId} />
 
       <KpiCards kpis={kpis} />
 
@@ -363,9 +356,7 @@ export default function WarehouseAnalysis() {
           if (!term.trim()) return;
           setAppliedSearchId(null);
           setFilters((prev) =>
-            prev.includes(`${prefix}${term.trim()}`)
-              ? prev
-              : [...prev, `${prefix}${term.trim()}`]
+            prev.includes(`${prefix}${term.trim()}`) ? prev : [...prev, `${prefix}${term.trim()}`],
           );
         }}
         chartType={chartType}
@@ -374,12 +365,23 @@ export default function WarehouseAnalysis() {
         onViewModeChange={setViewMode}
       />
 
+      <StockProductFilter
+        products={products}
+        filters={filters}
+        change={(next) => {
+          setAppliedSearchId(null);
+          setFilters(next);
+        }}
+      />
+
       {panelOpen && (
         <FilterPanel
           filters={filters}
           onToggleFilter={toggleFilter}
           groupByStack={groupByStack}
           onToggleGroupBy={toggleGroupBy}
+          products={products}
+          warehouses={warehouses}
           categories={categories}
           brands={brands}
           savedSearches={savedSearches}
@@ -390,8 +392,19 @@ export default function WarehouseAnalysis() {
         />
       )}
 
+      {filtered.length === 0 && (
+        <p
+          role="status"
+          className="mb-4 rounded-lg border border-gray-200 p-4 text-sm text-gray-600"
+        >
+          No stock matches these filters. Remove a filter or clear all to broaden the results.
+        </p>
+      )}
+
       <FilterChips
-        chips={filters.map((f) => ({ key: f, label: getFilterLabel(f) }))}
+        chips={filters
+          .filter((f) => !f.startsWith('product_') || f.startsWith('product_search:'))
+          .map((f) => ({ key: f, label: analysisFilterLabel(f, filterOptions) }))}
         appliedSearchName={appliedSearchName}
         onRemove={toggleFilter}
         onClearAll={() => {
@@ -443,9 +456,7 @@ export default function WarehouseAnalysis() {
                 groupLabel={groupLabel}
                 measureLabel={measureLabel}
                 orderMap={multiSeries.orderMap}
-                onSegmentClick={(rowLabel, seriesKey, list) =>
-                  openDrill(rowLabel, list, seriesKey)
-                }
+                onSegmentClick={(rowLabel, seriesKey, list) => openDrill(rowLabel, list, seriesKey)}
               />
             ) : (
               <MainChart
@@ -482,4 +493,3 @@ export default function WarehouseAnalysis() {
     </div>
   );
 }
-

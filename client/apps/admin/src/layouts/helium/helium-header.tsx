@@ -48,12 +48,6 @@ function HeaderMenuRight() {
           )}
         >
           <PiBellSimpleRingingFill className="h-[18px] w-auto 3xl:h-5" />
-          <Badge
-            renderAsDot
-            color="warning"
-            enableOutlineRing
-            className="absolute right-1 top-2.5 -translate-x-1 -translate-y-1/4"
-          />
         </ActionIcon>
       </NotificationDropdown>
       <SettingsButton className="rounded-full before:absolute before:h-full before:w-full before:-rotate-45 before:rounded-full before:bg-gradient-to-l before:from-green-dark/25 before:via-green-dark/0 before:to-green-dark/0 3xl:h-10 3xl:w-10">

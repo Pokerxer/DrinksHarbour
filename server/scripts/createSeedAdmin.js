@@ -1,3 +1,4 @@
+const { platformIdentity } = require('../utils/customerIdentity');
 #!/usr/bin/env node
 // scripts/createSeedAdmin.js
 //
@@ -55,7 +56,7 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
 
-  let user = await User.findOne({ email });
+  let user = await User.findOne({ email, ...platformIdentity() });
   if (user) {
     user.passwordHash = passwordHash;
     user.role = 'super_admin';

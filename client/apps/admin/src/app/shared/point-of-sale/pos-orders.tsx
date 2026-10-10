@@ -1,8 +1,20 @@
 'use client';
+
+import {
+  cashRefunded,
+  netSales,
+  returnDeduction,
+  roundingAmount,
+  tipAmount,
+  type NetSalesOrder,
+} from './report-totals';
+import { orderStatus, summariseOrders, type OrderStatus } from './orders-summary';
+import { paymentAttribution } from './analysis/measures';
 import { posStore } from '@/utils/print/pos-documents';
 
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import type { PageMeta } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth, usePOSShopScope } from '@/app/shared/point-of-sale/store';
 import { historyAccess } from './shop-entry';
 import { ShopHistorySelector } from './components/shop-history-selector';
@@ -18,10 +30,11 @@ import {
   PiPrinter, PiArrowCounterClockwise, PiWarningCircle,
   PiCheckSquare, PiSquare, PiInfo, PiFunnel, PiStack,
   PiStar, PiFloppyDisk, PiTrash, PiCalendar, PiDownloadSimple,
-  PiClock,
+  PiHandHeart,
 } from 'react-icons/pi';
 import { printInvoices } from '@/utils/invoice';
 import InvoicePreview from '@/components/InvoicePreview';
+import DateTimeRange from './components/orders-date-range';
 import { GroupItem, SortIcon } from '@/components/list-controls';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -32,15 +45,31 @@ interface OrderItem {
   warehouse?: { _id: string; name: string; code: string } | null;
 }
 interface OrderRefund {
+  source?: 'sales' | 'pos';
+  reason?: string;
   receiptNumber?: string; totalRefunded: number; paymentMethod?: string;
   refundedAt?: string;
   items?: { orderItemIndex: number; quantity: number; amount: number; unitPrice?: number }[];
 }
 interface PosOrder {
+  // Authoritative net figures, computed server-side (services/posReportOrder).
+  // `netSales` excludes gratuities and cash rounding; `total` includes both.
+  netSales?: number;
+  returnDeduction?: number;
+  /** Value of goods restocked through Sales — a return that moved no cash. */
+  salesReturnValue?: number;
+  /** The subset of returns actually paid back in cash. */
+  totalRefunds?: number;
+  tipAmount?: number;
+  totalTips?: number;
+  roundingAmount?: number;
+  totalRounding?: number;
+  lineDiscountTotal?: number;
+  returnStatus?: string;
   _id: string;
   orderNumber?: string;
   receiptNumber?: string;
-  total: number; totalAmount?: number; subtotal?: number; discountTotal?: number;
+  total: number; totalAmount?: number; subtotal?: number; taxAmount?: number; discountTotal?: number;
   paymentMethod: string; paymentStatus?: string; status?: string; isVoided?: boolean;
   placedAt: string; createdAt: string;
   posStaff?: { _id: string; firstName: string; lastName: string; posName?: string };
@@ -134,14 +163,25 @@ function sessionLabel(s?: { _id: string; terminalType?: string; openedAt?: strin
   return date ? `${term} · ${date}` : term;
 }
 
+const STATUS_META: Record<OrderStatus, { label: string; cls: string }> = {
+  voided:       { label: 'Voided',         cls: 'bg-gray-100 text-gray-500' },
+  returned:     { label: 'Returned',       cls: 'bg-red-50 text-red-600' },
+  'part-returned': { label: 'Part. Returned', cls: 'bg-amber-50 text-amber-600' },
+  paid:         { label: 'Paid',           cls: 'bg-emerald-50 text-emerald-600' },
+};
+
 function statusBadge(o: PosOrder) {
-  const ref = (o.refunds || []).reduce((s, r) => s + r.totalRefunded, 0);
-  const amt = o.total ?? 0;
-  if (o.isVoided)            return { label: 'Voided',         cls: 'bg-gray-100 text-gray-500' };
-  if (ref >= amt && ref > 0) return { label: 'Refunded',       cls: 'bg-red-50 text-red-600' };
-  if (ref > 0)               return { label: 'Part. Returned', cls: 'bg-amber-50 text-amber-600' };
-  return                            { label: 'Paid',            cls: 'bg-emerald-50 text-emerald-600' };
+  return STATUS_META[orderStatus(o)];
 }
+
+const paymentLabel = (o: PosOrder): string => {
+  const { method, split, shares } = paymentAttribution(o);
+  const name = METHOD_LABEL[method] ?? method;
+  if (!split) return name;
+  return `${name} +${shares.length - 1} more (${shares
+    .map((s) => `${METHOD_LABEL[s.method] ?? s.method} ${s.amount.toFixed(2)}`)
+    .join(' + ')})`;
+};
 
 function startOfWeek(d = new Date()) { const r = new Date(d); r.setHours(0,0,0,0); r.setDate(r.getDate()-r.getDay()); return r; }
 function startOfMonth(d = new Date()) { return new Date(d.getFullYear(), d.getMonth(), 1); }
@@ -169,9 +209,12 @@ function printOrders(orders: PosOrder[], tenant?: POSTenant | null) {
 }
 
 function exportCsv(rows: PosOrder[]) {
-  const headers = ['Date', 'Time', 'Receipt #', 'Order #', 'Customer', 'Cashier', 'Session', 'Payment', 'Subtotal', 'Discount', 'Total', 'Refunded', 'Net', 'Status'];
+  const headers = ['Date', 'Time', 'Receipt #', 'Order #', 'Customer', 'Cashier', 'Session', 'Payment', 'Subtotal', 'Discount', 'Original Total', 'Money Refunded', 'Returns and Refunds Deduction', 'Net Sales', 'Status'];
   const lines = rows.map(o => {
-    const refunded = (o.refunds || []).reduce((s, r) => s + r.totalRefunded, 0);
+    // Cash only. Summing every refund row counted goods restocked through Sales
+    // as money handed back, so the column overstated payouts and disagreed with
+    // the "Returns and Refunds Deduction" beside it.
+    const refunded = cashRefunded(o);
     const { label } = statusBadge(o);
     return [
       fmtDate(o.placedAt || o.createdAt),
@@ -180,12 +223,16 @@ function exportCsv(rows: PosOrder[]) {
       `"${customerLabel(o.customer) ?? 'Walk-in'}"`,
       `"${cashierLabel(o.posStaff)}"`,
       `"${sessionLabel(o.session)}"`,
-      METHOD_LABEL[o.paymentMethod] ?? o.paymentMethod,
+      // A split-tender receipt is not one method. Reading `paymentMethod` alone
+      // reported the first leg only, so a cash+card sale looked like a pure
+      // cash sale in the export.
+      paymentLabel(o),
       (o.subtotal ?? o.total ?? 0).toFixed(2),
       (o.discountTotal ?? 0).toFixed(2),
       (o.total ?? 0).toFixed(2),
       refunded.toFixed(2),
-      ((o.total ?? 0) - refunded).toFixed(2),
+      returnDeduction(o).toFixed(2),
+      netSales(o).toFixed(2),
       label,
     ].join(',');
   });
@@ -195,82 +242,6 @@ function exportCsv(rows: PosOrder[]) {
   const a = document.createElement('a');
   a.href = url; a.download = `pos-orders-${new Date().toISOString().slice(0,10)}.csv`;
   a.click(); URL.revokeObjectURL(url);
-}
-
-// ── DateTimeRange component ───────────────────────────────────────────────────
-
-function DateTimeRange({
-  dateFrom, dateTo, timeFrom, timeTo,
-  onDateFrom, onDateTo, onTimeFrom, onTimeTo, onClear,
-}: {
-  dateFrom: string; dateTo: string; timeFrom: string; timeTo: string;
-  onDateFrom: (v: string) => void; onDateTo: (v: string) => void;
-  onTimeFrom: (v: string) => void; onTimeTo:  (v: string) => void;
-  onClear: () => void;
-}) {
-  const hasRange = dateFrom || dateTo;
-
-  return (
-    <div className="flex items-center gap-2">
-      {/* From */}
-      <div className="flex flex-col gap-0.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">From</span>
-        <div className="flex overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:border-[#b20202] focus-within:ring-1 focus-within:ring-[#b20202]/20">
-          <div className="flex items-center gap-1 border-r border-gray-100 px-2.5 py-1.5">
-            <PiCalendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-            <input
-              type="date" value={dateFrom}
-              onChange={e => onDateFrom(e.target.value)}
-              className="w-[116px] bg-transparent text-xs text-gray-800 outline-none"
-            />
-          </div>
-          <div className="flex items-center gap-1 px-2.5 py-1.5">
-            <PiClock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-            <input
-              type="time" value={timeFrom}
-              onChange={e => onTimeFrom(e.target.value)}
-              className="w-[72px] bg-transparent text-xs text-gray-800 outline-none"
-            />
-          </div>
-        </div>
-      </div>
-
-      <span className="mt-5 text-gray-300 text-sm">→</span>
-
-      {/* To */}
-      <div className="flex flex-col gap-0.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">To</span>
-        <div className="flex overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:border-[#b20202] focus-within:ring-1 focus-within:ring-[#b20202]/20">
-          <div className="flex items-center gap-1 border-r border-gray-100 px-2.5 py-1.5">
-            <PiCalendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-            <input
-              type="date" value={dateTo}
-              onChange={e => onDateTo(e.target.value)}
-              className="w-[116px] bg-transparent text-xs text-gray-800 outline-none"
-            />
-          </div>
-          <div className="flex items-center gap-1 px-2.5 py-1.5">
-            <PiClock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-            <input
-              type="time" value={timeTo}
-              onChange={e => onTimeTo(e.target.value)}
-              className="w-[72px] bg-transparent text-xs text-gray-800 outline-none"
-            />
-          </div>
-        </div>
-      </div>
-
-      {hasRange && (
-        <button
-          type="button" onClick={onClear}
-          className="mt-5 flex h-7 w-7 items-center justify-center rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-          title="Clear date range"
-        >
-          <PiX className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
-  );
 }
 
 // ── Group-by panel ────────────────────────────────────────────────────────────
@@ -295,9 +266,31 @@ function GroupPanel({
     return () => document.removeEventListener('mousedown', onOut);
   }, [onClose]);
 
+  // Same viewport clamp as shared/nav-dropdown-panel: the panel is positioned
+  // off its trigger, so on a narrow window it would spill past the right edge.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const reposition = () => {
+      el.style.transform = '';
+      const { left, right } = el.getBoundingClientRect();
+      const shift = left < 12 ? 12 - left : right > window.innerWidth - 12 ? window.innerWidth - 12 - right : 0;
+      el.style.transform = `translateX(${shift}px)`;
+    };
+    reposition();
+    window.addEventListener('resize', reposition);
+    return () => window.removeEventListener('resize', reposition);
+  }, [groupDateOpen, showSaveInput]);
+
   return (
-    <div ref={ref} className="absolute right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-gray-900/8" style={{ minWidth: 460 }}>
-      <div className="flex divide-x divide-gray-100">
+    <div
+      ref={ref}
+      className="absolute right-0 top-full z-50 mt-2 max-h-[70dvh] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-gray-900/8"
+      style={{
+        minWidth: 'min(460px, calc(100vw - 1.5rem))',
+      }}
+    >
+      <div className="flex flex-col divide-y divide-gray-100 sm:flex-row sm:divide-x sm:divide-y-0">
 
         {/* Group By */}
         <div className="flex-1 p-4">
@@ -391,6 +384,12 @@ function OrderDetail({ order, tenant, onClose }: { order: PosOrder; tenant?: POS
   const refunded = (order.refunds || []).reduce((s, r) => s + r.totalRefunded, 0);
   const subtotal = order.subtotal ?? amount;
   const discount = order.discountTotal ?? 0;
+  // A gratuity or a rounding kobo is cash that left the till without buying
+  // goods. Without these rows the total simply didn't add up, which is how staff
+  // gratuities came to be read as unexplained shortfalls.
+  const tip      = tipAmount(order);
+  const rounding = roundingAmount(order);
+  const netAfterReturns = netSales(order);
   const splits   = order.paymentDetails?.splitPayments ?? [];
   const change   = order.paymentDetails?.change ?? 0;
   const ng       = (v: number) => `₦${v.toLocaleString('en-NG',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -403,10 +402,10 @@ function OrderDetail({ order, tenant, onClose }: { order: PosOrder; tenant?: POS
     : (order.paymentMethod||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-white">
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
-        <div>
-          <div className="flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 break-words">
             <span className="text-sm font-bold text-gray-900">{order.receiptNumber || order.orderNumber || '—'}</span>
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${stCls}`}>{stLabel}</span>
           </div>
@@ -461,9 +460,12 @@ function OrderDetail({ order, tenant, onClose }: { order: PosOrder; tenant?: POS
               { label:'Receipt #', value:order.receiptNumber||'—' },
               { label:'Order #',   value:order.orderNumber||'—' },
             ].map(({label,value})=>(
-              <div key={label} className="flex justify-between">
-                <span className="font-semibold text-gray-500">{label}</span>
-                <span className="font-medium text-gray-800">{value}</span>
+              <div key={label} className="flex items-baseline justify-between gap-3">
+                <span className="shrink-0 font-semibold text-gray-500">{label}</span>
+                {/* A split receipt renders every tender leg into one value
+                    ("Cash ₦2,000.00 + Card ₦8,000.00"); without a wrap floor it
+                    pushed the row past the narrow detail overlay's edge. */}
+                <span className="min-w-0 break-words text-right font-medium text-gray-800">{value}</span>
               </div>
             ))}
           </div>
@@ -472,31 +474,37 @@ function OrderDetail({ order, tenant, onClose }: { order: PosOrder; tenant?: POS
               <div className="bg-gray-50 px-5 py-2 border-b border-gray-50">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Items</p>
               </div>
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                  <tr>
-                    <th className="px-5 py-2 text-left">Product</th>
-                    <th className="px-3 py-2 text-right">Qty</th>
-                    <th className="px-5 py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {(order.items||[]).map((item,i)=>(
-                    <tr key={i}>
-                      <td className="px-5 py-2.5 font-medium text-gray-800">
-                        {item.name}
-                        {item.variant && <span className="font-normal text-gray-400"> · {item.variant}</span>}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{item.quantity}</td>
-                      <td className="px-5 py-2.5 text-right font-semibold tabular-nums text-gray-900">{formatCurrency(item.itemSubtotal)}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[300px] text-xs">
+                  <thead className="bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    <tr>
+                      <th className="px-5 py-2 text-left">Product</th>
+                      <th className="px-3 py-2 text-right">Qty</th>
+                      <th className="px-5 py-2 text-right">Total</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {(order.items||[]).map((item,i)=>(
+                      <tr key={i}>
+                        <td className="px-5 py-2.5 font-medium text-gray-800">
+                          {item.name}
+                          {item.variant && <span className="font-normal text-gray-400"> · {item.variant}</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{item.quantity}</td>
+                        <td className="px-5 py-2.5 text-right font-semibold tabular-nums text-gray-900">{formatCurrency(item.itemSubtotal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <div className="border-t border-gray-100 px-5 py-3 space-y-1 text-xs">
+                {order.taxAmount != null && <div className="flex justify-between text-gray-500"><span>Tax</span><span>{formatCurrency(order.taxAmount)}</span></div>}
                 {discount>0 && <div className="flex justify-between text-red-500"><span>Discount</span><span className="font-semibold">−{formatCurrency(discount)}</span></div>}
+                <div className="flex justify-between text-gray-700"><span>Goods sold</span><span className="tabular-nums">{formatCurrency(netAfterReturns)}</span></div>
+                {tip>0 && <div className="flex justify-between text-gray-500"><span>Gratuity</span><span className="tabular-nums">{formatCurrency(tip)}</span></div>}
+                {rounding!==0 && <div className="flex justify-between text-gray-500"><span>Rounding</span><span className="tabular-nums">{formatCurrency(rounding)}</span></div>}
                 <div className="flex justify-between text-sm font-bold text-gray-900">
-                  <span>Total</span><span className="tabular-nums">{formatCurrency(amount)}</span>
+                  <span>Total received</span><span className="tabular-nums">{formatCurrency(amount)}</span>
                 </div>
               </div>
             </div>
@@ -526,14 +534,15 @@ function OrderDetail({ order, tenant, onClose }: { order: PosOrder; tenant?: POS
                 <div key={i} className="px-5 py-4">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-sm font-bold text-gray-800">{r.receiptNumber||`Return ${i+1}`}</span>
-                    <span className="text-sm font-bold text-red-600 tabular-nums">−{formatCurrency(r.totalRefunded)}</span>
+                    <span className="text-sm font-bold text-red-600 tabular-nums">{r.source === 'sales' ? 'No refund recorded' : `−${formatCurrency(r.totalRefunded)}`}</span>
                   </div>
+                  {r.source === 'sales' && <p className="text-xs text-gray-500">{(r.items || []).reduce((sum, item) => sum + item.quantity, 0)} units returned through Sales · stock already restored</p>}
                   {r.refundedAt&&<p className="text-[11px] text-gray-400">{fmtDateTime(r.refundedAt)}</p>}
                   {r.paymentMethod&&<p className="text-[11px] text-gray-400 capitalize mt-0.5">via {r.paymentMethod.replace(/_/g,' ')}</p>}
                 </div>
               ))}
               <div className="flex justify-between border-t border-dashed border-gray-200 px-5 py-3 text-sm font-bold">
-                <span className="text-gray-600">Total Returned</span>
+                <span className="text-gray-600">Total Refunded</span>
                 <span className="text-red-600 tabular-nums">−{formatCurrency(refunded)}</span>
               </div>
             </div>
@@ -561,6 +570,7 @@ export default function POSOrders() {
   const [orders,         setOrders]         = useState<PosOrder[]>([]);
   const [loading,        setLoading]        = useState(true);
   const [truncated,      setTruncated]      = useState(false);
+  const [pageMeta,       setPageMeta]       = useState<PageMeta | null>(null);
   const [search,         setSearch]         = useState('');
   const [showPanel,      setShowPanel]      = useState(false);
   const [groupBy,        setGroupBy]        = useState<GroupKey | null>(null);
@@ -591,11 +601,16 @@ export default function POSOrders() {
     setLoading(true);
     setLoadError(''); setOrders([]); setSelected(null); setChecked(new Set()); setPage(1);
     posApi.getAllOrders(token, { limit: all ? 2000 : 500, shopId: historyShop })
-      .then(data => {
+      .then(({ data, meta }) => {
         if (version !== requestVersion.current) return;
         const rows = (data || []) as PosOrder[];
         setOrders(rows);
-        setTruncated(!all && rows.length === 500);
+        // The server says whether this is the whole set. The old code guessed
+        // with `rows.length === 500` and then *cleared* the warning on "Load all"
+        // — but the server clamped 2000 to 500, so the button reported a partial
+        // day as complete. A missing `meta` is treated as unknown, not complete.
+        setTruncated(meta ? meta.truncated : rows.length >= 500);
+        setPageMeta(meta);
       })
       .catch(error => { if (version === requestVersion.current) setLoadError(error instanceof Error ? error.message : 'Could not load orders'); })
       .finally(() => { if (version === requestVersion.current) setLoading(false); });
@@ -605,6 +620,14 @@ export default function POSOrders() {
   useEffect(() => () => { requestVersion.current++; }, []);
   useEffect(() => { setExpandedGroups(new Set()); }, [groupBy]);
   useEffect(() => { setPage(1); }, [search, statusFilter, dateFrom, dateTo, timeFrom, timeTo, cashierFilter, methodFilter, sortCol, sortDir]);
+  // Below lg the receipt is a sheet over the table, so Escape has to be the
+  // way back out — there is no visible desktop layout to fall back to.
+  useEffect(() => {
+    if (!selected) return;
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setSelected(null); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selected]);
 
   const cashiers = useMemo(() =>
     Array.from(new Set(orders.map(o => cashierLabel(o.posStaff)).filter(c => c !== '—'))).sort()
@@ -638,8 +661,8 @@ export default function POSOrders() {
   const filtered = useMemo(() => {
     let list = [...orders];
 
-    if (statusFilter === 'paid')     list = list.filter(o => !o.isVoided && (o.refunds||[]).reduce((s,r)=>s+r.totalRefunded,0)===0);
-    if (statusFilter === 'refunded') list = list.filter(o => { const r=(o.refunds||[]).reduce((s,r)=>s+r.totalRefunded,0); return r>0||o.paymentStatus==='refunded'||o.paymentStatus==='partially_refunded'; });
+    if (statusFilter === 'paid')     list = list.filter(o => !o.isVoided && returnDeduction(o)===0);
+    if (statusFilter === 'refunded') list = list.filter(o => { const r=returnDeduction(o); return r>0||o.paymentStatus==='refunded'||o.paymentStatus==='partially_refunded'; });
     if (statusFilter === 'voided')   list = list.filter(o => o.isVoided);
 
     // Date + time range — full timestamp comparison
@@ -681,7 +704,7 @@ export default function POSOrders() {
         case 'cashier':  cmp = cashierLabel(a.posStaff).localeCompare(cashierLabel(b.posStaff)); break;
         case 'session':  cmp = sessionLabel(a.session).localeCompare(sessionLabel(b.session)); break;
         case 'method':   cmp = (a.paymentMethod||'').localeCompare(b.paymentMethod||''); break;
-        case 'total':    cmp = (a.total??0) - (b.total??0); break;
+        case 'total':    cmp = netSales(a) - netSales(b); break;
         case 'status':   cmp = statusBadge(a).label.localeCompare(statusBadge(b).label); break;
       }
       return sortDir === 'asc' ? cmp : -cmp;
@@ -689,15 +712,9 @@ export default function POSOrders() {
     return list;
   }, [orders, search, statusFilter, dateFrom, dateTo, timeFrom, timeTo, cashierFilter, methodFilter, sortCol, sortDir]);
 
-  // Summary stats (filtered)
-  const stats = useMemo(() => {
-    const nonVoided    = filtered.filter(o => !o.isVoided);
-    const totalSales   = nonVoided.reduce((s,o) => s+(o.total??0), 0);
-    const totalRefunds = filtered.reduce((s,o) => s+(o.refunds||[]).reduce((r,ref)=>r+ref.totalRefunded,0), 0);
-    const netRevenue   = totalSales - totalRefunds;
-    const avgOrder     = nonVoided.length ? totalSales / nonVoided.length : 0;
-    return { count: nonVoided.length, totalSales, totalRefunds, netRevenue, avgOrder };
-  }, [filtered]);
+  // Summary stats (filtered). Every figure comes from one place so the cards
+  // beside each other always reconcile: gross sales − returns === net revenue.
+  const stats = useMemo(() => summariseOrders(filtered), [filtered]);
 
   // Group by
   const groupedOrders = useMemo((): [string, PosOrder[]][] | null => {
@@ -728,12 +745,12 @@ export default function POSOrders() {
   const totalPages      = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated       = groupedOrders ? [] : filtered.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
   const displayList     = groupedOrders ? filtered : paginated;
-  const filteredTotalRev = filtered.reduce((s,o) => s+(o.isVoided?0:(o.total??0)), 0);
+  const filteredTotalRev = filtered.reduce((s,o) => s+netSales(o), 0);
 
   const allChecked    = displayList.length > 0 && displayList.every(o => checked.has(o._id));
   const someChecked   = checked.size > 0 && !allChecked;
   const checkedOrders = orders.filter(o => checked.has(o._id));
-  const checkedTotal  = checkedOrders.reduce((s,o) => s+(o.total??0), 0);
+  const checkedTotal  = checkedOrders.reduce((s,o) => s+netSales(o), 0);
 
   function toggleAll()           { setChecked(allChecked ? new Set() : new Set(displayList.map(o=>o._id))); }
   function toggleOne(id: string) { setChecked(prev => { const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; }); }
@@ -761,7 +778,7 @@ export default function POSOrders() {
 
   function renderRow(order: PosOrder, isSel: boolean) {
     const isChk  = checked.has(order._id);
-    const amount = order.total ?? 0;
+    const amount = netSales(order);
     const { label: stLabel, cls: stCls } = statusBadge(order);
     const cust   = customerLabel(order.customer);
     const method = order.paymentMethod;
@@ -829,9 +846,9 @@ export default function POSOrders() {
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-gray-50">
+    <div className="flex min-h-dvh min-w-0 flex-col bg-gray-50 lg:h-dvh lg:overflow-hidden">
       <POSNavHeader />
-      <div className="flex items-center gap-3 border-b bg-white p-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b bg-white p-3">
         <ShopHistorySelector token={token} value={historyShop} onChange={value => { requestVersion.current++; setHistoryShop(value); setOrders([]); setSelected(null); setPage(1); }} />
         {loadError && <p role="alert" className="text-red-600">{loadError}</p>}
       </div>
@@ -840,22 +857,27 @@ export default function POSOrders() {
       <div className="shrink-0 bg-white border-b border-gray-200">
 
         {/* ── Row 1: title + meta + actions ── */}
-        <div className="flex items-center gap-4 px-5 pt-4 pb-3 border-b border-gray-100">
+        <div className="flex flex-wrap items-center gap-3 px-3 pt-4 pb-3 sm:px-5 border-b border-gray-100">
           <div className="flex-1 min-w-0">
             <h1 className="text-lg font-bold text-gray-900 leading-tight">Orders</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">
               <span className="font-medium text-gray-600">{filtered.length.toLocaleString()}</span> shown
               {filtered.length !== orders.length && <span> of {orders.length.toLocaleString()} loaded</span>}
               {truncated && (
-                <button type="button" onClick={() => fetchOrders(true)} className="ml-2 text-[#b20202] underline-offset-2 hover:underline">
-                  Load all →
-                </button>
+                <>
+                  <span className="ml-1.5 text-amber-700">
+                    ({pageMeta?.matched.toLocaleString() ?? 'more'} in total — totals below are partial)
+                  </span>
+                  <button type="button" onClick={() => fetchOrders(true)} className="ml-2 text-[#b20202] underline-offset-2 hover:underline">
+                    Load more →
+                  </button>
+                </>
               )}
             </p>
           </div>
 
           {/* Status tabs */}
-          <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-0.5">
+          <div className="flex max-w-full flex-wrap rounded-xl border border-gray-200 bg-gray-50 p-0.5">
             {(['all','paid','refunded','voided'] as StatusFilter[]).map(f => (
               <button key={f} type="button" onClick={() => { setStatusFilter(f); setSelected(null); }}
                 className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-all ${
@@ -867,7 +889,7 @@ export default function POSOrders() {
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex max-w-full flex-wrap items-center gap-2">
             <div className="relative">
               <button type="button" onClick={() => setShowPanel(v => !v)}
                 className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
@@ -900,7 +922,7 @@ export default function POSOrders() {
         </div>
 
         {/* ── Row 2: filters ── */}
-        <div className="px-5 py-3 space-y-2.5">
+        <div className="px-3 py-3 space-y-2.5 sm:px-5">
 
           {/* Quick date presets */}
           <div className="flex flex-wrap items-center gap-1.5">
@@ -932,33 +954,33 @@ export default function POSOrders() {
             />
 
             {/* Divider */}
-            <div className="self-stretch w-px bg-gray-100 mx-1 mt-5" />
+            <div className="hidden self-stretch w-px bg-gray-100 mx-1 mt-5 xl:block" />
 
             {/* Cashier */}
-            <div className="flex flex-col gap-0.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-none sm:max-w-[220px]">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Cashier</span>
               <select value={cashierFilter} onChange={e => setCashierFilter(e.target.value)}
-                className="h-[34px] rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20">
+                className="h-[34px] w-full min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20">
                 <option value="">All cashiers</option>
                 {cashiers.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
 
             {/* Payment */}
-            <div className="flex flex-col gap-0.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-none sm:max-w-[220px]">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Payment</span>
               <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)}
-                className="h-[34px] rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20">
+                className="h-[34px] w-full min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20">
                 <option value="">All methods</option>
                 {Object.entries(METHOD_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
 
             {/* Divider */}
-            <div className="self-stretch w-px bg-gray-100 mx-1 mt-5" />
+            <div className="hidden self-stretch w-px bg-gray-100 mx-1 mt-5 xl:block" />
 
             {/* Search */}
-            <div className="flex flex-1 min-w-[200px] flex-col gap-0.5">
+            <div className="flex w-full min-w-0 flex-col gap-0.5 sm:w-auto sm:min-w-[200px] sm:flex-1">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Search</span>
               <div className="relative">
                 <PiMagnifyingGlass className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
@@ -1008,19 +1030,25 @@ export default function POSOrders() {
       </div>
 
       {/* ── Summary cards ── */}
-      <div className="shrink-0 grid grid-cols-5 divide-x divide-gray-200 border-b border-gray-200 bg-white">
+      {/* Gross Sales − Returns === Net Revenue, by construction. Gratuities sit
+          beside them rather than inside them: a tip is staff earnings, not
+          product income, and folding it in overstated the day's sales. */}
+      <div className="shrink-0 grid grid-cols-2 divide-x divide-gray-200 border-b border-gray-200 bg-white sm:grid-cols-3 2xl:grid-cols-6">
         {[
-          { label:'Orders',        value:stats.count.toLocaleString(),         icon:<PiShoppingCart className="h-4 w-4"/>, color:'text-blue-600',   sub: `${filtered.filter(o=>o.isVoided).length} voided` },
-          { label:'Gross Sales',   value:formatCurrency(stats.totalSales),     icon:<PiCurrencyNgn className="h-4 w-4"/>,  color:'text-[#b20202]',  sub:'before refunds', red:true },
-          { label:'Refunds',       value:formatCurrency(stats.totalRefunds),   icon:<PiArrowCounterClockwise className="h-4 w-4"/>, color:'text-amber-500', sub:stats.totalRefunds>0?'returned to customers':'no refunds', amber:stats.totalRefunds>0 },
-          { label:'Net Revenue',   value:formatCurrency(stats.netRevenue),     icon:<PiTrendUp className="h-4 w-4"/>,      color:'text-emerald-600', sub:'after refunds' },
-          { label:'Avg Order',     value:formatCurrency(stats.avgOrder),       icon:<PiReceipt className="h-4 w-4"/>,      color:'text-purple-600',  sub:'per non-voided order' },
+          { label:'Orders',      value:stats.count.toLocaleString(),    icon:<PiShoppingCart className="h-4 w-4"/>,           color:'text-blue-600',    sub:`${stats.voided} voided` },
+          { label:'Gross Sales', value:formatCurrency(stats.grossSales), icon:<PiCurrencyNgn className="h-4 w-4"/>,          color:'text-[#b20202]',   sub:'goods, before returns', red:true },
+          { label:'Returns',     value:formatCurrency(stats.returns),    icon:<PiArrowCounterClockwise className="h-4 w-4"/>, color:'text-amber-500',   sub:stats.returns>0
+              ? `${formatCurrency(stats.cashRefunded)} paid back in cash`
+              : 'nothing returned', amber:true },
+          { label:'Net Revenue', value:formatCurrency(stats.netRevenue), icon:<PiTrendUp className="h-4 w-4"/>,             color:'text-emerald-600', sub:'after returns' },
+          { label:'Gratuities',  value:formatCurrency(stats.tips),       icon:<PiHandHeart className="h-4 w-4"/>,          color:'text-gray-500',   sub:stats.tips>0?'paid to staff, not sales':'none' },
+          { label:'Avg Order',   value:formatCurrency(stats.avgOrder),   icon:<PiReceipt className="h-4 w-4"/>,             color:'text-purple-600',  sub:'per non-voided order' },
         ].map(({label,value,icon,color,sub,red,amber})=>(
-          <div key={label} className="px-4 py-3 flex items-start gap-3">
-            <span className={`mt-0.5 ${red?'text-[#b20202]':amber&&stats.totalRefunds>0?'text-amber-500':color}`}>{icon}</span>
+          <div key={label} className="min-w-0 px-3 py-3 flex items-start gap-2 sm:px-4 sm:gap-3">
+            <span className={`mt-0.5 ${red?'text-[#b20202]':amber&&stats.returns>0?'text-amber-500':color}`}>{icon}</span>
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate">{label}</p>
-              <p className={`text-sm font-bold tabular-nums mt-0.5 ${red?'text-[#b20202]':amber&&stats.totalRefunds>0?'text-amber-500':'text-gray-900'}`}>{value}</p>
+              <p className={`break-words text-sm font-bold tabular-nums mt-0.5 ${red?'text-[#b20202]':amber&&stats.returns>0?'text-amber-500':'text-gray-900'}`}>{value}</p>
               {sub && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{sub}</p>}
             </div>
           </div>
@@ -1028,14 +1056,14 @@ export default function POSOrders() {
       </div>
 
       {/* ── Body (table + detail) ── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex min-h-[28rem] flex-1 overflow-hidden lg:min-h-0">
 
         {/* Table column */}
-        <div className={`flex flex-col overflow-hidden border-r border-gray-200 transition-all duration-200 ${selected?'w-[56%]':'flex-1'}`}>
+        <div className={`flex min-w-0 flex-col overflow-hidden border-r border-gray-200 transition-all duration-200 ${selected?'w-full lg:w-[56%]':'flex-1'}`}>
 
           {/* Selection bar */}
           {checked.size > 0 && (
-            <div className="shrink-0 flex items-center gap-3 border-b-2 border-[#b20202] bg-white px-4 py-2.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-3 border-b-2 border-[#b20202] bg-white px-4 py-2.5">
               <div className="flex-1 text-xs font-semibold text-gray-700">
                 <span className="text-[#b20202] font-bold">{checked.size}</span> selected ·{' '}
                 <span className="font-bold text-gray-900">{formatCurrency(checkedTotal)}</span>
@@ -1080,8 +1108,8 @@ export default function POSOrders() {
               )}
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto">
-              <table className="w-full border-collapse text-xs">
+            <div className="max-h-[70dvh] min-h-0 flex-1 overflow-auto lg:max-h-none">
+              <table className="w-full min-w-[1060px] border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_#e5e7eb]">
                   <tr className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
                     <th className="w-8 px-2 py-3 text-center">
@@ -1105,7 +1133,7 @@ export default function POSOrders() {
                   {groupedOrders ? (
                     groupedOrders.map(([groupName, groupOrders]) => {
                       const isCollapsed = !expandedGroups.has(groupName);
-                      const groupTotal  = groupOrders.reduce((s,o) => s+(o.isVoided?0:(o.total??0)), 0);
+                      const groupTotal  = groupOrders.reduce((s,o) => s+netSales(o), 0);
                       const share       = filteredTotalRev > 0 ? (groupTotal / filteredTotalRev) * 100 : 0;
                       return (
                         <React.Fragment key={`group-${groupName}`}>
@@ -1140,7 +1168,7 @@ export default function POSOrders() {
 
           {/* Pagination footer */}
           {!groupBy && totalPages > 1 && !loading && (
-            <div className="shrink-0 flex items-center justify-between border-t border-gray-100 bg-white px-4 py-2.5">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-gray-100 bg-white px-4 py-2.5">
               <span className="text-[11px] text-gray-400">
                 {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE,filtered.length)} of {filtered.length.toLocaleString()}
               </span>
@@ -1166,21 +1194,46 @@ export default function POSOrders() {
 
           {/* Truncation notice */}
           {truncated && !loading && (
-            <div className="shrink-0 flex items-center justify-between border-t border-amber-200 bg-amber-50 px-4 py-2.5">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2.5">
               <span className="flex items-center gap-2 text-xs text-amber-700">
                 <PiWarningCircle className="h-3.5 w-3.5 shrink-0"/>
-                Showing first 500 orders — older records may be missing.
+                {pageMeta
+                  ? `Showing ${pageMeta.included.toLocaleString()} of ${pageMeta.matched.toLocaleString()} orders — the totals above are partial.`
+                  : 'Showing a partial list of orders — the totals above may be incomplete.'}
               </span>
               <button type="button" onClick={() => fetchOrders(true)}
                 className="text-xs font-semibold text-amber-700 underline-offset-2 hover:underline">
-                Load all orders
+                {pageMeta && pageMeta.missing > (pageMeta.limit ?? 0)
+                  ? 'Load up to 2,000'
+                  : 'Load all orders'}
               </button>
             </div>
           )}
         </div>
 
+        {/* Scrim: on small screens the receipt floats over the table, so the
+            list underneath must not look clickable, and tapping it is the
+            natural way out. Hidden at lg where the split is side by side. */}
+        {selected && (
+          <button
+            type="button"
+            aria-label="Close order details"
+            onClick={() => setSelected(null)}
+            className="absolute inset-0 z-10 bg-gray-900/20 lg:hidden"
+          />
+        )}
+
         {/* Detail panel */}
-        <div className={`flex flex-col bg-white transition-all duration-200 ${selected?'flex-1 overflow-hidden':'w-72 shrink-0'}`}>
+        <div className={`flex min-w-0 flex-col bg-white transition-all duration-200 ${
+          selected
+            // On small screens the receipt overlays the table instead of
+            // squeezing it into half the window; on lg+ it returns to the
+            // in-row split.
+            ? 'absolute inset-y-0 right-0 z-20 w-full shadow-2xl sm:w-[440px] lg:static lg:z-auto lg:w-auto lg:flex-1 lg:shadow-none'
+            // The empty "Select an order" prompt is room the table needs on
+            // small screens.
+            : 'hidden w-72 shrink-0 xl:flex xl:flex-col'
+        }`}>
           {selected ? (
             <OrderDetail order={selected} tenant={tenant} onClose={()=>setSelected(null)} />
           ) : (

@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import {
+  bankAccountErrors,
+  hasBlockingBankAccountError,
+} from '@/app/shared/point-of-sale/bank-account-rules';
 import { usePOSAuth } from '@/app/shared/point-of-sale/store';
 import { routes } from '@/config/routes';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
@@ -37,7 +41,10 @@ type LoyaltyState = {
 type ReceiptState = {
   header: string;
   footer: string;
+  /** Print a tax breakdown on the receipt. */
   showTax: boolean;
+  /** Charge VAT on sales at the till. Off unless the tenant is VAT-registered. */
+  chargeTax: boolean;
   taxRate: number;
   autoPrint: boolean;
   copies: number;
@@ -76,6 +83,7 @@ const D_RECEIPT: ReceiptState = {
   header: '',
   footer: '',
   showTax: false,
+  chargeTax: false,
   taxRate: 7.5,
   autoPrint: false,
   copies: 1,
@@ -357,6 +365,9 @@ export default function POSSettingsPage() {
   const [savingAccounts, setSavingAccounts] = useState(false);
   const accountsDirty =
     JSON.stringify(accounts) !== JSON.stringify(savedAccounts);
+  // An invoice prints an account only when it has a bank AND a number, so a row
+  // that misses either is flagged here rather than saved and never printed.
+  const accountErrors = bankAccountErrors(accounts);
 
   // ── Validation errors ─────────────────────────────────────────────────────
   const [salesErr, setSalesErr] = useState<Record<string, string>>({});
@@ -410,6 +421,7 @@ export default function POSSettingsPage() {
           header: s.receiptHeader ?? '',
           footer: s.receiptFooter ?? '',
           showTax: s.showTaxOnReceipt ?? false,
+          chargeTax: s.taxEnabled ?? false,
           taxRate: s.taxRate ?? 7.5,
           autoPrint: s.autoPrintReceipt ?? false,
           copies: s.receiptCopies ?? 1,
@@ -509,7 +521,7 @@ export default function POSSettingsPage() {
   async function saveReceipt() {
     if (!token) return;
     const err: Record<string, string> = {};
-    if (receipt.showTax && (receipt.taxRate < 0 || receipt.taxRate > 100))
+    if ((receipt.showTax || receipt.chargeTax) && (receipt.taxRate < 0 || receipt.taxRate > 100))
       err.taxRate = 'Must be 0–100';
     if (receipt.copies < 1 || receipt.copies > 5) err.copies = 'Must be 1–5';
     setReceiptErr(err);
@@ -520,6 +532,7 @@ export default function POSSettingsPage() {
         receiptHeader: receipt.header,
         receiptFooter: receipt.footer,
         showTaxOnReceipt: receipt.showTax,
+        taxEnabled: receipt.chargeTax,
         taxRate: receipt.taxRate,
         autoPrintReceipt: receipt.autoPrint,
         receiptCopies: receipt.copies,
@@ -535,6 +548,12 @@ export default function POSSettingsPage() {
 
   async function saveAccounts() {
     if (!token) return;
+    // Same rule as the /settings form and the invoice: never store an account
+    // the printed document would drop.
+    if (hasBlockingBankAccountError(accounts)) {
+      toast.error('Fix the highlighted bank account before saving');
+      return;
+    }
     setSavingAccounts(true);
     try {
       await posApi.updateBankAccounts(token, accounts);
@@ -864,6 +883,16 @@ export default function POSSettingsPage() {
               </div>
 
               <Row
+                label="Charge VAT on sales"
+                description="Add VAT to every till sale at the rate below. Leave off unless the business is registered for VAT — Nigerian VAT is only due above a turnover threshold, so switching this on charges tax on sales that may not owe it."
+              >
+                <Toggle
+                  checked={receipt.chargeTax}
+                  onChange={(v) => setReceipt((p) => ({ ...p, chargeTax: v }))}
+                />
+              </Row>
+
+              <Row
                 label="Show tax breakdown on receipt"
                 description="Print a line showing the VAT / tax amount included in the order total."
               >
@@ -873,7 +902,7 @@ export default function POSSettingsPage() {
                 />
               </Row>
 
-              {receipt.showTax && (
+              {(receipt.showTax || receipt.chargeTax) && (
                 <div className="border-b border-gray-50 px-6 py-5">
                   <Field
                     label="VAT / Tax rate"
@@ -1014,10 +1043,16 @@ export default function POSSettingsPage() {
                                 )
                               )
                             }
-                            className={`w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#b20202] focus:ring-1 focus:ring-[#b20202]/20 ${mono ? 'font-mono' : ''}`}
+                            aria-invalid={!!accountErrors[i]}
+                            className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#b20202] focus:ring-1 focus:ring-[#b20202]/20 ${mono ? 'font-mono' : ''} ${accountErrors[i] ? 'border-red-300' : 'border-gray-200'}`}
                           />
                         </div>
                       ))}
+                      {accountErrors[i] && (
+                        <p className="mt-1.5 text-xs text-red-600">
+                          {accountErrors[i]}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}

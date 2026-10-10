@@ -27,6 +27,8 @@ export interface PeriodMeta {
 }
 
 export interface DashboardParams {
+  /** Force a fresh server report for an explicit refresh action. */
+  refresh?: boolean;
   period?: string;
   from?: string;
   to?: string;
@@ -37,7 +39,7 @@ export interface DashboardParams {
  * rather than forwarded — the server also degrades to its default, but there is
  * no reason to send a request we already know is meaningless.
  */
-export function buildDashboardQuery(params: DashboardParams): string {
+function buildDashboardPeriodQuery(params: DashboardParams): string {
   const { period, from, to } = params;
   if (!period || !PERIOD_KEYS.includes(period as PeriodKey)) return '';
 
@@ -47,6 +49,11 @@ export function buildDashboardQuery(params: DashboardParams): string {
   }
 
   return `?period=${period}`;
+}
+
+export function buildDashboardQuery(params: DashboardParams): string {
+  const query = buildDashboardPeriodQuery(params);
+  return params.refresh ? `${query}${query ? '&' : '?'}refresh=true` : query;
 }
 
 export interface SparklineDay {

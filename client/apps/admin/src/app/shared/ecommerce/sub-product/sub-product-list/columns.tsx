@@ -4,6 +4,7 @@
 import { routes } from '@/config/routes';
 import { SubProductListItem, SizeVariant } from './table';
 import { resolveSubProductImages } from '../image-utils';
+import { subProductListImage } from '../list-image';
 import { createColumnHelper } from '@tanstack/react-table';
 import Link from 'next/link';
 import { ActionIcon, Checkbox, Flex, Text, Badge, Tooltip } from 'rizzui';
@@ -27,6 +28,7 @@ const columnHelper = createColumnHelper<SubProductListItem>();
 function ProductThumb({ sp, alt }: { sp: any; alt?: string }) {
   const candidates = React.useMemo(() => resolveSubProductImages(sp), [sp]);
   const [idx, setIdx] = React.useState(0);
+  const [original, setOriginal] = React.useState(false);
   const src = candidates[idx];
   if (!src) {
     return (
@@ -37,10 +39,15 @@ function ProductThumb({ sp, alt }: { sp: any; alt?: string }) {
   }
   return (
     <img
-      src={src}
+      src={original ? src : subProductListImage(src, 72)}
+      loading="lazy"
+      decoding="async"
       alt={alt || 'Product'}
       className="h-12 w-9 rounded-lg border border-gray-200 bg-gray-50 object-contain p-0.5"
-      onError={() => setIdx((i) => i + 1)}
+      onError={() => {
+        if (!original && subProductListImage(src, 72) !== src) setOriginal(true);
+        else { setIdx(i => i + 1); setOriginal(false); }
+      }}
     />
   );
 }

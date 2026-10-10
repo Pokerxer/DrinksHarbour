@@ -38,9 +38,7 @@ const identity = (v: number) => v;
 describe('row derivations', () => {
   it('available = on-hand − reserved, floored at zero', () => {
     expect(availableQty(row())).toBe(8);
-    expect(availableQty(row({ currentQuantity: 1, reservedQuantity: 5 }))).toBe(
-      0
-    );
+    expect(availableQty(row({ currentQuantity: 1, reservedQuantity: 5 }))).toBe(0);
   });
 
   it('stock status: out at zero, low at/below minStockLevel (when set), else in', () => {
@@ -55,7 +53,7 @@ describe('row derivations', () => {
   it('expiry buckets split at 30 / 90 days', () => {
     const now = Date.now();
     const days = (n: number) => new Date(now + n * 86_400_000).toISOString();
-    expect(expiryBucket(row({ earliestExpiry: days(-1) }, ), now)).toBe('expired');
+    expect(expiryBucket(row({ earliestExpiry: days(-1) }), now)).toBe('expired');
     expect(expiryBucket(row({ earliestExpiry: days(10) }), now)).toBe('d30');
     expect(expiryBucket(row({ earliestExpiry: days(60) }), now)).toBe('d90');
     expect(expiryBucket(row({ earliestExpiry: days(200) }), now)).toBe('later');
@@ -84,34 +82,22 @@ describe('applyFilters', () => {
     },
   };
 
-  it('static stock filters compose (AND)', () => {
+  it('stock states match alternatives within the same facet', () => {
     expect(applyFilters(rows, ['in_stock'], {})).toHaveLength(2);
-    expect(applyFilters(rows, ['out_of_stock'], {}).map((r) => r._id)).toEqual([
-      'b',
-    ]);
-    expect(applyFilters(rows, ['in_stock', 'out_of_stock'], {})).toHaveLength(0);
+    expect(applyFilters(rows, ['out_of_stock'], {}).map((r) => r._id)).toEqual(['b']);
+    expect(applyFilters(rows, ['in_stock', 'out_of_stock'], {})).toHaveLength(3);
   });
 
   it('search filters match product name or SKU case-insensitively', () => {
-    expect(
-      applyFilters(rows, ['product_search:jack'], {}).map((r) => r._id)
-    ).toEqual(['a']);
-    expect(
-      applyFilters(rows, ['product_search:hn-'], {}).map((r) => r._id)
-    ).toEqual(['b']);
+    expect(applyFilters(rows, ['product_search:jack'], {}).map((r) => r._id)).toEqual(['a']);
+    expect(applyFilters(rows, ['product_search:hn-'], {}).map((r) => r._id)).toEqual(['b']);
   });
 
   it('category and brand filters join through prodMeta', () => {
-    expect(
-      applyFilters(rows, ['category_cat-wine'], prodMeta).map((r) => r._id)
-    ).toEqual(['c']);
-    expect(
-      applyFilters(rows, ['brand_brand-bf'], prodMeta).map((r) => r._id)
-    ).toEqual(['c']);
+    expect(applyFilters(rows, ['category_cat-wine'], prodMeta).map((r) => r._id)).toEqual(['c']);
+    expect(applyFilters(rows, ['brand_brand-bf'], prodMeta).map((r) => r._id)).toEqual(['c']);
     // Rows without meta are excluded by id-filters (empty catId ≠ match).
-    expect(
-      applyFilters([rows[0]], ['category_cat-wine'], prodMeta)
-    ).toHaveLength(0);
+    expect(applyFilters([rows[0]], ['category_cat-wine'], prodMeta)).toHaveLength(0);
   });
 });
 
@@ -171,7 +157,7 @@ describe('CSV export', () => {
       'stock_value',
       {},
       identity,
-      []
+      [],
     );
     const csv = buildGroupedTableCSV(data, 'Warehouse', 'Stock Value', 'stock_value');
     const lines = csv.split('\r\n');
@@ -185,4 +171,65 @@ describe('CSV export', () => {
     expect(fmtMeasureVal(1500, 'stock_value')).toContain('₦');
     expect(fmtMeasureVal(12, 'on_hand_qty')).toBe('12');
   });
+});
+
+it('multiple exact products and warehouses combine with category, brand and stock flags', () => {
+  const rows = [
+    row({
+      _id: 'a',
+      subProductId: 'p1',
+      warehouseId: 'w1',
+      currentQuantity: 10,
+      reservedQuantity: 2,
+    }),
+    row({
+      _id: 'b',
+      subProductId: 'p2',
+      warehouseId: 'w1',
+      currentQuantity: 0,
+      reservedQuantity: 0,
+    }),
+    row({
+      _id: 'c',
+      subProductId: 'p1',
+      warehouseId: 'w2',
+      currentQuantity: 3,
+      reservedQuantity: 1,
+    }),
+    row({
+      _id: 'd',
+      subProductId: 'p3',
+      warehouseId: 'w1',
+      currentQuantity: 10,
+      reservedQuantity: 2,
+    }),
+  ];
+  const meta = {
+    p1: { catId: 'c', catName: 'Wine', brandId: 'b', brandName: 'Brand' },
+    p2: { catId: 'c', catName: 'Wine', brandId: 'b', brandName: 'Brand' },
+  };
+  expect(
+    applyFilters(
+      rows,
+      ['product_p1', 'product_p2', 'warehouse_w1', 'category_c', 'brand_b'],
+      meta,
+    ).map((row) => row._id),
+  ).toEqual(['a', 'b']);
+  expect(
+    applyFilters(rows, ['product_p1', 'warehouse_w1', 'warehouse_w2', 'has_reserved'], meta).map(
+      (row) => row._id,
+    ),
+  ).toEqual(['a', 'c']);
+  expect(applyFilters(rows, ['product_search:   '], meta)).toHaveLength(4);
+});
+
+it('uses the server stock status when filtering and grouping low stock', () => {
+  const flagged = row({
+    _id: 'flagged',
+    currentQuantity: 50,
+    minStockLevel: 0,
+    flags: { status: 'low_stock' } as StockRow['flags'],
+  });
+  expect(stockStatus(flagged)).toBe('low');
+  expect(applyFilters([flagged], ['low_stock'], {})).toHaveLength(1);
 });

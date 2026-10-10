@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import {
   PiArrowsClockwise,
   PiDownloadSimple,
@@ -7,7 +8,6 @@ import {
   PiPlus,
 } from 'react-icons/pi';
 import type { JournalEntry } from '@/services/accounting.service';
-import { exportEntriesCsv } from './journal-entry-detail';
 
 /** Every posted entry type — kept in ledger-report order for the pill row. */
 export const TYPE_TABS: Array<{ key: string; label: string }> = [
@@ -51,7 +51,9 @@ export default function JournalEntriesControls({
   rangeLabel,
   entries,
   loading,
+  exporting,
   onRefresh,
+  onExport,
   onNewEntry,
 }: {
   tabFilter: string;
@@ -69,20 +71,35 @@ export default function JournalEntriesControls({
   rangeLabel: string;
   entries: JournalEntry[];
   loading: boolean;
+  exporting: boolean;
   onRefresh: () => void;
+  onExport: () => void;
   onNewEntry: () => void;
 }) {
+  const activeTab = useRef<HTMLButtonElement>(null);
+
+  // Twelve entry-type pills wrap onto three rows on a phone, which pushed the
+  // export/new buttons off-screen and made the active filter easy to lose. Keep
+  // them on one scrollable line and make sure the selected pill stays visible.
+  useEffect(() => {
+    activeTab.current?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [tabFilter]);
+
   return (
     <>
       {/* Control bar */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200">
+        <div
+          className="flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200"
+        >
           {TYPE_TABS.map((t) => (
             <button
               key={t.key}
               type="button"
+              ref={t.key === tabFilter ? activeTab : undefined}
+              aria-current={tabFilter === t.key ? 'true' : undefined}
               onClick={() => onTab(t.key)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition ${
                 tabFilter === t.key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
@@ -90,7 +107,7 @@ export default function JournalEntriesControls({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <span className="text-xs text-gray-500" aria-live="polite">
             {loading ? 'Loading…' : rangeLabel ? `${rangeLabel} entries` : '0 entries'}
           </span>
@@ -104,11 +121,13 @@ export default function JournalEntriesControls({
           </button>
           <button
             type="button"
-            disabled={loading || entries.length === 0}
-            onClick={() => exportEntriesCsv(entries)}
+            disabled={exporting || entries.length === 0}
+            onClick={onExport}
+            title="Export every entry matching the current filters"
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
           >
-            <PiDownloadSimple size={14} /> Export CSV
+            <PiDownloadSimple size={14} />
+            {exporting ? 'Exporting…' : 'Export CSV'}
           </button>
           <button
             type="button"
@@ -167,7 +186,7 @@ export default function JournalEntriesControls({
           />
           <input
             type="search"
-            placeholder="Search memo or account code…"
+            placeholder="Search memo, reference type or account code…"
             className={`${SELECT_CLS} w-56 pl-8`}
             value={search}
             onChange={(e) => onSearch(e.target.value)}

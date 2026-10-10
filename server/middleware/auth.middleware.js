@@ -54,6 +54,8 @@ const protect = asyncHandler(async (req, res, next) => {
       throw new UnauthorizedError('User not found');
     }
 
+    if (req.user.role === 'customer' && req.user.tenant) throw new ForbiddenError('Sign in through your store');
+
     if (req.user.status !== 'active') {
       throw new ForbiddenError('Account is not active');
     }
@@ -113,7 +115,7 @@ const optionalProtect = asyncHandler(async (req, res, next) => {
       .select('_id email role tenant status firstName lastName passwordChangedAt customRole')
       .lean();
 
-    if (req.user?.status !== 'active') req.user = null;
+    if (req.user?.status !== 'active' || (req.user?.role === 'customer' && req.user.tenant)) req.user = null;
     // Invalidate JWTs issued before a password change (same as protect)
     if (req.user?.passwordChangedAt && decoded.iat) {
       const passwordChangedTimestamp = Math.floor(req.user.passwordChangedAt.getTime() / 1000);

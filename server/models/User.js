@@ -11,11 +11,11 @@ const userSchema = new Schema(
     email: {
       type: String,
       required: true,
-      unique: true,
       lowercase: true,
       trim: true,
-      // index: true removed - unique:true already creates index
+      // Uniqueness is enforced by email + derived loginScope below.
     },
+    loginScope: { type: String, required: true, default: 'platform', index: true },
     passwordHash: {
       type: String,
       select: false,
@@ -113,7 +113,7 @@ const userSchema = new Schema(
           if (tenantRoles.includes(this.role)) {
             return value != null;
           }
-          // For super_admin and customer, tenant should be null/undefined
+          // Customer accounts may be scoped to their store; platform admins need no tenant.
           return true;
         },
         message: 'Tenant is required for tenant-related roles'
@@ -373,7 +373,7 @@ const userSchema = new Schema(
     },
     posPermissions: {
       type: [String],
-      enum: ['pos:sell', 'pos:refund', 'pos:void', 'pos:price_override', 'pos:discount', 'pos:terminal:retail', 'pos:terminal:wholesale'],
+      enum: ['pos:sell', 'pos:refund', 'pos:void', 'pos:price_override', 'pos:credit_override', 'pos:discount', 'pos:terminal:retail', 'pos:terminal:wholesale'],
       default: ['pos:sell', 'pos:terminal:retail', 'pos:terminal:wholesale'],
     },
 
@@ -647,6 +647,34 @@ userSchema.methods.generateReferralCode = function () {
   return this.referralCode;
 };
 
-const User = mongoose.models.User || mongoose.model('User', userSchema);
+// Email namespaces preserve platform staff identities and isolate store customers.
+userSchema.pre('validate', function () {
+  this.loginScope = require('../utils/customerIdentity').loginScope(this);
+});
+userSchema.index({ email: 1, loginScope: 1 }, { unique: true, name: 'email_loginScope_unique' });
 
+// Query updates to authority must keep the derived uniqueness namespace in sync.
+for (const operation of ['updateOne', 'findOneAndUpdate']) {
+  userSchema.pre(operation, async function () {
+    const update = this.getUpdate() || {};
+    const set = update.$set || update;
+    if (!['role', 'tenant', 'loginScope'].some(field => field in set || field in (update.$unset || {}))) return;
+    const existing = await this.model.findOne(this.getQuery()).select('role tenant').lean();
+    if (!existing) return;
+    const next = { ...existing };
+    for (const field of ['role', 'tenant']) {
+      if (field in set) next[field] = set[field];
+      if (field in (update.$unset || {})) next[field] = null;
+    }
+    set.loginScope = require('../utils/customerIdentity').loginScope(next);
+    if (update.$unset) delete update.$unset.loginScope;
+  });
+}
+userSchema.pre('updateMany', function () {
+  const update = this.getUpdate() || {};
+  if (['role', 'tenant', 'loginScope'].some(field => field in (update.$set || update) || field in (update.$unset || {})))
+    throw new Error('Account authority must be updated one account at a time');
+});
+
+const User = mongoose.models.User || mongoose.model('User', userSchema);
 module.exports = User;

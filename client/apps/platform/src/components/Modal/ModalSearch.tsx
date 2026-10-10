@@ -1,5 +1,7 @@
 'use client';
 
+import { isProductInStock } from '@/utils/productStock';
+
 import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -600,7 +602,7 @@ const ModalSearch: React.FC = () => {
                 </span>
                 {!isSearching && (
                   <button
-                    onClick={() => goAndClose(`/shop?search=${encodeURIComponent(searchQuery)}`)}
+                    onClick={() => goAndClose(`/search-result?query=${encodeURIComponent(searchQuery)}`)}
                     className={`flex items-center gap-1 text-xs font-semibold ${BRAND.text} ${BRAND.textHover} transition-colors`}
                   >
                     View all <Icon.PiArrowRight size={12} />
@@ -624,7 +626,7 @@ const ModalSearch: React.FC = () => {
                   {products.map((product, idx) => {
                     const { price, original } = getPrice(product);
                     const id        = (product as any).id ?? product._id ?? '';
-                    const inStock   = product.availability?.status !== 'out_of_stock';
+                    const inStock   = isProductInStock(product);
                     const stock     = product.availability?.totalStock ?? 0;
                     const isSel     = idx === selectedIdx;
                     const isExpanded= expandedId === id;

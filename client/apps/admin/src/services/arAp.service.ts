@@ -49,9 +49,17 @@ export interface OpenBill {
   vendor?: { _id: string; name: string } | null;
 }
 
+export interface CreditAllocation {
+  salesOrder: string;
+  amount: number;
+  appliedAt: string;
+  appliedBy?: string;
+}
+
 export interface CreditNote {
   _id: string;
-  number: string;
+  /** Absent while the note is a draft — allocated when it is posted. */
+  number?: string;
   customerName?: string;
   customer?: { _id: string; firstName: string; lastName: string } | null;
   salesOrder?: string;
@@ -60,6 +68,19 @@ export interface CreditNote {
   amount: number;
   taxAmount: number;
   status: 'draft' | 'applied' | 'cancelled';
+  /** VAT-inclusive credit the customer holds and has not spent on an invoice. */
+  unappliedAmount: number;
+  allocations: CreditAllocation[];
+  postedAt?: string;
+}
+
+/** What a customer's credit panel renders. */
+export interface CustomerCredit {
+  customer: string;
+  /** Credit held and unspent. */
+  balance: number;
+  data: CreditNote[];
+  pagination: { page: number; limit: number; total: number; pages: number };
 }
 
 export interface PaymentDoc {
@@ -115,6 +136,8 @@ export interface AccountingCustomer {
   totalOrders: number;
   outstanding: number;
   openInvoices: number;
+  /** Credit held and unspent. Distinct from `outstanding`, which is owed. */
+  creditBalance: number;
 }
 
 export interface AccountingVendor {
@@ -265,6 +288,10 @@ class ArApService {
       'Failed to load credit notes'
     );
   }
+  /**
+   * Creates a DRAFT unless `post: true`. A draft has not touched the ledger, so
+   * nothing needs reversing if it turns out to be wrong.
+   */
   createCreditNote(
     token: string,
     body: {
@@ -275,6 +302,7 @@ class ArApService {
       salesOrder?: string;
       reason?: string;
       date?: string;
+      post?: boolean;
     }
   ) {
     return this.post<CreditNote>(
@@ -282,6 +310,34 @@ class ArApService {
       'credit-notes',
       body,
       'Failed to create credit note'
+    );
+  }
+  postCreditNote(token: string, id: string) {
+    return this.post<CreditNote>(
+      token,
+      `credit-notes/${id}/post`,
+      undefined,
+      'Failed to post credit note'
+    );
+  }
+  /** Spend unapplied credit on an invoice. Moves no journal entry. */
+  applyCredit(
+    token: string,
+    body: { salesOrder: string; amount?: number; customer?: string }
+  ) {
+    return this.post<{ salesOrder: string; customer: string; applied: number }>(
+      token,
+      'credit-notes/apply',
+      body,
+      'Failed to apply credit'
+    );
+  }
+  customerCredits(token: string, customerId: string, params?: Query) {
+    return this.get<CustomerCredit>(
+      token,
+      `customer-credits/${customerId}`,
+      params,
+      'Failed to load customer credit'
     );
   }
   cancelCreditNote(token: string, id: string) {

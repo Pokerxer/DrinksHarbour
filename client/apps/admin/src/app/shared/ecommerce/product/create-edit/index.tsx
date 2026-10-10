@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
 import toast from 'react-hot-toast';
+import { getPrimaryImageIndex } from '../primary-image';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button, Text, Badge } from 'rizzui';
 import { FormProvider, useForm, SubmitHandler } from 'react-hook-form';
@@ -254,6 +255,7 @@ const SmartButton = ({
 );
 
 const transformFormData = (data: CreateProductInput) => {
+  const primaryImageIndex = getPrimaryImageIndex(data.uploadedImages || []);
   const slug =
     data.slug ||
     data.name
@@ -331,7 +333,7 @@ const transformFormData = (data: CreateProductInput) => {
         url: img.url,
         publicId: img.publicId,
         alt: `${data.name} - Image ${index + 1}`,
-        isPrimary: img.isPrimary || index === 0,
+        isPrimary: index === primaryImageIndex,
         order: index,
       })) ||
       data.images ||

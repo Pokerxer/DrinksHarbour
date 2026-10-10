@@ -3,6 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
+const { sharedStore } = require('../middleware/redisRateLimitStore');
 const userController = require('../controllers/user.controller');
 const mfaController = require('../controllers/mfa.controller');
 const { protect, authorize, superAdminOnly } = require('../middleware/auth.middleware');
@@ -17,6 +18,7 @@ const { body, param, query } = require('express-validator');
 // ============================================================
 
 const loginLimiter = rateLimit({
+  ...sharedStore('auth:login'),
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20, // 20 login attempts per IP per 15 min (account lockout handles the rest at 5)
   standardHeaders: true,
@@ -26,6 +28,7 @@ const loginLimiter = rateLimit({
 });
 
 const registerLimiter = rateLimit({
+  ...sharedStore('auth:register'),
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5, // 5 registrations per IP per hour
   standardHeaders: true,
@@ -35,6 +38,7 @@ const registerLimiter = rateLimit({
 });
 
 const forgotPasswordLimiter = rateLimit({
+  ...sharedStore('auth:forgotPassword'),
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5, // 5 password reset requests per IP per hour
   standardHeaders: true,
@@ -44,6 +48,7 @@ const forgotPasswordLimiter = rateLimit({
 });
 
 const refreshTokenLimiter = rateLimit({
+  ...sharedStore('auth:refreshToken'),
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 30, // 30 refresh requests per IP per 15 min
   standardHeaders: true,
@@ -53,6 +58,7 @@ const refreshTokenLimiter = rateLimit({
 });
 
 const mfaVerifyLimiter = rateLimit({
+  ...sharedStore('auth:mfaVerify'),
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10, // 10 MFA verify attempts per IP per 15 min (brute-force protection on 6-digit codes)
   standardHeaders: true,

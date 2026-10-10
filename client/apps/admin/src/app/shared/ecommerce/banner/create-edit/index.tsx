@@ -14,64 +14,23 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthorization } from '@/hooks/use-authorization';
+import {
+  EMPTY_BANNER_FORM,
+  bannerFormValues,
+  bannerLinkedTarget,
+} from './form-data';
 import { useSession } from 'next-auth/react';
 import { routes } from '@/config/routes';
 import { bannerService } from '@/services/banner.service';
-import { Button } from 'rizzui';
-import { PiSparkleBold } from 'react-icons/pi';
+import BannerSaveBar from './save-bar';
+import { BannerFormHeader, BannerFormLoading } from './form-chrome';
 import toast from 'react-hot-toast';
 import type { Banner, BannerFormData } from '@/types/banner.types';
 import { useBannerAI } from './use-banner-ai';
 import GenerateModal from './ai/generate-modal';
-import { BannerPreview } from './preview';
-import {
-  BasicInfoSection,
-  ImagesSection,
-  CtaSection,
-  StylingSection,
-} from './form-sections-content';
-import {
-  SchedulingSection,
-  StatusVisibilitySection,
-  DeviceTargetingSection,
-  TagsSection,
-  NotesSection,
-} from './form-sections-settings';
+import BannerEditorSections from './editor-sections';
 import { FormSidebar } from './form-sidebar';
-
-export const EMPTY_BANNER_FORM: BannerFormData = {
-  title: '',
-  subtitle: '',
-  description: '',
-  image: { url: '' },
-  mobileImage: { url: '' },
-  type: 'promotional',
-  placement: 'home_hero',
-  displayOrder: 0,
-  priority: 'medium',
-  ctaText: '',
-  ctaLink: '',
-  ctaStyle: 'primary',
-  linkType: 'internal',
-  imageClickable: true,
-  backgroundColor: '#FFFFFF',
-  textColor: '#000000',
-  overlayOpacity: 0,
-  imageFit: 'contain',
-  gradientIntensity: 100,
-  blurIntensity: 100,
-  textAlignment: 'center',
-  contentPosition: 'center',
-  startDate: '',
-  endDate: '',
-  isScheduled: false,
-  isActive: true,
-  status: 'active',
-  visibleTo: 'all',
-  isGlobal: true,
-  tags: [],
-  notes: '',
-};
 
 interface CreateEditBannerProps {
   bannerId?: string;
@@ -83,6 +42,8 @@ export default function CreateEditBanner({
   initialData,
 }: CreateEditBannerProps) {
   const router = useRouter();
+  const { role } = useAuthorization();
+  const canManageGlobal = ['super_admin', 'admin'].includes(role);
   const { data: session }: any = useSession();
   const token = session?.token || session?.user?.token || '';
 
@@ -135,7 +96,7 @@ export default function CreateEditBanner({
       populateForm(initialData);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bannerId, initialData]);
+  }, [bannerId, initialData, token]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -163,89 +124,35 @@ export default function CreateEditBanner({
   }
 
   function populateForm(data: Banner) {
-    setFormData({
-      title: data.title || '',
-      subtitle: data.subtitle || '',
-      description: data.description || '',
-      image: data.image || { url: '' },
-      mobileImage: data.mobileImage || { url: '' },
-      type: data.type || 'promotional',
-      placement: data.placement || 'home_hero',
-      displayOrder: data.displayOrder || 0,
-      priority: data.priority || 'medium',
-      ctaText: data.ctaText || '',
-      ctaLink: data.ctaLink || '',
-      ctaStyle: data.ctaStyle || 'primary',
-      linkType: data.linkType || 'internal',
-      imageClickable: data.imageClickable ?? true,
-      backgroundColor: data.backgroundColor || '#FFFFFF',
-      textColor: data.textColor || '#000000',
-      overlayOpacity: data.overlayOpacity || 0,
-      imageFit: data.imageFit || 'contain',
-      // `?? 100` not `|| 100` — a deliberate 0 must survive the round-trip.
-      gradientIntensity: data.gradientIntensity ?? 100,
-      blurIntensity: data.blurIntensity ?? 100,
-      textAlignment: data.textAlignment || 'center',
-      contentPosition: data.contentPosition || 'center',
-      startDate: data.startDate
-        ? new Date(data.startDate).toISOString().split('T')[0]
-        : '',
-      endDate: data.endDate
-        ? new Date(data.endDate).toISOString().split('T')[0]
-        : '',
-      isScheduled: data.isScheduled || false,
-      isActive: data.isActive ?? true,
-      status: data.status || 'draft',
-      visibleTo: data.visibleTo || 'all',
-      isGlobal: data.isGlobal ?? false,
-      tags: data.tags || [],
-      notes: data.notes || '',
-    });
+    setFormData(bannerFormValues(data));
     setDeviceTargeting(
       data.deviceTargeting || { desktop: true, mobile: true, tablet: true }
     );
 
-    // ── Reconstruct linked-target UI state ────────────────────────────────
-    // The API populates target refs, so prefer them.  When they're absent
-    // (e.g. a brand link that was saved before brand selectors existed)
-    // fall back to parsing the ctaLink canonical path for the slug.
-    const cta = data.ctaLink || '';
-
-    if (data.targetProduct) {
-      const p = data.targetProduct as any;
-      setTargetProduct({
-        _id: typeof p === 'object' ? p.slug || p._id : p,
-        name: typeof p === 'object' ? p.name || '' : '',
-      });
-    } else if (data.linkType === 'product') {
-      // /product/<slug>
-      const slug = cta.replace(/^\//, '').split('/')[1] || '';
-      if (slug) setTargetProduct({ _id: slug, name: slug.replace(/-/g, ' ') });
-    }
-
-    if (data.targetCategory) {
-      const c = data.targetCategory as any;
-      setTargetCategory({
-        _id: typeof c === 'object' ? c.slug || c._id : c,
-        name: typeof c === 'object' ? c.name || '' : '',
-      });
-    } else if (data.linkType === 'category') {
-      // /categories/<slug>
-      const slug = cta.replace(/^\//, '').split('/')[1] || '';
-      if (slug) setTargetCategory({ _id: slug, name: slug.replace(/-/g, ' ') });
-    }
-
-    if ((data as any).targetBrand) {
-      const b = (data as any).targetBrand;
-      setTargetBrand({
-        _id: typeof b === 'object' ? b.slug || b._id || b.id : b,
-        name: typeof b === 'object' ? b.name || '' : '',
-      });
-    } else if (data.linkType === 'brand') {
-      // /brands/<slug>
-      const slug = cta.replace(/^\//, '').split('/')[1] || '';
-      if (slug) setTargetBrand({ _id: slug, name: slug.replace(/-/g, ' ') });
-    }
+    setTargetProduct(
+      bannerLinkedTarget(
+        data.targetProduct,
+        data.linkType,
+        'product',
+        data.ctaLink || ''
+      )
+    );
+    setTargetCategory(
+      bannerLinkedTarget(
+        data.targetCategory,
+        data.linkType,
+        'category',
+        data.ctaLink || ''
+      )
+    );
+    setTargetBrand(
+      bannerLinkedTarget(
+        data.targetBrand,
+        data.linkType,
+        'brand',
+        data.ctaLink || ''
+      )
+    );
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -271,6 +178,7 @@ export default function CreateEditBanner({
       const isObjectId = (v?: string) => !!v && /^[a-f\d]{24}$/i.test(v);
       const payload = {
         ...formData,
+        isGlobal: canManageGlobal && formData.isGlobal,
         deviceTargeting,
         targetProduct: isObjectId(targetProduct?._id)
           ? targetProduct!._id
@@ -301,83 +209,29 @@ export default function CreateEditBanner({
     }
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="h-8 w-48 animate-pulse rounded-lg bg-gray-100" />
-          <div className="flex gap-2">
-            <div className="h-9 w-28 animate-pulse rounded-lg bg-gray-100" />
-            <div className="h-9 w-28 animate-pulse rounded-lg bg-gray-100" />
-            <div className="h-9 w-32 animate-pulse rounded-lg bg-gray-100" />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="space-y-3 lg:col-span-2">
-            {[...Array(5)].map((_, i) => (
-              <div
-                key={i}
-                className="h-24 animate-pulse rounded-2xl bg-gray-100"
-                style={{ animationDelay: `${i * 80}ms` }}
-              />
-            ))}
-          </div>
-          <div className="h-64 animate-pulse rounded-2xl bg-gray-100" />
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <BannerFormLoading />;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">
-            {isEdit ? 'Edit Banner' : 'Create New Banner'}
-          </h2>
-          {hasUnsavedChanges ? (
-            <span className="mt-1 flex items-center gap-1.5 text-sm text-amber-600">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-              Unsaved changes
-            </span>
-          ) : isEdit ? (
-            <span className="mt-1 flex items-center gap-1.5 text-sm text-gray-400">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              All changes saved
-            </span>
-          ) : (
-            <p className="mt-1 text-sm text-gray-400">
-              Fill in the details below to create a banner
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={ai.openModal}
-            type="button"
-            className="border-purple-200 text-purple-600 hover:bg-purple-50"
+      {!canManageGlobal && (
+        <p className="rounded-xl border border-muted bg-white p-4 text-sm text-gray-600">
+          Create banners for your store. Active banners are available to your
+          website through the storefront API.{' '}
+          <a
+            className="font-semibold text-primary underline"
+            href="/settings/api-keys/documentation#banners"
           >
-            <PiSparkleBold className="mr-2 h-4 w-4" />
-            AI Generate
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => router.push(routes.eCommerce.banners)}
-            type="button"
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            isLoading={submitting}
-            className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]"
-          >
-            {isEdit ? 'Update Banner' : 'Create Banner'}
-          </Button>
-        </div>
-      </div>
+            View API guide
+          </a>
+        </p>
+      )}
+      <BannerFormHeader
+        isEdit={isEdit}
+        hasUnsavedChanges={hasUnsavedChanges}
+        submitting={submitting}
+        onGenerate={ai.openModal}
+        onCancel={() => router.push(routes.eCommerce.banners)}
+      />
 
       {/* AI Generator modal */}
       <GenerateModal
@@ -399,58 +253,22 @@ export default function CreateEditBanner({
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left column — form sections */}
-        <div className="space-y-4 lg:col-span-2">
-          <BasicInfoSection
-            formData={formData}
-            set={set}
-            enhancingField={ai.enhancingField}
-            onEnhanceField={ai.handleEnhanceField}
-          />
-          <ImagesSection formData={formData} set={set} token={token} />
-          <CtaSection
-            formData={formData}
-            set={set}
-            token={token}
-            targetProduct={targetProduct ?? undefined}
-            targetCategory={targetCategory ?? undefined}
-            targetBrand={targetBrand ?? undefined}
-            onProductSelect={setTargetProduct}
-            onCategorySelect={setTargetCategory}
-            onBrandSelect={setTargetBrand}
-            enhancingField={ai.enhancingField}
-            onEnhanceField={ai.handleEnhanceField}
-          />
-          <StylingSection formData={formData} set={set} />
-          <SchedulingSection
-            formData={formData}
-            set={set}
-            deviceTargeting={deviceTargeting}
-            setDeviceTargeting={setDeviceTargeting}
-          />
-          <StatusVisibilitySection
-            formData={formData}
-            set={set}
-            deviceTargeting={deviceTargeting}
-            setDeviceTargeting={setDeviceTargeting}
-          />
-          <DeviceTargetingSection
-            deviceTargeting={deviceTargeting}
-            setDeviceTargeting={setDeviceTargeting}
-          />
-          <TagsSection
-            formData={formData}
-            set={set}
-            deviceTargeting={deviceTargeting}
-            setDeviceTargeting={setDeviceTargeting}
-          />
-          <NotesSection
-            formData={formData}
-            set={set}
-            deviceTargeting={deviceTargeting}
-            setDeviceTargeting={setDeviceTargeting}
-          />
-        </div>
+        <BannerEditorSections
+          formData={formData}
+          set={set}
+          token={token}
+          targetProduct={targetProduct ?? undefined}
+          targetCategory={targetCategory ?? undefined}
+          targetBrand={targetBrand ?? undefined}
+          onProductSelect={setTargetProduct}
+          onCategorySelect={setTargetCategory}
+          onBrandSelect={setTargetBrand}
+          enhancingField={ai.enhancingField}
+          onEnhanceField={ai.handleEnhanceField}
+          deviceTargeting={deviceTargeting}
+          setDeviceTargeting={setDeviceTargeting}
+          canManageGlobal={canManageGlobal}
+        />
 
         {/* Right column — live preview + quick info */}
         <div className="lg:col-span-1">
@@ -458,43 +276,13 @@ export default function CreateEditBanner({
         </div>
       </div>
 
-      {/* Sticky save bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-200 bg-white/95 px-4 py-3 shadow-[0_-4px_12px_rgba(16,24,40,0.06)] backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center gap-3">
-          <div className="hidden min-w-0 flex-1 sm:block">
-            <p className="truncate text-sm text-gray-500">
-              {formData.title || 'Untitled banner'}
-            </p>
-            {hasUnsavedChanges ? (
-              <span className="flex items-center gap-1 text-xs font-medium text-amber-600">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                Unsaved
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-xs text-gray-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                Saved
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 sm:ms-auto">
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => router.push(routes.eCommerce.banners)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              isLoading={submitting}
-              className="border-0 bg-[#b20202] text-white hover:bg-[#9f0101]"
-            >
-              {isEdit ? 'Update Banner' : 'Create Banner'}
-            </Button>
-          </div>
-        </div>
-      </div>
+      <BannerSaveBar
+        title={formData.title}
+        hasUnsavedChanges={hasUnsavedChanges}
+        submitting={submitting}
+        isEdit={isEdit}
+        onCancel={() => router.push(routes.eCommerce.banners)}
+      />
       <div className="h-16" />
     </form>
   );

@@ -12,6 +12,12 @@ const POSCustomerSchema = new mongoose.Schema(
     // Authoritative stored-value wallet balance (NGN). Mutated only alongside an
     // appended WalletTransaction; guarded so it never goes negative.
     walletBalance: { type: Number, default: 0, min: 0 },
+    // The most this customer may owe on their account in total, including any
+    // balance already outstanding. 0 (the default) means NO credit — a POS sale
+    // tendered to the account is refused, which is the behaviour that predates
+    // the tab. Granting credit is a deliberate act, not a side effect of
+    // creating a customer.
+    creditLimit:   { type: Number, default: 0, min: 0 },
     totalSpent:    { type: Number, default: 0 },
     totalOrders:   { type: Number, default: 0 },
     // Customer-assigned pricelist: when set, this pricelist is auto-selected and

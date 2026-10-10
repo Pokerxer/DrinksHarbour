@@ -55,4 +55,33 @@ function summarizeOpenDocs(docs, side, now = new Date()) {
   }
   return result;
 }
-module.exports = { bad, dateRange, openFilter, normalizeOpenDoc, summarizeOpenDocs, AR_FILTER, AP_FILTER, escapeSearch };
+/**
+ * The equally long window immediately before `from`..`to`.
+ *
+ * A profit & loss read without a comparison says only that a number exists.
+ * This is the period to read it against — same span, shifted back, so a 31-day
+ * month is not compared with a 28-day one. Returns ISO strings because the
+ * caller re-feeds them through the normal date filter.
+ *
+ * An open-ended window has no preceding period; returning null keeps the UI
+ * from putting a fabricated figure beside the real one.
+ */
+function previousWindow(from, to) {
+  if (!from || !to) return null;
+  const range = dateRange({ from, to });
+  if (!range?.$gte || !range.$lt) return null;
+  const start = range.$gte.getTime();
+  const end = range.$lt.getTime(); // exclusive
+  const span = end - start;
+  if (!(span > 0)) return null;
+  const priorFrom = new Date(start - span);
+  const priorTo = new Date(start - 1);
+  return {
+    from: priorFrom,
+    to: priorTo,
+    fromISO: priorFrom.toISOString(),
+    toISO: priorTo.toISOString(),
+  };
+}
+
+module.exports = { bad, dateRange, previousWindow, openFilter, normalizeOpenDoc, summarizeOpenDocs, AR_FILTER, AP_FILTER, escapeSearch };

@@ -3,14 +3,7 @@ const assert = require('node:assert');
 
 const { commitImport } = require('../services/subProductImport.service');
 
-/**
- * Opening stock must land ONCE on Size.stock.
- *
- * The import writes the warehouse ledger (adjustStock), the per-size figure
- * (Size.stock) and the audit trail (recordReceiptMovement) — and
- * recordReceiptMovement itself $inc's Size.stock. Applying an absolute $set AND
- * that $inc for the same receipt doubles every imported size.
- */
+// Imports update a warehouse; size quantities are recomputed from all locations.
 
 // Minimal in-memory Size store that understands the $set / $inc this code uses.
 function makeSizeStore(initial = {}) {
@@ -25,7 +18,12 @@ function makeSizeStore(initial = {}) {
         docs.set(String(id), doc);
         return Promise.resolve(doc);
       },
-      find() { return { select: () => ({ lean: async () => [] }) }; },
+      updateOne(query, update) {
+        return { session: () => this.findByIdAndUpdate(query._id, update) };
+      },
+      find() {
+        return { select: () => ({ lean: async () => [] }) };
+      },
     },
   };
 }
@@ -49,9 +47,21 @@ function baseDeps(sizeStore, extra = {}) {
   return {
     warehouseQty,
     deps: {
+      startSession: async () => ({ withTransaction: async (work) => work(), endSession: async () => {} }),
       Product: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
       SubProduct: { findOne: () => ({ select: () => ({ lean: async () => null }) }) },
       Size: sizeStore.model,
+      WarehouseStock: {
+        find: (query) => {
+          assert.strictEqual(query.tenant, 'tenant1');
+          return {
+            select: () => ({
+              session() { return this; },
+              lean: async () => [{ currentQuantity: warehouseQty.value, reservedQuantity: 0 }],
+            }),
+          };
+        },
+      },
       Category: {},
       Tenant: { findById: () => ({ select: () => ({ lean: async () => null }) }) },
       getCategoryOptions: async () => ({ categories: [], subcategories: {} }),
@@ -79,35 +89,45 @@ test('create-mode import applies opening stock to Size.stock exactly once', asyn
   const { deps, warehouseQty } = baseDeps(sizeStore);
   deps.recordReceiptMovement = makeRecordReceipt(sizeStore, calls);
 
-  const rows = [{
-    productName: 'Antinori Tignanello Toscana',
-    size: '75cl',
-    costPrice: 24964,
-    sellingPrice: 31300,
-    openingQty: 5,
-  }];
+  const rows = [
+    {
+      productName: 'Antinori Tignanello Toscana',
+      size: '75cl',
+      costPrice: 24964,
+      sellingPrice: 31300,
+      openingQty: 5,
+    },
+  ];
 
   const out = await commitImport(rows, { warehouseId: 'wh1' }, 'tenant1', { _id: 'user1' }, deps);
 
   assert.deepStrictEqual(out.errors, []);
   assert.strictEqual(out.stockApplied, 1);
   assert.strictEqual(warehouseQty.value, 5, 'warehouse ledger receives 5');
-  assert.strictEqual(sizeStore.docs.get('size1').stock, 5, 'Size.stock must be 5, not double-counted');
+  assert.strictEqual(
+    sizeStore.docs.get('size1').stock,
+    5,
+    'Size.stock must be 5, not double-counted',
+  );
   assert.strictEqual(sizeStore.docs.get('size1').availableStock, 5);
 });
 
-test('create-mode import still sets Size.stock when the audit trail fails', async () => {
+test('create-mode import uses canonical warehouse writer, not a second receipt increment', async () => {
   const sizeStore = makeSizeStore();
   const { deps } = baseDeps(sizeStore);
-  deps.recordReceiptMovement = async () => { throw new Error('movement write failed'); };
+  deps.recordReceiptMovement = async () => {
+    throw new Error('movement write failed');
+  };
 
-  const rows = [{
-    productName: 'Antinori Tignanello Toscana',
-    size: '75cl',
-    costPrice: 24964,
-    sellingPrice: 31300,
-    openingQty: 5,
-  }];
+  const rows = [
+    {
+      productName: 'Antinori Tignanello Toscana',
+      size: '75cl',
+      costPrice: 24964,
+      sellingPrice: 31300,
+      openingQty: 5,
+    },
+  ];
 
   const out = await commitImport(rows, { warehouseId: 'wh1' }, 'tenant1', { _id: 'user1' }, deps);
 
@@ -122,7 +142,11 @@ test('update-mode stock-take sets the absolute quantity, not double it', async (
   const calls = [];
   const { deps, warehouseQty } = baseDeps(sizeStore, {
     Product: {
-      find: () => ({ select: () => ({ lean: async () => [{ _id: 'prod1', name: 'Antinori Tignanello Toscana' }] }) }),
+      find: () => ({
+        select: () => ({
+          lean: async () => [{ _id: 'prod1', name: 'Antinori Tignanello Toscana' }],
+        }),
+      }),
     },
     SubProduct: {
       findOne: () => ({ select: () => ({ lean: async () => ({ _id: 'sub1' }) }) }),
@@ -134,18 +158,97 @@ test('update-mode stock-take sets the absolute quantity, not double it', async (
     ...sizeStore.model,
     find: () => ({
       select: () => ({
-        lean: async () => [{ _id: 'size1', size: '75cl', stock: 4, costPrice: 24964, sellingPrice: 31300 }],
+        lean: async () => [
+          { _id: 'size1', size: '75cl', stock: 4, costPrice: 24964, sellingPrice: 31300 },
+        ],
       }),
     }),
   };
 
   const rows = [{ productName: 'Antinori Tignanello Toscana', size: '75cl', openingQty: 10 }];
 
-  const out = await commitImport(rows, { warehouseId: 'wh1', mode: 'update' }, 'tenant1', { _id: 'user1' }, deps);
+  const out = await commitImport(
+    rows,
+    { warehouseId: 'wh1', mode: 'update' },
+    'tenant1',
+    { _id: 'user1' },
+    deps,
+  );
 
   assert.deepStrictEqual(out.errors, []);
   assert.strictEqual(out.stockUpdated, 1);
   assert.strictEqual(warehouseQty.value, 10, 'warehouse ledger is set to the absolute 10');
   assert.strictEqual(sizeStore.docs.get('size1').stock, 10, 'Size.stock must be the absolute 10');
   assert.strictEqual(sizeStore.docs.get('size1').availableStock, 10);
+});
+
+test('update import replaces one warehouse count without replacing total size stock', async () => {
+  const sizeStore = makeSizeStore({ size1: { stock: 40, availableStock: 40 } });
+  const { deps, warehouseQty } = baseDeps(sizeStore, {
+    Product: {
+      find: () => ({
+        select: () => ({
+          lean: async () => [{ _id: 'prod1', name: 'Antinori Tignanello Toscana' }],
+        }),
+      }),
+    },
+    SubProduct: {
+      findOne: () => ({ select: () => ({ lean: async () => ({ _id: 'sub1' }) }) }),
+      findById: () => ({ select: () => ({ lean: async () => ({ markupPercentage: 25 }) }) }),
+    },
+  });
+  warehouseQty.value = 10;
+  deps.WarehouseStock = {
+    find: (query) => {
+      assert.strictEqual(query.tenant, 'tenant1');
+      return {
+        select: () => ({
+          session() { return this; },
+          lean: async () => [{ currentQuantity: warehouseQty.value }, { currentQuantity: 30 }],
+        }),
+      };
+    },
+  };
+  deps.Size = {
+    ...sizeStore.model,
+    find: () => ({
+      select: () => ({ lean: async () => [{ _id: 'size1', size: '75cl', stock: 40 }] }),
+    }),
+  };
+  const rows = [{ productName: 'Antinori Tignanello Toscana', size: '75cl', openingQty: 5 }];
+  for (let i = 0; i < 2; i++) {
+    const result = await commitImport(
+      rows,
+      { warehouseId: 'wh1', mode: 'update' },
+      'tenant1',
+      { _id: 'user1' },
+      deps,
+    );
+    assert.deepStrictEqual(result.errors, []);
+    assert.strictEqual(warehouseQty.value, 5);
+    assert.strictEqual(sizeStore.docs.get('size1').stock, 35);
+  }
+  rows[0].openingQty = 0;
+  await commitImport(
+    rows,
+    { warehouseId: 'wh1', mode: 'update' },
+    'tenant1',
+    { _id: 'user1' },
+    deps,
+  );
+  assert.strictEqual(sizeStore.docs.get('size1').stock, 30);
+  assert.strictEqual(sizeStore.docs.get('size1').availability, 'in_stock');
+});
+test('quantity without warehouse is rejected before any stock write, including zero', async () => {
+  const { deps } = baseDeps(makeSizeStore());
+  await assert.rejects(
+    commitImport(
+      [{ productName: 'Wine', size: '75cl', openingQty: 0 }],
+      { mode: 'update' },
+      'tenant1',
+      {},
+      deps,
+    ),
+    /warehouse/i,
+  );
 });

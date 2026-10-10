@@ -1,3 +1,4 @@
+import { inventoryAdjustmentService, type AdjustmentInput } from './inventoryAdjustment.service';
 // services/inventory.service.ts
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -146,6 +147,7 @@ export interface GetMovementsParams {
   subProductId?: string;
   type?: string;
   category?: string;
+  scope?: 'internal' | 'adjustments';
   startDate?: string;
   endDate?: string;
   page?: number;
@@ -200,6 +202,24 @@ export const inventoryService = {
     return response.json();
   },
 
+  async getAllMovements(
+    token: string, params: Omit<GetMovementsParams, 'page' | 'limit'> = {},
+    { pageSize = 500, maxPages = 20 }: { pageSize?: number; maxPages?: number } = {}
+  ): Promise<{ movements: InventoryMovement[]; total: number; truncated: boolean }> {
+    const movements: InventoryMovement[] = [];
+    let totalPages = 1;
+    let total = 0;
+    for (let page = 1; page <= Math.min(totalPages, maxPages); page++) {
+      const result = await this.getMovements(token, { ...params, page, limit: pageSize }) as { data?: { movements?: InventoryMovement[]; total?: number; totalPages?: number } };
+      const rows = result.data?.movements || [];
+      movements.push(...rows);
+      total = result.data?.total ?? movements.length;
+      totalPages = result.data?.totalPages || page;
+      if (!rows.length || page >= totalPages) break;
+    }
+    return { movements, total, truncated: movements.length < total };
+  },
+
   async getInventorySummary(subProductId: string, token: string) {
     const response = await fetch(
       `${API_URL}/api/inventory/summary/${subProductId}`,
@@ -218,35 +238,8 @@ export const inventoryService = {
     return response.json();
   },
 
-  async adjustInventory(
-    subProductId: string,
-    adjustment: number,
-    reason: string,
-    token: string,
-    notes?: string,
-    reference?: string
-  ) {
-    const response = await fetch(`${API_URL}/api/inventory/adjust`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        subProductId,
-        adjustment,
-        reason,
-        notes,
-        reference,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to adjust inventory');
-    }
-
-    return response.json();
+  async adjustInventory(input: AdjustmentInput, token: string) {
+    return inventoryAdjustmentService.create(token, input);
   },
 
   async recordReceived(

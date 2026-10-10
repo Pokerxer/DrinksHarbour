@@ -10,6 +10,7 @@ import ProductDetailsDescription from '@/app/shared/ecommerce/product/product-de
 import { productService } from '@/services/product.service';
 import { isBeverageProductType } from '@/utils/product-types';
 import { PiSpinner, PiMagnifyingGlassBold } from 'react-icons/pi';
+import { useProductPrimaryImage } from './use-product-primary-image';
 
 const toDisplayName = (value: any): string => {
   if (!value) return '';
@@ -25,6 +26,19 @@ export default function ProductDetails() {
     'loading'
   );
   const [errorMsg, setErrorMsg] = useState('');
+  const canManageImages = ['super_admin', 'admin'].includes(
+    session?.user?.role || ''
+  );
+  const { makePrimary, isSavingPrimary, primaryError, primarySuccess } =
+    useProductPrimaryImage(
+      product?._id,
+      product?.images || [],
+      canManageImages ? session?.user?.token : undefined,
+      (images) =>
+        setProduct((current) =>
+          current?._id === product?._id ? { ...current, images } : current
+        )
+    );
 
   useEffect(() => {
     const slug = params?.slug;
@@ -129,7 +143,15 @@ export default function ProductDetails() {
           <ProductDetailsGallery
             images={viewModel.images}
             productName={viewModel.name}
+            onMakePrimary={canManageImages ? makePrimary : undefined}
+            isSavingPrimary={isSavingPrimary}
           />
+          {primaryError && (
+            <p role="alert" className="mt-3 text-sm text-red-600">{primaryError}</p>
+          )}
+          {primarySuccess && (
+            <p role="status" className="mt-3 text-sm text-green-600">{primarySuccess}</p>
+          )}
         </div>
         <div className="col-span-5 @container">
           <ProductDetailsSummery product={viewModel} />

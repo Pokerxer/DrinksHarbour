@@ -16,39 +16,51 @@ const {
   sumMovementCosts,
   buildMonthlySeries,
   periodOf,
+  periodRange,
 } = require('./accounting.helpers');
 const { getSummary } = require('./tax.service');
 
-const { dateRange: dateFilter } = require('./accounting.query');
+const { dateRange: dateFilter, previousWindow } = require('./accounting.query');
 
 async function fetchEntries(tenantId, { from, to, period } = {}) {
   const filter = { tenant: tenantId, status: 'posted' };
-  const date = period || from || to ? {} : undefined;
-  if (date) {
-    if (period) {
-      const [y, m] = String(period).split('-').map(Number);
-      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period)) || !y || !m) {
-        const err = new Error('period must be YYYY-MM');
-        err.status = 400;
-        throw err;
-      }
-      date.$gte = new Date(y, m - 1, 1);
-      date.$lt = new Date(y, m, 1);
-    } else {
-      Object.assign(date, dateFilter({ from, to }) || {});
-    }
-    filter.date = date;
+  if (period || from || to) {
+    filter.date = period
+      ? periodRange(period) // UTC bounds; validates the format
+      : dateFilter({ from, to }) || {};
   }
   return JournalEntry.find(filter).sort({ date: 1 }).lean();
 }
 
 /** Per-account debit/credit totals + closing balance for a period. */
+/**
+ * Draft entries are excluded from every report. The count is disclosed so a
+ * bookkeeper knows the figures are not the whole picture — a trial balance that
+ * quietly ignores 40 pending entries reads as final.
+ */
+/**
+ * Whether a window's cost of goods sold has to be estimated from inventory
+ * movements — i.e. it carries no 5xxx cost posting of its own.
+ */
+function needsMovementEstimate(entries) {
+  return (
+    !entries?.length || !entries.some((e) => e.lines?.some((l) => String(l.account).startsWith('5')))
+  );
+}
+
+function countDrafts(tenantId) {
+  return JournalEntry.countDocuments({ tenant: tenantId, status: 'draft' });
+}
+
 async function getTrialBalance(tenantId, { period } = {}) {
-  const [entries, accounts] = await Promise.all([
+  const [entries, accounts, draftsExcluded] = await Promise.all([
     fetchEntries(tenantId, { period }),
     Account.find({ tenant: tenantId }).lean(),
+    countDrafts(tenantId),
   ]);
-  return buildTrialBalance(entries, accounts);
+  // entryCount gives the reader scale to check the period against: "847 posted
+  // entries plus 3 drafts" is auditable, "balanced" on its own is not.
+  return { ...buildTrialBalance(entries, accounts), entryCount: entries.length, draftsExcluded };
 }
 
 async function movementTotalsForWindow(tenantId, { from, to }) {
@@ -66,25 +78,52 @@ async function movementTotalsForWindow(tenantId, { from, to }) {
  * backfill has run; falls back to inventory-movement cost sums ("derived")
  * when no COGS-bearing entries exist yet. Tax lines join the TaxRecord ledger.
  */
-async function getProfitLoss(tenantId, { from, to } = {}) {
-  const [entries, taxSummary] = await Promise.all([
+async function getProfitLoss(tenantId, { from, to, compare } = {}) {
+  const [entries, taxSummary, accounts, draftsExcluded] = await Promise.all([
     fetchEntries(tenantId, { from, to }),
     getSummary(tenantId, { from, to }),
+    Account.find({ tenant: tenantId }).lean(),
+    countDrafts(tenantId),
   ]);
-  let movementTotals = null;
-  if (entries.length === 0 || !entries.some((e) => e.lines.some((l) => String(l.account).startsWith('5')))) {
-    movementTotals = await movementTotalsForWindow(tenantId, { from, to });
-  }
-  return buildProfitLoss(entries, taxSummary, movementTotals);
+  const movementTotals = needsMovementEstimate(entries)
+    ? await movementTotalsForWindow(tenantId, { from, to })
+    : null;
+  const pl = buildProfitLoss(entries, taxSummary, movementTotals, accounts);
+
+  // Opt-in comparison against the equally long window immediately before. "All
+  // time" has no preceding period, so `previous` stays null rather than showing
+  // a variance against nothing.
+  const prior = compare ? previousWindow(from, to) : null;
+  if (!prior) return { ...pl, draftsExcluded, previous: null, previousWindow: null };
+
+  const [priorEntries, priorTax] = await Promise.all([
+    fetchEntries(tenantId, { from: prior.fromISO, to: prior.toISO }),
+    getSummary(tenantId, { from: prior.fromISO, to: prior.toISO }),
+  ]);
+  // The derived-COGS fallback is decided on the prior window's own entries.
+  const priorMovement = needsMovementEstimate(priorEntries)
+    ? await movementTotalsForWindow(tenantId, { from: prior.fromISO, to: prior.toISO })
+    : null;
+  const previous = buildProfitLoss(priorEntries, priorTax, priorMovement, accounts);
+  return {
+    ...pl,
+    draftsExcluded,
+    previous,
+    previousWindow: { from: prior.fromISO, to: prior.toISO },
+  };
 }
 
 /** Assets/liabilities/equity as of a moment; RE = cumulative net profit. */
 async function getBalanceSheet(tenantId, { asOf } = {}) {
   const filter = { tenant: tenantId, status: 'posted' };
   if (asOf) filter.date = dateFilter({ to: asOf });
-  const entries = await JournalEntry.find(filter).sort({ date: 1 }).lean();
-  const lifetime = buildProfitLoss(entries, {});
-  return buildBalanceSheet(entries, asOf, lifetime.netProfit);
+  const [entries, accounts, draftsExcluded] = await Promise.all([
+    JournalEntry.find(filter).sort({ date: 1 }).lean(),
+    Account.find({ tenant: tenantId }).lean(),
+    countDrafts(tenantId),
+  ]);
+  const lifetime = buildProfitLoss(entries, {}, null, accounts);
+  return { ...buildBalanceSheet(entries, asOf, lifetime.netProfit, accounts), draftsExcluded };
 }
 
 /**
@@ -128,6 +167,10 @@ async function getGeneralLedger(tenantId, { account, from, to } = {}) {
   return {
     ...gl,
     account: { code: accountDoc.code, name: accountDoc.name, type: accountDoc.type },
+    // Without `from` no prior entries are read, so opening is 0 and the closing
+    // figure is the movement inside the window, not the account's balance. The
+    // UI must be able to say so rather than labelling it a balance.
+    openingIncluded: Boolean(from),
   };
 }
 
@@ -159,6 +202,9 @@ async function getDashboard(tenantId, { from, to } = {}) {
   return {
     kpis: {
       revenueMtd: pl.revenueTotal,
+      salesMtd: pl.sales.net,
+      salesReversalsMtd: pl.sales.reversals,
+      postedSalesCount: pl.sales.documentCount,
       expensesMtd: round2(pl.cogs.total + pl.expenseTotal),
       netProfitMtd: pl.netProfit,
       grossProfitMtd: pl.grossProfit,

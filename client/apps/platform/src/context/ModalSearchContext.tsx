@@ -169,7 +169,7 @@ function buildSearchParams(
   if (filters.brand)                    p.set('brand',      filters.brand);
   if (filters.minPrice !== undefined)   p.set('minPrice',   String(filters.minPrice));
   if (filters.maxPrice !== undefined)   p.set('maxPrice',   String(filters.maxPrice));
-  if (filters.inStock)                  p.set('inStock',    'true');
+  p.set('inStock', filters.inStock ? 'true' : 'false');
   return p;
 }
 

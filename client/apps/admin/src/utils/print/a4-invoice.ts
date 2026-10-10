@@ -8,7 +8,7 @@ export function buildA4Invoice(
   const returned = new Map<number, number>();
   for (const refund of order.refunds ?? []) {
     for (const line of refund.items ?? []) {
-      returned.set(line.orderItemIndex, (returned.get(line.orderItemIndex) ?? 0) + line.quantity);
+      returned.set(line.orderItemIndex, (returned.get(line.orderItemIndex) ?? 0) + Math.max(0, line.quantity - (refund.source === 'sales' ? 0 : (line.salesReturnedQuantity || 0))));
     }
   }
   const delivery = [order.shipping?.address, order.shipping?.city, order.shipping?.state]
@@ -51,7 +51,7 @@ export function buildA4Invoice(
           sub: [
             item.variant || item.size?.displayName || item.size?.size,
             (item.refundedQty ?? returned.get(index))
-              ? `${item.refundedQty ?? returned.get(index)} refunded`
+              ? `${item.refundedQty ?? returned.get(index)} returned`
               : '',
           ]
             .filter(Boolean)
@@ -66,6 +66,9 @@ export function buildA4Invoice(
       { label: 'Subtotal', value: money(d.subtotal), variant: 'normal' },
       ...(d.discount
         ? [{ label: 'Discount', value: money(-d.discount), variant: 'normal' as const }]
+        : []),
+      ...(order.taxAmount != null
+        ? [{ label: 'Tax', value: money(order.taxAmount), variant: 'normal' as const }]
         : []),
       { label: 'Total', value: money(d.amount), variant: 'grand' },
       ...(d.totalRefunded

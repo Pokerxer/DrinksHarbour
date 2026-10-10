@@ -26,6 +26,7 @@ type DeviceTargeting = { desktop: boolean; mobile: boolean; tablet: boolean };
 interface SettingsProps extends SectionBaseProps {
   deviceTargeting: DeviceTargeting;
   setDeviceTargeting: React.Dispatch<React.SetStateAction<DeviceTargeting>>;
+  canManageGlobal?: boolean;
 }
 
 export function SchedulingSection({ formData, set }: SettingsProps) {
@@ -67,6 +68,7 @@ export function SchedulingSection({ formData, set }: SettingsProps) {
 export function StatusVisibilitySection({
   formData,
   set,
+  canManageGlobal = false,
 }: SettingsProps) {
   return (
     <CollapsibleSection
@@ -74,7 +76,7 @@ export function StatusVisibilitySection({
       iconBg="bg-cyan-100"
       title="Status & Visibility"
       subtitle="Control where and when the banner is shown"
-      defaultOpen={false}
+      defaultOpen={true}
     >
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
@@ -100,15 +102,30 @@ export function StatusVisibilitySection({
             <p className="font-medium text-gray-900">Active</p>
             <p className="text-sm text-gray-500">Banner will be displayed</p>
           </div>
-          <Switch checked={formData.isActive} onChange={(checked) => set('isActive', checked)} />
+          <Switch
+            checked={formData.isActive}
+            onChange={(checked) => set('isActive', checked)}
+          />
         </div>
-        <div className="flex items-center justify-between rounded-lg border border-gray-200 p-4">
-          <div>
-            <p className="font-medium text-gray-900">Global Banner</p>
-            <p className="text-sm text-gray-500">Available across all tenants</p>
+        {canManageGlobal ? (
+          <div className="flex items-center justify-between rounded-lg border border-gray-200 p-4">
+            <div>
+              <p className="font-medium text-gray-900">Global Banner</p>
+              <p className="text-sm text-gray-500">
+                Available across all tenants
+              </p>
+            </div>
+            <Switch
+              checked={formData.isGlobal}
+              onChange={(checked) => set('isGlobal', checked)}
+            />
           </div>
-          <Switch checked={formData.isGlobal} onChange={(checked) => set('isGlobal', checked)} />
-        </div>
+        ) : (
+          <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
+            <strong>Only your store</strong> — these banners belong to your
+            tenant and cannot appear in another tenant’s catalogue.
+          </p>
+        )}
       </div>
     </CollapsibleSection>
   );
@@ -132,7 +149,9 @@ export function DeviceTargetingSection({
             key={device}
             className="flex items-center justify-between rounded-lg border border-gray-200 p-4"
           >
-            <span className="font-medium capitalize text-gray-900">{device}</span>
+            <span className="font-medium capitalize text-gray-900">
+              {device}
+            </span>
             <Switch
               checked={deviceTargeting[device]}
               onChange={(checked) =>
@@ -155,7 +174,10 @@ export function TagsSection({ formData, set }: SettingsProps) {
       subtitle="Organize with tags"
       defaultOpen={false}
     >
-      <TagsInput tags={formData.tags || []} onChange={(tags) => set('tags', tags)} />
+      <TagsInput
+        tags={formData.tags || []}
+        onChange={(tags) => set('tags', tags)}
+      />
     </CollapsibleSection>
   );
 }

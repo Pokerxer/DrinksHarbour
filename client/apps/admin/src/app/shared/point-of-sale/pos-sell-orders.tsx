@@ -1,4 +1,6 @@
 'use client';
+
+import { POSStockReturnDetail } from './components/pos-stock-return-detail';
 import { requestDocumentExport } from '@/utils/print/document-export';
 import { buildPOSRefund } from '@/utils/print/pos-documents';
 import { usePOSShopScope } from './store';
@@ -6,6 +8,7 @@ import { usePOSShopScope } from './store';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import type { PageMeta } from '@/app/shared/point-of-sale/api';
 import {
   getAllOrders,
   getSessionOrders,
@@ -65,13 +68,14 @@ interface RefundLine {
 }
 
 interface Refund {
+  source?: 'sales' | 'pos';
   receiptNumber?: string;
   items: RefundLine[];
   totalRefunded: number;
   reason?: string;
   paymentMethod?: string;
   refundedBy?: { firstName: string; lastName: string; posName?: string };
-  refundedAt: string;
+  refundedAt?: string;
 }
 
 interface SellOrder {
@@ -238,7 +242,7 @@ function ReturnDetailPanel({
   const cashierName = refund.refundedBy
     ? refund.refundedBy.posName || `${refund.refundedBy.firstName} ${refund.refundedBy.lastName}`
     : '—';
-  const refundDate = new Date(refund.refundedAt).toLocaleString('en-GB', {
+  const refundDate = !refund.refundedAt ? 'Not recorded' : new Date(refund.refundedAt).toLocaleString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -251,6 +255,10 @@ function ReturnDetailPanel({
     requestDocumentExport(
       buildPOSRefund(parentOrder as unknown as Parameters<typeof buildPOSRefund>[0], refund, tenant)
     );
+  }
+
+  if (refund.source === 'sales') {
+    return <POSStockReturnDetail refund={refund} order={parentOrder} onClose={onClose} onViewOrder={onViewOrder} />;
   }
 
   return (
@@ -333,7 +341,7 @@ function ReturnDetailPanel({
 
       <div className="shrink-0 border-t border-gray-200 px-5 py-3">
         <div className="flex items-baseline justify-between">
-          <span className="text-sm font-bold text-gray-900">Total Returned</span>
+          <span className="text-sm font-bold text-gray-900">Total Refunded</span>
           <span className="text-base font-bold text-[#b20202]">
             −{formatCurrency(refund.totalRefunded)}
           </span>
@@ -476,6 +484,8 @@ export default function POSSellOrders() {
   const [scope, setScope] = useState<'session' | 'all'>('session');
   const [orders, setOrders] = useState<SellOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [truncated, setTruncated] = useState(false);
+  const [pageMeta, setPageMeta] = useState<PageMeta | null>(null);
   const [voiding, setVoiding] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -524,12 +534,28 @@ export default function POSSellOrders() {
       return;
     }
     setLoading(true);
-    const req =
+    // This page reads through the offline wrapper, which serves from IndexedDB
+    // when the connection is down — so there is no server `meta` to consult.
+    // Treat a list that fills the server page ceiling as partial rather than
+    // assuming a full page means the whole session.
+    const req: Promise<{ data: SellOrder[]; meta: PageMeta | null }> =
       scope === 'session' && sessionId
-        ? getSessionOrders(token, sessionId, shopId)
-        : getAllOrders(token, shopId);
+        ? getSessionOrders(token, sessionId, shopId).then((rows) => ({
+            data: rows as SellOrder[],
+            meta: null,
+          }))
+        : getAllOrders(token, shopId).then((rows) => ({
+            data: (rows || []) as unknown as SellOrder[],
+            meta: null,
+          }));
     req
-      .then((data) => setOrders((data || []) as SellOrder[]))
+      .then(({ data, meta }) => {
+        const fresh = (data || []) as SellOrder[];
+        setOrders(fresh);
+        setTruncated(meta ? meta.truncated : fresh.length >= 2000);
+        setPageMeta(meta);
+        setSelectedOrder(previous => previous ? fresh.find(row => row._id === previous._id) || previous : null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [token, sessionId, scope, shopId]);
@@ -800,6 +826,14 @@ export default function POSSellOrders() {
         <SessionSummaryStrip orders={orders} />
       )}
 
+      {/* A partial list must never be read as the whole session's takings. */}
+      {truncated && !loading && (
+        <div className="mx-3 mt-2 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Showing {pageMeta?.included ?? orders.length} of {pageMeta?.matched ?? '—'} orders.
+          Older orders are not loaded, so the figures above are partial.
+        </div>
+      )}
+
       {/* ── Body ── */}
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left: order table ── */}
@@ -816,7 +850,8 @@ export default function POSSellOrders() {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
-              <table className="w-full border-collapse text-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[880px] border-collapse text-sm">
                 <thead className="sticky top-0 z-10 bg-white">
                   <tr className="border-b border-gray-200 text-left">
                     <SortTh
@@ -1011,7 +1046,7 @@ export default function POSSellOrders() {
                                 }`}
                               >
                                 <td className="py-2 pl-8 pr-4 text-[11px] text-red-400">
-                                  {formatOrderDate(refund.refundedAt)}
+                                  {refund.refundedAt ? formatOrderDate(refund.refundedAt) : 'Sales return'}
                                 </td>
                                 <td className="px-4 py-2">
                                   <div className="flex items-center gap-1.5">
@@ -1030,7 +1065,7 @@ export default function POSSellOrders() {
                                   </p>
                                 </td>
                                 <td className="px-4 py-2 text-xs font-bold tabular-nums text-[#b20202]">
-                                  −{formatCurrency(refund.totalRefunded)}
+                                  {refund.source === 'sales' ? 'No refund recorded' : `−${formatCurrency(refund.totalRefunded)}`}
                                 </td>
                                 <td className="px-4 py-2 text-[11px] capitalize text-gray-500">
                                   {(refund.paymentMethod || '').replace(/_/g, ' ')}
@@ -1052,6 +1087,7 @@ export default function POSSellOrders() {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>

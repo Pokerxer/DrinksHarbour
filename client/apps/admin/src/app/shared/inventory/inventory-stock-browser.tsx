@@ -1,7 +1,6 @@
 'use client';
 
 import React, {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -16,12 +15,10 @@ import {
   PiCaretLeft,
   PiCaretRight,
   PiCaretUp,
-  PiCheck,
   PiCheckSquare,
   PiCube,
   PiCurrencyNgn,
   PiDownloadSimple,
-  PiInfo,
   PiMagnifyingGlass,
   PiPrinter,
   PiSquare,
@@ -32,6 +29,7 @@ import {
   PiX,
 } from 'react-icons/pi';
 import { SortIcon } from '@/components/list-controls';
+import ValuationNote from './inventory-valuation-note';
 import {
   warehouseStockService,
   type StockRow,
@@ -41,6 +39,15 @@ import type {
   FilterValue,
   SavedSearch as AdvSavedSearch,
 } from '../advanced-search/advanced-search-types';
+import StockProductFilter from './inventory-stock-product-filter';
+import StockProductLink from './inventory-stock-product-link';
+import {
+  stockViewTotals, stockViewCSV, toggleStockPage, visibleStockSelection,
+} from './inventory-stock-view';
+import { finite } from './inventory-dashboard-analysis';
+import { restoreStockView, type StockViewSettings } from './inventory-stock-saved-view';
+import StockDetail from './inventory-stock-detail-panel';
+import { useInventoryStockData } from './use-inventory-stock-data';
 import InventoryStockImport from './inventory-stock-import';
 import InventoryStockFilterPanel from './inventory-stock-filter-panel';
 import { buildStockDoc } from '@/utils/print/stock-print';
@@ -48,8 +55,6 @@ import { requestDocumentExport } from '@/utils/print/document-export';
 import PricelistPrintModal from './inventory-pricelist-print-modal';
 import {
   PAGE_SIZE,
-  fmtDate,
-  fmtDateTime,
   fmtNgn,
 } from './inventory-receipts-support';
 // Every search / filter / sort / group decision lives in this module, as pure
@@ -64,8 +69,8 @@ import {
   categoryOf,
   expiryRange,
   groupStockRows,
-  lineRetail,
   lineValue,
+  carryingCostOf,
   matchesExpiryRange,
   matchesStatusSet,
   parseStockQuerySet,
@@ -138,7 +143,7 @@ const STATUS_TABS: { key: StatusKey | null; label: string }[] = [
  * status tab, warehouse and category wherever the user happened to have them —
  * a "saved search" that returned different rows each time it was applied.
  */
-interface StockSavedSearch extends AdvSavedSearch {
+interface StockSavedSearch extends AdvSavedSearch, StockViewSettings {
   /** Committed search chips — the multi-item part of the query. */
   searchTerms?: string[];
   statuses?: StatusKey[];
@@ -167,6 +172,7 @@ function loadSavedFor(key: string): StockSavedSearch[] {
 }
 
 const CUSTOM_GROUP_KEY = 'dh-inventory-stock-custom-groups';
+const UNASSIGNED_WAREHOUSE = '__unassigned__';
 
 // ── Print (stock report) ──────────────────────────────────────────────────────
 
@@ -176,43 +182,7 @@ function printStock(rows: StockRow[], docTitle: string, valuation: boolean) {
 }
 
 function exportStockCsv(rows: StockRow[], prefix: string) {
-  const headers = [
-    'Product',
-    'SKU',
-    'Size',
-    'Warehouse',
-    'On hand',
-    'Reserved',
-    'Available',
-    'Category',
-    'Unit Cost',
-    'Wholesale Price',
-    'Selling Price',
-    'Value',
-    'Method',
-    'Status',
-    'Earliest Expiry',
-  ];
-  const lines = rows.map((r) =>
-    [
-      `"${r.productName}"`,
-      r.sku,
-      `"${r.sizeName}"`,
-      `"${r.warehouseName}"`,
-      r.currentQuantity,
-      r.reservedQuantity,
-      availableOf(r),
-      `"${r.categoryName ?? 'Uncategorized'}"`,
-      (r.costPrice || 0).toFixed(2),
-      (r.wholesalePrice || 0).toFixed(2),
-      (r.sellingPrice || 0).toFixed(2),
-      lineValue(r).toFixed(2),
-      r.valuationMethod ?? '',
-      STATUS_BADGE[statusOf(r)].label,
-      r.earliestExpiry ? fmtDate(r.earliestExpiry) : '',
-    ].join(',')
-  );
-  const csv = [headers.join(','), ...lines].join('\n');
+  const csv = stockViewCSV(rows);
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -224,172 +194,6 @@ function exportStockCsv(rows: StockRow[], prefix: string) {
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
-function StockDetail({
-  row,
-  mode,
-  onClose,
-  onApplied,
-}: {
-  row: StockRow;
-  mode: StockBrowserMode;
-  onClose: () => void;
-  onApplied: (rowId: string, counted: number) => Promise<void>;
-}) {
-  const status = STATUS_BADGE[statusOf(row)];
-  const [counted, setCounted] = useState('');
-  const [applying, setApplying] = useState(false);
-  const diff =
-    counted === '' || Number.isNaN(Number(counted))
-      ? null
-      : Number(counted) - row.currentQuantity;
-
-  const infoRows: [string, string][] = [
-    ['SKU', row.sku || '—'],
-    ['Category', row.categoryName || 'Uncategorized'],
-    ['Size', row.sizeName],
-    ['Warehouse', row.warehouseName],
-    ['Valuation method', (row.valuationMethod ?? '—').toUpperCase()],
-    ['Unit cost', fmtNgn(row.costPrice || 0)],
-    ['Selling price', fmtNgn(row.sellingPrice || 0)],
-    ['Min stock level', String(row.minStockLevel ?? 0)],
-    ...(row.earliestExpiry
-      ? ([['Earliest expiry', fmtDate(row.earliestExpiry)]] as [
-          string,
-          string,
-        ][])
-      : []),
-  ];
-
-  return (
-    <div className="flex h-full flex-col bg-white">
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-gray-900">
-              {row.productName}
-            </span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${status.cls}`}
-            >
-              {status.label}
-            </span>
-          </div>
-          <p className="mt-0.5 text-[11px] text-gray-400">
-            {row.sku} · {row.sizeName} · {row.warehouseName}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-        >
-          <PiX className="h-5 w-5" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
-          {[
-            {
-              label: 'On hand',
-              value: String(row.currentQuantity),
-              cls: 'text-gray-900',
-            },
-            {
-              label: 'Reserved',
-              value: String(row.reservedQuantity),
-              cls: 'text-amber-600',
-            },
-            {
-              label: 'Value',
-              value: fmtNgn(lineValue(row)),
-              cls: 'text-[#b20202]',
-            },
-          ].map(({ label, value, cls }) => (
-            <div key={label} className="px-4 py-3 text-center">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                {label}
-              </p>
-              <p className={`mt-0.5 text-sm font-bold tabular-nums ${cls}`}>
-                {value}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <div className="space-y-1.5 border-b border-gray-100 px-5 py-3 text-xs">
-          {infoRows.map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-3">
-              <span className="shrink-0 font-semibold text-gray-500">
-                {label}
-              </span>
-              <span className="truncate text-right font-medium text-gray-800">
-                {value}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {mode === 'count' && (
-          <div className="px-5 py-4">
-            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              <PiInfo className="h-3.5 w-3.5" /> Apply physical count
-            </p>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={0}
-                value={counted}
-                onChange={(e) => setCounted(e.target.value)}
-                placeholder={String(row.currentQuantity)}
-                className="w-28 rounded-lg border border-gray-200 px-3 py-2 text-right text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
-              />
-              <span
-                className={`w-14 text-center text-sm font-bold tabular-nums ${
-                  diff === null || diff === 0
-                    ? 'text-gray-300'
-                    : diff > 0
-                      ? 'text-emerald-600'
-                      : 'text-red-600'
-                }`}
-              >
-                {diff === null ? '—' : diff > 0 ? `+${diff}` : diff}
-              </span>
-              <button
-                type="button"
-                disabled={applying || diff === null || diff === 0}
-                onClick={async () => {
-                  setApplying(true);
-                  try {
-                    await onApplied(row._id, Number(counted));
-                    setCounted('');
-                  } finally {
-                    setApplying(false);
-                  }
-                }}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#b20202] py-2 text-xs font-bold text-white hover:bg-[#9a0101] disabled:opacity-40"
-              >
-                <PiCheck className="h-3.5 w-3.5" />{' '}
-                {applying ? 'Applying…' : 'Apply count'}
-              </button>
-            </div>
-            <p className="mt-2 text-[10px] text-gray-400">
-              Applying sets on-hand to the counted quantity and records an
-              adjustment for the audit trail.
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Main browser ──────────────────────────────────────────────────────────────
-
-/**
- * Stock-line browser in the POS Orders style, shared by the Stock report,
- * Valuation report and Physical Inventory pages via `mode`.
- */
 export default function InventoryStockBrowser({
   mode,
 }: {
@@ -399,8 +203,8 @@ export default function InventoryStockBrowser({
   const { data: session, status: sessionStatus } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
 
-  const [rows, setRows] = useState<StockRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { rows, loading, error, load } = useInventoryStockData(token, sessionStatus, mode);
+  const [productIds, setProductIds] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   // Filtering runs over every loaded row, so it keys off the debounced value —
   // the previous version re-filtered, re-scored and re-sorted on every
@@ -421,6 +225,7 @@ export default function InventoryStockBrowser({
   const [savedSearches, setSavedSearches] = useState<StockSavedSearch[]>([]);
   const [customGroups, setCustomGroups] = useState<CustomGroup[]>([]);
   const searchRef = useRef<HTMLDivElement>(null);
+  const restoredSort = useRef<string | null>(null);
   const [sortCol, setSortCol] = useState<SortCol>('product');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(1);
@@ -443,27 +248,9 @@ export default function InventoryStockBrowser({
     }
   }, [meta.savedKey]);
 
-  const load = useCallback(async () => {
-    if (sessionStatus === 'loading') return;
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await warehouseStockService.getAllStock(token);
-      setRows(res.data ?? []);
-      setCounts({});
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load stock');
-    } finally {
-      setLoading(false);
-    }
-  }, [token, sessionStatus]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!loading) setCounts({});
+  }, [rows, loading]);
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 250);
     return () => clearTimeout(t);
@@ -476,6 +263,7 @@ export default function InventoryStockBrowser({
   }, [
     debouncedSearch,
     searchTerms,
+    productIds,
     statusSel,
     warehouseFilter,
     categoryFilter,
@@ -501,13 +289,18 @@ export default function InventoryStockBrowser({
   // used to leave the comparator returning 0 for every pair, so the table went
   // silently unsorted.
   useEffect(() => {
+    const restored = restoredSort.current === JSON.stringify(querySet);
+    restoredSort.current = null;
+    if (restored) return;
     if (querySet.hasQuery) setSortCol('relevance');
     else setSortCol((c) => (c === 'relevance' ? 'product' : c));
   }, [querySet]);
 
   const warehouses = useMemo(() => {
     const map = new Map<string, string>();
-    rows.forEach((r) => map.set(r.warehouseId, r.warehouseName));
+    rows.forEach((r) => {
+      if (r.warehouseId) map.set(r.warehouseId, r.warehouseName);
+    });
     return Array.from(map.entries(), ([id, name]) => ({ id, name }));
   }, [rows]);
 
@@ -519,7 +312,7 @@ export default function InventoryStockBrowser({
       const name = r.categoryName || 'Uncategorized';
       const cur = map.get(name) ?? { count: 0, units: 0 };
       cur.count += 1;
-      cur.units += r.currentQuantity;
+      cur.units += finite(r.currentQuantity);
       map.set(name, cur);
     });
     return Array.from(map.entries(), ([name, v]) => ({ name, ...v })).sort(
@@ -546,11 +339,13 @@ export default function InventoryStockBrowser({
         warehouseId: warehouseFilter,
         category: categoryFilter,
         expiryPreset,
+        productIds, expiryFrom, expiryTo, sortCol, sortDir,
       },
     ]);
   }
   function applySaved(s: AdvSavedSearch) {
     const saved = savedSearches.find((x) => x.id === s.id);
+    restoredSort.current = JSON.stringify(parseStockQuerySet([...(saved?.searchTerms ?? []), s.search ?? '']));
     setSearch(s.search ?? '');
     setDebouncedSearch(s.search ?? '');
     setSearchTerms(saved?.searchTerms ?? []);
@@ -560,8 +355,12 @@ export default function InventoryStockBrowser({
     setWarehouseFilter(saved?.warehouseId ?? '');
     setCategoryFilter(saved?.category ?? 'all');
     setExpiryPreset(saved?.expiryPreset ?? null);
-    setExpiryFrom('');
-    setExpiryTo('');
+    const view = restoreStockView(saved ?? {});
+    setProductIds(view.productIds);
+    setExpiryFrom(view.expiryFrom);
+    setExpiryTo(view.expiryTo);
+    setSortCol(view.sortCol);
+    setSortDir(view.sortDir);
     setPage(1);
     setShowPanel(false);
   }
@@ -610,8 +409,12 @@ export default function InventoryStockBrowser({
   async function applyCount(rowId: string, counted: number) {
     const row = rows.find((r) => r._id === rowId);
     if (!row) return;
-    if (counted < 0 || Number.isNaN(counted)) {
+    if (counted < 0 || !Number.isFinite(counted)) {
       toast.error('Enter a valid counted quantity');
+      return;
+    }
+    if (!row.warehouseId || !row.sizeId) {
+      toast.error('Choose a warehouse and size before counting stock');
       return;
     }
     if (counted === row.currentQuantity) {
@@ -631,11 +434,7 @@ export default function InventoryStockBrowser({
         token
       );
       toast.success(`${row.productName}: on-hand set to ${counted}`);
-      setRows((prev) =>
-        prev.map((r) =>
-          r._id === rowId ? { ...r, currentQuantity: counted } : r
-        )
-      );
+      await load();
       setCounts((prev) => {
         const n = { ...prev };
         delete n[rowId];
@@ -651,6 +450,7 @@ export default function InventoryStockBrowser({
     setSearch('');
     setDebouncedSearch('');
     setSearchTerms([]);
+    setProductIds([]);
     setStatusSel(new Set());
     setWarehouseFilter('');
     setCategoryFilter('all');
@@ -685,11 +485,15 @@ export default function InventoryStockBrowser({
   // Narrow first, rank second: scoring is the expensive step, so it runs over
   // the smallest set the cheap predicates can produce.
   const searchResult = useMemo(() => {
-    let list = rows;
+    let list = productIds.length ? rows.filter(row => productIds.includes(row.subProductId)) : rows;
     if (statusSel.size > 0)
       list = list.filter((r) => matchesStatusSet(r, statusSel));
     if (warehouseFilter)
-      list = list.filter((r) => r.warehouseId === warehouseFilter);
+      list = list.filter((r) =>
+        warehouseFilter === UNASSIGNED_WAREHOUSE
+          ? !r.warehouseId
+          : r.warehouseId === warehouseFilter
+      );
     if (categoryFilter !== 'all')
       list = list.filter((r) => categoryOf(r) === categoryFilter);
     if (expiryWindow)
@@ -698,6 +502,7 @@ export default function InventoryStockBrowser({
     return searchStockRowSet(list, querySet);
   }, [
     rows,
+    productIds,
     statusSel,
     warehouseFilter,
     categoryFilter,
@@ -708,29 +513,11 @@ export default function InventoryStockBrowser({
 
   const filtered = useMemo(
     () =>
-      sortStockRows(searchResult.rows, sortCol, sortDir, searchResult.scores),
-    [searchResult, sortCol, sortDir]
+      sortStockRows(searchResult.rows, sortCol, sortDir, searchResult.scores, mode === 'valuation'),
+    [searchResult, sortCol, sortDir, mode]
   );
 
-  const stats = useMemo(() => {
-    const units = filtered.reduce((s, r) => s + r.currentQuantity, 0);
-    const reserved = filtered.reduce((s, r) => s + r.reservedQuantity, 0);
-    const value = filtered.reduce((s, r) => s + lineValue(r), 0);
-    const retail = filtered.reduce((s, r) => s + lineRetail(r), 0);
-    const alerts = filtered.filter((r) =>
-      ['low', 'out', 'expiry'].includes(statusOf(r))
-    ).length;
-    const whSet = new Set(filtered.map((r) => r.warehouseId));
-    return {
-      count: filtered.length,
-      units,
-      reserved,
-      value,
-      retail,
-      alerts,
-      warehouses: whSet.size,
-    };
-  }, [filtered]);
+  const stats = useMemo(() => stockViewTotals(filtered), [filtered]);
 
   const grouped = useMemo((): [string, StockRow[]][] | null => {
     if (!groupBy) return null;
@@ -738,6 +525,13 @@ export default function InventoryStockBrowser({
   }, [filtered, groupBy]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => { setPage(current => Math.min(current, totalPages)); }, [totalPages]);
+  useEffect(() => {
+    setChecked(current => {
+      const visible = new Set(visibleStockSelection(filtered, current).map(row => row._id));
+      return visible.size === current.size ? current : visible;
+    });
+  }, [filtered]);
   const paginated = grouped
     ? []
     : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -747,11 +541,11 @@ export default function InventoryStockBrowser({
   const allChecked =
     displayList.length > 0 && displayList.every((r) => checked.has(r._id));
   const someChecked = checked.size > 0 && !allChecked;
-  const checkedRows = rows.filter((r) => checked.has(r._id));
-  const selected = rows.find((r) => r._id === selectedId) ?? null;
+  const checkedRows = visibleStockSelection(filtered, checked);
+  const selected = filtered.find((r) => r._id === selectedId) ?? null;
 
   function toggleAll() {
-    setChecked(allChecked ? new Set() : new Set(displayList.map((r) => r._id)));
+    setChecked(current => toggleStockPage(current, displayList));
   }
   function toggleOne(id: string) {
     setChecked((prev) => {
@@ -778,6 +572,7 @@ export default function InventoryStockBrowser({
   }
 
   const hasAnyFilter =
+    productIds.length > 0 ||
     !!search ||
     searchTerms.length > 0 ||
     !!warehouseFilter ||
@@ -799,7 +594,9 @@ export default function InventoryStockBrowser({
     { col: 'reserved', label: 'Reserved', right: true },
     ...(mode === 'valuation'
       ? ([
-          { col: 'cost', label: 'Unit cost', right: true },
+          { col: 'available', label: 'Available', right: true },
+          { col: 'method', label: 'Method' },
+          { col: 'cost', label: 'Avg. carrying cost', right: true },
           { col: 'value', label: 'Value', right: true },
         ] as const)
       : mode === 'stock'
@@ -819,7 +616,7 @@ export default function InventoryStockBrowser({
     const raw = counts[r._id];
     const counted = raw === undefined || raw === '' ? null : Number(raw);
     const diff =
-      counted === null || Number.isNaN(counted)
+      counted === null || !Number.isFinite(counted)
         ? null
         : counted - r.currentQuantity;
     return (
@@ -839,6 +636,8 @@ export default function InventoryStockBrowser({
         >
           <button
             type="button"
+            aria-label={`Select stock line ${r.productName} ${r.warehouseName} ${r.sizeName}`}
+            aria-pressed={isChk}
             onClick={() => toggleOne(r._id)}
             className="text-gray-300 transition-colors hover:text-[#b20202]"
           >
@@ -856,7 +655,7 @@ export default function InventoryStockBrowser({
           <div
             className={`truncate text-xs font-semibold ${isSel ? 'text-white' : 'text-gray-800'}`}
           >
-            {r.productName}
+            <StockProductLink id={r.subProductId} name={r.productName} />
           </div>
           <div
             className={`truncate font-mono text-[10px] ${isSel ? 'text-red-200' : 'text-gray-400'}`}
@@ -890,11 +689,16 @@ export default function InventoryStockBrowser({
         </td>
         {mode === 'valuation' ? (
           <>
+            <td className={`px-3 py-2.5 text-right text-xs tabular-nums ${isSel ? 'text-red-100' : 'text-gray-600'}`} onClick={() => setSelectedId(isSel ? null : r._id)}>{availableOf(r)}</td>
+            <td className={`px-3 py-2.5 text-xs ${isSel ? 'text-red-100' : 'text-gray-600'}`} onClick={() => setSelectedId(isSel ? null : r._id)}>
+              <span className="font-semibold uppercase">{r.valuationMethod || 'standard'}</span>
+              {r.valuationSource && <p className="mt-0.5 text-[10px]">{r.valuationSource === 'batches' ? 'Captured batches' : r.valuationSource === 'mixed' ? 'Includes estimates' : r.valuationSource === 'unpriced' ? 'No cost recorded' : 'Standard fallback'}</p>}
+            </td>
             <td
               className={`px-3 py-2.5 text-right text-xs tabular-nums ${isSel ? 'text-red-100' : 'text-gray-600'}`}
               onClick={() => setSelectedId(isSel ? null : r._id)}
             >
-              {fmtNgn(r.costPrice || 0)}
+              {fmtNgn(carryingCostOf(r))}
             </td>
             <td
               className={`px-3 py-2.5 text-right text-xs font-bold tabular-nums ${isSel ? 'text-white' : 'text-gray-900'}`}
@@ -970,7 +774,7 @@ export default function InventoryStockBrowser({
               }`}
               onClick={(e) => e.stopPropagation()}
             >
-              {diff === null || Number.isNaN(diff)
+              {diff === null || !Number.isFinite(diff)
                 ? '—'
                 : diff > 0
                   ? `+${diff}`
@@ -982,7 +786,7 @@ export default function InventoryStockBrowser({
             >
               <button
                 type="button"
-                disabled={diff === null || Number.isNaN(diff) || diff === 0}
+                disabled={diff === null || !Number.isFinite(diff) || diff === 0}
                 onClick={() => applyCount(r._id, Number(raw))}
                 className="rounded-lg bg-[#b20202] px-2.5 py-1 text-[10px] font-bold text-white hover:bg-[#9a0101] disabled:opacity-30"
               >
@@ -1012,7 +816,8 @@ export default function InventoryStockBrowser({
   }
 
   return (
-    <div className="flex h-[calc(100dvh-47px)] flex-col overflow-hidden bg-gray-50">
+    <div className="w-full">
+    <div className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
       {/* ── Control bar ── */}
       <div className="shrink-0 border-b border-gray-200 bg-white">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-4 pb-2.5 pt-3 sm:px-5 sm:gap-x-4 sm:gap-y-2 sm:pb-3 sm:pt-4">
@@ -1066,6 +871,7 @@ export default function InventoryStockBrowser({
                 panel below, opened from the search bar itself. */}
             <button
               type="button"
+              aria-label="Refresh stock"
               onClick={load}
               disabled={loading}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-colors hover:bg-gray-50 disabled:opacity-40"
@@ -1079,7 +885,7 @@ export default function InventoryStockBrowser({
               onClick={() =>
                 printStock(filtered, meta.docTitle, mode === 'valuation')
               }
-              disabled={filtered.length === 0}
+              disabled={loading || !!error || filtered.length === 0}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-colors hover:bg-gray-50 hover:text-[#b20202] disabled:opacity-40"
               title={`Print ${meta.docTitle.toLowerCase()}`}
               aria-label={`Print ${meta.docTitle.toLowerCase()}`}
@@ -1093,7 +899,7 @@ export default function InventoryStockBrowser({
                   setPricelistRows(filtered);
                   setShowPricelist(true);
                 }}
-                disabled={filtered.length === 0}
+                disabled={loading || !!error || filtered.length === 0}
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-colors hover:bg-gray-50 hover:text-[#b20202] disabled:opacity-40"
                 title="Print customer pricelist for the current view"
                 aria-label="Print customer pricelist for the current view"
@@ -1113,7 +919,7 @@ export default function InventoryStockBrowser({
             <button
               type="button"
               onClick={() => exportStockCsv(filtered, meta.csvPrefix)}
-              disabled={filtered.length === 0}
+              disabled={loading || !!error || filtered.length === 0}
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#9a0101] disabled:opacity-50"
             >
               <PiDownloadSimple className="h-3.5 w-3.5" /> Export CSV
@@ -1122,17 +928,22 @@ export default function InventoryStockBrowser({
         </div>
 
         {/* Filters row */}
+        <StockProductFilter rows={rows} selected={productIds} change={setProductIds}
+          loading={loading} error={error} retry={load} />
+        {error && <div role="alert" className="flex items-center gap-3 bg-red-50 px-5 py-3 text-sm text-red-700">{error}<button type="button" onClick={load} className="underline">Retry</button></div>}
         <div className="flex flex-wrap items-end gap-3 px-5 py-3">
           <div className="flex flex-col gap-0.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
               Warehouse
             </span>
             <select
+              aria-label="Warehouse"
               value={warehouseFilter}
               onChange={(e) => setWarehouseFilter(e.target.value)}
               className="h-[34px] rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
             >
               <option value="">All warehouses</option>
+              <option value={UNASSIGNED_WAREHOUSE}>Unassigned warehouse</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
@@ -1396,6 +1207,7 @@ export default function InventoryStockBrowser({
                 </span>
                 <button
                   type="button"
+                  aria-label="Previous page"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1}
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
@@ -1404,6 +1216,7 @@ export default function InventoryStockBrowser({
                 </button>
                 <button
                   type="button"
+                  aria-label="Next page"
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
@@ -1431,7 +1244,7 @@ export default function InventoryStockBrowser({
             value: stats.units.toLocaleString(),
             icon: <PiStack className="h-4 w-4" />,
             color: 'text-emerald-600',
-            sub: `${stats.reserved.toLocaleString()} reserved`,
+            sub: `${stats.reserved.toLocaleString()} reserved · ${stats.available.toLocaleString()} available`,
           },
           {
             label: 'Stock Value',
@@ -1445,7 +1258,7 @@ export default function InventoryStockBrowser({
             value: fmtNgn(stats.retail),
             icon: <PiCurrencyNgn className="h-4 w-4" />,
             color: 'text-purple-600',
-            sub: `${fmtNgn(Math.max(0, stats.retail - stats.value))} potential profit`,
+            sub: `${fmtNgn(stats.profit)} potential profit`,
           },
           {
             label: 'Alerts',
@@ -1462,16 +1275,18 @@ export default function InventoryStockBrowser({
                 {label}
               </p>
               <p className="mt-0.5 text-sm font-bold tabular-nums text-gray-900">
-                {value}
+                {error ? 'Unavailable' : loading ? 'Loading…' : value}
               </p>
-              <p className="mt-0.5 truncate text-[10px] text-gray-400">{sub}</p>
+              <p className="mt-0.5 truncate text-[10px] text-gray-400">{error || loading ? '' : sub}</p>
             </div>
           </div>
         ))}
       </div>
 
+      {mode === 'valuation' && !loading && !error && <ValuationNote rows={filtered} />}
+
       {/* ── Body ── */}
-      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+      <div className="flex min-h-[420px] flex-1 flex-col overflow-hidden lg:max-h-[70dvh] lg:flex-row">
         {/* Category sidebar */}
         <aside className="hidden w-52 shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white lg:flex">
           <p className="shrink-0 border-b border-gray-100 px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">
@@ -1541,8 +1356,9 @@ export default function InventoryStockBrowser({
           className={`flex flex-col overflow-hidden border-b border-gray-200 transition-all duration-200 lg:border-b-0 lg:border-r ${selected ? 'flex-1 lg:flex-none lg:w-[58%]' : 'flex-1'}`}
         >
           {checked.size > 0 && (
-            <div className="flex shrink-0 items-center gap-3 border-b-2 border-[#b20202] bg-white px-4 py-2.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-3 border-b-2 border-[#b20202] bg-white px-4 py-2.5">
               <div className="flex-1 text-xs font-semibold text-gray-700">
+                <button type="button" className="mr-3 underline" onClick={() => setChecked(new Set(filtered.map(row => row._id)))}>Select all {filtered.length} matching lines</button>
                 <span className="font-bold text-[#b20202]">{checked.size}</span>{' '}
                 selected ·{' '}
                 <span className="font-bold text-gray-900">
@@ -1600,6 +1416,8 @@ export default function InventoryStockBrowser({
                 </div>
               ))}
             </div>
+          ) : error ? (
+            <div className="p-6 text-sm text-gray-500">Stock data is unavailable. Use Retry above to reload it.</div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
@@ -1636,6 +1454,8 @@ export default function InventoryStockBrowser({
                     <th className="w-8 px-2 py-3 text-center">
                       <button
                         type="button"
+                        aria-label="Select current page"
+                        aria-pressed={allChecked}
                         onClick={toggleAll}
                         className="text-gray-300 transition-colors hover:text-[#b20202]"
                       >
@@ -1783,7 +1603,9 @@ export default function InventoryStockBrowser({
         >
           {selected ? (
             <StockDetail
+              key={selected._id}
               row={selected}
+              token={token}
               mode={mode}
               onClose={() => setSelectedId(null)}
               onApplied={applyCount}
@@ -1828,6 +1650,7 @@ export default function InventoryStockBrowser({
           onClose={() => setShowPricelist(false)}
         />
       )}
+    </div>
     </div>
   );
 }

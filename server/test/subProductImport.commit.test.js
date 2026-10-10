@@ -6,6 +6,7 @@ const svc = require('../services/subProductImport.service');
 function makeDeps(overrides = {}) {
   const calls = { createSubProduct: [], adjustStock: [], recordReceiptMovement: [], enrich: [], sizeUpdates: [] };
   const deps = {
+    startSession: async () => ({ withTransaction: async (work) => work(), endSession: async () => {} }),
     Product: {
       findOne: () => ({ select: () => ({ lean: async () => overrides.product ?? null }) }),
       findById: () => ({ select: () => ({ lean: async () => overrides.productDoc ?? {} }) }),
@@ -20,7 +21,9 @@ function makeDeps(overrides = {}) {
     Size: {
       find: () => ({ select: () => ({ lean: async () => overrides.sizes ?? [] }) }),
       findByIdAndUpdate: async (id, upd) => { calls.sizeUpdates.push({ id, upd }); return {}; },
+      updateOne: (query, upd) => ({ session: async () => { calls.sizeUpdates.push({id:query._id,upd}); return {}; } }),
     },
+    WarehouseStock: {find: () => ({select: () => ({session() { return this; }, lean: async () => [{currentQuantity: calls.adjustStock.at(-1)?.quantity || 0}]})})},
     createSubProduct: async (data) => {
       calls.createSubProduct.push(data);
       const sizes = (data.sizes || []).map((s, i) => ({ _id: `size${i}`, size: s.size }));
@@ -52,8 +55,8 @@ test('commitImport creates a new product + sizes and applies opening stock', asy
   assert.equal(calls.createSubProduct[0].newProductData.type, 'gin');
   assert.equal(calls.adjustStock[0].type, 'received');
   assert.equal(calls.adjustStock[0].warehouseId, 'W1');
-  // Movement links to the Product so "Recent moves" shows the name, not "bulk-import".
-  assert.equal(calls.recordReceiptMovement[0].product, 'np1');
+  // Canonical warehouse writer owns the audit; no second stock increment.
+  assert.equal(calls.recordReceiptMovement.length, 0);
 });
 
 test('commitImport enriches a new product from its name (AI fills gaps, CSV wins)', async () => {

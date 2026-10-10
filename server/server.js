@@ -8,6 +8,7 @@ const morgan = require('morgan');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const { sharedStore } = require('./middleware/redisRateLimitStore');
 const { connectDB, disconnectDB } = require('./config/db');
 const { AppError } = require('./utils/errors');
 // resolveTenantContext is now mounted per-router after protect(), not globally.
@@ -83,11 +84,7 @@ app.use(cors(corsOptions));
 // ────────────────────────────────────────────────
 // Request Logger
 // ────────────────────────────────────────────────
-app.use((req, res, next) => {
-  console.log(`\n🔵 ${req.method} ${req.originalUrl}`);
-  console.log(`   Origin: ${req.headers.origin || 'No origin'}`);
-  next();
-});
+app.use(require('./middleware/requestLogger'));
 
 // ────────────────────────────────────────────────
 // Security & Performance Middleware
@@ -118,7 +115,7 @@ app.use(compression());
 app.use(express.json({
   limit: '10mb',
   verify: (req, res, buf) => {
-    if (req.originalUrl && req.originalUrl.startsWith('/api/erm/webhook')) {
+    if (req.originalUrl && (req.originalUrl.startsWith('/api/erm/webhook') || req.originalUrl.split('?')[0] === '/api/payments/webhooks/paystack')) {
       req.rawBody = buf;
     }
   },
@@ -160,6 +157,7 @@ app.use('/api', csrfProtection);
 // Rate Limiting
 // ────────────────────────────────────────────────
 const limiter = rateLimit({
+  ...sharedStore('api'),
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 100 : (parseInt(process.env.API_RATE_LIMIT_MAX, 10) || 1000),
   standardHeaders: true,
@@ -174,6 +172,7 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 const mailLimiter = rateLimit({
+  ...sharedStore('mail'),
   windowMs: 60 * 1000,
   max: 240,
   standardHeaders: true,
@@ -213,6 +212,7 @@ app.use('/api', async (req, res, next) => {
 // ────────────────────────────────────────────────
 // Mount Routes (MUST be after body parser)
 // ────────────────────────────────────────────────
+app.use('/api', require('./middleware/adminReportCache').invalidateReports);
 app.use('/api/orders',             orderRoutes);
 app.use('/api/cart',               cartRoutes);
 app.use('/api/products',           productRoutes);
@@ -296,6 +296,7 @@ app.use('/api/gift-cards/claim',   giftCardClaimRoutes);
 app.use('/api/gift-cards',         giftCardRoutes);
 app.use('/api/loyalty',            loyaltyRoutes);
 app.use('/api/referrals',          require('./routes/referral.routes'));
+app.use('/api/notifications', require('./routes/notification.routes'));
 app.use('/api/tts',                ttsRoutes);
 
 // ────────────────────────────────────────────────
@@ -477,6 +478,8 @@ async function startServer() {
       const { startBillingNoticesCron } = require('./jobs/billingNotices.job');
       startBillingNoticesCron();
       require('./jobs/billingReconciliation.job').startBillingReconciliationCron();
+      require('./jobs/integrationCheckout.job').startIntegrationCheckoutCron();
+      require('./jobs/tenantProductInsights.job').startTenantProductInsightsCron();
     }
 
     console.log('\n┌──────────────────────────────────────────────────────┐');
@@ -540,6 +543,7 @@ async function startServer() {
 
       server.close(async () => {
         console.log('   → HTTP server closed');
+        await require('./config/redis').closeRedis();
         await disconnectDB();
         console.log('   → Database disconnected');
         console.log('✅ Graceful shutdown complete\n');
