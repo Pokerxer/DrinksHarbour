@@ -15,7 +15,7 @@ import { BannerClickLayer, BannerClickArea, isImageClickable } from './banner-li
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-interface BannerData {
+export interface BannerData {
   _id: string;
   title?: string;
   subtitle?: string;
@@ -73,14 +73,18 @@ export default function PlacementBanner({
   variant = 'hero',
   limit = 1,
   className = '',
+  initialBanners = [],
+  initialBannersComplete = false,
 }: {
   placement: string;
   variant?: Variant;
   limit?: number;
   className?: string;
+  initialBanners?: BannerData[];
+  initialBannersComplete?: boolean;
 }) {
-  const [banners, setBanners] = useState<BannerData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [banners, setBanners] = useState<BannerData[]>(initialBanners);
+  const [loading, setLoading] = useState(!initialBannersComplete);
   const trackedRef = useRef<Set<string>>(new Set());
 
   const fetchBanners = useCallback(async () => {
@@ -101,8 +105,9 @@ export default function PlacementBanner({
   }, [placement, limit]);
 
   useEffect(() => {
+    if (initialBannersComplete) return;
     fetchBanners();
-  }, [fetchBanners]);
+  }, [fetchBanners, initialBannersComplete]);
 
   // Fire a single impression per banner
   useEffect(() => {

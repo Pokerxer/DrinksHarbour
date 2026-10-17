@@ -32,7 +32,7 @@ const { applyFulfillment, buildPostingLines, fulfillStatus, postShippedStock, bu
  * @param {string}   [args.paymentMethod] the tender THIS fulfilment took
  * @returns {Promise<{ order, reconciled: number, duplicate: boolean }>}
  */
-async function reconcileFulfillment({ salesOrder, fulfillLines, userId, ref, warehouseId, paymentMethod }) {
+async function reconcileFulfillment({ salesOrder, fulfillLines, userId, actor, ref, warehouseId, paymentMethod }) {
   // Already applied under this receipt — return the order untouched rather than
   // fulfilling and charging a second time.
   if (ref && (salesOrder.fulfillments || []).some((f) => f.ref && String(f.ref) === String(ref))) {
@@ -63,6 +63,8 @@ async function reconcileFulfillment({ salesOrder, fulfillLines, userId, ref, war
 
   const status = fulfillStatus(salesOrder.items);
   if (status) salesOrder.orderStatus = status;
+
+  if (lines.length) require('./salesSalesperson').completeFulfillment(salesOrder, actor);
 
   settlePayment(salesOrder, lines, byId);
 
@@ -135,7 +137,7 @@ async function defaultGetUnitCost(subproductId) {
  *  5. append a fulfillments[] entry + recompute orderStatus
  * deps = { adjustStock, SalesModel, getUnitCost }
  */
-async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, userId, deps, revenue = {}, paymentMethod }) {
+async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, userId, actor, deps, revenue = {}, paymentMethod }) {
   const adjustStock = deps.adjustStock || require('./warehouse.service').adjustStock;
   const SalesModel = deps.SalesModel || require('../models/Sales');
   const getUnitCost = deps.getUnitCost || defaultGetUnitCost;
@@ -203,6 +205,8 @@ async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, u
   const status = fulfillStatus(salesOrder.items);
   if (status) salesOrder.orderStatus = status;
 
+  if (postedLines.length) require('./salesSalesperson').completeFulfillment(salesOrder, actor);
+
   // Keep the SO's source warehouse aligned with where stock actually left.
   // Without this, a fulfill from wh-002 while the SO was created against
   // wh-001 leaves the order displaying the wrong warehouse.
@@ -237,7 +241,9 @@ async function returnOrder({ salesOrder, tenantId, warehouseId, returnLines, use
     try {
       const row = await adjustStock(
         { warehouseId, subProduct: item.subproduct, size: item.size, quantity: qty,
-          type: 'received', notes: `Sales return: ${salesOrder.soNumber}` },
+          type: 'received', notes: `Sales return: ${salesOrder.soNumber}`,
+          // The dedicated customer-return entry replaces the generic receipt mirror.
+          recordHistory: !recordMovement },
         userId, tenantId
       );
       item.returnedQty = (item.returnedQty || 0) + qty;
@@ -250,6 +256,7 @@ async function returnOrder({ salesOrder, tenantId, warehouseId, returnLines, use
             warehouse: warehouseId, quantity: qty,
             balanceAfter: row && Number.isFinite(row.currentQuantity) ? row.currentQuantity : undefined,
             reference: salesOrder.soNumber, referenceType: 'return', performedBy: userId,
+            relatedSalesOrder: salesOrder._id,
           });
         } catch (_) { /* history non-fatal */ }
       }

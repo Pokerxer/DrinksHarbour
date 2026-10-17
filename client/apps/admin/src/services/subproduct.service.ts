@@ -344,10 +344,13 @@ export const subproductService = {
   async getSubProduct(
     id: string,
     token: string,
-    params?: Record<string, string>
+    params?: Record<string, string>,
+    signal?: AbortSignal
   ) {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : '';
     const response = await fetch(`${API_URL}/api/subproducts/${id}${qs}`, {
+      signal,
+      cache: 'no-store',
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -610,7 +613,7 @@ export const subproductService = {
       baseWebsitePrice?: number;
       sizes?: Array<{
         id: string;
-        websitePrice: number;
+        websitePrice?: number;
         packUnitPrice?: number;
       }>;
     },

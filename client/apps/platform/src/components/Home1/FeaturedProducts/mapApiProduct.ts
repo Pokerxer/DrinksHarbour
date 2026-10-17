@@ -1,3 +1,4 @@
+import { representativeSelection } from '@/utils/representativeOffer';
 import type { ApiProduct, Product } from "./types";
 
 const FALLBACK_IMAGE = "/images/images/product/1000x1000.png";
@@ -45,9 +46,10 @@ const computeIsNew = (api: ApiProduct): boolean => {
 export const mapApiProductToProduct = (api: ApiProduct): Product => {
   const thumbImage = collectImages(api);
 
-  const availableAt = api.availableAt?.[0];
+  const representative = representativeSelection(api);
+  const availableAt = api.availableAt?.find(row => String(row._id) === api.shoppingOffer?.subProductId) || api.availableAt?.[0];
   const sizes = availableAt?.sizes;
-  const firstSize = sizes?.[0];
+  const firstSize = sizes?.find(row => String(row._id) === api.shoppingOffer?.sizeId) || sizes?.[0];
   const sizePricing = firstSize?.pricing;
   const entryPricing = availableAt?.pricing;
   const defaultSize =
@@ -85,7 +87,8 @@ export const mapApiProductToProduct = (api: ApiProduct): Product => {
     _id: api._id,
     slug: api.slug,
     name: api.name,
-    price,
+    shoppingOffer: api.shoppingOffer,
+    price: api.shoppingOffer ? websitePrice : price,
     originPrice: compareAtPrice,
     sale,
     discount,
@@ -104,7 +107,7 @@ export const mapApiProductToProduct = (api: ApiProduct): Product => {
     isAlcoholic: api.isAlcoholic,
     originCountry: api.originCountry,
     volumeMl: api.volumeMl,
-    availableAt: api.availableAt,
+    availableAt: availableAt ? [availableAt, ...(api.availableAt || []).filter(row => row !== availableAt)] : api.availableAt,
     tenantCount: api.availableAt?.length ?? 0,
   };
 };

@@ -25,6 +25,7 @@ import {
   type Appraisal,
   type ReviewRequest,
 } from '@/services/appraisal.service';
+import MyPeerCycles from './peer-rating/my-cycles';
 import AppraisalSubjectCard from './appraisal-subject-card';
 import ReviewRequestRow from './review-request-row';
 import {
@@ -209,6 +210,7 @@ export default function MyAppraisals() {
   return (
     <MotionConfig reducedMotion="user">
       <div className="flex flex-col gap-7 px-6 py-8 md:px-10 lg:px-14">
+        <MyPeerCycles />
         {/* Header */}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>

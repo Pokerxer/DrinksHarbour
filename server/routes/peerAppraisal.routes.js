@@ -1,0 +1,17 @@
+const router = require('express').Router();
+const { protect, attachTenant, requireOwnTenant } = require('../middleware/auth.middleware');
+const c = require('../controllers/peerAppraisal.controller');
+router.use(protect, attachTenant, requireOwnTenant);
+router.get('/my', c.my);
+router.get('/eligible-employees', c.eligible);
+router.post('/', c.create);
+router.get('/:cycleId/review', c.review);
+router.patch('/:cycleId/review', c.save);
+router.post('/:cycleId/submit', c.submit);
+router.get('/:cycleId/result', c.result);
+router.get('/:cycleId/participants', c.participants);
+router.put('/:cycleId/participants', c.replace);
+router.post('/:cycleId/launch', c.launch);
+router.post('/:cycleId/close', c.close);
+router.post('/:cycleId/cancel', c.cancel);
+module.exports = router;

@@ -4,7 +4,8 @@ const { getPlan } = require('../services/restock/service');
 const {
   syncForecastNotifications,
 } = require('../services/restock/notifications');
-let running = false;
+let running = false,
+  scheduled = false;
 async function scanDemandForecasts() {
   if (running) return;
   running = true;
@@ -32,13 +33,15 @@ async function scanDemandForecasts() {
   }
 }
 function startTenantDemandForecastCron() {
+  if (scheduled) return;
   cron.schedule(
-    '15 9 * * *',
+    '0 */12 * * *',
     () =>
       scanDemandForecasts().catch(() =>
         console.error('[demand forecast] sweep failed'),
       ),
     { timezone: 'Africa/Lagos' },
   );
+  scheduled = true;
 }
 module.exports = { scanDemandForecasts, startTenantDemandForecastCron };

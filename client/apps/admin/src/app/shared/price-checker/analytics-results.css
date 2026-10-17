@@ -1,0 +1,197 @@
+.pc-report-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.pc-report-section-heading > div {
+  min-width: 0;
+  flex: 1;
+}
+.pc-report-section-heading .pc-help {
+  max-width: 650px;
+}
+.pc-report-row-count {
+  font-size: 11px;
+  color: var(--pc-report-muted);
+  background: #8881;
+  padding: 6px 10px;
+  border-radius: 18px;
+  white-space: nowrap;
+}
+.pc-report-table-empty {
+  padding: 22px 16px;
+  margin-top: 18px;
+  border: 1px dashed #8884;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--pc-report-muted);
+  line-height: 1.6;
+}
+.pc-analytics .pc-report-table {
+  white-space: normal;
+  min-width: 560px;
+}
+.pc-analytics .pc-report-table td {
+  vertical-align: top;
+  line-height: 1.6;
+}
+.pc-report-table .pc-report-product {
+  min-width: 200px;
+  max-width: 380px;
+  overflow-wrap: anywhere;
+}
+.pc-report-table .pc-report-barcode {
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+.pc-report-table .pc-report-number {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pc-report-table strong {
+  font-weight: 600;
+}
+.pc-report-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.pc-analytics .pc-table-wrap:focus-visible {
+  outline: 2px solid #b20202;
+  outline-offset: 3px;
+}
+.pc-report-peak {
+  font-size: 11px;
+  color: #923e3e;
+  padding: 7px 12px;
+  background: #b2020209;
+  border-radius: 18px;
+}
+.pc-report-chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 24px 0 34px;
+}
+.pc-report-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 160px;
+  color: var(--pc-report-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.pc-report-hour-bars {
+  height: 160px;
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 5px;
+  border-bottom: 1px solid #8884;
+  background: repeating-linear-gradient(
+    to top,
+    transparent 0,
+    transparent 39px,
+    #8881 39px,
+    #8881 40px
+  );
+}
+.pc-report-hour-bars > div {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+.pc-report-hour-bars span {
+  display: block;
+  width: 100%;
+  background: #bc7b7b;
+  border-radius: 4px 4px 0 0;
+}
+.pc-report-hour-bars span[data-peak='true'] {
+  background: #b20202;
+}
+.pc-report-hour-bars small {
+  position: absolute;
+  bottom: -26px;
+  left: 0;
+  color: var(--pc-report-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.pc-report-hour-bars > div:last-child small {
+  left: auto;
+  right: 0;
+}
+.dark .pc-report-peak {
+  color: #f2b6b6;
+  background: #b2020220;
+}
+@container price-checker (max-width: 600px) {
+  .pc-analytics .pc-report-table {
+    min-width: 0;
+    display: block;
+    width: 100%;
+  }
+  .pc-report-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .pc-report-table tbody {
+    display: block;
+  }
+  .pc-report-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding: 18px 0;
+    border-bottom: 1px solid #8883;
+  }
+  .pc-analytics .pc-report-table td {
+    display: block;
+    border: 0;
+    padding: 0;
+    min-width: 0;
+    max-width: none;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .pc-report-table td::before {
+    content: attr(data-label);
+    display: block;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--pc-report-muted);
+    margin-bottom: 5px;
+  }
+  .pc-report-table .pc-report-product {
+    grid-column: 1/-1;
+    min-width: 0;
+  }
+  .pc-report-table tr:last-child {
+    border-bottom: 0;
+  }
+  .pc-report-table-section .pc-table-wrap {
+    margin-top: 8px;
+  }
+  .pc-report-hour-bars {
+    gap: 3px;
+  }
+  .pc-report-chart {
+    gap: 8px;
+  }
+  .pc-report-section-heading > div {
+    flex-basis: 100%;
+  }
+}

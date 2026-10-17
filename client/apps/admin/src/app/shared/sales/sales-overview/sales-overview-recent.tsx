@@ -12,11 +12,7 @@ import { PiFileText } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import type { SalesOrder } from '@/services/salesOrder.service';
 import { fmtCur } from '@/app/shared/purchases/purchases-analytics-helpers';
-import {
-  docStatusBadge,
-  paymentBadge,
-  TONE_CLASS,
-} from '../sales-list-status';
+import { docStatusBadge, paymentBadge, TONE_CLASS } from '../sales-list-status';
 import { relTime } from './sales-overview-helpers';
 
 function DocTypePill({ doc }: { doc: SalesOrder }) {
@@ -41,7 +37,7 @@ export default function SalesOverviewRecent({
 }) {
   return (
     <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3.5">
+      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
         <h2 className="text-sm font-semibold text-gray-900">
           Recent documents
         </h2>
@@ -56,9 +52,7 @@ export default function SalesOverviewRecent({
       {docs.length === 0 ? (
         <div className="px-5 py-16 text-center">
           <PiFileText className="mx-auto mb-3 h-10 w-10 text-gray-200" />
-          <p className="text-sm font-medium text-gray-600">
-            No documents yet
-          </p>
+          <p className="text-sm font-medium text-gray-600">No documents yet</p>
           <p className="mt-1 text-sm text-gray-400">
             Create your first quotation or sale to see it here.
           </p>
@@ -72,29 +66,31 @@ export default function SalesOverviewRecent({
               <li key={doc._id}>
                 <Link
                   href={routes.eCommerce.salesDetails(doc._id)}
-                  className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-3 py-2 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand sm:flex sm:gap-3 sm:px-4"
                 >
-                  <span className="w-40 shrink-0 truncate font-mono text-sm font-semibold text-brand">
+                  <span className="min-w-0 truncate font-mono text-sm font-semibold text-brand sm:w-40 sm:shrink-0">
                     {doc.soNumber}
                   </span>
-                  <DocTypePill doc={doc} />
-                  <span className="min-w-0 flex-1 truncate text-sm text-gray-700">
+                  <span className="col-start-2 row-start-3 justify-self-end sm:hidden lg:block">
+                    <DocTypePill doc={doc} />
+                  </span>
+                  <span className="col-start-1 row-start-2 min-w-0 flex-1 truncate text-sm text-gray-700">
                     {doc.customerSnapshot?.name || '—'}
                   </span>
                   <span
-                    className={`hidden shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-semibold sm:inline-flex ${TONE_CLASS[status.tone]}`}
+                    className={`col-start-1 row-start-3 inline-flex w-fit shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-semibold ${TONE_CLASS[status.tone]}`}
                   >
                     {status.label}
                   </span>
                   <span
                     className={`hidden w-[68px] shrink-0 items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold md:inline-flex ${TONE_CLASS[pay.tone]}`}
                   >
-                    {pay.label}
+                    {doc.docType === 'quotation' ? '—' : pay.label}
                   </span>
-                  <span className="w-28 shrink-0 text-right text-sm font-semibold text-gray-900 tabular-nums">
+                  <span className="col-start-2 row-start-1 shrink-0 text-right text-sm font-semibold tabular-nums text-gray-900 sm:w-28">
                     {fmtCur(doc.total, doc.currency)}
                   </span>
-                  <span className="w-20 shrink-0 text-right text-xs text-gray-400">
+                  <span className="col-start-2 row-start-2 shrink-0 text-right text-xs text-gray-500 sm:w-20">
                     {relTime(doc.createdAt, now)}
                   </span>
                 </Link>

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { resolveSubProductPricing } from '@/utils/sub-product-pricing';
 
 // Helper to convert empty strings to null for optional number fields
 const optionalNumber = z.preprocess(
@@ -340,7 +341,7 @@ export const subProductFormSchema = z.object({
 
   // When linking to an existing product, cost price is required
   if (!isCreatingNewProduct) {
-    const cost = typeof sp.costPrice === 'number' ? sp.costPrice : Number(sp.costPrice);
+    const cost = resolveSubProductPricing(sp).costPrice;
     if (!cost || cost <= 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

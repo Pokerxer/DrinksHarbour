@@ -70,12 +70,14 @@ export function resolveCartLine(
 
   const vendor =
     (vendorId && vendors.find((v) => v?.tenant?._id === vendorId)) ||
+    (!vendorId && !wantedSize && product.shoppingOffer && vendors.find(v => String(v._id) === product.shoppingOffer.subProductId)) ||
     (wantedSize && vendors.find((v) => v?.sizes?.some((s: any) => s?.size === wantedSize))) ||
     vendors[0];
 
   const sizes: any[] = Array.isArray(vendor?.sizes) ? vendor.sizes : [];
   const chosen =
-    (wantedSize && sizes.find((s) => s?.size === wantedSize)) || firstInStock<any>(sizes);
+    (wantedSize && sizes.find((s) => s?.size === wantedSize)) ||
+    (!vendorId && !wantedSize && product.shoppingOffer && sizes.find(s => String(s._id) === product.shoppingOffer.sizeId)) || firstInStock<any>(sizes);
 
   // Both ids or neither — a subProductId without its sizeId reads as "Out of
   // Stock" at validation, which is worse than an unvalidated line.

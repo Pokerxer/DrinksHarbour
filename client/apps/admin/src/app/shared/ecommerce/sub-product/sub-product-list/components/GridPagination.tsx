@@ -4,9 +4,9 @@
 // the page-size selector the TanStack pagination doesn't cover for grid views.
 
 import { Text, Select } from 'rizzui';
+import { SUBPRODUCT_PAGE_SIZE_OPTIONS } from '@/utils/sub-product-pagination';
 
-/** Page sizes offered by grid & list selectors (10 = POS entry point). */
-export const PAGE_SIZE_OPTIONS = [10, 12, 25, 50, 100];
+export const PAGE_SIZE_OPTIONS = SUBPRODUCT_PAGE_SIZE_OPTIONS;
 
 export default function GridPagination({
   pageIndex,
@@ -29,15 +29,13 @@ export default function GridPagination({
   const canNext = pageIndex < totalPages - 1;
 
   const navButton =
-    'flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-900 shadow-sm transition-colors hover:bg-gray-50 disabled:text-gray-400 disabled:opacity-40 disabled:shadow-none';
+    'flex h-11 w-11 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-900 transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:text-gray-400 disabled:opacity-40';
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 border-t border-gray-100 bg-gray-50/50 p-4">
       {/* Page size selector */}
       <div className="flex items-center gap-2">
-        <Text className="hidden font-normal text-gray-600 @md:block">
-          Rows per page
-        </Text>
+        <Text className="text-xs font-normal text-gray-600">Rows per page</Text>
         <Select
           size="sm"
           variant="flat"
@@ -46,23 +44,25 @@ export default function GridPagination({
             label: String(n),
           }))}
           value={pageSize}
-          onChange={(v: any) => onPageSizeChange(Number(v.value))}
+          onChange={(v: { value: number; label: string }) =>
+            onPageSizeChange(Number(v.value))
+          }
           aria-label="Rows per page"
-          className="w-16"
+          className="w-20"
           suffixClassName="[&>svg]:size-3"
-          selectClassName="font-semibold text-xs ring-0 shadow-sm h-7"
+          selectClassName="font-semibold text-sm ring-0 min-h-11"
           optionClassName="font-medium text-xs px-2 justify-center"
         />
       </div>
 
       {/* Result count */}
-      <Text className="hidden font-normal text-gray-600 @xl:block">
+      <Text className="text-xs font-normal tabular-nums text-gray-600">
         {total === 0
           ? '0 results'
           : `${start}–${end} of ${total.toLocaleString()}`}
       </Text>
-      <Text className="hidden font-normal text-gray-600 @3xl:block">
-        Page {pageIndex + 1} of {totalPages.toLocaleString()}
+      <Text className="text-xs font-normal tabular-nums text-gray-600">
+        Page {total === 0 ? 0 : pageIndex + 1} of {totalPages.toLocaleString()}
       </Text>
 
       {/* Page nav */}

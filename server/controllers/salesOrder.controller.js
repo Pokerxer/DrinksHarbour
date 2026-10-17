@@ -1,4 +1,9 @@
 const linkedReturns = require('../services/linkedReturns.service');
+const quotationReturns = require('../services/salesQuotationReturns');
+const { salespersonIdentity, mySalespersonQuery, saveSalesEdit } = require('../services/salesSalesperson');
+const orderPolicy = require('../services/salesOrderPolicy');
+const reservations = require('../services/salesReservations');
+Object.assign(exports, require('./salesOrderLock.controller'));
 // server/controllers/salesOrder.controller.js
 const asyncHandler = require("express-async-handler");
 const { withDbRetry } = require('../utils/db-retry');
@@ -9,7 +14,6 @@ const Activity = require('../models/Activity');
 const CustomField = require('../models/CustomField');
 const svc = require('../services/salesOrder.service');
 const salesImportSvc = require('../services/salesImport.service');
-const salesPayment = require('../services/salesPayment.service');
 const salesFulfillSvc = require('../services/salesFulfill.service');
 const salesLog = require('../services/salesActivity.service');
 const { captureDocumentTax, reverseDocumentTax, effectiveTaxForFlow } = require('../services/tax.service');
@@ -70,7 +74,7 @@ function requireResolvedTenant(tenantId, res) {
 exports.createSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   if (!requireResolvedTenant(tenantId, res)) return;
-  const salesperson = req.user?.name || '';
+  const assignment = salespersonIdentity(req.user);
   // Snapshot the effective taxRate for any line carrying a configured Tax ref
   // before the service normalises/copies the lines (mapLine reads item.taxRate).
   if (Array.isArray(req.body?.items)) {
@@ -86,7 +90,7 @@ exports.createSalesOrder = asyncHandler(async (req, res) => {
       if (resolved && resolved.taxRate !== null) item.taxRate = resolved.taxRate;
     }
   }
-  const so = await svc.createSalesOrderDoc({ tenantId, salesperson, body: req.body });
+  const so = await svc.createSalesOrderDoc({ tenantId, ...assignment, body: req.body });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_CREATE', 'create', so);
   await salesLog.logActivity(tenantId, so._id, {
     subject: so.docType === 'quotation' ? 'Quotation created' : 'Sales Order created',
@@ -99,7 +103,7 @@ exports.getSalesOrders = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   if (!requireResolvedTenant(tenantId, res)) return;
   const { search, page, limit, dateFrom, dateTo, warehouse, paymentMethod, paymentStatus, salesperson, docType, status, customer, currency, paymentTerms, pricelist, tags, filters, groupBy, groupBySubOption } = req.query;
-  const q = { tenant: tenantId };
+  let q = { tenant: tenantId };
   if (search) {
     q.$or = [
       { soNumber: { $regex: search, $options: 'i' } },
@@ -129,6 +133,19 @@ exports.getSalesOrders = asyncHandler(async (req, res) => {
   // filter query is merged OVER this one, so re-assert the scope afterwards.
   // Nothing a caller sends may decide which tenant's orders come back.
   q.tenant = tenantId;
+  // Add ownership after advanced filters so it cannot overwrite tenant/search
+  // predicates or be overridden by client-supplied document fields.
+  if (req.query.myQuotations === '1')
+    q.$and = [...(q.$and || []), mySalespersonQuery(req.user)];
+
+  let returnedIds = new Set();
+  if (q.docType === 'quotation' && req.query.includeReturnedOrders === '1') {
+    const expanded = await quotationReturns.includeReturnedOrders(q);
+    q = expanded.query;
+    returnedIds = new Set(expanded.ids.map(String));
+  }
+  const markReturns = doc => returnedIds.has(String(doc._id))
+    ? { ...doc, hasReturns: true } : doc;
 
   // Group-by path: server-side grouping, no pagination
   if (groupBy && groupBy !== 'none' && groupBy !== '') {
@@ -137,7 +154,9 @@ exports.getSalesOrders = asyncHandler(async (req, res) => {
     });
     // `truncated` is not decoration — the grouped path is unpaginated, so
     // without it a capped result is indistinguishable from a complete one.
-    return res.json({ success: true, groups, truncated, fetched, total });
+    return res.json({ success: true, groups: groups.map(group => ({
+      ...group, docs: group.docs.map(markReturns),
+    })), truncated, fetched, total });
   }
 
   const { skip, limit: pageLimit, page: pageNum } = parsePagination(page, limit);
@@ -151,7 +170,9 @@ exports.getSalesOrders = asyncHandler(async (req, res) => {
       SalesOrder.countDocuments(q),
     ])
   );
-  paginatedResponse(res, req.query.includeReturns === '1' ? await linkedReturns.projectSalesReturns(data, tenantId) : data, buildPaginationMeta(pageNum, pageLimit, total));
+  const rows = req.query.includeReturns === '1'
+    ? await linkedReturns.projectSalesReturns(data, tenantId) : data;
+  paginatedResponse(res, await reservations.projectReservations(rows.map(markReturns),tenantId), buildPaginationMeta(pageNum, pageLimit, total));
 });
 
 /**
@@ -205,7 +226,7 @@ exports.getSalesOrder = asyncHandler(async (req, res) => {
     .lean();
   res.json({
     success: true,
-    data: { ...(await linkedReturns.projectSalesReturns([so], tenantId))[0], issuerBankAccounts: printableBankAccounts(payer?.bankAccounts) },
+    data: { ...(await reservations.projectReservations(await linkedReturns.projectSalesReturns([so], tenantId),tenantId))[0], issuerBankAccounts: printableBankAccounts(payer?.bankAccounts) },
   });
 });
 
@@ -248,7 +269,7 @@ exports.updateSalesOrder = asyncHandler(async (req, res) => {
     }
   }
   await svc.applyEdit(so, req.body);
-  await so.save();
+  await saveSalesEdit(so, req.user);
   auditPrivilegedSalesAction(req, 'SALES_ORDER_UPDATE', 'update', so);
   const plDiff = salesLog.diffPricelist(before.pricelistName, so.appliedPricelist?.pricelistName);
   if (plDiff) {
@@ -309,7 +330,8 @@ exports.priceLines = asyncHandler(async (req, res) => {
     tenantId,
     pricelistId: pricelist || null,
   });
-  res.json({ success: true, data: { items: priced } });
+  const promoted = await svc.resolveLinePromotions(priced, {tenantId});
+  res.json({ success: true, data: { items: promoted } });
 });
 
 // Recompute every product line's unit price from the order's current pricelist,
@@ -327,7 +349,7 @@ exports.updatePrices = asyncHandler(async (req, res) => {
     discountTotal: so.discountTotal, promotionTotal: so.promotionTotal,
   };
   await svc.updatePricesForOrder(so, { tenantId });
-  await so.save();
+  await saveSalesEdit(so, req.user);
   auditPrivilegedSalesAction(req, 'SALES_ORDER_UPDATE', 'update', so);
   await salesLog.logActivity(tenantId, so._id, {
     subject: `Product prices recomputed according to pricelist ${so.appliedPricelist?.pricelistName || 'base'}`,
@@ -362,7 +384,7 @@ exports.applyCoupon = asyncHandler(async (req, res) => {
       .status(err.statusCode || 400)
       .json({ success: false, message: err.message || 'Could not apply coupon' });
   }
-  await so.save();
+  await saveSalesEdit(so, req.user);
   await salesLog.logActivity(tenantId, so._id, {
     subject: code
       ? `Coupon ${so.couponCode} applied (−${salesLog.formatMoney(so.couponDiscount)})`
@@ -378,11 +400,16 @@ exports.deleteSalesOrder = asyncHandler(async (req, res) => {
   const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId });
   if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
   if (!svc.canCancel(so)) {
-    return res.status(409).json({ success: false, message: 'This document cannot be cancelled' });
+    return res.status(409).json({ success: false, message: orderPolicy.cancellationReason(so) });
   }
-  if (so.docType === 'order') so.orderStatus = 'cancelled';
-  else so.quoteStatus = 'rejected';
-  await so.save();
+  if (so.reservationVersion) {
+    const cancelled = await reservations.cancelReservedOrder({tenantId,orderId:so._id,actorId:req.user?._id});
+    so.orderStatus=cancelled.orderStatus;
+  } else {
+    if (so.docType === 'order') so.orderStatus = 'cancelled';
+    else so.quoteStatus = 'rejected';
+    await so.save();
+  }
   if (so.docType === 'order') reverseDocumentTax({ sourceType: 'sales_order', doc: so, userId: req.user?._id });
   if (so.docType === 'order') reverseDocumentEntry({ sourceType: 'sales_order', doc: so, userId: req.user?._id });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_CANCEL', 'delete', so);
@@ -398,6 +425,10 @@ async function loadQuotation(req, res) {
   const so = await SalesOrder.findOne({ _id: req.params.id, tenant: req.tenant?._id });
   if (!so || so.docType !== 'quotation') {
     res.status(404).json({ success: false, message: 'Quotation not found' });
+    return null;
+  }
+  if (so.locked) {
+    res.status(409).json({success:false,message:'Unlock this document before changing it.'});
     return null;
   }
   return so;
@@ -462,35 +493,14 @@ exports.confirmSalesOrder = asyncHandler(async (req, res) => {
   if (!requireResolvedTenant(tenantId, res)) return;
   const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId, docType: 'order' });
   if (!so) return res.status(404).json({ success: false, message: 'Order not found' });
-  if (so.orderStatus !== 'draft') return res.status(409).json({ success: false, message: 'Only a draft order can be confirmed' });
-
-  const { paymentMethod, amountTendered, splitPayments, redeemPoints } = req.body;
-  if (!paymentMethod) return res.status(400).json({ success: false, message: 'Payment method required' });
-
-  // I1: attachTenant does NOT select posSettings onto req.tenant (only
-  // revenueModel/markupPercentage/commissionPercentage/etc are selected there),
-  // so loyalty earn would silently always compute to 0 if we trusted
-  // req.tenant?.posSettings. Load it explicitly here instead.
-  const Tenant = require('../models/Tenant');
-  const tenantDoc = await Tenant.findById(tenantId).select('posSettings').lean();
-  const posSettings = tenantDoc?.posSettings || {};
-
-  const result = await salesPayment.capturePayment({
-    salesOrder: so, tenantId, paymentMethod, amountTendered, splitPayments, redeemPoints,
-    userId: req.user?._id || req.posUser?._id,
-    posSettings,
-  });
-  if (!result.ok) return res.status(result.status || 409).json({ success: false, message: result.message });
-
-  so.orderStatus = 'confirmed';
-  so.paymentMethod = paymentMethod;
-  so.paymentStatus = 'paid';
-  so.amountPaid = so.total;
-  so.walletTxRef = result.walletTx?._id || undefined;
-  so.loyaltyEarned = result.loyaltyEarned || 0;
-  so.loyaltyRedeemed = result.loyaltyRedeemed || 0;
-  so.pointsRedeemed = result.pointsRedeemed || 0;
-  await so.save();
+  if (so.locked && so.orderStatus === 'draft') return res.status(409).json({success:false,message:'Unlock this document before confirming.'});
+  if (!req.body.paymentMethod) return res.status(400).json({success:false,message:'Payment method required'});
+  if (so.orderStatus === 'draft') await reservations.confirmReservation({tenantId,orderId:so._id,
+    warehouseId:so.warehouseId,actorId:req.user?._id||req.posUser?._id});
+  const paid = await require('../services/salesReservations/payment').recordPayment({tenantId,orderId:so._id,
+    actorId:req.user?._id||req.posUser?._id,payment:{paymentMethod:req.body.paymentMethod,
+      amountTendered:req.body.amountTendered,splitPayments:req.body.splitPayments,redeemPoints:req.body.redeemPoints}});
+  Object.assign(so,paid);
   captureDocumentTax({ sourceType: 'sales_order', doc: so, postedBy: req.user?._id });
   await postDocumentEntry({ sourceType: 'sales_order', doc: so, postedBy: req.user?._id });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_CONFIRM', 'update', so);
@@ -505,7 +515,7 @@ exports.fulfillSalesOrder = asyncHandler(async (req, res) => {
   if (!requireResolvedTenant(tenantId, res)) return;
   const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId, docType: 'order' });
   if (!so) return res.status(404).json({ success: false, message: 'Order not found' });
-  if (!['confirmed', 'partially_fulfilled'].includes(so.orderStatus)) {
+  if (!so.reservationVersion && !['confirmed', 'partially_fulfilled'].includes(so.orderStatus)) {
     return res.status(409).json({ success: false, message: 'Only a confirmed order can be fulfilled' });
   }
   let { warehouseId, items: fulfillLines } = req.body;
@@ -527,9 +537,13 @@ exports.fulfillSalesOrder = asyncHandler(async (req, res) => {
     markupPct: req.tenant?.markupPercentage,
     commissionPct: req.tenant?.commissionPercentage,
   };
-  const { order, posting } = await salesFulfillSvc.fulfillOrder({
+  const { order, posting } = so.reservationVersion ? await reservations.fulfillReservedOrder({
+    tenantId,orderId:so._id,warehouseId,items:fulfillLines||[],requestId:req.body.requestId,actorId:req.user?._id||req.posUser?._id,
+    actor:req.user||req.posUser,
+  }) : await salesFulfillSvc.fulfillOrder({
     salesOrder: so, tenantId, warehouseId, fulfillLines: fulfillLines || [],
     userId: req.user?._id || req.posUser?._id, deps: {},
+    actor: req.user || req.posUser,
     revenue, paymentMethod: so.paymentMethod,
   });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_FULFILL', 'transfer', order);
@@ -566,8 +580,10 @@ exports.returnSalesOrder = asyncHandler(async (req, res) => {
       quantityAfter: Number.isFinite(m.balanceAfter) ? m.balanceAfter : m.quantity,
       reference: m.reference,
       referenceType: 'return',
+      relatedSalesOrder: m.relatedSalesOrder,
       performedBy: m.performedBy,
       source: 'return',
+      status: 'confirmed',
       notes: `Sales return: ${m.reference}`,
     });
   };
@@ -609,7 +625,7 @@ exports.importSalesOrders = asyncHandler(async (req, res) => {
   const { csv } = req.body;
   if (!csv) return res.status(400).json({ success: false, message: 'CSV text is required in body.csv' });
   const orders = salesImportSvc.parseSalesCsv(csv, tenantId);
-  const result = await salesImportSvc.bulkImportSales(orders, tenantId);
+  const result = await salesImportSvc.bulkImportSales(orders, tenantId, salespersonIdentity(req.user));
   auditPrivilegedSalesAction(req, 'SALES_IMPORT', 'create', null);
   res.json({ success: true, data: result });
 });

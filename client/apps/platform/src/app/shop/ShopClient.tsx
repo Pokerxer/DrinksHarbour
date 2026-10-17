@@ -1,5 +1,7 @@
 'use client';
 
+import { useShoppingLocation } from '@/context/ShoppingLocationContext';
+import { shoppingHeaders } from '@/lib/shoppingRequest';
 import React, { useEffect, useState, useCallback, Suspense, useMemo, useRef } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 
@@ -176,10 +178,12 @@ function ShopPageContent({
   initialTotalPages,
   initialPage,
   initialFacetCounts,
-  serverPaged = false,
+  serverPaged: suppliedServerPaged = false,
   initialRecommended,
   heroSeed,
 }: PageProps) {
+  const { location, revision } = useShoppingLocation();
+  const serverPaged = suppliedServerPaged || !!location;
   const searchParams = useSearchParams();
   const router  = useRouter();
   const pathname = usePathname();
@@ -266,11 +270,12 @@ function ShopPageContent({
   const buildApiUrl = useCallback(() => {
     const base = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/products/search`;
     const sp = new URLSearchParams(searchParams.toString());
+    if (location && !sp.get('sort')) sp.set('sort', 'nearest');
     const opts = serverPaged
       ? { limit: SHOP_PAGE_SIZE, page: parseShopPage(sp.get('page')) }
       : {};
     return `${base}?${buildShopSearchParams(sp, opts).toString()}`;
-  }, [searchParams, serverPaged]);
+  }, [searchParams, serverPaged, revision]);
 
   // ── Fetch ────────────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async (signal: AbortSignal) => {
@@ -278,7 +283,7 @@ function ShopPageContent({
     setError(null);
 
     // Serve from cache if fresh
-    const cached = _shopCache.get(url);
+    const cached = location ? undefined : _shopCache.get(url);
     if (cached && Date.now() - cached.ts < SHOP_CACHE_TTL) {
       setProducts(cached.data);
       setTotalProducts(cached.total);
@@ -291,11 +296,11 @@ function ShopPageContent({
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(url, { signal });
+      const res = await fetch(url, { signal, headers: shoppingHeaders(location), cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const parsed = parseProductsResponse(await res.json());
       if (signal.aborted) return;
-      _shopCache.set(url, { ...parsed, data: parsed.products, ts: Date.now() });
+      if (!location) _shopCache.set(url, { ...parsed, data: parsed.products, ts: Date.now() });
       setProducts(parsed.products);
       setTotalProducts(parsed.total);
       setTotalPages(parsed.totalPages);
@@ -310,17 +315,26 @@ function ShopPageContent({
     } finally {
       if (!signal.aborted) setLoading(false);
     }
-  }, [buildApiUrl]);
+  }, [buildApiUrl, revision]);
 
   // Debounce rapid URL-param changes (e.g. slider dragging) by 200ms
   useEffect(() => {
     // Skip the first fetch when the server already seeded matching products.
-    if (skipNextFetchRef.current) { skipNextFetchRef.current = false; return; }
+    if (skipNextFetchRef.current) { skipNextFetchRef.current = false; if (!location) return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const controller = new AbortController();
     debounceRef.current = setTimeout(() => { fetchProducts(controller.signal); }, 200);
     return () => { controller.abort(); if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [fetchProducts]);
+
+  const previousLocation = useRef(revision);
+  useEffect(() => {
+    if (previousLocation.current === revision) return;
+    previousLocation.current = revision;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('page');
+    router.replace(shopPageHref(params, 1, pathname), { scroll: false });
+  }, [revision, searchParams, router, pathname]);
 
   // Navigate to another page of the series. The URL is the state, so the
   // debounced effect above picks up the new `?page=` and fetches it — and the
@@ -773,6 +787,7 @@ function ShopPageContent({
         </div>
       )}
 
+
       {/* ── Product grid ─────────────────────────────────────────────────── */}
       {(!isSalePage || visibleProducts.length > 0) && (
         <Shop
@@ -785,6 +800,7 @@ function ShopPageContent({
           onLayoutChange={setLayoutCol}
           initialFilters={initialFilters}
           serverPaged={serverPaged}
+          hasShoppingLocation={!!location}
           serverPage={currentPage - 1}
           serverPageCount={totalPages}
           serverTotal={totalProducts}

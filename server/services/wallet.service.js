@@ -30,7 +30,7 @@ const WalletTransaction = require('../models/WalletTransaction');
  * @returns {Promise<{ ok: true, balance: number, tx: object }
  *                  | { ok: false, status: number, message: string }>}
  */
-async function mutateWallet({ owner, tenantId, value, reference, relatedOrder, createdBy }) {
+async function mutateWallet({ owner, tenantId, value, reference, relatedOrder, createdBy, session = null }) {
   const { Model, ownerType, ownerId, filter } = owner;
   const { type, amount, reason } = value;
   const inc = type === 'debit' ? -amount : amount;
@@ -41,7 +41,7 @@ async function mutateWallet({ owner, tenantId, value, reference, relatedOrder, c
   const updated = await Model.findOneAndUpdate(
     query,
     { $inc: { walletBalance: inc } },
-    { new: true }
+    { new: true, ...(session ? { session } : {}) }
   ).select('walletBalance');
 
   if (!updated) {
@@ -54,7 +54,7 @@ async function mutateWallet({ owner, tenantId, value, reference, relatedOrder, c
   }
 
   try {
-    const tx = await WalletTransaction.create({
+    const ledger = {
       tenant: tenantId,
       ownerType,
       ownerId,
@@ -65,9 +65,11 @@ async function mutateWallet({ owner, tenantId, value, reference, relatedOrder, c
       reference,
       relatedOrder,
       createdBy,
-    });
+    };
+    const tx = session ? (await WalletTransaction.create([ledger],{session}))[0] : await WalletTransaction.create(ledger);
     return { ok: true, balance: updated.walletBalance, tx };
   } catch (err) {
+    if (session) throw err; // Transaction owner rolls balance and ledger back together.
     // Ledger write failed — undo the balance move to keep the two consistent.
     await Model.updateOne({ _id: updated._id }, { $inc: { walletBalance: -inc } });
     throw err;

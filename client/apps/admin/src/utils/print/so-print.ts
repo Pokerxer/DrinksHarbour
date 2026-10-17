@@ -158,11 +158,10 @@ export function buildSalesDoc(
 
   // ── Table ────────────────────────────────────────────────────────────────
   // Product lines carry price; section lines become group headers; standalone
-  // note lines are folded into a Notes section so nothing handwritten is lost.
+  // note lines stay in place so handwritten instructions retain their context.
   const productLines = so.items.filter(
     (i) => !isSection(i) && !isNote(i)
   );
-  const untaxed = productLines.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
   const taxAmt =
     so.taxTotal ?? productLines.reduce((s, l) => s + (l.taxAmount ?? 0), 0);
   const discAmt = so.discountTotal ?? 0;
@@ -174,7 +173,7 @@ export function buildSalesDoc(
         ...Array.from({ length: 5 }, () => ({ text: '' })),
       ];
     }
-    if (isNote(item)) return null;
+    if (isNote(item)) return [{text: item.description || item.name || '',sub:'Note'}, ...Array.from({length:5},()=>({text:''}))];
     const packs = packsLabel(item.quantity, item.packSize, 'bottle');
     return [
       {
@@ -196,7 +195,7 @@ export function buildSalesDoc(
           }
         : { text: '—' },
       item.taxRate ? `${item.taxRate}%` : '—',
-      { text: fmtAmt(item.lineTotal, so.currency), strong: true },
+      { text: fmtAmt(Math.max(0,item.lineTotal-(item.promoDiscount||0)), so.currency), strong: true },
     ].map((c) => (typeof c === 'string' ? { text: c } : c)) as DocCell[];
   }).filter((r): r is DocCell[] => r !== null);
 
@@ -204,7 +203,7 @@ export function buildSalesDoc(
   const totals: DocumentModel['totals'] = [];
   totals.push({
     label: `Items Total (${productLines.length} line${productLines.length === 1 ? '' : 's'})`,
-    value: fmtAmt(untaxed, so.currency),
+    value: fmtAmt(so.subtotal ?? productLines.reduce((sum,line)=>sum+line.unitPrice*line.quantity,0), so.currency),
   });
   if (discAmt > 0)
     totals.push({
@@ -212,6 +211,7 @@ export function buildSalesDoc(
       value: `−${fmtAmt(discAmt, so.currency)}`,
       color: '#dc2626',
     });
+  if ((so.promotionTotal ?? 0)>0) totals.push({label:'Promotions',value:`−${fmtAmt(so.promotionTotal!,so.currency)}`,color:'#dc2626'});
   if ((so.pricelistCartDiscount ?? 0) > 0)
     totals.push({
       label: `Spend Discount${so.appliedPricelist?.pricelistName ? ` (${so.appliedPricelist.pricelistName})` : ''}`,
@@ -271,11 +271,7 @@ export function buildSalesDoc(
     });
   }
 
-  const noteLines = so.items
-    .filter(isNote)
-    .map((n) => n.description || n.name || '')
-    .filter(Boolean);
-  const notesBody = [so.notes, ...noteLines].filter(Boolean).join('\n');
+  const notesBody = so.notes || '';
   if (notesBody) sections.push({ title: 'Notes', body: notesBody });
   if (so.terms)
     sections.push({ title: 'Terms & Conditions', body: so.terms });

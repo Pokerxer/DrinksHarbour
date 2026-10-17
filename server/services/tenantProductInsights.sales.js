@@ -8,7 +8,7 @@ const {
   buildLinkedReturnState,
 } = require('./linkedReturns.helpers');
 const units = (v) => (known(v) ? v : 0);
-function normalizeOrderUnits(order, tenantId, { locations = false } = {}) {
+function normalizeOrderUnits(order, tenantId, { locations = false, details = false } = {}) {
   if (!settled(order)) return [];
   if (order.source !== 'pos') {
     const ownStatus =
@@ -49,6 +49,7 @@ function normalizeOrderUnits(order, tenantId, { locations = false } = {}) {
     sales = Math.max(sales, units(order.projectedSalesReturns?.[index]));
     return [
       {
+        ...(details ? { lineIndex: index, gross: item.quantity } : {}),
         subProductId: id(item.subproduct),
         sizeId: id(item.size),
         ...(locations ? { warehouseId: id(item.warehouse) } : {}),
@@ -65,7 +66,7 @@ function normalizeSalesUnits(
   so,
   receipts,
   tenantId,
-  { locations = false } = {},
+  { locations = false, details = false } = {},
 ) {
   if (
     id(so.tenant) !== id(tenantId) ||
@@ -108,7 +109,7 @@ function normalizeSalesUnits(
     const ambiguous = remainingReturn > 0 && sources.size > 1;
     let remainingFulfilled = units(line.fulfilledQty);
     const rows = [];
-    for (const f of so.fulfillments || []) {
+    for (const [fulfillmentIndex, f] of (so.fulfillments || []).entries()) {
       if (f.status && f.status !== 'posted') continue;
       const qty = (f.items || [])
         .filter((r) => String(r.lineId) === id(line._id))
@@ -119,6 +120,7 @@ function normalizeSalesUnits(
       const returned = Math.min(actual, remainingReturn);
       remainingReturn -= returned;
       rows.push({
+        ...(details ? { lineId: id(line._id), fulfillmentId: id(f._id) || String(fulfillmentIndex), gross: actual } : {}),
         subProductId: id(line.subproduct),
         sizeId: id(line.size),
         ...(locations

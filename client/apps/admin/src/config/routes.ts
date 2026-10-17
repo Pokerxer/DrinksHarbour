@@ -28,6 +28,7 @@ export const routes = {
     transfers: '/inventory/transfers',
     receipts: '/inventory/receipts',
     deliveries: '/inventory/deliveries',
+    returns: '/inventory/returns',
     internal: '/inventory/internal',
     adjustments: '/inventory/adjustments',
     physicalInventory: '/inventory/physical-inventory',

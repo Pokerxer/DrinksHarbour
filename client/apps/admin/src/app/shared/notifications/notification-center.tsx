@@ -11,6 +11,7 @@ import {
   type InboxChip,
 } from './inbox-filters';
 import NotificationHero from './notification-hero';
+import NotificationCoverage from './notification-coverage';
 import NotificationStatCards from './notification-stat-cards';
 import NotificationToolbar, { hasFilters } from './notification-toolbar';
 import NotificationSelection from './notification-selection';
@@ -51,7 +52,7 @@ function Inbox({
   const notices = inbox.data.notifications,
     rows = filterNotices(notices, filters),
     groups = order === 'urgency' ? groupByUrgency(rows) : groupByDate(rows);
-  const selectedNotice = rows.find((n) => n._id === selected) || null;
+  const selectedNotice = notices.find((n) => n._id === selected) || null;
   useEffect(() => {
     if (selected && !selectedNotice) setSelected(null);
   }, [selected, selectedNotice]);
@@ -73,12 +74,13 @@ function Inbox({
     });
   const changeFilters = (next: typeof filters) => {
     setFilters(next);
+    setSelected(null);
     setChecked(new Set());
   };
   const close = useCallback(() => setSelected(null), []);
   const select = (id: string) => {
     setSelected(id);
-    if (!inbox.busy) void inbox.markRead(id);
+    void inbox.markRead(id);
   };
   return (
     <section className="space-y-6 pb-8">
@@ -97,6 +99,7 @@ function Inbox({
       <NotificationStatCards
         notices={notices}
         total={inbox.data.total}
+        scoped={!!range.startDate}
         unread={inbox.data.unreadCount}
         active={
           filters.chips.has('actionable')
@@ -141,12 +144,12 @@ function Inbox({
           )}
         </div>
       )}
-      {inbox.data.total > 500 && (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Showing the 500 most recent of {inbox.data.total} — older notices are
-          not loaded.
-        </p>
-      )}
+      <NotificationCoverage
+        loaded={notices.length}
+        total={inbox.data.total}
+        loading={inbox.loading}
+        failed={!!inbox.error}
+      />
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
         <NotificationToolbar
           order={order}

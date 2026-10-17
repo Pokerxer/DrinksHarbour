@@ -37,9 +37,9 @@ export function pricingSignature(
 ): string {
   const parts = lines
     .filter(
-      (l) => l.lineType === 'product' && l.subProductId && !l.priceOverridden
+      (l) => l.lineType === 'product' && l.subProductId
     )
-    .map((l) => [l.key, l.subProductId, l.sizeId ?? '', l.quantity]);
+    .map((l) => [l.key, l.subProductId, l.sizeId ?? '', l.quantity,l.discount,l.discountType,l.taxRate,l.priceOverridden,l.priceOverridden?l.baseUnitPrice:null]);
   return parts.length ? JSON.stringify([pricelistId, parts]) : '';
 }
 

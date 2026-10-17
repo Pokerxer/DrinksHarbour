@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
 const { computeRatingAggregate } = require('../services/review.helpers');
+const { expandedTypeValues } = require('../constants/expandedProductTypes');
 const { isBeverageType } = require('../constants/productTypes');
 
 // Reusable MediaItem Schema
@@ -205,6 +206,8 @@ const productSchema = new Schema(
         'alkaline_water',
         'coconut_water',
         
+        ...expandedTypeValues,
+
         // Mixers
         'mixer',
         'simple_syrup',
@@ -222,12 +225,14 @@ const productSchema = new Schema(
         'milkshake',
         
         // Accessories & Others
+        'vape',
         'accessory',
         'glassware',
         'bar_tool',
         'ice',
         'garnish',
         'snack',
+        'nuts',
         'gift_set',
         'subscription_box',
         'other',
@@ -866,7 +871,7 @@ productSchema.virtual('availabilitySummary').get(function () {
 });
 
 productSchema.virtual('isBeverage').get(function () {
-  return !['accessory', 'glassware', 'bar_tool', 'snack', 'gift_set'].includes(this.type);
+  return !['vape', 'accessory', 'glassware', 'bar_tool', 'snack', 'nuts', 'gift_set'].includes(this.type);
 });
 
 productSchema.virtual('alcoholCategory').get(function () {

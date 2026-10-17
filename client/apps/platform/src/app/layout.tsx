@@ -24,11 +24,6 @@ configureCommerceCore({
 });
 
 // Deferred — non-critical UI, code-split into separate chunks
-const ModalCart       = dynamic(() => import("@/components/Modal/ModalCart"));
-const ModalWishlist   = dynamic(() => import("@/components/Modal/ModalWishlist"));
-const ModalSearch     = dynamic(() => import("@/components/Modal/ModalSearch"));
-const ModalQuickview  = dynamic(() => import("@/components/Modal/ModalQuickview"));
-const ModalCompare    = dynamic(() => import("@/components/Modal/ModalCompare"));
 const ModalNewsletter = dynamic(() => import("@/components/Modal/ModalNewsletter"));
 const MobileBottomNav = dynamic(() => import("@/components/Navigation").then(mod => mod.MobileBottomNav));
 const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/ChatbotWidget"));
@@ -39,6 +34,7 @@ const FooterPlacementBanner = dynamic(() => import("@/components/Banner/Placemen
 // client-only (ssr: false). That option is only valid inside a Client Component,
 // so they live in ClientOverlays rather than being imported here directly.
 import ClientOverlays from "@/components/Layout/ClientOverlays";
+import CommerceModals from "@/components/Layout/CommerceModals";
 import ExtensionNoiseGuard from "@/components/Layout/ExtensionNoiseGuard";
 import CommerceCoreInit from "@/components/Layout/CommerceCoreInit";
 
@@ -296,11 +292,7 @@ export default async function RootLayout({
             <div className="container mx-auto px-4 py-4">
               <FooterPlacementBanner placement="footer" variant="footer" limit={1} />
             </div>
-            <ModalCart />
-            <ModalWishlist />
-            <ModalSearch />
-            <ModalQuickview />
-            <ModalCompare />
+            <CommerceModals />
             <Footer />
             <ModalNewsletter />
             <MobileBottomNav />

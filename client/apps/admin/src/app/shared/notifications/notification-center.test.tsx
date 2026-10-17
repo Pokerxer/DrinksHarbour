@@ -14,6 +14,7 @@ const fixture = vi.hoisted(() => ({
   refresh: vi.fn(),
   error: '',
   loading: false,
+  total: null as number | null,
   notices: [
     {
       _id: 'a',
@@ -41,7 +42,7 @@ vi.mock('./use-notification-inbox', () => ({
     scope: 'test',
     data: {
       notifications: fixture.notices,
-      total: fixture.notices.length,
+      total: fixture.total ?? fixture.notices.length,
       unreadCount: fixture.notices.filter((n) => !n.isRead).length,
     },
     error: fixture.error,
@@ -59,6 +60,7 @@ afterEach(() => {
   vi.clearAllMocks();
   fixture.error = '';
   fixture.loading = false;
+  fixture.total = null;
   fixture.notices = initialNotices;
 });
 it('opens full detail, displays every priority, marks read and closes on Escape', () => {
@@ -243,4 +245,39 @@ it('summary cards apply inbox filters and clear restores default ordering', () =
   expect(
     screen.getByRole('button', { name: 'Open Wine running low' })
   ).toBeTruthy();
+});
+
+it('keeps unread details open after reading and closes them on a filter change', () => {
+  const { rerender } = render(<NotificationCenter />);
+  fireEvent.click(screen.getByRole('button', { name: 'Filter: Unread' }));
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Open Wine running low' })
+  );
+  fixture.notices = [{ ...initialNotices[0], isRead: true }];
+  rerender(<NotificationCenter />);
+  expect(
+    screen.getByRole('complementary', { name: 'Notification details' })
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole('button', { name: 'Open Wine running low' })
+  ).toBeNull();
+  fireEvent.change(
+    screen.getByRole('textbox', { name: 'Search notifications' }),
+    { target: { value: 'other' } }
+  );
+  expect(
+    screen.queryByRole('complementary', { name: 'Notification details' })
+  ).toBeNull();
+});
+it('reports actual load coverage for a partial inbox, rather than claiming 500 rows', () => {
+  fixture.total = 700;
+  render(<NotificationCenter />);
+  expect(screen.getByText(/Showing 1 of 700/)).toBeTruthy();
+  expect(screen.queryByText(/Showing the 500 most recent/)).toBeNull();
+});
+it('reports partial loading even below the bounded cap', () => {
+  fixture.total = 60;
+  fixture.error = 'Offline';
+  render(<NotificationCenter />);
+  expect(screen.getByText(/Showing 1 of 60/)).toBeTruthy();
 });

@@ -3,14 +3,12 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Text, Badge, Flex } from 'rizzui';
+import { Text } from 'rizzui';
 import cn from '@core/utils/class-names';
 import {
   PiPackageBold,
-  PiCheckCircleBold,
   PiWarningBold,
   PiXCircleBold,
-  PiTrendUpBold,
   PiArrowsClockwiseBold,
   PiFunnelBold,
   PiPlus,
@@ -56,166 +54,7 @@ export function LoadingSkeleton() {
   );
 }
 
-// Stats Header Component
-// Trends are REAL counts of sub-products added in the last 30 days, computed
-// from the fetched catalog (the caller passes them via the `trends` prop in
-// the same order as the cards). No fabricated percentages.
-export function StatsHeader({
-  stats,
-  activeFilter,
-  onFilterChange,
-  trends,
-}: {
-  stats: Stats;
-  activeFilter: string;
-  onFilterChange: (filter: string) => void;
-  trends?: number[];
-}) {
-  const statCards = [
-    {
-      id: '',
-      label: 'Total',
-      value: stats.total,
-      icon: PiPackageBold,
-      color: 'blue',
-    },
-    {
-      id: 'active',
-      label: 'Active',
-      value: stats.active,
-      icon: PiCheckCircleBold,
-      color: 'green',
-    },
-    {
-      id: 'low_stock',
-      label: 'Low Stock',
-      value: stats.lowStock,
-      icon: PiWarningBold,
-      color: 'amber',
-    },
-    {
-      id: 'out_of_stock',
-      label: 'Out of Stock',
-      value: stats.outOfStock,
-      icon: PiXCircleBold,
-      color: 'red',
-    },
-  ];
-
-  const colorMap: Record<
-    string,
-    { bg: string; text: string; iconBg: string; ring: string }
-  > = {
-    blue: {
-      bg: 'from-blue-500/10 to-blue-500/5',
-      text: 'text-blue-600',
-      iconBg: 'bg-blue-500',
-      ring: 'ring-blue-500/30',
-    },
-    green: {
-      bg: 'from-green-500/10 to-green-500/5',
-      text: 'text-green-600',
-      iconBg: 'bg-green-500',
-      ring: 'ring-green-500/30',
-    },
-    amber: {
-      bg: 'from-amber-500/10 to-amber-500/5',
-      text: 'text-amber-600',
-      iconBg: 'bg-amber-500',
-      ring: 'ring-amber-500/30',
-    },
-    red: {
-      bg: 'from-red-500/10 to-red-500/5',
-      text: 'text-red-600',
-      iconBg: 'bg-red-500',
-      ring: 'ring-red-500/30',
-    },
-  };
-
-  return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      {statCards.map((stat, index) => {
-        const colors = colorMap[stat.color];
-        const isActive = activeFilter === stat.id;
-        const Icon = stat.icon;
-
-        return (
-          <motion.button
-            key={stat.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            whileHover={{ scale: 1.02, y: -2 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => onFilterChange(stat.id)}
-            className={cn(
-              'group relative overflow-hidden rounded-2xl bg-gradient-to-br p-5 text-left transition-all',
-              colors.bg,
-              isActive && 'ring-4 ' + colors.ring
-            )}
-          >
-            <motion.div
-              className="absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-20 transition-transform duration-500 group-hover:scale-150"
-              style={{ backgroundColor: 'currentColor' }}
-            />
-
-            <Flex justify="between" align="start">
-              <div>
-                <Text
-                  className={cn(
-                    'text-xs font-bold uppercase tracking-wider opacity-70',
-                    colors.text
-                  )}
-                >
-                  {stat.label}
-                </Text>
-                <motion.div
-                  key={stat.value}
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="mt-1"
-                >
-                  <Text className="text-3xl font-black">{stat.value}</Text>
-                </motion.div>
-              </div>
-
-              <motion.div
-                whileHover={{ scale: 1.1, rotate: 5 }}
-                className={cn(
-                  'flex h-12 w-12 items-center justify-center rounded-xl text-white shadow-lg',
-                  colors.iconBg
-                )}
-              >
-                <Icon className="h-6 w-6" />
-              </motion.div>
-            </Flex>
-
-            <Flex
-              justify="between"
-              align="center"
-              className="mt-3 border-t border-black/5 pt-3"
-            >
-              <Text className="text-[11px] font-medium text-gray-400">
-                Added in 30 days
-              </Text>
-              {trends !== undefined &&
-                (trends[index] > 0 ? (
-                  <span className="flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-600">
-                    <PiTrendUpBold className="h-3 w-3" />
-                    +{trends[index]}
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-400">
-                    0
-                  </span>
-                ))}
-            </Flex>
-          </motion.button>
-        );
-      })}
-    </div>
-  );
-}
+export { StatsHeader } from './StatsHeader';
 
 // Bulk Actions Bar
 export function BulkActionsBar({

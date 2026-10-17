@@ -57,6 +57,7 @@ export function shopPageHref(sp: URLSearchParams, page: number, pathname = '/sho
 
 // Frontend sort key → backend sort key
 export const SORT_MAP: Record<string, string> = {
+  nearest: 'nearest',
   newest:            'newest',
   priceLowToHigh:    'price_low',
   priceHighToLow:    'price_high',

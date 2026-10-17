@@ -4,7 +4,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useFormContext, useFieldArray, Controller } from 'react-hook-form';
 import { Input, Text, Button, Switch, Badge } from 'rizzui';
-import { Modal } from 'rizzui/modal';
+import SingleItemConfirmation from './components/SingleItemConfirmation';
+import RemoveSizeButton from './components/RemoveSizeButton';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import {
   PiPlus,
@@ -17,7 +18,6 @@ import {
   PiArrowsDownUp,
   PiCheck,
   PiWarning,
-  PiX,
   PiCheckCircle,
   PiMagnifyingGlass,
   PiFunnel,
@@ -33,7 +33,6 @@ import {
   PiInfo,
   PiDotsSixVertical,
   PiCopySimple,
-  PiTrashSimple,
   PiChartLine,
 } from 'react-icons/pi';
 import {
@@ -169,6 +168,7 @@ const SIZE_PRESETS = {
     { value: 'box-single', label: 'Single Box', quickAdd: true },
   ],
   snacks: [
+    { value: '240g', label: '240g', quickAdd: true },
     { value: 'bar-single', label: 'Single Bar', quickAdd: true },
     { value: 'bar-2', label: '2-Bar Pack', quickAdd: true },
     { value: 'bag-250g', label: 'Bag 250g', quickAdd: true },
@@ -356,6 +356,7 @@ export const SIZE_OPTIONS = [
   { value: '125g', label: '125g', category: 'Coffee & Tea' },
   { value: '200g', label: '200g', category: 'Coffee & Tea' },
   { value: '250g', label: '250g', category: 'Coffee & Tea' },
+  { value: '240g', label: '240g', category: 'Snacks' },
   { value: '340g', label: '340g', category: 'Coffee & Tea' },
   { value: '500g', label: '500g', category: 'Coffee & Tea' },
   { value: '1kg', label: '1kg', category: 'Coffee & Tea' },
@@ -615,6 +616,10 @@ export default function SubProductSizes() {
   };
 
   const clearAllSizes = () => {
+    if (getValues('subProductData.sizes').some((size) => size._id)) {
+      toast.error('Remove saved sizes individually so their history can be checked.');
+      return;
+    }
     for (let i = fields.length - 1; i >= 0; i--) {
       remove(i);
     }
@@ -634,7 +639,7 @@ export default function SubProductSizes() {
           <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-blue-100/50" />
           <div className="absolute -bottom-4 right-12 h-16 w-16 rounded-full bg-indigo-100/50" />
 
-          <div className="relative flex items-center justify-between">
+          <div className="relative flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <motion.div
                 whileHover={{ rotate: 360 }}
@@ -1048,89 +1053,15 @@ export default function SubProductSizes() {
         )}
       </AnimatePresence>
 
-      {/* Confirm turning off size variants */}
-      <Modal
-        isOpen={confirmSingleItem}
+      <SingleItemConfirmation
+        open={confirmSingleItem}
+        count={fields.length}
         onClose={() => setConfirmSingleItem(false)}
-        size={{ sm: 'max-w-md', md: 'max-w-md', lg: 'max-w-md' }}
-        className="[&>div]:p-0 [&>div]:rounded-2xl overflow-hidden"
-        overlayClassName="bg-black/50 backdrop-blur-sm"
-      >
-        <motion.div
-          variants={cardVariants}
-          initial="hidden"
-          animate="visible"
-          exit="exit"
-          custom={0}
-          className="overflow-hidden"
-        >
-          {/* Header */}
-          <div className="relative bg-gradient-to-r from-red-600 to-rose-600 px-6 py-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-                  <PiWarning className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-white">
-                    Sell without size variants?
-                  </h2>
-                  <p className="text-xs text-white/70">
-                    Replace your variants with a single Unit item
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setConfirmSingleItem(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-all hover:bg-white/20 hover:text-white"
-              >
-                <PiX className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Body */}
-          <div className="px-6 py-5">
-            <div className="rounded-xl border border-red-100 bg-red-50/50 p-4">
-              <Text className="text-sm text-gray-700">
-                Your{' '}
-                <span className="font-semibold text-gray-900">
-                  {fields.length} configured size variant
-                  {fields.length !== 1 ? 's' : ''}
-                </span>{' '}
-                will be replaced by a single{' '}
-                <span className="font-semibold text-gray-900">Unit</span> item
-                when you save. They stay in this form until then — turn this
-                back off to restore them.
-              </Text>
-            </div>
-
-            <div className="mt-5 flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setConfirmSingleItem(false)}
-                className="w-full sm:w-auto"
-              >
-                Keep Size Variants
-              </Button>
-              <Button
-                type="button"
-                className="w-full min-w-[140px] sm:w-auto"
-                onClick={() => {
-                  setValue('subProductData.sellWithoutSizeVariants', true);
-                  setConfirmSingleItem(false);
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <PiCheck className="h-4 w-4" />
-                  Sell Without Variants
-                </span>
-              </Button>
-            </div>
-          </div>
-        </motion.div>
-      </Modal>
+        onConfirm={() => {
+          setValue('subProductData.sellWithoutSizeVariants', true);
+          setConfirmSingleItem(false);
+        }}
+      />
     </motion.div>
   );
 }
@@ -1393,8 +1324,8 @@ function SizeVariantRow({
   );
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-4">
-      <div className="mb-4 flex items-center justify-between">
+    <div className="@container/size-variant rounded-lg border border-gray-200 bg-gray-50/50 p-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Text className="font-medium">Size Variant #{index + 1}</Text>
           <Controller
@@ -1456,23 +1387,20 @@ function SizeVariantRow({
           >
             <PiCopySimple className="h-4 w-4" />
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
+          <RemoveSizeButton
+            productId={watch('subProductData._id')}
+            sizeId={watch(`subProductData.sizes.${index}._id`)}
+            label={watch(`subProductData.sizes.${index}.displayName`) || watch(`subProductData.sizes.${index}.size`) || 'variant'}
+            onRemove={() => {
               remove(index);
-              toast.success('Size variant removed');
+              toast.success('Size removed from form');
             }}
-            className="text-red-600 hover:bg-red-50"
-          >
-            <PiTrashSimple className="h-4 w-4" />
-          </Button>
+          />
         </div>
       </div>
 
       {/* Basic Info - Always Visible */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 @[480px]/size-variant:grid-cols-3">
         {/* Size Dropdown */}
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -1977,7 +1905,7 @@ function SizeVariantRow({
             Additional Details
           </Text>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 @[480px]/size-variant:grid-cols-3">
             {/* Size Category */}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700">

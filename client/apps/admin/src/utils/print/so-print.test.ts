@@ -116,16 +116,16 @@ describe('buildSalesDoc', () => {
     expect(model.head).toBeUndefined();
   });
 
-  it('renders product rows with pack breakdowns and folds notes into sections', () => {
+  it('renders product rows with pack breakdowns and preserves inline notes', () => {
     const model = buildSalesDoc(baseOrder, 'DrinksHarbour', 'quotation');
     const productRow = model.table.rows.find((r) => r[0].text.includes('Hennessy'))!;
     expect(productRow[1].text).toBe('25');
     expect(productRow[1].sub).toContain('2 packs & 1 bottle');
-    // Section lines become group headers; note lines never render as table rows.
+    // Section and note rows preserve their document order.
     expect(model.table.rows.some((r) => r[0].text === 'Spirits')).toBe(true);
-    expect(model.table.rows.some((r) => r[0].text.includes('6pm'))).toBe(false);
+    expect(model.table.rows.some((r) => r[0].text.includes('6pm'))).toBe(true);
     const notes = model.sections.find((s) => s.title === 'Notes');
-    expect(notes?.body).toContain('Deliver before 6pm');
+    expect(notes).toBeUndefined();
   });
 
   it('carries totals, amount-in-words and a distinct title per variant', () => {
@@ -286,7 +286,8 @@ describe('sales documents — payment details', () => {
     const doc = buildSalesDoc(baseOrder, 'DrinksHarbour', 'sales-order');
     expect(payment(doc)).toBeUndefined();
     // Notes and terms are untouched by the omission.
-    expect(doc.sections.map((s) => s.title)).toEqual(['Notes']);
+    expect(doc.table.rows.some(row=>row[0].text.includes('6pm'))).toBe(true);
+    expect(doc.sections.map((s) => s.title)).toEqual([]);
   });
 
   it('puts the account on the page, not just on the model', () => {
@@ -303,4 +304,8 @@ describe('sales documents — payment details', () => {
     expect(content).toContain('Account Number: 0123456789');
     expect(content).toContain('Account Number: 9876543210');
   });
+});
+it('printed footer starts with gross subtotal so line discounts are deducted once',()=>{
+ const model=buildSalesDoc(baseOrder,'DrinksHarbour','quotation');
+ expect(model.totals[0].value).toContain('450,000');
 });

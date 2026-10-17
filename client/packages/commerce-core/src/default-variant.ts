@@ -32,6 +32,8 @@ export interface DefaultVariant {
  * `priceRange`).
  */
 export function pickDefaultVariant(product: any): DefaultVariant | null {
+  const representative = resolveRepresentativeVariant(product);
+  if (product?.shoppingOffer && representative) return representative;
   const vendor = product?.availableAt?.[0];
   const chosen = pickDefaultSizeFrom<any>(vendor?.sizes);
   if (!chosen) return null;
@@ -63,4 +65,24 @@ export function pickDefaultVariant(product: any): DefaultVariant | null {
  */
 export function isDefaultVariantInStock(product: any): boolean {
   return (pickDefaultVariant(product)?.stock ?? 0) > 0;
+}
+
+export interface RepresentativeProduct {
+  shoppingOffer?: { subProductId: string; sizeId: string } | null;
+  availableAt?: Array<{ _id?: string; tenant?: { _id?: string }; sizes?: Array<{
+    _id?: string; size?: string; stock?: number;
+    pricing?: { websitePrice?: number; originalWebsitePrice?: number; currencySymbol?: string };
+  }> }>;
+}
+export function resolveRepresentativeVariant(product: RepresentativeProduct): (DefaultVariant & {
+  subProductId?: string; sizeId?: string; tenantId?: string;
+}) | null {
+  const offers = product.availableAt || [];
+  const explicit = offers.find(offer => String(offer._id) === product.shoppingOffer?.subProductId);
+  const offer = explicit || offers.find(row => row.sizes?.some(size => (size.stock ?? 0) > 0)) || offers[0];
+  const size = offer?.sizes?.find(row => String(row._id) === product.shoppingOffer?.sizeId) || pickDefaultSizeFrom(offer?.sizes);
+  if (!offer || !size) return null;
+  return { subProductId: offer._id, sizeId: size._id, tenantId: offer.tenant?._id,
+    size: size.size, stock: size.stock ?? 0, price: size.pricing?.websitePrice,
+    originalPrice: size.pricing?.originalWebsitePrice, currencySymbol: size.pricing?.currencySymbol };
 }

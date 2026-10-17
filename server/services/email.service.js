@@ -244,7 +244,7 @@ const calculateVendorTotals = (order, tenantId) => {
     return id === tenantId?.toString();
   }) || order.items || [];
 
-  const customerSubtotal  = vendorItems.reduce((s, i) => s + (i.itemSubtotal || 0), 0);
+  const customerSubtotal  = vendorItems.reduce((s, i) => s + (i.revenuePolicyVersion === 'merchandise-v2' ? i.revenueBasisAmount || 0 : i.itemSubtotal || 0), 0);
   const vendorEarnings    = vendorItems.reduce((s, i) => s + (i.tenantRevenueShare || 0), 0);
   const platformCommission= vendorItems.reduce((s, i) => s + (i.platformCommission || 0), 0);
   const itemDiscounts     = vendorItems.reduce((s, i) => s + (i.discountAmount || 0), 0);
@@ -275,7 +275,7 @@ const calculateOrderBreakdown = (order) => {
       itemsByTenant[tid] = { items: [], customerTotal: 0, vendorEarnings: 0, platformCommission: 0 };
     }
     itemsByTenant[tid].items.push(item);
-    itemsByTenant[tid].customerTotal  += item.itemSubtotal || 0;
+    itemsByTenant[tid].customerTotal  += item.revenuePolicyVersion === 'merchandise-v2' ? item.revenueBasisAmount || 0 : item.itemSubtotal || 0;
     itemsByTenant[tid].vendorEarnings += item.tenantRevenueShare || 0;
     itemsByTenant[tid].platformCommission += item.platformCommission || 0;
   });
@@ -297,10 +297,11 @@ const calculateOrderBreakdown = (order) => {
 
   // Platform's true margin on this order: markup profit, plus shipping it
   // retains, minus the coupon it absorbs. (Vendors are paid pre-coupon.)
-  const platformNet = platformCommission + shippingFee - couponDiscount;
+  const allocatedCoupon = order.items?.reduce((sum, item) => sum + (item.revenuePolicyVersion === 'merchandise-v2' ? item.discountAmount || 0 : 0), 0) || 0;
+  const platformNet = platformCommission + shippingFee - (couponDiscount - allocatedCoupon);
 
   // Item identity check: subtotal must equal vendor payout + platform markup.
-  const splitCheck = Math.round((merchandiseSubtotal - totalVendorEarnings - platformCommission) * 100) / 100;
+  const splitCheck = Math.round((merchandiseSubtotal - allocatedCoupon - totalVendorEarnings - platformCommission) * 100) / 100;
   // Total reconciliation: computed order total must match the stored total.
   const totalCheck = Math.round(((merchandiseSubtotal - couponDiscount + shippingFee) - orderTotal) * 100) / 100;
 

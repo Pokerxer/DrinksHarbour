@@ -31,6 +31,7 @@ function load(file, mocks = {}) {
   return fixture.exports;
 }
 const mocks = {
+  '@/context/ShoppingLocationContext': { useShoppingLocation: () => ({ location: null, revision: '' }) },
   'swiper/react': { Swiper: ({ children }) => React.createElement('div', null, children), SwiperSlide: ({ children }) => React.createElement('div', null, children) },
   'swiper/modules': { Autoplay: {}, Navigation: {} },
   '@/context/ModalQuickviewContext': { useModalQuickviewContext: () => ({}) },
@@ -48,9 +49,13 @@ test('complete flash-sale seed renders product links and responsive CDN images o
   assert.match(html, /c_limit,w_\d+/);
   assert.doesNotMatch(html, /_next\/image/);
 });
-test('a complete empty sale seed renders no loading skeleton', () => {
+test('empty flash-sale seed keeps the section visible without a loading skeleton', () => {
   const FlashSale = load(path.join(__dirname, 'FlashSale.tsx'), mocks).default;
-  assert.equal(renderToStaticMarkup(React.createElement(FlashSale, { flashOnly: true, initialProductsComplete: true, initialProducts: [] })), '');
+  const html = renderToStaticMarkup(React.createElement(FlashSale, { flashOnly: true, initialProductsComplete: true, initialProducts: [] }));
+  assert.match(html, /Flash Sale/);
+  assert.match(html, /No active flash sales right now/);
+  assert.match(html, /href="\/shop"/);
+  assert.doesNotMatch(html, /animate-pulse|Lightning deals|ends soon/i);
 });
 test('successful empty server request marks its seed complete', async () => {
   const originalUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -62,7 +67,47 @@ test('successful empty server request marks its seed complete', async () => {
   try {
     const element = await HomeFlashSale();
     assert.equal(element.props.initialProductsComplete, true);
+    assert.equal(element.props.flashOnly, false);
     assert.deepEqual(element.props.initialProducts, []);
+  } finally {
+    if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_API_URL;
+    else process.env.NEXT_PUBLIC_API_URL = originalUrl;
+  }
+});
+test('expired flash offers show the empty state instead of advertised discounts', () => {
+  const FlashSale = load(path.join(__dirname, 'FlashSale.tsx'), mocks).default;
+  const html = renderToStaticMarkup(React.createElement(FlashSale, {
+    flashOnly: true, initialProductsComplete: true,
+    initialProducts: [{ _id: 'expired', name: 'Expired promotion bottle', slug: 'expired',
+      availableAt: [{ isOnSale: true, saleType: 'flash_sale', saleDiscountValue: 10,
+        saleEndDate: '2000-09-30T00:00:00Z' }] }],
+  }));
+  assert.match(html, /No active flash sales right now/);
+  assert.doesNotMatch(html, /Expired promotion bottle|Lightning deals|ends soon/i);
+});
+test('empty generic sale component stays hidden', () => {
+  const FlashSale = load(path.join(__dirname, 'FlashSale.tsx'), mocks).default;
+  assert.equal(renderToStaticMarkup(React.createElement(FlashSale, {
+    initialProductsComplete: true, initialProducts: [],
+  })), '');
+});
+test('homepage renders an active fixed-price promotion returned by the sale loader', async () => {
+  const originalUrl = process.env.NEXT_PUBLIC_API_URL;
+  process.env.NEXT_PUBLIC_API_URL = 'https://api.test';
+  const HomeFlashSale = load(path.join(__dirname, 'HomeFlashSale.tsx'), {
+    ...mocks,
+    './flash-sale-data': { fetchFlashSaleProducts: async () => [{
+      _id: 'fixed', name: 'Current fixed-price sale', slug: 'fixed-price-sale',
+      availableAt: [{ isOnSale: true, saleType: 'fixed', saleDiscountValue: 40000,
+        sizes: [{ size: '750ml', stock: 3, pricing: { websitePrice: 60000 },
+          discount: { hasDiscount: true, originalPrice: 100000, savings: 40000, percentage: 40 } }] }],
+    }] },
+  }).default;
+  try {
+    const html = renderToStaticMarkup(await HomeFlashSale());
+    assert.match(html, /Current fixed-price sale/);
+    assert.match(html, /href="\/product\/fixed-price-sale"/);
+    assert.doesNotMatch(html, /No active flash sales/);
   } finally {
     if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_API_URL;
     else process.env.NEXT_PUBLIC_API_URL = originalUrl;

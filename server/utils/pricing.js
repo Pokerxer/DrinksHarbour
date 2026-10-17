@@ -1,22 +1,15 @@
 /**
  * Pricing calculation utilities for DrinksHarbour platform
  * 
- * Pricing Pipeline:
- * Step 1: costPrice (supplier cost - floor)
- * Step 2: Apply tenant revenue model → platformCostPrice
- *         - Markup: costPrice × (1 + tenantMarkup%)
- *         - Commission: tenantSellingPrice × (1 − tenantCommission%)
- *         ** When the size carries a wholesalePrice (> 0), that B2B rate replaces
- *            the SUPPLIER COST as the revenue-model input (not the final cost).
- *            The model still applies its markup/commission — and its reduced
- *            PACK rates — to wholesale.
- * Step 3: Apply platformMarkup from Product → platformSellingPrice
- *         - platformSellingPrice = platformCostPrice × (1 + platformMarkup%)
- *           (admin override % takes precedence when set)
- * Step 4: Apply product-level discount (optional)
- *         - finalPlatformPrice = platformSellingPrice - discount
+ * Markup: supplier/wholesale cost plus agreed tenant markup is the payout;
+ * platform retail markup and discounts determine the customer price.
+ * Commission: tenant retail or explicit marketplace price, after discounts, is
+ * split at the agreed rate. No platform markup or wholesale payout substitution.
+ * Listing sales refresh the commission payout. Delivery/tax/fees are separate.
  */
 
+const { commissionResult, commissionSellingPrice } = require('./commissionPricing');
+const { splitMerchandise, commissionRate } = require('./revenueAgreement');
 const DEFAULT_PLATFORM_MARKUP = 15;
 const DEFAULT_PACK_RATE_MIN_UNITS = 2;
 
@@ -131,9 +124,10 @@ const calcPlatformCostPrice = (costPrice, tenantSellingPrice, revenueModel, mark
     return parseFloat((input * (1 + markupPct / 100)).toFixed(2));
   } else {
     // commission
-    const input = effectiveCost ?? tenantSellingPrice;
+    commissionRate(commissionPct);
+    const input = tenantSellingPrice;
     if (!input || input <= 0) return 0;
-    return parseFloat((input * (1 - commissionPct / 100)).toFixed(2));
+    return splitMerchandise({ amount: input, model: 'commission', rate: commissionPct }).tenantRevenueShare;
   }
 };
 
@@ -178,6 +172,8 @@ const roundUpTo100 = (price) => {
  * @returns {number} platformSellingPrice
  */
 const calcPlatformSellingPrice = (platformCostPrice, platformMarkupPct = DEFAULT_PLATFORM_MARKUP, productDiscount = null, options = {}) => {
+  if (options.revenueModel === 'commission')
+    return commissionSellingPrice(options.tenantStorePrice, productDiscount, options.commissionPriceOverride);
   if (!platformCostPrice || platformCostPrice <= 0) return 0;
   const { tenantStorePrice = 0, platformMarkupOverridePct = null } = options;
   const isOverride = platformMarkupOverridePct != null;
@@ -233,6 +229,10 @@ const calculateSubProductPricing = (subProduct, product, tenant) => {
   const costPrice = subProduct?.costPrice ?? 0;
   const tenantSellingPrice = subProduct?.baseSellingPrice ?? 0;
 
+  if (revenueModel === 'commission') return commissionResult({
+    retail: tenantSellingPrice, cost: costPrice, override: subProduct?.commissionPriceOverride,
+  }, product, tenant);
+
   // Tenant discount (for tenant store display only - not part of platform pricing)
   const tenantDiscount = subProduct?.discount > 0 && subProduct?.discountType
     ? { value: subProduct.discount, type: subProduct.discountType, start: subProduct.discountStart, end: subProduct.discountEnd }
@@ -262,7 +262,7 @@ const calculateSubProductPricing = (subProduct, product, tenant) => {
     ? (tenantSellingPrice > 0
         ? parseFloat((tenantSellingPrice * (1 - commissionPct / 100)).toFixed(2))
         : null)
-    : costPrice;
+    : platformCostPrice;
 
   return {
     // Inputs
@@ -321,6 +321,13 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   // missing OR zero (tenants often leave size costPrice at 0)
   const costPrice = size?.costPrice > 0 ? size.costPrice : fallbackCostPrice;
   const tenantSellingPrice = size?.sellingPrice > 0 ? size.sellingPrice : fallbackSellingPrice;
+
+  if (revenueModel === 'commission') return {
+    ...commissionResult({ retail: tenantSellingPrice, cost: costPrice,
+      override: size?.commissionPriceOverride, packOverride: size?.packCommissionPriceOverride,
+      units: size?.unitsPerPack ?? 1, maxQuantity: size?.maxOrderQuantity }, product, tenant),
+    sizeId: size?._id, sizeName: size?.size ?? size?.displayName,
+  };
 
   // Wholesale (B2B) price, when present, replaces the supplier cost as the
   // INPUT to the tenant's revenue model. The revenue model still applies its
@@ -470,6 +477,7 @@ const backCalcStoredPrice = (
     }
   }
 
+  if (revenueModel === 'commission') return parseFloat(preDiscount.toFixed(2));
   const platformCostPrice = preDiscount / (1 + platformMarkupPct / 100);
 
   const normalized = revenueModel === 'platform_markup' ? 'markup' : revenueModel;
@@ -560,8 +568,11 @@ const applySubProductSale = (pricing, subProduct, now = new Date()) => {
     };
   }
 
+  const split = base.revenueModel === 'commission'
+    ? splitMerchandise({ amount: finalPrice, model: 'commission', rate: base.commissionPct }) : null;
   return {
     ...base,
+    ...(split ? { platformCostPrice: split.tenantRevenueShare, tenantReceives: split.tenantRevenueShare, platformMargin: split.platformCommission } : {}),
     finalPrice,
     saleActive: true,
     priceBeforeSale,

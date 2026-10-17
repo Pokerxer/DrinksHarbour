@@ -57,13 +57,14 @@ async function capturePayment({
   }
   if (pointsRedeemed > 0) {
     try {
-      await mutateLoyalty({
+      const redeemed = await mutateLoyalty({
         owner: ownerOf(), tenantId,
         value: { type: 'redeem', points: pointsRedeemed, reason: `Sales order — ${reference}` },
         reference, createdBy: userId,
       });
+      if (!redeemed.ok) return {ok:false,status:409,message:redeemed.message || 'Point redemption failed'};
     } catch (e) {
-      return { ok: false, status: 409, message: `Point redemption failed: ${e.message}` };
+      return { ok: false, uncertain:true, status: 409, message: `Point redemption needs review: ${e.message}` };
     }
   }
 
@@ -78,17 +79,19 @@ async function capturePayment({
       reference, createdBy: userId,
     });
     if (!walletResult.ok) {
+      let uncertain = false;
       // Money never moved — reverse the redemption so the points aren't lost.
       if (pointsRedeemed > 0) {
         try {
-          await mutateLoyalty({
+          const reversal = await mutateLoyalty({
             owner: ownerOf(), tenantId,
             value: { type: 'earn', points: pointsRedeemed, reason: `Reversal — ${reference}` },
             reference, createdBy: userId,
           });
-        } catch (_) { /* best-effort reversal */ }
+          if (!reversal.ok) uncertain = true;
+        } catch (_) { uncertain = true; }
       }
-      return { ok: false, status: walletResult.status === 404 ? 404 : 409, message: walletResult.message };
+      return { ok: false, uncertain, status: walletResult.status === 404 ? 404 : 409, message: walletResult.message };
     }
     walletTx = walletResult.tx || null;
   }
@@ -100,12 +103,13 @@ async function capturePayment({
     loyaltyEarned = computeLoyaltyEarned(amountDue, posSettings);
     if (loyaltyEarned > 0) {
       try {
-        await mutateLoyalty({
+        const earned = await mutateLoyalty({
           owner: ownerOf(), tenantId,
           value: { type: 'earn', points: loyaltyEarned, reason: `Sales order — ${reference}` },
           reference, createdBy: userId,
         });
-      } catch (_) { /* non-fatal */ }
+        if (!earned.ok) loyaltyEarned = 0;
+      } catch (_) { loyaltyEarned = 0; }
     }
   }
 

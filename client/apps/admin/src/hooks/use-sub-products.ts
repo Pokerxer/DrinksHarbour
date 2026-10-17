@@ -3,6 +3,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { subproductService } from '@/services/subproduct.service';
+import { loadSubProductCatalog } from './sub-product-catalog';
+import { DEFAULT_SUBPRODUCT_PAGE_SIZE } from '@/utils/sub-product-pagination';
 
 export interface SubProductsStats {
   total: number;
@@ -21,11 +23,11 @@ export interface SubProductsPagination {
 }
 
 export interface UseSubProductsOptions {
-  /** Initial page size (default 25) */
+  /** Initial page size (default 50) */
   initialPageSize?: number;
   /** Debounce delay for search input (default 350ms) */
   searchDebounceMs?: number;
-  /** When true, fetch all (limit=500) and do client-side pagination/filtering.
+  /** When true, fetch all lightweight catalog pages and filter locally.
    *  When false, fetch one page from the server. */
   clientSideMode?: boolean;
 }
@@ -66,7 +68,7 @@ export function useSubProducts(
   options: UseSubProductsOptions = {}
 ): UseSubProductsResult {
   const {
-    initialPageSize = 25,
+    initialPageSize = DEFAULT_SUBPRODUCT_PAGE_SIZE,
     searchDebounceMs = 350,
     clientSideMode = false,
   } = options;
@@ -137,10 +139,12 @@ export function useSubProducts(
         if (!clientSideMode && status) params.status = status;
         if (showRefresh) params.refresh = 'true';
 
-        const response = await subproductService.getSubProducts(token, params);
+        const response = clientSideMode
+          ? await loadSubProductCatalog(token, showRefresh, () => callId === fetchRef.current)
+          : await subproductService.getSubProducts(token, params);
 
         // Stale-call guard: ignore out-of-order responses.
-        if (callId !== fetchRef.current) return;
+        if (callId !== fetchRef.current || !response) return;
 
         if (response.success) {
           const data = response.data || response;
@@ -175,7 +179,6 @@ export function useSubProducts(
         }
       } catch (err: any) {
         if (callId !== fetchRef.current) return;
-        console.error('Failed to fetch subproducts:', err);
         setError(err.message || 'Failed to load sub-products');
       } finally {
         if (callId === fetchRef.current) {
@@ -202,9 +205,13 @@ export function useSubProducts(
   // pagination/search are handled by the parent component).
   useEffect(() => {
     if (clientSideMode) {
-      // Fetch once on mount (token ready) — no dependency on page/search.
-      if (token && items.length === 0) fetchPage(false);
-      return;
+      // A new identity must never retain the previous tenant's catalog/widgets.
+      setItems([]);
+      setPagination(null);
+      setStats({ total: 0, active: 0, lowStock: 0, outOfStock: 0 });
+      setIsLoading(Boolean(token));
+      fetchPage(false);
+      return () => { fetchRef.current += 1; };
     }
     fetchPage(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -29,12 +29,12 @@ export default function SalesOverviewKpis({
   kpis: SalesOverviewKpi[];
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {kpis.map((kpi) => (
         <Link
           key={kpi.key}
           href={kpi.href}
-          className="group relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 transition-shadow hover:border-gray-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+          className="group relative overflow-hidden rounded-xl border border-gray-200 bg-white p-4 transition-shadow hover:border-gray-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
         >
           <div className="flex items-start justify-between gap-3">
             <p className="text-sm font-medium text-gray-500">{kpi.label}</p>
@@ -44,11 +44,11 @@ export default function SalesOverviewKpis({
               {kpi.icon}
             </span>
           </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-gray-900 tabular-nums">
+          <p className="mt-2 break-words font-lexend text-2xl font-semibold tabular-nums tracking-tight text-gray-900">
             {kpi.value}
           </p>
           {kpi.sub && (
-            <p className="mt-1 truncate text-xs text-gray-500">{kpi.sub}</p>
+            <p className="mt-2 text-xs leading-5 text-gray-500">{kpi.sub}</p>
           )}
           <PiCaretRight className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-200 transition-all group-hover:right-3 group-hover:text-brand" />
         </Link>

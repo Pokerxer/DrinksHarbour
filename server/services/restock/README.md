@@ -46,8 +46,8 @@ owner/admin role; supplier data remains absent from risk/demand responses.
 Automatic stock minimums are calculated separately for every tenant product,
 size and warehouse. `minimum-lead.js` selects exact route/receipt delivery history;
 `minimum-storage.js` saves eligible policies to existing scoped stock rows with an
-optimistic timestamp guard. Daily demand refresh and owner/admin planning reads
-update them; stock-only reads consume saved policies. Configured minima remain
+optimistic timestamp guard. The background demand refresh at midnight and noon Africa/Lagos updates them;
+all ordinary planning and inbox reads consume saved policies. Configured minima remain
 separate fallbacks. Metadata expires after 48 hours and decreases are limited to
 25% per Lagos day. Private demand inputs are excluded from raw inventory reads;
 warehouse stock APIs expose only effective/configured minimum, source and date.
@@ -135,3 +135,10 @@ then round once through supplier pack/MOQ terms. Demand existing only before thi
 supplier arrives produces zero later order and an earlier-supply warning. Full
 horizon and after-delivery demand are exposed separately. Generic warehouse risk
 and transfer planning remain unchanged. See RESUME-order-unit-calculation.md.
+
+Automatic minimums refresh every twelve hours (00:00 and 12:00 Africa/Lagos).
+Inbox catch-up never invokes sales planning. Page controllers set useSavedMinimum
+and disable persistence; forecasts still use authorized sales evidence. Planning
+cache identities isolate saved-policy reads from scheduled calculations. Explicit
+maintenance scripts may still calculate/apply when authorized. See
+RESUME-minimum-refresh-cadence.md; prior inbox-on-read refresh is superseded.

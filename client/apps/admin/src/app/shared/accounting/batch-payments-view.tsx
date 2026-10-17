@@ -1,233 +1,172 @@
 'use client';
-
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { PiPlus } from 'react-icons/pi';
-import toast from 'react-hot-toast';
-import {
-  arApService,
-  type BatchPayment,
-  type PaymentDoc,
-  type PaymentSide,
-} from '@/services/arAp.service';
-import { fmtDate, fmtMoney } from './accounting-helpers';
+import type { BatchPayment, PaymentSide } from '@/services/arAp.service';
+import { useBatchWorkspace } from './use-batch-workspace';
+import BatchWorkspaceToolbar from './batch-workspace-toolbar';
+import BatchWorkspaceResults from './batch-workspace-results';
+import BatchDetailModal from './batch-detail-modal';
+import BatchReviewModal from './batch-review-modal';
 import BatchFormModal from './batch-form-modal';
-
-const STATUS_STYLES: Record<string, string> = {
-  open: 'bg-amber-100 text-amber-700',
-  deposited: 'bg-emerald-100 text-emerald-700',
-  cancelled: 'bg-gray-100 text-gray-500',
-};
-
-/** /accounting/batch-payments — deposit runs for customer/vendor payments. */
-export default function BatchPaymentsView() {
-  const { data: session } = useSession();
-  const token = (session?.user as { token?: string })?.token ?? '';
-  const searchParams = useSearchParams();
-  const initialSide = (searchParams.get('side') as PaymentSide) || 'customer';
-  const [side, setSide] = useState<PaymentSide>(
-    initialSide === 'vendor' ? 'vendor' : 'customer'
-  );
-  const [batches, setBatches] = useState<BatchPayment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    setSide(initialSide === 'vendor' ? 'vendor' : 'customer');
-    setShowForm(false);
-  }, [initialSide]);
-
-  const load = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    setError('');
-    try {
-      const res = await arApService.batches(token, {
-        direction: side,
-        limit: 50,
-      });
-      setBatches(res.data ?? []);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [token, side]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const act = async (id: string, action: 'deposit' | 'cancel') => {
-    if (
-      busyId ||
-      !window.confirm(
-        action === 'cancel'
-          ? 'Cancel this batch and release its payments?'
-          : 'Mark this batch deposited? This records completion; it does not move money.'
-      )
-    )
-      return;
-    setBusyId(id);
-    try {
-      if (action === 'deposit') {
-        await arApService.depositBatch(token, id);
-        toast.success('Batch marked deposited');
-      } else {
-        await arApService.cancelBatch(token, id);
-        toast.success('Batch cancelled — payments unlinked');
-      }
-      load();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusyId(null);
-    }
-  };
-
+function Workspace({ token, side }: { token: string; side: PaymentSide }) {
+  const state = useBatchWorkspace(token, side);
+  const [form, setForm] = useState(false),
+    [focus, setFocus] = useState<{
+      batch: BatchPayment;
+      action?: 'deposit' | 'cancel';
+    } | null>(null);
   return (
-    <div className="min-w-0">
-      {error && (
+    <div className="space-y-4">
+      <BatchWorkspaceToolbar
+        filters={state.filters}
+        update={state.update}
+        summary={state.summary}
+        loading={state.loading}
+        busy={state.busy}
+        refresh={() => {
+          void state.load();
+        }}
+        create={() => setForm(true)}
+      />
+      {state.error ? (
         <div
           role="alert"
-          className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
         >
-          {error}
+          Batches could not load: {state.error}
           <button
             type="button"
-            onClick={() => void load()}
-            className="ml-3 min-h-10 font-semibold underline"
+            aria-label="Retry batches"
+            onClick={() => {
+              void state.load();
+            }}
+            className="ml-3 underline"
           >
             Retry
           </button>
         </div>
-      )}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="flex gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200">
-          {(['customer', 'vendor'] as PaymentSide[]).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setSide(s)}
-              className={`rounded-md px-4 py-1.5 text-sm font-medium transition ${
-                side === s
-                  ? 'bg-gray-900 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              {s === 'customer' ? 'Customer Receipts' : 'Vendor Payments'}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowForm(true)}
-          className="ml-auto flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-black"
+      ) : state.loading ? (
+        <p
+          role="status"
+          className="rounded-xl border p-10 text-center text-sm text-gray-500"
         >
-          <PiPlus size={14} /> New Batch
-        </button>
-      </div>
-
-      {loading && (
-        <p className="py-8 text-center text-sm text-gray-400">
           Loading batches…
         </p>
+      ) : (
+        <BatchWorkspaceResults
+          batches={state.batches}
+          busy={state.busy}
+          blocked={state.mustRefresh}
+          open={(batch, action) => setFocus({ batch, action })}
+        />
       )}
-      {!loading && batches.length === 0 && (
-        <p className="py-8 text-center text-sm text-gray-400">
-          No batches yet — group payments into a deposit run.
-        </p>
-      )}
-
-      <div className="space-y-4">
-        {batches.map((b) => (
-          <div
-            key={b._id}
-            className="rounded-xl border border-gray-200 bg-white p-5"
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-500">
+        <span>
+          {state.loading || state.error
+            ? '—'
+            : `${state.total} matching batches`}
+        </span>
+        <nav aria-label="Batch pages" className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-label="Previous page"
+            disabled={state.loading || !!state.error || state.page <= 1}
+            onClick={() => state.setPage(state.page - 1)}
+            className="rounded-lg border px-3 py-2 disabled:opacity-40"
           >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-bold text-gray-900">
-                  {b.number}
-                  <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-gray-500">
-                    {b.direction}
-                  </span>
-                  <span
-                    className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${STATUS_STYLES[b.status] ?? ''}`}
-                  >
-                    {b.status}
-                  </span>
-                </p>
-                <p className="text-xs text-gray-400">
-                  {fmtDate(b.date)} · account {b.account} ·{' '}
-                  {b.payments?.length ?? 0} payment(s)
-                  {b.depositedAt
-                    ? ` · deposited ${fmtDate(b.depositedAt)}`
-                    : ''}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-black tabular-nums text-gray-900">
-                  {fmtMoney(b.total)}
-                </span>
-                {b.status === 'open' && (
-                  <>
-                    <button
-                      type="button"
-                      disabled={busyId === b._id}
-                      onClick={() => act(b._id, 'deposit')}
-                      className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-black disabled:opacity-40"
-                    >
-                      Mark Deposited
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busyId === b._id}
-                      onClick={() => act(b._id, 'cancel')}
-                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40"
-                    >
-                      Cancel
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            {(b.payments ?? []).length > 0 && (
-              <div className="divide-y divide-gray-50 rounded-lg bg-gray-50 px-4">
-                {b.payments!.map((p) => (
-                  <div
-                    key={p._id}
-                    className="flex items-center justify-between py-2 text-xs"
-                  >
-                    <span className="font-medium text-gray-700">
-                      {p.number}
-                      <span className="ml-2 text-gray-400">
-                        {p.customerName || p.vendorName || ''}
-                      </span>
-                    </span>
-                    <span className="font-bold tabular-nums text-gray-900">
-                      {fmtMoney(p.amount)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+            Previous
+          </button>
+          <span>
+            Page {state.page} of {state.pages}
+          </span>
+          <button
+            type="button"
+            aria-label="Next page"
+            disabled={
+              state.loading || !!state.error || state.page >= state.pages
+            }
+            onClick={() => state.setPage(state.page + 1)}
+            className="rounded-lg border px-3 py-2 disabled:opacity-40"
+          >
+            Next
+          </button>
+        </nav>
       </div>
-
-      {showForm && (
+      {form && (
         <BatchFormModal
           side={side}
-          onClose={() => setShowForm(false)}
-          onSaved={() => load()}
+          onClose={() => setForm(false)}
+          onSaved={() => {
+            void state.load();
+          }}
         />
+      )}
+      {focus?.action ? (
+        <BatchReviewModal
+          batch={focus.batch}
+          action={focus.action}
+          busy={state.busy}
+          blocked={state.mustRefresh || !!state.error || state.loading}
+          close={() => setFocus(null)}
+          refresh={() => {
+            void state.load();
+            setFocus(null);
+          }}
+          confirm={async () => {
+            if (await state.act(focus.batch, focus.action!)) setFocus(null);
+          }}
+        />
+      ) : (
+        focus && (
+          <BatchDetailModal batch={focus.batch} close={() => setFocus(null)} />
+        )
       )}
     </div>
   );
 }
-
-// Keep PaymentDoc import used for the modal contract.
-export type { PaymentDoc };
+export default function BatchPaymentsView() {
+  const { data: session, status } = useSession();
+  const token = (session?.user as { token?: string })?.token || '';
+  const params = useSearchParams(),
+    urlSide = params.get('side') === 'vendor' ? 'vendor' : 'customer';
+  const [side, setSide] = useState<PaymentSide>(urlSide);
+  useEffect(() => {
+    setSide(urlSide);
+  }, [urlSide]);
+  if (status === 'loading')
+    return <p role="status">Loading your accounting workspace…</p>;
+  if (!token)
+    return (
+      <p role="alert" className="rounded-xl border p-5 text-sm">
+        Sign in to view payment batches.
+      </p>
+    );
+  return (
+    <div className="min-w-0 space-y-4">
+      <div
+        role="group"
+        aria-label="Batch direction"
+        className="inline-flex gap-1 rounded-lg border bg-white p-1"
+      >
+        {(['customer', 'vendor'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={side === value}
+            onClick={() => {
+              setSide(value);
+              const url = new URL(window.location.href);
+              url.searchParams.set('side', value);
+              window.history.replaceState(null, '', url.toString());
+            }}
+            className={`rounded-md px-3 py-2 text-sm font-medium ${side === value ? 'bg-gray-900 text-white' : 'text-gray-600'}`}
+          >
+            {value === 'customer' ? 'Customer receipts' : 'Vendor payments'}
+          </button>
+        ))}
+      </div>
+      <Workspace key={`${token}:${side}`} token={token} side={side} />
+    </div>
+  );
+}

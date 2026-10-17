@@ -41,13 +41,13 @@ function parseSalesCsv(csvText) {
  * Bulk-import parsed sales orders. Each order is created via
  * salesOrderService.createSalesOrderDoc. Returns a summary.
  */
-async function bulkImportSales(orders, tenantId) {
+async function bulkImportSales(orders, tenantId, assignment = {}) {
   let created = 0;
   const errors = [];
 
   for (let i = 0; i < orders.length; i++) {
     try {
-      await salesOrderService.createSalesOrderDoc({ tenantId, body: orders[i] });
+      await salesOrderService.createSalesOrderDoc({ tenantId, ...assignment, body: orders[i] });
       created++;
     } catch (err) {
       errors.push({ row: i + 2, message: err.message || 'Unknown error' });

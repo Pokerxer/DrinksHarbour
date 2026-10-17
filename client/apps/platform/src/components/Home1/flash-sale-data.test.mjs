@@ -49,3 +49,24 @@ test('failed requests can be retried', async () => {
   }
   finally { globalThis.fetch = original; }
 });
+test('homepage includes non-flash sales from later pages without caching prices', async () => {
+  const original = globalThis.fetch;
+  const urls = [];
+  const sale = { _id: 'percentage-sale', availableAt: [{ isOnSale: true, saleType: 'percentage', saleDiscountValue: 15 }] };
+  globalThis.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    urls.push(parsed);
+    assert.equal(options.cache, 'no-store');
+    assert.equal(parsed.searchParams.get('onSale'), 'true');
+    assert.equal(parsed.searchParams.has('saleType'), false);
+    return { ok: true, json: async () => ({ data: {
+      products: parsed.searchParams.get('page') === '2' ? [sale] : [],
+      pagination: { totalPages: 2 },
+    } }) };
+  };
+  try {
+    assert.deepEqual(await fetchFlashSaleProducts('https://api.test', null, false), [sale]);
+    assert.equal(urls.length, 2);
+    assert.equal(urls[1].searchParams.get('page'), '2');
+  } finally { globalThis.fetch = original; }
+});

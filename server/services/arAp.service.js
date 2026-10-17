@@ -44,9 +44,13 @@ async function summary(tenantId, side) {
 }
 
 /** Paged open documents for the Invoices / Bills browsers. */
-async function listOpenDocs(tenantId, side, { status, from, to, search, page = 1, limit = 25 } = {}) {
+async function listOpenDocs(tenantId, side, { status, from, to, search, vendor, page = 1, limit = 25 } = {}) {
   const Model = side === 'ar' ? SalesOrder : VendorBill;
   const filter = openFilter(tenantId, side, { status, from, to, search });
+  if (side === 'ap' && vendor) {
+    if (!mongoose.isValidObjectId(vendor)) throw require('./accounting.query').bad('Invalid vendor');
+    filter.vendor = vendor;
+  }
   const select = side === 'ar'
     ? 'soNumber createdAt customer customerSnapshot total amountPaid creditedAmount paymentStatus orderStatus dueDate currency'
     : 'billNumber billDate vendor vendorName totalAmount paidAmount status dueDate purchaseOrder currency';
@@ -188,6 +192,7 @@ async function productsList(tenantId, { search, page = 1, limit = 50 } = {}) {
 }
 
 module.exports = {
+  listInvoices: require('./customerInvoice/browse').listInvoices,
   summary,
   listOpenDocs,
   customerBalances,

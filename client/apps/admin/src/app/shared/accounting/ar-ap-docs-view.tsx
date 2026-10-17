@@ -1,284 +1,185 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
-import { PiArrowsClockwise, PiMagnifyingGlass } from 'react-icons/pi';
+import { useState } from 'react';
+import { PiDownloadSimple } from 'react-icons/pi';
+import type { PaymentSide } from '@/services/arAp.service';
 import {
-  arApService,
-  type ArApSummary,
-  type PaymentSide,
-} from '@/services/arAp.service';
-import { type AccountingDocument } from './accounting-documents';
-import { fmtMoney } from './accounting-helpers';
+  documentCsv,
+  documentPageLabel,
+  type AccountingDocument,
+} from './accounting-documents';
+import { useAccountingDocuments } from './use-accounting-documents';
 import AccountingDocumentResults from './accounting-document-results';
+import AccountingDocumentSummary from './accounting-document-summary';
+import AccountingDocumentFilters from './accounting-document-filters';
 import PaymentFormModal from './payment-form-modal';
-const INPUT =
-  'min-h-11 min-w-0 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-red-100';
 
+const button =
+  'min-h-10 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-40';
 export default function ArApDocsView({ side }: { side: PaymentSide }) {
-  const { data: session } = useSession();
-  const token = (session?.user as { token?: string })?.token || '';
-  const ar = side === 'customer';
-  const [summary, setSummary] = useState<ArApSummary | null>(null);
-  const [docs, setDocs] = useState<AccountingDocument[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [summaryError, setSummaryError] = useState('');
-  const [page, setPage] = useState(1);
-  const [pages, setPages] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [status, setStatus] = useState('');
-  const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [refresh, setRefresh] = useState(0);
+  const state = useAccountingDocuments(side);
   const [paymentDoc, setPaymentDoc] = useState<AccountingDocument | null>(null);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setQuery(search.trim());
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    setSummaryError('');
-    (ar
-      ? arApService.receivablesSummary(token)
-      : arApService.payablesSummary(token)
-    )
-      .then((result) => {
-        if (!cancelled) setSummary(result.data);
+  const ar = side === 'customer';
+  const pending = state.loading || state.searchPending;
+  const exportPage = () => {
+    const url = URL.createObjectURL(
+      new Blob(['\uFEFF', documentCsv(state.docs, side)], {
+        type: 'text/csv;charset=utf-8;',
       })
-      .catch((err) => {
-        if (!cancelled)
-          setSummaryError(
-            err instanceof Error ? err.message : 'Could not load balances'
-          );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, ar, refresh]);
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    const params = {
-      page,
-      limit: 25,
-      status: status || undefined,
-      search: query || undefined,
-      from: from || undefined,
-      to: to || undefined,
-    };
-    const load = async () => {
-      try {
-        const result = ar
-          ? await arApService.invoices(token, params)
-          : await arApService.bills(token, params);
-        if (cancelled) return;
-        setDocs(result.data);
-        setPages(result.pagination?.pages || 1);
-        setTotal(result.pagination?.total || 0);
-      } catch (err) {
-        if (!cancelled)
-          setError(
-            err instanceof Error ? err.message : 'Could not load documents'
-          );
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, ar, page, status, query, from, to, refresh]);
+    );
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${ar ? 'invoices' : 'open-bills'}-page-${state.page}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+  if (state.authLoading)
+    return (
+      <p role="status" className="py-10 text-sm text-gray-500">
+        Loading your accounting workspace…
+      </p>
+    );
+  if (!state.authenticated)
+    return (
+      <p
+        role="alert"
+        className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900"
+      >
+        Sign in to view {ar ? 'customer invoices' : 'vendor bills'}.
+      </p>
+    );
   return (
     <div className="min-w-0 space-y-5">
-      {summary && (
-        <section
-          aria-label="Outstanding balances"
-          className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6"
-        >
-          <div className="rounded-2xl bg-gray-900 p-4 text-white sm:col-span-2 xl:col-span-1">
-            <p className="text-xs text-gray-300">
-              {ar ? 'To collect' : 'To pay'}
-            </p>
-            <p className="mt-2 break-words text-2xl font-semibold tabular-nums">
-              {fmtMoney(summary.totalOutstanding)}
-            </p>
-            <p className="mt-1 text-xs text-gray-400">
-              {summary.count} open documents
+      <AccountingDocumentSummary
+        summary={state.summary}
+        side={side}
+        loading={state.summaryLoading}
+        error={state.summaryError}
+        onRetry={state.reloadSummary}
+        onReview={() => {
+          state.clearFilters();
+          state.updateFilter('status', 'draft');
+        }}
+      />
+      <section
+        aria-label={ar ? 'Open invoices' : 'Open bills'}
+        className="overflow-hidden rounded-xl border border-gray-200 bg-white"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-4 sm:px-5">
+          <div>
+            <h2 className="font-lexend text-sm font-semibold text-gray-900">
+              {ar ? 'Invoice ledger' : 'Bill ledger'}
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              {ar
+                ? 'Sales and POS invoices · paid, partially paid and unpaid'
+                : 'Open bills only'}{' '}
+              · balances above cover {ar ? 'open receivables' : 'open payables'}
             </p>
           </div>
-          {Object.entries(summary.buckets).map(([bucket, value]) => (
-            <div
-              key={bucket}
-              className="rounded-2xl border border-gray-200 bg-white p-4"
-            >
-              <p className="text-xs text-gray-500">
-                {bucket === 'current'
-                  ? 'Not due / up to 15 days'
-                  : `${bucket} days overdue`}
-              </p>
-              <p className="mt-2 break-words text-lg font-semibold tabular-nums text-gray-900">
-                {fmtMoney(value)}
-              </p>
-            </div>
-          ))}
-        </section>
-      )}
-      {summaryError && (
-        <p
-          role="alert"
-          className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-        >
-          Balance summary unavailable: {summaryError}
-        </p>
-      )}
-      <section
-        aria-label="Document filters"
-        className="rounded-2xl border border-gray-200 bg-white p-4"
-      >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_160px_160px_160px_auto]">
-          <label className="relative flex items-center">
-            <span className="sr-only">Search document or customer/vendor</span>
-            <PiMagnifyingGlass className="absolute left-3 text-gray-400" />
-            <input
-              className={`${INPUT} w-full pl-9`}
-              value={search}
-              placeholder="Search documents or names"
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </label>
-          <select
-            className={INPUT}
-            aria-label="Payment status"
-            value={status}
-            onChange={(event) => {
-              setStatus(event.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">All open statuses</option>
-            {(ar
-              ? ['unpaid', 'partial']
-              : ['confirmed', 'partial', 'overdue']
-            ).map((value) => (
-              <option key={value} value={value}>
-                {value[0].toUpperCase() + value.slice(1)}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            aria-label="From date"
-            className={INPUT}
-            value={from}
-            max={to || undefined}
-            onChange={(event) => {
-              setFrom(event.target.value);
-              setPage(1);
-            }}
-          />
-          <input
-            type="date"
-            aria-label="To date"
-            className={INPUT}
-            value={to}
-            min={from || undefined}
-            onChange={(event) => {
-              setTo(event.target.value);
-              setPage(1);
-            }}
-          />
           <button
             type="button"
-            disabled={loading}
-            onClick={() => setRefresh((value) => value + 1)}
-            className={`${INPUT} flex items-center justify-center gap-2 font-medium disabled:opacity-50`}
+            onClick={exportPage}
+            disabled={pending || !!state.error || !state.docs.length}
+            className={`${button} flex items-center gap-2`}
+            title="Export the displayed page only"
           >
-            <PiArrowsClockwise className={loading ? 'animate-spin' : ''} />
-            Refresh
+            <PiDownloadSimple aria-hidden />
+            Export page
           </button>
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-          <span>
-            {total} matching documents · balances above cover all open documents
-          </span>
-          {(search || status || from || to) && (
+        <AccountingDocumentFilters
+          side={side}
+          filters={state.filters}
+          update={state.updateFilter}
+          onClear={state.clearFilters}
+          onRefresh={state.refresh}
+          refreshing={state.loading || state.summaryLoading}
+        />
+        {ar && (
+          <p className="px-5 text-xs text-gray-500">
+            POS account repayments settle the oldest outstanding receipt first.
+          </p>
+        )}
+        {state.error && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 border-b border-red-200 bg-red-50 p-4 text-xs text-red-800"
+          >
+            <p>
+              {state.docs.length
+                ? 'Documents could not refresh. Previous results are shown. '
+                : 'Could not load documents. '}
+              {state.error}
+            </p>
             <button
               type="button"
-              className="min-h-8 font-semibold text-brand"
-              onClick={() => {
-                setSearch('');
-                setQuery('');
-                setStatus('');
-                setFrom('');
-                setTo('');
-                setPage(1);
-              }}
+              disabled={state.loading}
+              onClick={state.reloadList}
+              className={button}
             >
-              Clear filters
+              Try again
             </button>
-          )}
+          </div>
+        )}
+        {pending && state.docs.length > 0 && (
+          <p role="status" className="border-b px-5 py-2 text-xs text-gray-500">
+            Updating results…
+          </p>
+        )}
+        {(!state.error || state.docs.length > 0) && (
+          <AccountingDocumentResults
+            docs={state.docs}
+            side={side}
+            loading={pending}
+            onPay={setPaymentDoc}
+            filtered={state.filtered}
+            onClear={state.clearFilters}
+            disabled={!!state.error}
+          />
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 text-xs sm:px-5">
+          <span className="text-gray-500">
+            {state.error
+              ? 'Results unavailable'
+              : documentPageLabel(
+                  state.page,
+                  25,
+                  state.docs.length,
+                  state.total,
+                  side
+                )}
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-gray-500">
+              Page {state.page} of {state.pages}
+            </span>
+            <button
+              type="button"
+              className={button}
+              disabled={pending || !!state.error || state.page <= 1}
+              onClick={() => state.setPage(state.page - 1)}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className={button}
+              disabled={pending || !!state.error || state.page >= state.pages}
+              onClick={() => state.setPage(state.page + 1)}
+            >
+              Next
+            </button>
+          </div>
         </div>
       </section>
-      {error ? (
-        <div
-          role="alert"
-          className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800"
-        >
-          <p>{error}</p>
-          <button
-            type="button"
-            onClick={() => setRefresh((value) => value + 1)}
-            className="mt-3 min-h-10 rounded-lg border border-red-200 bg-white px-4 font-semibold"
-          >
-            Try again
-          </button>
-        </div>
-      ) : (
-        <AccountingDocumentResults
-          docs={docs}
-          side={side}
-          loading={loading}
-          onPay={setPaymentDoc}
-        />
-      )}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-        <span className="text-gray-500">
-          Page {page} of {pages}
-        </span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className={`${INPUT} disabled:opacity-40`}
-            disabled={loading || page <= 1}
-            onClick={() => setPage((value) => value - 1)}
-          >
-            Previous
-          </button>
-          <button
-            type="button"
-            className={`${INPUT} disabled:opacity-40`}
-            disabled={loading || page >= pages}
-            onClick={() => setPage((value) => value + 1)}
-          >
-            Next
-          </button>
-        </div>
-      </div>
       {paymentDoc && (
         <PaymentFormModal
           side={side}
           initialDocument={paymentDoc}
           onClose={() => setPaymentDoc(null)}
-          onSaved={() => setRefresh((value) => value + 1)}
+          onSaved={state.refresh}
         />
       )}
     </div>

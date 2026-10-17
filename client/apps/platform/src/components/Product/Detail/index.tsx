@@ -1,6 +1,11 @@
 'use client';
 
-import { isSizeInStock } from '@/utils/productStock';
+import PurchaseControls from './PurchaseControls';
+import SellerChoices from './SellerChoices';
+import SizeChoices from './SizeChoices';
+import type {VendorSize} from './detail-types';
+import {purchaseLimits,clampPurchaseQuantity} from './purchase-quantity';
+import { resolveSellerChoice } from '@/utils/representativeOffer';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Image from '@/components/UI/OptimizedImage';
@@ -31,25 +36,6 @@ import PackPricingCard from '@/components/Product/PackPricingCard';
 import { ProductType } from '@/types/product.types';
 import { pickDefaultSizeFrom, resolvePackPricing } from 'commerce-core';
 import * as Icon from 'react-icons/pi';
-
-const VENDOR_PALETTE = [
-  '#1a1a2e', '#16213e', '#0f3460', '#533483', '#e94560',
-  '#2c3e50', '#6b2d5b', '#1b4332', '#b8860b', '#3d405b',
-];
-
-function vendorPaletteIndex(name: string): number {
-  return name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % VENDOR_PALETTE.length;
-}
-
-function getInitials(name: string): string {
-  const skip = new Set(['the', 'a', 'an']);
-  const words = name
-    .replace(/[^a-zA-Z\s]/g, '')
-    .split(/\s+/)
-    .filter((w) => w && !skip.has(w.toLowerCase()));
-  if (!words.length) return name.charAt(0).toUpperCase();
-  return words.slice(0, 2).map((w) => w.charAt(0).toUpperCase()).join('');
-}
 
 /** snake_case type → readable label, e.g. "single_malt_scotch" → "Single Malt Scotch". */
 function formatType(type?: string): string {
@@ -88,26 +74,7 @@ function buildProductIntro(p: any): string {
 interface ProductDetailProps {
   productData: any;
   relatedProducts?: ProductType[];
-}
-
-interface VendorSize {
-  _id: string;
-  size: string;
-  displayName: string;
-  stock: number;
-  availability: string;
-  price: number;
-  originalPrice: number;
-  displayPrice: string;
-  currencySymbol: string;
-  discount?: { label?: string; percentage?: number; type?: string; value?: number; hasDiscount?: boolean } | null;
-  volumeMl?: number;
-  minOrderQuantity: number;
-  maxOrderQuantity?: number;
-  packUnitPrice?: number | null;
-  packThreshold?: number | null;
-  packSavingsPct?: number | null;
-  packPlatformCostPrice?: number | null;
+  purchaseBlocked?: boolean;
 }
 
 interface ToastState {
@@ -116,13 +83,14 @@ interface ToastState {
   type: 'success' | 'error';
 }
 
-const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProducts = [] }) => {
+const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProducts = [], purchaseBlocked = false }) => {
   const router = useRouter();
   
   const [thumbsSwiper, setThumbsSwiper] = useState<SwiperType | null>(null);
   const [activeSize, setActiveSize] = useState<string>('');
+  const explicitSeller = React.useRef(false);
   const [activeVendor, setActiveVendor] = useState<string | null>(null);
-  const [localQuantity, setLocalQuantity] = useState<number>(1);
+  const [storedQuantity, setLocalQuantity] = useState<number>(1);
   const [activeTab, setActiveTab] = useState<string>('description');
   const [showImageModal, setShowImageModal] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -141,13 +109,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
   const vendors = useMemo(() => productData?.availableAt || [], [productData]);
 
-  const selectedVendor = useMemo(() => {
-    if (!vendors.length) return null;
-    if (activeVendor) {
-      return vendors.find((v: any) => v.tenant._id === activeVendor) ?? vendors[0];
-    }
-    return vendors[0];
-  }, [vendors, activeVendor]);
+  const selectedVendor = useMemo(() => resolveSellerChoice<(typeof vendors)[number]>(
+    vendors, explicitSeller.current ? activeVendor : null, productData.shoppingOffer?.subProductId,
+  ), [vendors, activeVendor, productData.shoppingOffer]);
 
   const vendorSizes: VendorSize[] = useMemo(() => {
     if (!selectedVendor) return [];
@@ -155,7 +119,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
       _id: s._id,
       size: s.size,
       displayName: s.displayName || s.size,
-      stock: s.stock,
+      stock: s.availableStock ?? s.stock,
+      availableStock: s.availableStock,
+      inStock: s.inStock,
       availability: s.availability,
       price: s.pricing?.websitePrice || 0,
       originalPrice: s.pricing?.originalWebsitePrice || s.pricing?.websitePrice || 0,
@@ -178,8 +144,8 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   // priceRange.min (the cheapest variant, frequently out of stock), so crawlers
   // and Merchant Center read a different price/availability than real users saw.
   const defaultSize = useMemo(
-    () => pickDefaultSizeFrom(vendorSizes)?.size ?? '',
-    [vendorSizes],
+    () => (vendorSizes.find(s => s._id === productData.shoppingOffer?.sizeId && purchaseLimits(s).canBuy) ?? pickDefaultSizeFrom(vendorSizes.filter(s => purchaseLimits(s).canBuy)))?.size ?? '',
+    [vendorSizes, productData.shoppingOffer],
   );
 
   // A user's explicit pick wins; otherwise fall back to the default. Switching
@@ -195,6 +161,8 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   }, [activeSize, defaultSize, vendorSizes]);
 
   const effectiveSize = selectedSizeData?.size ?? '';
+  const limits = purchaseLimits(selectedSizeData);
+  const localQuantity = clampPurchaseQuantity(storedQuantity, limits);
 
   const displayPrice = (() => {
     const basePrice = selectedSizeData?.price ?? productData?.priceRange?.min ?? 0;
@@ -250,7 +218,6 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     effectiveUnitPrice,
     effectiveTotal,
     thresholdRemaining: packThresholdRemaining,
-    totalSavings: packTotalSavings,
   } = packPricing;
 
   const discountPercentage = useMemo(() => {
@@ -263,14 +230,16 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     return 0;
   }, [selectedSizeData, displayOriginalPrice, displayPrice, showDetailDiscount]);
 
-  const inStock = isSizeInStock(selectedSizeData);
+  const inStock = limits.canBuy;
   const isLowStock = (selectedSizeData?.stock ?? 0) > 0 && (selectedSizeData?.stock ?? 0) <= 5;
   const hasDiscount = showDetailDiscount;
   const isFixedDiscount = selectedSizeData?.discount?.type === 'fixed';
 
   useEffect(() => {
-    if (productData?.availableAt?.length > 0 && !activeVendor) {
-      setActiveVendor(productData.availableAt[0].tenant._id);
+    if (productData?.availableAt?.length > 0 && !explicitSeller.current) {
+      const offer = productData.availableAt.find((v: { _id?: string }) => String(v._id) === productData.shoppingOffer?.subProductId) || productData.availableAt[0];
+      setActiveVendor(String(offer._id));
+      if (productData.shoppingOffer) setActiveSize(offer.sizes.find((size: { _id?: string }) => String(size._id) === productData.shoppingOffer.sizeId)?.size || '');
     }
   }, [productData, activeVendor]);
 
@@ -281,38 +250,29 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     }
   }, [toast]);
 
-  // Switching size must not carry a quantity the new size can't fulfil — e.g.
-  // a 6-unit pack quantity surviving onto a size with 4 left.
   useEffect(() => {
-    if (!selectedSizeData) return;
-    const minQty = selectedSizeData.minOrderQuantity || 1;
-    const maxQty = selectedSizeData.maxOrderQuantity || selectedSizeData.stock || 99;
-    setLocalQuantity((prev) => Math.min(Math.max(prev, minQty), Math.max(minQty, maxQty)));
+    setLocalQuantity(previous => clampPurchaseQuantity(previous, purchaseLimits(selectedSizeData)));
   }, [selectedSizeData]);
 
   const handleQuantityChange = useCallback((change: number) => {
-    if (!selectedSizeData) return;
-    const newQty = localQuantity + change;
-    const minQty = selectedSizeData.minOrderQuantity || 1;
-    const maxQty = selectedSizeData.maxOrderQuantity || selectedSizeData.stock || 99;
-    if (newQty >= minQty && newQty <= maxQty) {
-      setLocalQuantity(newQty);
-    }
-  }, [localQuantity, selectedSizeData]);
+    if (purchaseBlocked) return;
+    setLocalQuantity(previous => clampPurchaseQuantity(previous + change, purchaseLimits(selectedSizeData)));
+  }, [selectedSizeData, purchaseBlocked]);
 
   const handleSetQuantityToPack = useCallback(() => {
-    if (!packPricing.packThreshold) return;
-    const maxQty = selectedSizeData?.maxOrderQuantity || selectedSizeData?.stock || 99;
-    setLocalQuantity(Math.min(packPricing.packThreshold, maxQty));
-  }, [packPricing.packThreshold, selectedSizeData]);
+    if (!packPricing.packThreshold || purchaseBlocked) return;
+    const bounds = purchaseLimits(selectedSizeData);
+    if (!bounds.canBuy || packPricing.packThreshold > bounds.max) return;
+    setLocalQuantity(clampPurchaseQuantity(packPricing.packThreshold, bounds));
+  }, [packPricing.packThreshold, selectedSizeData, purchaseBlocked]);
 
   const handleAddToCart = useCallback(async () => {
     if (!productData || !selectedSizeData || !selectedVendor) {
       setToast({ show: true, message: 'Please select a size and vendor', type: 'error' });
       return;
     }
-    if (!inStock) {
-      setToast({ show: true, message: 'This size is out of stock', type: 'error' });
+    if (purchaseBlocked || !inStock || localQuantity < limits.min || localQuantity > limits.max) {
+      setToast({ show: true, message: purchaseBlocked ? 'Please refresh seller availability before ordering.' : 'This quantity is unavailable. Choose another size or seller.', type: 'error' });
       return;
     }
 
@@ -326,7 +286,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     } finally {
       setIsAddingToCart(false);
     }
-  }, [productData, selectedSizeData, selectedVendor, effectiveSize, localQuantity, addToCart, inStock]);
+  }, [productData, selectedSizeData, selectedVendor, effectiveSize, localQuantity, addToCart, inStock, purchaseBlocked, limits.min, limits.max]);
 
   const handleAddToWishlist = useCallback(() => {
     if (!productData) return;
@@ -434,8 +394,8 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                               alt={img.alt || `${productData.name} ${index + 1}`}
                               fill
                               className="object-cover cursor-zoom-in"
-                              sizes="(max-width: 768px) 100vw, 50vw"
-                              priority={index === 0}
+                              sizes="(max-width: 1023px) calc(100vw - 32px), (max-width: 1535px) calc(50vw - 48px), 720px"
+                              preload={index === 0}
                             />
                           </div>
                         </SwiperSlide>
@@ -592,142 +552,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 {buildProductIntro(productData)}
               </p>
 
-              {/* Vendor Selection - Always show when vendors exist */}
-              {vendors.length > 0 && (
-                <div className="p-4 bg-gray-50 rounded-xl">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                    <Icon.PiStorefront size={18} />
-                    {vendors.length > 1 ? 'Select Seller' : 'Sold By'}
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {vendors.map((vendor: any) => {
-                      const isActive = selectedVendor?.tenant._id === vendor.tenant._id;
-                      const bg = VENDOR_PALETTE[vendorPaletteIndex(vendor.tenant.name)];
-                      const totalStock = vendor.sizes?.reduce((sum: number, s: any) => sum + (s.stock || 0), 0) || 0;
-                      return (
-                        <button
-                          key={vendor.tenant._id}
-                          onClick={() => setActiveVendor(vendor.tenant._id)}
-                          className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
-                            isActive || vendors.length === 1
-                              ? 'border-black bg-white shadow-md'
-                              : 'border-gray-200 hover:border-gray-300 bg-white'
-                          }`}
-                        >
-                          <div
-                            className="w-12 h-12 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-                            style={{ backgroundColor: bg }}
-                          >
-                            {vendor.tenant.logo?.url ? (
-                              <Image src={vendor.tenant.logo.url} alt={`${vendor.tenant.name} logo`} width={44} height={44} className="rounded-full object-cover" />
-                            ) : (
-                              getInitials(vendor.tenant.name)
-                            )}
-                          </div>
-                          <div className="text-left flex-1 min-w-0">
-                            <div className="text-sm font-semibold text-gray-900 truncate">{vendor.tenant.name}</div>
-                            <div className="text-xs text-gray-500 flex items-center gap-1">
-                              <Icon.PiMapPin size={12} />
-                              {vendor.tenant.city}, {vendor.tenant.country}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                              {totalStock === 0 ? (
-                                <span className="text-xs font-medium text-red-500">Out of stock</span>
-                              ) : totalStock < 10 ? (
-                                <span className="text-xs font-medium text-orange-500">{totalStock} in stock</span>
-                              ) : null}
-                            </div>
-                          </div>
-                          {isActive && (
-                            <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-                              <Icon.PiCheck size={14} className="text-white" />
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Size Selection */}
-              {vendorSizes.length > 0 && (
-                <div className="p-4 bg-gray-50 rounded-xl">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                      <Icon.PiRuler size={18} />
-                      Select Size
-                    </h3>
-                    {isLowStock && (
-                      <span className="text-xs text-red-600 font-medium flex items-center gap-1">
-                        <Icon.PiWarning size={14} />
-                        Only {selectedSizeData?.stock} left!
-                      </span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
-                    {vendorSizes.map((size: VendorSize) => {
-                      const isSelected = effectiveSize === size.size;
-                      const isOutOfStock = size.stock === 0;
-                      // Per-size offer, so a size with less than one pack in
-                      // stock doesn't advertise a pack rate it can't honour.
-                      const sizePack = resolvePackPricing({
-                        packUnitPrice: size.packUnitPrice,
-                        packThreshold: size.packThreshold,
-                        packSavingsPct: size.packSavingsPct,
-                        unitPrice: size.price,
-                        quantity: 1,
-                        stock: size.stock,
-                        maxOrderQuantity: size.maxOrderQuantity,
-                        onSale: !!size.discount,
-                      });
-
-                      return (
-                        <button
-                          key={size._id || size.size}
-                          onClick={() => !isOutOfStock && setActiveSize(size.size)}
-                          disabled={isOutOfStock}
-                          className={`relative p-2 sm:p-3 rounded-xl border-2 text-center transition-all ${
-                            isSelected
-                              ? 'border-black bg-gray-900 text-white shadow-lg'
-                              : isOutOfStock
-                                ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed line-through opacity-60'
-                                : 'border-gray-200 hover:border-gray-400 bg-white'
-                          }`}
-                        >
-                          <div className="font-bold text-sm sm:text-base">{size.displayName}</div>
-                          {!!size.volumeMl && (
-                            <div className={`text-[10px] sm:text-xs ${isSelected ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {size.volumeMl}ml
-                            </div>
-                          )}
-                          <div className={`text-xs sm:text-sm font-bold mt-1 ${isSelected ? 'text-white' : 'text-gray-900'}`}>
-                            {size.currencySymbol}{size.price.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                          </div>
-                          {size.discount && !isOutOfStock && (
-                            <div className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 bg-red-500 text-white text-[9px] sm:text-[10px] font-bold rounded-full">
-                              -{size.discount.percentage}%
-                            </div>
-                          )}
-                          {sizePack.hasPackPricing && (
-                            <div className={`absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-white text-[8px] sm:text-[9px] font-bold rounded-full whitespace-nowrap shadow-sm flex items-center gap-0.5 ${
-                              isSelected ? 'bg-amber-400 text-amber-900' : 'bg-amber-500'
-                            }`}>
-                              <Icon.PiArchive size={8} />
-                              {sizePack.packSavingsPct ? `${sizePack.packSavingsPct}% off` : `${sizePack.packThreshold}-pack`}
-                            </div>
-                          )}
-                          {isSelected && (
-                            <div className="absolute -top-1.5 -left-1.5 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-                              <Icon.PiCheck size={12} className="text-white" />
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              <SellerChoices sellers={vendors} selectedId={selectedVendor?._id}
+                nearestId={productData.shoppingOffer?.subProductId} locationOrder={!!productData.locationOrder}
+                onSelect={id => { explicitSeller.current = true; setActiveVendor(id); setActiveSize(''); }} />
+              <SizeChoices sizes={vendorSizes} selected={effectiveSize} onSelect={setActiveSize} />
 
               {/* Pack Pricing Card */}
               {hasPackPricing && (
@@ -744,81 +572,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 />
               )}
 
-              {/* Quantity & Add to Cart */}
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                {/* Quantity Selector */}
-                <div className={`flex items-center justify-center sm:justify-start border-2 rounded-xl py-1 px-2 bg-white transition-colors ${
-                  packRateActive
-                    ? 'border-amber-400 ring-2 ring-amber-200'
-                    : hasPackPricing && localQuantity > 0
-                      ? 'border-amber-200'
-                      : 'border-gray-200'
-                }`}>
-                  <button
-                    onClick={() => handleQuantityChange(-1)}
-                    disabled={localQuantity <= (selectedSizeData?.minOrderQuantity || 1)}
-                    className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white transition-colors"
-                  >
-                    <Icon.PiMinus size={20} />
-                  </button>
-                  <div className="w-16 sm:w-20 text-center">
-                    <span className={`block font-bold text-lg sm:text-xl ${packRateActive ? 'text-amber-600' : ''}`}>{localQuantity}</span>
-                    <span className="block text-[10px] sm:text-xs text-gray-400">
-                      {packRateActive ? 'pack rate' : 'items'}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => handleQuantityChange(1)}
-                    disabled={selectedSizeData?.maxOrderQuantity ? localQuantity >= selectedSizeData.maxOrderQuantity : false}
-                    className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white transition-colors"
-                  >
-                    <Icon.PiPlus size={20} />
-                  </button>
-                </div>
-
-                {/* Add to Cart Button */}
-                <div className="flex-1 flex flex-col gap-2">
-                  <button
-                    onClick={handleAddToCart}
-                    disabled={!inStock || !effectiveSize || isAddingToCart}
-                    className={`w-full py-4 px-6 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2 sm:gap-3 ${
-                      !effectiveSize
-                        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                        : !inStock
-                          ? 'bg-red-100 text-red-600 cursor-not-allowed'
-                          : packRateActive
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-300/40 hover:shadow-xl'
-                            : 'bg-gray-900 text-white hover:bg-black shadow-lg hover:shadow-xl'
-                    }`}
-                  >
-                    {isAddingToCart ? (
-                      <>
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Adding...</span>
-                      </>
-                    ) : !inStock ? (
-                      <>
-                        <Icon.PiProhibit size={20} />
-                        <span>Out of Stock</span>
-                      </>
-                    ) : !effectiveSize ? (
-                      <>
-                        <Icon.PiWarningCircle size={20} />
-                        <span>Select a Size</span>
-                      </>
-                    ) : packRateActive ? (
-                      <>
-                        <Icon.PiShoppingCart size={20} />
-                        <span>Add {localQuantity} to Cart · {displayCurrencySymbol}{effectiveTotal.toLocaleString('en-NG', { maximumFractionDigits: 0 })}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Icon.PiShoppingCart size={20} />
-                        <span>Add to Cart</span>
-                      </>
-                    )}
-                  </button>
-                  {/* Order on WhatsApp — cart-free checkout path */}
+              <PurchaseControls quantity={localQuantity} limits={limits} blocked={purchaseBlocked}
+                adding={isAddingToCart} size={selectedSizeData?.displayName} seller={selectedVendor?.tenant.name}
+                currency={displayCurrencySymbol} total={effectiveTotal} onChange={handleQuantityChange} onAdd={handleAddToCart}>
                   <OrderWhatsAppButton
                     productName={productData.name || 'this product'}
                     size={selectedSizeData?.displayName || effectiveSize}
@@ -828,34 +584,11 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     currencySymbol={displayCurrencySymbol}
                     seller={selectedVendor?.tenant.name}
                     packRateActive={packRateActive}
-                    disabled={!effectiveSize || !inStock}
+                    outOfStock={purchaseBlocked || !inStock}
+                    productPath={productData.slug ? `/product/${encodeURIComponent(productData.slug)}` : undefined}
+                    disabled={purchaseBlocked || !effectiveSize || !inStock}
                   />
-                  {/* Price display */}
-                  {effectiveSize && inStock && (
-                    <div className="text-center sm:text-right">
-                      {packRateActive && packTotalSavings > 0 && (
-                        <div className="text-xs text-green-600 font-semibold mb-0.5 flex items-center justify-center sm:justify-end gap-1">
-                          <Icon.PiCheckCircle size={12} />
-                          You save {displayCurrencySymbol}{packTotalSavings.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-                        </div>
-                      )}
-                      <span className={`text-lg sm:text-xl font-bold ${packRateActive ? 'text-amber-600' : 'text-gray-900'}`}>
-                        {displayCurrencySymbol}{effectiveTotal.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-                      </span>
-                      {localQuantity > 1 && (
-                        <span className="text-xs sm:text-sm text-gray-500 ml-2">
-                          ({displayCurrencySymbol}{effectiveUnitPrice.toLocaleString('en-NG', { maximumFractionDigits: 0 })} each)
-                        </span>
-                      )}
-                      {!packRateActive && hasPackPricing && packThresholdRemaining > 0 && (
-                        <div className="text-[11px] text-amber-500 mt-0.5">
-                          Add {packThresholdRemaining} more for pack rate
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
+              </PurchaseControls>
 
               {/* Action Buttons */}
               <div className="flex gap-3">

@@ -7,6 +7,7 @@ const CHILDREN = new Set([
   'vendor-orders',
   'products',
   'expiry',
+  'promotions',
 ]);
 function safeNotificationAction(value) {
   if (typeof value !== 'string' || value.length > 500) return false;

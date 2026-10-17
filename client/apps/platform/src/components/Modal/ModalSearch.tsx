@@ -12,6 +12,11 @@ import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { ProductType } from '@/types/product.types';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { API_URL } from '@/lib/api';
+import { useShoppingLocation } from '@/context/ShoppingLocationContext';
+import NearbyResultsStatus from '@/components/ShoppingLocation/NearbyResultsStatus';
+import SellerDistance from '@/components/Product/Card/SellerDistance';
+import SearchSuggestions from './SearchSuggestions';
+import { searchPrice } from './search-price';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,11 +109,7 @@ function formatNGN(n: number) {
   return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
 }
 
-function getPrice(product: Product) {
-  const pr = product.priceRange;
-  if (pr) return { price: pr.min ?? 0, original: pr.max !== pr.min ? pr.max : undefined };
-  return { price: 0, original: undefined };
-}
+function getPrice(product: Product) { return searchPrice(product); }
 
 /**
  * The line spoken for a product row: name, maker, tasting notes, price.
@@ -320,6 +321,7 @@ const ModalSearch: React.FC = () => {
   const router    = useRouter();
   const inputRef  = useRef<HTMLInputElement>(null);
   const listRef   = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const [selectedIdx,   setSelectedIdx]   = useState(-1);
   const [isListening,   setIsListening]   = useState(false);
@@ -338,8 +340,11 @@ const ModalSearch: React.FC = () => {
     searchQuery, setSearchQuery,
     searchResults, isSearching, searchError,
     recentSearches, removeRecentSearch, clearRecentSearches,
-    popularSearches, performSearch,
+    popularSearches, performSearch, suggestions, isLoadingSuggestions, fetchSuggestions, hasMore, loadMoreResults,
   } = useModalSearchContext();
+
+  const { location } = useShoppingLocation();
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const products  = useMemo(() => searchResults?.products ?? [], [searchResults]);
@@ -351,17 +356,22 @@ const ModalSearch: React.FC = () => {
   // ── Debounced search ───────────────────────────────────────────────────────
   useEffect(() => {
     const q = searchQuery.trim();
+    if (!isModalOpen) return;
+    fetchSuggestions(q);
     if (!q) return;
-    const t = setTimeout(() => performSearch(q), 80);
-    return () => clearTimeout(t);
-  }, [searchQuery, performSearch]);
+    searchTimer.current = setTimeout(() => performSearch(q), 250);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [searchQuery, performSearch, fetchSuggestions, isModalOpen]);
+  useEffect(() => { setSelectedIdx(-1); setExpandedId(null); }, [searchQuery, searchResults]);
 
   // ── Focus on open ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (isModalOpen) {
-      setTimeout(() => inputRef.current?.focus(), 80);
+      const before = document.activeElement as HTMLElement | null;
+      const timer = setTimeout(() => inputRef.current?.focus(), 80);
       setSelectedIdx(-1);
       setExpandedId(null);
+      return () => { clearTimeout(timer); before?.focus(); };
     }
   }, [isModalOpen]);
 
@@ -380,17 +390,27 @@ const ModalSearch: React.FC = () => {
       if (!isModalOpen) return;
       const len = products.length;
       if (e.key === 'Escape')     { closeModalSearch(); return; }
+      if (e.key === 'Tab') {
+        const controls = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input, a[href], [tabindex="0"]') || []);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+        return;
+      }
+      if (e.target !== inputRef.current || e.isComposing) return;
+      if (!len && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return;
       if (e.key === 'ArrowDown')  { e.preventDefault(); setSelectedIdx(p => (p + 1) % len); scrollSel(); }
-      if (e.key === 'ArrowUp')    { e.preventDefault(); setSelectedIdx(p => (p - 1 + len) % len); scrollSel(); }
+      if (e.key === 'ArrowUp')    { e.preventDefault(); setSelectedIdx(p => p <= 0 ? len - 1 : p - 1); scrollSel(); }
       if (e.key === 'Enter') {
         e.preventDefault();
+        if (searchTimer.current) clearTimeout(searchTimer.current);
         if (selectedIdx >= 0 && products[selectedIdx]) goProduct(products[selectedIdx]);
         else if (searchQuery.trim()) performSearch();
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [isModalOpen, products, selectedIdx, searchQuery]);
+  }, [isModalOpen, products, selectedIdx, searchQuery, performSearch, closeModalSearch]);
 
   function scrollSel() {
     setTimeout(() => {
@@ -421,7 +441,7 @@ const ModalSearch: React.FC = () => {
     rec.onresult = (ev: any) => {
       const t = ev.results[0][0].transcript;
       setSearchQuery(t);
-      performSearch(t);
+
     };
     rec.start();
   }, [setSearchQuery, performSearch]);
@@ -504,7 +524,8 @@ const ModalSearch: React.FC = () => {
 
         {/* Panel */}
         <motion.div
-          key="panel"
+          key="panel" ref={panelRef}
+          role="dialog" aria-modal="true" aria-label="Search drinks"
           initial={{ opacity: 0, y: -16, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -16, scale: 0.97 }}
@@ -556,7 +577,10 @@ const ModalSearch: React.FC = () => {
                 />
                 <input
                   ref={inputRef}
-                  type="text"
+                  type="search"
+                  role="combobox" aria-autocomplete="list" aria-controls="search-product-options"
+                  aria-expanded={hasResults && !isSearching}
+                  aria-activedescendant={selectedIdx >= 0 && selectedIdx < products.length ? `search-product-${selectedIdx}` : undefined}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by name, brand, country, region, appellation…"
@@ -581,6 +605,8 @@ const ModalSearch: React.FC = () => {
 
             </div>
 
+            <SearchSuggestions suggestions={suggestions} loading={isLoadingSuggestions} onSelect={setSearchQuery} />
+            <NearbyResultsStatus location={location} loading={isSearching} />
             {/* Result count strip */}
             {(hasResults || (isSearching && searchResults)) && (
               <div className="flex items-center justify-between mt-2.5">
@@ -621,6 +647,7 @@ const ModalSearch: React.FC = () => {
                 <motion.div
                   key="results"
                   {...fade}
+                  id="search-product-options" role="listbox" aria-label="Matching drinks"
                   className="p-4 md:p-5 space-y-2 relative"
                 >
                   {products.map((product, idx) => {
@@ -646,6 +673,7 @@ const ModalSearch: React.FC = () => {
                     return (
                       <motion.div
                         key={id}
+                        id={`search-product-${idx}`}
                         data-sel={isSel}
                         layout
                         whileHover={{ scale: 1.005 }}
@@ -682,6 +710,7 @@ const ModalSearch: React.FC = () => {
                             </p>
                           )}
 
+                          <SellerDistance product={product} />
                           {/* Provenance — country · region · appellation · … */}
                           {facets.length > 0 && (
                             <p className="flex items-center gap-1 mt-1 text-[11px] text-gray-500 min-w-0">
@@ -778,6 +807,8 @@ const ModalSearch: React.FC = () => {
                     );
                   })}
 
+                  {hasMore && <button disabled={isSearching} onClick={() => void loadMoreResults()}
+                    className="w-full rounded-xl border border-zinc-200 py-3 text-sm font-semibold text-[#b20202] hover:bg-red-50">Load more drinks</button>}
                   <p className="pt-1 text-center text-[11px] text-gray-300">
                     <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px]">↑↓</kbd> navigate &nbsp;
                     <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px]">↵</kbd> open
@@ -803,12 +834,12 @@ const ModalSearch: React.FC = () => {
 
               {/* ─ Error ─ */}
               {searchError && (
-                <motion.div key="error" {...fade} className="py-12 px-6 text-center">
+                <motion.div key="error" {...fade} role="alert" className="py-12 px-6 text-center">
                   <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-red-50 flex items-center justify-center">
                     <Icon.PiWarning size={28} className="text-red-400" />
                   </div>
                   <p className="text-sm text-gray-600 font-medium mb-4">{searchError}</p>
-                  <button onClick={() => performSearch()} className={`px-5 py-2 ${BRAND.bg} text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity`}>
+                  <button onClick={() => hasResults ? loadMoreResults() : performSearch()} className={`px-5 py-2 ${BRAND.bg} text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity`}>
                     Try Again
                   </button>
                 </motion.div>
@@ -826,7 +857,7 @@ const ModalSearch: React.FC = () => {
                   </p>
                   <div className="flex flex-wrap justify-center gap-2">
                     {['France', 'Bordeaux', 'Speyside', 'Single Malt', 'Smoky'].map((t) => (
-                      <button key={t} onClick={() => { setSearchQuery(t); performSearch(t); }}
+                      <button key={t} onClick={() => { setSearchQuery(t); }}
                         className={`px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 hover:${BRAND.bg} hover:text-white transition-all`}>
                         {t}
                       </button>
@@ -871,7 +902,7 @@ const ModalSearch: React.FC = () => {
                         {recentSearches.slice(0, 6).map((s) => (
                           <button
                             key={s.query}
-                            onClick={() => { setSearchQuery(s.query); performSearch(s.query); }}
+                            onClick={() => { setSearchQuery(s.query); }}
                             className="group flex items-center gap-1.5 pl-2.5 pr-1.5 py-1.5 bg-gray-100 hover:bg-[#b20202]/8 rounded-full text-xs text-gray-700 hover:text-[#b20202] transition-all"
                           >
                             <Icon.PiClock size={11} className="text-gray-400 group-hover:text-[#b20202]/60 shrink-0" />
@@ -920,7 +951,7 @@ const ModalSearch: React.FC = () => {
                       {popularSearches.map((term, i) => (
                         <button
                           key={term}
-                          onClick={() => { setSearchQuery(term); performSearch(term); }}
+                          onClick={() => { setSearchQuery(term); }}
                           className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:border-[#b20202] hover:bg-[#b20202]/5 transition-all text-xs font-medium text-gray-600 hover:text-[#b20202]"
                         >
                           <span className="w-4 h-4 rounded-full bg-gray-100 group-hover:bg-[#b20202]/10 flex items-center justify-center text-[10px] font-bold text-gray-400 group-hover:text-[#b20202] transition-colors shrink-0">

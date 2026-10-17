@@ -1,34 +1,13 @@
-// client/apps/admin/src/app/shared/sales/sales-create-header.tsx
 'use client';
-
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import toast from 'react-hot-toast';
-import {
-  PiArrowLeft,
-  PiCaretRight,
-  PiChartLineUp,
-  PiCircleNotch,
-  PiCloudArrowUp,
-  PiCloudCheck,
-  PiCloudWarning,
-  PiCopy,
-  PiEnvelope,
-  PiGear,
-  PiLink,
-  PiFolderSimplePlus,
-  PiPaperPlaneTilt,
-  PiPencilSimple,
-  PiPrinter,
-  PiShareNetwork,
-  PiTag,
-} from 'react-icons/pi';
+import { PiArrowLeft, PiFloppyDisk, PiPrinter } from 'react-icons/pi';
 import { routes } from '@/config/routes';
+import type { SalesOrder } from '@/services/salesOrder.service';
 import { SalesSteps, salesStepIndex } from './sales-stage-pill';
-import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
-
+import SalesCreateMoreActions from './sales-create-more-actions';
+import { docStatusBadge } from './sales-list-status';
 export interface SalesCreateHeaderProps {
+  readOnly?: boolean;
   mode: 'create' | 'edit';
   initial?: SalesOrder;
   saving: boolean;
@@ -36,6 +15,10 @@ export interface SalesCreateHeaderProps {
   orderId?: string;
   token: string;
   autoSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  action?: string | null;
+  error?: string;
+  saveError?: string;
+  confirmError?: string;
   onManualSave?: () => void;
   onSaveQuotation?: () => void;
   onCreateOrder?: () => void;
@@ -44,21 +27,8 @@ export interface SalesCreateHeaderProps {
   onSendProForma?: () => void;
   onStatusChange?: () => void;
 }
-
-const BTN_BASE =
-  'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40';
-
-const BTN_PRIMARY = `${BTN_BASE} bg-brand text-white hover:bg-brand-dark active:scale-[0.98]`;
-const BTN_GHOST = `${BTN_BASE} bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50`;
-
-const AUTO_SAVE_LABEL: Record<string, string> = {
-  idle: '',
-  saving: 'Saving…',
-  saved: 'Saved',
-  error: 'Save failed',
-};
-
 export default function SalesCreateHeader({
+  readOnly = false,
   mode,
   initial,
   saving,
@@ -66,6 +36,10 @@ export default function SalesCreateHeader({
   orderId,
   token,
   autoSaveStatus = 'idle',
+  action,
+  error,
+  saveError,
+  confirmError,
   onManualSave,
   onSaveQuotation,
   onCreateOrder,
@@ -75,315 +49,150 @@ export default function SalesCreateHeader({
   onStatusChange,
 }: SalesCreateHeaderProps) {
   const isEdit = mode === 'edit' && !!initial;
-  const backHref = isEdit
-    ? routes.eCommerce.salesDetails(initial!._id)
-    : routes.eCommerce.salesOrders;
-  const cancelHref = backHref;
-
-  const router = useRouter();
-
-  // Derived action handlers
-  const handleSend = isEdit ? onSaveEdit : onSaveQuotation;
-  const handleConfirm = isEdit ? onSaveEdit : onCreateOrder;
-
-  // Gear action handlers
-  const handleDuplicate = async () => {
-    if (!orderId) {
-      toast('No order to duplicate');
-      return;
-    }
-    try {
-      const res = await salesOrderService.duplicate(orderId, token);
-      toast('Order duplicated');
-      router.push(routes.eCommerce.salesDetails(res.data._id));
-    } catch {
-      toast('Failed to duplicate order');
-    }
-  };
-
-  const handleMarkAsSent = async () => {
-    if (!orderId) {
-      toast('No order to mark');
-      return;
-    }
-    try {
-      await salesOrderService.send(orderId, token);
-      toast('Marked as sent');
-      onStatusChange?.();
-    } catch {
-      toast('Failed to mark as sent');
-    }
-  };
-
-  const handleGeneratePaymentLink = async () => {
-    if (!orderId) {
-      toast('No order selected');
-      return;
-    }
-    try {
-      const res = await salesOrderService.generatePaymentLink(orderId, token);
-      window.open(res.data.paymentLink, '_blank');
-      toast('Payment link generated');
-    } catch {
-      toast('Failed to generate payment link');
-    }
-  };
-
-  const handleAccruedRevenueEntry = async () => {
-    if (!orderId) {
-      toast('No order selected');
-      return;
-    }
-    try {
-      await salesOrderService.accruedRevenue(orderId, token);
-      toast('Accrued revenue entry created');
-    } catch {
-      toast('Failed to create accrued revenue entry');
-    }
-  };
-
-  const handleRequestSignature = async () => {
-    if (!orderId) {
-      toast('No order selected');
-      return;
-    }
-    try {
-      await salesOrderService.requestSignature(orderId, token);
-      toast('Signature request sent');
-    } catch {
-      toast('Failed to request signature');
-    }
-  };
-
-  const handleSendEmail = async () => {
-    if (!orderId) {
-      toast('No order selected');
-      return;
-    }
-    try {
-      await salesOrderService.sendEmail(orderId, token);
-      toast('Email sent');
-    } catch {
-      toast('Failed to send email');
-    }
-  };
-
-  const handleShare = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      toast('Link copied to clipboard');
-    } catch {
-      toast('Failed to copy link');
-    }
-  };
-
-  const handleCreateProject = async () => {
-    if (!orderId) {
-      toast('No order selected');
-      return;
-    }
-    try {
-      await salesOrderService.createProject(orderId, token);
-      toast('Project created');
-    } catch {
-      toast('Failed to create project');
-    }
-  };
-
-  // Gear dropdown state
-  const [gearOpen, setGearOpen] = useState(false);
-  const gearRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    function onDown(e: MouseEvent) {
-      if (gearRef.current && !gearRef.current.contains(e.target as Node))
-        setGearOpen(false);
-    }
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, []);
-
-  function gearItem(
-    action: (() => void) | undefined,
-    label: string,
-    Icon: React.ElementType,
-    hasArrow?: boolean
-  ) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          action?.();
-          setGearOpen(false);
-        }}
-        className="flex w-full items-center gap-2.5 px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50"
-      >
-        <Icon className="h-4 w-4 shrink-0 text-gray-400" />
-        <span className="flex-1 text-left">{label}</span>
-        {hasArrow && <PiCaretRight className="h-3.5 w-3.5 text-gray-400" />}
-      </button>
-    );
-  }
-
+  const blocked = saving || !!action || autoSaveStatus === 'saving';
+  const button =
+    'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-40';
+  const status =
+    readOnly && initial
+      ? `${docStatusBadge(initial).label}${initial.locked ? ' · Locked' : ' · Read-only'}`
+      : action === 'printing'
+        ? 'Preparing print…'
+        : action === 'confirming'
+          ? 'Confirming order…'
+          : action === 'saving' || autoSaveStatus === 'saving'
+            ? 'Saving draft…'
+            : autoSaveStatus === 'error'
+              ? 'Draft could not be saved'
+              : autoSaveStatus === 'saved'
+                ? 'Draft saved'
+                : 'Unsaved draft';
   return (
-    <div className="mb-5">
-      {/* Breadcrumb */}
-      <div className="mb-2 flex items-center gap-2 text-sm text-gray-500">
+    <header className="mb-6 space-y-4 border-b border-gray-200 pb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href={routes.eCommerce.salesOrders}
-          className="flex items-center gap-1 hover:text-gray-700"
+          className="inline-flex min-h-9 items-center gap-2 text-xs font-medium text-gray-500 hover:text-brand"
         >
-          <PiArrowLeft className="h-4 w-4" /> Sales
+          <PiArrowLeft aria-hidden /> Sales
         </Link>
-        <span>/</span>
-        <span className="font-medium text-gray-900">
-          {isEdit ? initial!.soNumber : 'New'}
+        <span className="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+          {initial?.soNumber || (orderId ? 'Saved draft' : 'New draft')}
         </span>
       </div>
-
-      {/* Title row + gear */}
-      <div className="mb-3 flex items-center gap-2">
-        <h1 className="text-xl font-semibold text-gray-900">
-          {isEdit
-            ? initial!.docType === 'quotation'
-              ? 'Quotation'
-              : 'Sales Order'
-            : 'New'}
-        </h1>
-
-        {/* Cloud save button */}
-        <button
-          type="button"
-          onClick={onManualSave}
-          disabled={autoSaveStatus === 'saving' || !hasLines}
-          title={
-            autoSaveStatus === 'saving'
-              ? 'Saving…'
-              : autoSaveStatus === 'saved'
-                ? 'Saved'
-                : autoSaveStatus === 'error'
-                  ? 'Save failed — click to retry'
-                  : 'Save draft'
-          }
-          className="flex items-center gap-1 rounded-md p-1.5 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {autoSaveStatus === 'saving' ? (
-            <PiCircleNotch className="h-5 w-5 animate-spin text-gray-400" />
-          ) : autoSaveStatus === 'saved' ? (
-            <PiCloudCheck className="h-5 w-5 text-emerald-500" />
-          ) : autoSaveStatus === 'error' ? (
-            <PiCloudWarning className="h-5 w-5 text-red-500" />
-          ) : (
-            <PiCloudArrowUp className="h-5 w-5 text-gray-400" />
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="font-lexend text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">
+            {isEdit
+              ? initial.docType === 'quotation'
+                ? 'Edit quotation'
+                : 'Edit sales order'
+              : 'Create quotation'}
+          </h1>
+          <p className="mt-2 max-w-xl text-sm text-gray-500">
+            Build your quotation, review the total, then confirm the sales
+            order.
+          </p>
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none">
+          {!readOnly && (
+            <button
+              type="button"
+              className={button}
+              onClick={onManualSave}
+              disabled={blocked || !hasLines || !!saveError}
+            >
+              <PiFloppyDisk aria-hidden />
+              {action === 'saving' ? 'Saving draft…' : 'Save draft'}
+            </button>
           )}
-        </button>
-
-        {/* Gear dropdown */}
-        <div ref={gearRef} className="relative">
           <button
             type="button"
-            onClick={() => setGearOpen((v) => !v)}
-            title="More actions"
-            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            className={button}
+            onClick={onPrint}
+            disabled={blocked || !hasLines || !!saveError}
           >
-            <PiGear className="h-4.5 w-4.5 h-[18px] w-[18px]" />
+            <PiPrinter aria-hidden />
+            {action === 'printing'
+              ? 'Preparing print…'
+              : isEdit && initial.docType === 'order'
+                ? 'Print document'
+                : 'Print quotation'}
           </button>
-
-          {gearOpen && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-xl">
-              {gearItem(onPrint, 'Print', PiPrinter, true)}
-              {gearItem(
-                onSendProForma,
-                'Send PRO-FORMA Invoice',
-                PiPaperPlaneTilt
-              )}
-              {gearItem(
-                handleRequestSignature,
-                'Request Signature',
-                PiPencilSimple
-              )}
-              {gearItem(handleDuplicate, 'Duplicate', PiCopy)}
-              <div className="my-1 border-t border-gray-100" />
-              {gearItem(
-                handleAccruedRevenueEntry,
-                'Accrued Revenue Entry',
-                PiChartLineUp
-              )}
-              {gearItem(
-                handleGeneratePaymentLink,
-                'Generate a Payment Link',
-                PiLink
-              )}
-              {gearItem(handleSendEmail, 'Send an email', PiEnvelope)}
-              {gearItem(handleMarkAsSent, 'Mark Quotation as Sent', PiTag)}
-              {gearItem(handleShare, 'Share', PiShareNetwork)}
-              {gearItem(
-                handleCreateProject,
-                'Create Project',
-                PiFolderSimplePlus
-              )}
-            </div>
+          {!readOnly && (
+            <button
+              type="button"
+              className={`${button} !border-brand !bg-brand !text-white hover:!bg-red-800`}
+              onClick={isEdit ? onSaveEdit : onCreateOrder}
+              disabled={
+                blocked || !hasLines || !!(isEdit ? saveError : confirmError)
+              }
+            >
+              {action === 'confirming'
+                ? 'Confirming…'
+                : isEdit
+                  ? 'Save changes'
+                  : 'Confirm order'}
+            </button>
           )}
-        </div>
-
-        {/* Lifecycle steps: Quotation → Quotation Sent → Sales Order */}
-        <div className="ml-2">
-          {isEdit ? (
-            <SalesSteps
-              current={salesStepIndex(
-                initial!.docType,
-                initial!.quoteStatus,
-                initial!.orderStatus
-              )}
-            />
-          ) : (
-            <SalesSteps current={0} />
+          {!isEdit && (
+            <button
+              type="button"
+              className={button}
+              onClick={onSaveQuotation}
+              disabled={blocked || !hasLines || !!saveError}
+            >
+              Save quotation
+            </button>
           )}
-        </div>
-      </div>
-
-      {/* Action button bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={saving || !hasLines}
-          className={BTN_PRIMARY}
-        >
-          {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Confirm Order'}
-        </button>
-
-        {!isEdit && (
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={saving || !hasLines}
-            className={BTN_GHOST}
-          >
-            Save Quotation
-          </button>
-        )}
-
-        <button type="button" onClick={onPrint} className={BTN_GHOST}>
-          <PiPrinter className="h-4 w-4" />
-          Print
-        </button>
-
-        {isEdit && initial && (
+          <SalesCreateMoreActions
+            orderId={orderId}
+            token={token}
+            disabled={blocked}
+            readOnly={readOnly}
+            onPrint={onPrint}
+            onSendProForma={onSendProForma}
+            onStatusChange={onStatusChange}
+          />
+          {isEdit && (
+            <Link
+              href={routes.eCommerce.salesDetails(initial._id)}
+              className={button}
+            >
+              Preview
+            </Link>
+          )}
           <Link
-            href={routes.eCommerce.salesDetails(initial._id)}
-            className={BTN_GHOST}
+            href={
+              isEdit
+                ? routes.eCommerce.salesDetails(initial._id)
+                : routes.eCommerce.salesOrders
+            }
+            className="px-2 py-2 text-sm text-gray-500 hover:text-gray-700"
           >
-            Preview
+            {isEdit ? 'Back to order' : 'Discard'}
           </Link>
-        )}
-
-        <Link
-          href={cancelHref}
-          className={`${BTN_BASE} text-gray-500 hover:bg-gray-50 hover:text-gray-700`}
-        >
-          Cancel
-        </Link>
+        </div>
       </div>
-    </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p role="status" className="text-xs text-gray-500">
+          {status}
+        </p>
+        <SalesSteps
+          current={salesStepIndex(
+            initial?.docType,
+            initial?.quoteStatus,
+            initial?.orderStatus,
+          )}
+        />
+      </div>
+      {error && (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+        >
+          {error}
+        </p>
+      )}
+    </header>
   );
 }

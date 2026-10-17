@@ -24,7 +24,8 @@ function planningController(
         ...options,
         purchasing: kind === "purchase",
         includeSales: a.reports,
-        updateMinimum: a.inventory && a.purchase && !options.startDate,
+        updateMinimum: false,
+        useSavedMinimum: true,
       });
       if (
         a.inventory &&

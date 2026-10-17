@@ -22,22 +22,20 @@ import {
   PiArchive,
   PiTrash,
   PiTag,
-  PiCurrencyNgn,
   PiArchive as PiArchiveBox,
   PiFactory,
   PiToggleRight,
   PiGift,
   PiTrolley,
 } from 'react-icons/pi';
-import SubProductBasicInfo from './basic-info';
+import ProductStep from './product-step';
+import { resolveSubProductPricing } from '@/utils/sub-product-pricing';
 import { clearSubProductDraft } from './draft-cleanup';
 import { requestDuplicate } from './duplicate-intent';
 import { subProductSaveTarget } from './save-target';
 import SubProductToolbar from './toolbar';
 import { navigateFromToolbar } from './toolbar-actions';
-import SubProductPricing from './pricing';
 import SubProductInventory from './inventory';
-import SubProductSizes from './sizes';
 import { validateSizeVariants } from './validation';
 import SubProductVendor from './vendor';
 import SubProductStatusVisibility from './status-visibility';
@@ -152,191 +150,6 @@ const successVariants = {
     },
   },
 };
-
-// ── ProductStep ──────────────────────────────────────────────────────────────
-// Renders Basic Info + Pricing + Sizes as one step with a sticky section nav
-
-const PRODUCT_SECTIONS = [
-  {
-    id: 'product-info',
-    label: 'Product Info',
-    icon: PiTag,
-    description: 'Select or create the base product',
-  },
-  {
-    id: 'pricing-sizes',
-    label: 'Pricing & Sizes',
-    icon: PiCurrencyNgn,
-    description: 'Prices, markup & size variants',
-  },
-];
-
-function ProductStep({
-  onProductSelect,
-}: {
-  onProductSelect?: (id: string, name?: string) => void;
-}) {
-  const [activeSection, setActiveSection] = useState('product-info');
-
-  function scrollTo(id: string) {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setActiveSection(id);
-    }
-  }
-
-  // Update active section on scroll
-  useEffect(() => {
-    function onScroll() {
-      for (const s of [...PRODUCT_SECTIONS].reverse()) {
-        const el = document.getElementById(s.id);
-        if (el && el.getBoundingClientRect().top <= 180) {
-          setActiveSection(s.id);
-          break;
-        }
-      }
-    }
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
-      {/* Sticky side nav */}
-      <aside className="sticky top-24 hidden w-48 shrink-0 flex-col gap-1 self-start lg:flex">
-        <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-          Sections
-        </p>
-        {PRODUCT_SECTIONS.map((s) => {
-          const Icon = s.icon;
-          const isActive = activeSection === s.id;
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => scrollTo(s.id)}
-              className={`flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all ${
-                isActive
-                  ? 'bg-[#b20202]/8 text-[#b20202]'
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-              }`}
-            >
-              <Icon
-                className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? 'text-[#b20202]' : 'text-gray-400'}`}
-              />
-              <div>
-                <p
-                  className={`text-xs font-semibold leading-tight ${isActive ? 'text-[#b20202]' : ''}`}
-                >
-                  {s.label}
-                </p>
-                <p className="mt-0.5 text-[10px] leading-tight text-gray-400">
-                  {s.description}
-                </p>
-              </div>
-            </button>
-          );
-        })}
-
-        {/* Progress indicator */}
-        <div className="mt-4 space-y-1 px-3">
-          {PRODUCT_SECTIONS.map((s, i) => {
-            const idx = PRODUCT_SECTIONS.findIndex(
-              (x) => x.id === activeSection
-            );
-            const done = i < idx;
-            const current = i === idx;
-            return (
-              <div key={s.id} className="flex items-center gap-2">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full transition-colors ${done ? 'bg-green-500' : current ? 'bg-[#b20202]' : 'bg-gray-200'}`}
-                />
-                <span
-                  className={`text-[10px] transition-colors ${done ? 'text-green-600' : current ? 'font-medium text-[#b20202]' : 'text-gray-400'}`}
-                >
-                  {s.label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </aside>
-
-      {/* Mobile section pills */}
-      <div className="mb-4 flex w-full gap-2 overflow-x-auto pb-1 lg:hidden">
-        {PRODUCT_SECTIONS.map((s) => {
-          const Icon = s.icon;
-          const isActive = activeSection === s.id;
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => scrollTo(s.id)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
-                isActive
-                  ? 'bg-[#b20202] text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Sections */}
-      <div className="min-w-0 flex-1 space-y-10">
-        {/* ── Product Info ── */}
-        <section id="product-info" className="scroll-mt-24">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#b20202]/10">
-              <PiTag className="h-4 w-4 text-[#b20202]" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-gray-900">Product Info</h3>
-              <p className="text-xs text-gray-500">
-                Select or create the base product, then set SKU and currency
-              </p>
-            </div>
-            <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#b20202] text-[10px] font-bold text-white">
-              1
-            </span>
-          </div>
-          <SubProductBasicInfo onProductSelect={onProductSelect} />
-        </section>
-
-        <div className="border-t border-dashed border-gray-200" />
-
-        {/* ── Pricing & Sizes ── */}
-        <section id="pricing-sizes" className="scroll-mt-24">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-green-100">
-              <PiCurrencyNgn className="h-4 w-4 text-green-600" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-gray-900">
-                Pricing & Sizes
-              </h3>
-              <p className="text-xs text-gray-500">
-                Set base cost & markup, then add size variants with individual
-                prices and stock
-              </p>
-            </div>
-            <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white">
-              2
-            </span>
-          </div>
-          <SubProductPricing />
-          <div className="mt-8">
-            <SubProductSizes />
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
 
 interface CreateEditSubProductProps {
   slug?: string;
@@ -861,7 +674,7 @@ function SubProductForm({
       const sp = data.subProductData || (data as any);
       const productId = sp.product || '';
       const createNew = sp.createNewProduct ?? false;
-      const costPrice = Number(sp.costPrice ?? 0);
+      const costPrice = Number(resolveSubProductPricing(sp).costPrice);
 
       // Guard: must have a parent product or be creating a new one
       if (!productId && !createNew) {
@@ -1326,7 +1139,7 @@ function SubProductForm({
             }}
             stats={{
               stock: Number(watch('subProductData.totalStock')) || 0,
-              price: Number(watch('subProductData.baseSellingPrice')) || 0,
+              price: resolveSubProductPricing(watch('subProductData')).baseSellingPrice,
               currency: watch('subProductData.currency') || 'NGN',
               purchased: statPurchased,
               sold: statSold,
@@ -1379,7 +1192,12 @@ function SubProductForm({
         </div>
 
         {/* Main Content */}
-        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+        <div
+          className={cn(
+            'mx-auto px-4 py-6 sm:px-6 lg:px-8',
+            currentStep === 0 ? 'max-w-[1600px]' : 'max-w-5xl'
+          )}
+        >
           <FormProvider {...methods}>
             {isFetching ? (
               <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3">

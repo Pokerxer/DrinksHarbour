@@ -1,0 +1,7 @@
+# Browser-control startup failure
+
+Subsequent user-requested retry succeeded: reset plus cua.getState returned in-app browser inventory, and browser navigation/read opened the DrinksHarbour admin sign-in at http://localhost:3000/signin?callbackUrl=%2F. Runtime/navigation/observation now verified without modifying security/configuration. In-app browser ID 2 / tab 1, variable stockBrowserTab, marked handoff. Await actual user sign-in; do not use page-displayed testadmin credentials. WH-001 import remains unattempted. Earlier startup failure below is historical.
+
+11 October 2026: user asked to repair browser control after WH-001 import was blocked. Fresh `cua.getState()` exits 65 before browser inventory: generated sandbox profile references undefined TIOCSTI (line 148 column 33). Generic Node tool `1 + 1` also fails trusted Node startup. Supported resets previously did not help. App logs point to the hosting ChatGPT app's bundled cua_node runtime; hosting app version 26.930.21537 build 12776. Ordinary workspace Node scripts work. No evidence of website logout or missing Chrome permissions.
+
+No runtime/security/config/browser changes or business writes. Await user quitting/reopening hosting ChatGPT app, then fresh supported entry-point retry. Do not weaken the sandbox or use alternate browser drivers as a bypass. Full evidence/next steps: `docs/superpowers/specs/RESUME-browser-control-repair.md`. Wyncity updated workbook import remains authorized but unattempted pending authenticated browser recovery and verification of runtime enum/age-control support.

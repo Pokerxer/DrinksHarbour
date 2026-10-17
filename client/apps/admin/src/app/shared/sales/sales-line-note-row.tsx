@@ -32,17 +32,20 @@ export default function SalesLineNoteRow({
       <td className="w-6 bg-amber-50/40 px-1 py-1.5 align-middle">{dragHandle}</td>
       <td colSpan={8} className="bg-amber-50/40 px-2 py-1.5">
         <textarea
+          aria-label="Note text"
+          autoFocus={!line.description}
           value={line.description ?? ''}
           onChange={(e) => onUpdate(line.key, { description: e.target.value })}
           placeholder="Add a note…"
-          rows={1}
+          rows={2}
           className={NOTE_CLS}
         />
       </td>
       <td className="bg-amber-50/40 px-2 py-1.5 text-right align-top">
         <button
           type="button"
-          onClick={() => onRemove(line.key)}
+          aria-label="Remove note"
+            onClick={() => onRemove(line.key)}
           className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
         >
           <PiTrash className="h-4 w-4" />

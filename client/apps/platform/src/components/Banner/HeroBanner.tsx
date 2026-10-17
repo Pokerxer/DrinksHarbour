@@ -7,6 +7,7 @@ import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence, Variants, useReducedMotion } from 'framer-motion';
 import { BannerClickLayer } from './banner-link';
 import { API_URL } from '@/lib/api';
+import type { BannerData } from './hero-banner-types';
 
 interface HeroBannerProps {
   placement?: string;
@@ -18,31 +19,8 @@ interface HeroBannerProps {
   useFallback?: boolean;
   /** Called once when the database has no banners for this placement or the request fails. */
   onEmpty?: () => void;
-}
-
-interface BannerData {
-  _id: string;
-  title?: string;
-  subtitle?: string;
-  description?: string;
-  type: string;
-  placement: string;
-  ctaText?: string;
-  ctaLink?: string;
-  ctaStyle?: string;
-  linkType?: string;
-  imageClickable?: boolean;
-  backgroundColor?: string;
-  textColor?: string;
-  overlayOpacity?: number;
-  textAlignment?: string;
-  contentPosition?: string;
-  imageFit?: 'cover' | 'contain';
-  gradientIntensity?: number;
-  blurIntensity?: number;
-  image: { url: string; alt?: string };
-  animation?: { type: string; duration?: number; delay?: number };
-  autoplay?: { enabled: boolean; interval?: number };
+  initialBanners?: BannerData[];
+  initialBannersComplete?: boolean;
 }
 
 const HeroBanner: React.FC<HeroBannerProps> = ({
@@ -52,10 +30,12 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   showControls = true,
   showIndicators = true,
   onEmpty,
+  initialBanners = [],
+  initialBannersComplete = false,
 }) => {
-  const [banners, setBanners]       = useState<BannerData[]>([]);
+  const [banners, setBanners]       = useState<BannerData[]>(initialBanners);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading]       = useState(true);
+  const [loading, setLoading]       = useState(!initialBannersComplete);
   const [direction, setDirection]   = useState(0);
   const [isPaused, setIsPaused]     = useState(false);
   const [imgErrors, setImgErrors]   = useState<Record<string, boolean>>({});
@@ -64,6 +44,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   const effectiveAutoPlay = autoPlay && !reduceMotion;
 
   useEffect(() => {
+    if (initialBannersComplete) return;
     const fetchBanners = async () => {
       try {
         setLoading(true);
@@ -83,7 +64,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
       }
     };
     fetchBanners();
-  }, [placement, limit, onEmpty]);
+  }, [placement, limit, onEmpty, initialBannersComplete]);
 
   // The hero is database-backed only. During loading we show a neutral frame;
   // after loading, an empty or failed request renders no promotional content.

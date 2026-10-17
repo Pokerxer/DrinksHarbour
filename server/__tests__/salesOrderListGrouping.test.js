@@ -128,3 +128,19 @@ test('grouping still groups — the response shape the list renders is unchanged
   assert.strictEqual(ada.total, (1000 + 1) + (1000 + 3));
   assert.strictEqual(ada.docs.length, 2);
 });
+
+test('quotation lifecycle grouping produces usable status buckets', () => {
+  const extract = svc.groupByExtractor('quoteStatus');
+  assert.strictEqual(extract({ quoteStatus: 'sent' }), 'Sent');
+  assert.strictEqual(extract({ quoteStatus: 'expired' }), 'Expired');
+  assert.strictEqual(extract({}), 'Draft');
+});
+
+test('group outstanding subtracts payments and allocated credits in kobo', async t => {
+  const { res } = await listGrouped(t, { rows: [
+    { ...orderRow(1), salesperson: 'Ada', total: 100, amountPaid: 30, creditedAmount: 20 },
+    { ...orderRow(2), salesperson: 'Ada', total: 60, amountPaid: 80 },
+    { ...orderRow(3), salesperson: 'Ada', total: 0.3, amountPaid: 0.1 },
+  ] });
+  assert.strictEqual(res.body.groups[0].outstanding, 50.2);
+});

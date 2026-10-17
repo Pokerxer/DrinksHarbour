@@ -19,7 +19,8 @@ export function useNotifications(
     category?: NotificationCategory;
     type?: 'product_approved' | 'product_rejected';
     search?: string;
-    sort?: 'newest' | 'oldest';
+    sort?: 'newest' | 'oldest' | 'expiry_soonest' | 'expiry_latest';
+    expiryStatus?: 'all' | 'expired' | 'soon' | 'later' | 'quarantined';
     startDate?: string;
     endDate?: string;
     unreadOnly?: boolean;
@@ -34,6 +35,7 @@ export function useNotifications(
     type,
     search = '',
     sort = 'newest',
+    expiryStatus = 'all',
     startDate = '',
     endDate = '',
     unreadOnly = false,
@@ -42,7 +44,7 @@ export function useNotifications(
   } = options;
   const sessionKey = `${session?.user?.id || ''}:${session?.user?.tenantId || ''}`;
   const identity = `${sessionKey}:${token}`;
-  const scope = `${identity}:${category}:${type || ''}:${unreadOnly}:${page}:${limit}:${search}:${sort}:${startDate}:${endDate}`;
+  const scope = `${identity}:${category}:${type || ''}:${unreadOnly}:${page}:${limit}:${search}:${sort}:${expiryStatus}:${startDate}:${endDate}`;
   const currentScope = useRef(scope);
   currentScope.current = scope;
   const currentIdentity = useRef(identity);
@@ -81,6 +83,7 @@ export function useNotifications(
     try {
       const query = new URLSearchParams({
         category,
+        ...(category === 'expiry' ? { expiryStatus } : {}),
         ...(type ? { type } : {}),
         ...(startDate ? { startDate, endDate } : {}),
         ...(search ? { search } : {}),
@@ -123,6 +126,7 @@ export function useNotifications(
     limit,
     search,
     sort,
+    expiryStatus,
     startDate,
     endDate,
   ]);

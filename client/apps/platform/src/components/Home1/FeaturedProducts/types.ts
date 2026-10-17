@@ -34,6 +34,7 @@ export interface AvailableAtEntry {
 }
 
 export interface ApiProduct {
+  shoppingOffer?: import('@/utils/representativeOffer').ShoppingOffer | null;
   _id: string;
   name: string;
   slug: string;
@@ -61,6 +62,7 @@ export interface ApiProduct {
 }
 
 export interface Product {
+  shoppingOffer?: import('@/utils/representativeOffer').ShoppingOffer | null;
   _id: string;
   name: string;
   slug: string;

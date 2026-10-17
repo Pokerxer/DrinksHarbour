@@ -1,3 +1,4 @@
+const { minimumNoticeFields } = require('../minimumNoticeFields');
 const { reportingWindows } = require('../tenantProductInsights.rules');
 const {
   deliverInsights,
@@ -13,6 +14,10 @@ function forecastDrafts(plan, now) {
     w = reportingWindows(now);
   for (const l of plan.lines) {
     if (!l.warehouseId || !Number.isFinite(l.available)) continue;
+    const minimum = minimumNoticeFields(
+      { threshold: l.threshold, automaticMinimum: l.minimumPolicy },
+      now,
+    );
     const threshold = l.available <= l.threshold,
       risk =
         ['urgent', 'high'].includes(l.urgency) &&
@@ -36,6 +41,7 @@ function forecastDrafts(plan, now) {
           warehouseName: l.warehouseName,
           available: l.available,
           threshold: l.threshold,
+          ...(minimum.minimumSource === 'automatic' ? minimum : {}),
           daysOfCover: l.daysOfCover,
           units30: l.units30,
           model: l.forecast?.model,

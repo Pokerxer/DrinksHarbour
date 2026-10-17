@@ -55,12 +55,15 @@ function buildProductInsights(s, w) {
     add(
       'low_stock_alert',
       r.available <= 0 ? 'Out of stock' : 'Stock running low',
-      `${label}: ${r.available} units available (alert threshold ${r.threshold}). Review your stock and restock.`,
+      `${label}: ${r.available} units available (${r.minimumSource === 'automatic' ? 'automatic minimum' : 'alert threshold'} ${r.threshold}). Review your stock and restock.`,
       r.available <= 0 ? 'urgent' : 'high',
       `stock:${s.subProductId}:${r.sizeId || ''}:${r.warehouseId || ''}`,
       {
         available: r.available,
         threshold: r.threshold,
+        minimumSource: r.minimumSource,
+        minimumConfidence: r.minimumConfidence,
+        minimumUpdatedAt: r.minimumUpdatedAt,
         sizeId: r.sizeId,
         warehouseId: r.warehouseId,
         sizeName: r.sizeName,

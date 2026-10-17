@@ -85,6 +85,11 @@ const SalesOrderSchema = new Schema(
       customerId: { type: ObjectId, ref: 'POSCustomer' },
     },
     salesperson: { type: String, trim: true },
+    salespersonUser: { type: ObjectId, ref: 'User' },
+    fulfillmentAttribution: {
+      type: new Schema({ user: { type: ObjectId, ref: 'User' }, name: String, at: Date }, { _id: false }),
+      default: undefined,
+    },
     pricelist: { type: ObjectId, ref: 'Pricelist', default: null },
     appliedPricelist: { pricelistId: { type: ObjectId, ref: 'Pricelist' }, pricelistName: String },
     currency: { type: String, default: 'NGN', enum: ['NGN', 'USD', 'EUR', 'GBP'] },
@@ -115,6 +120,12 @@ const SalesOrderSchema = new Schema(
       default: undefined,
     },
     validUntil: { type: Date },
+    locked: { type: Boolean, default: false },
+    lockedAt: { type: Date },
+    lockedBy: { type: ObjectId, ref: 'User' },
+    confirmedAt: { type: Date },
+    confirmedBy: { type: ObjectId, ref: 'User' },
+    reservationVersion: { type: Number },
 
     // Order lifecycle (only when docType === 'order')
     orderStatus: {
@@ -151,6 +162,7 @@ const SalesOrderSchema = new Schema(
     },
     dueDate: { type: Date },
     invoiceIssuedAt: { type: Date },
+    invoiceDraft: { type: Boolean, default: false },
 
     // Billing + shipping addresses (snapshots; optional)
     invoiceAddress:  addressSchema,
@@ -165,6 +177,13 @@ const SalesOrderSchema = new Schema(
 SalesOrderSchema.index({ tenant: 1, docType: 1, quoteStatus: 1 });
 SalesOrderSchema.index({ tenant: 1, orderStatus: 1 });
 SalesOrderSchema.index({ tenant: 1, createdAt: -1 });
+SalesOrderSchema.index({ tenant: 1, salespersonUser: 1, createdAt: -1 });
 SalesOrderSchema.index({ tenant: 1, soNumber: 1 }, { unique: true });
 
+require('../services/salesSalesperson').protectFulfillmentAttribution(SalesOrderSchema);
+
+SalesOrderSchema.post('save', async function (doc) {
+  if (doc.$locals.skipSalesInvoiceSync) return;
+  await require('../services/customerInvoice/hooks').sourceSaved(doc, 'sales');
+});
 module.exports = mongoose.models.SalesOrder || mongoose.model('SalesOrder', SalesOrderSchema);

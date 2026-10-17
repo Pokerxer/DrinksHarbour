@@ -134,3 +134,27 @@ it('excludes read notices, rejects invalid dates in date chips and sorts newest 
     filterNotices([{ ...base, type: 'platform_notice' }], filters, now)
   ).toHaveLength(1);
 });
+it('searches product, size and warehouse evidence even when absent from the message', () => {
+  const notice = {
+    ...base,
+    metadata: {
+      productName: 'Caymus',
+      sizeName: '75cl',
+      warehouseName: 'Wyn City',
+      rejectionReason: 'Duplicate barcode',
+    },
+  };
+  for (const query of ['CAYMUS', '75cl', 'Wyn City', 'Duplicate barcode'])
+    expect(filterNotices([notice], { ...filters, query }, now)).toHaveLength(1);
+});
+it('permits promotion details without permitting unknown query parameters or external links', () => {
+  expect(safeAction('/notifications/promotions')).toBe(true);
+  expect(
+    safeAction(
+      '/notifications/promotions?subProductId=0123456789abcdef01234567'
+    )
+  ).toBe(true);
+  expect(safeAction('/notifications/promotions?next=https://evil.test')).toBe(
+    false
+  );
+});

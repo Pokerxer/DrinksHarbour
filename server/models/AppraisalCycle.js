@@ -5,7 +5,9 @@ const appraisalCycleSchema = new Schema(
   {
     tenant: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
     name: { type: String, required: true, trim: true, maxlength: 200 },
-    template: { type: Schema.Types.ObjectId, ref: 'AppraisalTemplate', required: true },
+    mode: { type: String, enum: ['standard', 'peer_rating'], default: 'standard' },
+    revision: { type: Number, default: 0 },
+    template: { type: Schema.Types.ObjectId, ref: 'AppraisalTemplate', required: function () { return this.mode !== 'peer_rating'; } },
     // The template FAMILY HR chose. `template` above is the concrete pinned
     // version, re-resolved from this family exactly once at launch and frozen
     // thereafter — so a form edited mid-cycle cannot rewrite an appraisal in

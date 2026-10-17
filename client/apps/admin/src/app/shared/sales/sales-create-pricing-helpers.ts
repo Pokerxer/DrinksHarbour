@@ -1,3 +1,5 @@
+import type { ProductLineSelection } from './product-line-search';
+import { lineAmounts } from '../../../../../../../packages/sales-money';
 // client/apps/admin/src/app/shared/sales/sales-create-pricing-helpers.ts
 
 import type { POSCartItem, POSBundleDeal } from '@/app/shared/point-of-sale/types';
@@ -35,6 +37,8 @@ export function soItemToDraftLine(it: SalesLineItem): DraftLine {
     // math on top of an already-adjusted figure.
     enginePriced: !it.priceOverridden,
     description: it.description ?? '',
+    promoDiscount: it.promoDiscount ?? 0,
+    promoName: it.promoName,
   };
 }
 
@@ -55,6 +59,36 @@ export function blankLine(lineType: DraftLine['lineType'] = 'product'): DraftLin
     taxRate: 0,
     costPrice: 0,
     priceOverridden: false,
+    description: '',
+  };
+}
+
+/** Keep authoritative catalogue quotes verbatim; estimates apply client rules once. */
+export function catalogSelectionToDraftLine(
+  info: ProductLineSelection,
+  quantity: number
+): DraftLine {
+  return {
+    ...blankLine('product'),
+    subProductId: info.subProductId,
+    product: info.productId,
+    name: info.name,
+    sku: info.sku,
+    sizeId: info.sizeId,
+    sizeName: info.sizeName,
+    baseUnitPrice: info.enginePriced
+      ? info.sellingPrice
+      : info.originalPrice ?? info.sellingPrice,
+    enginePriced: info.enginePriced,
+    costPrice: info.costPrice,
+    wholesalePrice: info.wholesalePrice,
+    taxRate: info.taxRate,
+    quantity,
+    packSize: Math.max(1, Math.floor(info.unitsPerPack ?? 1)),
+    priceOverridden: false,
+    availableStock: info.availableStock,
+    activeBundles: info.bundleDeals,
+    originalPrice: info.originalPrice,
     description: '',
   };
 }
@@ -81,6 +115,7 @@ export function liveUnitPrice(line: DraftLine, pricelist: unknown): number {
     discount: 0,
     stock: 0,
     costPrice: line.costPrice,
+    wholesalePrice: line.wholesalePrice,
     activeBundles: line.activeBundles as POSBundleDeal[] | undefined,
     originalPrice: line.originalPrice,
   };
@@ -95,17 +130,16 @@ export function liveUnitPrice(line: DraftLine, pricelist: unknown): number {
  * lineDiscountOf so the client and server totals agree.
  */
 export function resolveDiscount(unitPrice: number, line: DraftLine): number {
-  const qty = Math.max(0, line.quantity || 0);
-  const gross = unitPrice * qty;
-  const raw = Math.max(0, line.discount || 0);
-  if (line.discountType === 'percentage') {
-    return Math.min(gross, Math.round((gross * Math.min(100, raw)) / 100));
-  }
-  return Math.min(gross, raw);
+  return lineAmounts({...line,unitPrice}).discount;
 }
 
-/** Compute the line total after discount. */
 export function lineTotalOf(unitPrice: number, line: DraftLine): number {
-  const qty = Math.max(0, line.quantity || 0);
-  return Math.max(0, unitPrice * qty - resolveDiscount(unitPrice, line));
+  return lineAmounts({...line,unitPrice}).afterDiscount;
+}
+
+/** Keep an unfinished product under a new heading/note, preserving all input. */
+export function appendPresentationLine(lines: DraftLine[], type: 'section'|'note'): DraftLine[] {
+  const last=lines[lines.length-1];
+  return last?.lineType==='product'&&!last.subProductId
+    ? [...lines.slice(0,-1),blankLine(type),last] : [...lines,blankLine(type)];
 }

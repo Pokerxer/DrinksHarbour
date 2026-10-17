@@ -26,12 +26,12 @@ async function quoteCart(tenant, body, session = null) {
     const rates = resolveLineRates(tenant, size, line.quantity);
     const cost = size?.costPrice ?? sp.costPrice ?? 0;
     const model = tenant.revenueModel === 'commission' ? 'commission' : 'markup';
-    const share = money(model === 'commission' ? subtotal * (1 - rates.commissionPct / 100) : Math.min(subtotal, cost * line.quantity));
+    const payout = require('../utils/pricing').calcPlatformCostPrice(cost, unitPrice, model, rates.markupPct, rates.commissionPct);
+    const split = require('../utils/revenueAgreement').splitMerchandise({ amount: subtotal,
+      quantity: line.quantity, model, rate: model === 'commission' ? rates.commissionPct : rates.markupPct, payout });
     orderItems.push({ product: sp.product._id, subproduct: sp._id, size: size?._id || undefined,
       tenant: tenant._id, quantity: line.quantity, priceAtPurchase: unitPrice, itemSubtotal: subtotal,
-      vendorPriceAtPurchase: cost, tenantRevenueShare: share, platformCommission: money(subtotal - share),
-      tenantRevenueModel: model, revenueRateAtPurchase: model === 'commission' ? rates.commissionPct : rates.markupPct,
-      packRateApplied: rates.isPackRate });
+      ...split, packRateApplied: rates.isPackRate });
     items.push({ subProductId: id(sp), sizeId: size ? id(size) : null, name: sp.product.name,
       quantity: line.quantity, unitPrice, subtotal });
   }

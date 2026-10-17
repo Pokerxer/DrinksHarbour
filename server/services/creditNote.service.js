@@ -177,7 +177,7 @@ async function postCreditNote({ tenantId, id, userId }) {
 
       const { appliedNow, unapplied: remainder } = planAllocation({
         total,
-        outstanding: invoiceOutstanding(so),
+        outstanding: invoiceOutstanding(await require('./customerInvoice/creditBalance').effectiveCreditInvoice(tenantId, so, session)),
       });
       unapplied = remainder;
 
@@ -248,7 +248,7 @@ async function applyCredit({ tenantId, customer, salesOrder, amount, userId }) {
 
     const plan = planApplication({
       notes,
-      outstanding: invoiceOutstanding(so),
+      outstanding: invoiceOutstanding(await require('./customerInvoice/creditBalance').effectiveCreditInvoice(tenantId, so, session)),
       want: amount,
     });
     if (plan.error) throw bad(plan.error);
@@ -306,7 +306,8 @@ async function cancelCreditNote({ tenantId, id, userId }) {
       }).session(session);
       if (!so) throw bad('Invoice for this credit is missing; reconcile before cancelling');
 
-      const check = deallocationCheck({ so, allocationAmount: allocation.amount });
+      const effective = await require('./customerInvoice/creditBalance').effectiveCreditInvoice(tenantId, so, session);
+      const check = deallocationCheck({ so: effective, allocationAmount: allocation.amount });
       if (!check.ok) {
         if (check.reason === 'was-settled') {
           throw bad(
@@ -342,22 +343,8 @@ async function cancelCreditNote({ tenantId, id, userId }) {
 
 // ── read ────────────────────────────────────────────────────────────────────
 
-async function listCreditNotes(tenantId, { status, from, to, customer, page = 1, limit = 50 } = {}) {
-  const filter = { tenant: tenantId };
-  if (status) filter.status = status;
-  if (customer) filter.customer = customer;
-  const range = dateRange({ from, to });
-  if (range) filter.date = range;
-  const [data, total] = await Promise.all([
-    CreditNote.find(filter)
-      .sort({ date: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .populate({ path: 'customer', select: 'firstName lastName', match: { tenant: tenantId } })
-      .lean(),
-    CreditNote.countDocuments(filter),
-  ]);
-  return { data, total, page, pages: Math.ceil(total / limit) || 1 };
+async function listCreditNotes(tenantId, options = {}) {
+  return require('./creditNote.browse').listCreditNotes(tenantId, options);
 }
 
 /**

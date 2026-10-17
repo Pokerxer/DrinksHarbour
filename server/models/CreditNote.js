@@ -73,5 +73,8 @@ CreditNoteSchema.index({ tenant: 1, status: 1, date: -1 });
 // Serves the unapplied-credit balance and the per-customer ledger.
 CreditNoteSchema.index({ tenant: 1, customer: 1, status: 1, postedAt: 1 });
 
+CreditNoteSchema.post('save', async function (doc) {
+  await require('../services/customerInvoice/hooks').allocationsSaved(doc);
+});
 module.exports =
   mongoose.models.CreditNote || mongoose.model('CreditNote', CreditNoteSchema);

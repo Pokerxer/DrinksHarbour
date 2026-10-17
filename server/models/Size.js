@@ -88,7 +88,7 @@ const sizeSchema = new Schema(
         'case-6', 'case-12', 'case-24',
         
         // Coffee & Tea (Weight-based)
-        '50g', '100g', '125g', '200g', '250g', '340g', '500g', '1kg', '2kg',
+        '50g', '100g', '125g', '200g', '240g', '250g', '340g', '500g', '1kg', '2kg',
         'kg-0.5', 'kg-1', 'kg-2',
         'lb-0.5', 'lb-1', 'lb-2', 'lb-5',
         
@@ -252,6 +252,9 @@ const sizeSchema = new Schema(
     },
     // Admin price-override as the effective platform markup % for this size —
     // survives tenant cost/price changes (see SubProduct.platformMarkupOverridePct)
+    // Explicit pre-catalogue-discount marketplace price for commission agreements.
+    commissionPriceOverride: { type: Number, min: 0, default: null },
+    packCommissionPriceOverride: { type: Number, min: 0, default: null },
     platformMarkupOverridePct: {
       type: Number,
       default: null,

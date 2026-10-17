@@ -68,6 +68,7 @@ export function ProductSearchInput({
       <div className="relative">
         <PiMagnifyingGlass className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
         <input
+          id="catalogue-product-search"
           ref={inputRef}
           type="text"
           value={value}

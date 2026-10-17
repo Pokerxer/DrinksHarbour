@@ -12,11 +12,16 @@ const line = (over = {}) => ({
   _id: 'L1', quantity: 100, fulfilledQty: 0, postedQty: 0, returnedQty: 0, ...over,
 });
 
-test('outstanding subtracts fulfilled and returned, never below zero', () => {
+test('outstanding subtracts gross fulfilled units, never below zero', () => {
   assert.strictEqual(outstanding(line()), 100);
   assert.strictEqual(outstanding(line({ fulfilledQty: 60 })), 40);
   assert.strictEqual(outstanding(line({ fulfilledQty: 100, returnedQty: 0 })), 0);
-  assert.strictEqual(outstanding(line({ fulfilledQty: 60, returnedQty: 50 })), 0);
+  assert.strictEqual(outstanding(line({ fulfilledQty: 60, returnedQty: 50 })), 40);
+});
+
+test('returned shipped units do not erase the original unshipped delivery quantity', () => {
+  assert.strictEqual(outstanding(line({ fulfilledQty: 60, returnedQty: 40 })), 40);
+  assert.strictEqual(outstanding(line({ fulfilledQty: 100, returnedQty: 40 })), 0);
 });
 
 test('applyFulfillment accumulates and clamps to ordered quantity', () => {

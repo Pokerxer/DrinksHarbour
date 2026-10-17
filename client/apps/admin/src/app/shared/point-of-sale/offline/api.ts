@@ -1,14 +1,15 @@
+import { requestIdentity, completeRequest } from '../../sales/request-identity';
 import { readActiveShop } from '../shop-scope';
 import { posApi } from '../api';
 import { resolveSubProductGallery } from '@/app/shared/ecommerce/sub-product/image-utils';
 import { catalogueImageKeys, POS_IMAGES_UPDATED } from './image-cache';
 import { precacheImages, pruneImages } from './image-store';
-import { posDb } from './db';
-import type {
-  ProductRecord,
-  OrderRecord,
-  SessionRecord,
-  QueueEntry,
+import {
+  posDb,
+  type ProductRecord,
+  type OrderRecord,
+  type SessionRecord,
+  type QueueEntry,
 } from './db';
 
 export function isOnline(): boolean {
@@ -295,8 +296,11 @@ export async function createOrder(
   terminal: string,
   payload: Record<string, unknown>
 ): Promise<any> {
+  const scope = payload.linkedSalesOrderId ? `pos:${payload.linkedSalesOrderId}:${terminal}` : '';
+  if (scope && !payload.requestId) payload = {...payload, requestId: requestIdentity(scope, payload)};
   if (isOnline()) {
     const data = await posApi.createOrder(token, payload);
+    if (scope) completeRequest(scope);
     if (data?.order) await posDb.orders.put(orderToRecord(data.order));
     return data;
   }
@@ -314,6 +318,7 @@ export async function createOrder(
     retries: 0,
   });
 
+  if (scope) completeRequest(scope);
   const p = payload as any;
   for (const item of p.items ?? []) {
     const delta = -(item.quantity ?? 1);

@@ -1,7 +1,5 @@
-// client/apps/admin/src/app/shared/sales/sales-create.tsx
 'use client';
-
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -10,513 +8,301 @@ import {
   salesOrderService,
   type SalesOrder,
 } from '@/services/salesOrder.service';
-import { singleFlight } from './sales-repricing';
 import { useSalesCreateForm } from './hooks/useSalesCreateForm';
 import { useSalesAutosave } from './hooks/useSalesAutosave';
+import { useSalesCreateActions } from './hooks/use-sales-create-actions';
+import { useSalesCustomerPrefill } from './hooks/use-sales-customer-prefill';
 import SalesCreateHeader from './sales-create-header';
+import SalesCreateReview from './sales-create-review';
+import { salesCreateReadiness } from './sales-create-rules';
 import InvoiceCreateHeader from '@/app/shared/accounting/invoice-create-header';
-import { arApService } from '@/services/arAp.service';
-import SalesCustomerBar from './sales-customer-bar';
-import SalesLineTable from './sales-line-table';
-import SalesTotals from './sales-totals';
-import SalesOtherInfoTab from './sales-other-info-tab';
-import SalesCatalogModal from './sales-catalog-modal';
-import SalesScanDrawer from './sales-scan-drawer';
+import InvoiceCreateDetails from '@/app/shared/accounting/invoice-create-details';
+import InvoiceCreateReview from '@/app/shared/accounting/invoice-create-review';
+import { invoiceReadiness } from '@/app/shared/accounting/invoice-create-rules';
+import { useInvoiceCreateActions } from '@/app/shared/accounting/use-invoice-create-actions';
+import SalesCreateEditor from './sales-create-editor';
+import SalesCreateOverlays from './sales-create-overlays';
 import SalesActivityPanel from './sales-activity-panel';
-import SalesConfirmModal from './sales-confirm-modal';
-import SalesCartImportModal from './sales-cart-import-modal';
-import { posApi } from '@/app/shared/point-of-sale/api';
 import { useTenant } from '@/context/TenantContext';
-import { printProformaInvoice, printQuotation } from '@/utils/salesInvoice';
-import type { SalesDocVariant } from '@/utils/print/so-print';
-import type { CreateTab } from './sales-stage-pill';
+import { printProformaInvoice } from '@/utils/salesInvoice';
+import { editableSale } from './sales-edit-policy';
+import SalesEditControls from './sales-edit-controls';
+import SalesEditDelivery from './sales-edit-delivery';
 
 export default function SalesCreate({
   mode = 'create',
   initial,
   invoice = false,
+  onUpdated,
 }: {
   mode?: 'create' | 'edit';
   invoice?: boolean;
   initial?: SalesOrder;
+  onUpdated?: (doc: SalesOrder) => void;
 }) {
   const router = useRouter();
   const { data: session } = useSession();
-  const token = (session?.user as { token?: string })?.token ?? '';
+  const token = (session?.user as { token?: string })?.token || '';
   const { tenant } = useTenant();
-
+  const readOnly =
+    mode === 'edit' && Boolean(initial && !editableSale(initial));
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
   const form = useSalesCreateForm({ token, mode, initial });
-
   const [invoiceDueDate, setInvoiceDueDate] = useState(
-    initial?.dueDate?.slice(0, 10) || ''
+    initial?.dueDate?.slice(0, 10) || '',
   );
-  const { autoSaveStatus, isDirtyRef, draftId, handleManualSave, ensureSaved } =
-    useSalesAutosave({
-      token,
-      draftPath: invoice
-        ? (id) => `${routes.accounting.invoiceCreate}?draft=${id}`
+  const autosave = useSalesAutosave({
+    enabled: !readOnly,
+    token,
+    initial,
+    draftPath: invoice
+      ? (id) => `${routes.accounting.invoiceCreate}?draft=${id}`
+      : mode === 'create'
+        ? (id) => `/sales/create?draft=${id}`
         : undefined,
-      initial,
-      priced: form.priced,
-      customer: form.customer,
-      notes: form.notes,
-      terms: form.terms,
-      validUntil: form.validUntil,
-      paymentTerms: form.paymentTerms,
-      pricelistId: form.pricelistId,
-      warehouseId: form.warehouseId as string,
-      shippingFee: form.shippingFee,
-      plannedRedeemPoints: form.plannedRedeemPoints,
-      buildPayload: invoice
-        ? () => ({ ...form.buildPayload(), dueDate: invoiceDueDate || null })
-        : form.buildPayload,
-    });
-
-  const issueFlight = useRef(singleFlight());
-  const orderId = initial?._id ?? draftId ?? undefined;
+    priced: form.priced,
+    customer: form.customer,
+    notes: form.notes,
+    terms: form.terms,
+    validUntil: form.validUntil,
+    paymentTerms: form.paymentTerms,
+    pricelistId: form.pricelistId,
+    warehouseId: form.warehouseId,
+    shippingFee: form.shippingFee,
+    plannedRedeemPoints: form.plannedRedeemPoints,
+    buildPayload: invoice
+      ? () => ({
+          ...form.buildPayload(),
+          dueDate: invoiceDueDate || null,
+          invoiceDraft: true,
+        })
+      : form.buildPayload,
+  });
+  const orderId = initial?._id || autosave.draftId || undefined;
   const [historyKey, setHistoryKey] = useState(0);
-  const [confirmPrices, setConfirmPrices] = useState(false);
-  const [pricesBusy, setPricesBusy] = useState(false);
-  const [couponBusy, setCouponBusy] = useState(false);
-  const [cartModalOpen, setCartModalOpen] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
+  const onHistory = () => setHistoryKey((value) => value + 1);
   useEffect(() => {
-    if (autoSaveStatus === 'saved') setHistoryKey((k) => k + 1);
-  }, [autoSaveStatus]);
-
-  /**
-   * `?customer=<email|phone>` prefill. The Live Carts tab on the Orders page
-   * knows the shopper's marketplace email but not their tenant-scoped
-   * POSCustomer id, so the handoff is by contact string and the lookup happens
-   * here.
-   *
-   * Only an exact email/phone match is auto-selected: a fuzzy hit would put a
-   * *different* customer's name and address on a quotation without the operator
-   * having chosen anyone. On no match the search box is simply left empty.
-   */
-  const prefillCustomer = useSearchParams()?.get('customer') ?? '';
-  const prefillDoneRef = useRef(false);
-  useEffect(() => {
-    if (mode !== 'create' || !token || !prefillCustomer) return;
-    if (prefillDoneRef.current || form.customer) return;
-    prefillDoneRef.current = true;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const res = await posApi.searchCustomers(token, prefillCustomer, 10);
-        if (cancelled) return;
-        const needle = prefillCustomer.trim().toLowerCase();
-        const exact = (res?.customers ?? []).find(
-          (c) =>
-            (c.email || '').toLowerCase() === needle ||
-            (c.phone || '').replace(/\s/g, '') === needle.replace(/\s/g, '')
-        );
-        if (exact) {
-          form.handleSelectCustomer(exact);
-          toast.success(
-            `Customer ${`${exact.firstName} ${exact.lastName}`.trim()} selected`
-          );
-        } else {
-          toast(`No saved customer matches ${prefillCustomer}`, { icon: 'ℹ️' });
-        }
-      } catch {
-        // A failed prefill must never block the page — the operator can always
-        // pick the customer by hand.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // form.customer/handleSelectCustomer are intentionally omitted: this must
-    // run once per mount, and the ref already guards re-entry.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, token, prefillCustomer]);
-
-  const updatePricesFlight = useRef(singleFlight());
-  function handleUpdatePrices() {
-    return updatePricesFlight.current(async () => {
-      setPricesBusy(true);
-      try {
-        const id = await ensureSaved();
-        if (!id) {
-          toast.error('Add a product first');
-          return;
-        }
-        const res = await salesOrderService.updatePrices(id, token);
-        form.applyServerItems(res.data.items);
-        toast.success('Prices updated');
-        setHistoryKey((k) => k + 1);
-        setConfirmPrices(false);
-      } catch (err: unknown) {
-        toast.error(
-          err instanceof Error ? err.message : 'Failed to update prices'
-        );
-      } finally {
-        setPricesBusy(false);
-      }
-    });
-  }
-
-  // Coupons are validated server-side against tenant Promotions, so the
-  // document must exist first (same ensureSaved pattern as Update Prices).
-  async function handleCoupon(code: string) {
-    setCouponBusy(true);
-    try {
-      const id = await ensureSaved();
-      if (!id) {
-        toast.error('Add a product first');
-        return;
-      }
-      const res = await salesOrderService.applyCoupon(id, code, token);
-      const so = res.data;
-      form.setCoupon(
-        so.couponCode
-          ? {
-              code: so.couponCode,
-              name: so.couponName ?? '',
-              discount: so.couponDiscount ?? 0,
-            }
-          : null
-      );
-      toast.success(
-        code ? `Coupon ${so.couponCode} applied` : 'Coupon removed'
-      );
-      setHistoryKey((k) => k + 1);
-    } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Could not apply coupon'
-      );
-    } finally {
-      setCouponBusy(false);
-    }
-  }
-
-  function validateFilled() {
-    const filled = form.priced.filter(
-      (l) => l.lineType !== 'product' || l.subProductId
-    );
-    if (filled.length === 0) {
-      toast.error('Add at least one product line');
-      return null;
-    }
-    const badQty = filled.find(
-      (l) => l.lineType === 'product' && !(l.quantity > 0)
-    );
-    if (badQty) {
-      toast.error(`Quantity for "${badQty.name}" must be at least 1`);
-      return null;
-    }
-    return filled;
-  }
-
-  async function handleSaveEdit() {
-    if (!initial || !validateFilled()) return;
-    form.setSaving(true);
-    try {
-      await salesOrderService.update(
-        initial._id,
-        form.buildPayload() as any,
-        token
-      );
-      toast.success('Changes saved');
-      router.push(routes.eCommerce.salesDetails(initial._id));
-    } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to save changes'
-      );
-    } finally {
-      form.setSaving(false);
-    }
-  }
-
-  async function handleSave(asOrder: boolean) {
-    if (!validateFilled()) return;
-    form.setSaving(true);
-    try {
-      // Any earlier trigger that needed a document (print, coupon, price
-      // recompute, manual save) has ALREADY persisted this cart as a
-      // quotation draft — ensureSaved() returns its id. Creating here again,
-      // as the old code did, minted a second document and left the first as
-      // a stray quotation nobody owned.
-      const draftId = await ensureSaved();
-      if (!draftId) throw new Error('Could not save document');
-      if (asOrder) {
-        // The server converts a quotation in place — same id, lifecycle
-        // advanced, activity logged — rather than duplicating lines into a
-        // fresh document.
-        await salesOrderService.convert(draftId, token);
-        toast.success('Order created');
-      } else {
-        toast.success('Quotation saved');
-      }
-      router.push(routes.eCommerce.salesDetails(draftId));
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save');
-    } finally {
-      form.setSaving(false);
-    }
-  }
-
-  function handleIssueInvoice() {
-    return issueFlight.current(async () => {
-      if (!validateFilled()) return;
-      form.setSaving(true);
-      try {
-        if (orderId) {
-          const existing = await salesOrderService.get(orderId, token);
-          if (existing.data.invoiceIssuedAt) {
-            isDirtyRef.current = false;
-            toast.success('Invoice already issued');
-            router.push(routes.accounting.invoices);
-            return;
-          }
-        }
-        const id = await ensureSaved(true);
-        if (!id) throw new Error('Could not save invoice draft');
-        await arApService.issueInvoice(token, id, invoiceDueDate || undefined);
-        isDirtyRef.current = false;
-        toast.success('Invoice issued');
-        router.push(routes.accounting.invoices);
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : 'Could not issue invoice'
-        );
-      } finally {
-        form.setSaving(false);
-      }
-    });
-  }
-
-  function handleTabChange(next: CreateTab) {
-    form.setTab(next);
-  }
-
-  // Printed documents follow the purchase flow: a branded PDF built from the
-  // freshly-fetched order, with the selected fulfilment warehouse as the
-  // issuing entity on paper.
-  async function handlePrint(type: SalesDocVariant) {
-    const id = await ensureSaved();
-    if (!id) {
-      toast.error('Add at least one product before printing');
-      return;
-    }
-    try {
-      const res = await salesOrderService.get(id, token);
-      (type === 'proforma' ? printProformaInvoice : printQuotation)(
-        res.data,
-        tenant?.name || 'DrinksHarbour'
-      );
-    } catch {
-      toast.error('Could not load document for printing');
-    }
-  }
-
+    if (autosave.autoSaveStatus === 'saved')
+      setHistoryKey((value) => value + 1);
+  }, [autosave.autoSaveStatus]);
+  useSalesCustomerPrefill(
+    form,
+    token,
+    mode,
+    useSearchParams()?.get('customer') || '',
+  );
+  const actions = useSalesCreateActions({
+    readOnly,
+    form,
+    token,
+    initial,
+    ensureSaved: autosave.ensureSaved,
+    orderId,
+    router,
+    tenantName: tenant?.name || 'DrinksHarbour',
+    onHistory,
+    disabled:
+      lifecycleBusy || form.saving || autosave.autoSaveStatus === 'saving',
+    onPersisted: () => {
+      autosave.isDirtyRef.current = false;
+    },
+  });
+  const currency = initial?.currency || 'NGN';
+  const readiness = invoiceReadiness(
+    form.priced,
+    form.grandTotal,
+    invoiceDueDate,
+    currency,
+  );
+  const salesReady = salesCreateReadiness(
+    form.priced,
+    form.grandTotal,
+    form.validUntil,
+  );
+  const externalBusy =
+    lifecycleBusy ||
+    form.saving ||
+    autosave.autoSaveStatus === 'saving' ||
+    actions.pricesBusy ||
+    actions.couponBusy ||
+    Boolean(actions.action);
+  const invoiceActions = useInvoiceCreateActions({
+    token,
+    orderId,
+    dueDate: invoiceDueDate,
+    ...readiness,
+    disabled: externalBusy,
+    ensureSaved: autosave.ensureSaved,
+    onPrint: async (id) => {
+      const result = await salesOrderService.get(id, token);
+      printProformaInvoice(result.data, tenant?.name || 'DrinksHarbour');
+    },
+    onIssued: () => {
+      autosave.isDirtyRef.current = false;
+      toast.success('Invoice issued');
+      router.push(routes.accounting.invoices);
+    },
+  });
+  const busy = externalBusy || Boolean(invoiceActions.action);
   return (
-    <div className="pb-24">
+    <div className={`min-w-0 ${invoice ? 'pb-16' : 'pb-24'}`}>
       {invoice ? (
         <InvoiceCreateHeader
-          saving={form.saving || autoSaveStatus === 'saving'}
+          saving={externalBusy}
           hasLines={form.hasLines}
-          saveStatus={autoSaveStatus}
-          dueDate={invoiceDueDate}
-          onDueDate={(value) => {
-            setInvoiceDueDate(value);
-            isDirtyRef.current = true;
-          }}
-          onIssue={handleIssueInvoice}
-          onSave={() => {
-            void handleManualSave();
-          }}
-          onPrint={() => handlePrint('proforma')}
+          action={invoiceActions.action}
+          saveStatus={autosave.autoSaveStatus}
+          saveError={readiness.saveError}
+          issueError={readiness.issueError}
+          error={invoiceActions.error}
+          draftLabel={
+            initial?.soNumber || (orderId ? 'Saved draft' : 'New draft')
+          }
+          onSave={invoiceActions.save}
+          onPrint={invoiceActions.print}
+          onIssue={invoiceActions.issue}
         />
       ) : (
         <SalesCreateHeader
+          readOnly={readOnly}
           mode={mode}
           initial={initial}
-          saving={form.saving}
+          saving={externalBusy}
           hasLines={form.hasLines}
-          orderId={initial?._id}
+          orderId={orderId}
           token={token}
-          autoSaveStatus={autoSaveStatus}
-          onManualSave={handleManualSave}
-          onCreateOrder={() => handleSave(true)}
-          onSaveQuotation={() => handleSave(false)}
-          onSaveEdit={handleSaveEdit}
-          onPrint={() => handlePrint('quotation')}
-          onSendProForma={() => handlePrint('proforma')}
+          autoSaveStatus={autosave.autoSaveStatus}
+          action={actions.action}
+          error={actions.error}
+          saveError={salesReady.saveError}
+          confirmError={salesReady.confirmError}
+          onManualSave={actions.handleManualSave}
+          onCreateOrder={() => actions.handleSave(true)}
+          onSaveQuotation={() => actions.handleSave(false)}
+          onSaveEdit={actions.handleSaveEdit}
+          onPrint={() => actions.handlePrint('quotation')}
+          onSendProForma={() => actions.handlePrint('proforma')}
         />
       )}
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[7fr_3fr]">
-        <div className="min-w-0">
-          <SalesCustomerBar
+      {!invoice && mode === 'edit' && initial && (
+        <>
+          <SalesEditControls
+            so={initial}
             token={token}
-            customer={form.customer}
-            onSelectCustomer={form.handleSelectCustomer}
-            onClearCustomer={form.handleClearCustomer}
-            pricelists={form.pricelists as { _id: string; name: string }[]}
-            pricelistId={form.pricelistId}
-            onPricelistChange={(id) => {
-              form.setPricelistId(id);
-              form.setPricelistOverridden(true);
+            disabled={externalBusy}
+            beforeLock={async () =>
+              readOnly || Boolean(await autosave.ensureSaved(true))
+            }
+            onBusyChange={setLifecycleBusy}
+            onChanged={(doc) => {
+              autosave.isDirtyRef.current = false;
+              onHistory();
+              onUpdated?.(doc);
             }}
-            onUpdatePrices={() => setConfirmPrices(true)}
-            resolvedPricelistId={form.resolvedPricelistId}
-            validUntil={form.validUntil}
-            onValidUntilChange={form.setValidUntil}
-            warehouses={form.warehouses}
-            warehouseId={form.warehouseId as string}
-            onWarehouseChange={form.setWarehouseId}
-            onImportCart={() => setCartModalOpen(true)}
           />
-
-          <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.04]">
-            <div className="flex border-b border-gray-100 px-4">
-              <button
-                type="button"
-                onClick={() => handleTabChange('lines')}
-                className={`relative px-3 py-3 text-sm font-medium transition-colors ${
-                  form.tab === 'lines'
-                    ? 'text-brand after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-brand'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Order Lines
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTabChange('other')}
-                className={`relative px-3 py-3 text-sm font-medium transition-colors ${
-                  form.tab === 'other'
-                    ? 'text-brand after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-brand'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Other Info
-              </button>
-            </div>
-
-            <div className="p-5">
-              {form.tab === 'lines' ? (
-                <>
-                  <SalesLineTable
-                    token={token}
-                    lines={form.priced}
-                    onUpdate={form.updateLine}
-                    onAdd={form.addLine}
-                    onAddSection={form.addSection}
-                    onAddNote={form.addNote}
-                    onOpenCatalog={() => form.setCatalogOpen(true)}
-                    onOpenScan={() => form.setScanOpen(true)}
-                    onRemove={form.removeLine}
-                    onReorder={form.reorderLines}
-                    warehouseId={(form.warehouseId as string) || undefined}
-                    warehouseName={
-                      form.warehouses.find(
-                        (w) => w._id === (form.warehouseId as string)
-                      )?.name
-                    }
-                  />
-                  <SalesTotals
-                    untaxedAmount={form.untaxedAmount}
-                    discountTotal={form.discountTotal}
-                    taxTotal={form.taxTotal}
-                    grandTotal={form.grandTotal}
-                    coupon={form.coupon}
-                    couponBusy={couponBusy}
-                    pricelistCartDiscount={form.pricelistCartDiscount}
-                    pricelistName={(form.pricelist as any)?.name || undefined}
-                    onApplyCoupon={handleCoupon}
-                    onClearCoupon={() => handleCoupon('')}
-                    shippingFee={form.shippingFee}
-                    onShippingChange={form.setShippingFee}
-                    onApplyDiscount={form.applyGlobalDiscount}
-                    customerPoints={form.customer?.loyaltyPoints ?? null}
-                    plannedRedeemPoints={form.plannedRedeemPoints}
-                    onRedeemPointsChange={form.setPlannedRedeemPoints}
-                    onOpenTerms={() => handleTabChange('other')}
-                  />
-                </>
-              ) : (
-                <SalesOtherInfoTab
-                  paymentTerms={form.paymentTerms}
-                  onPaymentTermsChange={form.setPaymentTerms}
-                  invoiceAddress={form.invoiceAddress}
-                  deliveryAddress={form.deliveryAddress}
-                  deliverDifferent={form.deliverDifferent}
-                  onInvoiceChange={(patch) =>
-                    form.setInvoiceAddress((prev) => ({ ...prev, ...patch }))
-                  }
-                  onDeliveryChange={(patch) =>
-                    form.setDeliveryAddress((prev) => ({ ...prev, ...patch }))
-                  }
-                  onToggleDeliverDifferent={form.handleToggleDeliverDifferent}
-                  onLoadCustomerAddress={
-                    form.customer
-                      ? () => void form.loadCustomerAddress(form.customer!)
-                      : undefined
-                  }
-                  loadingCustomerAddress={form.loadingCustomerAddress}
-                  notes={form.notes}
-                  onNotesChange={form.setNotes}
-                  terms={form.terms}
-                  onTermsChange={form.setTerms}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          <SalesActivityPanel
+          <SalesEditDelivery so={initial} disabled={externalBusy} />
+        </>
+      )}
+      <div className="grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_288px]">
+        <fieldset disabled={busy} className="min-w-0">
+          <SalesCreateEditor
+            readOnly={readOnly}
+            snapshot={readOnly ? initial : undefined}
+            form={form}
             token={token}
-            orderId={orderId}
-            refreshKey={historyKey}
+            invoice={invoice}
+            invoiceDetails={
+              invoice ? (
+                <InvoiceCreateDetails
+                  dueDate={invoiceDueDate}
+                  disabled={busy}
+                  onDueDate={(value) => {
+                    setInvoiceDueDate(value);
+                    autosave.isDirtyRef.current = true;
+                    autosave.setAutoSaveStatus('idle');
+                  }}
+                />
+              ) : undefined
+            }
+            onUpdatePrices={() => actions.setConfirmPrices(true)}
+            onImportCart={() => setCartOpen(true)}
+            onCoupon={actions.handleCoupon}
+            couponBusy={actions.couponBusy}
           />
-        </div>
+        </fieldset>
+        <aside className="min-w-0 space-y-4 2xl:sticky 2xl:top-4 2xl:self-start">
+          {!invoice && mode === 'create' && (
+            <SalesCreateReview
+              customer={
+                `${form.customer?.firstName || ''} ${form.customer?.lastName || ''}`.trim() ||
+                'Walk-in customer'
+              }
+              validUntil={form.validUntil}
+              productCount={salesReady.productCount}
+              subtotal={form.untaxedAmount}
+              discounts={
+                form.discountTotal +
+                (form.promotionTotal || 0) +
+                (form.coupon?.discount || 0) +
+                form.pricelistCartDiscount
+              }
+              tax={form.taxTotal}
+              shipping={form.shippingFee}
+              total={form.grandTotal}
+              currency={currency}
+              confirmError={salesReady.confirmError}
+            />
+          )}
+          {invoice && (
+            <InvoiceCreateReview
+              customer={
+                `${form.customer?.firstName || ''} ${form.customer?.lastName || ''}`.trim() ||
+                'Walk-in customer'
+              }
+              dueDate={invoiceDueDate}
+              productCount={readiness.productCount}
+              subtotal={form.untaxedAmount}
+              discounts={
+                form.discountTotal +
+                (form.promotionTotal || 0) +
+                (form.coupon?.discount || 0) +
+                form.pricelistCartDiscount
+              }
+              tax={form.taxTotal}
+              shipping={form.shippingFee}
+              total={form.grandTotal}
+              currency={currency}
+              issueError={readiness.issueError}
+            />
+          )}
+          {invoice || mode === 'create' ? (
+            <details className="rounded-xl border border-gray-200 bg-white">
+              <summary className="cursor-pointer px-5 py-4 text-xs font-semibold text-gray-700">
+                {invoice ? 'Invoice activity' : 'Quotation activity'}
+              </summary>
+              <SalesActivityPanel
+                token={token}
+                orderId={orderId}
+                refreshKey={historyKey}
+              />
+            </details>
+          ) : (
+            <SalesActivityPanel
+              token={token}
+              orderId={orderId}
+              refreshKey={historyKey}
+            />
+          )}
+        </aside>
       </div>
-
-      <SalesCatalogModal
-        open={form.catalogOpen}
+      <SalesCreateOverlays
+        form={form}
         token={token}
-        pricelist={form.pricelist}
-        qtyMap={form.catalogQtyMap}
-        onClose={() => form.setCatalogOpen(false)}
-        onAdd={form.addProductFromCatalog}
-        onSetQty={form.setCatalogLineQty}
-        onRemove={form.removeCatalogLine}
-      />
-
-      <SalesScanDrawer
-        open={form.scanOpen}
-        token={token}
-        warehouseId={(form.warehouseId as string) || undefined}
-        onClose={() => form.setScanOpen(false)}
-        onAdd={form.addProductFromCatalog}
-      />
-
-      <SalesConfirmModal
-        open={confirmPrices}
-        title="Confirmation"
-        body="This will update the unit price of all products based on the new pricelist."
-        busy={pricesBusy}
-        onClose={() => setConfirmPrices(false)}
-        onConfirm={handleUpdatePrices}
-      />
-
-      <SalesCartImportModal
-        open={cartModalOpen}
-        token={token}
-        customer={form.customer}
-        onClose={() => setCartModalOpen(false)}
-        onConfirm={(items) => {
-          form.importCustomerCart(items);
-          setCartModalOpen(false);
-          toast.success(
-            `${items.length} line${items.length !== 1 ? 's' : ''} added from marketplace cart`
-          );
-        }}
+        currency={currency}
+        cartOpen={cartOpen}
+        setCartOpen={setCartOpen}
+        actions={actions}
       />
     </div>
   );

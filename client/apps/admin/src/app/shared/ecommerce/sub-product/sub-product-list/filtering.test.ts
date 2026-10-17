@@ -10,6 +10,7 @@ import {
   initialFilters,
   type SubProductListItem,
   type GridSortKey,
+  type SubProductFilterInput,
 } from './filtering';
 import type { FilterConfig } from './components/AdvancedFilters';
 
@@ -46,7 +47,7 @@ beforeEach(() => {
   seq = 0;
 });
 
-const NO_FILTERS = {
+const NO_FILTERS: SubProductFilterInput = {
   statusFilter: '',
   visibilityFilter: 'all',
   searchQuery: '',
@@ -55,7 +56,7 @@ const NO_FILTERS = {
   customMatch: null,
 };
 
-function filter(items: SubProductListItem[], input: Partial<typeof NO_FILTERS> = {}) {
+function filter(items: SubProductListItem[], input: SubProductFilterInput = {}) {
   return filterSubProducts(items, { ...NO_FILTERS, ...input });
 }
 
@@ -373,6 +374,17 @@ describe('groupSubProducts', () => {
 // ── Stats & helpers ───────────────────────────────────────────────────────────
 
 describe('computeStats', () => {
+  it('low-stock widgets and filters honor each item threshold including an explicit zero', () => {
+    const all = [
+      item({ totalStock: 12, lowStockThreshold: 15 }),
+      item({ totalStock: 7, lowStockThreshold: 3 }),
+      item({ totalStock: 1, lowStockThreshold: 0 }),
+      item({ totalStock: 0, lowStockThreshold: 15 }),
+    ];
+    expect(computeStats(all).lowStock).toBe(1);
+    expect(filter(all, { statusFilter: 'low_stock' }).map((p) => p._id)).toEqual([all[0]._id]);
+    expect(groupSubProducts(all, 'stock_level').find(([label]) => label === 'Low stock')?.[1].map((p) => p._id)).toEqual([all[0]._id]);
+  });
   it('derives published/draft from the fetched catalog', () => {
     // Third item keeps the factory default isPublished: true.
     const all = [item({ isPublished: true }), item({ isPublished: false }), item({ totalStock: 0 })];

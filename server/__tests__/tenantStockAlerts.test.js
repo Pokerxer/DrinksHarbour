@@ -159,3 +159,14 @@ test('recipient lookup keeps active membership and tenant filters when selecting
     User.find = original;
   }
 });
+test('inbox scanning does not invoke minimum calculation on subsequent loads', async () => {
+  const d = dependencies();
+  d.refreshMinimum = async () => {
+    throw Error('minimum recalculation');
+  };
+  const sync = createStockAlertSync(d);
+  await sync(req());
+  d.setTime(60000);
+  await sync(req());
+  assert.equal(d.calls.length, 2);
+});

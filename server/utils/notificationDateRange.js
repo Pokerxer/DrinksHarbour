@@ -1,7 +1,12 @@
 const { ValidationError } = require("./errors");
 const DAY = 86400000,
   OFFSET = 3600000;
-function validateDateRange(q = {}, now = new Date(), completed = false) {
+function validateDateRange(
+  q = {},
+  now = new Date(),
+  completed = false,
+  allowFuture = false,
+) {
   if (q.startDate === undefined && q.endDate === undefined) return null;
   const parse = (value) => {
     if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
@@ -20,7 +25,7 @@ function validateDateRange(q = {}, now = new Date(), completed = false) {
   if (
     end <= start ||
     end - start > 366 * DAY ||
-    end > today + (completed ? 0 : DAY)
+    (!allowFuture && end > today + (completed ? 0 : DAY))
   )
     throw new ValidationError(
       "Use a valid timeframe of up to 366 days with no future dates",

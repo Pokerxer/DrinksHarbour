@@ -39,6 +39,7 @@ function harness({ productStatus }) {
 
   const original = {
     findById: SubProduct.findById,
+    findOne: SubProduct.findOne,
     sizeUpdateMany: Size.updateMany,
     productFindById: Product.findById,
     approveProduct: productService.approveProduct,
@@ -48,6 +49,7 @@ function harness({ productStatus }) {
     const chain = { populate() { return chain; }, then: (r) => r(sp) };
     return chain;
   };
+  SubProduct.findOne = SubProduct.findById;
   Size.updateMany = async () => ({});
   Product.findById = () => ({
     select: () => ({ lean: async () => ({ _id: productId, status: productStatus }) }),
@@ -63,6 +65,7 @@ function harness({ productStatus }) {
     calls,
     restore() {
       SubProduct.findById = original.findById;
+      SubProduct.findOne = original.findOne;
       Size.updateMany = original.sizeUpdateMany;
       Product.findById = original.productFindById;
       productService.approveProduct = original.approveProduct;
@@ -104,7 +107,7 @@ test('a tenant admin approving their own listing does not touch the product', as
   const h = harness({ productStatus: 'pending' });
   try {
     await subProductService.adminSetSubProductStatus(
-      String(h.sp._id), 'active', {}, null, { _id: oid(), role: 'tenant_admin' },
+      String(h.sp._id), 'active', {}, null, { _id: oid(), role: 'tenant_admin', tenant: oid() },
     );
   } finally {
     h.restore();
@@ -124,4 +127,21 @@ test('declining a listing does not publish the product', async () => {
   }
   assert.strictEqual(h.sp.status, 'archived');
   assert.deepStrictEqual(h.calls.approved, []);
+});
+test('approval publishes the listing and decline unpublishes it', async () => {
+ const h = harness({ productStatus: 'approved' });
+ try {
+  await subProductService.adminSetSubProductStatus(String(h.sp._id), 'active', {}, null, { role: 'super_admin' });
+  assert.equal(h.sp.isPublished, true);
+  await subProductService.adminSetSubProductStatus(String(h.sp._id), 'archived', {}, 'Review', { role: 'super_admin' });
+  assert.equal(h.sp.isPublished, false);
+ } finally { h.restore(); }
+});
+test('an admin reviewing a listing cannot bypass super-admin approval of a pending catalogue product', async () => {
+ const h = harness({ productStatus: 'pending' });
+ try {
+  await subProductService.adminSetSubProductStatus(String(h.sp._id), 'active', {}, null, { role: 'admin' });
+  assert.deepEqual(h.calls.approved, []);
+  assert.equal(h.sp.isPublished, true);
+ } finally { h.restore(); }
 });

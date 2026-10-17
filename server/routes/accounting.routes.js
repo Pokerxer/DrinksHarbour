@@ -52,7 +52,11 @@ router.get('/dashboard', cacheReport('accounting-dashboard', { tenantRequired: t
 // Static segments before any :id routes.
 router.get('/receivables/summary', arAp.receivablesSummary);
 router.get('/payables/summary', arAp.payablesSummary);
+router.get('/receivables/invoices/summary', arAp.savedInvoiceSummary);
 router.get('/receivables/invoices', arAp.listInvoices);
+router.post('/receivables/invoices/drafts', arAp.saveInvoiceDraft);
+router.get('/receivables/invoices/:id', arAp.getInvoice);
+router.post('/receivables/invoices/:id/reconcile', arAp.reconcileInvoice);
 router.post('/receivables/invoices/:id/issue', arAp.issueInvoice);
 router.get('/payables/bills', arAp.listBills);
 
@@ -71,6 +75,7 @@ router.post('/payments/:id/cancel', arAp.cancelPayment);
 router.get('/batch-payments', arAp.listBatches);
 router.get('/batch-payments/unbatched', arAp.listUnbatched); // ?side=
 router.post('/batch-payments', arAp.createBatch);
+router.post('/batch-payments/preview', arAp.previewBatchSelection);
 router.post('/batch-payments/:id/deposit', arAp.depositBatch);
 router.post('/batch-payments/:id/cancel', arAp.cancelBatch);
 

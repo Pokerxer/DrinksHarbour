@@ -441,7 +441,7 @@ const CATEGORY_TYPES = [
   'sparkling_wine', 'champagne', 'fortified_wine', 'dessert_wine',
   'whiskey', 'scotch', 'bourbon', 'rye_whiskey', 'vodka', 'gin', 'rum',
   'tequila', 'brandy', 'cognac', 'soju', 'baijiu', 'shochu', 'mezcal',
-  'liqueur', 'aperitif', 'digestif', 'cocktail',
+  'liqueur', 'aperitif', 'digestif', 'cocktail', 'sake', 'fermented_drink', 'non_alcoholic',
   'coffee', 'tea', 'juice', 'soda', 'water', 'milk', 'yogurt_drink',
   'soft_drink', 'dairy_alternatives', 'functional_drink', 'syrup', 'bitters',
   'glassware', 'bar_tools', 'accessories', 'gift_set', 'subscription', 'other',

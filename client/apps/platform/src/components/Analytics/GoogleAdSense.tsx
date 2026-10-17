@@ -18,6 +18,7 @@ export const ADSENSE_CLIENT_ID = RAW_ADSENSE_ID
 
 /**
  * Loads the AdSense loader script (adsbygoogle.js) once for the whole app.
+ * Wait for page load/idle so advertising does not compete with the LCP image.
  *
  * Rendered from the root layout, so it is present on every page — the App
  * Router equivalent of Google's "paste this code between the <head> tags on
@@ -36,7 +37,7 @@ export default function GoogleAdSense() {
     <Script
       id="google-adsense"
       src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT_ID}`}
-      strategy="afterInteractive"
+      strategy="lazyOnload"
       crossOrigin="anonymous"
     />
   );

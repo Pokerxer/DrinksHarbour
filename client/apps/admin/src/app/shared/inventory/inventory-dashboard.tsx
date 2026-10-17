@@ -206,6 +206,7 @@ export default function InventoryDashboard() {
             counts={counts}
             loading={loading}
             hrefs={{
+              returns: routes.inventory.returns,
               receipts: routes.inventory.receipts,
               deliveries: routes.inventory.deliveries,
               internal: routes.inventory.internal,

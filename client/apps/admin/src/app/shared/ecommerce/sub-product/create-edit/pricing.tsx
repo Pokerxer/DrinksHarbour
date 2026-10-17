@@ -208,7 +208,7 @@ export default function SubProductPricing() {
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="space-y-6"
+      className="@container/pricing space-y-6"
     >
       {/* Enhanced Header */}
       <motion.div variants={fieldStaggerVariants} custom={0}>
@@ -216,7 +216,7 @@ export default function SubProductPricing() {
           <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-indigo-100/50" />
           <div className="absolute -bottom-4 right-12 h-16 w-16 rounded-full bg-purple-100/50" />
           
-          <div className="relative flex items-center justify-between">
+          <div className="relative flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500 text-white shadow-lg">
                 <PiCurrencyNgn className="h-5 w-5" />
@@ -262,7 +262,7 @@ export default function SubProductPricing() {
           
           <div className="relative">
             {/* Main Price Display */}
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-4">
                 <motion.div 
                   whileHover={{ rotate: 360 }}
@@ -292,7 +292,7 @@ export default function SubProductPricing() {
             </div>
 
             {/* Metrics Grid */}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 @[400px]/pricing:grid-cols-2 @[720px]/pricing:grid-cols-4">
               {/* Cost Price */}
               <div className="rounded-lg bg-white/80 p-4">
                 <div className="flex items-center gap-2 mb-1">
@@ -383,7 +383,7 @@ export default function SubProductPricing() {
             {PRICING_STRATEGIES.find(s => s.value === pricingStrategy)?.label}
           </Badge>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 @[400px]/pricing:grid-cols-2 @[720px]/pricing:grid-cols-4">
           {PRICING_STRATEGIES.map((strategy, index) => {
             const StrategyIcon = strategy.icon;
             const isSelected = pricingStrategy === strategy.value;
@@ -439,7 +439,7 @@ export default function SubProductPricing() {
             <Text className="text-xs text-gray-500">Auto-calculate</Text>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+        <div className="grid grid-cols-3 gap-2 @[560px]/pricing:grid-cols-6">
           {MARKUP_PRESETS.map((preset, index) => (
             <motion.button
               key={preset.value}
@@ -475,7 +475,7 @@ export default function SubProductPricing() {
       >
         <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-indigo-400 to-purple-600" />
         
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 @[420px]/pricing:grid-cols-2 @[720px]/pricing:grid-cols-3">
           {/* Cost Price */}
           <motion.div className="transition-transform duration-200 focus-within:scale-[1.01]">
             <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -692,7 +692,7 @@ export default function SubProductPricing() {
               exit={{ opacity: 0, height: 0 }}
               className="mt-4 space-y-4 overflow-hidden"
             >
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 @[420px]/pricing:grid-cols-2">
                 {/* Minimum Price */}
                 <motion.div className="rounded-lg border border-gray-200 bg-white p-4">
                   <label className="mb-2 block text-sm font-medium text-gray-700">
@@ -750,7 +750,7 @@ export default function SubProductPricing() {
                       exit={{ opacity: 0, height: 0 }}
                       className="space-y-3"
                     >
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="grid gap-2 @[400px]/pricing:grid-cols-2 @[720px]/pricing:grid-cols-4">
                         {COMPETITOR_PRICE_RANGES.map((range, index) => (
                           <motion.button
                             key={range.label}

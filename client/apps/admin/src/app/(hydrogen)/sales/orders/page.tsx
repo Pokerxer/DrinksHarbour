@@ -9,7 +9,7 @@ export default function SalesOrdersPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <SalesNavHeader />
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="w-full min-w-0 px-2 py-2">
         <Suspense>
           <SalesOrders />
         </Suspense>

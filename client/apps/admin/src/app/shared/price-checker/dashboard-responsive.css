@@ -1,0 +1,96 @@
+@container price-checker (max-width: 760px) {
+  .pc-command {
+    padding: 28px;
+  }
+  .pc-terminal {
+    width: 195px;
+  }
+  .pc-summary > div {
+    padding: 18px;
+    gap: 10px;
+  }
+}
+@container price-checker (max-width: 520px) {
+  .pc-command {
+    padding: 26px;
+  }
+  .pc-terminal {
+    display: none;
+  }
+  .pc-summary > div {
+    padding: 16px 10px;
+  }
+  .pc-summary svg {
+    display: none;
+  }
+  .pc-summary strong {
+    font-size: 23px;
+  }
+  .pc-search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .pc-fleet-heading {
+    align-items: flex-start;
+  }
+  .pc-refresh {
+    padding: 10px;
+    flex-shrink: 0;
+  }
+  .pc-command .pc-button {
+    width: 100%;
+    gap: 12px;
+  }
+  .pc-empty {
+    padding: 36px 18px;
+  }
+  .pc-heading nav {
+    width: 100%;
+  }
+  .pc-heading nav > .pc-button {
+    margin-left: auto;
+  }
+  .pc-heading h1 {
+    font-size: 26px;
+  }
+  .pc-heading {
+    margin-bottom: 20px;
+    gap: 14px;
+  }
+  .pc-segments {
+    width: 100%;
+  }
+  .pc-segments button {
+    flex: 1;
+  }
+  .pc-kiosk-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container price-checker (max-width: 760px) {
+  .pc-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .pc-command {
+    gap: 20px;
+  }
+  .pc-command h2 {
+    font-size: 30px;
+  }
+}
+@container price-checker (max-width: 360px) {
+  .pc-heading nav > .pc-button {
+    width: 100%;
+    margin-left: 0;
+  }
+  .pc-command {
+    padding: 20px;
+  }
+  .pc-segments button {
+    padding: 10px 6px;
+  }
+  .pc-summary > div {
+    padding: 14px 8px;
+  }
+}

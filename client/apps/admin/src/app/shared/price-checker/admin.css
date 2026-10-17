@@ -1,4 +1,7 @@
 .pc-admin {
+  container: price-checker / inline-size;
+  min-width: 0;
+  width: 100%;
   max-width: 1500px;
   margin: auto;
   padding-bottom: 48px;
@@ -13,6 +16,7 @@
   justify-content: space-between;
   gap: 24px;
   align-items: center;
+  flex-wrap: wrap;
   margin: 16px 0 30px;
 }
 .pc-eyebrow {
@@ -27,6 +31,13 @@
   align-items: center;
   gap: 12px;
   margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.pc-heading > div {
+  min-width: 0;
+}
+.pc-heading h1 svg {
+  flex-shrink: 0;
 }
 .pc-heading h1 svg {
   color: #b20202;
@@ -38,9 +49,20 @@
 }
 .pc-heading nav {
   display: flex;
-  gap: 18px;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+.pc-heading nav > a {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.pc-heading nav > a:hover {
+  background: #8881;
+}
+.pc-heading nav > .pc-button:hover {
+  background: #910202;
 }
 .pc-heading a,
 .pc-actions a,
@@ -60,7 +82,8 @@
   border-radius: 8px;
   padding: 12px 18px;
   font-weight: 600;
-  min-height: 42px;
+  min-height: 44px;
+  text-align: center;
 }
 .pc-admin button:disabled {
   opacity: 0.45;
@@ -121,7 +144,7 @@
 }
 .pc-kiosk-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   gap: 20px;
 }
 .pc-card-top {
@@ -129,6 +152,7 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 18px;
+  gap: 12px;
 }
 .pc-card-top > svg {
   font-size: 32px;

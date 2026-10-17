@@ -13,6 +13,7 @@ const { valuationCost } = require('./batch.helpers');
 const { stockValuation } = require('./stockValuation');
 const batchService = require('./batch.service');
 const { NotFoundError, ValidationError } = require('../utils/errors');
+const { issuePredicate, protectDocument } = require('./stockProtection');
 
 // ── Place CRUD ──────────────────────────────────────────────
 const CODE_PREFIX = { warehouse: 'WH', store: 'ST', distribution_center: 'DC' };
@@ -224,6 +225,7 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
     row.currentQuantity = Math.max(0, before - quantity);
   } else if (type === 'adjusted') row.currentQuantity = Math.max(0, quantity);
   const prevBalance = before; // captured before mutation above
+  if (type === 'shipped' || type === 'adjusted') protectDocument(row,before,row.currentQuantity);
   await row.save(session ? { session } : undefined);
 
   const movement = {
@@ -315,7 +317,9 @@ async function transferStock(
       if (!src || (!allowNegativeStock && src.currentQuantity < quantity)) {
         throw new ValidationError('Insufficient stock in source warehouse');
       }
+      const sourceBefore = src.currentQuantity;
       src.currentQuantity = Math.max(0, src.currentQuantity - quantity);
+      protectDocument(src,sourceBefore,src.currentQuantity);
       await src.save({ session });
 
       let dest = await WarehouseStock.findOne(
@@ -383,7 +387,7 @@ async function transferStock(
         session
       );
       // Total across warehouses is unchanged; recompute as a safety no-op.
-      await recalcSubProductStock(subProduct, session);
+      await recalcSubProductStock(subProduct, session, tenantId);
       result = { from: src, to: dest, transferGroupId };
     });
     return result;
@@ -638,17 +642,27 @@ async function sellStock({ warehouseId, subProduct, size, quantity, allowOversel
   // atomic path, which skips the schema min:0 validator).
   const overdraw = allowOverselling || allowNegativeStock;
   const filter = { tenant: tenantId, warehouse: warehouseId, subProduct, size };
-  if (!overdraw) {
-    filter.currentQuantity = { $gte: quantity };
-  }
+  Object.assign(filter,issuePredicate(quantity,overdraw));
 
-  const row = await WarehouseStock.findOneAndUpdate(
+  // MongoDB forbids $expr in an upsert predicate. Materialize a missing
+  // zero-balance row first, then apply the atomic reservation guard to issue.
+  if (overdraw) {
+    try { await WarehouseStock.updateOne({tenant:tenantId,warehouse:warehouseId,subProduct,size},
+      {$setOnInsert:{currentQuantity:0,reservedQuantity:0}},{upsert:true}); }
+    catch(error) { if(error.code!==11000) throw error; }
+  }
+  let row;
+  try { row = await WarehouseStock.findOneAndUpdate(
     filter,
     { $inc: { currentQuantity: -quantity } },
-    { new: true, upsert: overdraw, setDefaultsOnInsert: overdraw }
+    { new: true, upsert: false, setDefaultsOnInsert: false }
   );
+  } catch(error) {
+    if (error.code === 11000 && overdraw) throw new ValidationError('Insufficient unreserved stock for this sale');
+    throw error;
+  }
   if (!row) {
-    throw new ValidationError('Insufficient stock for this sale');
+    throw new ValidationError('Insufficient unreserved stock for this sale');
   }
 
   const after = row.currentQuantity;
@@ -656,7 +670,7 @@ async function sellStock({ warehouseId, subProduct, size, quantity, allowOversel
     tenant: tenantId, warehouse: warehouseId, subProduct, size,
     type: 'shipped', quantity, balanceAfter: after, performedBy: userId,
   });
-  await recalcSubProductStock(subProduct);
+  await recalcSubProductStock(subProduct, null, tenantId);
 
   let batchAllocations = [];
   if (tracksBatch) {
@@ -686,7 +700,7 @@ async function returnStock({ warehouseId, subProduct, size, quantity, batchAlloc
     tenant: tenantId, warehouse: warehouseId, subProduct, size,
     type: 'returned', quantity, balanceAfter: after, performedBy: userId,
   });
-  await recalcSubProductStock(subProduct);
+  await recalcSubProductStock(subProduct, null, tenantId);
 
   if (batchAllocations && batchAllocations.length) {
     await batchService.restoreBatches(batchAllocations);

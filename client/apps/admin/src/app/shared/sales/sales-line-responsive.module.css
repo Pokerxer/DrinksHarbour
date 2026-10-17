@@ -1,0 +1,81 @@
+.lines {
+  container-type: inline-size;
+}
+
+@container (max-width: 1199px) {
+  .lines table {
+    display: block;
+    min-width: 0;
+  }
+
+  .lines colgroup,
+  .lines thead {
+    display: none;
+  }
+
+  .lines tbody {
+    display: block;
+  }
+
+  .lines tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 2.25rem 0.5rem 0.5rem;
+  }
+
+  .lines td {
+    display: block;
+    width: auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .lines td[data-label]::before {
+    display: block;
+    margin-bottom: 0.375rem;
+    color: #6b7280;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-align: left;
+    content: attr(data-label);
+  }
+
+  .lines td:first-child {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.5rem;
+  }
+
+  .lines td:last-child {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.5rem;
+  }
+
+  .lines td[data-label='Product'],
+  .lines td[data-label='Untaxed total'],
+  .lines td[colspan] {
+    grid-column: 1 / -1;
+  }
+
+  .lines td[data-label='Untaxed total'] {
+    margin-top: 0.5rem;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .lines td[data-label='Product'] a {
+    max-width: 100%;
+  }
+
+  .lines td[data-label='Product'] a > span {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .lines td:first-child button,
+  .lines td:last-child button {
+    min-width: 2rem;
+    min-height: 2rem;
+  }
+}

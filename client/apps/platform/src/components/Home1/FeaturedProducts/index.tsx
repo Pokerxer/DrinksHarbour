@@ -1,5 +1,7 @@
 "use client";
 
+import { useShoppingLocation } from '@/context/ShoppingLocationContext';
+import { shoppingHeaders } from '@/lib/shoppingRequest';
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PiCheckCircle, PiWarning } from "react-icons/pi";
@@ -26,6 +28,7 @@ const FeaturedProducts: React.FC<FeaturedProductsContainerProps> = ({
   subtitle = "Handpicked selections from our premium collection",
   initialProducts,
 }) => {
+  const { location, revision } = useShoppingLocation();
   const seeded = (initialProducts?.length ?? 0) > 0;
   const sectionRef = useRef<HTMLElement>(null);
 
@@ -44,13 +47,13 @@ const FeaturedProducts: React.FC<FeaturedProductsContainerProps> = ({
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
-    if (seeded) return;
+    if (seeded && !location) { setProducts(seed.map(mapApiProductToProduct)); return; }
     let cancelled = false;
     (async () => {
       try {
         setLoading(true);
         const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-        const res = await fetch(`${API_URL}/api/products?isFeatured=true&limit=${limit}`);
+        const res = await fetch(`${API_URL}/api/products?isFeatured=true&limit=${limit}`, { headers: shoppingHeaders(location), cache: 'no-store' });
         if (!res.ok) throw new Error("fetch failed");
         const data = await res.json();
         const raw: ApiProduct[] =
@@ -68,7 +71,7 @@ const FeaturedProducts: React.FC<FeaturedProductsContainerProps> = ({
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [limit]);
+  }, [limit, revision]);
 
   const showToast = useCallback((message: string, type: "success" | "error") => {
     setToast({ message, type });

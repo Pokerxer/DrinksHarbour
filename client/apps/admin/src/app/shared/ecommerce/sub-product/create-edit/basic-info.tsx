@@ -38,6 +38,7 @@ import {
 import { fieldStaggerVariants, containerVariants } from './animations';
 import { LatestRequest, isAbortError } from './latest-request';
 import { productService } from '@/services/product.service';
+import { searchCatalogueProducts } from '@/services/catalogue-search';
 import { ProductReadError } from '@/services/product-read';
 import { inheritedProductImages } from '../image-utils';
 
@@ -96,6 +97,7 @@ export default function SubProductBasicInfo({
   const [searchQuery, setSearchQuery] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [isCreateMode, setIsCreateMode] = useState(false);
   const [newProductData, setNewProductData] =
@@ -130,7 +132,6 @@ export default function SubProductBasicInfo({
   const selectedCurrency = watch?.('subProductData.currency') || 'NGN';
 
   const hasSearched = searchQuery.length >= 2 && !selectedProductId;
-  const hasNoResults = hasSearched && products.length === 0 && !isLoading;
 
   // Close currency dropdown on outside click
   useEffect(() => {
@@ -202,7 +203,8 @@ export default function SubProductBasicInfo({
   // Keyboard navigation for search results
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isCreateMode || products.length === 0) return;
+      if (isCreateMode || products.length === 0 ||
+        (e.target as HTMLElement)?.id !== 'catalogue-product-search') return;
 
       switch (e.key) {
         case 'ArrowDown':
@@ -256,27 +258,25 @@ export default function SubProductBasicInfo({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch products when search query changes (debounced)
+  // Invalidate old results immediately, including during the next debounce.
   useEffect(() => {
-    // Don't search if:
-    // 1. Currently selecting a product
-    // 2. A product is already selected (in the form)
-    if (isSelectingProduct || selectedProductId) return;
-
-    const timer = setTimeout(() => {
-      if (searchQuery.length >= 2 && !isCreateMode) {
-        searchProducts(searchQuery);
-      } else if (searchQuery.length < 2) {
-        // Cancel too, or a request still in flight from a longer query lands
-        // afterwards and repopulates the list the user just cleared.
-        searchRequestRef.current.cancel();
-        setProducts([]);
-        setIsLoading(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery, isCreateMode, isSelectingProduct, selectedProductId]);
+    const guard = searchRequestRef.current;
+    guard.cancel();
+    setSearchError('');
+    if (isSelectingProduct || selectedProductId || isCreateMode) {
+      setIsLoading(false);
+      return;
+    }
+    setProducts([]);
+    setSelectedIndex(-1);
+    if (searchQuery.trim().length < 2 || !session?.user?.token) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    const timer = setTimeout(() => searchProducts(searchQuery), 300);
+    return () => { clearTimeout(timer); guard.cancel(); };
+  }, [searchQuery, isCreateMode, isSelectingProduct, selectedProductId, selectedTypeFilter, session?.user?.token]);
 
   // Drop anything in flight when the field goes away.
   useEffect(() => {
@@ -294,40 +294,11 @@ export default function SubProductBasicInfo({
     const { ticket, signal } = searchRequestRef.current.begin();
 
     setIsLoading(true);
+    setSearchError('');
     try {
-      const API_URL =
-        process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-      // Use search endpoint with text mode (avoids embedding issues) for relevance-scored results
-      // This searches across name, brand, type, origin, description, etc. with weighted relevance
-      const params = new URLSearchParams({
-        q: query,
-        limit: '15',
-        searchMode: 'text',
-        useEmbeddings: 'false',
+      const productList = await searchCatalogueProducts(query, {
+        token: session.user.token, signal, type: selectedTypeFilter,
       });
-      if (selectedTypeFilter) {
-        params.set('type', selectedTypeFilter);
-      }
-      // Staff catalogue search, NOT the public /api/products/search. The public
-      // one is approved-and-published only, which hid every tenant-created
-      // product still awaiting approval — so the operator saw nothing, clicked
-      // "Create new product", and the catalogue gained a duplicate. See the
-      // route comment in server/routes/product.routes.js.
-      const response = await fetch(
-        `${API_URL}/api/products/catalogue-search?${params}`,
-        {
-          signal,
-          headers: {
-            Authorization: `Bearer ${session.user.token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error('Failed to fetch products');
-
-      const data = await response.json();
-      const productList = data.data?.products || data.data || [];
 
       // A response that is no longer the current query must be discarded, not
       // rendered — aborting narrows this window but does not close it.
@@ -340,7 +311,7 @@ export default function SubProductBasicInfo({
       // Clearing the list here would blank the dropdown on every character.
       if (isAbortError(error)) return;
       if (!searchRequestRef.current.isCurrent(ticket)) return;
-      console.error('Error searching products:', error);
+      setSearchError('Could not search the catalog. Please retry.');
       setProducts([]);
     } finally {
       // Only the newest attempt owns the spinner; a superseded one turning it
@@ -351,9 +322,6 @@ export default function SubProductBasicInfo({
 
   const handleTypeFilterClick = (type: string) => {
     setSelectedTypeFilter(selectedTypeFilter === type ? null : type);
-    if (searchQuery.length >= 2) {
-      searchProducts(searchQuery);
-    }
   };
 
   const handleSelectProduct = useCallback(
@@ -365,7 +333,8 @@ export default function SubProductBasicInfo({
         productName: product.name,
       });
 
-      // Prevent search effect from triggering
+      // Stop any earlier search before switching catalog selection modes.
+      searchRequestRef.current.cancel();
       setIsSelectingProduct(true);
 
       // Clear create mode and product not found state
@@ -408,7 +377,8 @@ export default function SubProductBasicInfo({
     (query: string) => {
       console.log('🔍 handleCreateNewProduct called:', query);
 
-      // Prevent search effect from triggering
+      // Stop any earlier search before switching catalog selection modes.
+      searchRequestRef.current.cancel();
       setIsSelectingProduct(true);
 
       setIsCreateMode(true);
@@ -600,7 +570,6 @@ export default function SubProductBasicInfo({
                 type="button"
                 onClick={() => {
                   setSelectedTypeFilter(null);
-                  if (searchQuery.length >= 2) searchProducts(searchQuery);
                 }}
                 className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
               >
@@ -670,7 +639,7 @@ export default function SubProductBasicInfo({
                   <div className="relative">
                     <div className="flex items-start gap-3">
                       <div className="flex-1">
-                        <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        <label htmlFor="catalogue-product-search" className="mb-1.5 block text-sm font-medium text-gray-700">
                           Search Product <span className="text-red-500">*</span>
                         </label>
                         <ProductSearchInput
@@ -692,28 +661,18 @@ export default function SubProductBasicInfo({
                       </div>
                     </div>
 
-                    {/* Search Results Dropdown - positioned relative to input container */}
+                    {searchError && (
+                      <div role="alert" className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        {searchError}
+                        <button type="button" onClick={() => searchProducts(searchQuery)} className="ml-2 min-h-11 font-semibold underline">Retry catalog search</button>
+                      </div>
+                    )}
+
                     <AnimatePresence>
-                      {hasSearched && products.length > 0 && (
+                      {hasSearched && !searchError && (
                         <ProductSearchResults
                           products={products}
                           selectedIndex={selectedIndex}
-                          selectedProductId={selectedProductId}
-                          highlightedText={searchQuery}
-                          isLoading={isLoading}
-                          searchQuery={searchQuery}
-                          onSelect={handleSelectProduct}
-                          onCreateNew={handleCreateNewProduct}
-                        />
-                      )}
-                    </AnimatePresence>
-
-                    {/* No Results - with Create New button */}
-                    <AnimatePresence>
-                      {hasNoResults && (
-                        <ProductSearchResults
-                          products={[]}
-                          selectedIndex={-1}
                           selectedProductId={selectedProductId}
                           highlightedText={searchQuery}
                           isLoading={isLoading}
@@ -847,6 +806,7 @@ export default function SubProductBasicInfo({
               onChange={handleNewProductChange}
               errors={error ? { name: error, type: error } : {}}
               initialName={searchQuery}
+              onProductSelect={handleSelectProduct}
             />
           )}
         />

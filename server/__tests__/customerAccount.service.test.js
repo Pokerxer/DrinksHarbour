@@ -421,7 +421,7 @@ test('the balance subtracts credits', async (t) => {
   // kind of movement ends up quietly not counting towards the balance.
   assert.deepEqual(
     pipeline[1].$group.credits.$sum,
-    [{ $cond: [{ $eq: ['$entryType', 'credit'] }, '$amount', 0] }],
+    { $cond: [{ $eq: ['$entryType', 'credit'] }, '$amount', 0] },
   );
   assert.deepEqual(pipeline[2].$project.balance, {
     $round: [{ $subtract: [{ $subtract: ['$charges', '$payments'] }, '$credits'] }, 2],
@@ -432,14 +432,27 @@ test('the tab directory also subtracts credits', async (t) => {
   let pipeline;
   t.mock.method(Statement, 'aggregate', (p) => { pipeline = p; return Promise.resolve([]); });
   await service().tabBalances(TENANT);
-  // The key is literally `$sum` — `.sum` on it is undefined, which reads as a
-  // missing accumulator when the pipeline is in fact correct.
+  // In $group, $sum takes one expression, not an array of expressions.
   assert.deepEqual(
     pipeline[1].$group.credits.$sum,
-    [{ $cond: [{ $eq: ['$entryType', 'credit'] }, '$amount', 0] }],
+    { $cond: [{ $eq: ['$entryType', 'credit'] }, '$amount', 0] },
   );
   assert.ok(pipeline[2].$project.balance, 'credits must reach the projected balance');
 });
+
+for (const method of ['balances', 'tabBalances']) {
+  test(`${method} emits valid conditional charge and payment accumulators`, async (t) => {
+    const seen = mockBalance(t);
+    await service()[method](TENANT, ...(method === 'balances' ? [[CUSTOMER]] : []));
+    const group = seen()[1].$group;
+    assert.deepEqual(group.charges.$sum, {
+      $cond: [{ $eq: ['$entryType', 'charge'] }, '$amount', 0],
+    });
+    assert.deepEqual(group.payments.$sum, {
+      $cond: [{ $eq: ['$entryType', 'payment'] }, '$amount', 0],
+    });
+  });
+}
 
 test('a credit larger than the outstanding balance is refused', async (t) => {
   // Otherwise a mistyped refund creates a negative tab, which reads as the shop

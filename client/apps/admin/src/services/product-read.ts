@@ -35,6 +35,7 @@ export async function readProduct(
     signal?.throwIfAborted();
     const response = await fetch(url, {
       method: 'GET',
+      cache: 'no-store',
       headers: { Authorization: `Bearer ${token}` },
       signal,
     });

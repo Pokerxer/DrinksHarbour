@@ -57,3 +57,19 @@ test('createSalesOrderDoc persists a tenant-scoped order with snapshot totals', 
   assert.strictEqual(so.orderStatus, 'draft');
   assert.match(so.soNumber, /^SO\d{5}$/);
 });
+
+for (const [label, extra, expected] of [
+  ['explicitly unset', { dueDate: null }, undefined],
+  ['chosen', { dueDate: '2026-10-20' }, '2026-10-20T00:00:00.000Z'],
+  ['derived from terms', {}, 'derived'],
+]) {
+  test(`new invoice draft keeps its due date ${label}`, async (t) => {
+    const svc = require('../services/salesOrder.service');
+    t.mock.method(SalesOrder, 'findOne', () => ({ sort: () => ({ select: () => ({ lean: async () => null }) }) }));
+    t.mock.method(SalesOrder, 'create', async (doc) => doc);
+    const doc = await svc.createSalesOrderDoc({ tenantId: oid(), body: { docType: 'quotation', items: [], paymentTerms: 'net_30', ...extra } });
+    if (expected === undefined) assert.strictEqual(doc.dueDate, undefined);
+    else if (expected === 'derived') assert.ok(doc.dueDate instanceof Date);
+    else assert.strictEqual(doc.dueDate.toISOString(), expected);
+  });
+}

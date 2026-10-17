@@ -82,7 +82,8 @@ function resolveSubProductStatus(availableStock, lowStockThreshold = 10) {
  * Creates an InventoryMovement audit record.
  * Throws if insufficient stock.
  */
-async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, receiptNumber, productId, finalPrice, costPrice, allowOverselling = false, allowNegativeStock = false, warehouseId = null, defaultSizeId = null, tracksBatch = false, blockExpiredStock = false, fefoPicking = false }) {
+async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, receiptNumber, productId, finalPrice, costPrice, allowOverselling = false, allowNegativeStock = false, warehouseId = null, defaultSizeId = null, tracksBatch = false, blockExpiredStock = false, fefoPicking = false, reservationPOS = null }) {
+  if(reservationPOS)return reservationPOS.consumeLine({subProductId,sizeId:sizeId||defaultSizeId,quantity,tracksBatch,blockExpiredStock,fefoPicking});
   if (warehouseId) {
     // ── Warehouse-scoped deduction ────────────────────────────────────────
     // Decrement WarehouseStock directly; recalcSubProductStock refreshes the
@@ -1979,10 +1980,12 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   // fulfilment all name the same location), falling back to the shop's
   // resolution when the order carries no warehouse.
   let warehouseId;
+  let reservationOrder;
   if (linkedSalesOrderId) {
     const soWarehouse = await SalesOrder.findOne({ _id: linkedSalesOrderId, tenant: tenantId })
-      .select('warehouseId')
+      .select('warehouseId reservationVersion')
       .lean();
+    reservationOrder=soWarehouse;
     warehouseId = soWarehouse?.warehouseId
       ? await requirePOSLocation(tenantId, soWarehouse.warehouseId)
       : await resolveShopWarehouse(req.tenant, tenantId, shopId);
@@ -1990,6 +1993,11 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     warehouseId = await resolveShopWarehouse(req.tenant, tenantId, shopId);
   }
 
+  const reservationPOS=reservationOrder?.reservationVersion
+    ? await require('../services/salesReservations/pos').beginPOSSale({tenantId,orderId:linkedSalesOrderId,warehouseId,
+      actorId:staffId,actor:req.posUser,requestId:req.body.requestId,payload:req.body,receiptNumber}) : null;
+  if(reservationPOS?.duplicate)return res.json(reservationPOS.response);
+  try {
   // Atomic stock deduction with full audit trail
   const deductedItems = [];  // for rollback on failure
   const orderItems    = [];
@@ -2035,6 +2043,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
       // Deduct stock (throws on insufficient stock unless overselling is allowed)
       const deductedDoc = await deductStock({
+        reservationPOS,
         subProductId,
         sizeId:          sizeId || null,
         quantity,
@@ -2203,6 +2212,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   // below, when a wallet-tendered sale can't be paid for (so we never leave stock
   // committed for a sale that didn't go through).
   async function rollbackDeductedStock() {
+    if(reservationPOS){await reservationPOS.abort();return;}
     for (const d of deductedItems) {
       if (warehouseId) {
         await returnStock(
@@ -2374,7 +2384,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     }
 
     if (split.spend > 0) {
-      const walletResult = await mutateWallet({
+      const walletResult = await (reservationPOS ? reservationPOS.mutateWallet : mutateWallet)({
         owner: {
           Model: POSCustomer,
           ownerType: 'POSCustomer',
@@ -2406,7 +2416,8 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
   let order;
   try {
-    order = await Order.create({
+    const createReceipt=reservationPOS ? data=>reservationPOS.createReceipt(data) : data=>Order.create(data);
+    order = await createReceipt({
     orderNumber,                          // required unique string
     tenant:        tenantId,
     source:        'pos',
@@ -2461,11 +2472,12 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       thresholdDiscount: cartThresholdDiscount || 0,
     } : undefined,
     });
+    if(reservationPOS)await reservationPOS.commitReceipt(order);
   } catch (orderErr) {
     // The order failed to persist. Undo any wallet charge (append a compensating
     // credit — the ledger is never edited) and restore the stock, so a failed sale
     // leaves balance, ledger and inventory all consistent.
-    if (walletTx) {
+    if (walletTx && !reservationPOS && !orderErr.reservationCommitUncertain) {
       await mutateWallet({
         owner: {
           Model: POSCustomer,
@@ -2481,7 +2493,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         createdBy: staffId,
       }).catch(() => {});
     }
-    await rollbackDeductedStock();
+    if(!orderErr.reservationCommitUncertain)await rollbackDeductedStock();
     throw orderErr;
   }
 
@@ -2677,6 +2689,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       paymentMethod,
     });
   }
+  } finally { await reservationPOS?.close(); }
 });
 
 // Credit a POS customer's wallet back when a wallet-paid sale is refunded or
@@ -4416,6 +4429,16 @@ exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
   let so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId });
   if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
 
+  if (so.reservationVersion) {
+    const receipt = req.body.ref && await Order.findOne({tenant:tenantId, source:'pos',
+      receiptNumber:req.body.ref, linkedSalesOrder:so._id}).lean();
+    const operation = receipt && await require('../models/SalesOrderOperation').findOne({
+      tenant:tenantId, salesOrder:so._id, kind:'pos', state:'settled', 'result.receipt._id':receipt._id}).lean();
+    if (!operation || !so.fulfillments.some(row=>row.ref===req.body.ref))
+      return res.status(409).json({success:false,message:'No settled reserved POS receipt matches this order.'});
+    return res.json({success:true,data:so,reconciled:0,duplicate:true});
+  }
+
   // Quotation → order (skip only terminally-dead quotations)
   if (so.docType === 'quotation') {
     if (['rejected', 'expired'].includes(so.quoteStatus)) {
@@ -4464,8 +4487,13 @@ exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
   // from the order's own lines, prorated by what was actually sold. This used to
   // read `paymentStatus = 'paid'; amountPaid = order.total` right here, which
   // called an order 3/10 sold paid in full and erased the rest of the receivable.
+  const attributionReceipt = ref ? await Order.findOne({ tenant: tenantId, source: 'pos', receiptNumber: ref,
+    linkedSalesOrder: { $in: [req.params.id, so._id] } }) : null;
+  const fulfillmentActor = await require('../services/salesSalesperson').fulfillmentActorForReceipt(
+    attributionReceipt, req.posUser || req.user, tenantId);
   const { order, reconciled, duplicate } = await salesFulfillSvc.reconcileFulfillment({
-    salesOrder: so, fulfillLines, userId: req.posUser?._id || req.user?._id, ref,
+    salesOrder: so, fulfillLines, userId: fulfillmentActor?._id || req.posUser?._id || req.user?._id,
+    actor: fulfillmentActor, ref,
     // The terminal's warehouse is the one the sale deducted stock from —
     // and for a POS sale settled against an order, that is the order's own
     // warehouse (see createPOSOrder). The order's warehouse is server-derived

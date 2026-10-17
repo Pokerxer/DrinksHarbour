@@ -17,6 +17,11 @@ const invoice = {
   customerSnapshot: { name: 'Ada' },
 } as OpenInvoice;
 describe('accounting document interactions', () => {
+  it('opens POS invoices in their order source and labels settled balances Paid', () => {
+    expect(documentView({ ...invoice, source: 'pos' }, 'customer').href).toBe(
+      '/ecommerce/orders/so'
+    );
+  });
   it('links invoices to sales and preserves paid and credited amounts', () => {
     expect(documentView(invoice, 'customer')).toMatchObject({
       href: '/sales/so',
@@ -25,6 +30,17 @@ describe('accounting document interactions', () => {
       paid: 20,
       credited: 30,
     });
+  });
+  it('uses the invoice snapshot when the linked customer has no readable name', () => {
+    expect(
+      documentView(
+        {
+          ...invoice,
+          customer: { _id: 'customer', firstName: ' ', lastName: '' },
+        },
+        'customer'
+      ).name
+    ).toBe('Ada');
   });
   it('rejects duplicate allocations and allocation above outstanding', () => {
     expect(

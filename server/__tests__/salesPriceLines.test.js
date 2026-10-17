@@ -140,3 +140,10 @@ test('computeLineUnitPrice re-bases on the platform pipeline (Carlo Rossi ₦8,6
   });
   assert.strictEqual(price6, 8600);
 });
+test('draft preview resolves the same promotions after authoritative prices',async t=>{
+ const ctrl=require('../controllers/salesOrder.controller');const svc=require('../services/salesOrder.service');
+ t.mock.method(svc,'resolveLinePricing',async items=>items.map(item=>({...item,unitPrice:123.45})));
+ let called=false;t.mock.method(svc,'resolveLinePromotions',async(items,args)=>{called=true;assert.equal(args.tenantId,'tenant');assert.equal(items[0].unitPrice,123.45);return items.map(item=>({...item,promoDiscount:10.1,promoName:'Offer'}));});
+ const res=mockRes();await ctrl.priceLines({tenant:{_id:'tenant'},body:{items:[{quantity:2,unitPrice:100,subproduct:'sp'}]}},res,error=>{throw error;});
+ assert.equal(called,true);assert.equal(res.body.data.items[0].promoDiscount,10.1);
+});

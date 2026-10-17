@@ -61,7 +61,7 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
   return (
     <div className="hidden lg:flex items-center gap-1 flex-shrink-0">
       {/* Wishlist */}
-      <Link href="/wishlist" className={iconBtn}>
+      <Link href="/wishlist" aria-label="Wishlist" className={iconBtn}>
         <Icon.PiHeart size={22} />
         {wishlistState.wishlistArray.length > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
@@ -73,6 +73,7 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
       {/* Cart — accented */}
       <button
         onClick={openModalCart}
+        aria-label={`Open cart${cartCount > 0 ? `, ${cartCount} items` : ''}`}
         className={`relative flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all duration-200 ${
           isDark
             ? "bg-white/10 text-white hover:bg-white/20"
@@ -80,7 +81,7 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
         }`}
       >
         <Icon.PiShoppingCart size={18} />
-        <span>Cart</span>
+        <span className="hidden xl:inline">Cart</span>
         {cartCount > 0 && (
           <span className={`min-w-[20px] h-5 px-1 rounded-full text-xs font-bold flex items-center justify-center ${
             isDark ? "bg-white text-red-600" : "bg-white/25 text-white"
@@ -94,6 +95,8 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
       <div className="relative ml-1" ref={userDropdownRef}>
         <button
           onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+          aria-label={isLoggedIn ? "Open account menu" : "Open sign-in menu"}
+          aria-expanded={userDropdownOpen}
           className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all duration-200 ${
             isDark
               ? "text-white/80 hover:text-white hover:bg-white/10"

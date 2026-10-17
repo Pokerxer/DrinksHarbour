@@ -59,7 +59,7 @@ test('computeAuthoritativeLinePrices recomputes unitPrice from the subproduct pi
   };
 
   t.mock.method(Tenant, 'findById', () => chainable(tenantDoc));
-  t.mock.method(SubProduct, 'findById', () => chainable(spDoc));
+  t.mock.method(SubProduct, 'find', () => chainable([spDoc]));
   t.mock.method(Pricelist, 'findOne', () => chainable(pricelistDoc));
 
   const baseline = computeSalesBasePricing(spDoc, null, tenantDoc).sellingPrice;
@@ -75,7 +75,7 @@ test('computeAuthoritativeLinePrices leaves the line untouched if the subproduct
   const tenantId = oid();
 
   t.mock.method(Tenant, 'findById', () => chainable({ _id: tenantId }));
-  t.mock.method(SubProduct, 'findById', () => { throw new Error('db unavailable'); });
+  t.mock.method(SubProduct, 'find', () => ({ select() { return this; }, populate() { return this; }, lean: async () => { throw new Error('db unavailable'); } }));
 
   const items = [{ subproduct: oid(), quantity: 1, unitPrice: 999, priceOverridden: false }];
   const result = await computeAuthoritativeLinePrices(items, { tenantId, pricelistId: null });

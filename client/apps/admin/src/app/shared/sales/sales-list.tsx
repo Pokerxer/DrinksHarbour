@@ -38,15 +38,6 @@ import {
 } from '@/services/salesOrder.service';
 import { printSalesDocs } from '@/utils/salesPrint';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
-import type {
-  DocTypeFilter,
-  ActiveFilter,
-  GroupByKey,
-  GroupBySubOption,
-  DatePreset,
-  SavedSearch,
-  OptionalCol,
-} from './sales-list-helpers';
 import type { CustomGroup } from '../advanced-search/advanced-search-types';
 import {
   PAGE_SIZE,
@@ -61,9 +52,15 @@ import {
   DATE_PRESETS,
   buildListParams,
   collectAllPages,
+  type DocTypeFilter,
+  type ActiveFilter,
+  type GroupByKey,
+  type GroupBySubOption,
+  type DatePreset,
+  type SavedSearch,
+  type OptionalCol,
 } from './sales-list-helpers';
-import { visibleColumns, visibleColumnCount } from './sales-list-columns';
-import type { ListColumn } from './sales-list-columns';
+import { visibleColumns, visibleColumnCount, type ListColumn } from './sales-list-columns';
 import {
   docStatusBadge,
   paymentBadge,
@@ -118,7 +115,7 @@ function RowSkeleton({ cols }: { cols: number }) {
   return (
     <tr className="animate-pulse border-b border-gray-100">
       {Array.from({ length: cols }).map((_, i) => (
-        <td key={i} className="px-3 py-3">
+        <td key={i} className="px-3 py-2">
           <div
             className="h-4 rounded bg-gray-100"
             style={{ width: `${60 + (i % 3) * 20}%` }}
@@ -131,18 +128,19 @@ function RowSkeleton({ cols }: { cols: number }) {
 
 interface SalesListProps {
   defaultDocType?: DocTypeFilter;
+  includeReturnedOrders?: boolean;
 }
 
-export default function SalesList({ defaultDocType = 'all' }: SalesListProps) {
+export default function SalesList({
+  defaultDocType = 'all',
+  includeReturnedOrders = false,
+}: SalesListProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const sessionUser = session?.user as
     | { token?: string; id?: string; _id?: string; name?: string }
     | undefined;
   const token = sessionUser?.token ?? '';
-  // SalesOrder.salesperson holds a NAME (written from req.user.name), not a
-  // ref — so "My Quotations" has to filter by name.
-  const currentUserName = sessionUser?.name ?? '';
 
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [total, setTotal] = useState(0);
@@ -164,7 +162,7 @@ export default function SalesList({ defaultDocType = 'all' }: SalesListProps) {
     if (defaultDocType === 'quotation')
       initial.push({
         id: 'quotation',
-        label: 'Quotations',
+        label: includeReturnedOrders ? 'Quotations & returned orders' : 'Quotations',
         type: 'docType',
         value: 'quotation',
       });
@@ -226,22 +224,22 @@ export default function SalesList({ defaultDocType = 'all' }: SalesListProps) {
   const listParams = useCallback(
     (over: { page?: number; pageSize?: number } = {}) =>
       buildListParams({
+        includeReturnedOrders,
         activeFilters,
         search: debouncedSearch,
         groupBy,
         groupBySubOption,
-        currentUserName,
         dateFrom,
         dateTo,
         page: over.page ?? page,
         pageSize: over.pageSize,
       }),
     [
+      includeReturnedOrders,
       activeFilters,
       debouncedSearch,
       groupBy,
       groupBySubOption,
-      currentUserName,
       dateFrom,
       dateTo,
       page,
@@ -692,7 +690,9 @@ export default function SalesList({ defaultDocType = 'all' }: SalesListProps) {
   const docFilter = activeFilters.find((f) => f.type === 'docType');
   const listTitle = docFilter
     ? docFilter.value === 'quotation'
-      ? 'Quotations'
+      ? includeReturnedOrders
+        ? 'Quotations & returned orders'
+        : 'Quotations'
       : 'Sales Orders'
     : 'All Orders';
 
@@ -799,7 +799,7 @@ export default function SalesList({ defaultDocType = 'all' }: SalesListProps) {
         {shownColumns.map((col) => (
           <td
             key={col.key}
-            className={`px-3 py-3 ${ALIGN_CLASS[col.align ?? 'left']}`}
+            className={`px-3 py-2 ${ALIGN_CLASS[col.align ?? 'left']}`}
             onClick={
               col.key === 'select' ? (e) => e.stopPropagation() : undefined
             }
@@ -1102,7 +1102,7 @@ export default function SalesList({ defaultDocType = 'all' }: SalesListProps) {
                   {shownColumns.map((col) => (
                     <th
                       key={col.key}
-                      className={`px-3 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 ${
+                      className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 ${
                         ALIGN_CLASS[col.align ?? 'left']
                       } ${col.key === 'select' ? 'w-10' : ''}`}
                     >

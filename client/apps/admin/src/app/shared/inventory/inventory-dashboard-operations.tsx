@@ -14,7 +14,7 @@ import {
 interface OperationTileProps {
   label: string;
   desc: string;
-  count: number;
+  count?: number;
   href: string;
   icon: React.ReactNode;
 }
@@ -34,7 +34,7 @@ function OperationTile({ label, desc, count, href, icon }: OperationTileProps) {
       </div>
       <div className="flex items-center gap-1.5">
         <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-sm font-bold text-gray-700 transition-colors group-hover:bg-[#b20202] group-hover:text-white">
-          {count}
+          {count ?? 'Open'}
         </span>
         <PiArrowRight className="h-4 w-4 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[#b20202]" />
       </div>
@@ -69,6 +69,7 @@ interface OperationsGridProps {
   counts: OperationCounts;
   loading?: boolean;
   hrefs: {
+    returns?: string;
     receipts: string;
     deliveries: string;
     internal: string;
@@ -82,7 +83,7 @@ const OP_CONFIG: Array<{
   key: keyof OperationCounts;
   label: string;
   desc: string;
-  hrefKey: keyof OperationsGridProps['hrefs'];
+  hrefKey: Exclude<keyof OperationsGridProps['hrefs'], 'returns'>;
   icon: React.ReactNode;
 }> = [
   {
@@ -142,6 +143,7 @@ export default function OperationsGrid({ counts, loading = false, hrefs }: Opera
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {hrefs.returns && <OperationTile label="Customer Returns" desc="Sales and POS returned goods" href={hrefs.returns} icon={<PiArrowsClockwiseDuotone />} />}
       {OP_CONFIG.map(({ key, hrefKey, ...cfg }) => (
         <OperationTile key={cfg.label} {...cfg} count={counts[key]} href={hrefs[hrefKey]} />
       ))}

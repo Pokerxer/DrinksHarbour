@@ -24,6 +24,7 @@ test('a cross-tenant allocation aborts without a payment or journal write', asyn
   const journal = require('../services/journalEntry.service');
   const session = {};
   t.mock.method(coa, 'ensureDefaultCOA', async () => {});
+  t.mock.method(require('../models/Order'), 'exists', () => ({ session: async () => false }));
   t.mock.method(mongoose.connection, 'transaction', async callback => callback(session));
   let filter;
   t.mock.method(SalesOrder, 'findOne', query => { filter = query; return { session: async supplied => { assert.equal(supplied, session); return null; } }; });
@@ -46,6 +47,7 @@ test('payment updates the invoice and posts bank receipt inside the same transac
   const journal = require('../services/journalEntry.service');
   const session = {};
   t.mock.method(coa, 'ensureDefaultCOA', async () => {});
+  t.mock.method(require('../models/Order'), 'exists', () => ({ session: async () => false }));
   t.mock.method(mongoose.connection, 'transaction', async callback => callback(session));
   let saved = false;
   const doc = { total: 100, amountPaid: 20, creditedAmount: 10, currency: 'NGN', save: async options => { assert.equal(options.session, session); saved = true; } };
@@ -84,4 +86,18 @@ test('cancelling a receipt reverses its journal and restores the invoice in one 
   assert.equal(payment.status, 'cancelled');
   assert.equal(reverse.mock.callCount(), 1);
   delete require.cache[require.resolve('../services/accountingPayment.service')];
+});
+test('a reopened Sales invoice accepts payment against verified net collection after a POS refund', async (t) => {
+  const mongoose = require('mongoose');
+  const tenant = new mongoose.Types.ObjectId();
+  const source = new mongoose.Types.ObjectId();
+  const doc = { _id: source, tenant, total: 100, amountPaid: 100, creditedAmount: 0, currency: 'NGN', paymentStatus: 'paid', customerSnapshot: { name: 'Ada' }, save: async () => {} };
+  t.mock.method(require('../services/chartOfAccounts.service'), 'ensureDefaultCOA', async () => {});
+  t.mock.method(mongoose.connection, 'transaction', async (run) => run({}));
+  t.mock.method(require('../models/SalesOrder'), 'findOne', (filter) => ({ session: async () => !filter.paymentStatus || filter.paymentStatus.$in.includes(doc.paymentStatus) ? doc : null }));
+  t.mock.method(require('../services/customerInvoice/creditBalance'), 'effectiveCreditInvoice', async () => ({ ...doc, amountPaid: 60 }));
+  t.mock.method(require('../models/CustomerPayment'), 'create', async (rows) => [{ ...rows[0], _id: new mongoose.Types.ObjectId() }]);
+  t.mock.method(require('../services/journalEntry.service'), 'postJournalEntry', async () => ({}));
+  const payment = await require('../services/accountingPayment.service').createPayment({ tenantId: tenant, direction: 'customer', data: { amount: 40, customerName: 'Ada', allocations: [{ salesOrder: source, amount: 40 }] } });
+  assert.equal(payment.amount, 40); assert.equal(doc.amountPaid, 140);
 });

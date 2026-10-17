@@ -74,8 +74,10 @@ function pickPricelistForShop({ pricelists, shopId, warehouseId, customerPriceli
  * Returns { resolved, allowed, warehouseId }.
  */
 async function resolveShopPricelist(tenant, tenantId, shopId, customerPricelistId = null, warehouseOverride = null, customerTags = null) {
-  const warehouseId = warehouseOverride || await resolveShopWarehouse(tenant, tenantId, shopId);
-  const pricelists = await Pricelist.find({ tenant: tenantId }).lean();
+  const [warehouseId, pricelists] = await Promise.all([
+    warehouseOverride || resolveShopWarehouse(tenant, tenantId, shopId),
+    Pricelist.find({ tenant: tenantId }).lean(),
+  ]);
   const { resolved, allowed } = pickPricelistForShop({
     pricelists, shopId, warehouseId, customerPricelistId, customerTags,
   });

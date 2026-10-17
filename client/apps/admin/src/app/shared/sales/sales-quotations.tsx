@@ -4,5 +4,5 @@
 import SalesList from './sales-list';
 
 export default function SalesQuotations() {
-  return <SalesList defaultDocType="quotation" />;
+  return <SalesList defaultDocType="quotation" includeReturnedOrders />;
 }

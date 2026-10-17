@@ -124,7 +124,7 @@ export default function SalesOrderDetail({
         { paymentMethod, amountTendered, redeemPoints },
         token
       );
-      toast.success('Order confirmed and payment captured');
+      toast.success('Payment recorded');
       setConfirmOpen(false);
       onChanged();
     } catch (err: unknown) {
@@ -194,7 +194,17 @@ export default function SalesOrderDetail({
     );
   }
 
-  const canConfirm = status === 'draft';
+  async function reserve() {
+    if (busy || !token) return;
+    setBusy(true);
+    try {
+      await salesOrderService.confirmReservation(so._id, token);
+      toast.success('Order confirmed; available stock reserved'); onChanged();
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not confirm order'); }
+    finally { setBusy(false); }
+  }
+  const canConfirm = status === 'draft' && !so.locked;
+  const canPay = ['confirmed','partially_fulfilled','fulfilled'].includes(status) && !so.amountPaid && so.paymentStatus !== 'paid';
   const canFulfill = status === 'confirmed' || status === 'partially_fulfilled';
   const canReturn = status === 'partially_fulfilled' || status === 'fulfilled';
 
@@ -204,9 +214,13 @@ export default function SalesOrderDetail({
       key: 'confirm',
       label: 'Confirm Order',
       icon: <PiCreditCard className="h-4 w-4" />,
-      onClick: () => setConfirmOpen(true),
+      onClick: () => void reserve(),
       variant: 'primary',
       disabled: busy,
+    },
+    canPay && {
+      key: 'payment', label: 'Record payment', icon: <PiCreditCard className="h-4 w-4" />,
+      onClick: () => setConfirmOpen(true), disabled: busy || !token,
     },
     canFulfill && {
       key: 'fulfill',

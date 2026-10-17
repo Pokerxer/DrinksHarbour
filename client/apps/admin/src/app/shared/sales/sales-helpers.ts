@@ -40,11 +40,11 @@ export function addressLines(a?: SalesOrderAddress): string[] {
   return [street, locality].filter(Boolean);
 }
 
-/** Units still owed on a line: ordered minus shipped minus returned, floored at 0. Mirrors server/services/salesFulfill.helpers.js:outstanding. */
+/** Original units still to ship: ordered minus gross shipped. Returns are separate and never cancel unshipped demand or create replacement demand. Mirrors server/services/salesFulfill.helpers.js:outstanding. */
 export function outstanding(line: SalesLineItem): number {
   return Math.max(
     0,
-    (line.quantity || 0) - (line.fulfilledQty || 0) - (line.returnedQty || 0)
+    (line.quantity || 0) - (line.fulfilledQty || 0)
   );
 }
 

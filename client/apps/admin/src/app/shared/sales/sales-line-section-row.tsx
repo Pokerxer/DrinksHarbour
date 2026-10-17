@@ -38,23 +38,26 @@ export default function SalesLineSectionRow({
     <>
       <td className="w-6 bg-gray-50/70 px-1 py-2 align-middle">{dragHandle}</td>
       <td colSpan={8} className="bg-gray-50/70 px-2 py-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <input
             type="text"
+            aria-label="Section title"
+            autoFocus={!line.name}
             value={line.name}
             onChange={(e) => onUpdate(line.key, { name: e.target.value })}
             placeholder="Section title"
-            className={TITLE_CLS}
+            className={`${TITLE_CLS} min-w-0 flex-1`}
           />
+          <span className="text-xs font-medium text-gray-500">
+            Untaxed subtotal {fmtCur(subtotal, currency)}
+          </span>
         </div>
       </td>
       <td className="bg-gray-50/70 px-2 py-2 text-right align-top">
         <div className="flex items-center justify-end gap-3">
-          <span className="text-xs font-medium text-gray-500">
-            Subtotal {fmtCur(subtotal, currency)}
-          </span>
           <button
             type="button"
+            aria-label="Remove section"
             onClick={() => onRemove(line.key)}
             className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
           >

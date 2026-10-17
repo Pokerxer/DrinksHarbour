@@ -1,3 +1,4 @@
+import { expandedProductTypeValues } from '@/utils/expanded-product-types';
 import { z } from 'zod';
 import { fileSchema } from './common-rules';
 
@@ -138,6 +139,7 @@ export const productFormSchema = z.object({
   type: z
     .enum(
       [
+        ...expandedProductTypeValues,
         'beer',
         'wine',
         'sparkling_wine',
@@ -153,6 +155,8 @@ export const productFormSchema = z.object({
         'water',
         'mixer',
         'snack',
+        'vape',
+        'nuts',
         'accessory',
         'glassware',
         'bar_tool',

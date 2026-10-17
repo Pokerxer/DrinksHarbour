@@ -5,7 +5,11 @@ import type {
   OpenBill,
   PaymentSide,
 } from '@/services/arAp.service';
-import { allocationError } from './accounting-documents';
+import {
+  allocationError,
+  documentView,
+  type AccountingDocument,
+} from './accounting-documents';
 import { fmtMoney } from './accounting-helpers';
 export interface AllocRow {
   docId: string;
@@ -22,17 +26,14 @@ export default function PaymentAllocations({
   amount,
 }: {
   side: PaymentSide;
-  openDocs: OpenInvoice[] | OpenBill[];
+  openDocs: AccountingDocument[];
   allocs: AllocRow[];
   setAllocs: Dispatch<SetStateAction<AllocRow[]>>;
   busy: boolean;
   amount: string;
 }) {
-  const isAr = side === 'customer';
   const labelOf = (d: OpenInvoice | OpenBill) =>
-    isAr
-      ? `${(d as OpenInvoice).orderNumber} · ${(d as OpenInvoice).customer?.firstName ?? ''} ${fmtMoney(d.outstanding)}`
-      : `${(d as OpenBill).billNumber} · ${(d as OpenBill).vendor?.name ?? ''} · ${fmtMoney(d.outstanding)}`;
+    `${documentView(d, side).label} · ${documentView(d, side).name} · ${fmtMoney(d.outstanding)}`;
 
   const allocated = useMemo(
     () =>
@@ -80,6 +81,7 @@ export default function PaymentAllocations({
             <select
               className={INPUT_CLS}
               value={a.docId}
+              disabled={busy}
               onChange={(e) =>
                 setAllocs((prev) =>
                   prev.map((r, idx) =>
@@ -116,6 +118,7 @@ export default function PaymentAllocations({
               step="0.01"
               className={`${INPUT_CLS} text-right`}
               value={a.amount}
+              disabled={busy}
               onChange={(e) =>
                 setAllocs((prev) =>
                   prev.map((r, idx) =>
@@ -127,6 +130,7 @@ export default function PaymentAllocations({
             />
             <button
               type="button"
+              disabled={busy}
               onClick={() =>
                 setAllocs((prev) => prev.filter((_, idx) => idx !== i))
               }

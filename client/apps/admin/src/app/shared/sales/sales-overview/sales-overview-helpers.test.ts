@@ -9,7 +9,10 @@
 // refactor cannot quietly redefine what the business reads as truth.
 
 import { describe, expect, test } from 'vitest';
-import type { SalesOrder, SalesOrderGroup } from '@/services/salesOrder.service';
+import type {
+  SalesOrder,
+  SalesOrderGroup,
+} from '@/services/salesOrder.service';
 import {
   tallyGroups,
   monthToDateRange,
@@ -55,15 +58,34 @@ describe('tallyGroups', () => {
   test('absent input yields an empty tally, not a crash', () => {
     expect(tallyGroups(undefined)).toEqual({});
   });
+
+  test('reads actual server display labels as lifecycle keys', () => {
+    const tallies = tallyGroups([
+      group('Confirmed', 2, 300),
+      group('Partially Fulfilled', 1, 100),
+      group('Draft', 3, 600),
+      group('Sent', 1, 50),
+    ]);
+    expect(bookedThisMonth(tallies)).toEqual({ revenue: 400, count: 3 });
+    expect(openQuotations(tallies)).toEqual({
+      count: 4,
+      value: 650,
+      expired: 0,
+    });
+  });
 });
 
 describe('monthToDateRange', () => {
   test('spans from the first instant of the month until now', () => {
-    const range = monthToDateRange(new Date(2026, 7, 23, 14, 30));
+    const range = monthToDateRange(new Date('2026-08-23T14:30:00Z'));
 
-    expect(range.dateFrom).toBe(new Date(2026, 7, 1, 0, 0, 0, 0).toISOString());
-    expect(range.dateTo).toBe(
-      new Date(2026, 7, 23, 14, 30).toISOString()
+    expect(range.dateFrom).toBe('2026-07-31T23:00:00.000Z');
+    expect(range.dateTo).toBe('2026-08-23T14:30:00.000Z');
+  });
+
+  test('uses the new Lagos month before midnight UTC', () => {
+    expect(monthToDateRange(new Date('2026-09-30T23:30:00Z')).dateFrom).toBe(
+      '2026-09-30T23:00:00.000Z'
     );
   });
 });
@@ -84,9 +106,7 @@ describe('bookedThisMonth', () => {
   });
 
   test('a cancelled order books nothing', () => {
-    const result = bookedThisMonth(
-      tallyGroups([group('cancelled', 5, 99999)])
-    );
+    const result = bookedThisMonth(tallyGroups([group('cancelled', 5, 99999)]));
 
     expect(result.revenue).toBe(0);
     expect(result.count).toBe(0);
@@ -131,7 +151,18 @@ describe('openQuotations', () => {
 });
 
 describe('unpaidBalance', () => {
-  test('only fully-unpaid money counts as outstanding', () => {
+  test('includes net partially paid balances and credits from server groups', () => {
+    const result = unpaidBalance(
+      tallyGroups([
+        { ...group('Unpaid', 1, 100), outstanding: 80 },
+        { ...group('Partial', 2, 300), outstanding: 75.25 },
+        { ...group('Paid', 1, 200), outstanding: 0 },
+      ])
+    );
+    expect(result.unpaidTotal).toBe(155.25);
+    expect(result.partialCount).toBe(2);
+  });
+  test('legacy groups without net fields never substitute gross partially-paid totals', () => {
     const result = unpaidBalance(
       tallyGroups([
         group('unpaid', 2, 5000),
@@ -203,7 +234,9 @@ describe('relTime', () => {
   });
 
   test('older documents fall back to a fixed date', () => {
-    expect(relTime('2025-03-04T12:00:00Z', now)).toMatch(/Mar 2025|04\/03\/2025|3\/4\/2025/);
+    expect(relTime('2025-03-04T12:00:00Z', now)).toMatch(
+      /Mar 2025|04\/03\/2025|3\/4\/2025/
+    );
   });
 
   test('a missing timestamp renders an em dash', () => {

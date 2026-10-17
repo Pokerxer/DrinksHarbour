@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import Link from 'next/link';
@@ -11,17 +10,12 @@ import {
   PiStarFill,
   PiTrendUpBold,
   PiSparkle,
-  PiWineBold,
-  PiBeerBottleBold,
-  PiDropBold,
-  PiPackageBold,
   PiImagesBold as PiImages,
 } from 'react-icons/pi';
 import type { SubProductListItem, SizeVariant } from '../table';
 import SubProductImage from './SubProductImage';
-import { resolveSubProductImages } from '../../image-utils';
 
-interface ProductGridCardProps {
+export interface ProductGridCardProps {
   product: SubProductListItem;
   isSelected: boolean;
   onSelect: () => void;
@@ -31,87 +25,21 @@ interface ProductGridCardProps {
   currencySymbol?: string;
 }
 
-const currencySymbols: Record<string, string> = {
-  NGN: '₦',
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  ZAR: 'R',
-  KES: 'KSh',
-  GHS: '₵',
-};
-
-const TYPE_COLORS: Record<string, string> = {
-  whisky: 'from-amber-50 to-amber-100/60',
-  whiskey: 'from-amber-50 to-amber-100/60',
-  bourbon: 'from-orange-50 to-orange-100/60',
-  scotch: 'from-yellow-50 to-yellow-100/60',
-  rum: 'from-rose-50 to-rose-100/60',
-  gin: 'from-sky-50 to-sky-100/60',
-  vodka: 'from-slate-50 to-slate-100/60',
-  tequila: 'from-lime-50 to-lime-100/60',
-  wine: 'from-purple-50 to-purple-100/60',
-  champagne: 'from-yellow-50 to-yellow-100/50',
-  beer: 'from-amber-50 to-yellow-50',
-  brandy: 'from-orange-50 to-amber-100/60',
-  cognac: 'from-amber-50 to-orange-100/60',
-};
-
-const getBgGradient = (type?: string) => {
-  if (!type) return 'from-gray-50 to-gray-100/60';
-  const t = type.toLowerCase();
-  for (const [key, val] of Object.entries(TYPE_COLORS)) {
-    if (t.includes(key)) return val;
-  }
-  return 'from-gray-50 to-gray-100/60';
-};
-
-const getBeverageIcon = (type?: string) => {
-  if (!type) return PiPackageBold;
-  const t = type.toLowerCase();
-  if (t.includes('wine') || t.includes('champagne')) return PiWineBold;
-  if (
-    t.includes('beer') ||
-    t.includes('lager') ||
-    t.includes('ale') ||
-    t.includes('stout')
-  )
-    return PiBeerBottleBold;
-  if (t.includes('water') || t.includes('juice') || t.includes('soft'))
-    return PiDropBold;
-  return PiPackageBold;
-};
-
-const stockBadge = (stock: number) => {
-  if (stock === 0)
-    return {
-      label: 'Out of stock',
-      dot: 'bg-red-500',
-      text: 'text-red-600 bg-red-50',
-    };
-  if (stock <= 10)
-    return {
-      label: `Low · ${stock}`,
-      dot: 'bg-amber-500',
-      text: 'text-amber-700 bg-amber-50',
-    };
-  return {
-    label: `${stock} in stock`,
-    dot: 'bg-emerald-500',
-    text: 'text-emerald-700 bg-emerald-50',
-  };
-};
-
+import {
+  currencySymbols,
+  getBgGradient,
+  getBeverageIcon,
+  stockBadge,
+} from './product-card-utils';
 export default function ProductGridCard({
   product,
   isSelected,
   onSelect,
-  onEdit,
   onView,
   currencySymbol: propSymbol,
 }: ProductGridCardProps) {
   const symbol = propSymbol || currencySymbols[product.currency] || '₦';
-  const stock = stockBadge(product.totalStock);
+  const stock = stockBadge(product.totalStock, product.lowStockThreshold ?? 10);
   const BeverageIcon = getBeverageIcon(product.product?.type);
   const productId = product._id || product.id;
   const base = product.baseSellingPrice || 0;
@@ -173,18 +101,17 @@ export default function ProductGridCard({
         <div className="absolute right-2 top-2 flex flex-col gap-1 opacity-100 transition-opacity duration-150 md:opacity-0 md:group-hover:opacity-100">
           <Link
             href={routes.eCommerce.editSubProduct(productId)}
-            onClick={(e) => e.stopPropagation()}
+            prefetch={false}
+            aria-label={`Edit ${product.product?.name || 'product'}`}
+            onClick={(event) => event.stopPropagation()}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-gray-600 shadow transition-colors hover:bg-white hover:text-[#b20202]"
           >
-            <button
-              type="button"
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-gray-600 shadow transition-colors hover:bg-white hover:text-[#b20202]"
-            >
-              <PiPencilSimpleBold className="h-3.5 w-3.5" />
-            </button>
+            <PiPencilSimpleBold className="h-3.5 w-3.5" />
           </Link>
           {onView && (
             <button
               type="button"
+              aria-label={`View ${product.product?.name || 'product'}`}
               onClick={(e) => {
                 e.stopPropagation();
                 onView(product);
@@ -279,109 +206,4 @@ export default function ProductGridCard({
   );
 }
 
-// ─── Compact card ────────────────────────────────────────────────────────────
-export function ProductGridCardCompact({
-  product,
-  isSelected,
-  onSelect,
-  currencySymbol: propSymbol,
-}: ProductGridCardProps) {
-  const symbol = propSymbol || currencySymbols[product.currency] || '₦';
-  const stock = stockBadge(product.totalStock);
-  const BeverageIcon = getBeverageIcon(product.product?.type);
-  const productId = product._id || product.id;
-  const base = product.baseSellingPrice || 0;
-  const bg = getBgGradient(product.product?.type);
-
-  const ps =
-    product.sizes
-      ?.map((s: SizeVariant) => s.sellingPrice || base)
-      .filter((p: number) => p > 0) || [];
-  const effective = ps.length ? ps : base > 0 ? [base] : [];
-  const lo = effective.length ? Math.min(...effective) : 0;
-  const hi = effective.length ? Math.max(...effective) : 0;
-
-  return (
-    <div
-      onClick={onSelect}
-      className={cn(
-        'group flex cursor-pointer items-center gap-2.5 rounded-xl border bg-white p-2 transition-all duration-150',
-        isSelected
-          ? 'border-[#b20202]/60 bg-red-50/40 ring-1 ring-[#b20202]/30'
-          : 'border-gray-200 hover:border-gray-300 hover:shadow-md hover:shadow-[#b20202]/10'
-      )}
-    >
-      {/* Image */}
-      <div
-        className={cn(
-          'relative flex h-14 w-11 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br',
-          bg
-        )}
-      >
-        <SubProductImage
-          sp={product}
-          alt={product.product?.name || ''}
-          className="h-full w-full rounded-lg object-contain p-1"
-          fallback={<BeverageIcon className="h-6 w-6 text-gray-300" />}
-        />
-        <span
-          className={cn(
-            'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white',
-            stock.dot
-          )}
-        />
-      </div>
-
-      {/* Content */}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <p className="truncate text-xs font-semibold leading-tight text-gray-900">
-          {product.product?.name || 'Unknown'}
-        </p>
-        {product.product?.brand?.name && (
-          <p className="truncate text-[10px] leading-none text-gray-400">
-            {product.product.brand.name}
-          </p>
-        )}
-        <div className="flex items-center justify-between gap-1 pt-0.5">
-          <span className="text-[11px] font-bold tabular-nums text-gray-900">
-            {symbol}
-            {lo.toLocaleString()}
-            {lo !== hi ? (
-              <span className="font-normal text-gray-400">
-                –{hi.toLocaleString()}
-              </span>
-            ) : (
-              ''
-            )}
-          </span>
-          <span
-            className={cn(
-              'shrink-0 rounded-full px-1.5 py-px text-[9px] font-semibold',
-              stock.text
-            )}
-          >
-            {product.totalStock === 0
-              ? 'Out'
-              : product.totalStock <= 10
-                ? `Low·${product.totalStock}`
-                : product.totalStock}
-          </span>
-        </div>
-      </div>
-
-      {/* Edit — always visible on touch, hover-revealed on desktop */}
-      <Link
-        href={routes.eCommerce.editSubProduct(productId)}
-        onClick={(e) => e.stopPropagation()}
-        className="shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-      >
-        <button
-          type="button"
-          className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition-colors hover:bg-red-50 hover:text-[#b20202]"
-        >
-          <PiPencilSimpleBold className="h-3.5 w-3.5" />
-        </button>
-      </Link>
-    </div>
-  );
-}
+export { default as ProductGridCardCompact } from './ProductGridCardCompact';

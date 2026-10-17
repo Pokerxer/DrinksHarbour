@@ -13,7 +13,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({ variant }) => {
   const isDark = variant === "dark";
 
   return (
-    <div className="flex flex-1 mx-2 md:mx-4 md:max-w-sm">
+    <div className="flex min-w-0 flex-1 lg:mx-1 xl:mx-2">
       <button
         onClick={openModalSearch}
         className={`w-full flex items-center gap-2.5 px-3 md:px-4 py-2.5 rounded-full border transition-all duration-200 ${
@@ -26,7 +26,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({ variant }) => {
           size={16}
           className={isDark ? "text-white/50" : "text-gray-400"}
         />
-        <span className={`flex-1 text-sm text-left ${isDark ? "text-white/50" : "text-gray-400"}`}>
+        <span className={`min-w-0 flex-1 truncate text-sm text-left ${isDark ? "text-white/50" : "text-gray-400"}`}>
           Search DrinksHarbour
         </span>
       </button>

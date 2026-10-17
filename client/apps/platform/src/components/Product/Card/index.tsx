@@ -1,5 +1,7 @@
 'use client';
 
+import SellerDistance from './SellerDistance';
+import { representativeSelection } from '@/utils/representativeOffer';
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import Image from '@/components/UI/OptimizedImage';
 import Link from 'next/link';
@@ -432,19 +434,20 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
         store.sizes.map((size: any) => size.pricing?.websitePrice).filter(Boolean)
       );
       // Fall back to priceRange.min when availableAt is absent
-      const minPrice = allPrices.length > 0
+      const representative = representativeSelection(productData);
+      const minPrice = representative?.size.pricing?.websitePrice ?? (allPrices.length > 0
         ? Math.min(...allPrices)
-        : (data.priceRange?.min ?? 0);
+        : (data.priceRange?.min ?? 0));
 
       // originPrice is the pre-discount price from the platform discount object.
       // Never use maxPrice (max websitePrice across sizes) — that would show a
       // fake strikethrough just because larger sizes cost more.
-      const disc = productData.discount;
+      const disc = representative ? representative.size.discount as typeof productData.discount : productData.discount;
       const hasRealDiscount = disc?.savings > 0;
-      const originPrice = hasRealDiscount ? (disc.originalPrice ?? minPrice) : minPrice;
+      const originPrice = representative?.size.pricing?.originalWebsitePrice ?? (hasRealDiscount ? (disc.originalPrice ?? minPrice) : minPrice);
 
       // Vendor-level sale (isOnSale on the subproduct)
-      const vendorOnSale = (productData.availableAt || []).some((v: any) => v.isOnSale === true);
+      const vendorOnSale = (representative ? [representative.offer] : (productData.availableAt || [])).some((v: any) => v.isOnSale === true);
 
       const isNew = data.badge?.type === 'new-arrival' || isProductNew(data.createdAt);
 
@@ -512,6 +515,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
         originCountry: data.originCountry,
         isAlcoholic: data.isAlcoholic,
         availableAt: productData.availableAt,
+        shoppingOffer: productData.shoppingOffer,
         region: data.region || data.originCountry,
         foodPairing: data.foodPairings,
         tastingNotes: data.tastingNotes,
@@ -556,8 +560,8 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
   const selectedVendor = useMemo(() => {
     if (!vendors.length) return null;
     if (activeVendor) return vendors.find((v: any) => v.tenant._id === activeVendor) ?? vendors[0];
-    return vendors[0];
-  }, [vendors, activeVendor]);
+    return vendors.find((v: { _id?: string }) => String(v._id) === productData.shoppingOffer?.subProductId) || vendors[0];
+  }, [vendors, activeVendor, productData.shoppingOffer]);
 
   /** Sizes exposed by the currently-selected vendor */
   const vendorSizes = useMemo(() => {
@@ -574,9 +578,10 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
   
   /** Get the full size data from selected vendor including pricing */
   const getSelectedSizeData = useCallback(() => {
-    if (!selectedVendor || !activeSize) return null;
-    return selectedVendor.sizes.find((s: any) => s.size === activeSize);
-  }, [selectedVendor, activeSize]);
+    if (!selectedVendor) return null;
+    if (!activeSize && activeVendor) return selectedVendor.sizes.find((s: { stock?: number }) => (s.stock ?? 0) > 0) || selectedVendor.sizes[0];
+    return selectedVendor.sizes.find((s: { size: string; _id?: string }) => activeSize ? s.size === activeSize : String(s._id) === productData.shoppingOffer?.sizeId);
+  }, [selectedVendor, activeSize, activeVendor, productData.shoppingOffer]);
 
   // Reset size pick whenever the vendor switches
   useEffect(() => {
@@ -586,12 +591,13 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
   // Use server-computed values directly
   const productLevelIsOnSale = productData.isOnSale || false;
   const productLevelSaleType = productData.saleType || null;
-  const productLevelDiscount = productData.discount;
+  const productLevelDiscount = productData.shoppingOffer ? null : productData.discount;
 
   // Find vendor with sale
-  const firstSaleVendor = vendors.find((v: any) => v.isOnSale === true);
-  const vendorWithSale = vendors.find((v: any) => v.isOnSale === true || v.saleDiscountValue > 0);
-  const firstVendor = vendors[0];
+  const pricingVendors = productData.shoppingOffer ? vendors.filter((v: { _id?: string }) => String(v._id) === productData.shoppingOffer.subProductId) : vendors;
+  const firstSaleVendor = pricingVendors.find((v: any) => v.isOnSale === true);
+  const vendorWithSale = pricingVendors.find((v: any) => v.isOnSale === true || v.saleDiscountValue > 0);
+  const firstVendor = pricingVendors[0];
 
   // discount lives inside sizes[0].discount (server puts it at size level, not vendor level)
   const vendorDiscount = firstSaleVendor?.sizes?.[0]?.discount || firstSaleVendor?.discount;
@@ -666,11 +672,11 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
   const vendorToUse = vendorWithSale || firstVendor;
   
   // Get size data from the vendor with sale or first vendor
-  const firstSizeData = vendorToUse?.sizes?.[0] || {};
+  const firstSizeData = vendorToUse?.sizes?.find((s: { _id?: string }) => String(s._id) === productData.shoppingOffer?.sizeId) || vendorToUse?.sizes?.[0] || {};
   const firstSizePricing = firstSizeData?.pricing || {};
   
   // Get selected size data if available
-  const selectedSizeFull = activeSize ? (selectedVendor?.sizes?.find((s: any) => s.size === activeSize) || {}) : {};
+  const selectedSizeFull = getSelectedSizeData() || {};
   const selectedPricing = selectedSizeFull?.pricing || {};
   
   // Use server-computed prices from pricing object
@@ -690,7 +696,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
     displayPrice = currentPrice;
     displayOriginalPrice = origPrice;
     showStrikethrough = true;
-  } else if (hasActiveSale && saleInfo && saleInfo.value > 0 && currentPrice > 0) {
+  } else if (!productData.shoppingOffer && hasActiveSale && saleInfo && saleInfo.value > 0 && currentPrice > 0) {
     const now = new Date();
     const saleStart = saleInfo.saleStartDate ? new Date(saleInfo.saleStartDate) : null;
     const saleEnd = saleInfo.saleEndDate ? new Date(saleInfo.saleEndDate) : null;
@@ -1280,6 +1286,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                   {mappedProduct.name}
                 </h3>
               </Link>
+              <SellerDistance product={mappedProduct} />
 
               {/* ABV + Origin row */}
               {isBeverageProduct(data) && (data.abv || data.originCountry) && (
@@ -1463,6 +1470,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                   {mappedProduct.name}
                 </h3>
               </Link>
+              <SellerDistance product={mappedProduct} />
 
               {/* ABV + Origin row */}
               {isBeverageProduct(data) && (data.abv || data.originCountry) && (

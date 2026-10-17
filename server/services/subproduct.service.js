@@ -17,7 +17,9 @@ const {
 const { generateSKU } = require('../utils/skuGenerator');
 const { escapeRegex } = require('../utils/escapeRegex');
 const { subProductPageCache } = require('./subProductPageCache');
+const { SUBPRODUCT_LIST_FIELDS, SIZE_LIST_FIELDS } = require('./subproduct-list-fields');
 const { assessSubProductDeletion } = require('./warehouseStock.helpers');
+const { assertSizesDeletable, sizeDeletionStatus, removedSizes } = require('./size-deletion');
 const { calculateSubProductPricing, calculateSizePricing, isDiscountActive, resolveRevenueRates, calcPlatformCostPrice } = require('../utils/pricing');
 
 // Tenant-sensitive fields that must NEVER be exposed via public endpoints
@@ -162,7 +164,9 @@ const getMySubProducts = async (tenantId, options) => {
     isSuperAdmin = false,
     warehouseId = null,
     fresh = false,
+    view,
   } = options;
+  const listView = view === 'list';
 
   // Validate pagination
   const pageNum = Math.max(1, page);
@@ -227,12 +231,13 @@ const getMySubProducts = async (tenantId, options) => {
     totalRevenue: { totalRevenue: sortOrder },
   };
   const sortOptions = sortMap[sort] || { createdAt: -1 };
+  sortOptions._id = sortOptions[Object.keys(sortOptions)[0]];
 
   // Build populate options - include tenant for super_admin
   const populateOptions = [
     {
       path: 'product',
-      select: 'name slug type images isAlcoholic abv volumeMl brand category status',
+      select: 'name slug type images isAlcoholic abv volumeMl originCountry brand category status',
       populate: [
         { path: 'brand', select: 'name slug logo' },
         { path: 'category', select: 'name slug' },
@@ -240,6 +245,7 @@ const getMySubProducts = async (tenantId, options) => {
     },
     {
       path: 'sizes',
+      ...(listView ? { select: SIZE_LIST_FIELDS } : {}),
     },
   ];
 
@@ -258,12 +264,12 @@ const getMySubProducts = async (tenantId, options) => {
     SubProduct.countDocuments(query),
     SubProduct.find(query)
       .populate(populateOptions)
-      .select('-embeddingOverride') // Exclude large fields
+      .select(listView ? SUBPRODUCT_LIST_FIELDS : '-embeddingOverride')
       .sort(sortOptions)
       .skip(skip)
       .limit(limitNum)
       .lean(),
-    subProductPageCache.statistics(tenantId, { fresh }),
+    listView ? null : subProductPageCache.statistics(tenantId, { fresh }),
   ]);
 
   if (subProductPageCache.isEnabled()) {
@@ -306,7 +312,7 @@ const getMySubProducts = async (tenantId, options) => {
       hasNext: pageNum < Math.ceil(total / limitNum),
       hasPrev: pageNum > 1,
     },
-    stats,
+    ...(listView ? {} : { stats }),
   };
 };
 
@@ -555,29 +561,8 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     let subCategoryId = null;
     if (newProductData.subCategory && typeof newProductData.subCategory === 'string' && newProductData.subCategory.trim()) {
       try {
-        const Category = require('../models/Category');
-        
-        // Check if it's a valid 24-character hex ObjectId
-        const isObjectId = ObjectId.isValid(newProductData.subCategory) && 
-          /^[0-9a-fA-F]{24}$/.test(newProductData.subCategory);
-        
-        let existingSubCategory;
-        if (isObjectId) {
-          // If it's an ObjectId, find by ID
-          existingSubCategory = await Category.findById(newProductData.subCategory).select('_id').lean();
-        } else {
-          // If it's a name, search by name/slug
-          existingSubCategory = await Category.findOne({ 
-            $or: [
-              { name: { $regex: new RegExp(`^${newProductData.subCategory}$`, 'i') } },
-              { slug: new RegExp(newProductData.subCategory.toLowerCase().replace(/\s+/g, '-'), 'i') }
-            ]
-          }).select('_id').lean();
-        }
-        
-        if (existingSubCategory) {
-          subCategoryId = existingSubCategory._id;
-        }
+        const { resolveSubcategory } = require('./resolveSubcategory');
+        subCategoryId = await resolveSubcategory(newProductData.subCategory, categoryId);
       } catch (subCategoryError) {
         console.log('⚠️ SubCategory lookup failed:', subCategoryError.message);
       }
@@ -1151,7 +1136,7 @@ const createSubProduct = async (data, tenantId, user) => {
       })
       .populate({
         path: 'sizes',
-        select: 'size displayName unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
+        select: 'size displayName unitType sellingPrice costPrice unitsPerPack commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
       })
       .populate({
         path: 'vendor',
@@ -1245,7 +1230,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
     },
     {
       path: 'sizes',
-      select: 'size displayName sizeCategory unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice currency stock reservedStock availableStock lowStockThreshold reorderLevel reorderQuantity availability sku barcode packaging weightGrams volumeMl servingsPerUnit discountValue discountType discountStart discountEnd isDefault isOnSale rank totalSold',
+      select: 'size displayName sizeCategory unitType sellingPrice costPrice unitsPerPack commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice currency stock reservedStock availableStock lowStockThreshold reorderLevel reorderQuantity availability sku barcode packaging weightGrams volumeMl servingsPerUnit discountValue discountType discountStart discountEnd isDefault isOnSale rank totalSold',
     },
     {
       path: 'vendor',
@@ -1342,7 +1327,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
  * Mutates `sizeLean` in place (a plain/lean Size object) and returns it.
  */
 const preserveEffectivePlatformMarkupOnCostChange = (sizeLean, product, tenant, fallbackCost, fallbackSelling) => {
-  if (!sizeLean || !tenant) return sizeLean;
+  if (!sizeLean || !tenant || tenant.revenueModel === 'commission') return sizeLean;
   const pricing = calculateSizePricing(sizeLean, product, tenant, fallbackCost, fallbackSelling);
   if (!pricing) return sizeLean;
 
@@ -1394,6 +1379,13 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
 
   // Handle both direct data and nested subProductData format from frontend
   const data = updateData.subProductData || updateData;
+
+  // Check removals before saving any product/pricing edits. Never trust stock
+  // counters sent by the browser to decide whether history can be deleted.
+  if (Array.isArray(data.sizes)) {
+    const existing = await Size.find({ subproduct: subProductId, tenant: tenantObjectId }).lean();
+    await assertSizesDeletable(removedSizes(existing, data.sizes, data.sellWithoutSizeVariants), tenantObjectId);
+  }
 
   // Stock rollup fields are derived from WarehouseStock by recalcSubProductStock().
   // Never accept them from the client — doing so would overwrite the authoritative
@@ -1454,7 +1446,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
         .select('platformMarkup platformDiscount')
         .lean()
         .catch(() => null);
-      if (t) {
+      if (t && t.revenueModel !== 'commission') {
         const basePricing = calculateSubProductPricing(subProduct, p, t);
         if (basePricing?.platformCostPrice > 0 && basePricing?.platformSellingPrice > 0) {
           subProduct.platformMarkupOverridePct = parseFloat(
@@ -1949,10 +1941,13 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       // Delete all existing sizes and replace with a single Unit size so
       // WarehouseStock (size required) and the purchase-receiving audit trail
       // always have a size to reference.
-      await Size.deleteMany({ subproduct: subProductId });
+      const oldSizes = await Size.find({ subproduct: subProductId, tenant: tenantObjectId }).lean();
+      const dropped = removedSizes(oldSizes, [], true);
+      await assertSizesDeletable(dropped, tenantObjectId);
+      await WarehouseStock.deleteMany({ tenant: tenantObjectId, subProduct: subProductId, size: { $in: dropped.map(s => s._id) } });
+      await Size.deleteMany({ subproduct: subProductId, tenant: tenantObjectId, _id: { $in: dropped.map(s => s._id) } });
 
-      const Size = require('../models/Size');
-      const unitSize = await Size.create({
+      const unitSize = oldSizes.find(s => s.size === 'unit') || await Size.create({
         subproduct: subProductId,
         tenant: tenantObjectId,
         size: 'unit',
@@ -1964,9 +1959,10 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       });
       subProduct.sizes = [unitSize._id];
       subProduct.defaultSize = unitSize._id;
+      await subProduct.save();
     } else {
       // Get existing sizes to preserve IDs for updates
-      const existingSizes = await Size.find({ subproduct: subProductId }).lean();
+      const existingSizes = await Size.find({ subproduct: subProductId, tenant: tenantObjectId }).lean();
 
       // Tenant + product needed to derive the pre-change effective platform/pack
       // markup so a cost change preserves the last selling-price relationship.
@@ -2133,13 +2129,20 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       const existingSizeIds = existingSizes.map(s => s._id.toString());
       const sizesToDelete = existingSizes.filter(s => !updatedSizeIds.map(id => id.toString()).includes(s._id.toString()));
       if (sizesToDelete.length > 0) {
+        await assertSizesDeletable(sizesToDelete, tenantObjectId);
         console.log('📦 Deleting sizes:', sizesToDelete.map(s => s.size));
+        await WarehouseStock.deleteMany({ tenant: tenantObjectId, subProduct: subProductId, size: { $in: sizesToDelete.map(s => s._id) } });
         await Size.deleteMany({ 
+          tenant: tenantObjectId, subproduct: subProductId,
           _id: { $in: sizesToDelete.map(s => s._id) }
         });
       }
       
       subProduct.sizes = updatedSizeIds;
+      if (!updatedSizeIds.some(id => String(id) === String(subProduct.defaultSize))) {
+        subProduct.defaultSize = updatedSizeIds[0] || null;
+      }
+      await subProduct.save();
       
       // Only recalculate stock from sizes if there are actual sizes
       // This prevents overwriting manually set inventory when sizes array is empty
@@ -4963,18 +4966,32 @@ const deleteSize = async (subProductId, sizeId, tenantId, user = null) => {
   }
 
   const Size = require('../models/Size');
-  const size = await Size.findOne({ _id: sizeId, subproduct: subProductId });
+  const size = await Size.findOne({ _id: sizeId, subproduct: subProductId, tenant: tenantId });
 
   if (!size) {
     throw new NotFoundError('Size not found');
   }
 
+  await assertSizesDeletable([size], tenantId);
+  await WarehouseStock.deleteMany({ tenant: tenantId, subProduct: subProductId, size: sizeId });
   await size.deleteOne();
 
   subProduct.sizes = subProduct.sizes.filter(s => s.toString() !== sizeId);
+  if (String(subProduct.defaultSize) === String(sizeId)) {
+    subProduct.defaultSize = subProduct.sizes[0] || null;
+  }
   await subProduct.save();
 
   return true;
+};
+
+const getSizeDeletionStatus = async (subProductId, sizeId, tenantId, user = null) => {
+  tenantId = await resolveSystemTenant(tenantId, user);
+  const parent = await SubProduct.findOne({ _id: subProductId, tenant: tenantId });
+  if (!parent) throw new NotFoundError('SubProduct not found for this tenant');
+  const size = await Size.findOne({ _id: sizeId, subproduct: subProductId, tenant: tenantId });
+  if (!size) throw new NotFoundError('Size not found');
+  return sizeDeletionStatus(size, tenantId);
 };
 
 /**
@@ -5066,136 +5083,32 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
     throw new ValidationError(`Invalid status: ${status}`);
   }
 
-  const subProduct = await SubProduct.findById(subProductId)
+  const platformAdmin = ['super_admin', 'admin'].includes(user?.role);
+  const tenantId = user?.tenant?._id || user?.tenant;
+  if (!platformAdmin && !tenantId) throw new ForbiddenError('Tenant authority is required to review a listing');
+  const lookup = platformAdmin
+    ? SubProduct.findById(subProductId)
+    : SubProduct.findOne({ _id: subProductId, tenant: tenantId });
+  const subProduct = await lookup
     .populate('tenant', 'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
     .populate('product', 'platformMarkup platformDiscount');
   if (!subProduct) {
     throw new NotFoundError('Sub-product not found');
   }
 
+  // Validate every supplied price and size ownership before changing any document.
+  const prepared = status === 'active'
+    ? await require('./subproduct-review-prices').prepareReviewPrices(subProduct, priceOverrides)
+    : { base: null, sizes: [] };
   const previousStatus = subProduct.status;
   subProduct.status = status;
-
-  // ── Apply price overrides on approval ──────────────────────────────────────
-  if (status === 'active' && priceOverrides && (priceOverrides.baseWebsitePrice || priceOverrides.sizes?.length)) {
-    const tenant  = subProduct.tenant;
-    const product = subProduct.product;
-    const revenueModel = tenant?.revenueModel ?? 'markup';
-
-    const productDiscount = product?.platformDiscount?.value > 0 && product?.platformDiscount?.type
-      ? {
-          value: product.platformDiscount.value,
-          type: product.platformDiscount.type,
-          start: product.platformDiscount.start,
-          end: product.platformDiscount.end,
-        }
-      : null;
-
-    // The review drawer pre-fills its inputs with the computed platform price
-    // and sends them back verbatim, so treat a value matching the current
-    // computed price (±₦1) as "no change" — otherwise every approval would
-    // store a spurious override.
-    const isRealOverride = (adminPrice, currentPlatformSelling) =>
-      adminPrice > 0 && Math.abs(adminPrice - (currentPlatformSelling || 0)) >= 1;
-
-    /**
-     * Convert the admin's desired FINAL platform price into an effective
-     * platform-markup % over the CURRENT platform cost price. Storing the %
-     * (not a back-calculated price) means tenant cost/price changes
-     * automatically recalculate the platform selling price while preserving
-     * the admin's last margin relationship. Inverts an active product
-     * discount first, since the admin edits the post-discount price.
-     */
-    const toEffectivePct = (adminPrice, platformCostPrice) => {
-      if (!(platformCostPrice > 0)) return null;
-      let preDiscount = adminPrice;
-      if (isDiscountActive(productDiscount)) {
-        if (productDiscount.type === 'percentage') {
-          const factor = 1 - productDiscount.value / 100;
-          if (factor > 0) preDiscount = adminPrice / factor;
-        } else if (productDiscount.type === 'fixed') {
-          preDiscount = adminPrice + productDiscount.value;
-        }
-      }
-      return parseFloat(((preDiscount / platformCostPrice - 1) * 100).toFixed(4));
-    };
-
-    // Override base price → store effective platform markup %
-    if (priceOverrides.baseWebsitePrice > 0) {
-      const currentBase = calculateSubProductPricing(subProduct, product, tenant);
-      if (isRealOverride(priceOverrides.baseWebsitePrice, currentBase.platformSellingPrice)) {
-        const pct = toEffectivePct(priceOverrides.baseWebsitePrice, currentBase.platformCostPrice);
-        if (pct != null) subProduct.platformMarkupOverridePct = pct;
-      }
-    }
-
-    // Override per-size prices → store effective platform markup % per size
-    if (priceOverrides.sizes?.length) {
-      const sizes = await Size.find({ _id: { $in: priceOverrides.sizes.map(s => s.id) } });
-      const sizeMap = new Map(sizes.map(s => [s._id.toString(), s]));
-
-      for (const { id, websitePrice, packUnitPrice: adminPackPrice } of priceOverrides.sizes) {
-        const sizeDoc = sizeMap.get(id);
-        if (!sizeDoc) continue;
-
-        // Normal website price override
-        if (websitePrice && websitePrice > 0) {
-          const currentSize = calculateSizePricing(
-            sizeDoc,
-            product,
-            tenant,
-            subProduct.costPrice,
-            subProduct.baseSellingPrice
-          );
-          if (isRealOverride(websitePrice, currentSize.platformSellingPrice)) {
-            const pct = toEffectivePct(websitePrice, currentSize.platformCostPrice);
-            if (pct != null) sizeDoc.platformMarkupOverridePct = pct;
-          }
-        }
-
-        // ── Pack unit price override ────────────────────────────────────────
-        // Back-calc an effective platform markup % for the PACK price only.
-        // Uses the tenant's pack rates to compute the pack cost, then inverts
-        // the admin's desired pack price → packPlatformMarkupOverridePct.
-        if (adminPackPrice && adminPackPrice > 0) {
-          const currentSize = calculateSizePricing(
-            sizeDoc,
-            product,
-            tenant,
-            subProduct.costPrice,
-            subProduct.baseSellingPrice
-          );
-          const unitsPerPack = sizeDoc.unitsPerPack ?? 1;
-          const minUnits = tenant?.packRateMinUnits ?? 2;
-          if (unitsPerPack >= minUnits) {
-            // Divide by the SAME pack cost calculateSizePricing will multiply
-            // the stored % by, or the published pack price will not be the
-            // price the admin typed. Prefer the computed value outright — a
-            // second local formula drifted from it once already, dropping the
-            // size's wholesale price from the cost basis.
-            const packRates = resolveRevenueRates(tenant, unitsPerPack);
-            const packCost =
-              currentSize.packPlatformCostPrice > 0
-                ? currentSize.packPlatformCostPrice
-                : calcPlatformCostPrice(
-                    sizeDoc.wholesalePrice > 0
-                      ? sizeDoc.wholesalePrice
-                      : currentSize.costPrice,
-                    currentSize.tenantSellingPrice,
-                    tenant?.revenueModel ?? 'markup',
-                    packRates.markupPct,
-                    packRates.commissionPct
-                  );
-            const packPct = toEffectivePct(adminPackPrice, packCost);
-            if (packPct != null) {
-              sizeDoc.packPlatformMarkupOverridePct = packPct;
-            }
-          }
-        }
-
-        await sizeDoc.save();
-      }
-    }
+  subProduct.isPublished = status === 'active';
+  if (status === 'active' && !subProduct.activatedAt) subProduct.activatedAt = new Date();
+  if (prepared.base !== null) subProduct.platformMarkupOverridePct = prepared.base;
+  if (prepared.baseCommissionPrice != null) subProduct.commissionPriceOverride = prepared.baseCommissionPrice;
+  for (const { doc, values } of prepared.sizes) {
+    Object.assign(doc, values);
+    await doc.save();
   }
 
   // ── Status-specific metadata & side effects ────────────────────────────────
@@ -5206,7 +5119,7 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
       previousStatus,
       ...(declineReason ? { declineReason } : {}),
     };
-    await Size.updateMany({ subProduct: subProductId }, { availability: 'unavailable' });
+    await Size.updateMany({ subproduct: subProductId, tenant: subProduct.tenant?._id || subProduct.tenant }, { availability: 'discontinued' });
   } else if (status === 'active') {
     subProduct.metadata = {
       ...subProduct.metadata,
@@ -5214,7 +5127,7 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
       previousStatus,
     };
     if (previousStatus === 'archived') {
-      await Size.updateMany({ subProduct: subProductId }, { availability: 'available' });
+      await Size.updateMany({ subproduct: subProductId, tenant: subProduct.tenant?._id || subProduct.tenant }, [{ $set: { availability: { $cond: [{ $gt: [{ $subtract: [{ $ifNull: ['$stock', 0] }, { $ifNull: ['$reservedStock', 0] }] }, 0] }, 'available', 'out_of_stock'] } } }]);
     }
 
     // A tenant listing a product the catalog doesn't carry yet creates the Product
@@ -5222,10 +5135,10 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
     // only the listing would leave it invisible — approve the parent too, which is
     // what the admin is signing off on in the review drawer. Required lazily: this
     // is the one place the two services meet.
-    // Tenant admins reach this route too; approveProduct rejects them outright, so
-    // only platform admins trigger the parent approval.
+    // Only a super-admin may publish a pending central catalogue product.
+    // Listing review must not bypass the product-approval route's role gate.
     const productId = subProduct.product?._id ?? subProduct.product;
-    if (productId && ['super_admin', 'admin'].includes(user?.role)) {
+    if (productId && user?.role === 'super_admin') {
       const parent = await Product.findById(productId).select('status').lean();
       if (parent && parent.status !== 'approved') {
         // eslint-disable-next-line global-require
@@ -5281,6 +5194,7 @@ module.exports = {
   addSize,
   updateSize,
   deleteSize,
+  getSizeDeletionStatus,
   updateStock,
   getStockStatus,
   preserveEffectivePlatformMarkupOnCostChange,

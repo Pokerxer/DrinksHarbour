@@ -75,7 +75,7 @@ const orderItemSchema = new Schema({
     default: 0,
   },
 
-  // platformCommission = platform's net profit for this line
+  // platformCommission = platform gross merchandise revenue, before expenses
   //   markup model  → itemSubtotal − tenantRevenueShare
   //   commission    → itemSubtotal × commissionRate
   platformCommission: {
@@ -102,6 +102,10 @@ const orderItemSchema = new Schema({
     type: Number,
     default: 0,
   },
+  // Additive v2 snapshots; absent on legacy orders, never backfilled from live terms.
+  revenuePolicyVersion: { type: String, default: undefined },
+  revenueBasisAmount: { type: Number, default: undefined },
+  discountFunding: { type: String, enum: ['shared_by_agreement', 'platform'], default: undefined },
   // True when the quantity-triggered pack rate was applied to this line
   packRateApplied: {
     type: Boolean,
@@ -304,6 +308,11 @@ const orderSchema = new Schema(
 
     refundDetails: {
       refundId: String,
+      processedBy: { type: ObjectId, ref: 'User' },
+      settlement: {
+        status: { type: String, enum: ['allocated', 'needs_review'] },
+        lines: [{ orderItemIndex: Number, tenant: { type: ObjectId, ref: 'Tenant' }, tenantRevenueShare: Number, platformCommission: Number }],
+      },
       amount: Number,
       reason: String,
       createdAt: Date,
@@ -548,7 +557,9 @@ orderSchema.pre('save', function () {
   this.$locals.captureAccounting = this.isNew || this.isModified('paymentStatus') || this.isModified('refunds') || this.isModified('isVoided') || this.isModified('refundDetails');
 });
 orderSchema.post('save', async function (doc) {
+  if (doc.$locals.deferAccounting) return;
   if (doc.$locals.captureAccounting) await require('../services/accounting.orders').captureOrderAccounting(doc);
+  await require('../services/customerInvoice/hooks').sourceSaved(doc, 'pos');
 });
 
 const Order = mongoose.models.Order || mongoose.model('Order', orderSchema);

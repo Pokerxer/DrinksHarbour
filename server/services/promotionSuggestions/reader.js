@@ -70,7 +70,7 @@ async function readSuggestions(tenantId, opts, now, canPrice) {
       1000,
     ),
   ]);
-  const plan = buildPlan(e, { now, coverDays: 14 });
+  const plan = buildPlan(e, { now, coverDays: 14, useSavedMinimum: true });
   const sizeMap = new Map(
     sizes.map((s) => [`${id(s.subproduct)}:${id(s)}`, s]),
   );

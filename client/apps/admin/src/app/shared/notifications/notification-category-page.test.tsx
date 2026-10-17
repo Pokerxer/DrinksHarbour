@@ -77,7 +77,8 @@ it('searches all category notices on the server and resets pagination on changed
       limit: 50,
       unreadOnly: false,
       search: 'wine',
-      sort: 'newest',
+      sort: 'expiry_soonest',
+      expiryStatus: 'all',
     })
   );
   fireEvent.change(screen.getByRole('combobox', { name: 'Sort products' }), {
@@ -95,7 +96,8 @@ it('searches all category notices on the server and resets pagination on changed
     limit: 50,
     unreadOnly: false,
     search: '',
-    sort: 'newest',
+    sort: 'expiry_soonest',
+    expiryStatus: 'all',
   });
 });
 it('applies a custom timeframe atomically and resets the current page', () => {

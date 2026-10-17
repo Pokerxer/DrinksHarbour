@@ -42,6 +42,9 @@ const QuillEditor = dynamic(() => import('@core/ui/quill-editor'), {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const TYPE_OPTIONS = [
+  { value: 'sake', label: 'Sake & Rice Wine' },
+  { value: 'fermented_drink', label: 'Fermented Drink' },
+  { value: 'non_alcoholic', label: 'Non-Alcoholic Alternative' },
   { value: 'beer', label: 'Beer' },
   { value: 'cider', label: 'Cider' },
   { value: 'wine', label: 'Wine' },
@@ -85,6 +88,8 @@ const TYPE_OPTIONS = [
   { value: 'glassware', label: 'Glassware' },
   { value: 'bar_tools', label: 'Bar Tools' },
   { value: 'accessories', label: 'Accessories' },
+  { value: 'vape', label: 'Vape' },
+  { value: 'nuts', label: 'Nuts' },
   { value: 'gift_set', label: 'Gift Set' },
   { value: 'snack', label: 'Snack' },
   { value: 'beauty', label: 'Beauty' },

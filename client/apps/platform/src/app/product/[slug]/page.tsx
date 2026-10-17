@@ -5,6 +5,7 @@ import { capSeoTitle } from "@/lib/seoTitle";
 import { normalizeDescription } from "@/lib/seoDescription";
 import { pickDefaultVariant, isDefaultVariantInStock, SHIPPING_DETAILS, MERCHANT_RETURN_POLICY } from "commerce-core";
 import ProductClient from "./ProductClient";
+import { fetchProductBannerSeed } from '@/components/Banner/product-page-banner-data';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
 import ProductSeoDetails from '@/components/SEO/ProductSeoDetails';
@@ -255,7 +256,7 @@ export default async function ProductPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const fetched = await fetchProduct(slug);
+  const [fetched, banners] = await Promise.all([fetchProduct(slug), fetchProductBannerSeed(API_URL)]);
 
   if (!fetched) notFound();
 
@@ -290,7 +291,7 @@ export default async function ProductPage({
           description, specs, reviews — is in the server HTML rather than a
           "Loading product details..." spinner. The fetch is deduped with the
           one generateMetadata made. */}
-      <ProductClient slug={slug} initialProduct={p} initialRelated={related} />
+      <ProductClient slug={slug} initialProduct={p} initialRelated={related} initialBannerData={banners} />
     </>
   );
 }

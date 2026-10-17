@@ -23,12 +23,13 @@ async function loadAllocations(tenantId, direction, allocations, session, cancel
   for (const allocation of allocations) {
     if (!mongoose.isValidObjectId(allocation[key])) throw bad('Invalid allocation document');
     const doc = await Model.findOne({ _id: allocation[key], tenant: tenantId,
-      ...(cancelling ? {} : ar ? AR_FILTER : AP_FILTER) }).session(session);
+      ...(cancelling ? {} : ar ? { currency: AR_FILTER.currency, docType: AR_FILTER.docType, orderStatus: AR_FILTER.orderStatus } : AP_FILTER) }).session(session);
     if (!doc) throw bad('Allocation document is not available in this tenant');
     if (doc.currency && doc.currency !== 'NGN') throw bad('Accounting payments currently support NGN documents only');
     const total = Number(ar ? doc.total : doc.totalAmount) || 0;
-    const paid = Number(ar ? doc.amountPaid : doc.paidAmount) || 0;
-    if (!cancelling && allocation.amount > round2(total - paid - (ar ? doc.creditedAmount || 0 : 0))) throw bad('Allocation exceeds the outstanding document balance');
+    const effective = ar && !cancelling ? await require('./customerInvoice/creditBalance').effectiveCreditInvoice(tenantId, doc, session) : doc;
+    const paid = Number(ar ? effective.amountPaid : doc.paidAmount) || 0;
+    if (!cancelling && allocation.amount > round2(total - paid - (ar ? effective.creditedAmount || 0 : 0))) throw bad('Allocation exceeds the outstanding document balance');
     if (cancelling && allocation.amount > paid) throw bad('Document payment balance has changed; reconcile it before cancelling');
     docs.push({ doc, amount: allocation.amount });
   }
@@ -106,18 +107,13 @@ async function cancelPayment({ tenantId, direction, id, userId }) {
     await updateAllocations(docs, direction, payment, session, -1);
     payment.status = 'cancelled';
     await payment.save({ session });
+    if (direction === 'customer') for (const { doc } of docs)
+      await require('./customerInvoice/sync').syncSource({ tenantId, source: 'sales', sourceId: doc._id, session });
     return payment;
   });
 }
-async function listPayments(tenantId, direction, { status, from, to, page = 1, limit = 50 } = {}) {
-  const filter = { tenant: tenantId };
-  if (status) filter.status = status;
-  const range = dateRange({ from, to });
-  if (range) filter.date = range;
-  const [data, total] = await Promise.all([
-    model(direction).find(filter).sort({ date: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(),
-    model(direction).countDocuments(filter),
-  ]);
-  return { data, total, page, pages: Math.ceil(total / limit) || 1 };
+async function listPayments(tenantId, direction, options = {}) {
+  return require('./accountingPayment.browse').listPayments(tenantId, direction, options);
 }
+
 module.exports = { createPayment, cancelPayment, listPayments };

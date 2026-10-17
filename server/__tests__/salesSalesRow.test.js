@@ -138,3 +138,25 @@ test('buildSalesRow: required-field regression guard fails loudly if a field is 
   assert.ok(err, 'expected validateSync to report missing revenueModelUsed');
   assert.ok(err.errors.revenueModelUsed, 'revenueModelUsed should be flagged as required');
 });
+
+test('partial delivery prorates a fixed line discount and promotion over ordered quantity',()=>{
+  const item={...baseItem(),quantity:10,discount:200,discountType:'fixed',promoDiscount:100};
+  const row=buildSalesRow({tenantId:oid(),item,qty:2,unitCost:300});
+  assert.strictEqual(row.priceAtSale,470);assert.strictEqual(row.itemSubtotal,940);
+  assert.strictEqual(row.tenantAmount+row.platformAmount,940);
+});
+test('partial delivery uses a percentage line discount before sales reporting',()=>{
+  const row=buildSalesRow({tenantId:oid(),item:{...baseItem(),quantity:10,discount:10,discountType:'percentage'},qty:2});
+  assert.strictEqual(row.priceAtSale,450);assert.strictEqual(row.itemSubtotal,900);
+});
+test('delivery pricing reads real persisted line getters when prorating discounts',()=>{
+  const Order=require('../models/SalesOrder');
+  const order=new Order({tenant:oid(),items:[{...baseItem(),quantity:10,discount:200,discountType:'fixed',promoDiscount:100}]});
+  const row=buildSalesRow({tenantId:oid(),item:order.items[0],qty:2});
+  assert.strictEqual(row.priceAtSale,470);assert.strictEqual(row.itemSubtotal,940);
+});
+test('delivery revenue shares preserve kobo and sum to the actual subtotal',()=>{
+ const row=buildSalesRow({tenantId:oid(),item:{...baseItem(),quantity:2,unitPrice:100.25},qty:2,revenue:{revenueModel:'commission',commissionPct:10}});
+ assert.strictEqual(row.tenantAmount,180.45);assert.strictEqual(row.platformAmount,20.05);
+ assert.strictEqual(row.tenantAmount+row.platformAmount,row.itemSubtotal);
+});

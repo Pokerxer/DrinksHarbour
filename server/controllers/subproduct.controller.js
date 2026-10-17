@@ -26,7 +26,9 @@ const getMySubProducts = asyncHandler(async (req, res) => {
   // Super_admin with no target tenant = all subproducts (platform-wide).
   const tenantId = getOptionalTenantId(req);
 
-  const result = await subProductService.getMySubProducts(tenantId, {
+  const result = req.query.view === 'catalogue'
+    ? await require('../services/sales-catalogue').getSalesCatalogue(tenantId, req.query)
+    : await subProductService.getMySubProducts(tenantId, {
     page: parseInt(page),
     limit: parseInt(limit),
     status,
@@ -36,6 +38,7 @@ const getMySubProducts = asyncHandler(async (req, res) => {
     isSuperAdmin: ['super_admin', 'admin'].includes(req.user?.role),
     warehouseId: req.query.warehouseId || null,
     fresh: req.query.refresh === 'true',
+    view: req.query.view === 'list' ? 'list' : undefined,
   });
 
   res.status(200).json({
@@ -76,13 +79,14 @@ const createSubProduct = asyncHandler(async (req, res) => {
  */
 const getSubProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const tenantId = getTenantId(req);
+  const anyTenant = ['super_admin', 'admin'].includes(req.user?.role);
+  const tenantId = getTenantId(req, { required: !anyTenant });
 
   const subProduct = await subProductService.getSubProduct(id, tenantId, {
     warehouseId: req.query.warehouseId || null,
     fresh: req.query.refresh === 'true',
     // Platform admins review other tenants' listings from this endpoint.
-    anyTenant: ['super_admin', 'admin'].includes(req.user?.role),
+    anyTenant,
   });
 
   res.status(200).json({
@@ -738,6 +742,13 @@ const deleteSize = asyncHandler(async (req, res) => {
   });
 });
 
+const getSizeDeletionStatus = asyncHandler(async (req, res) => {
+  const data = await subProductService.getSizeDeletionStatus(
+    req.params.id, req.params.sizeId, getTenantId(req), req.user
+  );
+  res.json({ success: true, data });
+});
+
 /**
  * @desc    Update stock for SubProduct
  * @route   PATCH /api/subproducts/:id/stock
@@ -850,6 +861,7 @@ module.exports = {
   addSize,
   updateSize,
   deleteSize,
+  getSizeDeletionStatus,
   updateStock,
   getStockStatus,
 };

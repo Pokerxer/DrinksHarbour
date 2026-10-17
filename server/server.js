@@ -10,6 +10,7 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const { sharedStore } = require('./middleware/redisRateLimitStore');
 const { connectDB, disconnectDB } = require('./config/db');
+const { withDbStartupRetry } = require('./utils/db-startup');
 const { AppError } = require('./utils/errors');
 // resolveTenantContext is now mounted per-router after protect(), not globally.
 // See route files for: router.use(protect); router.use(resolveTenantContext);
@@ -281,6 +282,7 @@ const timeOffRouters = require('./routes/timeOff.routes');
 app.use('/api/time-off',           timeOffRouters.timeOffRouter);
 app.use('/api/shift-swaps',        timeOffRouters.shiftSwapRouter);
 const appraisalRouters = require('./routes/appraisal.routes');
+app.use('/api/peer-appraisals', require('./routes/peerAppraisal.routes'));
 app.use('/api/appraisal-cycles',   appraisalRouters.cycleRouter);
 app.use('/api/appraisals',         appraisalRouters.appraisalRouter);
 app.use('/api/appraisal-feedback', appraisalRouters.feedbackRouter);
@@ -452,7 +454,11 @@ app.use((err, req, res, next) => {
 // ────────────────────────────────────────────────
 async function startServer() {
   try {
-    const dbConnection = await connectDB();
+    const dbConnection = await withDbStartupRetry(connectDB, {
+      onRetry: (attempt, err) => console.warn(
+        `MongoDB startup connection interrupted (${err.name}); retrying attempt ${attempt + 1}/3 in 1 second`,
+      ),
+    });
 
     // Drop indexes left behind by the multi-warehouse model rewrite so migrated
     // databases self-heal (prevents "E11000 dup key … subProduct: null" on

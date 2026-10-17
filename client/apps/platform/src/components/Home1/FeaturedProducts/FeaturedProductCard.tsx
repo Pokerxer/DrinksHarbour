@@ -45,7 +45,7 @@ const FeaturedProductCard: React.FC<FeaturedProductCardProps> = ({
   onRemoveFromCart,
   onWishlistToggle,
 }) => {
-  const selectedSize = product.sizes?.[0] ?? null;
+  const selectedSize = product.sizes?.find(row => String(row._id) === product.shoppingOffer?.sizeId) || product.sizes?.[0] || null;
   const { price, originPrice } = priceForSize(selectedSize, product.price);
   const soldOut = product.totalStock <= 0 || isSizeOutOfStock(selectedSize);
 

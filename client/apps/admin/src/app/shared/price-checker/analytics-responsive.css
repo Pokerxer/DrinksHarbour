@@ -1,0 +1,85 @@
+@container price-checker (max-width: 800px) {
+  .pc-analytics .pc-heading {
+    flex-direction: column;
+  }
+  .pc-analytics .pc-filter {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pc-analytics .pc-filter .pc-button {
+    align-self: end;
+  }
+  .pc-report-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pc-report-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pc-report-pagination > div {
+    justify-content: center;
+  }
+}
+@container price-checker (max-width: 540px) {
+  .pc-analytics .pc-report-controls {
+    padding: 18px;
+  }
+  .pc-analytics .pc-heading nav {
+    width: 100%;
+  }
+  .pc-analytics .pc-heading nav > .pc-button {
+    margin-left: auto;
+  }
+  .pc-report-summary {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 22px;
+    gap: 18px;
+  }
+  .pc-report-leader {
+    border-top: 1px solid #ffffff2b;
+    padding-top: 16px;
+    max-width: none;
+  }
+  .pc-report-stats .pc-card {
+    padding: 16px;
+  }
+  .pc-report-calendar dl {
+    width: 100%;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .pc-report-title {
+    align-items: flex-start;
+  }
+  .pc-report-title p {
+    max-width: 180px;
+  }
+  .pc-report-refresh {
+    padding: 10px;
+  }
+  .pc-report-presets small {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+@container price-checker (max-width: 360px) {
+  .pc-analytics .pc-heading nav > .pc-button {
+    width: 100%;
+    margin-left: 0;
+  }
+  .pc-report-title {
+    flex-wrap: wrap;
+  }
+  .pc-report-stat-label svg {
+    display: none;
+  }
+  .pc-report-pagination > div {
+    gap: 10px;
+  }
+}
+
+@container price-checker (max-width: 320px) {
+  .pc-analytics .pc-filter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

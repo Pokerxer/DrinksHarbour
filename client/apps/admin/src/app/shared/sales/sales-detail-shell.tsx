@@ -72,7 +72,7 @@ function CustomerBlock({
   email?: string;
 }) {
   return (
-    <div className="border-t border-white/[0.08] p-6">
+    <div className="border-t border-white/[0.08] p-4">
       <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">
         Customer
       </p>
@@ -131,7 +131,7 @@ export default function SalesDetailShell({
   const showActions = actions.length > 0 || !!totalSubline;
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="mb-5 flex items-center gap-1.5 text-sm text-gray-500 print:hidden">
+      <nav className="mb-3 flex items-center gap-1.5 text-sm text-gray-500 print:hidden">
         <Link href={backHref} className="transition-colors hover:text-gray-700">
           {backLabel}
         </Link>
@@ -139,9 +139,9 @@ export default function SalesDetailShell({
         <span className="font-medium text-gray-900">{soNumber}</span>
       </nav>
 
-      <div className="flex flex-col items-start gap-6 lg:flex-row">
+      <div className="flex flex-col items-start gap-4 lg:flex-row">
         <div className="min-w-0 flex-1 space-y-4">
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-black/[0.04]">
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand">
@@ -170,7 +170,7 @@ export default function SalesDetailShell({
         </div>
 
         <aside className="sticky top-6 w-full shrink-0 self-start overflow-hidden rounded-2xl bg-[#0f0e13] print:hidden lg:w-[17rem]">
-          <div className="p-6">
+          <div className="p-4">
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">
               Total Amount
             </p>
@@ -198,7 +198,7 @@ export default function SalesDetailShell({
 
           {customer && <CustomerBlock {...customer} />}
 
-          <div className="border-t border-white/[0.06] px-6 py-3">
+          <div className="border-t border-white/[0.06] px-4 py-2">
             <p className="font-mono text-[10px] text-white/20">{soNumber}</p>
           </div>
         </aside>

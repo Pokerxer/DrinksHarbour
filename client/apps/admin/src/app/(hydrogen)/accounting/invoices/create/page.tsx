@@ -6,9 +6,9 @@ import InvoiceCreate from '@/app/shared/accounting/invoice-create';
 export const metadata = { ...metaObject('Create Invoice') };
 export default function InvoiceCreatePage() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen min-w-0 bg-gray-50">
       <AccountingNavHeader />
-      <main className="w-full px-4 py-6 xl:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-screen-2xl px-3 py-5 sm:px-6 sm:py-8">
         <Suspense fallback={<p>Loading invoice form…</p>}>
           <InvoiceCreate />
         </Suspense>

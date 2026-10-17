@@ -39,6 +39,7 @@ export interface AvailableAt {
 }
 
 export interface SaleProduct {
+  shoppingOffer?: import('@/utils/representativeOffer').ShoppingOffer | null;
   _id: string;
   name: string;
   slug: string;

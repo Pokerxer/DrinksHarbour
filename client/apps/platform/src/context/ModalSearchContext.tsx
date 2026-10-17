@@ -1,5 +1,6 @@
 'use client';
 
+import { useShoppingLocation } from '@/context/ShoppingLocationContext';
 import React, {
   createContext,
   useContext,
@@ -10,103 +11,17 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
-import { ProductType } from '@/types/product.types';
 import { gtagEvent } from '@/lib/gtag';
+import {POPULAR_SEARCHES} from './search-data-support';
+import {useSearchSuggestions} from './useSearchSuggestions';
+import {useRecentSearches} from './useRecentSearches';
+import {useSearchPage} from './useSearchPage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface SearchFilters {
-  category?: string;
-  type?: string;
-  brand?: string;
-  minPrice?: number;
-  maxPrice?: number;
-  inStock?: boolean;
-}
-
-export interface SearchResult {
-  products: ProductType[];
-  total: number;
-  page: number;
-  totalPages: number;
-}
-
-export interface RecentSearch {
-  query: string;
-  filters?: SearchFilters;
-  timestamp: number;
-}
-
-// ─── UI Context (modal open/close only — stable, rarely changes) ─────────────
-
-interface ModalSearchUIValue {
-  isModalOpen: boolean;
-  openModalSearch: () => void;
-  closeModalSearch: () => void;
-  toggleModalSearch: () => void;
-}
-
-const ModalSearchUIContext = createContext<ModalSearchUIValue | undefined>(undefined);
-
-export const useModalSearchUIContext = (): ModalSearchUIValue => {
-  const ctx = useContext(ModalSearchUIContext);
-  if (!ctx) throw new Error('useModalSearchUIContext must be used within ModalSearchUIProvider');
-  return ctx;
-};
-
-export const ModalSearchUIProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const originalOverflow = useRef<string>('');
-
-  const openModalSearch = useCallback(() => {
-    if (typeof document !== 'undefined') {
-      originalOverflow.current = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-    }
-    setIsModalOpen(true);
-  }, []);
-
-  const closeModalSearch = useCallback(() => {
-    if (typeof document !== 'undefined') {
-      document.body.style.overflow = originalOverflow.current;
-    }
-    setIsModalOpen(false);
-  }, []);
-
-  const toggleModalSearch = useCallback(() => {
-    setIsModalOpen((open) => {
-      if (open) {
-        if (typeof document !== 'undefined')
-          document.body.style.overflow = originalOverflow.current;
-        return false;
-      } else {
-        if (typeof document !== 'undefined') {
-          originalOverflow.current = document.body.style.overflow;
-          document.body.style.overflow = 'hidden';
-        }
-        return true;
-      }
-    });
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (typeof document !== 'undefined')
-        document.body.style.overflow = originalOverflow.current;
-    };
-  }, []);
-
-  const value = useMemo(
-    () => ({ isModalOpen, openModalSearch, closeModalSearch, toggleModalSearch }),
-    [isModalOpen, openModalSearch, closeModalSearch, toggleModalSearch],
-  );
-
-  return (
-    <ModalSearchUIContext.Provider value={value}>
-      {children}
-    </ModalSearchUIContext.Provider>
-  );
-};
+export type {SearchFilters,SearchResult,RecentSearch} from './search-types';
+import type {SearchFilters,SearchResult,RecentSearch} from './search-types';
+export { ModalSearchUIProvider, useModalSearchUIContext } from './ModalSearchUIContext';
 
 // ─── Data Context (search state, results, suggestions — changes frequently) ──
 
@@ -144,56 +59,12 @@ export const useModalSearchContext = (): ModalSearchDataValue => {
 
 // ─── Helpers & constants ──────────────────────────────────────────────────────
 
-const LS_KEY = 'dh_recentSearches';
-const MAX_RECENT = 10;
-const SUGGESTION_DEBOUNCE_MS = 250;
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-const POPULAR_SEARCHES: string[] = [
-  'Whiskey', 'Red Wine', 'Beer', 'Vodka',
-  'Champagne', 'Gin', 'Rum', 'Brandy',
-  'Tequila', 'Rosé',
-];
-
-function buildSearchParams(
-  query: string,
-  filters: SearchFilters,
-  page: number,
-  limit = 8,
-): URLSearchParams {
-  const p = new URLSearchParams();
-  if (query.trim()) p.set('q', query.trim());
-  p.set('page', String(page));
-  p.set('limit', String(limit));
-  if (filters.category)                 p.set('category',  filters.category);
-  if (filters.type)                     p.set('type',       filters.type);
-  if (filters.brand)                    p.set('brand',      filters.brand);
-  if (filters.minPrice !== undefined)   p.set('minPrice',   String(filters.minPrice));
-  if (filters.maxPrice !== undefined)   p.set('maxPrice',   String(filters.maxPrice));
-  p.set('inStock', filters.inStock ? 'true' : 'false');
-  return p;
-}
-
-function readLocalRecents(): RecentSearch[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? (JSON.parse(raw) as RecentSearch[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeLocalRecents(searches: RecentSearch[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(searches));
-  } catch { /* quota exceeded — ignore */ }
-}
-
 // ─── Data Provider ────────────────────────────────────────────────────────────
 
 export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [searchQuery, setSearchQuery]       = useState('');
+  const { location, revision } = useShoppingLocation();
+  const fetchSearchPage = useSearchPage(location, revision);
+  const [searchQuery, updateSearchQuery]       = useState('');
   const [searchResults, setSearchResults]   = useState<SearchResult | null>(null);
   const [isSearching, setIsSearching]       = useState(false);
   const [searchError, setSearchError]       = useState<string | null>(null);
@@ -203,17 +74,28 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const [filters, setFilters]               = useState<SearchFilters>({});
 
-  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>(readLocalRecents);
+  const {recentSearches,addRecentSearch,clearRecentSearches,removeRecentSearch}=useRecentSearches();
 
-  const [suggestions, setSuggestions]                   = useState<string[]>([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const suggestionAbortRef   = useRef<AbortController | null>(null);
-  const suggestionTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {suggestions,isLoadingSuggestions,fetchSuggestions,clearSuggestions}=useSearchSuggestions(recentSearches);
 
   const searchAbortRef = useRef<AbortController | null>(null);
   // Each request gets a sequence number so an older aborted request cannot
   // clear loading state or overwrite results for a newer query.
   const searchRequestIdRef = useRef(0);
+  const setSearchQuery = useCallback((query: string) => {
+    if (query === searchQueryRef.current) return;
+    searchRequestIdRef.current++;
+    searchAbortRef.current?.abort();
+    searchQueryRef.current = query;
+    updateSearchQuery(query);
+    setSearchResults(null); setSearchError(null); setIsSearching(false); setCurrentPage(1);
+  }, []);
+  useEffect(() => {
+    searchRequestIdRef.current++;
+    searchAbortRef.current?.abort();
+    searchCacheRef.current.clear();
+    setSearchResults(null); setSearchError(null); setIsSearching(false); setCurrentPage(1);
+  }, [revision]);
 
   // ── Refs for transient values (keep callbacks stable) ────────────────────
   const searchQueryRef = useRef(searchQuery);
@@ -248,31 +130,6 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
   const hasMoreRef = useRef(hasMore);
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
 
-  // ── Recent searches ──────────────────────────────────────────────────────
-  const addRecentSearch = useCallback((query: string, searchFilters?: SearchFilters) => {
-    if (!query.trim()) return;
-    setRecentSearches((prev) => {
-      const filtered = prev.filter((s) => s.query.toLowerCase() !== query.toLowerCase());
-      const updated  = [{ query, filters: searchFilters, timestamp: Date.now() }, ...filtered]
-        .slice(0, MAX_RECENT);
-      writeLocalRecents(updated);
-      return updated;
-    });
-  }, []);
-
-  const clearRecentSearches = useCallback(() => {
-    setRecentSearches([]);
-    writeLocalRecents([]);
-  }, []);
-
-  const removeRecentSearch = useCallback((query: string) => {
-    setRecentSearches((prev) => {
-      const updated = prev.filter((s) => s.query !== query);
-      writeLocalRecents(updated);
-      return updated;
-    });
-  }, []);
-
   // ── Filters ──────────────────────────────────────────────────────────────
   const updateFilter = useCallback(<K extends keyof SearchFilters>(
     key: K,
@@ -282,33 +139,6 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
   }, []);
 
   const clearFilters = useCallback(() => setFilters({}), []);
-
-  // ── Core fetch helper (no deps — always stable) ─────────────────────────
-  const fetchSearchPage = useCallback(async (
-    query: string,
-    activeFilters: SearchFilters,
-    page: number,
-    signal: AbortSignal,
-  ): Promise<SearchResult> => {
-    const params = buildSearchParams(query, activeFilters, page);
-    const res    = await fetch(`${API_URL}/api/products/search?${params}`, { signal });
-
-    if (!res.ok) throw new Error(`Server error ${res.status}`);
-
-    const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'Search failed');
-
-    const rd         = data.data ?? data;
-    const products   = rd.products ?? [];
-    const pagination = rd.pagination ?? {};
-
-    return {
-      products,
-      total:      pagination.totalResults  ?? rd.total      ?? products.length,
-      page:       pagination.currentPage   ?? rd.page       ?? page,
-      totalPages: pagination.totalPages    ?? rd.totalPages ?? 1,
-    };
-  }, []);
 
   // ── performSearch (reads transient values from refs — stable ref) ───────
   const performSearch = useCallback(async (query?: string, page = 1) => {
@@ -321,7 +151,7 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
 
     // Fast path: return cached result instantly (no network, no loading state)
     const cacheKey = getCacheKey(term, activeFilters, page);
-    const cached = searchCacheRef.current.get(cacheKey);
+    const cached = location ? undefined : searchCacheRef.current.get(cacheKey);
     if (cached) {
       searchRequestIdRef.current += 1;
       searchAbortRef.current?.abort();
@@ -355,7 +185,7 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
       if (requestId !== searchRequestIdRef.current) return;
 
       // Cache the result (evict oldest if over limit)
-      searchCacheRef.current.set(cacheKey, result);
+      if (!location) searchCacheRef.current.set(cacheKey, result);
       if (searchCacheRef.current.size > CACHE_MAX) {
         const firstKey = searchCacheRef.current.keys().next().value;
         if (firstKey) searchCacheRef.current.delete(firstKey);
@@ -393,6 +223,7 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     searchAbortRef.current = controller;
 
     setIsSearching(true);
+    setSearchError(null);
 
     try {
       const result = await fetchSearchPage(query, f, nextPage, controller.signal);
@@ -407,7 +238,7 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
       setCurrentPage(nextPage);
     } catch (err: any) {
       if (err.name === 'AbortError' || requestId !== searchRequestIdRef.current) return;
-      console.error('loadMoreResults error:', err.message);
+      setSearchError('More drinks could not be loaded. Please try again.');
     } finally {
       if (requestId === searchRequestIdRef.current) setIsSearching(false);
     }
@@ -423,68 +254,15 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     setSearchError(null);
     setCurrentPage(1);
     setFilters({});
-    setSuggestions([]);
+    clearSuggestions();
     lastSearchRef.current = { query: '', filters: {} };
-  }, []);
-
-  // ── fetchSuggestions (read recentSearches from ref — stable ref) ────────
-  const fetchSuggestions = useCallback((query: string) => {
-    if (suggestionTimerRef.current) clearTimeout(suggestionTimerRef.current);
-    suggestionAbortRef.current?.abort();
-
-    if (!query.trim() || query.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-
-    suggestionTimerRef.current = setTimeout(async () => {
-      const controller = new AbortController();
-      suggestionAbortRef.current = controller;
-      setIsLoadingSuggestions(true);
-
-      try {
-        const res = await fetch(
-          `${API_URL}/api/products/suggestions?q=${encodeURIComponent(query)}&limit=8`,
-          { signal: controller.signal },
-        );
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && Array.isArray(data.data) && data.data.length > 0) {
-            setSuggestions(data.data);
-            return;
-          }
-        }
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-      } finally {
-        setIsLoadingSuggestions(false);
-      }
-
-      // Fallback: read from ref — no closure dep on recentSearches state
-      const q    = query.toLowerCase();
-      const seen = new Set<string>();
-      const fb: string[] = [];
-
-      for (const s of [...recentSearchesRef.current.map((r) => r.query), ...POPULAR_SEARCHES]) {
-        const lower = s.toLowerCase();
-        if (lower.includes(q) && !seen.has(lower)) {
-          seen.add(lower);
-          fb.push(s);
-          if (fb.length >= 8) break;
-        }
-      }
-
-      setSuggestions(fb);
-    }, SUGGESTION_DEBOUNCE_MS);
-  }, []);
+  }, [clearSuggestions, setSearchQuery]);
 
   // ── Cleanup timers on unmount ─────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      if (suggestionTimerRef.current) clearTimeout(suggestionTimerRef.current);
-      suggestionAbortRef.current?.abort();
       searchAbortRef.current?.abort();
+      searchRequestIdRef.current++;
     };
   }, []);
 

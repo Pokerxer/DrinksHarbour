@@ -63,3 +63,12 @@ test('wallet payment without a saved customer is rejected before touching the wa
   assert.match(result.message, /saved customer/);
   assert.strictEqual(walletCalled, false);
 });
+
+test('refused loyalty redemption cannot pay an order with points that never left the account',async()=>{
+  let charged=0;
+  const result=await capturePayment({salesOrder:baseOrder(),tenantId:'t1',paymentMethod:'wallet',redeemPoints:100,
+    posSettings:{loyaltyEnabled:true,loyaltyPointsValue:1},deps:{
+      mutateLoyalty:async()=>({ok:false,message:'Insufficient loyalty points'}),
+      mutateWallet:async()=>{charged++;return {ok:true};}}});
+  assert.strictEqual(result.ok,false);assert.strictEqual(charged,0);
+});

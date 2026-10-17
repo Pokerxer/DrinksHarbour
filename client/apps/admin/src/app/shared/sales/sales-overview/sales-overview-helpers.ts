@@ -9,17 +9,21 @@
 // Money definitions worth remembering:
 // - Booked revenue = orders whose lifecycle has passed draft (confirmed or
 //   further) minus cancelled. Drafts are intentions, not money.
-// - Outstanding = fully-unpaid totals only. A 'partial' group's total holds
-//   FULL order values; part of it is already collected (see paymentBadge).
+// - Outstanding uses server net balances (total minus payments and allocated
+//   credits). A group's gross total is never a partial-payment balance.
 //
 // Vitest runs `environment: 'node'` here — nothing renderable may live in
 // this file.
 
-import type { SalesOrder, SalesOrderGroup } from '@/services/salesOrder.service';
+import type {
+  SalesOrder,
+  SalesOrderGroup,
+} from '@/services/salesOrder.service';
 
 export interface GroupTally {
   count: number;
   total: number;
+  outstanding?: number;
 }
 
 /** Server groups keyed by their `_id` status. Absent statuses are simply absent. */
@@ -30,7 +34,12 @@ export function tallyGroups(
 ): GroupTallies {
   const out: GroupTallies = {};
   for (const g of groups ?? []) {
-    out[g._id] = { count: g.count ?? 0, total: g.total ?? 0 };
+    const key = g._id.toLowerCase().replace(/\s+/g, '_');
+    out[key] = {
+      count: g.count ?? 0,
+      total: g.total ?? 0,
+      ...(g.outstanding !== undefined ? { outstanding: g.outstanding } : {}),
+    };
   }
   return out;
 }
@@ -54,10 +63,17 @@ export interface MonthRange {
   dateTo: string;
 }
 
-/** Month-to-date window for the server's createdAt $gte/$lte filter. */
+/** Month-to-date window in Lagos for the server's createdAt $gte/$lte filter. */
 export function monthToDateRange(now: Date = new Date()): MonthRange {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Lagos',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(now);
+  const year = Number(parts.find((p) => p.type === 'year')?.value);
+  const month = Number(parts.find((p) => p.type === 'month')?.value);
   return {
-    dateFrom: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
+    dateFrom: new Date(Date.UTC(year, month - 1, 1) - 3600000).toISOString(),
     dateTo: now.toISOString(),
   };
 }
@@ -105,7 +121,17 @@ export interface UnpaidResult {
 export function unpaidBalance(tallies: GroupTallies): UnpaidResult {
   const unpaid = pick(tallies, 'unpaid');
   return {
-    unpaidTotal: unpaid.total,
+    unpaidTotal:
+      Math.round(
+        Object.entries(tallies).reduce(
+          (total, [key, g]) =>
+            total +
+            Math.round(
+              (g.outstanding ?? (key === 'unpaid' ? g.total : 0)) * 100
+            ),
+          0
+        )
+      ) / 100,
     unpaidCount: unpaid.count,
     partialCount: pick(tallies, 'partial').count,
   };
@@ -125,7 +151,10 @@ export function mergeRecentDocs(
 }
 
 /** Compact relative timestamp for feed rows; falls back to a fixed date. */
-export function relTime(iso: string | undefined, now: Date = new Date()): string {
+export function relTime(
+  iso: string | undefined,
+  now: Date = new Date()
+): string {
   if (!iso) return '—';
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return '—';

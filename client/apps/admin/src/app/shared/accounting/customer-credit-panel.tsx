@@ -44,7 +44,7 @@ export default function CustomerCreditPanel({ token, customer, onClose }: Props)
     try {
       const [credit, open] = await Promise.all([
         arApService.customerCredits(token, customer._id, { limit: 25 }),
-        arApService.invoices(token, { limit: 100 }),
+        arApService.invoices(token, { limit: 100, scope: 'open' }),
       ]);
       setNotes(credit.data?.data ?? []);
       setBalance(credit.data?.balance ?? 0);

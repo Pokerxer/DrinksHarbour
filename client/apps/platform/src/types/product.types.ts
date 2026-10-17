@@ -3,6 +3,8 @@
  * Core product interface matching the beverage e-commerce backend
  */
 export interface ProductType {
+  shoppingOffer?: import('@/utils/representativeOffer').ShoppingOffer | null;
+  locationOrder?: 'nearest' | 'custom';
   // Core Identification
   id: string;
   _id?: string;

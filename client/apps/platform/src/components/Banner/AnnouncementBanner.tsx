@@ -16,9 +16,11 @@ interface AnnouncementBannerProps {
   scrollSpeed?: number;
   pauseOnHover?: boolean;
   variant?: 'info' | 'success' | 'warning' | 'error' | 'promo';
+  initialBanners?: BannerData[];
+  initialBannersComplete?: boolean;
 }
 
-interface BannerData {
+export interface BannerData {
   _id: string;
   title: string;
   subtitle?: string;
@@ -77,8 +79,10 @@ const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({
   scrollSpeed = 40,
   pauseOnHover = true,
   variant = 'promo',
+  initialBanners,
+  initialBannersComplete = false,
 }) => {
-  const [banners, setBanners] = useState<BannerData[]>(DEFAULT_ANNOUNCEMENTS);
+  const [banners, setBanners] = useState<BannerData[]>(initialBanners?.length ? initialBanners : DEFAULT_ANNOUNCEMENTS);
   const [loading, setLoading] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [paused, setPaused] = useState(false);
@@ -104,13 +108,13 @@ const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({
       } catch {}
       finally { setLoading(false); }
     };
-    fetchBanners();
-  }, [placement, limit]);
+    if (!initialBannersComplete) fetchBanners();
+  }, [placement, limit, initialBannersComplete]);
 
   const dismiss = (id: string) => {
     setDismissed(prev => {
       const next = new Set(prev).add(id);
-      try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...next])); } catch {}
+      try { localStorage.setItem(DISMISS_KEY, JSON.stringify(Array.from(next))); } catch {}
       return next;
     });
   };
@@ -125,7 +129,7 @@ const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({
   const getBg = (b: BannerData) => b.backgroundColor || VARIANT_STYLES[variant]?.bg || '#7C1D1D';
 
   if (loading) return <div className="h-10 bg-[#7C1D1D] animate-pulse" />;
-  if (active.length === 0) return null;
+  if (active.length === 0) return layout === 'static' ? <div className="h-10" aria-hidden="true" /> : null;
 
   // ── Toast ──────────────────────────────────────────────────────────────────
   if (layout === 'toast') {
@@ -214,19 +218,19 @@ const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({
     if (!b) return null;
     return (
       <motion.div
-        initial={{ opacity: 0 }}
+        initial={false}
         animate={{ opacity: 1 }}
-        className="relative"
+        className="relative h-10"
         style={{ backgroundColor: getBg(b) }}
       >
-        <div className="container mx-auto px-4 py-2.5">
-          <div className="flex items-center justify-center gap-3 flex-wrap">
+        <div className="container mx-auto px-10 h-full">
+          <div className="flex h-full items-center justify-center gap-3">
             <span className="text-white/80"><VariantIcon v={variant} /></span>
-            <span className="text-sm font-semibold text-white">{b.title}</span>
-            {b.subtitle && <span className="text-xs text-white/75 hidden sm:inline">— {b.subtitle}</span>}
+            <span className="text-sm font-semibold text-white min-w-0 truncate">{b.title}</span>
+            {b.subtitle && <span className="text-xs text-white/75 hidden sm:inline min-w-0 truncate">— {b.subtitle}</span>}
             {b.ctaText && (
               <Link href={b.ctaLink || '#'} onClick={() => trackClick(b._id)}
-                className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs font-bold text-white transition-colors">
+                className="px-3 py-1 shrink-0 bg-white/20 hover:bg-white/30 rounded-full text-xs font-bold text-white transition-colors">
                 {b.ctaText}
               </Link>
             )}

@@ -1,5 +1,6 @@
 'use client';
 
+import { usePOSReceiptLink } from './use-pos-receipt-link';
 import { POSStockReturnDetail } from './components/pos-stock-return-detail';
 import { requestDocumentExport } from '@/utils/print/document-export';
 import { buildPOSRefund } from '@/utils/print/pos-documents';
@@ -7,8 +8,7 @@ import { usePOSShopScope } from './store';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { posApi } from '@/app/shared/point-of-sale/api';
-import type { PageMeta } from '@/app/shared/point-of-sale/api';
+import { posApi, type PageMeta } from '@/app/shared/point-of-sale/api';
 import {
   getAllOrders,
   getSessionOrders,
@@ -498,6 +498,8 @@ export default function POSSellOrders() {
     refund: Refund;
     order: SellOrder;
   } | null>(null);
+
+  usePOSReceiptLink(orders, `${token || ''}:${shopId || ''}`, setScope, setSearch, setSelectedOrder);
 
   useEffect(() => {
     setHydrated(true);

@@ -56,3 +56,26 @@ it('handles exclusive sales-period ends and missing evidence', () => {
   expect(facts[0].value).toContain('7 Oct 2026');
   expect(noticeFacts({})).toEqual([]);
 });
+it('identifies an automatic minimum and its update date without displaying private demand inputs', () => {
+  const facts = noticeFacts({
+    threshold: 36,
+    minimumSource: 'automatic',
+    minimumConfidence: 'early',
+    minimumUpdatedAt: '2026-10-12T12:00:00Z',
+    dailySales: 4,
+  });
+  expect(facts).toContainEqual({
+    label: 'Automatic minimum stock',
+    value: '36 units',
+  });
+  expect(facts).toContainEqual({
+    label: 'Minimum confidence',
+    value: 'Early history',
+  });
+  expect(
+    facts.some(
+      (f) => f.label === 'Minimum updated' && f.value.includes('12 Oct 2026')
+    )
+  ).toBe(true);
+  expect(facts.some((f) => f.label === 'dailySales')).toBe(false);
+});

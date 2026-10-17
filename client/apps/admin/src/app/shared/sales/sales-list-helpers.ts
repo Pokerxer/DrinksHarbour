@@ -109,12 +109,10 @@ export function warehouseName(so: SalesOrder): string {
   return '—';
 }
 
-// `salesperson` is a String on the SalesOrder schema — the user's name, written
-// from req.user.name at create time and never populated into an object. The
-// client type used to declare `{ _id, name } | null`, so this returned 'None'
-// for every order ever written.
+// The display name is a historical string snapshot; the stable user reference
+// is separate and ownership filters are resolved by the authenticated server.
 export function salespersonName(so: SalesOrder): string {
-  return so.salesperson?.trim() || 'None';
+  return so.fulfillmentAttribution?.name?.trim() || so.salesperson?.trim() || 'None';
 }
 
 export function statusText(so: SalesOrder): string {
@@ -254,12 +252,11 @@ export function filterValueToActiveFilter(
 // ─── The params the list sends to the server ─────────────────────────────────
 
 export interface ListParamsInput {
+  includeReturnedOrders?: boolean;
   activeFilters: ActiveFilter[];
   search: string;
   groupBy: GroupByKey;
   groupBySubOption?: GroupBySubOption;
-  /** The salesperson field holds a NAME, so "My Quotations" must filter by name. */
-  currentUserName: string;
   dateFrom: string;
   dateTo: string;
   page: number;
@@ -292,7 +289,6 @@ export function buildListParams(input: ListParamsInput): ListParams {
     search,
     groupBy,
     groupBySubOption,
-    currentUserName,
     dateFrom,
     dateTo,
     page,
@@ -311,10 +307,9 @@ export function buildListParams(input: ListParamsInput): ListParams {
   }
   if (search) params.search = search;
   if (docFilter?.value) params.docType = docFilter.value;
-  // An empty name would send `salesperson=` and match nothing while looking
-  // like a filter that ran.
-  if (myFilter && currentUserName.trim())
-    params.salesperson = currentUserName.trim();
+  if (input.includeReturnedOrders && params.docType === 'quotation')
+    params.includeReturnedOrders = '1';
+  if (myFilter) params.myQuotations = '1';
 
   if (dateFilter?.value) {
     const range = dateRange(dateFilter.value);

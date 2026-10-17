@@ -22,6 +22,9 @@ export interface SalesLineItem {
   promoDiscount?: number;
   promoName?: string;
   lineTotal: number;
+  reservedQty?: number;
+  waitingQty?: number;
+  reservations?: { warehouseId: string; warehouseName?: string; quantity: number }[];
   fulfilledQty: number;
   postedQty: number;
   returnedQty: number;
@@ -144,17 +147,33 @@ export type OrderStatus =
   | 'cancelled';
 
 export interface SalesOrder {
-  returnHistory?: { source: 'sales' | 'pos'; reference: string; receiptNumber?: string; quantity: number; refundAmount: number; at?: string; description: string }[];
+  reservationVersion?: number;
+  confirmedAt?: string;
+  confirmedBy?: string;
+  locked?: boolean;
+  lockedAt?: string;
+  lockedBy?: string;
+  walletTxRef?: string;
+  /** Read-only marker for returned orders included in the quotation workspace. */
+  hasReturns?: boolean;
+  returnHistory?: {
+    source: 'sales' | 'pos';
+    reference: string;
+    receiptNumber?: string;
+    quantity: number;
+    refundAmount: number;
+    at?: string;
+    description: string;
+  }[];
   _id: string;
   tenant?: string;
   soNumber: string;
   docType: 'quotation' | 'order';
   warehouseId?: string | PopulatedWarehouse | null;
-  // A NAME, not a ref. The schema declares `salesperson: { type: String }` and
-  // it is written from req.user.name at create time; nothing ever populates it
-  // into an object. Declaring it as `{ _id, name }` here made every consumer's
-  // `typeof === 'object'` check fail silently and render '—'.
+  /** Historical display snapshot; salespersonUser holds the stable assignment. */
   salesperson?: string;
+  salespersonUser?: string;
+  fulfillmentAttribution?: { user: string; name: string; at: string };
   customer?: string;
   customerSnapshot?: SalesOrderCustomerSnapshot;
   /**
@@ -194,6 +213,7 @@ export interface SalesOrder {
   // what the till has actually taken so far, not the order total.
   paymentStatus?: 'unpaid' | 'partial' | 'paid';
   amountPaid?: number;
+  creditedAmount?: number;
   loyaltyEarned?: number;
   loyaltyRedeemed?: number;
   pointsRedeemed?: number;
@@ -228,6 +248,7 @@ export interface SalesOrderLineInput {
 }
 
 export interface CreateSalesOrderInput {
+  dueDate?: string | null;
   docType: 'quotation' | 'order';
   customer?: string;
   customerSnapshot?: SalesOrderCustomerSnapshot;
@@ -243,6 +264,7 @@ export interface CreateSalesOrderInput {
 }
 
 export interface UpdateSalesOrderInput {
+  dueDate?: string | null;
   items?: SalesOrderLineInput[];
   customer?: string;
   customerSnapshot?: SalesOrderCustomerSnapshot;
@@ -278,12 +300,17 @@ export interface SalesOrderGroup {
   _id: string;
   count: number;
   total: number;
+  outstanding?: number;
   currency: string;
   docs: SalesOrder[];
 }
 
 export interface SalesOrderListResponse {
-  pagination?: { currentPage: number; totalPages: number; hasNextPage: boolean };
+  pagination?: {
+    currentPage: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
   success: boolean;
   data: SalesOrder[];
   groups?: SalesOrderGroup[];
@@ -353,6 +380,7 @@ export const salesOrderService = {
       status?: string;
       customer?: string;
       salesperson?: string;
+      myQuotations?: '1';
       search?: string;
       dateFrom?: string;
       dateTo?: string;
@@ -426,6 +454,14 @@ export const salesOrderService = {
     return response.json();
   },
 
+  async setLocked(id: string, locked: boolean, token: string): Promise<SalesOrderResponse> {
+    const response = await fetch(`${API_URL}/api/sales-orders/${id}/${locked ? 'lock' : 'unlock'}`, {
+      method: 'POST', headers: authHeaders(token),
+    });
+    await parseErrorOrThrow(response, 'Could not change the document lock');
+    return response.json() as Promise<SalesOrderResponse>;
+  },
+
   async send(id: string, token: string): Promise<SalesOrderResponse> {
     const response = await fetch(`${API_URL}/api/sales-orders/${id}/send`, {
       method: 'POST',
@@ -462,6 +498,22 @@ export const salesOrderService = {
     return response.json();
   },
 
+  async confirmReservation(id: string, token: string): Promise<SalesOrderResponse> {
+    const response = await fetch(`${API_URL}/api/sales-orders/${id}/confirm-reservation`, {
+      method: 'POST', headers: authHeaders(token), body: JSON.stringify({}),
+    });
+    await parseErrorOrThrow(response, 'Could not confirm and reserve stock');
+    return response.json() as Promise<SalesOrderResponse>;
+  },
+
+  async checkAvailability(id: string, token: string): Promise<SalesOrderResponse> {
+    const response = await fetch(`${API_URL}/api/sales-orders/${id}/check-availability`, {
+      method: 'POST', headers: authHeaders(token), body: JSON.stringify({}),
+    });
+    await parseErrorOrThrow(response, 'Could not check stock availability');
+    return response.json() as Promise<SalesOrderResponse>;
+  },
+
   async confirm(
     id: string,
     body: {
@@ -483,7 +535,7 @@ export const salesOrderService = {
 
   async fulfill(
     id: string,
-    body: { warehouseId: string; items: { lineId: string; qty: number }[] },
+    body: { warehouseId: string; items: { lineId: string; qty: number }[]; requestId?: string },
     token: string
   ): Promise<FulfillResponse> {
     const response = await fetch(`${API_URL}/api/sales-orders/${id}/fulfill`, {
@@ -633,13 +685,14 @@ export const salesOrderService = {
         quantity: number;
         unitPrice: number;
         priceOverridden?: boolean;
+        discount?: number; discountType?: 'fixed'|'percentage'; taxRate?: number;
       }>;
       pricelist?: string | null;
     },
     token: string
   ): Promise<{
     success: boolean;
-    data: { items: Array<{ key?: string; unitPrice: number }> };
+    data: { items: Array<{ key?: string; unitPrice: number; promoDiscount?:number; promoName?:string }> };
   }> {
     const response = await fetch(`${API_URL}/api/sales-orders/price-lines`, {
       method: 'POST',
@@ -649,7 +702,7 @@ export const salesOrderService = {
     await parseErrorOrThrow(response, 'Failed to price lines');
     return (await response.json()) as {
       success: boolean;
-      data: { items: Array<{ key?: string; unitPrice: number }> };
+      data: { items: Array<{ key?: string; unitPrice: number; promoDiscount?:number; promoName?:string }> };
     };
   },
 

@@ -2,68 +2,74 @@
 
 import { useAccountingDialog } from './use-accounting-dialog';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
-import {
-  arApService,
-  type AccountingCustomer,
-  type OpenInvoice,
-} from '@/services/arAp.service';
+import { arApService, type OpenInvoice } from '@/services/arAp.service';
+import CreditCustomerSelect from './credit-customer-select';
+import CreditInvoiceLoading from './credit-invoice-loading';
+import type { CreditInvoiceChoices } from './use-credit-invoices';
 import { fmtMoney } from './accounting-helpers';
 
 const INPUT_CLS =
   'w-full rounded border border-gray-300 bg-white px-2.5 py-2 text-sm outline-none focus:border-gray-400';
 
-/** Issue a customer credit note (posts a refund journal entry on save). */
+/** Save a reviewed draft or explicitly post a customer credit. */
 export default function CreditNoteFormModal({
   invoices,
+  initialInvoice,
+  defaultPostNow,
+  invoiceChoices,
   onClose,
   onSaved,
 }: {
   invoices: OpenInvoice[];
+  initialInvoice?: OpenInvoice;
+  defaultPostNow?: boolean;
+  invoiceChoices?: CreditInvoiceChoices;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
-  const [salesOrderId, setSalesOrderId] = useState('');
+  const [salesOrderId, setSalesOrderId] = useState(initialInvoice?._id || '');
   const [customerName, setCustomerName] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [amount, setAmount] = useState('');
   const [taxAmount, setTaxAmount] = useState('');
-  const [reason, setReason] = useState('');
-  // Default on: a standalone credit is normally wanted in the ledger
-  // immediately. Turning it off leaves a reviewable draft that reaches nothing.
-  const [postNow, setPostNow] = useState(true);
+  const [reason, setReason] = useState(
+    initialInvoice
+      ? `Returned goods — ${initialInvoice.orderNumber || initialInvoice._id}`
+      : ''
+  );
+  const [postNow, setPostNow] = useState(defaultPostNow ?? !initialInvoice);
   const [busy, setBusy] = useState(false);
   const dialogRef = useAccountingDialog(onClose, busy);
 
-  // Only needed for a standalone credit, which must name a customer the account
-  // can hold credit for. Loaded lazily so opening the form with an invoice
-  // already chosen costs nothing.
-  const [customers, setCustomers] = useState<AccountingCustomer[]>([]);
+  const initializedInvoice = useRef('');
   useEffect(() => {
-    if (salesOrderId || customers.length) return;
-    arApService
-      .customers(token, { limit: 100 } as never)
-      .then((res) => setCustomers(res.data ?? []))
-      .catch(() => setCustomers([]));
-  }, [salesOrderId, customers.length, token]);
-
-  useEffect(() => {
-    if (!salesOrderId) return;
+    if (!salesOrderId) {
+      initializedInvoice.current = '';
+      return;
+    }
+    if (initializedInvoice.current === salesOrderId) return;
     const inv = invoices.find((i) => i._id === salesOrderId);
     if (inv) {
+      initializedInvoice.current = salesOrderId;
       setCustomerName(
-        inv.customer
-          ? `${inv.customer.firstName} ${inv.customer.lastName}`.trim()
-          : inv.customerSnapshot?.name || ''
+        inv.customerSnapshot?.name ||
+          (inv.customer
+            ? `${inv.customer.firstName} ${inv.customer.lastName}`.trim()
+            : inv.customerSnapshot?.name || '')
       );
-      setAmount(String(inv.outstanding ?? ''));
+      setAmount(
+        initialInvoice?._id === salesOrderId
+          ? ''
+          : String(inv.outstanding ?? '')
+      );
       setTaxAmount('');
     }
-  }, [salesOrderId, invoices]);
+  }, [salesOrderId, invoices, initialInvoice]);
 
   const selectedInvoice = invoices.find(
     (invoice) => invoice._id === salesOrderId
@@ -81,7 +87,8 @@ export default function CreditNoteFormModal({
     Number.isFinite(gross) &&
     Number(amount) > 0 &&
     Number(taxAmount || 0) >= 0 &&
-    (!!selectedInvoice || !!customerId);
+    (!!selectedInvoice || !!customerId) &&
+    (!selectedInvoice || (!invoiceChoices?.loading && !invoiceChoices?.error));
 
   const submit = async () => {
     if (!valid || busy) return;
@@ -96,7 +103,7 @@ export default function CreditNoteFormModal({
         reason: reason || undefined,
         post: postNow,
       });
-      toast.success('Credit note applied');
+      toast.success(postNow ? 'Credit note posted' : 'Credit draft saved');
       onSaved();
       onClose();
     } catch (e) {
@@ -136,7 +143,13 @@ export default function CreditNoteFormModal({
             <select
               className={`${INPUT_CLS} mt-1`}
               value={salesOrderId}
-              onChange={(e) => setSalesOrderId(e.target.value)}
+              onChange={(e) => {
+                setSalesOrderId(e.target.value);
+                setCustomerId('');
+                setCustomerName('');
+                setAmount('');
+                setTaxAmount('');
+              }}
             >
               <option value="">Standalone credit</option>
               {invoices.map((i) => (
@@ -146,29 +159,16 @@ export default function CreditNoteFormModal({
               ))}
             </select>
           </label>
+          {invoiceChoices && <CreditInvoiceLoading choices={invoiceChoices} />}
           {!selectedInvoice && (
-            <label className="block text-xs font-medium text-gray-600">
-              Customer account
-              <select
-                className={`${INPUT_CLS} mt-1`}
-                value={customerId}
-                onChange={(e) => {
-                  setCustomerId(e.target.value);
-                  const c = customers.find((x) => x._id === e.target.value);
-                  if (c) setCustomerName(`${c.firstName} ${c.lastName}`.trim());
-                }}
-              >
-                <option value="">Select a customer…</option>
-                {customers.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {`${c.firstName} ${c.lastName}`.trim() || c.email || c._id}
-                  </option>
-                ))}
-              </select>
-              <span className="mt-1 block text-[11px] text-gray-400">
-                Credit without an invoice is held on the account, so it needs one.
-              </span>
-            </label>
+            <CreditCustomerSelect
+              token={token}
+              value={customerId}
+              onChange={(id, name) => {
+                setCustomerId(id);
+                setCustomerName(name);
+              }}
+            />
           )}
           {selectedInvoice && (
             <label className="block text-xs font-medium text-gray-600">
@@ -229,13 +229,16 @@ export default function CreditNoteFormModal({
               </div>
               {selectedInvoice && (
                 <div className="flex justify-between">
-                  <span>Reduces {selectedInvoice.orderNumber || 'the invoice'} by</span>
+                  <span>
+                    On posting, reduces{' '}
+                    {selectedInvoice.orderNumber || 'the invoice'} by
+                  </span>
                   <span className="tabular-nums">{fmtMoney(appliedNow)}</span>
                 </div>
               )}
               {unapplied > 0 && (
                 <div className="flex justify-between font-medium text-emerald-700">
-                  <span>Held as unapplied credit</span>
+                  <span>On posting, held as available credit</span>
                   <span className="tabular-nums">{fmtMoney(unapplied)}</span>
                 </div>
               )}
@@ -246,6 +249,7 @@ export default function CreditNoteFormModal({
             <input
               type="checkbox"
               className="mt-0.5"
+              aria-label="Post immediately"
               checked={postNow}
               onChange={(e) => setPostNow(e.target.checked)}
             />
@@ -276,7 +280,7 @@ export default function CreditNoteFormModal({
             onClick={submit}
             className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
           >
-            Apply Credit Note
+            {postNow ? 'Post credit note' : 'Save draft'}
           </button>
         </div>
       </div>

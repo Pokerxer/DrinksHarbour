@@ -2,12 +2,12 @@ import React from 'react';
 import { routes } from '@/config/routes';
 import {
   PiCashRegisterDuotone,
+  PiBellDuotone,
   PiBooksDuotone,
   PiChartBarDuotone,
   PiChartLineUpDuotone,
   PiShieldCheckDuotone,
   PiShoppingCartDuotone,
-  PiTagDuotone,
   PiListBulletsDuotone,
   PiReceiptDuotone,
   PiStarDuotone,
@@ -19,7 +19,6 @@ import {
   PiStorefrontDuotone,
   PiChatCircleDotsDuotone,
   PiArrowsDownUpDuotone,
-  PiFilesDuotone,
   PiWarehouseDuotone,
   PiInvoiceDuotone,
   PiGearDuotone,
@@ -148,6 +147,11 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     // available on all plans
   },
   {
+    name: 'Notifications',
+    href: routes.notifications,
+    icon: <PiBellDuotone />,
+  },
+  {
     name: 'Analytics',
     href: routes.analytics,
     icon: <PiChartBarDuotone />,
@@ -172,20 +176,6 @@ export const tenantMenuItems: TenantMenuEntry[] = [
       { name: 'Add Product', href: routes.eCommerce.createSubProduct },
     ],
   },
-  {
-    name: 'Categories',
-    href: '#',
-    icon: <PiTagDuotone />,
-    dropdownItems: [
-      { name: 'All Categories', href: routes.eCommerce.categories },
-      { name: 'Sub-categories', href: routes.eCommerce.subCategories },
-    ],
-  },
-  {
-    name: 'Brands',
-    href: routes.eCommerce.brands,
-    icon: <PiFilesDuotone />,
-  },
 
   // ─── Inventory ──────────────────────────────────────────────
   { label: 'Inventory' },
@@ -198,6 +188,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
       { name: 'Transfers', href: routes.inventory.transfers },
       { name: 'Receipts', href: routes.inventory.receipts },
       { name: 'Deliveries', href: routes.inventory.deliveries },
+      { name: 'Customer Returns', href: routes.inventory.returns },
       { name: 'Adjustments', href: routes.inventory.adjustments },
       { name: 'Stock', href: routes.inventory.stock },
       { name: 'Replenishment', href: routes.inventory.replenishment },
@@ -238,11 +229,6 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     name: 'Orders',
     href: routes.eCommerce.orders,
     icon: <PiReceiptDuotone />,
-  },
-  {
-    name: 'Live Carts',
-    href: routes.eCommerce.carts,
-    icon: <PiShoppingCartDuotone />,
   },
   {
     name: 'Reviews',

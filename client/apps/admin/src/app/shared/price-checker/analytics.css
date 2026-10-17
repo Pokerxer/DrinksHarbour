@@ -1,0 +1,233 @@
+.pc-analytics {
+  --pc-report-muted: #766969;
+}
+.pc-analytics .pc-heading {
+  align-items: flex-start;
+}
+.pc-analytics .pc-heading h1 {
+  font-size: clamp(24px, 3vw, 30px);
+}
+.pc-analytics .pc-report-controls {
+  padding: 22px;
+  background: rgb(var(--background, 255 255 255));
+}
+.pc-report-controls fieldset {
+  min-width: 0;
+}
+.pc-analytics .pc-report-presets button {
+  min-height: 44px;
+  padding: 10px 16px;
+}
+.pc-analytics .pc-report-presets button[aria-pressed='true'] {
+  color: #b20202;
+  background: #b2020209;
+  border-color: #b2020244;
+  font-weight: 600;
+}
+.pc-analytics .pc-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 14px;
+}
+.pc-analytics .pc-filter label {
+  min-width: 0;
+}
+.pc-analytics .pc-filter input,
+.pc-analytics .pc-filter select {
+  min-width: 0;
+  font-size: 16px;
+}
+.pc-report-filter-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pc-report-muted);
+  margin-top: 14px;
+}
+.pc-report-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin: 28px 0 16px;
+}
+.pc-report-title h2 {
+  font-size: 19px;
+}
+.pc-report-title p {
+  color: var(--pc-report-muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.pc-report-refresh {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid #8884;
+  border-radius: 9px;
+  font-size: 12px;
+}
+.pc-report-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-radius: 16px;
+  padding: 26px 28px;
+  background: #271719;
+  color: #fff;
+}
+.pc-report-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: #edb6a8;
+  font-weight: 700;
+}
+.pc-report-summary h2 {
+  font-size: 25px;
+  margin-top: 9px;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+.pc-report-summary p {
+  color: #e1caca;
+  font-size: 13px;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.pc-report-leader {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  max-width: 300px;
+}
+.pc-report-leader svg {
+  flex-shrink: 0;
+  font-size: 30px;
+  color: #edb6a8;
+}
+.pc-report-leader span {
+  font-size: 11px;
+  color: #e1caca;
+}
+.pc-report-leader strong {
+  display: block;
+  font-size: 14px;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.pc-report-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.pc-report-stat-label {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+.pc-report-stat-label svg {
+  flex-shrink: 0;
+  color: #9e5757;
+  font-size: 21px;
+}
+.pc-report-stats .pc-card {
+  min-width: 0;
+  padding: 20px;
+}
+.pc-report-stats strong {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.pc-report-stats small {
+  font-size: 11px;
+  color: var(--pc-report-muted);
+  display: block;
+  margin-top: 6px;
+}
+.pc-report-calendar {
+  display: flex;
+  justify-content: space-between;
+  gap: 22px;
+}
+.pc-report-calendar h2 {
+  font-size: 14px;
+}
+.pc-report-calendar p {
+  color: var(--pc-report-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 6px;
+}
+.pc-report-calendar dl {
+  display: flex;
+  gap: 26px;
+}
+.pc-report-calendar dt {
+  font-size: 11px;
+  color: var(--pc-report-muted);
+}
+.pc-report-calendar dd {
+  margin-top: 4px;
+  font-size: 21px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pc-report-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 60px 20px;
+  color: var(--pc-report-muted);
+  border: 1px dashed #8884;
+  border-radius: 14px;
+  font-size: 14px;
+}
+.pc-analytics .pc-report-empty > svg {
+  font-size: 48px;
+  margin: 0 auto 16px;
+  color: #b20202;
+}
+.pc-analytics .pc-report-empty .pc-button {
+  margin-top: 20px;
+}
+.pc-report-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 0;
+}
+.pc-report-pagination p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pc-report-muted);
+  max-width: 420px;
+}
+.pc-report-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.pc-report-pagination button {
+  min-height: 44px;
+  border: 1px solid #8884;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+.pc-report-pagination span {
+  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.dark .pc-analytics {
+  --pc-report-muted: #b8abab;
+}
+.dark .pc-analytics .pc-error {
+  background: #3b2020;
+  color: #ffc5bc;
+  border-color: #71403b;
+}

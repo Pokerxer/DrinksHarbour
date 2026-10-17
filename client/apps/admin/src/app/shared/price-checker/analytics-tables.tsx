@@ -1,108 +1,127 @@
+import { AnalyticsHours } from './analytics-hours';
+import { UnknownBarcodes } from './analytics-unknown';
 import type { InterestRow, KioskAnalytics } from './types';
-const money = (row: InterestRow) =>
-  row.currentPrice === null || !row.currency
-    ? 'Unavailable'
-    : new Intl.NumberFormat('en-NG', { style: 'currency', currency: row.currency }).format(
-        row.currentPrice
-      );
+function money(row: InterestRow) {
+  if (
+    row.currentPrice === null ||
+    !Number.isFinite(row.currentPrice) ||
+    !row.currency
+  )
+    return 'Unavailable';
+  try {
+    return new Intl.NumberFormat('en-NG', {
+      style: 'currency',
+      currency: row.currency,
+    }).format(row.currentPrice);
+  } catch {
+    return 'Unavailable';
+  }
+}
 function InterestTable({
   title,
   rows,
+  page,
   stock = false,
 }: {
   title: string;
   rows: InterestRow[];
+  page: number;
   stock?: boolean;
 }) {
   return (
-    <section className="pc-card">
-      <h2>{title}</h2>
-      <div className="pc-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Product / kiosk</th>
-              <th>Barcode</th>
-              <th>Scans</th>
-              <th>{stock ? 'Units available now' : 'Current price'}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={`${row.kiosk}-${row.barcode}-${index}`}>
-                <td>
-                  <strong>{row.productName}</strong>
-                  <small>{row.kioskName}</small>
-                </td>
-                <td>{row.barcode}</td>
-                <td>{row.scans}</td>
-                <td>{stock ? row.quantity : money(row)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!rows.length && <p className="pc-help">No matching scans in this period.</p>}
-    </section>
-  );
-}
-export function AnalyticsTables({ data }: { data: KioskAnalytics }) {
-  const max = Math.max(1, ...data.hours.map((row) => row.scans));
-  return (
-    <>
-      <section className="pc-card">
-        <h2>Peak hours</h2>
-        <p className="pc-help">Scan activity in Africa/Lagos time.</p>
-        <div
-          className="pc-hours"
-          role="img"
-          aria-label={data.hours.map((row) => `${row.hour}:00, ${row.scans} scans`).join('; ')}
-        >
-          {data.hours.map((row) => (
-            <div key={row.hour} title={`${row.hour}:00 — ${row.scans} scans`}>
-              <span style={{ height: `${(row.scans / max) * 100}%` }} />
-              <small>{row.hour}</small>
-            </div>
-          ))}
+    <section className="pc-card pc-report-table-section">
+      <div className="pc-report-section-heading">
+        <div>
+          <h2>{title}</h2>
+          <p className="pc-help">
+            {stock
+              ? 'Scanned products currently at or below their stock threshold at the scanned location.'
+              : 'Customer interest ranked by scans. Prices shown are current retail prices, not prices at the time of scanning.'}
+          </p>
         </div>
-      </section>
-      <InterestTable title="Most scanned products" rows={data.popular} />
-      <section className="pc-card">
-        <h2>Unknown barcodes</h2>
-        <p className="pc-help">
-          Products scanned here that do not match a barcode in your catalogue.
+        <span className="pc-report-row-count">{rows.length} on this page</span>
+      </div>
+      {!rows.length ? (
+        <p className="pc-report-table-empty">
+          {page > 1
+            ? 'No rows on this page. Check previous pages for more results.'
+            : stock
+              ? 'No scanned products currently match the low-stock threshold.'
+              : 'No matching product scans in this period.'}
         </p>
-        <div className="pc-table-wrap">
-          <table>
+      ) : (
+        <div
+          className="pc-table-wrap"
+          role="region"
+          aria-label={`${title} results`}
+          tabIndex={0}
+        >
+          <table className="pc-report-table">
+            <caption className="pc-report-sr-only">
+              {title} · page {page}
+            </caption>
             <thead>
               <tr>
-                <th>Barcode</th>
-                <th>Scans</th>
-                <th>First seen</th>
-                <th>Last seen</th>
-                <th>Kiosk</th>
+                <th scope="col">Product / kiosk</th>
+                <th scope="col">Barcode</th>
+                <th scope="col">Scans</th>
+                <th scope="col">
+                  {stock ? 'Units available now' : 'Current price'}
+                </th>
               </tr>
             </thead>
             <tbody>
-              {data.unknown.map((row) => (
-                <tr key={`${row.kiosk}-${row.barcode}`}>
-                  <td>{row.barcode}</td>
-                  <td>{row.count}</td>
-                  <td>
-                    {new Date(row.firstSeen).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}
+              {rows.map((row, index) => (
+                <tr key={`${row.kiosk}-${row.barcode}-${index}`}>
+                  <td
+                    data-label="Product / kiosk"
+                    className="pc-report-product"
+                  >
+                    <strong>{row.productName || 'Product unavailable'}</strong>
+                    <small>{row.kioskName}</small>
                   </td>
-                  <td>
-                    {new Date(row.lastSeen).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}
+                  <td data-label="Barcode" className="pc-report-barcode">
+                    {row.barcode}
                   </td>
-                  <td>{row.kioskName}</td>
+                  <td data-label="Scans" className="pc-report-number">
+                    {row.scans.toLocaleString('en-NG')}
+                  </td>
+                  <td
+                    data-label={stock ? 'Units available now' : 'Current price'}
+                    className="pc-report-number"
+                  >
+                    {stock
+                      ? row.quantity !== undefined &&
+                        Number.isFinite(row.quantity)
+                        ? row.quantity.toLocaleString('en-NG')
+                        : 'Unavailable'
+                      : money(row)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {!data.unknown.length && <p>No unknown barcodes in this period.</p>}
-      </section>
-      <InterestTable title="Low stock interest" rows={data.lowStock} stock />
+      )}
+    </section>
+  );
+}
+export function AnalyticsTables({ data }: { data: KioskAnalytics }) {
+  return (
+    <>
+      <AnalyticsHours hours={data.hours} />
+      <InterestTable
+        title="Most scanned products"
+        rows={data.popular}
+        page={data.range.page}
+      />
+      <UnknownBarcodes rows={data.unknown} page={data.range.page} />
+      <InterestTable
+        title="Low stock interest"
+        rows={data.lowStock}
+        page={data.range.page}
+        stock
+      />
     </>
   );
 }

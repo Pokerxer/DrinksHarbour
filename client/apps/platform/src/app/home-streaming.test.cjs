@@ -24,9 +24,9 @@ test('homepage sends hero while catalog is pending, then sends server catalog', 
     '@/lib/jsonld': { jsonLdHtml: JSON.stringify },
     '@/components/Home1/MarketplaceIntro': { default: () => null },
     '@/components/Home1/HomeCategoryDrawer': { default: () => null },
-    '@/components/Home1/HomeFlashSale': { default: () => null },
+    '@/components/Home1/HomeFlashSale': { default: () => { if (!ready) throw pending; return null; } },
     '@/components/Home1/HomeSections': { default: content },
-    '@/components/Banner/HeroBanner': { default: () => React.createElement('div', null, 'Immediate hero') },
+    '@/components/Banner/HomeHero': { default: () => React.createElement('div', null, 'Immediate hero') },
   };
   const page = new Module(__filename + '.fixture', module);
   page.filename = __filename;
@@ -49,6 +49,7 @@ test('homepage sends hero while catalog is pending, then sends server catalog', 
   try {
     await new Promise(resolve => setImmediate(resolve));
     assert.match(html, /Immediate hero/);
+    assert.match(html, /Loading current offers/);
     assert.doesNotMatch(html, /Server catalog/);
     ready = true;
     release();

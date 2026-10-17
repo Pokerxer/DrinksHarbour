@@ -22,13 +22,14 @@ const accountingPayment = require('./accountingPayment.service');
 const { bad } = require('./accounting.query');
 const { round2 } = require('./accounting.helpers');
 
-const CHARGES = [{ $cond: [{ $eq: ['$entryType', 'charge'] }, '$amount', 0] }];
-const PAYMENTS = [{ $cond: [{ $eq: ['$entryType', 'payment'] }, '$amount', 0] }];
+// $group accumulators accept a single expression, not an argument array.
+const CHARGES = { $cond: [{ $eq: ['$entryType', 'charge'] }, '$amount', 0] };
+const PAYMENTS = { $cond: [{ $eq: ['$entryType', 'payment'] }, '$amount', 0] };
 // Lowers the balance with no money moving. Exists for the partial refund of a
 // sale that went on the tab: the customer never paid that part, so it is neither
 // a payment (they handed nothing over) nor a voided charge (the rest of the sale
 // stands).
-const CREDITS = [{ $cond: [{ $eq: ['$entryType', 'credit'] }, '$amount', 0] }];
+const CREDITS = { $cond: [{ $eq: ['$entryType', 'credit'] }, '$amount', 0] };
 
 /**
  * Balances for a set of customers in one query. A directory page calls this once
@@ -337,6 +338,13 @@ async function revertCharge(tenantId, receiptNumber, { userId = null } = {}) {
     },
     { $set: { voided: true, voidedAt: new Date(), voidedBy: userId } },
   );
+  if (mongoose.connection.readyState === 1 && result?.modifiedCount) {
+    const rows = await Statement.find({ tenant: tenantId, receiptNumber: String(receiptNumber), entryType: 'charge' }).select('tenant customer').lean();
+    for (const row of rows) {
+      try { await require('./customerInvoice/hooks').customerLedgerSaved(row); }
+      catch (err) { console.error('invoiceVoidSyncFailed', { message: err.message }); }
+    }
+  }
   return { modifiedCount: result?.modifiedCount ?? 0 };
 }
 

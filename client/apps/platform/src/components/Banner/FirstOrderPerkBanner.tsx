@@ -4,8 +4,9 @@
  * Advertises free delivery on a customer's first purchase.
  *
  * Two presentations of one verdict: a slim dismissible strip for the header, and
- * a card for the cart page. Both read the shared probe, and both stay hidden for
- * anyone who cannot actually claim the offer — see `describeFirstOrderPerk`.
+ * a card for the cart page. Both read the shared probe; the offer stays hidden
+ * for anyone who cannot claim it. Pending, dismissed and ineligible states do
+ * not render a replacement strip or reserve header space.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -48,7 +49,9 @@ const FirstOrderPerkBanner: React.FC<Props> = ({
 
   const promo = describeFirstOrderPerk(perk, { subtotal, returnTo });
 
-  if (!mounted || loading || !promo.show || dismissed) return null;
+  if (!mounted || loading || !promo.show || dismissed) {
+    return null;
+  }
 
   const dismiss = () => {
     setDismissed(true);
@@ -61,12 +64,12 @@ const FirstOrderPerkBanner: React.FC<Props> = ({
   if (variant === 'bar') {
     return (
       <div
-        className={`w-full ${success ? 'bg-green-600' : 'bg-black'} text-white`}
+        className={`w-full h-10 ${success ? 'bg-green-600' : 'bg-black'} text-white`}
         role="status"
       >
-        <div className="container mx-auto px-4 py-2 flex items-center justify-center gap-2 sm:gap-3 text-center">
+        <div className="container mx-auto px-4 h-full flex items-center justify-center gap-2 sm:gap-3 text-center">
           <Icon.PiTruckBold size={16} className="flex-shrink-0" aria-hidden="true" />
-          <p className="text-xs sm:text-sm leading-snug">
+          <p className="text-xs sm:text-sm leading-snug min-w-0 truncate">
             <span className="font-bold">{promo.headline}</span>
             <span className="hidden sm:inline"> — {promo.detail}</span>
           </p>

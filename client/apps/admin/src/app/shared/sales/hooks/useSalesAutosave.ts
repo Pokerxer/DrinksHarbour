@@ -2,11 +2,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
+import {
+  salesOrderService,
+  type SalesOrder,
+} from '@/services/salesOrder.service';
 import { routes } from '@/config/routes';
 import type { PricedLine } from '../sales-line-table';
 
 export interface UseSalesAutosaveOptions {
+  enabled?: boolean;
   token: string;
   draftPath?: (id: string) => string;
   initial?: SalesOrder;
@@ -24,6 +28,7 @@ export interface UseSalesAutosaveOptions {
 }
 
 export function useSalesAutosave({
+  enabled = true,
   token,
   draftPath = routes.eCommerce.salesEdit,
   initial,
@@ -39,6 +44,8 @@ export function useSalesAutosave({
   plannedRedeemPoints,
   buildPayload,
 }: UseSalesAutosaveOptions) {
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
   const [autoSaveStatus, setAutoSaveStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle');
@@ -46,6 +53,7 @@ export function useSalesAutosave({
   const [draftId, setDraftId] = useState<string | null>(initial?._id ?? null);
   const isDirtyRef = useRef(false);
   const autoSaveEnabledRef = useRef(false);
+  const saveInFlight = useRef<Promise<boolean | undefined> | null>(null);
 
   // Assign a freshly-created draft id to both the ref (sync reads) and state
   // (so consumers re-render, e.g. the history panel gets an orderId).
@@ -62,7 +70,10 @@ export function useSalesAutosave({
   }, []);
 
   useEffect(() => {
-    if (autoSaveEnabledRef.current) isDirtyRef.current = true;
+    if (enabledRef.current && autoSaveEnabledRef.current) {
+      isDirtyRef.current = true;
+      setAutoSaveStatus((status) => (status === 'saving' ? status : 'idle'));
+    }
   }, [
     priced,
     customer,
@@ -91,7 +102,11 @@ export function useSalesAutosave({
   const bgSaveRef = useRef<() => void | Promise<void>>(() => {});
   useEffect(() => {
     bgSaveRef.current = async () => {
-      if (!isDirtyRef.current) return;
+      if (!enabledRef.current) return;
+      // Let the explicit save assign its id first, then flush any newer edits
+      // against that same source instead of creating a competing quotation.
+      if (saveInFlight.current) await saveInFlight.current;
+      if (!enabledRef.current || !isDirtyRef.current) return;
       const tok = tokenRef.current;
       if (!tok) return;
       const payload = latestPayloadRef.current;
@@ -166,14 +181,14 @@ export function useSalesAutosave({
   useEffect(() => {
     if (prevWarehouseRef.current === warehouseId) return;
     prevWarehouseRef.current = warehouseId;
-    if (!autoSaveEnabledRef.current) return;
+    if (!enabledRef.current || !autoSaveEnabledRef.current) return;
     void manualSaveRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- save-on-warehouse-change only
   }, [warehouseId]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (!isDirtyRef.current) return;
+      if (!enabledRef.current || !isDirtyRef.current) return;
       e.preventDefault();
       bgSaveRef.current();
     };
@@ -187,7 +202,8 @@ export function useSalesAutosave({
     };
   }, []);
 
-  async function handleManualSave() {
+  async function saveDraft() {
+    if (!enabledRef.current) return false;
     const productLines = priced.filter(
       (l) => l.lineType === 'product' && l.subProductId
     );
@@ -206,13 +222,28 @@ export function useSalesAutosave({
         assignDraftId(res.data._id);
         window.history.replaceState(null, '', draftPath(res.data._id));
       }
-      isDirtyRef.current = false;
-      setAutoSaveStatus('saved');
-      return true;
+      const unchanged =
+        !latestPayloadRef.current ||
+        JSON.stringify(latestPayloadRef.current) === JSON.stringify(payload);
+      isDirtyRef.current = !unchanged;
+      setAutoSaveStatus(unchanged ? 'saved' : 'idle');
+      // An action that requires the current form must not proceed with a
+      // successfully stored older snapshot while newer edits remain dirty.
+      return unchanged;
     } catch {
       setAutoSaveStatus('error');
       return false;
     }
+  }
+
+  function handleManualSave() {
+    if (saveInFlight.current) return saveInFlight.current;
+    const pending = saveDraft();
+    saveInFlight.current = pending;
+    void pending.finally(() => {
+      if (saveInFlight.current === pending) saveInFlight.current = null;
+    });
+    return pending;
   }
 
   manualSaveRef.current = handleManualSave;
@@ -226,26 +257,8 @@ export function useSalesAutosave({
         return null;
       return existingId;
     }
-    const productLines = priced.filter(
-      (l) => l.lineType === 'product' && l.subProductId
-    );
-    if (productLines.length === 0) return null;
-    try {
-      setAutoSaveStatus('saving');
-      const res = await salesOrderService.create(
-        { ...buildPayload(), docType: 'quotation' } as any,
-        token
-      );
-      const newId = res.data._id;
-      assignDraftId(newId);
-      isDirtyRef.current = false;
-      window.history.replaceState(null, '', draftPath(newId));
-      setAutoSaveStatus('saved');
-      return newId;
-    } catch {
-      setAutoSaveStatus('error');
-      return null;
-    }
+    if (!(await handleManualSave())) return null;
+    return initial?._id ?? draftIdRef.current;
   }
 
   return {

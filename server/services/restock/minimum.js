@@ -53,9 +53,7 @@ function automaticMinimum({
   const safetyUnits = Math.ceil(
     2 * mean + 1.65 * deviation * Math.sqrt(lead.days),
   );
-  const leadUnits = demand
-    .slice(0, lead.days)
-    .reduce((a, b) => a + b, 0);
+  const leadUnits = demand.slice(0, lead.days).reduce((a, b) => a + b, 0);
   let units = Math.max(1, Math.ceil(leadUnits + safetyUnits - 1e-8));
   if (saved && units < saved.units)
     units = Math.max(
@@ -84,12 +82,12 @@ module.exports = { automaticMinimum, freshMinimum, VERSION };
 function applyMinimum(
   line,
   stock,
-  { e, values, forecast, incomplete, facts, now },
+  { e, values, forecast, incomplete, facts, now, useSavedMinimum = false },
 ) {
   line.stockRecordId = stock.stockRecordId;
   line.previousMinimumAt = stock.automaticMinimum?.calculatedAt;
   line.minimumPolicy =
-    e.salesIncluded === false
+    e.salesIncluded === false || useSavedMinimum
       ? freshMinimum(stock.automaticMinimum, now) || {
           status: 'learning',
           units: line.threshold,
@@ -104,7 +102,10 @@ function applyMinimum(
           now,
         });
   line.threshold = line.minimumPolicy.units;
-  line.minimumPolicy = { ...line.minimumPolicy, demandBasis: line.minimumPolicy.demandBasis || line.demandBasis };
+  line.minimumPolicy = {
+    ...line.minimumPolicy,
+    demandBasis: line.minimumPolicy.demandBasis || line.demandBasis,
+  };
   if (line.minimumPolicy.status === 'active') {
     line.buffer = line.minimumPolicy.safetyUnits;
     line.bufferSource = 'automatic_sales_policy';

@@ -15,7 +15,7 @@ const forwardPrice = (stored, ctx) => {
     ctx.revenueModel === 'markup'
       ? calcPlatformCostPrice(stored, 0, 'markup', ctx.markupPct, ctx.commissionPct)
       : calcPlatformCostPrice(0, stored, 'commission', ctx.markupPct, ctx.commissionPct);
-  return calcPlatformSellingPrice(platformCost, ctx.platformMarkupPct, ctx.productDiscount);
+  return calcPlatformSellingPrice(platformCost, ctx.platformMarkupPct, ctx.productDiscount, { revenueModel: ctx.revenueModel, tenantStorePrice: ctx.revenueModel === 'commission' ? stored : 0 });
 };
 
 test('markup model: platform cost and selling follow cost × (1+markup) × (1+platformMarkup), rounded up to 100', () => {
@@ -81,7 +81,7 @@ test('size pricing falls back to sub-product values when size price is 0', () =>
   assert.strictEqual(pricing.platformCostPrice, 1250);
 });
 
-test('tenantReceives under commission is tenant price minus commission, even with product discount', () => {
+test('tenantReceives under commission follows final discounted merchandise', () => {
   const pricing = calculateSubProductPricing(
     { costPrice: 0, baseSellingPrice: 2000 },
     {
@@ -90,7 +90,7 @@ test('tenantReceives under commission is tenant price minus commission, even wit
     },
     { revenueModel: 'commission', commissionPercentage: 12 }
   );
-  assert.strictEqual(pricing.tenantReceives, 1760); // 2000 × 0.88
+  assert.strictEqual(pricing.tenantReceives, 1584); // 1800 after discount × 0.88
 });
 
 test('backCalc roundtrip — markup, no discount', () => {
@@ -151,7 +151,7 @@ test('markup model: a wholesale price on the size replaces the supplier cost inp
   assert.strictEqual(pricing.platformSellingPrice, 2200);
 });
 
-test('commission model: a wholesale price replaces the supplier cost input (revenue model still applies)', () => {
+test('commission model: wholesale does not replace the final merchandise basis', () => {
   const product = { platformMarkup: 15 };
   const tenant = { revenueModel: 'commission', commissionPercentage: 10 };
   // Wholesale replaces supplier cost; commission derives from tenantSellingPrice (unchanged).
@@ -164,9 +164,8 @@ test('commission model: a wholesale price replaces the supplier cost input (reve
   // Commission model: platformCostPrice = tenantSellingPrice × (1 − commission%)
   // wholesale replaces costPrice (supplier cost), not tenantSellingPrice.
   assert.strictEqual(pricing.platformCostPrice, 1800); // 2000 × 0.9
-  assert.strictEqual(pricing.isPlatformCostFromWholesale, true);
-  // 1800 × 1.15 = 2070, but undercut caps it just below tenant price 2000 → 1900
-  assert.strictEqual(pricing.platformSellingPrice, 1900);
+  assert.notEqual(pricing.isPlatformCostFromWholesale, true);
+  assert.strictEqual(pricing.platformSellingPrice, 2000);
 });
 
 test('no wholesale price falls back to the computed platform cost (unchanged behaviour)', () => {

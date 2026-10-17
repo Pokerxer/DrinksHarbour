@@ -39,6 +39,7 @@ import {
   type AppraisalCycle,
   type AppraisalTemplateDoc,
 } from '@/services/appraisal.service';
+import CreatePeerCycle from './peer-rating/create-cycle';
 import { deadlineTone } from './my-appraisals-utils';
 import {
   CYCLE_STATUS_FILTERS,
@@ -659,6 +660,8 @@ export default function CyclesList() {
           New cycle
         </Button>
       </div>
+
+      <div><CreatePeerCycle /></div>
 
       {/* A fixed grid, not flex-wrap with flex-1: wrapped flex tiles stretch to
           different widths at mid viewports, so the row reads as an accident. */}

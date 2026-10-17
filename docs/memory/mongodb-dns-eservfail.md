@@ -1,5 +1,9 @@
 # MongoDB Atlas DNS ESERVFAIL recovery
 
+Later startup selection failures (2026-10-13): see
+[mongodb-startup.md](mongodb-startup.md) for discovery timeout defaults,
+bounded startup recovery and current reachability evidence.
+
 Date: 2026-09-21
 
 ## Symptom

@@ -68,6 +68,8 @@ const subProductSchema = new Schema(
     // by the admin's chosen final platform price. Survives tenant cost/price
     // changes: the platform selling price recalculates with this same %.
     // null = use the product-level platformMarkup.
+    // Explicit pre-catalogue-discount marketplace price for commission agreements.
+    commissionPriceOverride: { type: Number, min: 0, default: null },
     platformMarkupOverridePct: {
       type: Number,
       default: null,

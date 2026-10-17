@@ -23,8 +23,8 @@ export function sectionSubtotals(items: SalesLineItem[]): Map<string, number> {
       out.set(cur, 0);
       continue;
     }
-    if (it.lineType !== 'product') continue;
-    if (cur) out.set(cur, (out.get(cur) ?? 0) + (it.lineTotal || 0));
+    if (it.lineType && it.lineType !== 'product') continue;
+    if (cur) out.set(cur, Math.round(((out.get(cur) ?? 0) + Math.max(0,(it.lineTotal||0)-(it.promoDiscount||0)))*100)/100);
   }
   return out;
 }
@@ -53,7 +53,7 @@ export function NonProductLineRow({
           {item.name || 'Section'}
         </td>
         <td className="px-4 py-2.5 text-right text-xs font-medium text-gray-500">
-          {typeof subtotal === 'number' ? `Subtotal ${fmtCur(subtotal, currency)}` : ''}
+          {typeof subtotal === 'number' ? `Untaxed subtotal ${fmtCur(subtotal, currency)}` : ''}
         </td>
       </tr>
     );
@@ -61,7 +61,7 @@ export function NonProductLineRow({
   if (item.lineType === 'note') {
     return (
       <tr>
-        <td colSpan={cols} className="bg-amber-50/40 px-4 py-2 text-xs text-gray-600">
+        <td colSpan={cols} className="whitespace-pre-wrap bg-amber-50/40 px-4 py-2 text-xs text-gray-600">
           {item.description || ''}
         </td>
       </tr>

@@ -11,6 +11,7 @@ const arApService = require('../services/arAp.service');
 const creditNoteService = require('../services/creditNote.service');
 const paymentService = require('../services/accountingPayment.service');
 const batchService = require('../services/batchPayment.service');
+const { withDbRetry } = require('../utils/db-retry');
 
 function paged(req) {
   return {
@@ -26,31 +27,37 @@ function envelope(req, res, { data, total, page, pages }) {
 // ── Summaries + open documents ───────────────────────────────────────────────
 
 exports.receivablesSummary = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await arApService.summary(req.tenant._id, 'ar') });
+  res.json({ success: true, data: await withDbRetry(() => arApService.summary(req.tenant._id, 'ar')) });
 });
 
 exports.payablesSummary = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await arApService.summary(req.tenant._id, 'ap') });
+  res.json({ success: true, data: await withDbRetry(() => arApService.summary(req.tenant._id, 'ap')) });
+});
+
+exports.savedInvoiceSummary = asyncHandler(async (req, res) => {
+  const tenant = require('../utils/tenantContext').getTenantId(req);
+  res.json({ success: true, data: await withDbRetry(() => require('../services/customerInvoice/summary').invoiceSummary(tenant)) });
 });
 
 exports.listInvoices = asyncHandler(async (req, res) => {
-  envelope(req, res, await arApService.listOpenDocs(req.tenant._id, 'ar', { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search }));
+  const options = { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search, returnStatus: req.query.returnStatus, customer: req.query.customer };
+  envelope(req, res, await withDbRetry(() => arApService.listInvoices(req.tenant._id, { ...options, scope: req.query.scope })));
 });
 
 exports.listBills = asyncHandler(async (req, res) => {
-  envelope(req, res, await arApService.listOpenDocs(req.tenant._id, 'ap', { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search }));
+  envelope(req, res, await withDbRetry(() => arApService.listOpenDocs(req.tenant._id, 'ap', { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search, vendor: req.query.vendor })));
 });
 
 // ── Credit notes ─────────────────────────────────────────────────────────────
 
 exports.listCreditNotes = asyncHandler(async (req, res) => {
-  envelope(req, res, await creditNoteService.listCreditNotes(req.tenant._id, {
-    ...paged(req),
-    status: req.query.status,
-    from: req.query.from,
-    to: req.query.to,
-    customer: req.query.customer,
+  const tenant = require('../utils/tenantContext').getTenantId(req);
+  const result = await withDbRetry(() => creditNoteService.listCreditNotes(tenant, {
+    ...paged(req), status: req.query.status, from: req.query.from,
+    to: req.query.to, customer: req.query.customer, search: req.query.search,
   }));
+  res.json({ success: true, data: result.data, summary: result.summary,
+    pagination: { page: result.page, limit: paged(req).limit, total: result.total, pages: result.pages } });
 });
 
 exports.createCreditNote = asyncHandler(async (req, res) => {
@@ -62,9 +69,11 @@ exports.createCreditNote = asyncHandler(async (req, res) => {
   // Creating is a draft by default. `post: true` is the one-step path for a
   // caller that has already reviewed the split; otherwise nothing reaches the
   // ledger until an explicit POST /:id/post.
+  const data = { ...req.body };
+  if (data.salesOrder) data.salesOrder = await require('../services/customerInvoice/browse').salesSourceId(req.tenant._id, data.salesOrder);
   const draft = await creditNoteService.createCreditNote({
     tenantId: req.tenant._id,
-    data: req.body,
+    data,
     userId: req.user._id,
   });
   const creditNote = post
@@ -104,7 +113,7 @@ exports.applyCreditNote = asyncHandler(async (req, res) => {
   const result = await creditNoteService.applyCredit({
     tenantId: req.tenant._id,
     customer,
-    salesOrder,
+    salesOrder: await require('../services/customerInvoice/browse').salesSourceId(req.tenant._id, salesOrder),
     amount,
     userId: req.user._id,
   });
@@ -143,12 +152,25 @@ exports.cancelCreditNote = asyncHandler(async (req, res) => {
 // ── Payments (customer + vendor) ─────────────────────────────────────────────
 
 function sideOf(req) {
-  const side = req.query.side === 'vendor' ? 'vendor' : 'customer';
-  return side;
+  const querySide = req.query.side;
+  const bodySide = req.body?.side;
+  const allowed = ['customer', 'vendor'];
+  if ((querySide && !allowed.includes(querySide)) || (bodySide && !allowed.includes(bodySide)))
+    throw require('../services/accounting.query').bad('Invalid payment side');
+  if (querySide && bodySide && querySide !== bodySide)
+    throw require('../services/accounting.query').bad('Conflicting payment side');
+  return querySide || bodySide || 'customer';
 }
 
 exports.listPayments = asyncHandler(async (req, res) => {
-  envelope(req, res, await paymentService.listPayments(req.tenant._id, sideOf(req), { ...paged(req), status: req.query.status, from: req.query.from, to: req.query.to, search: req.query.search }));
+  const tenant = require('../utils/tenantContext').getTenantId(req);
+  const result = await withDbRetry(() => paymentService.listPayments(tenant, sideOf(req), {
+    ...paged(req), status: req.query.status, method: req.query.method,
+    from: req.query.from, to: req.query.to, search: req.query.search,
+    vendor: req.query.vendor,
+  }));
+  res.json({ success: true, data: result.data, paymentSummary: result.paymentSummary,
+    pagination: { page: result.page, limit: paged(req).limit, total: result.total, pages: result.pages } });
 });
 
 exports.createPayment = asyncHandler(async (req, res) => {
@@ -157,10 +179,16 @@ exports.createPayment = asyncHandler(async (req, res) => {
   if (!amount || amount <= 0) {
     return res.status(400).json({ success: false, message: 'amount must be positive' });
   }
+  const data = { ...req.body };
+  if (direction === 'customer' && Array.isArray(data.allocations)) {
+    data.allocations = [];
+    for (const allocation of req.body.allocations) data.allocations.push({ ...allocation,
+      salesOrder: await require('../services/customerInvoice/browse').salesSourceId(req.tenant._id, allocation.salesOrder) });
+  }
   const doc = await paymentService.createPayment({
     tenantId: req.tenant._id,
     direction,
-    data: req.body,
+    data,
     userId: req.user._id,
   });
   await logPrivilegedAction(req, 'accounting.payment', 'create', {
@@ -191,45 +219,62 @@ exports.cancelPayment = asyncHandler(async (req, res) => {
 // ── Batch payments ───────────────────────────────────────────────────────────
 
 exports.listBatches = asyncHandler(async (req, res) => {
-  envelope(req, res, await batchService.listBatches(req.tenant._id, { ...paged(req), direction: req.query.direction, status: req.query.status }));
+  const result = await withDbRetry(() => batchService.listBatches(require('../utils/tenantContext').getTenantId(req), {
+    ...paged(req), direction: req.query.direction, status: req.query.status,
+    account: req.query.account, search: req.query.search, from: req.query.from, to: req.query.to,
+  }));
+  res.json({ success: true, data: result.data, batchSummary: result.batchSummary,
+    pagination: { page: result.page, limit: paged(req).limit, total: result.total, pages: result.pages } });
 });
 
 exports.listUnbatched = asyncHandler(async (req, res) => {
-  envelope(req, res, await batchService.listUnbatched(req.tenant._id, sideOf(req), paged(req)));
+  envelope(req, res, await withDbRetry(() => batchService.listUnbatched(require('../utils/tenantContext').getTenantId(req), sideOf(req), { ...paged(req), account: req.query.account, search: req.query.search })));
 });
 
 exports.createBatch = asyncHandler(async (req, res) => {
+  const tenantId = require('../utils/tenantContext').getTenantId(req);
   const batch = await batchService.createBatch({
-    tenantId: req.tenant._id,
+    tenantId,
     direction: req.body.direction,
     paymentIds: req.body.paymentIds,
     account: req.body.account,
+    expectedMembers: req.body.expectedMembers,
     userId: req.user._id,
   });
   await logPrivilegedAction(req, 'accounting.batch_create', 'create', {
     targetType: 'BatchPayment',
     targetId: batch._id,
-    targetTenantId: req.tenant._id,
+    targetTenantId: tenantId,
   });
   res.status(201).json({ success: true, data: batch });
 });
 
+exports.previewBatchSelection = asyncHandler(async (req, res) => {
+  const data = await withDbRetry(() => batchService.previewSelection({
+    tenantId: require('../utils/tenantContext').getTenantId(req), direction: req.body.direction,
+    account: req.body.account, paymentIds: req.body.paymentIds,
+  }));
+  res.json({ success: true, data });
+});
+
 exports.depositBatch = asyncHandler(async (req, res) => {
-  const batch = await batchService.depositBatch({ tenantId: req.tenant._id, id: req.params.id });
+  const tenantId = require('../utils/tenantContext').getTenantId(req);
+  const batch = await batchService.depositBatch({ tenantId, id: req.params.id });
   await logPrivilegedAction(req, 'accounting.batch_deposit', 'update', {
     targetType: 'BatchPayment',
     targetId: req.params.id,
-    targetTenantId: req.tenant._id,
+    targetTenantId: tenantId,
   });
   res.json({ success: true, data: batch });
 });
 
 exports.cancelBatch = asyncHandler(async (req, res) => {
-  const batch = await batchService.cancelBatch({ tenantId: req.tenant._id, id: req.params.id });
+  const tenantId = require('../utils/tenantContext').getTenantId(req);
+  const batch = await batchService.cancelBatch({ tenantId, id: req.params.id });
   await logPrivilegedAction(req, 'accounting.batch_cancel', 'delete', {
     targetType: 'BatchPayment',
     targetId: req.params.id,
-    targetTenantId: req.tenant._id,
+    targetTenantId: tenantId,
   });
   res.json({ success: true, data: batch });
 });
@@ -281,9 +326,23 @@ exports.listProducts = asyncHandler(async (req, res) => {
 });
 
 exports.issueInvoice = asyncHandler(async (req, res) => {
+  const id = await require('../services/customerInvoice/browse').salesSourceId(req.tenant._id, req.params.id, { allowDraft: true });
   const doc = await require('../services/accountingInvoice.service').issueInvoice({
-    tenantId: req.tenant._id, id: req.params.id, dueDate: req.body.dueDate, userId: req.user._id,
+    tenantId: req.tenant._id, id, dueDate: req.body.dueDate, userId: req.user._id,
   });
   await require('../services/tax.service').captureDocumentTax({ sourceType: 'sales_order', doc, postedBy: req.user._id });
   res.json({ success: true, data: doc });
+});
+exports.getInvoice = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await withDbRetry(() => require('../services/customerInvoice/browse').getInvoice(req.tenant._id, req.params.id)) });
+});
+exports.saveInvoiceDraft = asyncHandler(async (req, res) => {
+  const doc = await require('../services/accountingInvoice.service').saveDraft({ tenantId: req.tenant._id, id: req.body.sourceId });
+  res.json({ success: true, data: doc });
+});
+exports.reconcileInvoice = asyncHandler(async (req, res) => {
+  const doc = await require('../services/customerInvoice/browse').getInvoice(req.tenant._id, req.params.id);
+  const saved = await require('../services/customerInvoice/sync').syncSource({ tenantId: req.tenant._id, source: doc.source, sourceId: doc.sourceId });
+  if (!saved) return res.status(404).json({ success: false, message: 'Source document is not available' });
+  res.json({ success: true, data: saved });
 });

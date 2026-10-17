@@ -46,17 +46,17 @@ const categorySchema = new Schema(
         'tequila', 'brandy', 'cognac', 'soju', 'baijiu', 'shochu', 'mezcal',
         
         // Other Alcoholic Categories
-        'liqueur', 'aperitif', 'digestif', 'cocktail',
+        'liqueur', 'aperitif', 'digestif', 'cocktail', 'sake', 'fermented_drink', 'non_alcoholic',
         
         // NON-ALCOHOLIC BEVERAGES
         'coffee', 'tea', 'juice', 'soda', 'water', 'milk', 'yogurt_drink',
         'soft_drink', 'dairy_alternatives', 'functional_drink', 'syrup', 'bitters',
         
         // ACCESSORIES & OTHER
-        'glassware', 'bar_tools', 'accessories', 'gift_set', 'subscription', 'other',
+        'glassware', 'bar_tools', 'accessories', 'vape', 'gift_set', 'subscription', 'other',
 
         // GIFT & LIFESTYLE (ckay taxonomy — snacks, beauty & grooming, home & living)
-        'snack', 'beauty', 'home'
+        'snack', 'nuts', 'beauty', 'home'
       ],
       required: true,
       index: true,

@@ -415,3 +415,21 @@ test('an older till cannot settle a taxed quotation at its untaxed displayed tot
   assert.equal(res.code, 409);
   assert.equal(captured.doc, undefined, 'do not persist a paid sale at an unconfirmed amount');
 });
+
+test('reserved POS handler delegates consumption and receipt once, bypassing legacy stock issue',async t=>{
+  const captured=stub(t,{salesOrder:quotation({docType:'order',orderStatus:'confirmed',reservationVersion:1,warehouseId:TENANT})});
+  let consumed=0,committed=0,closed=0,legacyIssue=0;
+  t.mock.method(WarehouseStock,'findOneAndUpdate',async()=>{legacyIssue++;throw new Error('must use owner reservation');});
+  t.mock.method(require('../services/salesReservations/pos'),'beginPOSSale',async args=>{
+    assert.equal(args.requestId,'handler-request-1');assert.equal(String(args.tenantId),String(TENANT));
+    return {consumeLine:async args=>{consumed+=args.quantity;return {before:10,after:8,batchAllocations:[]};},
+      createReceipt:async data=>{captured.doc=data;return {...data,_id:oid()};},
+      commitReceipt:async()=>{committed++;},abort:async()=>{},close:async()=>{closed++;}};
+  });
+  const res={status(code){this.code=code;return this;},json(body){this.body=body;return this;}};
+  await pos.createPOSOrder({tenant:TENANT_DOC,posUser:{_id:oid()},posPermissions:[],body:{
+    requestId:'handler-request-1',linkedSalesOrderId:String(SO_ID),paymentMethod:'cash',amountTendered:999999,
+    items:[{subProductId:String(SP),sizeId:String(SIZE),quantity:2}]}},res,error=>{throw error;});
+  assert.equal(res.body.success,true);assert.equal(consumed,2);assert.equal(committed,1);assert.equal(closed,1);
+  assert.equal(legacyIssue,0);assert.ok(captured.doc);
+});

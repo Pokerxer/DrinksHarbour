@@ -20,6 +20,7 @@ test('supplying accountId cannot bypass tenant account validation', async (t) =>
 test('AR/AP pagination envelopes work without a global request variable', async (t) => {
   const svc = require('../services/arAp.service');
   t.mock.method(svc, 'listOpenDocs', async () => ({ data: [], total: 0, page: 1, pages: 1 }));
+  t.mock.method(svc, 'listInvoices', async () => ({ data: [], total: 0, page: 1, pages: 1 }));
   const controller = require('../controllers/arAp.controller');
   let body;
   let error;

@@ -4,6 +4,9 @@ import { useMemo, useState } from 'react';
 import { PiCheckCircle } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { arApService, type OpenInvoice } from '@/services/arAp.service';
+import { useAccountingDialog } from './use-accounting-dialog';
+import CreditInvoiceLoading from './credit-invoice-loading';
+import type { CreditInvoiceChoices } from './use-credit-invoices';
 import { fmtMoney } from './accounting-helpers';
 
 const SELECT_CLS =
@@ -19,15 +22,16 @@ interface Props {
   invoices: OpenInvoice[];
   /** Context line, e.g. a note number or the customer's name. */
   caption?: string;
+  invoiceChoices?: CreditInvoiceChoices;
   onClose: () => void;
   onApplied: () => void;
 }
 
 /**
- * Spends a credit note's unapplied balance on an invoice.
+ * Applies available customer account credit using the existing oldest-note FIFO flow.
  *
  * Application is always explicit. The server will happily spend a note across
- * several invoices oldest-first, but it will not do so on its own: a silent
+ * several notes oldest-first against the chosen invoice. A silent
  * sweep moves money where the operator did not ask, and undoing it means
  * cancelling a note whose invoices may since have been paid.
  */
@@ -37,12 +41,14 @@ export default function CreditApplyModal({
   available,
   invoices,
   caption,
+  invoiceChoices,
   onClose,
   onApplied,
 }: Props) {
   const [salesOrder, setSalesOrder] = useState('');
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
+  const dialog = useAccountingDialog(onClose, busy);
 
   // Only invoices still owing something — the server refuses a settled invoice,
   // so hide it here rather than offering a choice that can only fail.
@@ -58,8 +64,15 @@ export default function CreditApplyModal({
   // as the credit allows".
   const effective = amount.trim() === '' ? ceiling : Number(amount);
 
+  const valid =
+    !!selected &&
+    Number.isFinite(effective) &&
+    effective > 0 &&
+    effective <= ceiling &&
+    !invoiceChoices?.loading &&
+    !invoiceChoices?.error;
   const submit = async () => {
-    if (!salesOrder) return;
+    if (!valid || busy) return;
     setBusy(true);
     try {
       const res = await arApService.applyCredit(token, {
@@ -78,20 +91,26 @@ export default function CreditApplyModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Apply customer credit"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-    >
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Apply customer credit"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
+      >
         <h2 className="text-sm font-semibold text-gray-900">Apply credit</h2>
         <p className="mt-1 text-xs text-gray-500">
           {caption ? `${caption} · ` : ''}
-          {fmtMoney(available)} unapplied. This moves no journal entry — the
-          receivable was credited when the note was posted.
+          {fmtMoney(available)} available on this customer account. Credit is
+          used from the oldest posted notes first. No cash refund is sent.
         </p>
 
+        {invoiceChoices && (
+          <div className="mt-3">
+            <CreditInvoiceLoading choices={invoiceChoices} />
+          </div>
+        )}
         {candidates.length === 0 ? (
           <p className="mt-4 rounded bg-amber-50 p-3 text-xs text-amber-800">
             No open invoice for this customer to apply credit to. The balance
@@ -112,8 +131,8 @@ export default function CreditApplyModal({
                 <option value="">Select an invoice…</option>
                 {candidates.map((inv) => (
                   <option key={inv._id} value={inv._id}>
-                    {inv.orderNumber || inv._id.slice(-6)} — {fmtMoney(inv.outstanding)}{' '}
-                    outstanding
+                    {inv.orderNumber || inv._id.slice(-6)} —{' '}
+                    {fmtMoney(inv.outstanding)} outstanding
                   </option>
                 ))}
               </select>
@@ -124,7 +143,9 @@ export default function CreditApplyModal({
               <input
                 className={`${SELECT_CLS} mt-1`}
                 type="number"
+                aria-label="Amount"
                 min={0}
+                max={ceiling}
                 step="0.01"
                 placeholder={ceiling ? fmtMoney(ceiling) : 'Select an invoice'}
                 value={amount}
@@ -132,9 +153,8 @@ export default function CreditApplyModal({
                 disabled={!salesOrder}
               />
               <span className="mt-1 block text-[11px] text-gray-400">
-                Leave blank to apply the maximum of{' '}
-                {fmtMoney(available)} credit and{' '}
-                {fmtMoney(selected?.outstanding || 0)} outstanding.
+                Leave blank to apply up to {fmtMoney(ceiling)}. The amount
+                cannot exceed available credit or the invoice balance.
               </span>
             </label>
           </div>
@@ -143,6 +163,7 @@ export default function CreditApplyModal({
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
+            disabled={busy}
             onClick={onClose}
             className="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
           >
@@ -151,7 +172,7 @@ export default function CreditApplyModal({
           <button
             type="button"
             onClick={submit}
-            disabled={busy || !salesOrder || effective <= 0}
+            disabled={busy || !valid}
             className="flex items-center gap-1.5 rounded bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-black disabled:opacity-40"
           >
             <PiCheckCircle size={13} /> Apply credit

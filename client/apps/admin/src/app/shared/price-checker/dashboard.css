@@ -1,12 +1,12 @@
 .pc-command {
   display: flex;
   justify-content: space-between;
-  gap: 40px;
+  gap: 28px;
   background: #271719;
   color: #fff;
   border-radius: 20px;
-  padding: 36px 44px;
-  margin: 24px 0;
+  padding: 28px 32px;
+  margin: 20px 0;
   overflow: hidden;
 }
 .pc-command-label {
@@ -23,7 +23,7 @@
   margin: 15px 0;
 }
 .pc-command p {
-  max-width: 380px;
+  max-width: 470px;
   color: #d2c2c2;
   font-size: 14px;
   line-height: 1.7;
@@ -35,7 +35,7 @@
   gap: 24px;
 }
 .pc-terminal {
-  width: 260px;
+  width: 210px;
   flex-shrink: 0;
   align-self: center;
   transform: rotate(-5deg);
@@ -82,13 +82,13 @@
   grid-template-columns: repeat(3, 1fr);
   border: 1px solid #8883;
   border-radius: 14px;
-  margin-bottom: 36px;
+  margin-bottom: 28px;
   background: rgb(var(--background, 255 255 255));
 }
 .pc-summary > div {
   display: flex;
   gap: 18px;
-  padding: 24px 28px;
+  padding: 18px 22px;
   align-items: center;
 }
 .pc-summary > div + div {
@@ -149,14 +149,15 @@
   border-radius: 10px;
   padding: 0 14px;
   flex: 1;
-  min-width: 220px;
-  max-width: 440px;
+  min-width: min(100%, 220px);
+  max-width: none;
 }
 .pc-search input {
   background: transparent;
   border: 0;
   width: 100%;
   padding: 13px 0;
+  min-width: 0;
   font-size: 13px;
   outline: none;
   box-shadow: none;
@@ -183,7 +184,7 @@
   border-radius: 7px;
   font-size: 12px;
   color: #817575;
-  min-height: 40px;
+  min-height: 44px;
 }
 .pc-segments button[aria-pressed='true'] {
   background: rgb(var(--background, 255 255 255));
@@ -196,47 +197,7 @@
   font-size: 12px;
   margin-bottom: 14px;
 }
-@media (max-width: 800px) {
-  .pc-command {
-    padding: 28px;
-  }
-  .pc-terminal {
-    width: 195px;
-  }
-  .pc-summary > div {
-    padding: 18px;
-    gap: 10px;
-  }
-}
-@media (max-width: 560px) {
-  .pc-command {
-    padding: 26px;
-  }
-  .pc-terminal {
-    display: none;
-  }
-  .pc-summary > div {
-    padding: 16px 10px;
-  }
-  .pc-summary svg {
-    display: none;
-  }
-  .pc-summary strong {
-    font-size: 23px;
-  }
-  .pc-search {
-    max-width: none;
-  }
-  .pc-segments {
-    width: 100%;
-  }
-  .pc-segments button {
-    flex: 1;
-  }
-  .pc-kiosk-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+
 @media (prefers-reduced-motion: reduce) {
   .pc-skeleton span {
     animation: none;
@@ -244,4 +205,32 @@
   .pc-device {
     transition: none;
   }
+}
+
+.pc-command > div:first-child {
+  min-width: 0;
+}
+.pc-command h2 {
+  max-width: 530px;
+}
+.pc-summary > div {
+  min-width: 0;
+}
+.pc-summary svg {
+  flex-shrink: 0;
+}
+.pc-summary span {
+  overflow-wrap: anywhere;
+}
+.pc-refresh {
+  min-height: 44px;
+}
+.pc-search > button {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 22px;
+  color: inherit;
+}
+.pc-segments {
+  min-width: 0;
 }

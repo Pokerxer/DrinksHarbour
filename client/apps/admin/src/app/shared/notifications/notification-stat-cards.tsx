@@ -13,9 +13,11 @@ export default function NotificationStatCards({
   unread,
   active,
   onSelect,
+  scoped = false,
 }: {
   notices: TenantNotice[];
   total: number;
+  scoped?: boolean;
   unread: number;
   active: string;
   onSelect: (value: string) => void;
@@ -44,7 +46,9 @@ export default function NotificationStatCards({
         valueId: label,
         detail:
           label === 'Total notices' || label === 'Unread'
-            ? 'Across your inbox'
+            ? scoped
+              ? 'In selected timeframe'
+              : 'Across your inbox'
             : 'In loaded window',
       }))}
     />

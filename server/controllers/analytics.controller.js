@@ -206,10 +206,10 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
-        '_vc': { $cond: [{ $gt: ['$items.tenantRevenueShare', 0] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
+        '_vc': { $cond: [{ $or: [{ $eq: ['$items.revenuePolicyVersion', 'merchandise-v2'] }, { $gt: ['$items.tenantRevenueShare', 0] }] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
       }},
       { $addFields: {
-        '_pp': { $cond: [{ $gt: ['$items.platformCommission', 0] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
+        '_pp': { $cond: [{ $or: [{ $eq: ['$items.revenuePolicyVersion', 'merchandise-v2'] }, { $gt: ['$items.platformCommission', 0] }] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
       }},
       { $group: {
         _id:            null,
@@ -225,10 +225,10 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: prevStart, $lte: prevEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
-        '_vc': { $cond: [{ $gt: ['$items.tenantRevenueShare', 0] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
+        '_vc': { $cond: [{ $or: [{ $eq: ['$items.revenuePolicyVersion', 'merchandise-v2'] }, { $gt: ['$items.tenantRevenueShare', 0] }] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
       }},
       { $addFields: {
-        '_pp': { $cond: [{ $gt: ['$items.platformCommission', 0] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
+        '_pp': { $cond: [{ $or: [{ $eq: ['$items.revenuePolicyVersion', 'merchandise-v2'] }, { $gt: ['$items.platformCommission', 0] }] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
       }},
       { $group: {
         _id:            null,
@@ -243,10 +243,10 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: startOf(addMonths(now, -11), 'month') }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
-        '_vc': { $cond: [{ $gt: ['$items.tenantRevenueShare', 0] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
+        '_vc': { $cond: [{ $or: [{ $eq: ['$items.revenuePolicyVersion', 'merchandise-v2'] }, { $gt: ['$items.tenantRevenueShare', 0] }] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
       }},
       { $addFields: {
-        '_pp': { $cond: [{ $gt: ['$items.platformCommission', 0] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
+        '_pp': { $cond: [{ $or: [{ $eq: ['$items.revenuePolicyVersion', 'merchandise-v2'] }, { $gt: ['$items.platformCommission', 0] }] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
       }},
       { $group: {
         _id: { year: { $year: '$placedAt' }, month: { $month: '$placedAt' } },
@@ -263,10 +263,10 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       { $unwind: '$items' },
       { $match: { 'items.tenant': { $exists: true, $ne: null } } },
       { $addFields: {
-        '_vc': { $cond: [{ $gt: ['$items.tenantRevenueShare', 0] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
+        '_vc': { $cond: [{ $or: [{ $eq: ['$items.revenuePolicyVersion', 'merchandise-v2'] }, { $gt: ['$items.tenantRevenueShare', 0] }] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
       }},
       { $addFields: {
-        '_pp': { $cond: [{ $gt: ['$items.platformCommission', 0] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
+        '_pp': { $cond: [{ $or: [{ $eq: ['$items.revenuePolicyVersion', 'merchandise-v2'] }, { $gt: ['$items.platformCommission', 0] }] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
       }},
       { $group: {
         _id:            '$items.tenant',

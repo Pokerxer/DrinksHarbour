@@ -520,6 +520,7 @@ export interface POSCartItem {
   discount: number;
   stock: number;
   activeBundles?: POSBundleDeal[];
+  wholesalePrice?: number;
   costPrice?: number; // needed for markup_on_cost bundle computation
   originalPrice?: number; // pre-sale price, needed for no_discount bundle computation
   /** Set on items added from a combo. Groups them visually in the cart. */

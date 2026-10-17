@@ -11,7 +11,7 @@ import Script from "next/script";
  * Docs: https://developers.google.com/search/docs/appearance/preferred-sources
  *
  * The loader script (`publisher.js`) is injected once here with
- * `strategy="afterInteractive"`; the `<div>` below is the placeholder the
+ * `strategy="lazyOnload"`; the `<div>` below is the placeholder the
  * script scans for and hydrates into the actual button. Two DOM elements is
  * the entire integration surface — no props or state.
  */
@@ -29,7 +29,7 @@ export default function PreferredSourceButton({
       <Script
         id="google-preferred-sources"
         src="https://news.google.com/swg/js/v1/publisher.js"
-        strategy="afterInteractive"
+        strategy="lazyOnload"
       />
       <div
         {...({ "google-add-preferred-source-btn": "" } as Record<string, string>)}

@@ -182,7 +182,7 @@ export default function SalesNavHeader() {
 
       <Link
         href={routes.eCommerce.salesOrders}
-        className="flex shrink-0 items-center gap-2.5 border-r border-gray-200 py-2 pl-4 pr-5"
+        className="flex shrink-0 items-center gap-2.5 border-r border-gray-200 py-1.5 pl-3 pr-3"
       >
         <Image
           src="/logo-short.png"
@@ -194,7 +194,7 @@ export default function SalesNavHeader() {
         <span className="hidden min-[480px]:inline text-sm font-semibold text-gray-900">Sales</span>
       </Link>
 
-      <div className="flex min-w-0 flex-1 flex-wrap items-center pl-2">
+      <div className="flex min-w-0 basis-full flex-wrap items-center px-2 sm:basis-0 sm:flex-1 sm:pr-0">
         {navItems.map((item) => {
           const flatHrefs = [
             ...(item.items ?? []).map((s) => s.href),
@@ -222,7 +222,7 @@ export default function SalesNavHeader() {
               <button
                 type="button"
                 onClick={() => setOpenMenu(isOpen ? null : item.label)}
-                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors md:px-4 ${
+                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 py-2 text-sm transition-colors md:px-3 ${
                   isDropdownActive || isOpen
                     ? `${activeCls} text-brand`
                     : 'font-normal text-gray-600 hover:text-gray-900'

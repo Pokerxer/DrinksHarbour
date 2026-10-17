@@ -1,6 +1,7 @@
 // routes/salesOrder.routes.js
 const express = require('express');
 const router = express.Router();
+const reservations = require('../controllers/salesReservation.controller');
 const {
   createSalesOrder, getSalesOrders, getSalesOrder, updateSalesOrder, deleteSalesOrder,
   updatePrices, priceLines,
@@ -14,6 +15,7 @@ const {
   bulkMarkSent, bulkDuplicate, bulkDelete, bulkCancel,
   bulkCreateInvoice, bulkAccruedRevenue, bulkFollowers, bulkSendEmail,
   getCustomerCartForQuote,
+  lockSalesOrder, unlockSalesOrder,
 } = require('../controllers/salesOrder.controller');
 const { protect, attachTenant, tenantUserOnly, requireOwnTenant } = require('../middleware/auth.middleware');
 
@@ -47,6 +49,10 @@ router.post('/:id/accept', acceptQuotation);
 router.post('/:id/reject', rejectQuotation);
 router.post('/:id/convert', convertQuotation);
 router.post('/:id/confirm', confirmSalesOrder);
+router.post('/:id/confirm-reservation', reservations.confirmReservation);
+router.post('/:id/check-availability', reservations.checkAvailability);
+router.post('/:id/lock', lockSalesOrder);
+router.post('/:id/unlock', unlockSalesOrder);
 router.post('/:id/update-prices', updatePrices);
 router.post('/:id/coupon', applyCoupon);
 router.post('/:id/fulfill', fulfillSalesOrder);

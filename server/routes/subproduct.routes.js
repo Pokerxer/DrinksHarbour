@@ -515,6 +515,12 @@ router.delete(
   subProductController.deleteSize
 );
 
+router.get(
+  '/:id/sizes/:sizeId/deletion',
+  tenantAdminOrSuperAdmin,
+  subProductController.getSizeDeletionStatus
+);
+
 /**
  * @route   PATCH /api/subproducts/:id/stock
  * @desc    Update stock for SubProduct

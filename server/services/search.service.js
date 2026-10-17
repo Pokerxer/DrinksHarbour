@@ -432,7 +432,7 @@ function buildAggregationPipeline(baseQuery, options) {
               'tenant.defaultCurrency': 1,
               sku: 1,
               costPrice: 1,
-              baseSellingPrice: 1,
+              baseSellingPrice: 1, commissionPriceOverride: 1,
               discount: 1,
               discountType: 1,
               sizes: 1,
@@ -789,43 +789,13 @@ function processProduct(product) {
       const sellingPrice = size.sellingPrice || 0;
       const costPrice = size.costPrice || subProduct.costPrice || 0;
       
-      // Calculate discount - check size-level discount first, then subProduct-level
-      let discount = null;
-      if (size.discount && isDiscountActive(size.discount)) {
-        discount = calculateDiscount(sellingPrice, size.discount, commissionPercentage);
-      } else if (subProduct.discount && isDiscountActive(subProduct.discount)) {
-        discount = calculateDiscount(sellingPrice, subProduct.discount, commissionPercentage);
-      }
-      
-      // Calculate website price based on sale type
-      let websitePrice = sellingPrice;
-      let originalWebsitePrice = sellingPrice;
-      
-      // Calculate prices with commission markup (for revenue model 'commission')
-      const sellingPriceWithCommission = revenueModel === 'commission' 
-        ? sellingPrice * (1 + commissionPercentage / 100) 
-        : sellingPrice;
-      
-      // Apply subProduct-level sale pricing if active
-      if (subProductSaleActive && subProduct.saleDiscountValue > 0) {
-        originalWebsitePrice = Math.round(sellingPriceWithCommission * 100) / 100;
-        
-        if (subProduct.saleType === 'percentage' || subProduct.saleType === 'flash_sale') {
-          // Percentage discount
-          websitePrice = sellingPriceWithCommission * (1 - subProduct.saleDiscountValue / 100);
-        } else if (subProduct.saleType === 'fixed') {
-          // Fixed discount - subtract from selling price with commission
-          websitePrice = Math.max(0, sellingPriceWithCommission - subProduct.saleDiscountValue);
-        }
-      } else if (discount) {
-        // Use discount object prices (from size-level or subProduct-level discount)
-        websitePrice = discount.discountedPrice * (1 + commissionPercentage / 100);
-        originalWebsitePrice = discount.originalPrice * (1 + commissionPercentage / 100);
-      }
-      
-      const finalWebsitePrice = Math.round(websitePrice * 100) / 100;
-      const finalOriginalPrice = Math.round(originalWebsitePrice * 100) / 100;
-      
+      const { calculateSizePricing, applySubProductSale } = require('../utils/pricing');
+      const basePricing = calculateSizePricing(size, product, tenant, subProduct.costPrice, subProduct.baseSellingPrice);
+      const quote = applySubProductSale(basePricing, subProduct);
+      const finalWebsitePrice = quote.finalPrice;
+      const finalOriginalPrice = calculateSizePricing(size, { ...product, platformDiscount: null }, tenant, subProduct.costPrice, subProduct.baseSellingPrice).finalPrice;
+      const discount = basePricing.productDiscount;
+
       // Calculate savings info for frontend display
       const hasDiscount = finalOriginalPrice > finalWebsitePrice;
       const savingsAmount = hasDiscount ? Math.round((finalOriginalPrice - finalWebsitePrice) * 100) / 100 : 0;

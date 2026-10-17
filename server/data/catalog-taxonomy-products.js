@@ -1,0 +1,53 @@
+// Exact identities reviewed against the 2026-10-15 catalog audit.
+const reviewedProducts = [
+  ["6ac609015a9646ade2907e55", "Monin Le Fruit Kiwi", "cocktail-mixers", "fruit-purees-mixes", "fruit_mix"],
+  ["6ac609045a9646ade2907e86", "Le Fruit De Monin Mango Aromes Naturels", "cocktail-mixers", "fruit-purees-mixes", "fruit_mix"],
+  ["6ac609065a9646ade2907ea8", "Monin Le Fruit Passion Fruit", "cocktail-mixers", "fruit-purees-mixes", "fruit_mix"],
+  ["6ac609085a9646ade2907ecb", "Monin Le Fruit Strawberry", "cocktail-mixers", "fruit-purees-mixes", "fruit_mix"],
+  ["6ac6090a5a9646ade2907efc", "Le Sirop De Monin Blackberry", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac6090c5a9646ade2907f1e", "Monin Blue Curaçao Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac6090e5a9646ade2907f41", "Monin Bubble Gum Syrup", "syrup", "confectionery-syrups", "flavoured_syrup"],
+  ["6ac609105a9646ade2907f64", "Monin Pure Cane Sugar Syrup", "syrup", "simple-syrup", "simple_syrup"],
+  ["6ac609125a9646ade2907f95", "Monin Caramel Syrup", "syrup", "flavoured-syrups-coffee", "flavoured_syrup"],
+  ["6ac609155a9646ade2907fc5", "Monin Coconut Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac609165a9646ade2907fe7", "Monin Green Mint Syrup", "syrup", "herbal-mint-syrups", "flavoured_syrup"],
+  ["6ac609195a9646ade2908018", "Monin Kiwi Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac6091b5a9646ade2908048", "Le Sirop de Monin Lemon Rantcho", "cocktail-mixers", "lemon-juice-concentrates", "juice_concentrate"],
+  ["6ac6091d5a9646ade290806a", "Monin Passion Fruit Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac609205a9646ade290809b", "Monin Peach Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac609215a9646ade29080bd", "Monin Strawberry Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac609245a9646ade29080ee", "Le Sirop de Monin Triple Sec Curaçao Arômes Naturels", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac609265a9646ade290811e", "Monin Vanilla from Madagascar Syrup", "syrup", "flavoured-syrups-coffee", "flavoured_syrup"],
+  ["6ac609285a9646ade2908140", "Le Sirop de Monin Mango Aromes Naturels", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac6092a5a9646ade2908163", "Le Sirop de Monin Pineapple Aromes Naturels", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6a5a10a95d61e5374ed3facd", "Da Vinci Strawberry Flavoured Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6a5a11295d61e5374ed40339", "Riunite Zero Alcohol", "non-alcoholic-alternatives", "non-alcoholic-still-wine", "non_alcoholic_wine"],
+  ["6a5a1b5516ddb33bdedcfcfe", "Martinellis Sparkling Apple Non Alcoholic", "juice", "sparkling-fruit-juice", "fruit_juice"],
+  ["6a969c050bfa0b4188666fab", "Angel Non-Alcoholic Sparkling Red Grape Wine", "non-alcoholic-alternatives", "non-alcoholic-sparkling-wine", "non_alcoholic_wine"],
+  ["6a969c080bfa0b4188666fd7", "Blue Nun Silver Non Alcoholic", "non-alcoholic-alternatives", "non-alcoholic-still-wine", "non_alcoholic_wine"],
+  ["6a969c1d0bfa0b4188667133", "Martinellis Apple Cider", "juice", "sparkling-fruit-juice", "fruit_juice"],
+  ["6a9f22cd8dffd7230a2d08a3", "Da Vinci Blueberry Flavoured Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6a9f22cf8dffd7230a2d08c4", "MG Spirit Apple", "ready-to-drink-cocktails", "spirit-based-rtd-cocktails", "premixed_cocktail"],
+  ["6a9f22e08dffd7230a2d09df", "Da Vinci Coconut Flavoured Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac65d4a434d4bb65f7b7b56", "Amstel Malt", "soft-drinks", "non-alcoholic-malt-drinks", "malt_drink"],
+  ["6ac65fa0434d4bb65f7b7d9d", "Dala Star-Apple Syrup", "syrup", "fruit-syrups", "fruit_syrup"],
+  ["6ac65fef434d4bb65f7b7fa6", "Malta Guinness", "soft-drinks", "non-alcoholic-malt-drinks", "malt_drink"],
+  ["6ac65ff6434d4bb65f7b7fd6", "Maltina", "soft-drinks", "non-alcoholic-malt-drinks", "malt_drink"],
+  ["6ac65ffc434d4bb65f7b8006", "Monster Energy", "functional-drinks", "caffeinated-energy-drinks", "energy_drink"],
+  ["6ac66001434d4bb65f7b8029", "Monster Energy Ultra Zero Sugar", "functional-drinks", "sugar-free-energy-drinks", "energy_drink"],
+  ["6ac66007434d4bb65f7b8059", "Power Horse Energy Drink", "functional-drinks", "caffeinated-energy-drinks", "energy_drink"],
+  ["6ac66011434d4bb65f7b8096", "Power Horse Energy Drink Zero Sugar", "functional-drinks", "sugar-free-energy-drinks", "energy_drink"],
+  ["6ac66017434d4bb65f7b80c3", "Red Bull", "functional-drinks", "caffeinated-energy-drinks", "energy_drink"],
+  ["6ac6601d434d4bb65f7b80f1", "Smirnoff Ice Original", "ready-to-drink-cocktails", "alcopops-coolers", "premixed_cocktail"],
+  ["6ac9750d025c7e4beecf5d61", "MG Spirit Mojito Cocktail Ready-to-Drink", "ready-to-drink-cocktails", "spirit-based-rtd-cocktails", "cocktail_ready_to_drink"],
+  ["6ac97516025c7e4beecf5d8d", "MG Spirit Orange", "ready-to-drink-cocktails", "spirit-based-rtd-cocktails", "cocktail_ready_to_drink"],
+  ["6ac9751a025c7e4beecf5dae", "MG Spirit Pineapple Cocktail Ready-to-Drink", "ready-to-drink-cocktails", "spirit-based-rtd-cocktails", "cocktail_ready_to_drink"],
+  ["6ac97521025c7e4beecf5dda", "MG Spirit Tonic Cocktail Ready-to-Drink", "ready-to-drink-cocktails", "spirit-based-rtd-cocktails", "cocktail_ready_to_drink"],
+  ["6ad0d5ccc3d6947bcc399fe7", "Zima Palmwine cocktail", "ready-to-drink-cocktails", "palm-wine-cocktails", "cocktail_ready_to_drink"],
+].map(([id,name,parent,slug,type])=>({id,name,parent,slug,type}));
+function findClassification(id,name) {
+ const p=reviewedProducts.find(p=>p.id===String(id)&&p.name===name);
+ if(!p) throw new Error('Unreviewed product: '+name);
+ return {parent:p.parent,slug:p.slug,type:p.type};
+}
+module.exports={reviewedProducts,findClassification};

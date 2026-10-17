@@ -1,6 +1,7 @@
 import { routes } from '@/config/routes';
 import {
   PiAddressBookDuotone,
+  PiBellDuotone,
   PiArrowsDownUpDuotone,
   PiArrowUUpLeftDuotone,
   PiBuildingsDuotone,
@@ -64,6 +65,11 @@ export const menuItems = [
     name: 'Dashboard',
     href: routes.eCommerce.dashboard,
     icon: <PiStorefrontDuotone />,
+  },
+  {
+    name: 'Notifications',
+    href: routes.notifications,
+    icon: <PiBellDuotone />,
   },
   {
     name: 'Analytics',
@@ -227,6 +233,7 @@ export const menuItems = [
       { name: 'Overview', href: routes.inventory.index },
       { name: 'Receipts', href: routes.inventory.receipts },
       { name: 'Deliveries', href: routes.inventory.deliveries },
+      { name: 'Customer Returns', href: routes.inventory.returns },
       { name: 'Transfers', href: routes.inventory.transfers },
       { name: 'Internal Transfers', href: routes.inventory.internal },
       { name: 'Adjustments', href: routes.inventory.adjustments },

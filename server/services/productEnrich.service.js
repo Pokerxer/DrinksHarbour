@@ -7,6 +7,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
+const SubCategory = require('../models/SubCategory');
 
 // Same model the platform chatbot / scan matcher already use.
 const CLAUDE_MODEL = 'claude-haiku-4-5';
@@ -60,6 +61,13 @@ async function getCategoryOptions(deps = {}) {
       } else {
         categories.push(d.name);
       }
+    }
+    const children = await (deps.SubCategory || SubCategory).find({}).select('name parent').lean();
+    for (const child of children) {
+      const parent = byId.get(String(child.parent));
+      if (!parent?.name || !child.name) continue;
+      const names = subcategories[parent.name] || (subcategories[parent.name] = []);
+      if (!names.includes(child.name)) names.push(child.name);
     }
     return { categories, subcategories };
   } catch {

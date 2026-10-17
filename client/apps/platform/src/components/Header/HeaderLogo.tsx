@@ -33,7 +33,7 @@ export const HeaderLogo: React.FC<HeaderLogoProps> = ({
           alt={tenantLogoAlt}
           width={160}
           height={48}
-          className="h-10 md:h-12 w-auto object-contain"
+          className="h-10 md:h-12 w-auto max-w-40 object-contain"
           priority
         />
       ) : (
@@ -42,8 +42,8 @@ export const HeaderLogo: React.FC<HeaderLogoProps> = ({
           alt="DrinksHarbour"
           width={2172}
           height={724}
-          className="h-7 w-56 min-w-56 object-cover"
-          sizes="224px"
+          className="h-auto w-36 xl:w-40 shrink-0 object-contain"
+          sizes="(min-width: 1280px) 160px, 144px"
           priority
         />
       )}

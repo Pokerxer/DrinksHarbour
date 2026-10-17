@@ -47,3 +47,25 @@ test('detail populates the first scoped document and omits corrupt legacy refere
   assert.equal(result.shipping, null);
   assert.equal(result.warehouse, null);
 });
+
+test('lightweight catalog keeps tenant scope, selects list fields and skips unused summary queries', async t => {
+  const queries = [], selections = [];
+  let populations, ordering;
+  t.mock.method(SubProduct, 'countDocuments', async query => { queries.push(query); return 7; });
+  const chain = { populate: fields => { populations = fields; return chain; },
+    select: fields => { selections.push(fields); return chain; },
+    sort: fields => { ordering = fields; return chain; },
+    skip: () => chain, limit: () => chain, lean: async () => [] };
+  t.mock.method(SubProduct, 'find', query => { queries.push(query); return chain; });
+  const result = await service.getMySubProducts(tenant, { limit: 5000, view: 'list' });
+  assert.equal(queries.length, 2);
+  assert.ok(queries.every(query => String(query.tenant) === String(tenant)));
+  assert.ok(selections[0].includes('lowStockThreshold'));
+  assert.ok(selections[0].includes('descriptionOverride'));
+  assert.ok(!selections[0].includes('shipping'));
+  assert.ok(populations.find(field => field.path === 'sizes').select.includes('sellingPrice'));
+  assert.ok(!populations.find(field => field.path === 'sizes').select.includes('images'));
+  assert.equal(ordering._id, -1);
+  assert.equal(result.pagination.total, 7);
+  assert.equal(result.stats, undefined);
+});

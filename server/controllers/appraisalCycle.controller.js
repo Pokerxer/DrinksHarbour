@@ -112,6 +112,19 @@ exports.listCycles = async (req, res, next) => {
       byCycle.get(key)[row._id.state] = row.count;
     }
 
+    const peerIds = cycles.filter(c => c.mode === 'peer_rating').map(c => c._id);
+    if (peerIds.length) {
+      const PeerParticipant = require('../models/PeerAppraisalParticipant');
+      const peerCounts = await PeerParticipant.aggregate([
+        { $match: { tenant: tenantId, cycle: { $in: peerIds } } },
+        { $group: { _id: '$cycle', total: { $sum: 1 }, submitted: { $sum: { $cond: ['$submittedAt', 1, 0] } } } },
+      ]);
+      for (const c of cycles.filter(c => c.mode === 'peer_rating')) {
+        const count = peerCounts.find(r => String(r._id) === String(c._id));
+        const total = count?.total || 0, submitted = count?.submitted || 0;
+        byCycle.set(String(c._id), c.status === 'closed' ? { released: total } : { collecting: total - submitted, summarising: submitted });
+      }
+    }
     res.json({
       success: true,
       // `?? {}` and not `?? undefined`: a cycle with no appraisals must still
@@ -840,3 +853,31 @@ exports.cycleReport = async (req, res, next) => {
     });
   } catch (err) { next(err); }
 };
+
+// Peer-rating cycles have no standard form or manager/nomination records.
+// Keep this dispatch outside the legacy handlers to preserve their behavior.
+const peerController = require('./peerAppraisal.controller');
+const { requirePeerHr } = require('../services/peerAppraisal/access');
+const originalCreateCycle = exports.createCycle;
+exports.createCycle = async (req, res, next) => {
+  if (req.body.mode === 'peer_rating') return peerController.create(req, res, next);
+  if (req.body.mode && req.body.mode !== 'standard') return res.status(400).json({ success: false, message: 'Unknown appraisal mode.' });
+  return originalCreateCycle(req, res, next);
+};
+for (const [method, peerMethod] of [
+  ['getCycle', null], ['launchCycle', 'launch'], ['closeCycle', 'close'],
+  ['cycleProgress', 'participants'], ['cycleRoster', 'participants'], ['cycleReport', 'participants'],
+]) {
+  const original = exports[method];
+  exports[method] = async (req, res, next) => {
+    try {
+      if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid cycle id' });
+      if (!req.tenant?._id) return res.status(403).json({ success: false, message: 'Tenant context required' });
+      const cycle = await AppraisalCycle.findOne({ _id: req.params.id, tenant: req.tenant._id });
+      if (cycle?.mode !== 'peer_rating') return original(req, res, next);
+      await requirePeerHr(req);
+      if (!peerMethod) return res.json({ success: true, data: cycle });
+      return peerController[peerMethod]({ ...req, params: { ...req.params, cycleId: String(cycle._id) } }, res, next);
+    } catch (err) { next(err); }
+  };
+}

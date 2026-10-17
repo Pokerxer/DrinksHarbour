@@ -1,3 +1,4 @@
+import { ShoppingLocationProvider } from '@/context/ShoppingLocationContext';
 import React from "react";
 import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
@@ -16,6 +17,7 @@ const GlobalProvider: React.FC<{
 }> = ({ children }) => {
   return (
     <AuthProvider>
+      <ShoppingLocationProvider>
       <TenantProvider>
         {/* Reads auth state, so it must sit inside AuthProvider. */}
         <FirstOrderPerkProvider>
@@ -40,6 +42,7 @@ const GlobalProvider: React.FC<{
         </CartProvider>
         </FirstOrderPerkProvider>
       </TenantProvider>
+      </ShoppingLocationProvider>
     </AuthProvider>
   );
 };

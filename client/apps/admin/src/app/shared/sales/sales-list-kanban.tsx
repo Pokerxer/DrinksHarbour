@@ -5,7 +5,8 @@ import { routes } from '@/config/routes';
 import { PiKanban } from 'react-icons/pi';
 import type { SalesOrder } from '@/services/salesOrder.service';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
-import { fmtDate } from './sales-list-helpers';
+import { fmtDate, salespersonName } from './sales-list-helpers';
+import { docStatusBadge, kanbanStatus } from './sales-list-status';
 
 const ORDER_COLUMNS = [
   { status: 'draft', label: 'Draft' },
@@ -30,7 +31,10 @@ interface Props {
 
 export default function SalesListKanban({ orders, isQuotation }: Props) {
   const router = useRouter();
-  const columns = isQuotation ? QUOTE_COLUMNS : ORDER_COLUMNS;
+  const columns = isQuotation
+    ? [...QUOTE_COLUMNS, ...(orders.some(o => o.hasReturns)
+      ? [{status:'returned',label:'Returned orders'}] : [])]
+    : ORDER_COLUMNS;
 
   if (orders.length === 0) {
     return (
@@ -44,11 +48,7 @@ export default function SalesListKanban({ orders, isQuotation }: Props) {
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
       {columns.map((col) => {
-        const statusKey = isQuotation ? 'quoteStatus' as const : 'orderStatus' as const;
-        const items = orders.filter((o) => {
-          const val = isQuotation ? o.quoteStatus : o.orderStatus;
-          return val === col.status || (!val && col.status === 'draft');
-        });
+        const items = orders.filter(o => kanbanStatus(o, isQuotation) === col.status);
 
         return (
           <div key={col.status} className="min-w-[260px] flex-1 rounded-xl border border-gray-200 bg-gray-50">
@@ -64,9 +64,11 @@ export default function SalesListKanban({ orders, isQuotation }: Props) {
                   className="cursor-pointer rounded-lg border border-gray-200 bg-white p-3 transition-shadow hover:shadow-md"
                 >
                   <p className="font-mono text-sm font-semibold text-brand">{o.soNumber}</p>
+                  {o.hasReturns && <p className="mt-1 text-xs text-gray-600">{docStatusBadge(o).label}</p>}
                   <p className="mt-1 text-sm text-gray-800">{o.customerSnapshot?.name || '—'}</p>
                   <p className="mt-1 text-sm font-semibold text-gray-900">{fmtCur(o.total, o.currency)}</p>
                   <p className="mt-0.5 text-xs text-gray-400">{fmtDate(o.createdAt)}</p>
+                  <p className="mt-1 text-xs text-gray-500">Salesperson: {salespersonName(o)}</p>
                 </div>
               ))}
               {items.length === 0 && (

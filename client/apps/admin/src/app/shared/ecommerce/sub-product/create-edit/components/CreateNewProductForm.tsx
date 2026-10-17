@@ -25,6 +25,8 @@ import { geminiService } from '@/services/gemini.service';
 import { categoryService } from '@/services/category.service';
 import toast from 'react-hot-toast';
 import cn from '@core/utils/class-names';
+import ClosestProductMatches from './ClosestProductMatches';
+import type { Product } from './ProductSearchResults';
 
 export interface NewProductFormData {
   name: string;
@@ -67,6 +69,7 @@ interface CreateNewProductFormProps {
   onChange: (value: NewProductFormData) => void;
   errors?: Record<string, { message?: string }>;
   initialName?: string;
+  onProductSelect?: (product: Product) => void;
 }
 
 const PRODUCT_TYPE_OPTIONS = [
@@ -103,6 +106,9 @@ const PRODUCT_TYPE_OPTIONS = [
   { value: 'tea', label: 'Tea' },
   { value: 'mixer', label: 'Mixer' },
   { value: 'other', label: 'Other' },
+  { value: 'vape', label: 'Vape' },
+  { value: 'snack', label: 'Snack' },
+  { value: 'nuts', label: 'Nuts' },
 ];
 
 const COUNTRY_OPTIONS = [
@@ -178,6 +184,7 @@ export function CreateNewProductForm({
   onChange,
   errors = {},
   initialName = '',
+  onProductSelect,
 }: CreateNewProductFormProps) {
   const { data: session } = useSession();
   const formData = value || { ...defaultFormData, name: initialName || '' };
@@ -541,11 +548,12 @@ export function CreateNewProductForm({
             </Button>
           </div>
           <Input
-            value={formData.name || initialName}
+            value={formData.name}
             onChange={(e) => handleChange('name', e.target.value)}
             placeholder="e.g., Johnnie Walker Blue Label"
             error={errors.name?.message}
           />
+          {onProductSelect && <ClosestProductMatches name={formData.name} token={session?.user?.token} onSelect={onProductSelect} />}
           <Text className="mt-1.5 flex items-center gap-1 text-xs text-gray-500">
             <PiSparkle className="h-3 w-3 text-purple-500" />
             Enter a product name and click &quot;Auto-fill with AI&quot; to

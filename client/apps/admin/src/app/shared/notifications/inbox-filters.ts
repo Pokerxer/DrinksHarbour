@@ -46,6 +46,7 @@ export function safeAction(url?: string) {
       'vendor-orders',
       'products',
       'expiry',
+      'promotions',
     ].includes(path.slice('/notifications/'.length))
   )
     return false;
@@ -87,7 +88,18 @@ export function filterNotices(
     (n) =>
       (filters.category === 'all' || categories[n.type] === filters.category) &&
       (!query ||
-        [n.title, n.message, n.type, n.actionLabel || '']
+        [
+          n.title,
+          n.message,
+          n.type,
+          n.actionLabel || '',
+          ...[
+            'productName',
+            'sizeName',
+            'warehouseName',
+            'rejectionReason',
+          ].map((key) => n.metadata?.[key] || ''),
+        ]
           .join(' ')
           .toLowerCase()
           .includes(query)) &&

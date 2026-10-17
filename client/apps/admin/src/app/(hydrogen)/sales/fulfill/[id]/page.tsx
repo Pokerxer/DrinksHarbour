@@ -13,7 +13,7 @@ export default function SalesFulfillDetailPage({
   return (
     <div className="min-h-screen bg-gray-50">
       <SalesNavHeader />
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="mx-auto max-w-7xl px-3 py-3">
         <SalesFulfillDetail id={id} />
       </main>
     </div>

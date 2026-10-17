@@ -50,9 +50,15 @@ const QUOTE_STATUS: Record<QuoteStatus, StatusBadge> = {
 
 export function docStatusBadge(so: SalesOrder): StatusBadge {
   if (so.docType === 'order') {
-    return ORDER_STATUS[so.orderStatus as OrderStatus] ?? ORDER_STATUS.draft;
+    const status = ORDER_STATUS[so.orderStatus as OrderStatus] ?? ORDER_STATUS.draft;
+    return so.hasReturns ? { ...status, label: `${status.label} · Returned` } : status;
   }
   return QUOTE_STATUS[so.quoteStatus as QuoteStatus] ?? QUOTE_STATUS.draft;
+}
+
+export function kanbanStatus(so: SalesOrder, isQuotation: boolean): string {
+  if (isQuotation && so.docType === 'order' && so.hasReturns) return 'returned';
+  return (isQuotation ? so.quoteStatus : so.orderStatus) || 'draft';
 }
 
 export interface PaymentBadge extends StatusBadge {

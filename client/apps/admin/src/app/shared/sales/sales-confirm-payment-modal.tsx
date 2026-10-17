@@ -10,7 +10,6 @@ const PAYMENT_METHODS: { value: string; label: string }[] = [
   { value: 'mobile_money', label: 'Mobile Money' },
   { value: 'pos_terminal', label: 'POS Terminal' },
   { value: 'wallet', label: 'Customer Wallet' },
-  { value: 'invoice', label: 'Invoice (bill later)' },
   { value: 'other', label: 'Other' },
 ];
 

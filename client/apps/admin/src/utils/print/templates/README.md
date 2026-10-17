@@ -16,6 +16,10 @@ combined PDFs. Tenant/user scope changes discard the dialog and form state.
 Settings saves require `settings:write` on the server. Inactive/read-only tenant
 restrictions remain enforced by the existing tenant guard.
 
+Saved accounting customer invoices use `customer-invoice.ts` and this same
+template/preview flow. Build from frozen CustomerInvoice details, not live source
+orders; never reprice lines or replace invoice numbers with Sales/POS references.
+
 Layout files: header/footer (`pdf-layout`), parties (`pdf-parties`), tables
 (`pdf-table`), totals (`pdf-totals`). Long tables and paragraphs flow onto pages
 with compact continuation headers. `pdf-text.ts` preserves the existing WinAnsi

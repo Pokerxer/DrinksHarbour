@@ -1,9 +1,11 @@
+const {money}=require('../../packages/sales-money');
 // server/services/salesPricing.service.js
 const SubProduct = require('../models/SubProduct');
 const Size = require('../models/Size');
 const Pricelist = require('../models/Pricelist');
 const Tenant = require('../models/Tenant');
 const { computeSalesBasePricing } = require('./salesBasePricing');
+const { PRODUCT_FIELDS, idOf, loadPricingRecords } = require('./salesPricing-data');
 const {
   findMatchingPriceRules,
   applyPriceRules,
@@ -25,15 +27,17 @@ const {
  * is missing) so the cart-wide bundle pass can reuse cost/original without a
  * second lookup.
  */
-async function computeLinePricing({ subProductId, sizeId, quantity, pricelist, tenant }) {
-  const sp = await SubProduct.findById(subProductId)
-    .select('product sku baseSellingPrice basePriceBeforePricelist costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals sizes')
+async function computeLinePricing({ subProductId, sizeId, quantity, pricelist, tenant, records }) {
+  const sp = records ? records.products.get(idOf(subProductId)) : await SubProduct.findById(subProductId)
+    .select(PRODUCT_FIELDS)
     .populate('product', 'platformMarkup platformDiscount')
     .populate('sizes', 'wholesalePrice isDefault unitsPerPack')
     .lean();
   if (!sp) return null;
 
-  const sizeDoc = sizeId ? await Size.findById(sizeId).lean() : null;
+  if (records && sizeId && records.sizeReadFailed) return null;
+  const sizeDoc = sizeId ? (records ? records.sizes.get(idOf(sizeId)) : await Size.findById(sizeId).lean()) : null;
+  if (records && sizeDoc && idOf(sizeDoc.subproduct) !== idOf(subProductId)) return null;
   const pricing = computeSalesBasePricing(sp, sizeDoc, tenant);
   const cost = pricing.costPrice || 0;
   if (!(pricing.sellingPrice > 0)) {
@@ -106,12 +110,15 @@ async function computeAuthoritativeLinePrices(items, { tenantId, pricelistId }) 
   const needsPricing = items.some((it) => !it.priceOverridden && it.subproduct);
   if (!needsPricing) return items;
 
-  const tenant = await Tenant.findById(tenantId)
-    .select('revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
-    .lean();
-  const pricelist = pricelistId
-    ? await Pricelist.findOne({ _id: pricelistId, tenant: tenantId }).lean()
-    : null;
+  const [tenant, pricelist, records] = await Promise.all([
+    Tenant.findById(tenantId)
+      .select('revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+      .lean(),
+    pricelistId
+      ? Pricelist.findOne({ _id: pricelistId, tenant: tenantId }).lean()
+      : null,
+    loadPricingRecords(items, tenantId),
+  ]);
 
   const out = [];
   const lineMeta = []; // parallel to `out`: pricing context for the cart pass
@@ -128,6 +135,7 @@ async function computeAuthoritativeLinePrices(items, { tenantId, pricelistId }) 
         quantity: Number(it.quantity) || 0,
         pricelist,
         tenant,
+        records,
       });
       out.push(priced != null ? { ...it, unitPrice: priced.unitPrice } : it);
       lineMeta.push(priced);
@@ -169,7 +177,7 @@ async function computeAuthoritativeLinePrices(items, { tenantId, pricelistId }) 
 /**
  * Cart spend-threshold discount for a sales order: loads the pricelist and
  * runs the shared cart_threshold engine against the given untaxed base.
- * Returns a whole-₦ discount (sales totals are integer NGN). Best-effort:
+ * Returns a discount rounded to kobo. Best-effort:
  * any failure returns 0 so an order can always be saved.
  */
 async function computeCartThresholdForOrder(subtotalBase, { tenantId, pricelistId }) {
@@ -181,7 +189,7 @@ async function computeCartThresholdForOrder(subtotalBase, { tenantId, pricelistI
       .lean();
     if (!pricelist?.rules?.length) return 0;
     const rules = findCartThresholdRules(pricelist.rules, base);
-    return Math.round(computeCartThresholdDiscount(rules, base));
+    return money(computeCartThresholdDiscount(rules, base));
   } catch {
     return 0;
   }

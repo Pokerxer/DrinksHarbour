@@ -12,6 +12,7 @@ const PRODUCT_TYPES = new Set(RealProduct.schema.path('type').enumValues);
 // Keyword-based type fallback for when AI enrichment is unavailable or returns
 // nothing useful. Checked against the product name before giving up.
 const TYPE_KEYWORDS = [
+  ['vape',     /\bvapes?\b|\be-cigarettes?\b/i],
   ['bourbon',   /\bbourbons?\b/i],
   ['scotch',    /\bscotch\b/i],
   ['whiskey',   /\bwhiskeys?\b|\bwhisky\b|\birish\s+whiskey\b|\brye\b/i],
@@ -178,7 +179,7 @@ function resolveNewProductFields(base, ai = {}) {
   const { stripSizeFromName } = require('./productEnrich.service');
   return {
     name: str(ai.name) || stripSizeFromName(base.productName) || base.productName,
-    type: base.productType || str(ai.type) || undefined,
+    type: base.productType || (/\bvapes?\b|\be-cigarettes?\b/i.test(base.productName) ? 'vape' : str(ai.type)) || undefined,
     brand: base.brand || str(ai.brand) || undefined,
     category: base.category || str(ai.category) || undefined,
     subCategory: base.subCategory || str(ai.subCategory) || undefined,

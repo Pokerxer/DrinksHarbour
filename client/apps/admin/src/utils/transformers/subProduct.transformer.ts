@@ -1,5 +1,6 @@
 // utils/transformers/subProduct.transformer.ts
 // Transforms form data to API-ready format for SubProduct creation
+import { resolveSubProductPricing } from '@/utils/sub-product-pricing';
 
 const VALID_STOCK_STATUSES = [
   'in_stock',
@@ -284,6 +285,7 @@ const transformNewProductData = (
 export const transformFormData = (data: SubProductFormInput) => {
   // Direct access to subProductData - form structure is { subProductData: { ... } }
   const sp = data.subProductData || {};
+  const effectivePricing = resolveSubProductPricing(sp);
 
   // Get product name from newProductData if creating new product
   const name = sp.newProductData?.name || '';
@@ -304,8 +306,8 @@ export const transformFormData = (data: SubProductFormInput) => {
     ),
     tenant: sp.tenant || '',
     sku: sp.sku || '',
-    baseSellingPrice: toNumber(sp.baseSellingPrice) ?? 0,
-    costPrice: toNumber(sp.costPrice) ?? 0,
+    baseSellingPrice: toNumber(effectivePricing.baseSellingPrice) ?? 0,
+    costPrice: toNumber(effectivePricing.costPrice) ?? 0,
     currency: sp.currency || 'NGN',
     taxRate: toNumber(sp.taxRate) ?? 0,
     marginPercentage: toNumber(sp.marginPercentage) ?? 0,
@@ -466,7 +468,7 @@ export const validateRequiredFields = (data: SubProductFormInput): string[] => {
   if (!hasProduct) missing.push('Product');
 
   // Cost price is optional when creating new product
-  const costPrice = toNumber(sp.costPrice);
+  const costPrice = toNumber(resolveSubProductPricing(sp).costPrice);
   if (!createNew && (!costPrice || costPrice <= 0)) missing.push('Cost Price');
 
   return missing;

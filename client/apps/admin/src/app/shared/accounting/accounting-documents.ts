@@ -1,4 +1,6 @@
+import { invoiceSettlementLabel, returnLabel } from './invoice-return-helpers';
 import { routes } from '@/config/routes';
+import { csvCell } from './accounting-helpers';
 import type {
   OpenInvoice,
   OpenBill,
@@ -12,18 +14,132 @@ export function documentView(doc: AccountingDocument, side: PaymentSide) {
   return {
     label: (ar ? invoice.orderNumber : bill.billNumber) || 'Untitled document',
     name: ar
-      ? invoice.customer
-        ? `${invoice.customer.firstName || ''} ${invoice.customer.lastName || ''}`.trim()
-        : invoice.customerSnapshot?.name || 'Walk-in customer'
+      ? invoice.customerSnapshot?.name ||
+        `${invoice.customer?.firstName || ''} ${invoice.customer?.lastName || ''}`.trim() ||
+        'Walk-in customer'
       : bill.vendor?.name || bill.vendorName || 'Vendor',
     href: ar
-      ? routes.eCommerce.salesDetails(doc._id)
+      ? invoice.persisted
+        ? `/accounting/invoices/${doc._id}`
+        : invoice.source === 'pos'
+          ? routes.eCommerce.orderDetails(doc._id)
+          : routes.eCommerce.salesDetails(doc._id)
       : routes.eCommerce.vendorBillDetails(doc._id),
+    sourceLabel: ar ? (invoice.source === 'pos' ? 'POS' : 'Sales') : '',
     total: ar ? invoice.total : bill.totalAmount,
     paid: ar ? invoice.amountPaid : bill.paidAmount,
     credited: ar ? invoice.creditedAmount || 0 : 0,
-    status: ar ? invoice.paymentStatus : bill.status,
+    status: ar
+      ? invoice.state && invoice.state !== 'posted'
+        ? invoice.state
+        : invoice.paymentStatus
+      : bill.status,
   };
+}
+
+const nigeriaDate = (date: Date) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Lagos',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+
+export function documentDue(doc: AccountingDocument, now = new Date()) {
+  if (doc.outstanding <= 0) return { overdue: false, label: 'Settled' };
+  const due = doc.dueDate ? new Date(doc.dueDate) : null;
+  if (!due || Number.isNaN(due.getTime()))
+    return { overdue: false, label: 'Not set' };
+  const days = Math.round(
+    (Date.parse(nigeriaDate(now)) - Date.parse(nigeriaDate(due))) / 86400000
+  );
+  return {
+    overdue: days > 0,
+    label:
+      days > 0
+        ? `${days} ${days === 1 ? 'day' : 'days'} overdue`
+        : days === 0
+          ? 'Due today'
+          : `Due in ${-days} ${days === -1 ? 'day' : 'days'}`,
+  };
+}
+
+export function documentStatus(status: string) {
+  return (
+    (
+      {
+        partial: 'Partially paid',
+        paid: 'Paid',
+        unpaid: 'Unpaid',
+        confirmed: 'Unpaid',
+        overdue: 'Overdue',
+        draft: 'Draft · Review',
+        cancelled: 'Cancelled',
+      } as Record<string, string>
+    )[status] || status
+  );
+}
+
+export function documentCsv(docs: AccountingDocument[], side: PaymentSide) {
+  const headers = [
+    side === 'customer' ? 'Invoice' : 'Bill',
+    side === 'customer' ? 'Customer' : 'Vendor',
+    'Issued',
+    'Due date',
+    'Status',
+    'Total (NGN)',
+    'Paid (NGN)',
+    'Credited (NGN)',
+    'Outstanding (NGN)',
+    ...(side === 'customer'
+      ? [
+          'Source',
+          'Return status',
+          'Returned units',
+          'Verified refunds (NGN)',
+          'Posted credit notes (NGN)',
+        ]
+      : []),
+  ];
+  const rows = docs.map((doc) => {
+    const view = documentView(doc, side);
+    return [
+      view.label,
+      view.name,
+      doc.date,
+      doc.dueDate || '',
+      side === 'customer' &&
+      (!(doc as OpenInvoice).state || (doc as OpenInvoice).state === 'posted')
+        ? invoiceSettlementLabel(doc as OpenInvoice)
+        : documentStatus(view.status),
+      view.total,
+      view.paid,
+      view.credited,
+      doc.outstanding,
+      ...(side === 'customer'
+        ? [
+            view.sourceLabel,
+            returnLabel(doc as OpenInvoice),
+            (doc as OpenInvoice).returnSummary?.recordedUnits || 0,
+            (doc as OpenInvoice).refundedAmount || 0,
+            (doc as OpenInvoice).creditNoteAmount || 0,
+          ]
+        : []),
+    ];
+  });
+  return [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
+}
+
+export function documentPageLabel(
+  page: number,
+  limit: number,
+  count: number,
+  total: number,
+  side: PaymentSide = 'customer'
+) {
+  if (!count) return `0 matching ${side === 'customer' ? 'invoices' : 'bills'}`;
+  const start = (page - 1) * limit + 1;
+  return `Showing ${start}–${Math.min(start + count - 1, total)} of ${total}`;
 }
 export function allocationError(
   amount: number,

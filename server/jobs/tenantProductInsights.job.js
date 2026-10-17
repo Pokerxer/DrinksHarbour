@@ -1,3 +1,4 @@
+const { minimumNoticeFields } = require('../services/minimumNoticeFields');
 const cron = require('node-cron');
 const {
   reportingWindows,
@@ -51,7 +52,7 @@ async function scanTenantProducts(
   while (true) {
     const products = await deps.page(tenantId, last);
     if (!products.length) break;
-    const stock = await deps.stock(tenantId, products);
+    const stock = await deps.stock(tenantId, products, { now });
     const sales = includeSales
       ? await deps.sales(
           tenantId,
@@ -75,7 +76,10 @@ async function scanTenantProducts(
         {
           subProductId: p._id,
           name: p.product?.name || p.sku || 'Product',
-          stock: snapshot?.stock || [],
+          stock: (snapshot?.stock || []).map((row) => ({
+            ...row,
+            ...minimumNoticeFields(row, now),
+          })),
           reorderQuantity: p.reorderQuantity,
           observedSince: p.createdAt,
           ...(includeSales

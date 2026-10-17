@@ -39,7 +39,7 @@ export function computeItemPriceWithPricelist(
   let price = item.price;
   const cost = Number(item.costPrice) || 0;
   for (const rule of rules) {
-    price = applyRuleTransform(price, rule, cost);
+    price = applyRuleTransform(price, rule, cost, Number(item.wholesalePrice) || 0);
   }
   return price;
 }
@@ -69,7 +69,7 @@ export function computeItemPriceChain(
 
   for (const rule of rules) {
     const before = price;
-    price = applyRuleTransform(price, rule, cost);
+    price = applyRuleTransform(price, rule, cost, Number(item.wholesalePrice) || 0);
     const saving = before - price;
     if (Math.abs(saving) > 0.001) {
       let label = '';

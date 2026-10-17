@@ -19,6 +19,7 @@ function buildPlan(
     coverDays = 14,
     warehouseId = "",
     purchasing = false,
+    useSavedMinimum = false,
     startDate,
     endDate,
   } = {},
@@ -153,6 +154,7 @@ function buildPlan(
       ];
       attachDemand(line, demand);
       applyMinimum(line, stock, {
+        useSavedMinimum,
         e,
         values: series.values,
         forecast: f,

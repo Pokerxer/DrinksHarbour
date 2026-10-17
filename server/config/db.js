@@ -23,13 +23,12 @@ if (!cached) {
 }
 
 // A cold serverless container pays for SRV DNS resolution, a TLS handshake and
-// full replica-set discovery before the first query can run. The driver's own
-// default is 30 000 ms for exactly that reason; the 5 000 ms this used to run
-// with turned an ordinary slow cold start into a 500. Kept well under a typical
-// serverless function limit so a genuine outage fails fast rather than burning
-// the whole invocation budget, and overridable per-environment.
+// full replica-set discovery before the first query can run. Give long-running
+// servers the driver's 30-second default. Keep Vercel requests bounded to 10
+// seconds so an outage does not consume the function's whole execution budget.
+// Explicit environment overrides apply to either deployment.
 const SERVER_SELECTION_TIMEOUT_MS =
-  Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS) || 10000;
+  Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS) || (process.env.VERCEL ? 10000 : 30000);
 
 // How often the driver pings each replica-set node. See the note where it is used:
 // this exists to notice a closed `<monitor>` connection quickly, not to add load.

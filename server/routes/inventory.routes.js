@@ -33,6 +33,11 @@ router.use(attachTenant);
 router.use(requireOwnTenant);
 
 const readInventory = authorizeTenantAction('inventory:read');
+router.get('/customer-returns', readInventory, require('express-async-handler')(async (req, res) => {
+  const tenantId = require('../utils/tenantContext').getTenantId(req);
+  const data = await require('../services/customerReturns/browse').listCustomerReturns(tenantId, req.query);
+  res.json({ success: true, data });
+}));
 const writeInventory = authorizeTenantAction('inventory:write');
 const adjustStock = authorizeTenantAction('inventory:adjust');
 const movementAction = (req, res, next) => {

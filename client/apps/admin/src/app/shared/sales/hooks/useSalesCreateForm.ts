@@ -1,6 +1,8 @@
 // client/apps/admin/src/app/shared/sales/hooks/useSalesCreateForm.ts
 'use client';
 
+import { lineAmounts, documentAmounts, documentTotal, money } from '../../../../../../../../packages/sales-money';
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
@@ -13,6 +15,7 @@ import {
 import type { POSCustomer } from '@/app/shared/point-of-sale/types';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { mergeRepricedLines, pricingSignature } from '../sales-repricing';
+import { useSalesPricePreview } from './use-sales-price-preview';
 import { useSalesCustomerPricelist } from '../use-sales-customer-pricelist';
 import {
   findCartThresholdRules,
@@ -21,6 +24,8 @@ import {
 import { addressesDiffer } from '../sales-helpers';
 import {
   blankLine,
+  catalogSelectionToDraftLine,
+  appendPresentationLine,
   liveUnitPrice,
   resolveDiscount,
   lineTotalOf,
@@ -253,6 +258,7 @@ export function useSalesCreateForm({
               ? (matchedSize.displayName ?? matchedSize.size)
               : line.sizeName,
             costPrice: matchedSize?.costPrice ?? sp.costPrice ?? line.costPrice,
+            wholesalePrice: matchedSize?.wholesalePrice ?? line.wholesalePrice,
             availableStock: stock ?? line.availableStock,
             activeBundles: sp.bundleDeals ?? line.activeBundles,
             originalPrice: catalogPrice || line.originalPrice,
@@ -308,12 +314,14 @@ export function useSalesCreateForm({
   const {
     pricelists,
     resolvedId,
-  }: { pricelists: any[]; resolvedId: string | null } =
-    useSalesCustomerPricelist(
-      token as string,
-      customer?._id ?? '',
-      warehouseIdStr || undefined
-    );
+    loading: pricelistsLoading,
+    error: pricelistsError,
+    retry: retryPricelists,
+  } = useSalesCustomerPricelist(
+    token as string,
+    customer?._id ?? '',
+    warehouseIdStr || undefined
+  );
 
   useEffect(() => {
     if (!pricelistOverridden) setPricelistId(resolvedId ?? '');
@@ -342,55 +350,15 @@ export function useSalesCreateForm({
   const confirmedPricingSigRef = useRef('');
 
   const priceSeqRef = useRef(0);
-  useEffect(() => {
-    const seq = ++priceSeqRef.current;
-    const alreadyPriced = pricingSig === confirmedPricingSigRef.current;
-    confirmedPricingSigRef.current = '';
-    if (!token || !pricingSig || alreadyPriced) return;
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      if (seq !== priceSeqRef.current) return;
-      try {
-        const items = linesRef.current
-          .filter(
-            (l) =>
-              l.lineType === 'product' && l.subProductId && !l.priceOverridden
-          )
-          .map((l) => ({
-            key: l.key,
-            subproduct: l.subProductId,
-            size: l.sizeId,
-            quantity: l.quantity,
-            unitPrice: l.baseUnitPrice,
-            priceOverridden: false,
-          }));
-        if (!items.length) return;
-        const res = await salesOrderService.priceLines(
-          { items, pricelist: pricelistId || null },
-          token
-        );
-        if (cancelled || seq !== priceSeqRef.current) return; // superseded response
-        const byKey = new Map(
-          (res?.data?.items ?? []).map((it) => [it.key, it.unitPrice])
-        );
-        setLines((prev) =>
-          prev.map((l) => {
-            const p = byKey.get(l.key);
-            if (typeof p !== 'number' || !isFinite(p) || l.priceOverridden)
-              return l;
-            if (l.enginePriced && l.baseUnitPrice === p) return l;
-            return { ...l, baseUnitPrice: p, enginePriced: true };
-          })
-        );
-      } catch {
-        // keep the client-side estimate; the server reprices on save anyway
-      }
-    }, 350);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [pricingSig, token, pricelistId]);
+  useSalesPricePreview({
+    token,
+    pricingSig,
+    pricelistId,
+    linesRef,
+    setLines,
+    priceSeqRef,
+    confirmedPricingSigRef,
+  });
 
   const updateLine = useCallback((key: string, patch: Partial<DraftLine>) => {
     setLines((prev) =>
@@ -400,11 +368,11 @@ export function useSalesCreateForm({
 
   const addLine = useCallback(() => setLines((p) => [...p, blankLine()]), []);
   const addSection = useCallback(
-    () => setLines((p) => [...p, blankLine('section')]),
+    () => setLines((p) => appendPresentationLine(p,'section')),
     []
   );
   const addNote = useCallback(
-    () => setLines((p) => [...p, blankLine('note')]),
+    () => setLines((p) => appendPresentationLine(p,'note')),
     []
   );
   const removeLine = useCallback(
@@ -450,29 +418,7 @@ export function useSalesCreateForm({
           next[idx] = { ...next[idx], quantity: next[idx].quantity + inc };
           return next;
         }
-        return [
-          ...p,
-          {
-            ...blankLine('product'),
-            subProductId: info.subProductId,
-            product: info.productId,
-            name: info.name,
-            sku: info.sku,
-            sizeId: info.sizeId,
-            sizeName: info.sizeName,
-            baseUnitPrice: info.sellingPrice,
-            costPrice: info.costPrice,
-            taxRate: info.taxRate,
-            quantity: inc,
-            packSize: Math.max(1, Math.floor(info.unitsPerPack ?? 1)),
-            uom: undefined,
-            priceOverridden: false,
-            availableStock: info.availableStock,
-            activeBundles: info.bundleDeals,
-            originalPrice: info.originalPrice,
-            description: '',
-          },
-        ];
+        return [...p, catalogSelectionToDraftLine(info, inc)];
       });
     },
     []
@@ -527,43 +473,31 @@ export function useSalesCreateForm({
           ...l,
           unitPrice,
           lineTotal,
-          taxAmount: Math.round(lineTotal * (Math.max(0, l.taxRate) / 100)),
+          taxAmount: lineAmounts({...l,unitPrice}).tax,
         };
       }),
     [lines, pricelist]
   );
 
-  const untaxedAmount = priced
-    .filter((l) => l.lineType === 'product')
-    .reduce((s, l) => s + l.unitPrice * l.quantity, 0);
-  const discountTotal = priced
-    .filter((l) => l.lineType === 'product')
-    .reduce((s, l) => s + resolveDiscount(l.unitPrice, l), 0);
-  const taxTotal = priced
-    .filter((l) => l.lineType === 'product')
-    .reduce((s, l) => s + l.taxAmount, 0);
+  const amounts = documentAmounts(priced);
+  const untaxedAmount = amounts.subtotal;
+  const discountTotal = amounts.discountTotal;
+  const promotionTotal = amounts.promotionTotal;
+  const taxTotal = amounts.taxTotal;
   // Cart spend-threshold discount (cart_threshold pricelist rules) — same
   // base as the server: the post-line-discount untaxed amount. The server
   // recomputes authoritatively on save; this keeps the footer preview live.
   const pricelistCartDiscount = useMemo(() => {
     const rules = (pricelist as any)?.rules;
-    const base = Math.max(0, untaxedAmount - discountTotal);
+    const base = Math.max(0, untaxedAmount - discountTotal - promotionTotal);
     if (!rules?.length || base <= 0) return 0;
-    return Math.round(
+    return money(
       computeCartThresholdDiscount(findCartThresholdRules(rules, base), base)
     );
-  }, [pricelist, untaxedAmount, discountTotal]);
+  }, [pricelist, untaxedAmount, discountTotal, promotionTotal]);
   // Mirrors server refreshOrderTotal: coupon + spend-threshold discounts come
   // off the untaxed+tax figure (floored at 0), shipping is added on top.
-  const grandTotal =
-    Math.max(
-      0,
-      untaxedAmount -
-        discountTotal +
-        taxTotal -
-        (coupon?.discount ?? 0) -
-        pricelistCartDiscount
-    ) + Math.max(0, shippingFee);
+  const grandTotal = documentTotal({...amounts,couponDiscount:coupon?.discount ?? 0,pricelistCartDiscount,shippingFee});
   const hasLines = lines.some((l) => l.subProductId);
 
   const loadCustomerAddress = useCallback(
@@ -799,7 +733,8 @@ export function useSalesCreateForm({
     setPricelistId,
     pricelistOverridden,
     setPricelistOverridden,
-    warehouseId,
+    // Public form consumers always receive an ID, never a populated reference.
+    warehouseId: warehouseIdStr,
     setWarehouseId,
     warehouses,
     loadingCustomerAddress,
@@ -814,9 +749,13 @@ export function useSalesCreateForm({
     pricelist,
     pricelists,
     resolvedPricelistId: resolvedId,
+    pricelistsLoading,
+    pricelistsError,
+    retryPricelists,
     priced,
     untaxedAmount,
     discountTotal,
+    promotionTotal,
     taxTotal,
     pricelistCartDiscount,
     grandTotal,

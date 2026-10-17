@@ -6,6 +6,18 @@ status: local implementation; rollout reconciliation required
 
 # Accounting workflows
 
+Invoice creation redesign (2026-10-13): see
+[accounting-invoice-create.md](accounting-invoice-create.md) for invoice-specific
+editing/review, guarded save/print/issue actions, draft recovery and due-date rules.
+
+Invoice workspace redesign (2026-10-13): see
+[accounting-invoices-workspace.md](accounting-invoices-workspace.md) for responsive
+ledger/aging design, scoped export, independent retries and receipt-loading safety.
+
+Open balance error fix (2026-10-13): see
+[accounting-open-balances.md](accounting-open-balances.md) for the customer-tab
+aggregation correction and disposable MongoDB regression coverage.
+
 Latest corrections (2026-09-30): see [accounting-vat-reconciliation.md](accounting-vat-reconciliation.md)
 for POS VAT capture, exact tax snapshots, refund/void handling and P&L disclosures.
 The older rollout notes below remain historical context.

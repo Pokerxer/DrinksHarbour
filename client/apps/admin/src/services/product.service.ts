@@ -95,6 +95,13 @@ export const productService = {
     return readProduct(url, token, signal);
   },
 
+  async getProductSalesHistory(id: string, token: string, signal?: AbortSignal) {
+    return readProduct(`${API_URL}/api/products/admin/${id}/sales`, token, signal);
+  },
+  async getProductStock(id: string, token: string, signal?: AbortSignal) {
+    return readProduct(`${API_URL}/api/products/admin/${id}/stock`, token, signal);
+  },
+
   async updateProduct(id: string, data: Partial<ProductData>, token: string) {
     const response = await fetch(`${API_URL}/api/products/${id}`, {
       method: 'PUT',

@@ -20,8 +20,9 @@ import {
   buildListParams,
   csvMatrix,
   collectAllPages,
+  type ActiveFilter,
+  type WireFilter,
 } from './sales-list-helpers';
-import type { ActiveFilter, WireFilter } from './sales-list-helpers';
 import type { SalesOrder } from '@/services/salesOrder.service';
 
 function order(over: Partial<SalesOrder> = {}): SalesOrder {
@@ -46,13 +47,17 @@ const baseInput = {
   search: '',
   groupBy: 'none' as const,
   groupBySubOption: undefined,
-  currentUserName: 'Ada Lovelace',
   dateFrom: '',
   dateTo: '',
   page: 1,
 };
 
 describe('salespersonName', () => {
+  test('completed orders display the frozen fulfiller name', () => {
+    expect(salespersonName(order({ salesperson: 'Later changed name',
+      fulfillmentAttribution: { user: 'staff', name: 'Original cashier', at: '2026-10-16T00:00:00Z' },
+    }))).toBe('Original cashier');
+  });
   test('a salesperson is a name string, and it is rendered', () => {
     expect(salespersonName(order({ salesperson: 'Ada Lovelace' }))).toBe(
       'Ada Lovelace'
@@ -66,27 +71,28 @@ describe('salespersonName', () => {
 });
 
 describe('buildListParams — the "my" filter', () => {
-  test("it filters by the user's name, because that is what the field holds", () => {
+  test('it asks the server to resolve the authenticated salesperson', () => {
     const params = buildListParams({
       ...baseInput,
       activeFilters: [{ id: 'my', label: 'My Quotations', type: 'my' }],
     });
 
-    expect(params.salesperson).toBe('Ada Lovelace');
+    expect(params.myQuotations).toBe('1');
+    expect(params.salesperson).toBeUndefined();
   });
 
   test('without the filter no salesperson param is sent at all', () => {
     expect(buildListParams(baseInput).salesperson).toBeUndefined();
   });
 
-  test('an unnamed session does not send an empty salesperson that matches nothing', () => {
+  test('an unnamed session still requests the current user filter', () => {
     const params = buildListParams({
       ...baseInput,
-      currentUserName: '',
       activeFilters: [{ id: 'my', label: 'My Quotations', type: 'my' }],
     });
 
     expect(params.salesperson).toBeUndefined();
+    expect(params.myQuotations).toBe('1');
   });
 });
 
@@ -343,4 +349,13 @@ describe('collectAllPages', () => {
     expect(calls).toBe(1);
     expect(result.complete).toBe(false);
   });
+});
+
+test('quotation workspace includes returned orders consistently for paging, grouping and export', () => {
+  const activeFilters: ActiveFilter[] = [{id:'quotation',label:'Quotations',type:'docType',value:'quotation'}];
+  for (const groupBy of ['none', 'customer'] as const) {
+    expect(buildListParams({...baseInput,activeFilters,groupBy,includeReturnedOrders:true,pageSize:100})).toMatchObject({docType:'quotation',includeReturnedOrders:'1'});
+  }
+  expect(buildListParams({...baseInput,activeFilters})).not.toHaveProperty('includeReturnedOrders');
+  expect(buildListParams({...baseInput,includeReturnedOrders:true,activeFilters:[{id:'order',label:'Orders',type:'docType',value:'order'}]})).not.toHaveProperty('includeReturnedOrders');
 });

@@ -1,5 +1,9 @@
 # Notification custom timeframes
 
+2026-10-12 exception: expiry ranges filter batch expiry dates and may include
+future dates (still bounded to 366 inclusive days). Other category history rules
+remain unchanged. See RESUME-notifications-expiry.md for statuses and sorting.
+
 2026-10-09: All notification pages include explicit From/To, Apply and reset.
 Use Lagos dates, inclusive end, max 366 days, no future dates. Planning uses only
 completed days; notices include today. Default metrics retain 30-day/weekly behavior.

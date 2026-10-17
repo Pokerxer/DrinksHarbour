@@ -2,10 +2,12 @@
 
 const express = require('express');
 const router = express.Router();
+router.use(require('../middleware/shoppingLocation.middleware'));
 const productController = require('../controllers/product.controller');
 const productService = require('../services/product.service');
 const asyncHandler = require('../utils/asyncHandler');
 const { protect, authorize, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
+const { resolveTenantContext } = require('../middleware/tenant.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { uploadReviewImages } = require('../middleware/imageUpload.middleware');
 const { body, param, query } = require('express-validator');
@@ -135,6 +137,7 @@ router.get(
 router.get(
   '/catalogue-search',
   protect,
+  resolveTenantContext,
   tenantAdminOrSuperAdmin,
   productController.searchProducts
 );
@@ -386,6 +389,13 @@ router.get('/admin/list', productController.getAdminProductList);
  * @access Private/Admin (incl. tenant_admin/owner for read-only browsing)
  */
 router.get('/admin/pending', productController.getPendingProducts);
+
+// Private sales history: buyer identities never belong in the public product read.
+router.get('/admin/:id/sales', resolveTenantContext, mongoIdValidation, validate,
+  require('../controllers/productSales.controller').getProductSalesHistory);
+// Private inventory balances: never add reservations to the public product read.
+router.get('/admin/:id/stock', resolveTenantContext, mongoIdValidation, validate,
+  require('../controllers/productStock.controller').getProductStock);
 
 // ── Product mutations — restricted to platform admins only ──────────────────
 // Central Products are platform-owned; tenants may only create pending proposals.

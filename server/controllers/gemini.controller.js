@@ -1,3 +1,4 @@
+const { expandedTypeValues } = require('../constants/expandedProductTypes');
 // controllers/gemini.controller.js
 const Anthropic = require('@anthropic-ai/sdk');
 const asyncHandler = require('express-async-handler');
@@ -184,9 +185,9 @@ const PRODUCT_ENUMS = {
     'coffee', 'espresso', 'cold_brew', 'instant_coffee', 'tea', 'green_tea', 'black_tea', 'herbal_tea', 'oolong_tea', 'white_tea', 'chai', 'matcha', 'hot_chocolate',
     'energy_drink', 'sports_drink', 'protein_shake', 'vitamin_drink', 'electrolyte_drink',
     'water', 'mineral_water', 'spring_water', 'alkaline_water', 'coconut_water',
-    'mixer', 'simple_syrup', 'grenadine', 'bitters_mixer',
+    ...expandedTypeValues, 'mixer', 'simple_syrup', 'grenadine', 'bitters_mixer',
     'milk', 'dairy_milk', 'plant_milk', 'almond_milk', 'oat_milk', 'soy_milk', 'coconut_milk', 'milkshake',
-    'accessory', 'glassware', 'bar_tool', 'ice', 'garnish', 'snack', 'gift_set', 'subscription_box', 'other'
+    'vape', 'accessory', 'glassware', 'bar_tool', 'ice', 'garnish', 'snack', 'nuts', 'gift_set', 'subscription_box', 'other'
   ],
 
   standardSizes: [

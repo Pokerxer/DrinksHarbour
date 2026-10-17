@@ -1,6 +1,9 @@
+const { ValidationError } = require('../utils/errors');
+const salesMoney = require('../../packages/sales-money');
 const { escapeRegex } = require('../utils/escapeRegex');
 // server/services/salesOrder.service.js
 const SalesOrder = require('../models/SalesOrder');
+const orderPolicy = require('./salesOrderPolicy');
 const { generateSalesOrderNumber } = require('../utils/orderUtils');
 const { logActivity, statusSubject } = require('./salesActivity.service');
 
@@ -116,36 +119,17 @@ function normalizeAddress(addr) {
  *  discountType 'percentage' = percent of each unit (scales with quantity);
  *  'fixed' = a flat ₦ amount off the whole line (independent of quantity).
  *  Section/note lines carry no discount. */
-function lineDiscountOf(item) {
-  if (item.lineType && item.lineType !== 'product') return 0;
-  const gross = (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
-  const raw = Math.max(0, Number(item.discount) || 0);
-  if (item.discountType === 'percentage') {
-    return Math.min(gross, Math.round((gross * Math.min(100, raw)) / 100));
-  }
-  return Math.min(gross, raw);
-}
+function lineDiscountOf(item) { return salesMoney.lineAmounts(item).discount; }
 
 /** Compute a single line's UNTAXED total: gross − line discount, floored at 0.
  *  Section/note lines carry no price and contribute nothing. */
-function lineTotalOf(item) {
-  if (item.lineType && item.lineType !== 'product') return 0;
-  const gross = (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
-  return Math.max(0, gross - lineDiscountOf(item));
-}
+function lineTotalOf(item) { return salesMoney.lineAmounts(item).afterDiscount; }
 
 /**
  * Per-line tax (tax-exclusive): the line's untaxed total * taxRate%. Rounded to
- * the nearest integer minor unit so order taxTotal is the sum of clean line taxes.
+ * kobo so order taxTotal is the sum of rounded line taxes.
  */
-function lineTaxOf(item) {
-  if (item.lineType && item.lineType !== 'product') return 0;
-  const rate = Math.max(0, Number(item.taxRate) || 0);
-  if (rate <= 0) return 0;
-  // Tax is charged on the post-promotion untaxed base (discount-before-tax).
-  const base = Math.max(0, lineTotalOf(item) - (Number(item.promoDiscount) || 0));
-  return Math.round(base * (rate / 100));
-}
+function lineTaxOf(item) { return salesMoney.lineAmounts(item).tax; }
 
 /**
  * The authoritative pricing engine, but ONLY when a DB connection is live —
@@ -217,7 +201,7 @@ async function resolveLinePromotions(items, deps = {}) {
     if (calc && it.subproduct && base > 0) {
       try {
         const r = await calc(tenantId, it.subproduct, it.size, base, Number(it.quantity) || 0);
-        promoDiscount = Math.min(base, Math.max(0, Math.round(Number(r && r.discount) || 0)));
+        promoDiscount = Math.min(base, salesMoney.money(Number(r && r.discount) || 0));
         promoName =
           (r && r.appliedPromotions && r.appliedPromotions[0] && r.appliedPromotions[0].name) || '';
       } catch {
@@ -238,17 +222,8 @@ async function resolveLinePromotions(items, deps = {}) {
  * The "Untaxed Amount" Odoo row is (subtotal - discountTotal).
  */
 function computeTotals(items) {
-  let subtotal = 0, discountTotal = 0, promotionTotal = 0, taxTotal = 0;
-  for (const it of items) {
-    // Section/note lines are presentational only — excluded from all totals.
-    if (it.lineType && it.lineType !== 'product') continue;
-    subtotal += (Number(it.unitPrice) || 0) * (Number(it.quantity) || 0);
-    discountTotal += lineDiscountOf(it);
-    promotionTotal += Number(it.promoDiscount) || 0;
-    taxTotal += lineTaxOf(it);
-  }
-  const untaxed = Math.max(0, subtotal - discountTotal - promotionTotal);
-  return { subtotal, discountTotal, promotionTotal, taxTotal, total: untaxed + taxTotal };
+  const {untaxed,...totals}=salesMoney.documentAmounts(items);
+  return totals;
 }
 
 /**
@@ -260,17 +235,7 @@ function computeTotals(items) {
  *                  - couponDiscount - pricelistCartDiscount) + shippingFee
  */
 function refreshOrderTotal(so) {
-  const untaxed = Math.max(
-    0,
-    (Number(so.subtotal) || 0) - (Number(so.discountTotal) || 0) - (Number(so.promotionTotal) || 0)
-  );
-  const beforeAdjust = untaxed + (Number(so.taxTotal) || 0);
-  so.total =
-    Math.max(
-      0,
-      beforeAdjust - (Number(so.couponDiscount) || 0) - (Number(so.pricelistCartDiscount) || 0)
-    ) +
-    Math.max(0, Number(so.shippingFee) || 0);
+  so.total = salesMoney.documentTotal(so);
   return so;
 }
 
@@ -295,7 +260,7 @@ async function resolveCartThresholdDiscount(so, pricelistId, deps = {}) {
     (Number(so.subtotal) || 0) - (Number(so.discountTotal) || 0) - (Number(so.promotionTotal) || 0)
   );
   try {
-    return Math.max(0, Math.round(Number(await compute(base, { tenantId: so.tenant, pricelistId })) || 0));
+    return salesMoney.money(Number(await compute(base, { tenantId: so.tenant, pricelistId })) || 0);
   } catch {
     return 0;
   }
@@ -337,7 +302,7 @@ async function applyCouponToOrder(so, code, deps = {}) {
   const base = untaxed + (Number(so.taxTotal) || 0);
   const value = Math.max(0, Number(promo.discountValue) || 0);
   let discount =
-    promo.discountType === 'fixed' ? value : Math.round((base * Math.min(100, value)) / 100);
+    promo.discountType === 'fixed' ? value : salesMoney.money((base * Math.min(100, value)) / 100);
   const cap = Number(promo.maxDiscountAmount) || 0;
   if (cap > 0) discount = Math.min(discount, cap);
   discount = Math.min(discount, base);
@@ -368,6 +333,13 @@ function mapLine(input) {
       taxAmount: 0, lineTotal: 0, priceOverridden: false,
     };
   }
+  for (const field of ['unitPrice','quantity','discount','taxRate','promoDiscount']) {
+    if (it[field] != null && (!Number.isFinite(Number(it[field])) || Number(it[field])<0))
+      throw new ValidationError(`${field} must be a finite nonnegative number.`);
+  }
+  const gross = (Number(it.unitPrice)||0)*(Number(it.quantity)||0);
+  if(!Number.isFinite(gross)||gross>Number.MAX_SAFE_INTEGER/100)
+    throw new ValidationError('Line amount is too large to calculate safely.');
   // Store the operator's raw discount input verbatim (percentage clamped to
   // 0–100; fixed as an absolute ₦ figure). It's interpreted against the line —
   // 'percentage' as a percent of each unit, 'fixed' as a flat ₦ off the whole
@@ -391,7 +363,7 @@ function mapLine(input) {
     unitPrice,
     discount,
     discountType,
-    taxRate: Math.max(0, Number(it.taxRate) || 0),
+    taxRate: Math.min(100, Math.max(0, Number(it.taxRate) || 0)),
     promoDiscount: Math.max(0, Number(it.promoDiscount) || 0),
     promoName: it.promoName || '',
     taxAmount: lineTaxOf(lineForTotals),
@@ -433,7 +405,13 @@ async function withSoNumber(tenantId, persist) {
  * Build + persist a SalesOrder. Snapshots line totals and order totals.
  * docType 'quotation' starts quoteStatus='draft'; 'order' starts orderStatus='draft'.
  */
-async function createSalesOrderDoc({ tenantId, salesperson, body }) {
+function checkedShipping(value) {
+  if(value==null || value==='')return 0;
+  if(!Number.isFinite(Number(value))||Number(value)<0)throw new ValidationError('Shipping must be a finite nonnegative amount.');
+  return salesMoney.money(Number(value));
+}
+
+async function createSalesOrderDoc({ tenantId, salesperson, salespersonUser, body }) {
   const docType = body.docType === 'quotation' ? 'quotation' : 'order';
   await assertTenantOwnedRefs({
     tenantId,
@@ -461,17 +439,18 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
   const totals = computeTotals(items);
   const paymentTerms = normalizePaymentTerms(body.paymentTerms);
 
-  const shippingFee = Math.max(0, Number(body.shippingFee) || 0);
+  const shippingFee = checkedShipping(body.shippingFee);
   const pricelistCartDiscount = await resolveCartThresholdDiscount(
     { ...totals, tenant: tenantId },
     body.pricelist
   );
-  totals.total = Math.max(0, totals.total - pricelistCartDiscount) + shippingFee;
+  totals.total = salesMoney.documentTotal({...totals,pricelistCartDiscount,shippingFee});
   return withSoNumber(tenantId, (soNumber) => SalesOrder.create({
     tenant: tenantId,
     soNumber,
     docType,
-    salesperson: salesperson || body.salesperson || '',
+    salesperson: salesperson || '',
+    salespersonUser,
     customer: body.customer || undefined,
     customerSnapshot: body.customerSnapshot || undefined,
     pricelist: body.pricelist || null,
@@ -480,27 +459,29 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
     items,
     ...totals, // subtotal, discountTotal, taxTotal, total (refreshed below for footer adjustments)
     pricelistCartDiscount,
-    shippingFee: Math.max(0, Number(body.shippingFee) || 0),
+    shippingFee: checkedShipping(body.shippingFee),
     plannedRedeemPoints: Math.max(0, Math.round(Number(body.plannedRedeemPoints) || 0)),
     validUntil: body.validUntil || undefined,
     paymentTerms,
-    dueDate: body.dueDate ? require('./accounting.query').dateRange({ from: body.dueDate }).$gte : computeDueDate(paymentTerms),
+    // Explicit null means no agreed date; omitted fields retain term defaults.
+    dueDate: body.dueDate !== undefined
+      ? (body.dueDate ? require('./accounting.query').dateRange({ from: body.dueDate }).$gte : undefined)
+      : computeDueDate(paymentTerms),
     invoiceAddress: normalizeAddress(body.invoiceAddress),
     deliveryAddress: normalizeAddress(body.deliveryAddress),
     notes: body.notes, terms: body.terms,
+    invoiceDraft: body.invoiceDraft === true,
     warehouseId: body.warehouseId || null,
     ...(docType === 'quotation' ? { quoteStatus: 'draft' } : { orderStatus: 'draft' }),
   }));
 }
 
 function canEdit(so) {
-  if (so.docType === 'quotation') return ['draft', 'sent'].includes(so.quoteStatus);
-  return so.orderStatus === 'draft';
+  return orderPolicy.canEdit(so);
 }
 
 function canCancel(so) {
-  if (so.docType === 'quotation') return !['converted', 'rejected'].includes(so.quoteStatus);
-  return !['fulfilled', 'cancelled'].includes(so.orderStatus);
+  return !orderPolicy.cancellationReason(so);
 }
 
 /**
@@ -540,6 +521,7 @@ async function updatePricesForOrder(so, { tenantId } = {}) {
 
 /** Re-snapshot line prices + totals from an edit body. Mutates `so` in place. */
 async function applyEdit(so, body) {
+  if(body.shippingFee!==undefined) checkedShipping(body.shippingFee);
   // Validate only the FKs this patch actually touches, scoped to the order's
   // own tenant. `undefined` = field omitted (skip); a present value (incl. a
   // real id) is checked. Clearing to null/'' is allowed and not validated.
@@ -615,6 +597,7 @@ async function applyEdit(so, body) {
   }
   if (body.dueDate !== undefined) so.dueDate = body.dueDate ? require('./accounting.query').dateRange({ from: body.dueDate }).$gte : undefined;
   if (body.notes !== undefined) so.notes = body.notes;
+  if (body.invoiceDraft === true && !so.invoiceIssuedAt) so.invoiceDraft = true;
   if (body.terms !== undefined) so.terms = body.terms;
   if (body.validUntil !== undefined) so.validUntil = body.validUntil;
   if (body.paymentTerms !== undefined) {
@@ -626,7 +609,7 @@ async function applyEdit(so, body) {
   if (body.deliveryAddress !== undefined) so.deliveryAddress = normalizeAddress(body.deliveryAddress);
   if (body.warehouseId !== undefined) so.warehouseId = body.warehouseId || null;
   if (body.shippingFee !== undefined) {
-    so.shippingFee = Math.max(0, Number(body.shippingFee) || 0);
+    so.shippingFee = checkedShipping(body.shippingFee);
     refreshOrderTotal(so);
   }
   if (body.plannedRedeemPoints !== undefined) {
@@ -652,6 +635,7 @@ async function applyEdit(so, body) {
  * the real two-document pairs created before this change.
  */
 async function convertQuotationToOrder(quotation) {
+  orderPolicy.assertUnlocked(quotation);
   quotation.docType = 'order';
   quotation.quoteStatus = 'converted';
   quotation.orderStatus = 'draft';
@@ -696,6 +680,8 @@ async function duplicateSalesOrderDoc(so) {
       tenant: so.tenant,
       soNumber,
       docType: 'quotation',
+      salesperson: so.salesperson,
+      salespersonUser: so.salespersonUser,
       customer: so.customer,
       customerSnapshot: so.customerSnapshot,
       pricelist: so.pricelist,
@@ -781,6 +767,7 @@ function buildFilterQuery(filtersRaw) {
 // ─── Bulk action helpers ──────────────────────────────────────────────────────
 
 async function bulkMarkSent(doc) {
+  orderPolicy.assertUnlocked(doc);
   if (doc.docType !== 'quotation') throw new Error(`${doc.soNumber} is not a quotation`);
   if (doc.quoteStatus !== 'draft') throw new Error(`Only draft quotations can be marked as sent, ${doc.soNumber} is ${doc.quoteStatus}`);
   doc.quoteStatus = 'sent';
@@ -795,11 +782,21 @@ async function bulkDuplicate(doc) {
 }
 
 async function bulkDeleteDoc(doc) {
+  orderPolicy.assertUnlocked(doc);
+  if (doc.reservationVersion && doc.orderStatus!=='cancelled') throw new Error('Cancel this reservation order before deleting it.');
   await SalesOrder.deleteOne({ _id: doc._id });
   return { deleted: true };
 }
 
 async function bulkCancelDoc(doc) {
+  const reason = orderPolicy.cancellationReason(doc);
+  if (reason) throw new Error(reason);
+  if (doc.reservationVersion) {
+    const cancelled = await require('./salesReservations').cancelReservedOrder({tenantId:doc.tenant,orderId:doc._id});
+    doc.orderStatus=cancelled.orderStatus;
+    logActivity(doc.tenant,doc._id,{subject:'Order cancelled; unused reservations released'});
+    return {};
+  }
   let action;
   if (doc.docType === 'order') {
     if (['fulfilled', 'cancelled'].includes(doc.orderStatus)) {
@@ -929,6 +926,9 @@ function groupByExtractor(groupBy, groupBySubOption) {
     // settled/complete bucket would overstate what has happened to the order.
     case 'paymentStatus':
       return (d) => PAYMENT_STATUS_LABEL[d.paymentStatus] || PAYMENT_STATUS_LABEL.unpaid;
+    case 'quoteStatus':
+      return (d) => ({ draft: 'Draft', sent: 'Sent', accepted: 'Accepted',
+        rejected: 'Rejected', expired: 'Expired', converted: 'Converted' })[d.quoteStatus] || 'Draft';
     case 'orderStatus':
       return (d) => ORDER_STATUS_LABEL[d.orderStatus] || ORDER_STATUS_LABEL.draft;
     case 'general': case 'dates': case 'customer':
@@ -990,9 +990,12 @@ async function getGroupedOrders({ matchQuery, groupBy, groupBySubOption, sort })
   const map = new Map();
   for (const d of docs) {
     const key = extract(d);
-    const g = map.get(key) ?? { _id: key, count: 0, total: 0, currency: d.currency || 'NGN', docs: [] };
+    const g = map.get(key) ?? { _id: key, count: 0, total: 0, outstanding: 0, currency: d.currency || 'NGN', docs: [] };
     g.count += 1;
     g.total += d.total || 0;
+    const cents = value => Math.round((Number(value) || 0) * 100);
+    g.outstanding = (cents(g.outstanding) + Math.max(0,
+      cents(d.total) - cents(d.amountPaid) - cents(d.creditedAmount))) / 100;
     g.docs.push(d);
     map.set(key, g);
   }

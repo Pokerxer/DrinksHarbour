@@ -10,6 +10,7 @@ import {
   fmtDate,
 } from './sales-helpers';
 import { warehouseName } from './sales-fulfillment-view';
+import { salespersonName } from './sales-list-helpers';
 
 interface Props {
   so: SalesOrder;
@@ -33,11 +34,11 @@ export default function SalesOrderDetailInfo({ so }: Props) {
               {fmtDate(so.createdAt)}
             </span>
           </div>
-          {so.salesperson && (
+          {(so.salesperson || so.fulfillmentAttribution) && (
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">Salesperson</span>
+              <span className="text-xs text-gray-500">{so.fulfillmentAttribution ? 'Fulfilled by' : 'Salesperson'}</span>
               <span className="text-sm font-medium text-gray-800">
-                {so.salesperson}
+                {salespersonName(so)}
               </span>
             </div>
           )}

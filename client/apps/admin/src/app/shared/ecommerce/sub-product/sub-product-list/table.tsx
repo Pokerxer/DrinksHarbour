@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { routes } from '@/config/routes';
 import Table from '@core/components/table';
 import { useTanStackTable } from '@core/components/table/custom/use-TanStack-Table';
+import { DEFAULT_SUBPRODUCT_PAGE_SIZE } from '@/utils/sub-product-pagination';
 import TablePagination from '@core/components/table/pagination';
 import { subProductListColumns } from './columns';
 import { TableClassNameProps } from '@core/components/table/table-types';
@@ -23,14 +24,10 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Extracted components & types
-import {
-  AdvancedFilters,
-  ColumnToggle,
-  ProductGridCard,
-  ProductGridCardCompact,
-  ViewToggle,
-} from './components';
-import type { FilterConfig, ViewMode } from './components';
+import ColumnToggle from './components/ColumnToggle';
+import ProductGridCard, { ProductGridCardCompact } from './components/ProductGridCard';
+import ViewToggle, { type ViewMode } from './components/ViewToggle';
+import type { FilterConfig } from './components/AdvancedFilters';
 import CustomFilterModal, {
   applyRule,
   type ActiveCustomRules,
@@ -58,6 +55,7 @@ import {
   EmptyState,
   ErrorState,
 } from './components/states';
+import { summarizeWidgets, nextWidgetFilter } from './widget-summary';
 import { useSubProducts } from '@/hooks/use-sub-products';
 import {
   saveSubProductSearchContext,
@@ -125,13 +123,8 @@ async function runWithConcurrency<T>(
 /** Max in-flight requests for bulk operations (keeps API load bounded). */
 const BULK_CONCURRENCY = 4;
 
-/** Entry animation delay capped so the last card never waits seconds. */
-const staggerDelay = (index: number) => ({
-  transition: { delay: Math.min(index * 0.02, 0.3) },
-});
-
 export default function SubProductsTable({
-  pageSize = 25,
+  pageSize = DEFAULT_SUBPRODUCT_PAGE_SIZE,
   hideFilters = false,
   hidePagination = false,
   hideFooter = false,
@@ -159,7 +152,7 @@ export default function SubProductsTable({
     {}
   );
   const [gridPageSize, setGridPageSize] = useState<number>(
-    PAGE_SIZE_OPTIONS.includes(pageSize) ? pageSize : 25
+    PAGE_SIZE_OPTIONS.includes(pageSize) ? pageSize : DEFAULT_SUBPRODUCT_PAGE_SIZE
   );
   const [gridPageIndex, setGridPageIndex] = useState(0);
 
@@ -211,11 +204,11 @@ export default function SubProductsTable({
     setGridSort(s.gridSort as any);
     setViewMode(s.viewMode as any);
     setGridPageIndex(s.gridPageIndex);
-    setGridPageSize(s.gridPageSize);
+    setGridPageSize(PAGE_SIZE_OPTIONS.includes(s.gridPageSize) ? s.gridPageSize : DEFAULT_SUBPRODUCT_PAGE_SIZE);
   }, []);
 
   // ── Data hook ──────────────────────────────────────────────────────────────
-  // The catalog is fetched in full once (server caps at 1000), then every
+  // The catalog is fetched in full (each server page is capped at 5000), then every
   // control — free-text search, status pills, visibility, advanced filters,
   // SP quick-filters, search chips, custom rules, sort and pagination — is
   // applied in-memory. This keeps a single, consistent code path so a filter
@@ -227,7 +220,6 @@ export default function SubProductsTable({
     isRefreshing,
     error,
     refresh,
-    stats: serverStats,
   } = useSubProducts(session?.user?.token, {
     initialPageSize: pageSize,
     clientSideMode: true,
@@ -354,30 +346,23 @@ export default function SubProductsTable({
     [filteredSubProducts, gridSort]
   );
 
-  // ── Stats ───────────────────────────────────────────────────────────────────
-  const stats = useMemo(
-    () => computeStats(allSubProducts, serverStats),
-    [allSubProducts, serverStats]
+  // Widget facets share the list's search scope, excluding only their own status.
+  const catalogStats = useMemo(
+    () => computeStats(allSubProducts),
+    [allSubProducts]
   );
-
-  // ── Real 30-day trends ──────────────────────────────────────────────────────
-  // Counts of sub-products created within the last 30 days, per status bucket.
-  // Computed client-side from the already-fetched catalog, so no backend call.
-  const trends = useMemo(() => {
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const inWindow = allSubProducts.filter((p) => {
-      const ts = new Date(p.createdAt).getTime();
-      return Number.isFinite(ts) && ts >= cutoff;
-    });
-    const isLow = (p: SubProductListItem) =>
-      (p.totalStock ?? 0) > 0 && (p.totalStock ?? 0) <= 10;
-    return [
-      inWindow.length,
-      inWindow.filter((p) => p.status === 'active').length,
-      inWindow.filter(isLow).length,
-      inWindow.filter((p) => (p.totalStock ?? 0) === 0).length,
-    ];
-  }, [allSubProducts]);
+  const { stats, trends } = useMemo(
+    () => summarizeWidgets(allSubProducts, {
+      visibilityFilter,
+      searchQuery,
+      searchChips,
+      quickFilters: spActiveFilters,
+      customMatch,
+      advancedFilters,
+    }),
+    [allSubProducts, visibilityFilter, searchQuery, searchChips,
+      spActiveFilters, customMatch, advancedFilters]
+  );
 
   // ── Grid page window & grouped products for Odoo group-by ───────────────────
   const gridTotalPages = Math.max(
@@ -680,7 +665,7 @@ export default function SubProductsTable({
 
   // ── Filter handlers ─────────────────────────────────────────────────────────
   const handleStatusFilter = useCallback((filter: string) => {
-    setStatusFilter((prev) => (prev === filter ? '' : filter));
+    setStatusFilter((prev) => nextWidgetFilter(prev, filter));
   }, []);
 
   const handleAdvancedFilterChange = useCallback(
@@ -718,7 +703,7 @@ export default function SubProductsTable({
       <div className="space-y-4 pb-24">
         <SubProductsHeader
           total={allSubProducts.length}
-          lowStock={stats.lowStock}
+          lowStock={catalogStats.lowStock}
           onNew={goCreateSubProduct}
           onAddProduct={goAddProduct}
         />
@@ -733,8 +718,8 @@ export default function SubProductsTable({
     return (
       <div className="space-y-6 pb-24">
         <SubProductsHeader
-          total={stats.total}
-          lowStock={stats.lowStock}
+          total={catalogStats.total}
+          lowStock={catalogStats.lowStock}
           onNew={goCreateSubProduct}
           onAddProduct={goAddProduct}
         />
@@ -743,6 +728,10 @@ export default function SubProductsTable({
           activeFilter={statusFilter}
           onFilterChange={handleStatusFilter}
           trends={trends}
+          onRetry={refresh}
+          unavailable={Boolean(error)}
+          refreshing={isRefreshing || isFetching}
+          resultCount={filteredSubProducts.length}
         />
         <ErrorState onRetry={refresh} message={error} />
       </div>
@@ -753,8 +742,8 @@ export default function SubProductsTable({
     return (
       <div className="space-y-6 pb-24">
         <SubProductsHeader
-          total={stats.total}
-          lowStock={stats.lowStock}
+          total={catalogStats.total}
+          lowStock={catalogStats.lowStock}
           onNew={goCreateSubProduct}
           onAddProduct={goAddProduct}
         />
@@ -763,6 +752,10 @@ export default function SubProductsTable({
           activeFilter={statusFilter}
           onFilterChange={handleStatusFilter}
           trends={trends}
+          onRetry={refresh}
+          unavailable={Boolean(error)}
+          refreshing={isRefreshing || isFetching}
+          resultCount={filteredSubProducts.length}
         />
         <EmptyState
           variant="empty"
@@ -780,7 +773,7 @@ export default function SubProductsTable({
     <div className="space-y-4 pb-24">
       <SubProductsHeader
         total={allSubProducts.length}
-        lowStock={stats.lowStock}
+        lowStock={catalogStats.lowStock}
         onNew={goCreateSubProduct}
         onAddProduct={goAddProduct}
       />
@@ -790,6 +783,10 @@ export default function SubProductsTable({
         activeFilter={statusFilter}
         onFilterChange={handleStatusFilter}
         trends={trends}
+        onRetry={refresh}
+        unavailable={Boolean(error)}
+        refreshing={isRefreshing || isFetching}
+        resultCount={filteredSubProducts.length}
       />
 
       {/* ── Toolbar ── */}
@@ -913,9 +910,9 @@ export default function SubProductsTable({
             >
               <option value="all">All visibility</option>
               <option value="published">
-                Published ({stats.published || 0})
+                Published ({catalogStats.published || 0})
               </option>
-              <option value="draft">Draft ({stats.draft || 0})</option>
+              <option value="draft">Draft ({catalogStats.draft || 0})</option>
             </select>
 
             <div className="hidden h-5 w-px shrink-0 bg-gray-200 sm:block" />
@@ -1050,9 +1047,7 @@ export default function SubProductsTable({
       ) : viewMode === 'grid' || viewMode === 'compact' ? (
         /* ═══════════════ Grid View ═══════════════ */
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+          initial={false}
           className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm sm:rounded-2xl"
         >
           {spGroupedProducts ? (
@@ -1077,7 +1072,7 @@ export default function SubProductsTable({
                         : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8'
                     )}
                   >
-                    {groupItems.map((subProduct, index) => {
+                    {groupItems.map((subProduct) => {
                       const productId = subProduct._id || subProduct.id;
                       const isSel = !!gridSelection[productId];
                       const onSel = () =>
@@ -1088,9 +1083,7 @@ export default function SubProductsTable({
                       return (
                         <motion.div
                           key={productId}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          {...staggerDelay(index)}
+                          initial={false}
                         >
                           {viewMode === 'grid' ? (
                             <ProductGridCard
@@ -1130,14 +1123,12 @@ export default function SubProductsTable({
                     : 'grid-cols-2 xs:grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7'
                 )}
               >
-                {gridPageItems.map((subProduct, index) => {
+                {gridPageItems.map((subProduct) => {
                   const productId = subProduct._id || subProduct.id;
                   return (
                     <motion.div
                       key={productId}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      {...staggerDelay(index)}
+                      initial={false}
                     >
                       {viewMode === 'grid' ? (
                         <ProductGridCard
@@ -1193,9 +1184,7 @@ export default function SubProductsTable({
       ) : (
         /* ═══════════════ List View ═══════════════ */
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+          initial={false}
           className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm"
         >
           <Table

@@ -1,5 +1,6 @@
 "use client";
 
+import ShoppingLocationControl from '@/components/ShoppingLocation/ShoppingLocationControl';
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -72,9 +73,9 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Red accent line at top */}
         <div className="h-0.5 bg-gradient-to-r from-red-600 via-orange-400 to-red-600" />
 
-        <div className={`transition-all duration-300 ${isScrolled ? "py-2" : "py-3"}`}>
+        <div className="py-3">
           <div className="container mx-auto px-4">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 xl:gap-3">
 
               {/* Mobile hamburger */}
               <button
@@ -85,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
 
               {/* Logo — hidden on mobile (search bar takes its place) */}
-              <div className="hidden lg:block">
+              <div className="hidden lg:block shrink-0">
                 <HeaderLogo
                   tenant={tenant}
                   isMainSite={isMainSite}
@@ -104,6 +105,7 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* Search — grows to fill space */}
               <HeaderSearch variant={variant} />
+              {isMainSite && <div className="shrink-0"><ShoppingLocationControl compact /></div>}
 
               {/* Actions — desktop */}
               <HeaderActions
@@ -125,8 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
         <AnnouncementBanner placement="header" layout="static" variant="promo" />
       )}
 
-      {/* Renders only for shoppers who can actually claim it, and only until
-          dismissed — see FirstOrderPerkBanner. */}
+      {/* Only show a claimable offer; no replacement strip for hidden states. */}
       <FirstOrderPerkBanner variant="bar" returnTo="/cart" />
 
       <MobileMenu

@@ -4,7 +4,12 @@ export const timeframeToday = (completed = false) =>
   new Date(Date.now() + 3600000 - (completed ? 86400000 : 0))
     .toISOString()
     .slice(0, 10);
-export function validTimeframe(start: string, end: string, completed = false) {
+export function validTimeframe(
+  start: string,
+  end: string,
+  completed = false,
+  allowFuture = false
+) {
   const date = (value: string) =>
     /^\d{4}-\d{2}-\d{2}$/.test(value) &&
     Number.isFinite(Date.parse(value)) &&
@@ -13,7 +18,7 @@ export function validTimeframe(start: string, end: string, completed = false) {
     date(start) &&
     date(end) &&
     start <= end &&
-    end <= timeframeToday(completed) &&
+    (allowFuture || end <= timeframeToday(completed)) &&
     (Date.parse(end) - Date.parse(start)) / 86400000 < 366
   );
 }
@@ -22,6 +27,8 @@ export default function NotificationTimeframe(props: {
   endDate?: string;
   onApply: (start: string, end: string) => void;
   completed?: boolean;
+  allowFuture?: boolean;
+  title?: string;
   disabled?: boolean;
 }) {
   return (
@@ -33,21 +40,27 @@ function TimeframeFields({
   endDate = '',
   onApply,
   completed = false,
+  allowFuture = false,
+  title = 'Timeframe',
   disabled = false,
 }: {
   startDate?: string;
   endDate?: string;
   onApply: (start: string, end: string) => void;
   completed?: boolean;
+  allowFuture?: boolean;
+  title?: string;
   disabled?: boolean;
 }) {
   const [start, setStart] = useState(startDate),
     [end, setEnd] = useState(endDate),
     [error, setError] = useState('');
   const apply = () => {
-    if (!validTimeframe(start, end, completed)) {
+    if (!validTimeframe(start, end, completed, allowFuture)) {
       setError(
-        'Choose valid dates in order, up to 366 days, with no future dates.'
+        allowFuture
+          ? 'Choose valid expiry dates in order, up to 366 days.'
+          : 'Choose valid dates in order, up to 366 days, with no future dates.'
       );
       return;
     }
@@ -58,7 +71,7 @@ function TimeframeFields({
     <div className="rounded-2xl border border-gray-200 bg-white p-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="mr-auto">
-          <p className="text-sm font-semibold text-gray-900">Timeframe</p>
+          <p className="text-sm font-semibold text-gray-900">{title}</p>
           <p className="mt-1 text-xs text-gray-500">
             {startDate
               ? `${startDate} – ${endDate}`
@@ -74,7 +87,7 @@ function TimeframeFields({
             aria-label="From date"
             type="date"
             value={start}
-            max={timeframeToday(completed)}
+            max={allowFuture ? undefined : timeframeToday(completed)}
             disabled={disabled}
             onChange={(e) => {
               setStart(e.target.value);
@@ -89,7 +102,7 @@ function TimeframeFields({
             aria-label="To date"
             type="date"
             value={end}
-            max={timeframeToday(completed)}
+            max={allowFuture ? undefined : timeframeToday(completed)}
             disabled={disabled}
             onChange={(e) => {
               setEnd(e.target.value);

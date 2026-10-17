@@ -9,14 +9,14 @@ function lineId(item) {
 }
 
 /**
- * Units still expected on a line: ordered minus shipped (fulfilledQty) minus
- * sent-back (returnedQty). Never below zero.
+ * Original units still to ship: ordered minus gross shipped (fulfilledQty).
+ * Returned goods are a subset of shipped units, not cancelled unshipped demand.
+ * Returns do not automatically create replacement deliveries.
  */
 function outstanding(line) {
   const ordered = line.quantity || 0;
   const fulfilled = line.fulfilledQty || 0;
-  const returned = line.returnedQty || 0;
-  return Math.max(0, ordered - fulfilled - returned);
+  return Math.max(0, ordered - fulfilled);
 }
 
 /**
@@ -160,8 +160,13 @@ function mapPaymentMethod(paymentMethod) {
  * @returns {Object} a payload satisfying every `required: true` field on Sales
  */
 function buildSalesRow({ tenantId, item, qty, paymentMethod, unitCost = 0, revenue = {}, channelDetail }) {
-  const priceAtSale = Math.max(0, (item.unitPrice || 0) - (item.discount || 0));
-  const itemSubtotal = priceAtSale * qty;
+  item = typeof item.toObject === 'function' ? item.toObject() : item;
+  const { round2 } = require('./accounting.helpers');
+  const ordered = Number(item.quantity) || qty;
+  const { lineTotalOf } = require('./salesOrder.service');
+  const net = Math.max(0, lineTotalOf({...item, quantity:ordered}) - (Number(item.promoDiscount) || 0));
+  const priceAtSale = ordered > 0 ? net / ordered : 0;
+  const itemSubtotal = Math.round(priceAtSale * qty * 100) / 100;
   const finalItemPrice = priceAtSale;
 
   const isCommission = revenue.revenueModel === 'commission';
@@ -170,13 +175,13 @@ function buildSalesRow({ tenantId, item, qty, paymentMethod, unitCost = 0, reven
   let tenantAmount;
   if (isCommission) {
     const commissionPct = Number(revenue.commissionPct) || 0;
-    tenantAmount = Math.round(itemSubtotal * (1 - commissionPct / 100));
+    tenantAmount = round2(itemSubtotal * (1 - commissionPct / 100));
   } else {
     tenantAmount = Math.min((Number(unitCost) || 0) * qty, itemSubtotal);
-    tenantAmount = Math.round(tenantAmount);
+    tenantAmount = round2(tenantAmount);
   }
   tenantAmount = Math.max(0, Math.min(tenantAmount, itemSubtotal));
-  const platformAmount = Math.max(0, Math.round(itemSubtotal) - tenantAmount);
+  const platformAmount = Math.max(0, round2(itemSubtotal - tenantAmount));
 
   return {
     tenant: tenantId,

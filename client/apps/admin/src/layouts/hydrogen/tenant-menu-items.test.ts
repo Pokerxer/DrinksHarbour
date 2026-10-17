@@ -3,6 +3,12 @@ import { expect, test, vi } from 'vitest';
 vi.mock('./menu-items', () => ({ menuItems: [] }));
 import { roleAllows } from './tenant-menu-items';
 import { buildTenantGroups } from './app-launcher-utils';
+test('notifications is accessible from the overview menu for all tenant roles', () => {
+  for (const role of ['tenant_owner', 'tenant_admin', 'tenant_staff']) {
+    const overview = buildTenantGroups('starter', role).find(group => group.label === 'Overview');
+    expect(overview?.tiles.find(tile => tile.name === 'Notifications')?.href).toBe('/notifications');
+  }
+});
 test('owner can reach every administrator menu entry', () => {
   expect(roleAllows('tenant_owner', 'tenant_admin')).toBe(true);
   expect(roleAllows('tenant_admin', 'tenant_admin')).toBe(true);

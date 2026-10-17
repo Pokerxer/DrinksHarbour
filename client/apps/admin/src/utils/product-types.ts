@@ -1,7 +1,10 @@
+import {generalNonBeverageTypes} from './general-product-types';
 // Mirrors `server/constants/productTypes.js` NON_BEVERAGE_TYPES plus the extra
 // accessory/gift values the Product model allows ('accessory', 'gift', 'ice',
 // 'subscription_box'). Anything not in this set is treated as a beverage.
 export const NON_BEVERAGE_PRODUCT_TYPES: ReadonlySet<string> = new Set([
+  ...generalNonBeverageTypes,
+  'vape',
   // Accessories & related
   'accessory',
   'glassware',

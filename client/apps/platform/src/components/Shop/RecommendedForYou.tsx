@@ -1,5 +1,9 @@
 'use client';
 
+import { useShoppingLocation } from '@/context/ShoppingLocationContext';
+import { useAuth } from '@/context/AuthContext';
+import { shoppingHeaders } from '@/lib/shoppingRequest';
+import type { ShoppingCoordinates } from '@/lib/shoppingRequest';
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import ProductCard from '@/components/Product/Card';
 import { ProductCardSkeleton } from '@/components/Product/Card/Skeleton';
@@ -84,7 +88,7 @@ const SECTION_KEYS: SectionKey[] = ['recommended', 'trending', 'bestsellers', 'n
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 const API_ENDPOINTS: Record<SectionKey, string> = {
-  recommended: `${API_BASE}/api/user/recommendations`,
+  recommended: `${API_BASE}/api/products/recommendations/personalized`,
   trending:    `${API_BASE}/api/products/trending`,
   bestsellers: `${API_BASE}/api/products/bestsellers`,
   newArrivals: `${API_BASE}/api/products/new-arrivals`,
@@ -120,10 +124,11 @@ type SectionResult = { products: any[]; failed: boolean };
 async function loadSectionData(
   section: SectionKey,
   auth: boolean,
-  maxItems: number
+  maxItems: number,
+  location: ShoppingCoordinates | null = null, token: string | null = null
 ): Promise<SectionResult> {
   const cacheKey = `${section}:${auth ? 'auth' : 'anon'}:${maxItems}`;
-  const cached = _recCache.get(cacheKey);
+  const cached = location || auth ? undefined : _recCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < REC_CACHE_TTL) {
     return { products: cached.data, failed: false };
   }
@@ -140,7 +145,7 @@ async function loadSectionData(
 
   for (const endpoint of endpoints) {
     try {
-      const response = await fetchWithTimeout(`${endpoint}?limit=${maxItems}`);
+      const response = await fetchWithTimeout(`${endpoint}?limit=${maxItems}`, { headers: shoppingHeaders(location, token ? { Authorization: 'Bearer ' + token } : undefined), cache: 'no-store' });
       if (!response.ok) continue;
 
       const data = await response.json();
@@ -149,7 +154,7 @@ async function loadSectionData(
       reachedServer = true;
       const prods = normalizeProducts(data).map(normalizeProduct);
       if (prods.length > 0) {
-        _recCache.set(cacheKey, { data: prods, ts: Date.now() });
+        if (!location && !auth) _recCache.set(cacheKey, { data: prods, ts: Date.now() });
         return { products: prods, failed: false };
       }
     } catch {
@@ -158,7 +163,7 @@ async function loadSectionData(
   }
 
   // Cache a genuine empty so an empty tab doesn't refetch on every switch.
-  if (reachedServer) _recCache.set(cacheKey, { data: [], ts: Date.now() });
+  if (reachedServer && !location && !auth) _recCache.set(cacheKey, { data: [], ts: Date.now() });
 
   return { products: [], failed: !reachedServer };
 }
@@ -176,12 +181,14 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
   layoutCol = 4,
   initialProducts,
 }) => {
+  const { location, revision } = useShoppingLocation();
+  const { isAuthenticated, token } = useAuth();
+  const request = useRef(0);
   const seeded = (initialProducts?.length ?? 0) > 0;
   const [products, setProducts] = useState<any[]>(
     () => (seeded ? initialProducts! : (getInitialCache(maxItems) ?? [])),
   );
   const [loading, setLoading] = useState(() => !seeded && !getInitialCache(maxItems));
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [currentSection, setCurrentSection] = useState<SectionKey>('recommended');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -202,7 +209,9 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
   const fetchSection = useCallback(
     async (section: SectionKey, auth: boolean) => {
       setHasError(false);
-      const { products: prods, failed } = await loadSectionData(section, auth, maxItems);
+      const requestId = ++request.current;
+      const { products: prods, failed } = await loadSectionData(section, auth, maxItems, location, token);
+      if (requestId !== request.current) return;
       // An empty section still replaces the previous tab's products — otherwise
       // switching to an empty tab leaves the old tab's cards on screen under
       // the new tab's heading.
@@ -210,7 +219,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
       setFadeKey(k => k + 1);
       setHasError(failed);
     },
-    [maxItems]
+    [maxItems, revision, token]
   );
 
   const handleSectionChange = useCallback(
@@ -231,60 +240,16 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
   }, [fetchSection, currentSection, isAuthenticated, maxItems]);
 
   useEffect(() => {
-    if (initDoneRef.current) return;
+    if (!location && !isAuthenticated && seeded && !initDoneRef.current) {
+      initDoneRef.current = true;
+      return;
+    }
     initDoneRef.current = true;
-
-    if (getInitialCache(maxItems)) return;
-
-    const init = async () => {
-      // Server already seeded the initial (trending) products into the HTML —
-      // don't refetch them; just resolve auth and, for logged-in users, upgrade
-      // to personalized recommendations.
-      if (seeded) {
-        const isAuth = await fetchWithTimeout(`${API_BASE}/api/auth/me`, {}, 3000)
-          .then(r => (r.ok ? r.json() : null))
-          .then(data => !!data?.user)
-          .catch(() => false);
-        setIsAuthenticated(isAuth);
-        if (isAuth) {
-          const { products: personalized } = await loadSectionData('recommended', true, maxItems);
-          if (personalized.length > 0) {
-            setProducts(personalized);
-            setFadeKey(k => k + 1);
-          }
-        }
-        return;
-      }
-
-      const [initial, isAuth] = await Promise.all([
-        loadSectionData('recommended', false, maxItems),
-        fetchWithTimeout(`${API_BASE}/api/auth/me`, {}, 3000)
-          .then(r => (r.ok ? r.json() : null))
-          .then(data => !!data?.user)
-          .catch(() => false),
-      ]);
-
-      setIsAuthenticated(isAuth);
-
-      if (initial.products.length > 0) {
-        setProducts(initial.products);
-        setLoading(false);
-
-        if (isAuth) {
-          const { products: personalized } = await loadSectionData('recommended', true, maxItems);
-          if (personalized.length > 0) {
-            setProducts(personalized);
-            setFadeKey(k => k + 1);
-          }
-        }
-      } else {
-        setHasError(initial.failed);
-        setLoading(false);
-      }
-    };
-
-    init();
-  }, [maxItems, seeded]);
+    setLoading(true);
+    let active = true;
+    void fetchSection(currentSection, isAuthenticated).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; request.current++; };
+  }, [fetchSection, isAuthenticated]);
 
   // ─── Memoized header / tabs ─────────────────────────────────────────────────
   const sectionHeader = useMemo(() => (

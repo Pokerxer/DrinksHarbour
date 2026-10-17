@@ -25,6 +25,7 @@ const FILTER_URL_KEYS: Partial<Record<keyof FilterState, string>> = {
 
 const SORT_OPTIONS: SortOption[] = [
   { value: '', label: 'Sort by', disabled: true },
+  { value: 'nearest', label: 'Nearest sellers' },
   { value: 'newest', label: 'Newest Arrivals' },
   { value: 'priceLowToHigh', label: 'Price: Low to High' },
   { value: 'priceHighToLow', label: 'Price: High to Low' },
@@ -203,6 +204,7 @@ interface Props {
   // its original behaviour of filtering/sorting/slicing a locally held list —
   // which the deals view still relies on.
   serverPaged?: boolean;
+  hasShoppingLocation?: boolean;
   serverPage?: number;
   serverPageCount?: number;
   serverTotal?: number;
@@ -227,6 +229,7 @@ const Shop: React.FC<Props> = ({
   layoutCol: externalLayoutCol,
   onLayoutChange: externalOnLayoutChange,
   serverPaged = false,
+  hasShoppingLocation = false,
   serverPage = 0,
   serverPageCount = 1,
   serverTotal,
@@ -795,7 +798,7 @@ const Shop: React.FC<Props> = ({
                 onLayoutChange={handleLayoutChange}
                 filters={filters}
                 updateFilter={updateFilter}
-                sortOptions={SORT_OPTIONS}
+                sortOptions={SORT_OPTIONS.filter(option => option.value !== 'nearest' || hasShoppingLocation).map(option => option.value === '' && hasShoppingLocation ? { ...option, label: 'Nearest sellers' } : option)}
                 totalProducts={0}
                 onClearAllFilters={handleClearAll}
                 defaultPriceRange={filterOptions.priceRange}
@@ -817,7 +820,7 @@ const Shop: React.FC<Props> = ({
                 onLayoutChange={handleLayoutChange}
                 filters={filters}
                 updateFilter={updateFilter}
-                sortOptions={SORT_OPTIONS}
+                sortOptions={SORT_OPTIONS.filter(option => option.value !== 'nearest' || hasShoppingLocation).map(option => option.value === '' && hasShoppingLocation ? { ...option, label: 'Nearest sellers' } : option)}
                 totalProducts={headerTotal}
                 onClearAllFilters={handleClearAll}
                 defaultPriceRange={filterOptions.priceRange}

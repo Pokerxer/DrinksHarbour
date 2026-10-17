@@ -45,6 +45,7 @@ const corsOptions = {
     'Accept',
     'Origin',
     'x-tenant-slug',
+    'x-shopping-location',
     'x-is-tenant-site',
     'x-mfa-token',
     'x-csrf-token',

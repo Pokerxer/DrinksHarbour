@@ -354,6 +354,7 @@ export interface ReviewerForm {
 }
 
 export interface AppraisalCycle {
+  mode?: 'standard' | 'peer_rating';
   _id: string;
   name: string;
   status: 'draft' | 'collecting' | 'closed' | 'cancelled';
@@ -1274,3 +1275,6 @@ export const sendNudge = (
     method: 'POST',
     body: JSON.stringify(body),
   });
+
+// Shared authenticated transport for the independent peer-rating mode.
+export { request as appraisalRequest };

@@ -44,3 +44,24 @@ appearance preview, explicit URL suggestions and assignment validation. Stale
 select values remain visible instead of silently changing. Reports use explicit
 Lagos date presets and distinguish selected-period from calendar totals.
 53 tests passed; 376 existing type errors, no new module errors. No visual QA claim.
+
+2026-10-13: approved management-page refinement implemented. Layout uses available
+container width; preserve explicit `width: 100%` on the contained admin flex child.
+Dashboard actions now use server-confirmed records, cancel stale refreshes and
+separate load/action errors. Token-keyed content plus unmount guards prevent old
+account responses from leaking into the new view. Local README records these rules.
+38 focused tests pass; full backend 3,732 pass / 5 skip; admin type check has 359
+errors outside this module. Browser checked empty fleets at 320/390/768/1440 widths
+without horizontal overflow. Final full admin rerun with two workers: 2,725 tests
+passed / 315 files; earlier default-worker timeouts all passed without changing
+test thresholds. RESUME records verification details. No deployment or live writes.
+
+Analytics refinement (2026-10-13): applied report scope is separate from drafts;
+page/refresh/retry use applied filters. Token+kiosk-link keys reset account context
+and old requests abort. Kiosk-list failures are visible/retryable independently.
+Responsive summary and chart, mobile semantic row cards, safe current prices and
+missing-stock labels, distinct later-page/period empty states. Empty reports omit
+blank tables/chart/paging. Keep backend shared pagination semantics; do not invent
+list totals. 49 focused tests; full admin 2,736 pass; backend 3,732 pass/5 skip;
+359 unrelated type errors, none here. Browser reviewed live empty and illustrative
+populated layouts at phone/tablet/desktop widths; temporary fixtures removed.

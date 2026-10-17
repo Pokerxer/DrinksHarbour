@@ -10,7 +10,7 @@ async function getToken() {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = await getToken();
+    const token = request.headers.get('Authorization')?.replace(/^Bearer /, '') || await getToken();
     
     if (!token) {
       return NextResponse.json(
@@ -23,15 +23,16 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get('limit') || '10';
 
     const response = await fetch(`${API_URL}/api/products/recommendations/personalized?limit=${limit}`, {
-      method: 'GET',
+      method: 'GET', cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        ...(request.headers.get('x-shopping-location') ? { 'x-shopping-location': request.headers.get('x-shopping-location')! } : {}),
       },
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching personalized recommendations:', error);
     return NextResponse.json(

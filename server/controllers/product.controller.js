@@ -587,6 +587,12 @@ const exportAllProducts = asyncHandler(async (req, res) => {
 const searchProducts = asyncHandler(async (req, res) => {
   const { q: query } = req.query;
 
+  if (req.query.matchMode === 'smart') {
+    const { searchCatalogueProducts } = require('../services/catalogue-search.service');
+    const result = await searchCatalogueProducts({ query, type: req.query.type, limit: req.query.limit });
+    return res.status(200).json({ success: true, data: result });
+  }
+
   // Check if user is super_admin to include pending products
   const isSuperAdmin = req.user?.role === 'super_admin';
 
@@ -871,7 +877,7 @@ const getTrendingProducts = asyncHandler(async (req, res) => {
     if (ids.length) categoryIds = ids;
   }
 
-  const products = await productService.getTrendingProducts(limit, days, categoryIds);
+  const products = await productService.getTrendingProducts(limit, days, categoryIds, { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id });
 
   res.status(200).json({
     success: true,
@@ -1218,6 +1224,9 @@ const getAllProducts = asyncHandler(async (req, res) => {
     limit: parseInt(limit, 10),
     // Public listing. Both pinned after the spread for the same reason as the
     // public search endpoint — `filters` carries the raw query string.
+    shoppingLocation: req.shoppingLocation || null,
+    explicitSort: req.query.sort || req.query.sortBy || null,
+    tenantId: req.tenant?._id || filters.tenantId || undefined,
     status: 'approved',
     includeUnpublished: false,
   });
@@ -1267,6 +1276,9 @@ const searchProductsPublic = asyncHandler(async (req, res) => {
     // crafted query string cannot reach past them: `?status=pending` and
     // `?includeUnpublished=true` both arrive inside `filters` and are overwritten
     // here. Keep them last.
+    shoppingLocation: req.shoppingLocation || null,
+    explicitSort: req.query.sort || req.query.sortBy || null,
+    tenantId: req.tenant?._id || filters.tenantId || undefined,
     status: 'approved',
     includeUnpublished: false,
   };
@@ -1355,7 +1367,8 @@ const getFeaturedProducts = asyncHandler(async (req, res) => {
   
   const result = await productService.getFeaturedProducts(
     parseInt(page),
-    parseInt(limit)
+    parseInt(limit),
+    { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id }
   );
 
   res.status(200).json({
@@ -1375,7 +1388,8 @@ const getNewArrivals = asyncHandler(async (req, res) => {
   const result = await productService.getNewArrivals(
     parseInt(page),
     parseInt(limit),
-    parseInt(days)
+    parseInt(days),
+    { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id }
   );
 
   res.status(200).json({
@@ -1394,7 +1408,8 @@ const getBestsellers = asyncHandler(async (req, res) => {
   
   const result = await productService.getBestsellers(
     parseInt(page),
-    parseInt(limit)
+    parseInt(limit),
+    { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id }
   );
 
   res.status(200).json({
@@ -1460,7 +1475,7 @@ const getProductBySlug = asyncHandler(async (req, res) => {
     throw new ValidationError('Product slug is required');
   }
 
-  const product = await productService.getProductBySlug(slug);
+  const product = await productService.getProductBySlug(slug, { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id });
 
   res.status(200).json({
     success: true,
@@ -1835,7 +1850,7 @@ const getPersonalizedRecommendations = asyncHandler(async (req, res) => {
     return res.status(401).json({ success: false, message: 'Not authorized' });
   }
 
-  const recommendations = await productService.getPersonalizedRecommendations(req.user._id, limit);
+  const recommendations = await productService.getPersonalizedRecommendations(req.user._id, limit, { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id });
   
   successResponse(res, {
     count: recommendations.length,

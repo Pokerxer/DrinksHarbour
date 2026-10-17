@@ -89,6 +89,10 @@ const inventoryMovementSchema = new Schema(
       type: ObjectId,
       ref: 'Order',
     },
+    relatedSalesOrder: {
+      type: ObjectId,
+      ref: 'SalesOrder',
+    },
     relatedPurchaseOrder: {
       type: ObjectId,
       ref: 'PurchaseOrder',

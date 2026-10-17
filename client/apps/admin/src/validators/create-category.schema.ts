@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { messages } from '@/config/messages';
 
 const validTypes = [
+  'sake',
+  'fermented_drink',
+  'non_alcoholic',
   'beer',
   'cider',
   'wine',
@@ -45,6 +48,8 @@ const validTypes = [
   'glassware',
   'bar_tools',
   'accessories',
+  'vape',
+  'nuts',
   'gift_set',
   'snack',
   'beauty',

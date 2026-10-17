@@ -42,3 +42,12 @@ Group `WarehouseMovement {transfer_in,transfer_out}` and
 `server/scripts/backfill-inventory-histories.js` (idempotent, `--apply` to write).
 
 See `docs/superpowers/specs/RESUME-inventory-history-mirror-fix.md`.
+## Sales customer returns — 2026-10-14
+
+Sales returnOrder also had the generic received mirror plus dedicated return row.
+It now passes recordHistory:false when the dedicated callback is present; one
+stock increment produces one unified return entry. New entries include the typed
+relatedSalesOrder source. No historical rows/stock/refunds replayed. Direct service
+callers without a dedicated callback retain generic history. Verified with the
+real warehouse service regression and the full server suite (3,763 passed).
+See docs/superpowers/specs/RESUME-inventory-customer-returns.md.

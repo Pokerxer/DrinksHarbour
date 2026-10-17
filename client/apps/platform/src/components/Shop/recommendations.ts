@@ -6,6 +6,8 @@
 // crawlers). Keeping the shaping logic here means the server-seeded products and
 // the client's own fetches produce identical objects, so hydration matches.
 
+import { representativeSelection } from '@/utils/representativeOffer';
+
 export const REC_API_BASE =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -51,13 +53,14 @@ export function normalizeProduct(p: any): any {
   const allPrices = (p.availableAt || []).flatMap((store: any) =>
     (store.sizes || []).map((size: any) => size.pricing?.websitePrice).filter(Boolean)
   );
-  const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : (p.priceRange?.min ?? 0);
+  const representative = representativeSelection(p);
+  const minPrice = representative?.size.pricing?.websitePrice ?? (allPrices.length > 0 ? Math.min(...allPrices) : (p.priceRange?.min ?? 0));
   const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : (p.priceRange?.max ?? minPrice);
   const currency = p.priceRange?.currency ?? 'NGN';
 
   const disc = p.discount;
   const hasRealDiscount = disc?.savings > 0;
-  const originPrice = hasRealDiscount ? (disc.originalPrice ?? minPrice) : minPrice;
+  const originPrice = representative?.size.pricing?.originalWebsitePrice ?? (hasRealDiscount ? (disc.originalPrice ?? minPrice) : minPrice);
   const discountPct = hasRealDiscount
     ? (disc.type === 'percentage'
         ? disc.value

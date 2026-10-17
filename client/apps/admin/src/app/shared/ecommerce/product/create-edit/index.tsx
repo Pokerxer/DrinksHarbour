@@ -1,7 +1,12 @@
 // @ts-nocheck
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import ProductEditHeader from './header/ProductEditHeader';
+import { productWebsiteUrl } from './header/website-preview';
+import ProductSoldModal from './sold/ProductSoldModal';
+import { useProductSales } from './sold/useProductSales';
+import ProductOnHandModal from './on-hand/ProductOnHandModal';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,7 +14,7 @@ import Confetti from 'react-confetti';
 import toast from 'react-hot-toast';
 import { getPrimaryImageIndex } from '../primary-image';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button, Text, Badge } from 'rizzui';
+import { Button, Text } from 'rizzui';
 import { FormProvider, useForm, SubmitHandler } from 'react-hook-form';
 import cn from '@core/utils/class-names';
 import {
@@ -20,37 +25,8 @@ import {
   PiArrowRight,
   PiFloppyDisk,
   PiCaretDown,
-  PiClock,
-  PiGear,
-  PiArchive,
-  PiCopy,
-  PiTrash,
-  PiPlus,
-  PiSignature,
-  PiChartLine,
   PiTag,
   PiCurrencyNgn,
-  PiPercent,
-  PiArchive as PiArchiveBox,
-  PiRuler,
-  PiFactory,
-  PiToggleRight,
-  PiGift,
-  PiTrolley,
-  PiSliders,
-  PiWarningCircle,
-  PiWarningDiamond,
-  PiPackage,
-  PiFileText,
-  PiShoppingCart,
-  PiTrendUp,
-  PiTrendDown,
-  PiDotsThree,
-  PiGlobe,
-  PiArrowLineLeft,
-  PiArrowLineRight,
-  PiList,
-  PiX,
   PiWine,
   PiMapPin,
   PiTextAa,
@@ -58,11 +34,6 @@ import {
   PiStar,
   PiMagnifyingGlass,
   PiLink,
-  PiMagicWand,
-  PiSparkle,
-  PiCaretLeft,
-  PiCaretRight,
-  PiMagnifyingGlassBold,
 } from 'react-icons/pi';
 import ProductIdentification from '@/app/shared/ecommerce/product/create-edit/product-identification';
 import ProductBeverageInfo from '@/app/shared/ecommerce/product/create-edit/product-beverage-info';
@@ -219,41 +190,6 @@ const successVariants = {
   },
 };
 
-interface SmartButtonProps {
-  icon: React.ReactNode;
-  value: string | React.ReactNode;
-  label: string;
-  iconColor?: string;
-  onClick?: () => void;
-  title?: string;
-}
-
-const SmartButton = ({
-  icon,
-  value,
-  label,
-  iconColor = 'text-gray-600',
-  onClick,
-  title,
-}: SmartButtonProps) => (
-  <button
-    type="button"
-    onClick={onClick}
-    title={title}
-    className="group flex min-w-[44px] flex-shrink-0 flex-col items-center justify-center rounded-md border border-gray-200 bg-white px-0.5 py-1 transition-all hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm xs:min-w-[48px] xs:px-1 sm:min-w-[56px]"
-  >
-    <div className="flex items-center gap-0.5 text-gray-900">
-      <span className={cn('flex-shrink-0', iconColor)}>{icon}</span>
-      <span className="max-w-[40px] truncate text-[10px] font-bold xs:text-xs">
-        {value}
-      </span>
-    </div>
-    <span className="mt-0.5 max-w-[50px] truncate text-[6px] font-medium uppercase tracking-wide text-gray-500 xs:text-[7px]">
-      {label}
-    </span>
-  </button>
-);
-
 const transformFormData = (data: CreateProductInput) => {
   const primaryImageIndex = getPrimaryImageIndex(data.uploadedImages || []);
   const slug =
@@ -369,7 +305,16 @@ export default function CreateEditProduct({
 }: IndexProps) {
   const router = useRouter();
   const { data: session } = useSession();
+  const [websiteRecord, setWebsiteRecord] = useState<{
+    id?: string;
+    slug?: string;
+  }>({ id, slug: product?.slug });
+  const websiteUrl =
+    websiteRecord.id === id ? productWebsiteUrl(websiteRecord.slug) : null;
   const [isLoading, setLoading] = useState(false);
+  const [showSold, setShowSold] = useState(false);
+  const salesHistory = useProductSales(id || '', session?.user?.token);
+  const [showOnHand, setShowOnHand] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
@@ -379,12 +324,6 @@ export default function CreateEditProduct({
   >('idle');
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
   const [showStepDropdown, setShowStepDropdown] = useState(false);
-  const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
-  const [showSmartButtons, setShowSmartButtons] = useState(false);
-  const [showMoreDropdown, setShowMoreDropdown] = useState(false);
-  const settingsDropdownRef = useRef<HTMLDivElement>(null);
-  const moreDropdownRef = useRef<HTMLDivElement>(null);
-
   // Record navigation — real product id list so prev/next moves between records
   const [productIds, setProductIds] = useState<string[]>([]);
   const [navContextSummary, setNavContextSummary] = useState<string>('');
@@ -848,6 +787,8 @@ export default function CreateEditProduct({
           price: p.basePrice || sps[0]?.baseSellingPrice || 0,
         });
 
+        setWebsiteRecord({ id, slug: p.slug });
+
         // Extract IDs from populated references
         // Convert ISO date → datetime-local format (YYYY-MM-DDTHH:mm)
         const toDatetimeLocal = (v: any): string | null => {
@@ -970,26 +911,6 @@ export default function CreateEditProduct({
     }
   }, [isEditMode, methods]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        settingsDropdownRef.current &&
-        !settingsDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowSettingsDropdown(false);
-      }
-      if (
-        moreDropdownRef.current &&
-        !moreDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowMoreDropdown(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const handleNext = () => {
     setCompletedSteps((prev) => new Set([...prev, currentStep]));
     if (currentStep < displaySteps.length - 1) {
@@ -1031,6 +952,7 @@ export default function CreateEditProduct({
         // Sync form with what the server actually saved
         const saved = res?.data?.product;
         if (saved) {
+          setWebsiteRecord({ id, slug: saved.slug });
           const toDatetimeLocal = (v: any): string | null => {
             if (!v) return null;
             const d = new Date(v);
@@ -1182,6 +1104,26 @@ export default function CreateEditProduct({
 
   return (
     <>
+      {showSold && id && (
+        <ProductSoldModal
+          key={id}
+          productName={displayTitle}
+          sales={salesHistory}
+          onClose={() => setShowSold(false)}
+        />
+      )}
+      {showOnHand && id && (
+        <ProductOnHandModal
+          key={id}
+          productId={id}
+          productName={displayTitle}
+          token={session?.user?.token}
+          onClose={() => setShowOnHand(false)}
+          onTotalChange={(onHand) =>
+            setHeaderMeta((previous) => ({ ...previous, onHand }))
+          }
+        />
+      )}
       <style>{`
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
@@ -1209,515 +1151,44 @@ export default function CreateEditProduct({
             />
           </div>
 
-          {/* Main Header Content */}
-          <div className="px-4 py-3 sm:px-6 lg:px-8">
-            {/* Row 1: Back, Title, Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              {/* Left: Back + Title + Save + Settings */}
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <Button
-                  variant="text"
-                  onClick={() => router.push(routes.eCommerce.products)}
-                  className="flex-shrink-0"
-                >
-                  <PiArrowLeft className="h-5 w-5" />
-                </Button>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <h1 className="truncate text-lg font-bold text-gray-900 sm:text-xl">
-                      {displayTitle}
-                    </h1>
-                    {isEditMode && headerMeta.status && (
-                      <Badge
-                        variant="flat"
-                        color={
-                          headerMeta.status === 'approved'
-                            ? 'success'
-                            : headerMeta.status === 'pending'
-                              ? 'warning'
-                              : headerMeta.status === 'rejected'
-                                ? 'danger'
-                                : 'secondary'
-                        }
-                        className="flex-shrink-0 text-xs font-semibold capitalize"
-                      >
-                        {headerMeta.status === 'approved'
-                          ? 'Active'
-                          : headerMeta.status}
-                      </Badge>
-                    )}
-                  </div>
-                  {lastSaved && (
-                    <Text className="flex hidden items-center gap-1 text-xs text-gray-400 sm:flex">
-                      <PiClock className="h-3 w-3" />
-                      {lastSaved.toLocaleTimeString()}
-                    </Text>
-                  )}
-                </div>
-
-                {/* Save & Settings - Close to product name */}
-                <div className="ml-2 flex flex-shrink-0 items-center gap-1.5">
-                  {/* New product */}
-                  <button
-                    type="button"
-                    onClick={() => router.push(routes.eCommerce.createProduct)}
-                    className="flex h-8 items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 shadow-sm transition-all hover:border-gray-400 hover:bg-gray-50"
-                    title="Create new product"
-                  >
-                    <PiPlus className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">New</span>
-                  </button>
-
-                  {/* Save Button */}
-                  <button
-                    type="button"
-                    onClick={methods.handleSubmit(onSubmit)}
-                    disabled={isLoading}
-                    className="flex h-8 items-center gap-1.5 rounded-lg bg-gray-900 px-3.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Save"
-                  >
-                    {isLoading ? (
-                      <PiSpinner className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <PiFloppyDisk className="h-3.5 w-3.5" />
-                    )}
-                    <span className="hidden sm:inline">Save</span>
-                  </button>
-
-                  {/* Generate with AI - only in edit mode */}
-                  {isEditMode && id && (
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={handleGenerate}
-                      disabled={isGenerating}
-                      className="flex h-8 items-center gap-1.5 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-50 to-indigo-50 px-3 text-xs font-semibold text-purple-700 shadow-sm transition-all hover:border-purple-400 hover:from-purple-100 hover:to-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      title="Auto-generate every product field with AI (Claude Haiku)"
-                    >
-                      {isGenerating ? (
-                        <PiSpinner className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <PiSparkle className="h-3.5 w-3.5" />
-                      )}
-                      <span>{isGenerating ? 'Generating…' : 'AI'}</span>
-                    </motion.button>
-                  )}
-
-                  {/* ── Prev / Next navigation ── */}
-                  {isEditMode && productIds.length > 1 && currentProductIndex !== -1 && (
-                    <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-                      {navContextSummary && (
-                        <span
-                          className="hidden max-w-[10rem] truncate rounded-md bg-[#b20202]/5 px-2 py-1 text-[10px] font-medium text-[#b20202] md:block"
-                          title={`From search: ${navContextSummary}`}
-                        >
-                          <PiMagnifyingGlassBold className="mr-1 inline h-2.5 w-2.5" />
-                          {navContextSummary}
-                        </span>
-                      )}
-                      {navContextSummary && <div className="h-4 w-px bg-gray-200" />}
-                      <button
-                        type="button"
-                        disabled={currentProductIndex <= 0}
-                        title={
-                          currentProductIndex > 0
-                            ? `Previous product (${currentProductIndex} of ${productIds.length})`
-                            : 'No previous product'
-                        }
-                        onClick={handlePrevProduct}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-30"
-                      >
-                        <PiCaretLeft className="h-3.5 w-3.5" />
-                      </button>
-                      <span className="min-w-[3rem] text-center text-[10px] font-semibold tabular-nums text-gray-500">
-                        {currentProductIndex + 1} / {productIds.length}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={currentProductIndex >= productIds.length - 1}
-                        title={
-                          currentProductIndex < productIds.length - 1
-                            ? `Next product (${currentProductIndex + 2} of ${productIds.length})`
-                            : 'No next product'
-                        }
-                        onClick={handleNextProduct}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-30"
-                      >
-                        <PiCaretRight className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Settings Dropdown */}
-                  <div className="relative" ref={settingsDropdownRef}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowSettingsDropdown(!showSettingsDropdown)
-                      }
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm transition-all hover:border-gray-400 hover:bg-gray-50"
-                      title="Settings"
-                    >
-                      <PiGear className="h-4 w-4" />
-                    </button>
-
-                    <AnimatePresence>
-                      {showSettingsDropdown && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="absolute right-0 top-full z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-xl"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              console.log('Archive clicked');
-                              setShowSettingsDropdown(false);
-                            }}
-                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                          >
-                            <PiArchive className="h-4 w-4 text-gray-500" />
-                            Archive
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              console.log('Duplicate clicked');
-                              setShowSettingsDropdown(false);
-                            }}
-                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                          >
-                            <PiCopy className="h-4 w-4 text-gray-500" />
-                            Duplicate
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              console.log('Delete clicked');
-                              setShowSettingsDropdown(false);
-                            }}
-                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
-                          >
-                            <PiTrash className="h-4 w-4" />
-                            Delete
-                          </button>
-                          <div className="my-1 border-t border-gray-100" />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              console.log('Add Properties clicked');
-                              setShowSettingsDropdown(false);
-                            }}
-                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                          >
-                            <PiPlus className="h-4 w-4 text-gray-500" />
-                            Add Properties
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              console.log('Request Signature clicked');
-                              setShowSettingsDropdown(false);
-                            }}
-                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                          >
-                            <PiSignature className="h-4 w-4 text-gray-500" />
-                            Request Signature
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              console.log('Pricelist Report clicked');
-                              setShowSettingsDropdown(false);
-                            }}
-                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                          >
-                            <PiChartLine className="h-4 w-4 text-gray-500" />
-                            Pricelist Report
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                  {/* Mobile Toggle for Smart Buttons */}
-                  <button
-                    type="button"
-                    onClick={() => setShowSmartButtons(!showSmartButtons)}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm transition-all hover:bg-gray-50 lg:hidden"
-                    title="Toggle Stats"
-                  >
-                    {showSmartButtons ? (
-                      <PiX className="h-4 w-4" />
-                    ) : (
-                      <PiList className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Row 2: Smart Buttons Bar - Responsive */}
-              <div
-                className={cn(
-                  'scrollbar-hide mt-3 flex w-full items-center gap-1.5 overflow-x-auto pb-1.5 lg:mt-0 lg:w-auto',
-                  showSmartButtons ? 'flex' : 'hidden lg:flex'
-                )}
-              >
-                <SmartButton
-                  icon={<PiGlobe className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-                  value={isEditMode ? 'View' : '—'}
-                  label="Website"
-                  iconColor="text-indigo-600"
-                  title="View on Website"
-                  onClick={() => {
-                    const productSlug = slug || id;
-                    if (productSlug) {
-                      window.open(`/products/${productSlug}`, '_blank');
-                    } else {
-                      toast.error('Product not saved yet');
-                    }
-                  }}
-                />
-
-                <SmartButton
-                  icon={<PiPackage className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-                  value={String(headerMeta.onHand)}
-                  label="On Hand"
-                  iconColor="text-blue-600"
-                  title="Stock across all sub-product listings"
-                  onClick={() => {
-                    toast.info('Stock details feature coming soon');
-                  }}
-                />
-
-                <SmartButton
-                  icon={<PiCurrencyNgn className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-                  value={
-                    headerMeta.price > 0
-                      ? Intl.NumberFormat('en', { notation: 'compact' }).format(
-                          headerMeta.price
-                        )
-                      : '—'
-                  }
-                  label="Price"
-                  iconColor="text-green-600"
-                  title="Base selling price"
-                  onClick={() => {
-                    toast.info('Pricing lives in the Pricing step');
-                  }}
-                />
-
-                <SmartButton
-                  icon={<PiPackage className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-                  value={String(headerMeta.variants)}
-                  label="Variants"
-                  iconColor="text-orange-600"
-                  title="Tenant sub-product listings"
-                  onClick={() => {
-                    document
-                      .getElementById('product-subproducts-panel')
-                      ?.scrollIntoView({ behavior: 'smooth' });
-                  }}
-                />
-
-                <SmartButton
-                  icon={
-                    <PiShoppingCart className="h-2.5 w-2.5 xs:h-3 xs:w-3" />
-                  }
-                  value="0"
-                  label="Purchased"
-                  iconColor="text-purple-600"
-                  title="Purchase History"
-                  onClick={() => {
-                    toast.info('Purchase history feature coming soon');
-                  }}
-                />
-
-                <SmartButton
-                  icon={<PiTrendDown className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-                  value={String(headerMeta.sold)}
-                  label="Sold"
-                  iconColor="text-red-600"
-                  title="Units sold across sub-products"
-                  onClick={() => {
-                    toast.info('Sales history feature coming soon');
-                  }}
-                />
-
-                {/* More Button with Dropdown */}
-                <div className="relative flex-shrink-0" ref={moreDropdownRef}>
-                  <button
-                    type="button"
-                    onClick={() => setShowMoreDropdown(!showMoreDropdown)}
-                    className="group flex min-w-[40px] flex-col items-center justify-center rounded-md border border-gray-200 bg-white px-0.5 py-1 transition-all hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm xs:min-w-[44px] xs:px-1 sm:min-w-[48px]"
-                    title="More Actions"
-                  >
-                    <PiDotsThree className="h-3.5 w-3.5 text-gray-400 xs:h-4 xs:w-4" />
-                    <span className="mt-0.5 text-[6px] font-medium uppercase tracking-wide text-gray-500 xs:text-[7px]">
-                      More
-                    </span>
-                  </button>
-
-                  <AnimatePresence>
-                    {showMoreDropdown && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="absolute left-0 top-full z-50 mt-2 w-52 rounded-lg border border-gray-200 bg-white py-2 shadow-xl"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Rules clicked');
-                            setShowMoreDropdown(false);
-                            toast.info('Rules feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                        >
-                          <PiList className="h-4 w-4 text-gray-500" />
-                          Rules
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Pricelists clicked');
-                            setShowMoreDropdown(false);
-                            toast.info('Pricelists feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                        >
-                          <PiCurrencyNgn className="h-4 w-4 text-gray-500" />
-                          Pricelists
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Product History clicked');
-                            setShowMoreDropdown(false);
-                            toast.info('History feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                        >
-                          <PiClock className="h-4 w-4 text-gray-500" />
-                          History
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Inventory Report clicked');
-                            setShowMoreDropdown(false);
-                            toast.info('Inventory report feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                        >
-                          <PiChartLine className="h-4 w-4 text-gray-500" />
-                          Inventory Report
-                        </button>
-                        <div className="my-1 border-t border-gray-100" />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Print Labels clicked');
-                            setShowMoreDropdown(false);
-                            toast.info('Print labels feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                        >
-                          <PiPackage className="h-4 w-4 text-gray-500" />
-                          Print Labels
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Export clicked');
-                            setShowMoreDropdown(false);
-                            toast.info('Export feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                        >
-                          <PiArrowRight className="h-4 w-4 text-gray-500" />
-                          Export Data
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {/* Right: Navigation Arrows + Save Status */}
-                <div className="flex flex-shrink-0 items-center gap-3">
-                  {/* Save Status Indicators */}
-                  <AnimatePresence mode="wait">
-                    {saveStatus === 'saving' && (
-                      <motion.div
-                        initial={{ opacity: 0, x: 10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -10 }}
-                        className="hidden items-center gap-2 text-sm text-blue-600 sm:flex"
-                      >
-                        <PiSpinner className="h-4 w-4 animate-spin" />
-                        <span className="hidden lg:inline">Saving...</span>
-                      </motion.div>
-                    )}
-                    {saveStatus === 'saved' && (
-                      <motion.div
-                        initial={{ opacity: 0, x: 10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -10 }}
-                        className="hidden items-center gap-2 text-sm text-green-600 sm:flex"
-                      >
-                        <PiCheck className="h-4 w-4" />
-                        <span className="hidden lg:inline">Saved</span>
-                      </motion.div>
-                    )}
-                    {saveStatus === 'error' && (
-                      <motion.div
-                        initial={{ opacity: 0, x: 10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -10 }}
-                        className="hidden items-center gap-2 text-sm text-red-600 sm:flex"
-                      >
-                        <PiWarningCircle className="h-4 w-4" />
-                        <span className="hidden lg:inline">Error</span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Navigation Arrows — only once the real record list is loaded */}
-                  {isEditMode &&
-                    totalProducts > 0 &&
-                    currentProductIndex >= 0 && (
-                      <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
-                        <button
-                          type="button"
-                          onClick={handlePrevProduct}
-                          disabled={currentProductIndex === 0}
-                          className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          title="Previous Product"
-                        >
-                          <PiArrowLeft className="h-4 w-4" />
-                        </button>
-                        <Text className="min-w-[50px] px-2 text-center text-sm font-semibold text-gray-700">
-                          {currentProductIndex + 1} / {totalProducts}
-                        </Text>
-                        <button
-                          type="button"
-                          onClick={handleNextProduct}
-                          disabled={currentProductIndex === totalProducts - 1}
-                          className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          title="Next Product"
-                        >
-                          <PiArrowRight className="h-4 w-4" />
-                        </button>
-                      </div>
-                    )}
-                </div>
-              </div>
-            </div>
-          </div>
+          <ProductEditHeader
+            title={displayTitle}
+            isEditMode={isEditMode}
+            status={headerMeta.status}
+            saving={isLoading}
+            generating={isGenerating}
+            canGenerate={!!(isEditMode && id)}
+            saveStatus={saveStatus}
+            dirty={!!isDirty}
+            lastDraftSaved={lastSaved}
+            metrics={{
+              ...headerMeta,
+              sold: salesHistory.report?.complete
+                ? salesHistory.report.totals.net
+                : null,
+            }}
+            onOnHand={() => setShowOnHand(true)}
+            onSold={() => setShowSold(true)}
+            index={currentProductIndex}
+            total={totalProducts}
+            searchContext={navContextSummary}
+            onBack={() => router.push(routes.eCommerce.products)}
+            onNew={() => router.push(routes.eCommerce.createProduct)}
+            onSave={methods.handleSubmit(onSubmit)}
+            onGenerate={handleGenerate}
+            onPrevious={handlePrevProduct}
+            onNext={handleNextProduct}
+            onPreview={
+              websiteUrl
+                ? () => window.open(websiteUrl, '_blank', 'noopener,noreferrer')
+                : undefined
+            }
+            onVariants={() =>
+              document
+                .getElementById('product-subproducts-panel')
+                ?.scrollIntoView({ behavior: 'smooth' })
+            }
+          />
 
           {/* Step Navigation - Desktop */}
           <div className="hidden border-t border-gray-100 px-4 py-2 sm:px-6 lg:block lg:px-8">
@@ -1812,9 +1283,11 @@ export default function CreateEditProduct({
                                     ? '#ca8a04'
                                     : displaySteps[currentStep].color === 'pink'
                                       ? '#db2777'
-                                      : displaySteps[currentStep].color === 'rose'
+                                      : displaySteps[currentStep].color ===
+                                          'rose'
                                         ? '#e11d48'
-                                        : displaySteps[currentStep].color === 'indigo'
+                                        : displaySteps[currentStep].color ===
+                                            'indigo'
                                           ? '#4f46e5'
                                           : '#6b7280',
                     }}

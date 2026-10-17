@@ -7,6 +7,7 @@ import NotificationProductControls from './notification-product-controls';
 import { useNotifications } from './use-notifications';
 import NotificationList from './notification-list';
 import ProductUpdatesList from './products/product-updates-list';
+import ExpiryAlertsList from './expiry/expiry-alerts-list';
 import type { NotificationCategory } from '@/services/notification.service';
 export default function NotificationCategoryPage({
   category,
@@ -25,7 +26,12 @@ export default function NotificationCategoryPage({
     [unreadOnly, setUnread] = useState(false),
     [query, setQuery] = useState(''),
     [search, setSearch] = useState(''),
-    [sort, setSort] = useState<'newest' | 'oldest'>('newest');
+    [sort, setSort] = useState<
+      'newest' | 'oldest' | 'expiry_soonest' | 'expiry_latest'
+    >(category === 'expiry' ? 'expiry_soonest' : 'newest');
+  const [expiryStatus, setExpiryStatus] = useState<
+    'all' | 'expired' | 'soon' | 'later' | 'quarantined'
+  >('all');
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(query.trim());
@@ -35,6 +41,7 @@ export default function NotificationCategoryPage({
   }, [query]);
   const inbox = useNotifications({
     category,
+    ...(category === 'expiry' ? { expiryStatus } : {}),
     ...(category === 'products' && decision ? { type: decision } : {}),
     ...(range.startDate ? range : {}),
     page,
@@ -57,13 +64,19 @@ export default function NotificationCategoryPage({
         title={title}
         description={description}
         warehouse="Your notifications"
-        period="Recorded updates for your account"
+        period={
+          category === 'expiry'
+            ? 'Batch expiry dates · daily scan at 02:00 Lagos time'
+            : 'Recorded updates for your account'
+        }
         loading={inbox.loading}
         refresh={inbox.refresh}
         refreshLabel="Refresh notifications"
       />
       <NotificationTimeframe
         {...range}
+        allowFuture={category === 'expiry'}
+        title={category === 'expiry' ? 'Expiry dates' : 'Timeframe'}
         disabled={inbox.loading || inbox.busy}
         onApply={(startDate, endDate) => {
           setRange({ startDate, endDate });
@@ -111,10 +124,16 @@ export default function NotificationCategoryPage({
         ]}
         sort={sort}
         setSort={(value) => {
-          setSort(value as 'newest' | 'oldest');
+          setSort(value as typeof sort);
           setPage(1);
         }}
         sorts={[
+          ...(category === 'expiry'
+            ? ([
+                ['expiry_soonest', 'Soonest expiry first'],
+                ['expiry_latest', 'Latest expiry first'],
+              ] as Array<[string, string]>)
+            : []),
           ['newest', 'Newest first'],
           ['oldest', 'Oldest first'],
         ]}
@@ -123,11 +142,32 @@ export default function NotificationCategoryPage({
           setQuery('');
           setSearch('');
           setUnread(false);
-          setSort('newest');
+          setSort(category === 'expiry' ? 'expiry_soonest' : 'newest');
+          setExpiryStatus('all');
           setDecision('');
           setPage(1);
         }}
       >
+        {category === 'expiry' && (
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-600">
+            Expiry status
+            <select
+              aria-label="Expiry status"
+              value={expiryStatus}
+              onChange={(e) => {
+                setExpiryStatus(e.target.value as typeof expiryStatus);
+                setPage(1);
+              }}
+              className="h-11 rounded-xl border border-gray-200 px-3 text-sm font-normal"
+            >
+              <option value="all">All expiry alerts</option>
+              <option value="expired">Expired</option>
+              <option value="soon">Within 30 days</option>
+              <option value="later">More than 30 days</option>
+              <option value="quarantined">Quarantined</option>
+            </select>
+          </label>
+        )}
         {category === 'products' && (
           <label className="flex flex-col gap-1 text-xs font-semibold text-gray-600">
             Decision
@@ -150,6 +190,16 @@ export default function NotificationCategoryPage({
       <div className="overflow-hidden rounded-2xl border bg-white">
         {category === 'products' ? (
           <ProductUpdatesList
+            key={inbox.scope}
+            notifications={inbox.data.notifications}
+            loading={inbox.loading}
+            error={inbox.error}
+            busy={inbox.busy}
+            onRetry={inbox.refresh}
+            onRead={(id) => void inbox.markRead(id)}
+          />
+        ) : category === 'expiry' ? (
+          <ExpiryAlertsList
             key={inbox.scope}
             notifications={inbox.data.notifications}
             loading={inbox.loading}

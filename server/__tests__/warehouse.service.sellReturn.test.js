@@ -31,6 +31,7 @@ test('sellStock decrements stock and records a shipped movement', async (t) => {
     assert.deepStrictEqual(filter, {
       tenant: TENANT_ID, warehouse: WAREHOUSE_ID, subProduct: SUBPRODUCT_ID, size: SIZE_ID,
       currentQuantity: { $gte: 5 },
+      $expr: {$gte:[{$subtract:[{$ifNull:['$currentQuantity',0]},{$ifNull:['$reservedQuantity',0]}]},5]},
     });
     assert.deepStrictEqual(update, { $inc: { currentQuantity: -5 } });
     assert.strictEqual(options.new, true);
@@ -67,12 +68,13 @@ test('sellStock throws when stock is insufficient and overselling is disallowed'
 
 test('sellStock allows negative stock when allowOverselling is true', async (t) => {
   mockRecalc(t);
+  t.mock.method(WarehouseStock, 'updateOne', async()=>({}));
   const movements = [];
   t.mock.method(WarehouseMovement, 'create', async (doc) => { movements.push(doc); return doc; });
   t.mock.method(WarehouseStock, 'findOneAndUpdate', async (filter, update, options) => {
     assert.strictEqual(filter.currentQuantity, undefined);
-    assert.strictEqual(options.upsert, true);
-    assert.strictEqual(options.setDefaultsOnInsert, true);
+    assert.strictEqual(options.upsert, false);
+    assert.strictEqual(options.setDefaultsOnInsert, false);
     return { currentQuantity: -2 };
   });
 

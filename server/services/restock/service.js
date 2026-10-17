@@ -17,6 +17,7 @@ function createPlanningService(
       !!options.purchasing,
       options.includeSales !== false,
       options.updateMinimum === true,
+      options.useSavedMinimum === true,
     ].join(":");
     const now = clock(),
       cached = cache.get(identity);
@@ -26,7 +27,11 @@ function createPlanningService(
     const work = (async () => {
       const evidence = await reader(tenantId, { ...options, now });
       const result = buildPlan(evidence, { ...options, now });
-      if (options.updateMinimum === true && options.includeSales !== false)
+      if (
+        options.updateMinimum === true &&
+        options.includeSales !== false &&
+        options.useSavedMinimum !== true
+      )
         await persist(tenantId, result);
       if (cache.size >= 20) cache.delete(cache.keys().next().value);
       cache.set(identity, { at: now.getTime(), value: result });

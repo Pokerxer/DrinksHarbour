@@ -28,3 +28,22 @@ test('applyEdit replaces lines and recomputes totals', async () => {
   assert.strictEqual(so.items[0].lineTotal, 2900); // 1500*2 - flat ₦100 off the line
   assert.strictEqual(so.total, 2900);
 });
+
+test('locked sales documents cannot edit, cancel or bypass lock through bulk actions', async () => {
+  const svc = require('../services/salesOrder.service');
+  const doc = {docType:'order',orderStatus:'draft',locked:true,save:async()=>{throw new Error('must not save');}};
+  assert.equal(svc.canEdit(doc),false);
+  assert.equal(svc.canCancel(doc),false);
+  await assert.rejects(svc.bulkCancelDoc(doc),/locked|unlock/i);
+  await assert.rejects(svc.bulkDeleteDoc(doc),/locked|unlock/i);
+});
+
+test('cancellation rejects paid or delivered evidence despite stale lifecycle statuses', () => {
+  const base = {docType:'order',orderStatus:'confirmed'};
+  for (const evidence of [
+    {amountPaid:1}, {paymentStatus:'paid'}, {paymentStatus:'partial'},
+    {items:[{fulfilledQty:1,returnedQty:1}]},
+    {fulfillments:[{items:[{qty:1}]}]},
+    {orderStatus:'partially_fulfilled'}, {invoiceIssuedAt:new Date()},
+  ]) assert.equal(canCancel({...base,...evidence}),false,JSON.stringify(evidence));
+});

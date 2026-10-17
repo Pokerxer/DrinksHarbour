@@ -1,5 +1,6 @@
 // client/apps/admin/src/app/shared/sales/customer-search.tsx
 'use client';
+import { SUGGESTION_MENU, SUGGESTION_ROW } from './sales-dropdown-styles';
 
 import { useState, useEffect, useRef } from 'react';
 import { PiMagnifyingGlass, PiX, PiUser, PiPlus } from 'react-icons/pi';
@@ -8,7 +9,7 @@ import type { POSCustomer } from '@/app/shared/point-of-sale/types';
 import { routes } from '@/config/routes';
 
 const INPUT_CLS =
-  'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
+  'min-h-11 w-full rounded-[10px] border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 function customerName(c: POSCustomer) {
   return `${c.firstName} ${c.lastName}`.trim();
@@ -36,6 +37,11 @@ export default function CustomerSearch({
   const [loading, setLoading] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  function chooseCustomer(c: POSCustomer) {
+    onSelect(c);
+    setQuery('');
+    setOpen(false);
+  }
 
   async function ensureInitial() {
     if (initialLoaded || !token) return;
@@ -122,6 +128,7 @@ export default function CustomerSearch({
       <div className="relative">
         <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         <input
+          aria-label="Customer"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -152,7 +159,7 @@ export default function CustomerSearch({
       </div>
 
       {open && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+        <div className={SUGGESTION_MENU}>
           {results.length === 0 && !loading ? (
             <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-400">
               <PiUser className="h-4 w-4" />
@@ -166,12 +173,14 @@ export default function CustomerSearch({
                 <button
                   key={c._id}
                   type="button"
-                  onMouseDown={() => {
-                    onSelect(c);
-                    setQuery('');
-                    setOpen(false);
+                  onMouseDown={() => chooseCustomer(c)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      chooseCustomer(c);
+                    }
                   }}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-gray-50"
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left ${SUGGESTION_ROW}`}
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-bold text-brand">
                     {initials(c)}

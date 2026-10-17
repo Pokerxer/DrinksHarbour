@@ -100,11 +100,14 @@ async function postJournalEntry({
     return JournalEntry.create(payload);
   }
   // A retry must never rewrite a posted entry (especially one already reversed).
-  return JournalEntry.findOneAndUpdate(
+  const entry = await JournalEntry.findOneAndUpdate(
     { tenant: tenantId, refDoc, entryType },
     { $setOnInsert: payload },
     { upsert: true, new: true, runValidators: true, ...(session ? { session } : {}) }
   );
+  try { await require('./customerInvoice/hooks').journalSaved(entry, session); }
+  catch (err) { console.error('invoiceJournalSyncFailed', { message: err.message }); }
+  return entry;
 }
 
 /** Tenant-scoped lookup used by hooks and the reverse endpoint. */
@@ -175,6 +178,8 @@ async function reverseEntry({ tenantId, entryId, userId, session }) {
     }
   }
 
+  try { await require('./customerInvoice/hooks').journalSaved(original, session); }
+  catch (err) { console.error('invoiceReversalSyncFailed', { message: err.message }); }
   return reversal;
 }
 

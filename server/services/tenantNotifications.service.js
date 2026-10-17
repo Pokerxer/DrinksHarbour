@@ -1,3 +1,9 @@
+const { presentExpiryNotice } = require("./expiryAlerts/payload");
+const {
+  datePredicate,
+  expiryConditions,
+  expiryRows,
+} = require("./expiryAlerts/query");
 const { validateDateRange } = require("../utils/notificationDateRange");
 const { escapeRegex } = require("../utils/escapeRegex");
 const Notification = require("../models/Notification");
@@ -28,6 +34,9 @@ const METADATA = [
   "periodEnd",
   "available",
   "threshold",
+  "minimumSource",
+  "minimumConfidence",
+  "minimumUpdatedAt",
   "sizeName",
   "warehouseName",
   "currentUnits",
@@ -36,11 +45,16 @@ const METADATA = [
   "units30",
   "rule",
   "expiryDate",
+  "batchId",
+  "batchNumber",
+  "quarantineStatus",
+  "expiryState",
+  "scanUpdatedAt",
   "quantity",
   "rejectionReason",
   ...DEMAND_METADATA,
 ];
-function parseOptions(q = {}) {
+function parseOptions(q = {}, now = new Date()) {
   const integer = (value, fallback, max) => {
     if (value === undefined) return fallback;
     if (
@@ -65,17 +79,33 @@ function parseOptions(q = {}) {
     (typeof q.search !== "string" || q.search.length > 200)
   )
     throw new ValidationError("Invalid notification search");
-  if (q.sort !== undefined && !["newest", "oldest"].includes(q.sort))
+  if (
+    q.sort !== undefined &&
+    !(
+      category === "expiry"
+        ? ["newest", "oldest", "expiry_soonest", "expiry_latest"]
+        : ["newest", "oldest"]
+    ).includes(q.sort)
+  )
     throw new ValidationError("Invalid notification sort");
   if (
     q.type !== undefined &&
     (category !== "products" || !CATEGORIES.products.includes(q.type))
   )
     throw new ValidationError("Invalid product decision filter");
-  const range = validateDateRange(q);
+  if (
+    q.expiryStatus !== undefined &&
+    (category !== "expiry" ||
+      !["all", "expired", "soon", "later", "quarantined"].includes(
+        q.expiryStatus,
+      ))
+  )
+    throw new ValidationError("Invalid expiry status");
+  const range = validateDateRange(q, now, false, category === "expiry");
   return {
     ...(range ? { range } : {}),
     search: (q.search || "").trim(),
+    ...(category === "expiry" ? { expiryStatus: q.expiryStatus || "all" } : {}),
     sort: q.sort || "newest",
     page: integer(q.page, 1, 100000),
     limit: integer(q.limit, 20, 50),
@@ -104,33 +134,45 @@ function inboxScope(req, now) {
   if (!platform) scope.tenant = getTenantId(req);
   return scope;
 }
-function publicNotice(row, user) {
+function publicNotice(row, user, now = new Date()) {
   const n = typeof row.toObject === "function" ? row.toObject() : row;
   const metadata = {};
   const reports =
     !user ||
     typeof user !== "object" ||
     effectivePermissions(user).includes("reports:read");
-  for (const key of METADATA)
+  for (const key of METADATA) {
+    if (
+      key === "expiryDate" &&
+      n.metadata?.[key] instanceof Date &&
+      Number.isFinite(+n.metadata[key])
+    ) {
+      metadata[key] = n.metadata[key].toISOString();
+      continue;
+    }
     if (
       (reports || !DEMAND_METADATA.includes(key)) &&
       ["string", "number"].includes(typeof n.metadata?.[key])
     )
       metadata[key] = n.metadata[key];
+  }
   const safeUrl = safeNotificationAction(n.actionUrl) ? n.actionUrl : undefined;
-  return {
-    _id: String(n._id),
-    type: n.type,
-    title: n.title,
-    message: n.message,
-    priority: n.priority,
-    isRead: n.isRead,
-    createdAt: n.createdAt,
-    readAt: n.readAt,
-    actionUrl: safeUrl,
-    actionLabel: safeUrl ? n.actionLabel : undefined,
-    metadata,
-  };
+  return presentExpiryNotice(
+    {
+      _id: String(n._id),
+      type: n.type,
+      title: n.title,
+      message: n.message,
+      priority: n.priority,
+      isRead: n.isRead,
+      createdAt: n.createdAt,
+      readAt: n.readAt,
+      actionUrl: safeUrl,
+      actionLabel: safeUrl ? n.actionLabel : undefined,
+      metadata,
+    },
+    now,
+  );
 }
 function createInboxService(
   model = Notification,
@@ -139,20 +181,29 @@ function createInboxService(
 ) {
   return {
     async list(req) {
-      const o = parseOptions(req.query),
-        base = inboxScope(req, clock());
+      const now = clock(),
+        o = parseOptions(req.query, now),
+        base = inboxScope(req, now);
       await syncStock(req);
-      if (o.range) base.createdAt = { $gte: o.range.start, $lt: o.range.end };
+      if (o.range) {
+        if (o.category === "expiry")
+          base.$and.push(
+            datePredicate({ $gte: o.range.start, $lt: o.range.end }),
+          );
+        else base.createdAt = { $gte: o.range.start, $lt: o.range.end };
+      }
       const query = { ...base };
       if (o.category !== "all")
         query.type = {
           $in: CATEGORIES[o.category].filter((t) => base.type.$in.includes(t)),
         };
       if (o.type) query.type.$in = query.type.$in.filter((t) => t === o.type);
+      if (o.category === "expiry")
+        query.$and = [...base.$and, ...expiryConditions(o.expiryStatus, now)];
       if (o.unreadOnly) query.isRead = false;
       if (o.search)
         query.$and = [
-          ...base.$and,
+          ...query.$and,
           {
             $or: [
               "title",
@@ -160,6 +211,7 @@ function createInboxService(
               "metadata.productName",
               "metadata.sizeName",
               "metadata.warehouseName",
+              "metadata.batchNumber",
             ].map((field) => ({
               [field]: { $regex: escapeRegex(o.search), $options: "i" },
             })),
@@ -167,25 +219,27 @@ function createInboxService(
         ];
       const [rows, total, unreadCount, matchingUnreadCount] = await Promise.all(
         [
-          model
-            .find(query)
-            .sort({
-              createdAt: o.sort === "oldest" ? 1 : -1,
-              _id: o.sort === "oldest" ? 1 : -1,
-            })
-            .skip((o.page - 1) * o.limit)
-            .limit(o.limit)
-            .select(
-              "type title message priority isRead createdAt readAt actionUrl actionLabel metadata",
-            )
-            .lean(),
+          o.sort.startsWith("expiry_")
+            ? expiryRows(model, query, o)
+            : model
+                .find(query)
+                .sort({
+                  createdAt: o.sort === "oldest" ? 1 : -1,
+                  _id: o.sort === "oldest" ? 1 : -1,
+                })
+                .skip((o.page - 1) * o.limit)
+                .limit(o.limit)
+                .select(
+                  "type title message priority isRead createdAt readAt actionUrl actionLabel metadata",
+                )
+                .lean(),
           model.countDocuments(query),
           model.countDocuments({ ...base, isRead: false }),
           model.countDocuments({ ...query, isRead: false }),
         ],
       );
       return {
-        notifications: rows.map((row) => publicNotice(row, req.user)),
+        notifications: rows.map((row) => publicNotice(row, req.user, now)),
         total,
         unreadCount,
         matchingUnreadCount,
@@ -204,7 +258,7 @@ function createInboxService(
         { $set: { isRead: true, readAt: now } },
         { new: true },
       );
-      if (row) return publicNotice(row, req.user);
+      if (row) return publicNotice(row, req.user, now);
       const existing = await model
         .findOne(scope)
         .select(
@@ -212,7 +266,7 @@ function createInboxService(
         )
         .lean();
       if (!existing) throw new NotFoundError("Notification not found");
-      return publicNotice(existing, req.user);
+      return publicNotice(existing, req.user, now);
     },
     async markAllRead(req) {
       const now = clock();

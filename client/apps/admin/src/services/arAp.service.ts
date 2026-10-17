@@ -4,7 +4,7 @@
 // invoices, bills, credit notes, payments, batch payments, products,
 // customers, vendors. Same envelope style as accounting.service.ts.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const ACCOUNTING_URL = '/api/accounting';
 
 export type PaymentSide = 'customer' | 'vendor';
 
@@ -18,11 +18,33 @@ export type PaymentMethod =
 export interface ArApSummary {
   count: number;
   totalOutstanding: number;
+  onAccount?: number;
+  reviewCount?: number;
+  reviewBalanceCount?: number;
+  reviewOutstanding?: number;
   buckets: Record<string, number>;
 }
 
+export interface InvoiceReturnSummary {
+  status: 'none' | 'partial' | 'full' | 'review';
+  returnedUnits: number;
+  recordedUnits: number;
+  soldUnits: number;
+  needsReview: boolean;
+  refundRecorded: boolean;
+  truncated: boolean;
+  lines: Array<{
+    source: 'sales' | 'pos';
+    sourceId: string;
+    sourceNumber: string;
+    reference?: string;
+    product: string;
+    returned: number;
+  }>;
+}
 export interface OpenInvoice {
   _id: string;
+  currency?: string;
   orderNumber?: string;
   date: string;
   dueDate?: string;
@@ -31,9 +53,92 @@ export interface OpenInvoice {
   amountPaid: number;
   creditedAmount?: number;
   paymentStatus: string;
+  refundedAmount?: number;
+  creditNoteAmount?: number;
+  returnSummary?: InvoiceReturnSummary;
   orderStatus?: string;
+  source?: 'sales' | 'pos';
+  persisted?: boolean;
+  sourceId?: string;
+  sourceNumber?: string;
+  state?: 'draft' | 'posted' | 'cancelled';
+  reconciliationIssue?: string;
   customer?: { _id: string; firstName: string; lastName: string } | null;
-  customerSnapshot?: { name?: string };
+  customerSnapshot?: {
+    name?: string;
+    customerId?: string;
+    email?: string;
+    phone?: string;
+  };
+}
+
+export interface SavedInvoice extends OpenInvoice {
+  checkedAt?: string;
+  postedAt?: string;
+  detailContext?: {
+    issuer: {
+      name: string;
+      address?: {
+        street?: string;
+        city?: string;
+        state?: string;
+        country?: string;
+      };
+      bankAccounts: Array<{
+        bankName: string;
+        accountNumber: string;
+        accountName?: string;
+      }>;
+    };
+    activity: Array<{
+      id: string;
+      kind: 'receipt' | 'credit' | 'refund' | 'pos_receipt';
+      label: string;
+      date?: string;
+      amount: number;
+      status: string;
+      scope: 'invoice' | 'customer_account' | 'source_document';
+      method?: string;
+      reference?: string;
+    }>;
+  };
+  editableDraft?: boolean;
+  number: string;
+  source: 'sales' | 'pos';
+  sourceId: string;
+  state: 'draft' | 'posted' | 'cancelled';
+  currency: string;
+  subtotal: number;
+  discountTotal: number;
+  taxTotal: number;
+  shippingFee?: number;
+  tipAmount?: number;
+  roundingAmount?: number;
+  promotionTotal?: number;
+  couponDiscount?: number;
+  pricelistCartDiscount?: number;
+  loyaltyRedeemed?: number;
+  invoiceAddress?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+  };
+  notes?: string;
+  terms?: string;
+  items: Array<{
+    lineType: string;
+    name: string;
+    description?: string;
+    quantity: number;
+    unitPrice: number;
+    taxRate?: number;
+    taxAmount?: number;
+    lineTotal?: number;
+    promoDiscount?: number;
+    packSize?: number;
+    uom?: string;
+  }>;
 }
 
 export interface OpenBill {
@@ -50,6 +155,7 @@ export interface OpenBill {
 }
 
 export interface CreditAllocation {
+  invoice?: { id: string; number: string };
   salesOrder: string;
   amount: number;
   appliedAt: string;
@@ -70,6 +176,7 @@ export interface CreditNote {
   status: 'draft' | 'applied' | 'cancelled';
   /** VAT-inclusive credit the customer holds and has not spent on an invoice. */
   unappliedAmount: number;
+  invoice?: { id: string; number: string };
   allocations: CreditAllocation[];
   postedAt?: string;
 }
@@ -83,7 +190,22 @@ export interface CustomerCredit {
   pagination: { page: number; limit: number; total: number; pages: number };
 }
 
+export interface PaymentSummary {
+  sourceAmount?: number;
+  refundedAmount?: number;
+  activeAmount: number;
+  allocated: number;
+  unallocated: number;
+  cancelledAmount: number;
+}
 export interface PaymentDoc {
+  readOnly?: boolean;
+  source?: 'sales' | 'pos';
+  sourceHref?: string;
+  sourceId?: string;
+  invoice?: { id: string; label: string; href: string };
+  refundedAmount?: number;
+  refundIssue?: string;
   _id: string;
   number: string;
   customerName?: string;
@@ -92,26 +214,66 @@ export interface PaymentDoc {
   vendor?: { _id: string; name: string } | null;
   date: string;
   amount: number;
-  method: PaymentMethod;
+  method: PaymentMethod | 'split';
   reference?: string;
   allocations: Array<{
     salesOrder?: string;
     vendorBill?: string;
     amount: number;
+    document?: {
+      id: string;
+      label: string;
+      href: string;
+      status?: string;
+      outstanding?: number;
+    };
+    purchaseOrder?: { id: string; label: string; href: string };
   }>;
   batch?: string | null;
   status: 'active' | 'cancelled';
 }
 
+export type BatchAccount = '1000' | '1100' | '2200';
+export interface BatchMember {
+  key: string;
+  _id?: string;
+  origin: 'accounting' | 'sales' | 'pos';
+  account: BatchAccount;
+  paymentId?: string;
+  journalId?: string;
+  sourceId?: string;
+  number: string;
+  name: string;
+  date: string;
+  method: string;
+  capturedAmount: number;
+  refundedAmount: number;
+  amount: number;
+  sourceHref?: string;
+  invoice?: { id: string; label: string; href: string };
+  allocations?: PaymentDoc['allocations'];
+}
+export interface BatchSummary {
+  openCount: number;
+  openAmount: number;
+  completedCount: number;
+  completedAmount: number;
+  cancelledCount: number;
+  cancelledAmount: number;
+}
 export interface BatchPayment {
   _id: string;
   number: string;
   direction: PaymentSide;
   date: string;
-  account: '1000' | '1100';
+  account: BatchAccount;
   total: number;
   status: 'open' | 'deposited' | 'cancelled';
   depositedAt?: string;
+  members?: BatchMember[];
+  historyAvailable?: boolean;
+  needsReview?: boolean;
+  reviewReason?: string;
   payments?: Array<{
     _id: string;
     number: string;
@@ -167,7 +329,18 @@ export interface Pagination {
   pages: number;
 }
 
+export interface CreditNoteSummary {
+  count: number;
+  postedTotal: number;
+  appliedTotal: number;
+  available: number;
+  draftTotal: number;
+}
+
 interface Envelope<T> {
+  summary?: CreditNoteSummary;
+  paymentSummary?: PaymentSummary;
+  batchSummary?: BatchSummary;
   success: boolean;
   data: T;
   message?: string;
@@ -215,6 +388,20 @@ class ArApService {
       { dueDate }
     );
   }
+  saveInvoiceDraft(token: string, sourceId: string) {
+    return this.post<SavedInvoice>(token, 'receivables/invoices/drafts', {
+      sourceId,
+    });
+  }
+  invoice(token: string, id: string) {
+    return this.get<SavedInvoice>(token, `receivables/invoices/${id}`);
+  }
+  reconcileInvoice(token: string, id: string) {
+    return this.post<SavedInvoice>(
+      token,
+      `receivables/invoices/${id}/reconcile`
+    );
+  }
 
   private async get<T>(
     token: string,
@@ -222,12 +409,9 @@ class ArApService {
     params?: Query,
     fallback = 'Request failed'
   ): Promise<Envelope<T>> {
-    const res = await fetch(
-      `${API_URL}/api/accounting/${path}${toQuery(params)}`,
-      {
-        headers: this.headers(token),
-      }
-    );
+    const res = await fetch(`${ACCOUNTING_URL}/${path}${toQuery(params)}`, {
+      headers: this.headers(token),
+    });
     return this.unwrap<T>(res, fallback);
   }
 
@@ -237,7 +421,7 @@ class ArApService {
     body?: unknown,
     fallback = 'Request failed'
   ): Promise<Envelope<T>> {
-    const res = await fetch(`${API_URL}/api/accounting/${path}`, {
+    const res = await fetch(`${ACCOUNTING_URL}/${path}`, {
       method: 'POST',
       headers: this.headers(token),
       body: JSON.stringify(body ?? {}),
@@ -246,10 +430,10 @@ class ArApService {
   }
 
   // Summaries + documents
-  receivablesSummary(token: string) {
+  receivablesSummary(token: string, invoiceLedger = false) {
     return this.get<ArApSummary>(
       token,
-      'receivables/summary',
+      invoiceLedger ? 'receivables/invoices/summary' : 'receivables/summary',
       undefined,
       'Failed to load receivables'
     );
@@ -402,11 +586,11 @@ class ArApService {
       'Failed to load batches'
     );
   }
-  unbatched(token: string, side: PaymentSide) {
-    return this.get<PaymentDoc[]>(
+  unbatched(token: string, side: PaymentSide, params?: Query) {
+    return this.get<BatchMember[]>(
       token,
       'batch-payments/unbatched',
-      { side },
+      { side, ...params },
       'Failed to load open payments'
     );
   }
@@ -415,7 +599,13 @@ class ArApService {
     body: {
       direction: PaymentSide;
       paymentIds: string[];
-      account?: '1000' | '1100';
+      account?: BatchAccount;
+      expectedMembers?: Array<
+        Pick<
+          BatchMember,
+          'key' | 'amount' | 'capturedAmount' | 'refundedAmount'
+        >
+      >;
     }
   ) {
     return this.post<BatchPayment>(
@@ -431,6 +621,21 @@ class ArApService {
       `batch-payments/${id}/deposit`,
       undefined,
       'Failed to deposit batch'
+    );
+  }
+  previewBatchSelection(
+    token: string,
+    body: {
+      direction: PaymentSide;
+      account: BatchAccount;
+      paymentIds: string[];
+    }
+  ) {
+    return this.post<BatchMember[]>(
+      token,
+      'batch-payments/preview',
+      body,
+      'Could not check selected payments'
     );
   }
   cancelBatch(token: string, id: string) {

@@ -435,7 +435,7 @@ const getCart = async (userId) => {
       // at its pre-sale price — the exact drawer-vs-checkout mismatch this path
       // exists to prevent.
       path: 'items.subproduct',
-      select: 'sku costPrice baseSellingPrice status isOnSale saleType saleDiscountValue saleStartDate saleEndDate',
+      select: 'sku costPrice baseSellingPrice commissionPriceOverride status isOnSale saleType saleDiscountValue saleStartDate saleEndDate',
       populate: {
         path: 'tenant',
         select: 'name slug logo status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits',
@@ -443,7 +443,7 @@ const getCart = async (userId) => {
     })
     .populate({
       path: 'items.size',
-      select: 'size displayName sellingPrice costPrice stock availability currency unitsPerPack maxOrderQuantity minOrderQuantity discountValue discountType discountStart discountEnd platformMarkupOverridePct packPlatformMarkupOverridePct',
+      select: 'size displayName sellingPrice costPrice stock availability currency unitsPerPack maxOrderQuantity minOrderQuantity discountValue discountType discountStart discountEnd commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct',
     })
     .lean();
 

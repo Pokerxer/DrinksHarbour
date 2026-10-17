@@ -1,4 +1,5 @@
 "use client";
+import { useShoppingLocation } from '@/context/ShoppingLocationContext';
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Swiper, SwiperSlide } from "swiper/react";
@@ -8,11 +9,11 @@ import { API_URL } from "@/lib/api";
 import type { ProductType } from "@/types/product.types";
 import { PiLightningFill, PiClock, PiArrowRight } from "react-icons/pi";
 import FlashSaleCard from "./FlashSaleCard";
+import FlashSaleEmpty from "./FlashSaleEmpty";
 import CountdownTimer from "./FlashSaleCountdown";
 import type { SaleProduct } from "./flash-sale-types";
 import { getNearestEndTime, isSaleProduct, isActiveFlashSale } from "./flash-sale-helpers";
 import { fetchFlashSaleProducts } from "./flash-sale-data";
-import { fetchSaleProducts } from "./flash-sale-legacy";
 import "swiper/css";
 import "swiper/css/navigation";
 const FLASH_SALE_HREF = "/deals";
@@ -37,9 +38,12 @@ interface FlashSaleProps {
   flashOnly?: boolean;
   /** True only for a successful, complete server flash-sale request. */
   initialProductsComplete?: boolean;
+  showEmptyState?: boolean;
 }
 
-const FlashSale = ({ initialProducts = [], flashOnly = false, initialProductsComplete = false }: FlashSaleProps) => {
+const FlashSale = ({ initialProducts = [], flashOnly = false, initialProductsComplete = false, showEmptyState = false }: FlashSaleProps) => {
+  const { location, revision } = useShoppingLocation();
+  const requestRef = React.useRef(0);
   const filterProducts = useCallback((products: SaleProduct[]) => {
     const eligible = products.filter(isSaleProduct);
     return (flashOnly ? eligible.filter(isActiveFlashSale) : eligible).slice(0, 20);
@@ -53,19 +57,22 @@ const FlashSale = ({ initialProducts = [], flashOnly = false, initialProductsCom
   const load = useCallback(async () => {
     // Seeded deals are already available from the homepage server request.
     // Refresh them in the background without replacing them with a skeleton.
+    const requestId = ++requestRef.current;
     try {
-      const items = flashOnly ? await fetchFlashSaleProducts(API_URL) : await fetchSaleProducts();
+      const items = await fetchFlashSaleProducts(API_URL, location, flashOnly);
       const withDiscount = filterProducts(items);
-      setProducts(withDiscount);
+      if (requestRef.current === requestId) setProducts(withDiscount);
     } catch {
       // silent
     } finally {
       setLoading(false);
     }
-  }, [filterProducts, flashOnly]);
+  }, [filterProducts, flashOnly, revision]);
 
   useEffect(() => {
-    if (!initialProductsComplete) void load();
+    if (!initialProductsComplete || location) void load();
+    else setProducts(seededProducts);
+    return () => { requestRef.current++; };
   }, [load, initialProductsComplete]);
 
   const handleQuickView = useCallback(
@@ -91,7 +98,7 @@ const FlashSale = ({ initialProducts = [], flashOnly = false, initialProductsCom
     );
   }
 
-  if (products.length === 0) return null;
+  if (products.length === 0) return flashOnly || showEmptyState ? <FlashSaleEmpty /> : null;
 
   const label = isFlashSaleSection ? "Flash Sale" : "On Sale Now";
   const sublabel = isFlashSaleSection ? "Lightning deals — ends soon!" : "Limited time offers";

@@ -72,5 +72,9 @@ CustomerAccountStatementSchema.index({ tenant: 1, customer: 1, entryType: 1 });
 // Reconciliation against the journal: find every charge raised for one receipt.
 CustomerAccountStatementSchema.index({ tenant: 1, receiptNumber: 1 }, { sparse: true });
 
+CustomerAccountStatementSchema.post('save', async function (doc) {
+  try { await require('../services/customerInvoice/hooks').customerLedgerSaved(doc); }
+  catch (err) { console.error('invoiceLedgerSyncFailed', { message: err.message }); }
+});
 module.exports = mongoose.models.CustomerAccountStatement
   || mongoose.model('CustomerAccountStatement', CustomerAccountStatementSchema);

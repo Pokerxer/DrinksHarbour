@@ -218,7 +218,7 @@ router.get('/combos', protectPOS, async (req, res, next) => {
       const rawSelling = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null) ?? sp.baseSellingPrice ?? 0;
       if (rawCost <= 0 && rawSelling <= 0) return rawSelling;
       const platformCost = calcPlatformCostPrice(rawCost, rawSelling, revenueModel, markupPct, commissionPct);
-      return calcPlatformSellingPrice(platformCost, platformMarkupPct) || rawSelling;
+      return calcPlatformSellingPrice(platformCost, platformMarkupPct, null, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? rawSelling : 0, commissionPriceOverride: sizeDoc?.commissionPriceOverride ?? sp.commissionPriceOverride }) || rawSelling;
     }
 
     const combos = await POSCombo.find({ tenant: tenant._id, active: true })

@@ -15,6 +15,46 @@ const unavailable = () =>
   );
 
 describe('linked product read recovery', () => {
+  it('reads reservations through the private stock route with auth, cancellation and no cache', async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: { product: { _id: 'p', subProducts: [] } },
+        })
+      )
+    );
+    vi.stubGlobal('fetch', fetcher);
+    const controller = new AbortController();
+    await productService.getProductStock('p', 'staff-token', controller.signal);
+    expect(fetcher.mock.calls[0][0]).toContain('/api/products/admin/p/stock');
+    expect(fetcher.mock.calls[0][1]).toMatchObject({
+      method: 'GET',
+      cache: 'no-store',
+      headers: { Authorization: 'Bearer staff-token' },
+      signal: controller.signal,
+    });
+  });
+  it('reads buyer history only through the authenticated private sales route', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { report: {} } })));
+    vi.stubGlobal('fetch', fetcher);
+    const controller = new AbortController();
+    await productService.getProductSalesHistory('p', 'staff-token', controller.signal);
+    expect(fetcher.mock.calls[0][0]).toContain('/api/products/admin/p/sales');
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'GET', cache: 'no-store', headers: { Authorization: 'Bearer staff-token' }, signal: controller.signal });
+  });
+  it('bypasses cached product responses when checking live stock', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ success: true, data: { product: { _id: 'p' } } })
+        )
+      );
+    vi.stubGlobal('fetch', fetcher);
+    await productService.getProductById('p', 'token', true);
+    expect(fetcher.mock.calls[0][1].cache).toBe('no-store');
+  });
   it('waits and retries a temporary database outage without any writes', async () => {
     const fetcher = vi
       .fn()

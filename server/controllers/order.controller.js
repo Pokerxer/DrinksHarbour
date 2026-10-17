@@ -1,3 +1,4 @@
+const { calculateSubProductPricing } = require('../utils/pricing');
 // controllers/order.controller.js
 
 const mongoose = require('mongoose');
@@ -10,7 +11,7 @@ const Product = require('../models/Product');
 const Size = require('../models/Size');
 const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber, resolveOrderRecipient } = require('../utils/orderUtils');
-const { calcPlatformCostPrice, resolveRevenueRates, resolveLineRates, resolveEffectiveUnitPrice, calculateSizePricing, applySubProductSale, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { resolveRevenueRates, resolveLineRates, resolveEffectiveUnitPrice, calculateSizePricing, applySubProductSale } = require('../utils/pricing');
 const inventoryService = require('../services/inventory.service');
 const { applyOrderStatus, APPLICABLE_STATUSES } = require('../services/orderStatus.service');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
@@ -18,7 +19,7 @@ const { calculateShipping, DISTANCE_MIN_FEE } = require('../data/shipping-zones'
 const { resolveFirstOrderPerk, recordPerkUsage } = require('../services/firstOrderPerk.service');
 const { normalizePaymentMethod, buildOrderPaymentFields } = require('../utils/paymentMethods');
 const { resolveGatewayPaymentMethod } = require('../services/payment.service');
-const { ForbiddenError } = require('../utils/errors');
+const { ForbiddenError, ValidationError } = require('../utils/errors');
 const {
   sendOrderConfirmationToCustomer,
   sendNewOrderNotificationToTenant,
@@ -83,12 +84,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const [subProducts, sizes] = await Promise.all([
     subProductIds.length
       ? SubProduct.find({ _id: { $in: subProductIds }, isPublished: true, status: 'active' })
-          .select('_id costPrice baseSellingPrice tenant product isOnSale saleDiscountValue saleType saleStartDate saleEndDate')
+          .select('_id costPrice baseSellingPrice commissionPriceOverride platformMarkupOverridePct tenant product isOnSale saleDiscountValue saleType saleStartDate saleEndDate')
           .lean()
       : Promise.resolve([]),
     sizeIds.length
       ? Size.find({ _id: { $in: sizeIds } })
-          .select('_id costPrice sellingPrice tenant unitsPerPack maxOrderQuantity platformMarkupOverridePct discountValue discountType discountStart discountEnd')
+          .select('_id subproduct costPrice sellingPrice wholesalePrice packPlatformMarkupOverridePct tenant unitsPerPack maxOrderQuantity commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct discountValue discountType discountStart discountEnd')
           .lean()
       : Promise.resolve([]),
   ]);
@@ -98,8 +99,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   // Validate: every item's subProductId must resolve to a published, active SubProduct
   const invalidItems = items.filter(item => {
-    if (!item.subProductId) return false;
-    return !subProductMap.has(item.subProductId.toString());
+    const listing = subProductMap.get(item.subProductId?.toString());
+    if (!listing) return true;
+    if (!item.sizeId) return false;
+    const size = sizeMap.get(item.sizeId.toString());
+    return !size || String(size.subproduct) !== String(listing._id) || String(size.tenant) !== String(listing.tenant);
   });
   if (invalidItems.length) {
     return res.status(400).json({
@@ -128,20 +132,20 @@ exports.createOrder = asyncHandler(async (req, res) => {
   //
   // Mirrors the server-side pricing pipeline in utils/pricing.js:
   //   Markup model     → platformCostPrice = costPrice × (1 + tenant.markupPercentage%)
-  //   Commission model → platformCostPrice = subProduct.baseSellingPrice × (1 − tenant.commissionPercentage%)
+  //   Commission model → final merchandise × (1 − agreed commission rate)
   //
   // platformCostPrice = vendorPayout (what platform owes vendor)
   // platformProfit    = itemSubtotal − vendorPayout × qty
   //
   // costPrice/sellingPrice use Size values when present, falling back to SubProduct.
-  // Fallback when no cost data: vendorPayout = customerPrice ÷ (1 + DEFAULT_PLATFORM_MARKUP%)
-  const orderItems = items.map(item => {
+  let orderItems = items.map(item => {
     const sp            = subProductMap.get(item.subProductId?.toString());
     const sz            = sizeMap.get(item.sizeId?.toString());
     // Derive tenant from the SubProduct (server-authoritative), NOT from client body
     const tenantId      = sp?.tenant?.toString() || item.tenantId || null;
     const tenant        = tenantMap.get(tenantId);
-    const revenueModel  = tenant?.revenueModel ?? 'markup';
+    if (!tenant) throw new ValidationError('Tenant revenue agreement is unavailable');
+    const revenueModel  = tenant.revenueModel ?? 'markup';
     const qty = item.quantity;
     // Server-authoritative unit price — the SAME two steps, in the same order,
     // that cart validateCartItems runs: calculateSizePricing, then the
@@ -152,9 +156,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
     // a sale item bought by the pack was charged pack × sale. Stacking the two
     // is what pricing.js and product.service.js both say must never happen.
     const productDoc = productMap.get(sp?.product?.toString());
-    const sizePricing = (sz && tenant)
+    const sizePricing = (sp && tenant)
       ? applySubProductSale(
-          calculateSizePricing(sz, productDoc, tenant, sp?.costPrice ?? 0, sp?.baseSellingPrice ?? 0),
+          sz ? calculateSizePricing(sz, productDoc, tenant, sp?.costPrice ?? 0, sp?.baseSellingPrice ?? 0) : calculateSubProductPricing(sp, productDoc, tenant),
           sp,
         )
       : null;
@@ -170,27 +174,18 @@ exports.createOrder = asyncHandler(async (req, res) => {
     // sizePricing already carries the sale (and has withdrawn the pack rate for
     // its duration), so this is just the quantity choice.
     const serverUnitPrice = sizePricing ? resolveEffectiveUnitPrice(sizePricing, qty) : 0;
-    // Fall back to the client price only when the line can't be priced (no size data)
-    const customerPrice = serverUnitPrice > 0 ? serverUnitPrice : item.price;
+    if (!(serverUnitPrice > 0)) throw new ValidationError('Product has no valid marketplace price');
+    const customerPrice = serverUnitPrice;
     const itemSubtotal  = customerPrice * qty;
 
-    // Size-level values take priority; fall back to SubProduct
-    const costPrice         = sz?.costPrice      ?? sp?.costPrice      ?? 0;
-    const tenantSellingPrice= sz?.sellingPrice   ?? sp?.baseSellingPrice ?? 0;
-
-    // Use the same calcPlatformCostPrice function used when products are priced
-    let vendorCostPerUnit = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, markupPct, commissionPct);
-
-    // Fallback: if no cost data was available (costPrice=0 for markup, tenantSellingPrice=0 for commission)
-    if (!vendorCostPerUnit || vendorCostPerUnit <= 0) {
-      vendorCostPerUnit = customerPrice / (1 + DEFAULT_PLATFORM_MARKUP / 100);
-    }
-
-    const vendorPayout   = vendorCostPerUnit * qty;
-    const platformProfit = itemSubtotal - vendorPayout;
+    const split = require('../utils/revenueAgreement').splitMerchandise({
+      amount: itemSubtotal, quantity: qty, model: revenueModel,
+      rate: revenueModel === 'commission' ? commissionPct : markupPct,
+      payout: packApplied ? sizePricing.packPlatformCostPrice : sizePricing?.platformCostPrice,
+    });
 
     return {
-      product:               item.productId,
+      product:               sp.product,
       subproduct:            item.subProductId || null,
       size:                  item.sizeId || null,
       tenant:                tenantId,
@@ -198,9 +193,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       priceAtPurchase:       customerPrice,
       itemSubtotal:          Math.round(itemSubtotal     * 100) / 100,
       discountAmount:        0,
-      vendorPriceAtPurchase: Math.round(vendorCostPerUnit * 100) / 100,
-      tenantRevenueShare:    Math.round(vendorPayout      * 100) / 100,
-      platformCommission:    Math.round(platformProfit    * 100) / 100,
+      ...split,
       tenantRevenueModel:    revenueModel,
       revenueRateAtPurchase: revenueModel === 'commission' ? commissionPct : markupPct,
       packRateApplied:       packApplied,
@@ -209,7 +202,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
    // Calculate order totals from items
   const calculatedSubtotal = orderItems.reduce((sum, item) => sum + item.itemSubtotal, 0);
-  const calculatedPlatformCommission = orderItems.reduce((sum, item) => sum + (item.platformCommission || 0), 0);
+  let calculatedPlatformCommission = orderItems.reduce((sum, item) => sum + (item.platformCommission || 0), 0);
 
   // ── Coupon: server-authoritative ────────────────────────────────────────
   //
@@ -247,6 +240,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
     discountTotal = appliedCoupon.calculateDiscount(calculatedSubtotal);
   }
   // ──────────────────────────────────────────────────────────────────────────
+
+  orderItems = require('../utils/revenueAgreement').allocateOrderDiscount(orderItems, discountTotal);
+  calculatedPlatformCommission = Math.round(orderItems.reduce((sum, item) => sum + item.platformCommission, 0) * 100) / 100;
 
   // ── Delivery fee: server-authoritative ────────────────────────────────────
   //
@@ -306,11 +302,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
     deliveryWaiver = { applied: false, amount: 0, reason: perk.reason };
   }
 
-  // Correct only the delivery component of the client's total. Recomputing the
-  // whole total from calculatedSubtotal would change the charge on every order
-  // where server and client subtotals legitimately differ (pack pricing), so the
-  // delta approach leaves the untouched path exactly as it was.
-  const resolvedTotal = Math.max(0, (Number(total) || 0) + (resolvedShippingFee - clientShippingFee));
+  // The customer total and the split share the same server-priced merchandise basis.
+  const resolvedTotal = Math.round((calculatedSubtotal - discountTotal + resolvedShippingFee) * 100) / 100;
 
   // Build order object with payment details if provided
   const orderData = {
@@ -1077,6 +1070,7 @@ exports.updatePaymentStatus = asyncHandler(async (req, res) => {
         reason: notes || 'Refunded by admin',
         createdAt: now,
         processedBy: req.user._id,
+        settlement: require('../utils/revenueAgreement').refundSettlement(order.items, amount || order.totalAmount, order.totalAmount),
       };
       break;
     }
@@ -1116,7 +1110,8 @@ exports.updatePaymentStatus = asyncHandler(async (req, res) => {
     if (action === 'mark_failed') {
       // Payment failed: release the stock reservation (order won't be fulfilled)
       inventoryService.releaseReserve(stockItems, order._id, req.user?._id).catch(() => {});
-    } else if (action === 'mark_refunded') {
+    } else if (action === 'mark_refunded' && order.paymentStatus === 'refunded') {
+      // A full refund restores stock; amount-only partial refunds need item allocation.
       // Refund: restore physical stock (item returned to warehouse)
       inventoryService.restoreStock(stockItems, order._id, req.user?._id).catch(() => {});
     }

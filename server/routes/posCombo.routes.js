@@ -18,7 +18,7 @@ function computePrice(sp, sizeDoc, tenant) {
   if (rawCost <= 0 && rawSelling <= 0) return 0;
 
   const platformCost = calcPlatformCostPrice(rawCost, rawSelling, revenueModel, markupPct, commissionPct);
-  return calcPlatformSellingPrice(platformCost, platformMarkupPct);
+  return calcPlatformSellingPrice(platformCost, platformMarkupPct, null, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? rawSelling : 0, commissionPriceOverride: sizeDoc?.commissionPriceOverride ?? sp.commissionPriceOverride });
 }
 
 router.use(authenticate);

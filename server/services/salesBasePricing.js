@@ -22,7 +22,7 @@ function computeSalesBasePricing(sp, sizeDoc, tenant) {
   }
 
   const platformCostPrice    = calcPlatformCostPrice(rawCost, rawSelling, revenueModel, markupPct, commissionPct);
-  let   platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+  let   platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? rawSelling : 0, commissionPriceOverride: sizeDoc?.commissionPriceOverride ?? sp.commissionPriceOverride });
   const priceBeforeSale      = platformSellingPrice;
 
   const now = new Date();
@@ -64,7 +64,7 @@ function computeSalesBasePricing(sp, sizeDoc, tenant) {
     originalPrice:      priceBeforeSale,
     isOnSale:           platformSellingPrice < priceBeforeSale,
     isFlashSale:        flashActive,
-    costPrice:          platformCostPrice,
+    costPrice:          revenueModel === 'commission' ? calcPlatformCostPrice(0, platformSellingPrice, 'commission', 0, commissionPct) : platformCostPrice,
     revenueModel,
     markupPct,
     commissionPct,

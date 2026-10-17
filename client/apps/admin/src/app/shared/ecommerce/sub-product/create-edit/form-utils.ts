@@ -1,3 +1,4 @@
+import { expandedProductTypeOptions } from '@/utils/expanded-product-types';
 import { SubProductInput } from '@/validators/sub-product.schema';
 import isEmpty from 'lodash/isEmpty';
 
@@ -251,6 +252,7 @@ export function defaultValues(product?: Partial<SubProductInput>): Partial<SubPr
 
 // Product types options
 export const productTypes = [
+  ...expandedProductTypeOptions,
   // Alcoholic Beverages
   { value: 'beer', label: 'Beer', category: 'Alcoholic' },
   { value: 'wine', label: 'Wine', category: 'Alcoholic' },
@@ -271,6 +273,8 @@ export const productTypes = [
   
   // Others
   { value: 'snack', label: 'Snack', category: 'Other' },
+  { value: 'vape', label: 'Vape', category: 'Other' },
+  { value: 'nuts', label: 'Nuts', category: 'Other' },
   { value: 'accessory', label: 'Accessory', category: 'Other' },
   { value: 'gift', label: 'Gift', category: 'Other' },
   { value: 'other', label: 'Other', category: 'Other' },
@@ -316,6 +320,7 @@ export const standardSizes = [
   { value: 'case-24', label: 'Case of 24', volume: 0 },
   
   // Coffee & Tea
+  { value: '240g', label: '240g', volume: 0 },
   { value: '250g', label: '250g', volume: 0 },
   { value: '500g', label: '500g', volume: 0 },
   { value: '1kg', label: '1kg', volume: 0 },

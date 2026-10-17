@@ -12,7 +12,7 @@ async function main() {
   const now = Date.now();
   const cases = Array.from({ length: 45 }, (_, i) => ({
     name: `Fixture ${String(i).padStart(2, '0')}`,
-    isOnSale: i >= 20, saleType: 'flash_sale', saleDiscountValue: 15,
+    isOnSale: i >= 20 || i === 8, saleType: i === 8 ? 'fixed' : 'flash_sale', saleDiscountValue: 15,
     ...(i === 40 ? { saleEndDate: new Date(now - 10000) } : {}),
     ...(i === 41 ? { saleStartDate: new Date(now + 60000) } : {}),
     ...(i === 42 ? { saleType: 'percentage' } : {}),
@@ -22,7 +22,7 @@ async function main() {
   for (const item of cases) {
     const product = new mongoose.Types.ObjectId();
     const subproduct = new mongoose.Types.ObjectId();
-    await db.collection('products').insertOne({ _id: product, name: item.name, slug: item.name.replaceAll(' ', '-'), status: 'approved', isPublished: true, tags: [], flavors: [], images: [] });
+    await db.collection('products').insertOne({ _id: product, name: item.name, slug: item.name.replaceAll(' ', '-'), status: 'approved', isPublished: true, tags: [], flavors: [], images: [], ...(item.name === 'Fixture 09' ? { platformDiscount: { type: 'percentage', value: 10 } } : {}) });
     await db.collection('subproducts').insertOne({ _id: subproduct, product, tenant, status: 'active', totalStock: 10, ...item });
     await db.collection('sizes').insertOne({ subproduct, size: '750ml', sellingPrice: 5000, costPrice: 3000, stock: 10, availableStock: 10, status: 'active', availability: 'available' });
   }
@@ -35,6 +35,11 @@ async function main() {
   const second = await searchProducts({ saleType: 'flash_sale', sortBy: 'name_asc', page: 2, limit: 20, fields: 'card', useEmbeddings: false });
   assert.deepEqual(second.products.map(p => p.name), ['Fixture 43']);
   assert.equal(second.products[0].availableAt[0].isOnSale, true);
+  const general = await searchProducts({ onSale: true, sortBy: 'name_asc', limit: 20, fields: 'card', useEmbeddings: false });
+  assert.equal(general.products.length, 20, 'general sales must be matched before pagination');
+  assert.equal(general.pagination.totalResults, 24);
+  assert.equal(general.pagination.isExactCount, true);
+  assert.deepEqual(general.products.slice(0, 2).map(p => p.name), ['Fixture 08', 'Fixture 09']);
   console.log(JSON.stringify({ fixtureProducts: cases.length, eligibleSales: 21, firstPageCards: 20, secondPageCards: 1, exactCount: true, elapsedMs: performance.now() - start }));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

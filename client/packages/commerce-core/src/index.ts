@@ -6,3 +6,5 @@ export * from './default-variant.ts';
 export * from './validation.ts';
 export { configureCommerceCore, getApiBaseUrl } from './config.ts';
 export * from './categories.ts';
+
+export { resolveRepresentativeVariant } from './default-variant';

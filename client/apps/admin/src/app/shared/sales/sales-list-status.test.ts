@@ -173,3 +173,14 @@ describe('invoiceStatusText', () => {
     expect(invoiceStatusText(order())).toBe('Not Invoiced');
   });
 });
+
+test('returned order status retains delivery state and identifies the return', () => {
+  expect(docStatusBadge(order({orderStatus:'fulfilled',hasReturns:true})).label).toBe('Fulfilled · Returned');
+  expect(docStatusBadge(order({orderStatus:'partially_fulfilled',hasReturns:true})).label).toBe('Partially Fulfilled · Returned');
+});
+
+test('returned orders have their own quotation board bucket even after conversion', async () => {
+  const { kanbanStatus } = await import('./sales-list-status');
+  expect(kanbanStatus(order({quoteStatus:'converted',orderStatus:'fulfilled',hasReturns:true}),true)).toBe('returned');
+  expect(kanbanStatus(order({quoteStatus:'converted',orderStatus:'fulfilled',hasReturns:true}),false)).toBe('fulfilled');
+});

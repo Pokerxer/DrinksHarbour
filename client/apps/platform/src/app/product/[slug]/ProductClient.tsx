@@ -1,5 +1,7 @@
 "use client";
 
+import { useShoppingLocation } from '@/context/ShoppingLocationContext';
+import { shoppingHeaders } from '@/lib/shoppingRequest';
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import BreadcrumbProduct from "@/components/Breadcrumb/BreadcrumbProduct";
@@ -8,6 +10,7 @@ import type { ProductType } from "@/types/product.types";
 import * as Icon from "react-icons/pi";
 import { AnnouncementBanner, PlacementBanner } from "@/components/Banner";
 import { viewItemEvent } from "@/lib/gtag";
+import type { ProductBannerSeed } from '@/components/Banner/product-page-banner-data';
 
 // ProductDetail is imported statically on purpose. It used to be a
 // next/dynamic() chunk to keep Swiper out of the initial bundle, but a lazy
@@ -24,8 +27,8 @@ const RecentlyViewed    = dynamic(() => import("@/components/Shop/RecentlyViewed
 // edits a price. A 5-minute in-memory cache used to keep the old price visible
 // on every navigation back to a product until it expired — the exact bug the
 // details page had. The initial payload from the server already renders the
-// full detail page; the only remaining fetch is the background related-
-// products top-up, which we still keep uncached below.
+// full detail page. Location changes and explicit retries refresh availability;
+// related-products top-ups also remain uncached and discard stale completions.
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -38,18 +41,18 @@ interface ApiResponse {
 
 /** Background top-up when the product response carried no related products. */
 function fetchRelated(
-  _slug: string,
-  product: any,
+  product: { _id: string },
+  options: RequestInit,
   onLoaded: (related: ProductType[]) => void,
 ) {
   // no-store: the related endpoint recomputes each card's priceRange per
   // request off live SubProduct rows, same as the detail payload. A cached
   // response would show pre-edit prices in the "You May Also Like" carousel
   // even after the details price above had refreshed.
-  fetch(`${API_URL}/api/products/${product._id}/related?limit=8`, { cache: 'no-store' })
+  fetch(`${API_URL}/api/products/${product._id}/related?limit=8`, { ...options, cache: 'no-store' })
     .then(r => r.ok ? r.json() : null)
     .then(d => {
-      if (!d) return;
+      if (!d || options.signal?.aborted) return;
       let fetchedRelated: ProductType[] = [];
       if (d.success && d.data?.products?.products) fetchedRelated = d.data.products.products;
       else if (d.success && d.data?.products) fetchedRelated = d.data.products;
@@ -62,6 +65,7 @@ export default function ProductClient({
   slug,
   initialProduct = null,
   initialRelated = [],
+  initialBannerData,
 }: {
   slug: string;
   /**
@@ -72,7 +76,12 @@ export default function ProductClient({
    */
   initialProduct?: any;
   initialRelated?: ProductType[];
+  initialBannerData?: ProductBannerSeed;
 }) {
+  const { location, revision } = useShoppingLocation();
+  const request = useRef(0);
+  const controller = useRef<AbortController | null>(null);
+  const seedAvailable = useRef(!!initialProduct);
   const [productData, setProductData] = useState<any>(initialProduct);
   const [relatedProducts, setRelatedProducts] = useState<ProductType[]>(initialRelated);
   const [loading, setLoading] = useState(!initialProduct);
@@ -80,18 +89,27 @@ export default function ProductClient({
 
   const loadProduct = useCallback(async () => {
     if (!slug) return;
+    const requestId = ++request.current;
+    controller.current?.abort();
+    const active = new AbortController(); controller.current = active;
+    const options = {signal: active.signal, headers: shoppingHeaders(location)};
+    const updateRelated = (related: ProductType[]) => { if (requestId === request.current && !active.signal.aborted) setRelatedProducts(related); };
 
     // Already server-rendered — don't refetch the product on mount. Related
     // products are still topped up below when the server response lacked them.
     // The server render is a fresh, uncached fetch (see page.tsx), so the
     // price/discount/stock we already hold is always current for this request.
-    if (initialProduct) {
+    if (seedAvailable.current && initialProduct && !location) {
+      seedAvailable.current = false;
+      setProductData(initialProduct);
+      setLoading(false); setError(null);
       if (initialRelated.length === 0 && initialProduct?._id) {
-        fetchRelated(slug, initialProduct, setRelatedProducts);
+        fetchRelated(initialProduct, options, updateRelated);
       }
       return;
     }
 
+    seedAvailable.current = false;
     try {
       setLoading(true);
       setError(null);
@@ -100,10 +118,11 @@ export default function ProductClient({
       // revalidatePath/revalidateTag hook fires when they change. A cached
       // response here served the pre-edit price until the window rolled over.
       const response = await fetch(`${API_URL}/api/products/slug/${slug}`, {
-        cache: 'no-store',
+        cache: 'no-store', ...options,
       });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw new Error("Seller availability could not be updated. Please try again.");
       const data: ApiResponse = await response.json();
+      if (requestId !== request.current) return;
 
       let product: any = null;
       let related: ProductType[] = [];
@@ -118,7 +137,7 @@ export default function ProductClient({
       } else if (Array.isArray(data) && (data as any).length > 0) {
         product = (data as any)[0];
       } else {
-        setError("Product data format not recognized");
+        setError("This drink could not be loaded. Please try again.");
         setLoading(false);
         return;
       }
@@ -130,16 +149,16 @@ export default function ProductClient({
       // If the main response didn't include related products, fetch them in the background
       // without blocking the UI
       if (related.length === 0 && product?._id) {
-        fetchRelated(slug, product, setRelatedProducts);
+        fetchRelated(product, options, updateRelated);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load product. Please try again later.");
-      setProductData(null);
+      if (requestId !== request.current) return;
+      setError("Seller availability could not be updated. Please try again.");
       setLoading(false);
     }
-  }, [slug, initialProduct, initialRelated]);
+  }, [slug, initialProduct, initialRelated, revision]);
 
-  useEffect(() => { loadProduct(); }, [loadProduct]);
+  useEffect(() => { loadProduct(); return () => { request.current++; controller.current?.abort(); }; }, [loadProduct]);
 
   const viewItemFired = useRef(false);
   useEffect(() => {
@@ -160,7 +179,7 @@ export default function ProductClient({
     });
   }, [productData, loading]);
 
-  if (loading) {
+  if (loading && !productData) {
     return (
       <>
         <AnnouncementBanner placement="header" layout="static" variant="info" />
@@ -171,7 +190,7 @@ export default function ProductClient({
     );
   }
 
-  if (error || !productData) {
+  if (!productData) {
     return (
       <>
         <AnnouncementBanner placement="header" layout="static" variant="info" />
@@ -188,7 +207,7 @@ export default function ProductClient({
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => void loadProduct()}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-br from-red-700 to-red-900 text-white rounded-lg font-semibold hover:from-red-800 hover:to-red-950 transition-all shadow-md"
               >
                 <Icon.PiArrowClockwise size={20} />
@@ -232,14 +251,20 @@ export default function ProductClient({
 
   return (
     <>
-      <AnnouncementBanner placement="header" layout="static" variant="info" />
+      <AnnouncementBanner placement="header" layout="static" variant="info"
+        initialBanners={initialBannerData?.header} initialBannersComplete={!!initialBannerData} />
       <div className="container mx-auto px-4 pt-6">
         <BreadcrumbProduct data={productData} productPage="default" productId={slug} />
       </div>
       <div className="container mx-auto px-4 pb-2">
-        <PlacementBanner placement="product_page" variant="hero" limit={1} />
+        <PlacementBanner placement="product_page" variant="hero" limit={1}
+          initialBanners={initialBannerData?.product} initialBannersComplete={!!initialBannerData} />
       </div>
-      <ProductDetail productData={productData} relatedProducts={relatedProducts} />
+      {loading && <p role="status" className="text-sm text-gray-500 container">Updating nearby sellers…</p>}
+      {error && <div role="alert" className="container my-3 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">
+        <p>{error}</p><button onClick={() => void loadProduct()} className="mt-2 font-semibold underline">Retry availability</button>
+      </div>}
+      <ProductDetail key={productData._id} productData={productData} relatedProducts={relatedProducts} purchaseBlocked={loading || !!error} />
       <RecentlyViewed productId={productData._id} currentProduct={currentProductData} />
     </>
   );

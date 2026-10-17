@@ -3,6 +3,14 @@
 ## Overview
 A comprehensive banner system with 4 main banner types, each designed for specific use cases on the DrinksHarbour e-commerce platform.
 
+Product-page layout stability: `product-page-banner-data.ts` fetches header and
+product-page placements before product rendering. `AnnouncementBanner` and
+`PlacementBanner` accept complete initial seeds and skip duplicate mount requests.
+Static announcements reserve 40px. First-order header offers render only when
+eligible and not dismissed; other states have no replacement or reserved space
+(user screenshot correction, 2026-10-16). See
+`docs/memory/desktop-product-cls.md` at the repository root.
+
 ---
 
 ## Banner Types
@@ -38,6 +46,9 @@ import { HeroBanner } from '@/components/Banner';
 - `autoPlay`: Enable/disable auto-rotation
 - `showControls`: Show navigation arrows
 - `showIndicators`: Show slide indicators
+- `initialBanners` / `initialBannersComplete`: optional complete server seed.
+  The homepage uses `HomeHero.tsx` to emit the first responsive image in HTML.
+  Complete seeds skip the mount request; server failures retain client recovery.
 
 ---
 

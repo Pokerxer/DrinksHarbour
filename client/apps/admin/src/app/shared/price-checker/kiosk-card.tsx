@@ -15,31 +15,40 @@ export function KioskCard({
   kiosk,
   options,
   busy,
+  saving = false,
   onChange,
   onCopy,
 }: {
   kiosk: Kiosk;
   options: KioskOptions | null;
   busy: boolean;
+  saving?: boolean;
   onChange: (kiosk: Kiosk, remove?: boolean) => void;
   onCopy: (kiosk: Kiosk) => void;
 }) {
   const labels = kioskLabels(kiosk, options);
   return (
-    <article className="pc-card pc-device" data-enabled={kiosk.enabled}>
+    <article
+      className="pc-card pc-device"
+      data-enabled={kiosk.enabled}
+      aria-busy={saving}
+    >
       <div className="pc-card-top">
         <span className="pc-device-icon">
           <PiBarcode />
         </span>
-        <span className={kiosk.enabled ? 'pc-active' : 'pc-paused'}>
-          {kiosk.enabled ? 'Enabled' : 'Disabled'}
+        <span
+          className={kiosk.enabled ? 'pc-active' : 'pc-paused'}
+          title="Configuration status; does not indicate device connectivity"
+        >
+          {saving ? 'Saving…' : kiosk.enabled ? 'Enabled' : 'Disabled'}
         </span>
       </div>
       <h2>{kiosk.name}</h2>
       <p className="pc-device-store">{labels.shop}</p>
       <p className="pc-device-location">
         <PiMapPin aria-hidden="true" />
-        {labels.location}
+        <span>{labels.location}</span>
       </p>
       <dl>
         <div>
@@ -63,7 +72,12 @@ export function KioskCard({
         {kiosk.internalId} · {kiosk.slug}
       </p>
       <div className="pc-device-primary">
-        <a className="pc-button" href={kioskUrl(kiosk.slug)} target="_blank" rel="noreferrer">
+        <a
+          className="pc-button"
+          href={kioskUrl(kiosk.slug)}
+          target="_blank"
+          rel="noreferrer"
+        >
           <PiArrowSquareOut />
           {kiosk.enabled ? 'Open kiosk' : 'Open disabled screen'}
         </a>
@@ -91,7 +105,11 @@ export function KioskCard({
             <button disabled={busy} onClick={() => onChange(kiosk)}>
               {kiosk.enabled ? 'Disable kiosk' : 'Enable kiosk'}
             </button>
-            <button className="pc-danger" disabled={busy} onClick={() => onChange(kiosk, true)}>
+            <button
+              className="pc-danger"
+              disabled={busy}
+              onClick={() => onChange(kiosk, true)}
+            >
               Delete kiosk
             </button>
           </div>

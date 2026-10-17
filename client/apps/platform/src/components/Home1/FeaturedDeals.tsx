@@ -1,5 +1,8 @@
 "use client";
 
+import { useShoppingLocation } from '@/context/ShoppingLocationContext';
+import { shoppingHeaders } from '@/lib/shoppingRequest';
+import { representativeSelection } from '@/utils/representativeOffer';
 import React, { useState, useEffect, useCallback, useMemo, memo } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -38,6 +41,7 @@ interface ProductSize {
 }
 
 interface DealProduct {
+  shoppingOffer?: import('@/utils/representativeOffer').ShoppingOffer | null;
   _id: string;
   name: string;
   slug: string;
@@ -82,6 +86,8 @@ interface FeaturedDealsProps {
 // isn't necessarily availableAt[0].sizes[0]. Falling back to the first size (for
 // the base price) means non-promoted products still render a plain price.
 function resolveBestOffer(product: DealProduct) {
+  const selected = representativeSelection(product);
+  if (selected) return { offer: selected.offer, size: selected.size };
   const offers = product.availableAt || [];
   let bestSize: ProductSize | undefined;
   let bestOffer: (typeof offers)[number] | undefined;
@@ -112,7 +118,8 @@ function calcPricing(product: DealProduct) {
   const sizeDiscount: SizeDiscount = size?.discount || offer?.discount || {};
   const sizePricing = size?.pricing || {};
 
-  const currentPrice = sizePricing.websitePrice || product.priceRange?.min || 0;
+  const representative = representativeSelection(product);
+  const currentPrice = representative?.size.pricing?.websitePrice ?? (sizePricing.websitePrice || product.priceRange?.min || 0);
   const originalPrice = sizePricing.originalWebsitePrice || currentPrice;
   const hasDiscount =
     !!sizeDiscount.hasDiscount || (originalPrice > currentPrice && currentPrice > 0);
@@ -281,10 +288,11 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
   limit = 12,
   initialProducts,
 }) => {
+  const { location, revision } = useShoppingLocation();
   const seeded = (initialProducts?.length ?? 0) > 0;
   const [products, setProducts] = useState<DealProduct[]>(() => {
     if (seeded) return initialProducts!;
-    const cached = _dealsCache.get(limit);
+    const cached = location ? undefined : _dealsCache.get(limit);
     return cached && Date.now() - cached.ts < DEALS_CACHE_TTL ? cached.data : [];
   });
   const [loading, setLoading] = useState(() => {
@@ -297,7 +305,8 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
 
   useEffect(() => {
     // Server already seeded the deals into the HTML — don't refetch.
-    if (seeded) return;
+    if (seeded && !location) { setProducts(initialProducts || []); return; }
+    let cancelled = false;
     const cached = _dealsCache.get(limit);
     if (cached && Date.now() - cached.ts < DEALS_CACHE_TTL) return;
 
@@ -306,9 +315,11 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
         const API_URL =
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
         const res = await fetch(
-          `${API_URL}/api/products?sortBy=discount&limit=${limit}`,
+          `${API_URL}/api/products?${location ? 'sortBy=nearest&onSale=true' : 'sortBy=discount'}&limit=${limit}`,
+          { headers: shoppingHeaders(location), cache: 'no-store' },
         );
         const data = await res.json();
+        if (cancelled) return;
         let prods: DealProduct[] = [];
         if (data.success && data.data?.products) {
           prods = data.data.products;
@@ -320,17 +331,18 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
         if (prods.length === 0) {
           setHasError(true);
         } else {
-          _dealsCache.set(limit, { data: prods, ts: Date.now() });
+          if (!location) _dealsCache.set(limit, { data: prods, ts: Date.now() });
           setProducts(prods);
         }
       } catch {
-        setHasError(true);
+        if (!cancelled) setHasError(true);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchProducts();
-  }, [limit, seeded]);
+    return () => { cancelled = true; };
+  }, [limit, seeded, revision]);
 
   const handleQuickView = useCallback(
     (product: DealProduct) => {

@@ -65,6 +65,7 @@ function setup(t, { note, order = null, notes = [], journalEntry = { _id: 'j1' }
   });
   // Unmocked, this reaches for a real connection and times out after 10s.
   t.mock.method(POSCustomer, 'findOne', () => query(customer ? { _id: CUSTOMER } : null));
+  t.mock.method(require('../models/Order'), 'exists', () => query(false));
   t.mock.method(JournalEntry, 'findOne', () => query(journalEntry));
 
   return {

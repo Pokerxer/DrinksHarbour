@@ -7,6 +7,10 @@ function setup(t, doc) {
   const session = {};
   t.mock.method(mongoose.connection, 'transaction', fn => fn(session));
   t.mock.method(require('../services/chartOfAccounts.service'), 'ensureDefaultCOA', async () => {});
+  t.mock.method(require('../services/customerInvoice/sync'), 'syncSource', async args => {
+    assert.equal(args.session, session);
+    return { _id: 'saved-invoice', state: 'posted' };
+  });
   let filter;
   t.mock.method(SalesOrder, 'findOne', query => { filter = query; return { session: async () => doc }; });
   const post = t.mock.method(journal, 'postJournalEntry', async args => { assert.equal(args.session, session); return { _id: 'journal' }; });

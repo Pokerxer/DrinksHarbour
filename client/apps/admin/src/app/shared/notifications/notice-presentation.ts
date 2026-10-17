@@ -33,6 +33,7 @@ export function noticeAppearance(type: string) {
 }
 const labels: Record<string, string> = {
   productName: 'Product',
+  batchNumber: 'Batch number',
   available: 'Available stock',
   currentUnits: 'Units sold (current period)',
   threshold: 'Low stock threshold',
@@ -59,6 +60,10 @@ const unitKeys = new Set([
 // Display only approved evidence. Internal rule identifiers are not customer copy.
 export function noticeFacts(metadata: TenantNotice['metadata']) {
   const facts = Object.entries(labels).flatMap(([key, label]) => {
+    if (key === 'quantity' && metadata.batchNumber)
+      label = 'Batch units remaining';
+    if (key === 'threshold' && metadata.minimumSource === 'automatic')
+      label = 'Automatic minimum stock';
     const value = metadata[key];
     if (typeof value === 'number' && Number.isFinite(value))
       return [
@@ -73,6 +78,39 @@ export function noticeFacts(metadata: TenantNotice['metadata']) {
       ? [{ label, value: value.trim() }]
       : [];
   });
+  if (metadata.quarantineStatus === 'quarantined')
+    facts.push({ label: 'Quarantine status', value: 'Quarantined' });
+  else if (metadata.quarantineStatus === 'not_quarantined')
+    facts.push({ label: 'Quarantine status', value: 'No recorded quarantine' });
+  if (
+    typeof metadata.scanUpdatedAt === 'string' &&
+    Number.isFinite(Date.parse(metadata.scanUpdatedAt))
+  )
+    facts.push({
+      label: 'Batch scan updated',
+      value: fullNoticeTimestamp(metadata.scanUpdatedAt),
+    });
+  if (metadata.minimumSource === 'configured')
+    facts.push({ label: 'Minimum basis', value: 'Configured fallback' });
+  if (
+    metadata.minimumConfidence === 'early' ||
+    metadata.minimumConfidence === 'established'
+  )
+    facts.push({
+      label: 'Minimum confidence',
+      value:
+        metadata.minimumConfidence === 'early'
+          ? 'Early history'
+          : 'Established history',
+    });
+  if (
+    typeof metadata.minimumUpdatedAt === 'string' &&
+    Number.isFinite(Date.parse(metadata.minimumUpdatedAt))
+  )
+    facts.push({
+      label: 'Minimum updated',
+      value: fullNoticeTimestamp(metadata.minimumUpdatedAt),
+    });
   const {
     periodStart,
     periodEnd,

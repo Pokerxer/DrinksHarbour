@@ -1,4 +1,5 @@
 'use client';
+import { requestIdentity, completeRequest } from './request-identity';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -88,7 +89,7 @@ export default function SalesFulfillDetail({ id }: { id: string }) {
   );
 
   async function handleFulfill() {
-    if (!so) return;
+    if (!so || submitting || !token) return;
     if (!warehouseId) {
       toast.error('Select a source warehouse');
       return;
@@ -104,9 +105,10 @@ export default function SalesFulfillDetail({ id }: { id: string }) {
     try {
       const res = await salesOrderService.fulfill(
         so._id,
-        { warehouseId, items },
+        { warehouseId, items, ...(so.reservationVersion ? { requestId: requestIdentity(`fulfill:${so._id}`, {warehouseId, items}) } : {}) },
         token
       );
+      completeRequest(`fulfill:${so._id}`);
       const { failCount, failures, successCount } = res.posting;
       if (failCount > 0) {
         // Partial success: HTTP 200 but some lines failed to post stock.

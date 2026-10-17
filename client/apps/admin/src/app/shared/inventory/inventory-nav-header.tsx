@@ -77,6 +77,12 @@ const navItems: NavItem[] = [
         desc: 'Outgoing stock',
       },
       {
+        label: 'Customer Returns',
+        href: routes.inventory.returns,
+        icon: <PiArrowsCounterClockwiseDuotone />,
+        desc: 'Sales and POS returns',
+      },
+      {
         label: 'Internal',
         href: routes.inventory.internal,
         icon: <PiArrowsClockwiseDuotone />,

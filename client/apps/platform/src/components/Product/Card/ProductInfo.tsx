@@ -1,5 +1,6 @@
 'use client';
 
+import SellerDistance from './SellerDistance';
 import React from 'react';
 import Image from 'next/image';
 import { ProductType } from '@/types/product.types';
@@ -37,7 +38,7 @@ const ProductInfo: React.FC<ProductInfoProps> = ({
     const availableAt = (data as any)?.availableAt;
     if (!Array.isArray(availableAt) || availableAt.length === 0) return null;
     
-    for (const vendor of availableAt) {
+    for (const vendor of availableAt.filter((row: { _id?: string }) => !data.shoppingOffer || String(row._id) === data.shoppingOffer.subProductId)) {
       if (vendor.isOnSale === true) {
         // Check if sale is active based on dates
         const now = new Date();
@@ -163,6 +164,7 @@ const ProductInfo: React.FC<ProductInfoProps> = ({
       <h3 className="product-name text-base font-medium line-clamp-2 hover:text-green transition-colors mb-1">
         {data.name}
       </h3>
+      <SellerDistance product={data} />
       {renderColorVariations()}
       {renderPrice()}
       {style === 'style-5' && onAddToCart && (

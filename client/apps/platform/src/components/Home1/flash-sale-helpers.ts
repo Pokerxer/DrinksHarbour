@@ -1,6 +1,6 @@
 import type { SaleProduct, SizeDiscount, ProductSize, AvailableAt } from "./flash-sale-types";
 export function getBestSale(product: SaleProduct) {
-  const allAt = product.availableAt || [];
+  const allAt = (product.availableAt || []).filter(at => !product.shoppingOffer || String(at._id) === product.shoppingOffer.subProductId).map(at => product.shoppingOffer ? { ...at, sizes: at.sizes?.filter(size => String(size._id) === product.shoppingOffer?.sizeId) } : at);
 
   let bestDiscount: SizeDiscount | null = null;
   let bestSize: ProductSize | null = null;

@@ -1,5 +1,6 @@
 'use client';
 import type { Kiosk } from './types';
+import { datePreset } from './workflow-utils';
 export interface ReportFilters {
   from: string;
   to: string;
@@ -12,6 +13,8 @@ export function ReportFilterBar({
   loading,
   apply,
   preset,
+  disabled = false,
+  dirty = false,
 }: {
   filters: ReportFilters;
   setFilters: (filters: ReportFilters) => void;
@@ -19,70 +22,98 @@ export function ReportFilterBar({
   loading: boolean;
   apply: () => void;
   preset: (days: number) => void;
+  disabled?: boolean;
+  dirty?: boolean;
 }) {
   return (
     <section className="pc-report-controls">
-      <div className="pc-report-presets">
-        <span>Reporting period</span>
-        {[
-          [1, 'Today'],
-          [7, 'Last 7 days'],
-          [30, 'Last 30 days'],
-        ].map(([days, label]) => (
-          <button type="button" key={days} onClick={() => preset(Number(days))}>
-            {label}
+      <fieldset disabled={disabled}>
+        <div className="pc-report-presets">
+          <span>Reporting period</span>
+          {[
+            [1, 'Today'],
+            [7, 'Last 7 days'],
+            [30, 'Last 30 days'],
+          ].map(([days, label]) => (
+            <button
+              type="button"
+              key={days}
+              onClick={() => preset(Number(days))}
+              aria-pressed={
+                filters.from === datePreset(Number(days)).from &&
+                filters.to === datePreset(Number(days)).to
+              }
+            >
+              {label}
+            </button>
+          ))}
+          <small>Africa/Lagos time</small>
+        </div>
+        <form
+          className="pc-filter"
+          onSubmit={(event) => {
+            event.preventDefault();
+            apply();
+          }}
+        >
+          <label>
+            From
+            <input
+              required
+              type="date"
+              value={filters.from}
+              max={filters.to || undefined}
+              onChange={(event) =>
+                setFilters({ ...filters, from: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            To
+            <input
+              required
+              type="date"
+              value={filters.to}
+              min={filters.from || undefined}
+              onChange={(event) =>
+                setFilters({ ...filters, to: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            Kiosk
+            <select
+              value={filters.kiosk}
+              onChange={(event) =>
+                setFilters({ ...filters, kiosk: event.target.value })
+              }
+            >
+              <option value="">All kiosks</option>
+              {filters.kiosk &&
+                !kiosks.some((kiosk) => kiosk._id === filters.kiosk) && (
+                  <option value={filters.kiosk}>
+                    Selected kiosk (historical)
+                  </option>
+                )}
+              {kiosks.map((kiosk) => (
+                <option key={kiosk._id} value={kiosk._id}>
+                  {kiosk.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="pc-button" type="submit">
+            Apply filters
           </button>
-        ))}
-        <small>Africa/Lagos time</small>
-      </div>
-      <form
-        className="pc-filter"
-        onSubmit={(event) => {
-          event.preventDefault();
-          apply();
-        }}
-      >
-        <label>
-          From
-          <input
-            required
-            type="date"
-            value={filters.from}
-            max={filters.to || undefined}
-            onChange={(event) => setFilters({ ...filters, from: event.target.value })}
-          />
-        </label>
-        <label>
-          To
-          <input
-            required
-            type="date"
-            value={filters.to}
-            min={filters.from || undefined}
-            onChange={(event) => setFilters({ ...filters, to: event.target.value })}
-          />
-        </label>
-        <label>
-          Kiosk
-          <select
-            value={filters.kiosk}
-            onChange={(event) => setFilters({ ...filters, kiosk: event.target.value })}
-          >
-            <option value="">All kiosks</option>
-            {filters.kiosk && !kiosks.some((kiosk) => kiosk._id === filters.kiosk) && (
-              <option value={filters.kiosk}>Selected kiosk (historical)</option>
-            )}
-            {kiosks.map((kiosk) => (
-              <option key={kiosk._id} value={kiosk._id}>
-                {kiosk.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="pc-button" disabled={loading}>
-          {loading ? 'Loading…' : 'Apply filters'}
-        </button>
-      </form>
+        </form>
+      </fieldset>
+      <p className="pc-report-filter-note" role="status">
+        {dirty
+          ? 'Unapplied changes · apply filters to update the report.'
+          : loading
+            ? 'Loading the applied filters…'
+            : 'Filters are applied to the report.'}
+      </p>
     </section>
   );
 }

@@ -4,6 +4,7 @@
 import { PiCreditCard, PiMapPin, PiNotePencil } from 'react-icons/pi';
 import type { ReactNode } from 'react';
 import { PAYMENT_TERMS } from './sales-helpers';
+import SalesEditorSelect from './sales-editor-select';
 import SalesAddressBlock, { INPUT_CLS } from './sales-address-block';
 import type { SalesOrderAddress } from '@/services/salesOrder.service';
 
@@ -80,20 +81,15 @@ export default function SalesOtherInfoTab({
           title="Payment"
           hint="due date derives from the document date"
         >
-          <label className="mb-1.5 block text-xs font-medium text-gray-600">
-            Payment Terms
-          </label>
-          <select
+          <SalesEditorSelect
+            label="Payment terms"
             value={paymentTerms}
-            onChange={(e) => onPaymentTermsChange(e.target.value)}
-            className={INPUT_CLS}
-          >
-            {PAYMENT_TERMS.map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+            onChange={onPaymentTermsChange}
+            options={PAYMENT_TERMS.map((t) => ({
+              value: t.key,
+              label: t.label,
+            }))}
+          />
         </Section>
 
         <Section

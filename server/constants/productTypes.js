@@ -1,4 +1,5 @@
 // constants/productTypes.js
+const { expandedTypes } = require('./expandedProductTypes');
 
 /**
  * Product Type Enums and Related Constants for DrinksHarbour
@@ -14,6 +15,7 @@
  * Main product type categories
  */
 const PRODUCT_TYPES = {
+  ...Object.fromEntries(expandedTypes.map(t => [t.value.toUpperCase(), t.value])),
   // Alcoholic Beverages - Beer & Cider
   BEER: 'beer',
   CRAFT_BEER: 'craft_beer',
@@ -162,6 +164,9 @@ const PRODUCT_TYPES = {
   DECANTER: 'decanter',
   AERATOR: 'aerator',
   
+  // Age-restricted non-beverage devices
+  VAPE: 'vape',
+
   // Snacks & Pairings
   SNACK: 'snack',
   NUTS: 'nuts',
@@ -193,6 +198,7 @@ const PRODUCT_TYPE_VALUES = Object.values(PRODUCT_TYPES);
  * Alcoholic beverage types
  */
 const ALCOHOLIC_TYPES = [
+  ...expandedTypes.filter(t=>t.alcoholic && !['baijiu'].includes(t.value)).map(t=>t.value),
   PRODUCT_TYPES.BEER,
   PRODUCT_TYPES.CRAFT_BEER,
   PRODUCT_TYPES.CIDER,
@@ -234,6 +240,7 @@ const ALCOHOLIC_TYPES = [
  * Non-alcoholic beverage types
  */
 const NON_ALCOHOLIC_TYPES = [
+  ...expandedTypes.filter(t=>!t.alcoholic && t.beverage).map(t=>t.value),
   PRODUCT_TYPES.NON_ALCOHOLIC,
   PRODUCT_TYPES.NON_ALCOHOLIC_BEER,
   PRODUCT_TYPES.NON_ALCOHOLIC_WINE,
@@ -310,6 +317,8 @@ const BEVERAGE_TYPES = [...ALCOHOLIC_TYPES, ...NON_ALCOHOLIC_TYPES, PRODUCT_TYPE
  * Non-beverage product types
  */
 const NON_BEVERAGE_TYPES = [
+  ...expandedTypes.filter(t=>!t.beverage).map(t=>t.value),
+  PRODUCT_TYPES.VAPE,
   PRODUCT_TYPES.GLASSWARE,
   PRODUCT_TYPES.BAR_TOOL,
   PRODUCT_TYPES.COCKTAIL_KIT,
@@ -541,6 +550,11 @@ const TYPE_CATEGORIES = {
     ],
   },
   
+  VAPES: {
+    name: 'Vapes & E-cigarettes',
+    types: [PRODUCT_TYPES.VAPE],
+  },
+
   SNACKS: {
     name: 'Snacks & Pairings',
     types: [
@@ -563,6 +577,12 @@ const TYPE_CATEGORIES = {
     ],
   },
 };
+
+for (const type of expandedTypes) {
+  const group = TYPE_CATEGORIES[type.group];
+  if (group && !group.types.includes(type.value)) group.types.push(type.value);
+}
+
 
 // ============================================================
 // SUB-TYPES & STYLES
@@ -777,7 +797,7 @@ const STANDARD_SIZES = {
   PACKS: ['pack-4', 'pack-6', 'pack-12', 'pack-24', 'case-24'],
   
   // Non-beverage sizes
-  WEIGHT: ['kg-0.25', 'kg-0.5', 'kg-1', 'kg-2'],
+  WEIGHT: ['240g', 'kg-0.25', 'kg-0.5', 'kg-1', 'kg-2'],
   UNITS: ['unit-single', 'unit-pair', 'set-4', 'set-6', 'set-8'],
   
   // Gifts, Lifestyle & Snacks — count / piece / set / bar / bag / tin based
@@ -884,6 +904,10 @@ const getTypeDisplayName = (type) => {
  * Get appropriate sizes for a type
  */
 const getSizesForType = (type) => {
+  const expanded = expandedTypes.find(t=>t.value===type);
+  if (expanded?.sizeKind==='unit') return ['unit-single'];
+  if (expanded?.sizeKind==='weight') return STANDARD_SIZES.WEIGHT;
+  if (expanded) return ['25cl', '50cl', '70cl', '75cl', '1L'];
   const sizeMap = {
     // Beer & Cider
     [PRODUCT_TYPES.BEER]: [...STANDARD_SIZES.STANDARD_BOTTLES, ...STANDARD_SIZES.CANS],
@@ -918,6 +942,8 @@ const getSizesForType = (type) => {
     [PRODUCT_TYPES.BAR_TOOL]: STANDARD_SIZES.GIFTS_AND_LIFESTYLE,
     [PRODUCT_TYPES.DECANTER]: STANDARD_SIZES.GIFTS_AND_LIFESTYLE,
     [PRODUCT_TYPES.COCKTAIL_KIT]: STANDARD_SIZES.GIFTS_AND_LIFESTYLE,
+
+    [PRODUCT_TYPES.VAPE]: ['unit-single'],
 
     // Snacks & Pairings
     [PRODUCT_TYPES.SNACK]: [

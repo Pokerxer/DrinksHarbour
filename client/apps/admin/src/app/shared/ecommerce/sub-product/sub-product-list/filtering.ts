@@ -60,6 +60,7 @@ export interface SubProductListItem {
   conversionRate?: number;
   marginPercentage?: number;
   reorderPoint?: number;
+  lowStockThreshold?: number;
   visibleInPOS?: boolean;
   visibleInOnlineStore?: boolean;
   seasonality?: {
@@ -140,9 +141,9 @@ export function effectivePrice(p: SubProductListItem): number {
 }
 
 /** Low-stock check honouring an explicit threshold when provided. */
-export function isLowStock(p: Pick<SubProductListItem, 'totalStock'>): boolean {
+export function isLowStock(p: Pick<SubProductListItem, 'totalStock' | 'lowStockThreshold'>): boolean {
   const stock = p.totalStock ?? 0;
-  return stock > 0 && stock <= LOW_STOCK_THRESHOLD;
+  return stock > 0 && stock <= (p.lowStockThreshold ?? LOW_STOCK_THRESHOLD);
 }
 
 // ── Initial filter state ──────────────────────────────────────────────────────
@@ -371,7 +372,7 @@ function matchesStockStatusFacet(
   return statuses.some((s) => {
     switch (s) {
       case 'in_stock':
-        return (p.totalStock ?? 0) > lowStockThreshold;
+        return (p.totalStock ?? 0) > (p.lowStockThreshold ?? lowStockThreshold);
       case 'low_stock':
         return isLowStock(p);
       case 'out_of_stock':

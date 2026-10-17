@@ -131,3 +131,47 @@ test('a nested snapshot path stays filterable', async (t) => {
 
   assert.deepStrictEqual(query['customerSnapshot.name'], { $regex: 'Ada', $options: 'i' });
 });
+
+test('quotations can include returned orders before paging, count and grouping', async (t) => {
+  const returns = require('../services/linkedReturns.service');
+  const Order = require('../models/Order');
+  const mine = oid(), returned = oid(), noReturn = oid(), product = oid(), line = oid();
+  const candidate = id => ({ _id:id, tenant:mine, docType:'order', items:[{_id:line,subproduct:product,fulfilledQty:2,returnedQty:0}] });
+  t.mock.method(Order, 'distinct', async (field, q) => {
+    assert.equal(field, 'linkedSalesOrder');
+    assert.equal(String(q.tenant), String(mine));
+    assert.equal(q.source, 'pos');
+    return [returned, noReturn];
+  });
+  const receipt = {_id:oid(),tenant:mine,linkedSalesOrder:returned,items:[{subproduct:product,quantity:2}],refunds:[{items:[{orderItemIndex:0,quantity:1}]}]};
+  t.mock.method(Order, 'find', q => {
+    assert.equal(String(q.tenant), String(mine));
+    return stubQuery([receipt]);
+  });
+  let finalQuery, countQuery;
+  t.mock.method(SalesOrder, 'find', q => {
+    if (q.docType === 'order') return stubQuery([candidate(returned), candidate(noReturn)]);
+    finalQuery = q;
+    return stubQuery([{_id:returned,docType:'order'}]);
+  });
+  t.mock.method(SalesOrder, 'countDocuments', async q => {countQuery=q;return 81;});
+  const res = makeRes();
+  await ctrl.getSalesOrders({query:{docType:'quotation',includeReturnedOrders:'1',search:'Ada',page:'2'},tenant:{_id:mine}},res,e=>{if(e)throw e;});
+  assert.equal(finalQuery.docType, undefined, 'quotation-only restriction must be replaced');
+  assert.equal(String(finalQuery.tenant), String(mine));
+  assert.deepStrictEqual(finalQuery.$or, [
+    {soNumber:{$regex:'Ada',$options:'i'}},
+    {'customerSnapshot.name':{$regex:'Ada',$options:'i'}},
+  ], 'the return union must not replace search');
+  assert.deepStrictEqual(finalQuery.$and.at(-1), {$or:[{docType:'quotation'},{docType:'order',_id:{$in:[returned]}}]});
+  assert.deepStrictEqual(countQuery, finalQuery);
+  assert.equal(res.body.data[0].hasReturns, true);
+  assert.equal(res.body.pagination.totalItems, 81);
+  assert.equal(res.body.pagination.currentPage, 2);
+  const grouped = makeRes();
+  await ctrl.getSalesOrders({query:{docType:'quotation',includeReturnedOrders:'1',groupBy:'customer'},tenant:{_id:mine}},grouped,e=>{if(e)throw e;});
+  assert.equal(grouped.body.groups[0].docs[0].hasReturns, true);
+  assert.deepStrictEqual(finalQuery.$and.at(-1), {$or:[{docType:'quotation'},{docType:'order',_id:{$in:[returned]}}]});
+  // A money refund with no matching returned goods is not enough.
+  assert.equal((await returns.projectSalesReturns([candidate(noReturn)],mine))[0].items[0].returnedQty,0);
+});
