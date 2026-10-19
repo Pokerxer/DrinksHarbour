@@ -18,3 +18,9 @@ test('missing or malformed request bodies return validation errors', async () =>
     assert.equal(error.statusCode, 400);
   }
 });
+
+test('HR projection distinguishes appraisers and employees receiving ratings', () => {
+  const base = { employee: 'a', displayName: 'Ada', allocationMinor: 100, submittedAt: null };
+  assert.equal(participantView(base, false).isAppraiser, true);
+  assert.equal(participantView({ ...base, isAppraiser: false }, false).isAppraiser, false);
+});

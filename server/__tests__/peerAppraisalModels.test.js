@@ -16,3 +16,9 @@ test('ratings and money reject fractions and bounds at persistence boundary', ()
   assert.equal(new Rating({ ...base, rating: 5 }).validateSync(), undefined);
   assert.ok(new Participant({ tenant: id(), cycle: id(), employee: id(), displayName: 'Ada', allocationMinor: -1 }).validateSync());
 });
+
+test('participant appraiser permission defaults to true for existing cycle behavior', () => {
+  const base = { tenant: id(), cycle: id(), employee: id(), displayName: 'Ada', allocationMinor: 0 };
+  assert.equal(new Participant(base).isAppraiser, true);
+  assert.equal(new Participant({ ...base, isAppraiser: false }).isAppraiser, false);
+});

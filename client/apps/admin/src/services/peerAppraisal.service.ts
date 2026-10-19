@@ -1,8 +1,14 @@
+import type {
+  ExaminationSettings,
+  QuestionBankOption,
+  CompositeScore,
+} from './examination.service';
 import {
   appraisalRequest as request,
   type AppraisalCycle,
 } from './appraisal.service';
 export interface PeerEmployee {
+  department?: string | null;
   employee: string;
   displayName: string;
 }
@@ -11,6 +17,7 @@ export interface PeerRatingInput {
   rating: number;
 }
 export interface PeerResult {
+  composite?: CompositeScore;
   averageScore: number;
   ratingCount: number;
   allocationMinor: number;
@@ -18,19 +25,25 @@ export interface PeerResult {
   currency: 'NGN';
 }
 export interface PeerParticipant extends PeerEmployee {
+  isAppraiser?: boolean;
   allocationMinor: number;
   submittedAt: string | null;
   unavailable: boolean;
   result?: PeerResult;
 }
 export interface PeerProgress {
+  availableQuestionBanks?: QuestionBankOption[];
+  examination?: ExaminationSettings | null;
   revision?: number;
   status: AppraisalCycle['status'];
   total: number;
+  appraiserTotal?: number;
   submitted: number;
   participants: PeerParticipant[];
 }
 export interface PeerReview {
+  hasExamination?: boolean;
+  isAppraiser?: boolean;
   name: string;
   status: AppraisalCycle['status'];
   submittedAt: string | null;
@@ -39,10 +52,18 @@ export interface PeerReview {
   ratings: PeerRatingInput[];
 }
 export interface PeerMyCycle {
+  examAssigned?: boolean;
+  examSubmittedAt?: string | null;
+  isAppraiser?: boolean;
   _id: string;
   name: string;
   status: AppraisalCycle['status'];
   submittedAt: string | null;
+}
+export interface PeerRosterInput {
+  employee: string;
+  bonusAmount: number;
+  isAppraiser?: boolean;
 }
 const base = '/api/peer-appraisals';
 const write = (method: string, body?: unknown) => ({
@@ -57,7 +78,7 @@ export const fetchPeerParticipants = (id: string) =>
   request<PeerProgress>(`${base}/${id}/participants`);
 export const replacePeerRoster = (
   id: string,
-  participants: { employee: string; bonusAmount: number }[],
+  participants: PeerRosterInput[],
   expectedRevision = 0
 ) =>
   request<{ saved: number; revision: number }>(

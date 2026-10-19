@@ -129,3 +129,75 @@ it('an older progress response cannot undo a newer closed state', async () => {
     screen.queryByRole('button', { name: 'Close and calculate bonuses' })
   ).toBeNull();
 });
+
+it('closes after selected appraisers submit without waiting for subjects who do not appraise', async () => {
+  vi.mocked(api.fetchPeerParticipants).mockResolvedValue({
+    status: 'collecting',
+    total: 3,
+    appraiserTotal: 2,
+    submitted: 2,
+    participants: ['Ada', 'Ben', 'Chris'].map((displayName, i) => ({
+      employee: String(i),
+      displayName,
+      isAppraiser: i < 2,
+      allocationMinor: 10000,
+      submittedAt: i < 2 ? '2026-10-19' : null,
+      unavailable: false,
+    })),
+  });
+  render(
+    <CyclePanel
+      cycle={{
+        _id: 'cycle',
+        name: 'October',
+        status: 'collecting',
+        mode: 'peer_rating',
+        peerReviewEnabled: true,
+      }}
+    />
+  );
+  const close = await screen.findByRole('button', {
+    name: 'Close and calculate bonuses',
+  });
+  expect((close as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText('2 of 2 appraisers submitted')).toBeTruthy();
+  expect(screen.getByText('Not an appraiser')).toBeTruthy();
+});
+it('changing appraiser selection invalidates an open launch confirmation', async () => {
+  const participants = ['Ada', 'Ben', 'Chris'].map((displayName, i) => ({
+    employee: String(i),
+    displayName,
+    allocationMinor: 10000,
+    submittedAt: null,
+    unavailable: false,
+  }));
+  vi.mocked(api.fetchPeerEmployees).mockResolvedValue(participants);
+  vi.mocked(api.fetchPeerParticipants).mockResolvedValue({
+    status: 'draft',
+    total: 3,
+    submitted: 0,
+    participants,
+  });
+  render(
+    <CyclePanel
+      cycle={{
+        _id: 'cycle',
+        name: 'October',
+        status: 'draft',
+        mode: 'peer_rating',
+        peerReviewEnabled: true,
+      }}
+    />
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Launch cycle' }));
+  fireEvent.click(
+    screen.getByRole('checkbox', { name: 'Allow Chris to appraise' })
+  );
+  expect(
+    (
+      screen.getByRole('button', {
+        name: 'Confirm launch',
+      }) as HTMLButtonElement
+    ).disabled
+  ).toBe(true);
+});

@@ -15,12 +15,14 @@ test('transactional peer appraisal lifecycle', { skip: !process.env.PEER_TEST_MO
   assert.equal(process.env.PEER_TEST_MONGO, 'mongodb://127.0.0.1:27029/?replicaSet=peerTest');
   await mongoose.connect(process.env.PEER_TEST_MONGO, { dbName: `peer_appraisal_test_${process.pid}` });
   try {
-    await Promise.all([Cycle.init(), P.init(), R.init()]);
+    await Promise.all([Cycle.init(), P.init(), R.init(), require('../models/PeerAppraisalExam').init(), require('../models/PeerAppraisalExamAttempt').init()]);
     const tenantId = oid(), ids = [oid(), oid(), oid()];
     await User.collection.insertMany(ids.map((id, i) => ({ _id: id, tenant: tenantId, role: 'tenant_staff', status: 'active', firstName: `Employee${i}`, lastName: 'Test' })));
     const c = await Cycle.create({ tenant: tenantId, name: 'Peer test', mode: 'peer_rating' });
     const ctx = { tenantId, cycleId: c._id };
     await life.replaceRoster({ ...ctx, expectedRevision: 0, participants: ids.map(employee => ({ employee: String(employee), bonusAmount: 50000 })) });
+    // Legacy persisted participants have no appraiser flag.
+    await P.collection.updateMany({ cycle: c._id }, { $unset: { isAppraiser: '' } });
     await Promise.all([life.launchPeerCycle(ctx), life.launchPeerCycle(ctx)]);
     assert.equal(await P.countDocuments({ cycle: c._id }), 3);
     await assert.rejects(life.closePeerCycle(ctx), { statusCode: 409 });
@@ -61,7 +63,7 @@ test('transactional peer appraisal lifecycle', { skip: !process.env.PEER_TEST_MO
     assert.ok(rows.every(p => p.result.ratingCount === 2 && p.result.averageScore === 4 && p.result.bonusMinor === 4000000));
     await assert.rejects(life.replaceRoster({ ...ctx, participants: [] }), { statusCode: 409 });
     await assert.rejects(life.launchPeerCycle({ ...ctx, tenantId: oid() }), { statusCode: 404 });
-    await t.test('authenticated HTTP workflow creates, rates, closes and releases private bonuses', async () => {
+    await t.test('authenticated HTTP workflow creates, rates, closes and releases private bonuses', async t => {
       const express = require('express');
       const jwt = require('jsonwebtoken');
       const Tenant = require('../models/Tenant');
@@ -117,6 +119,68 @@ test('transactional peer appraisal lifecycle', { skip: !process.env.PEER_TEST_MO
         }
         assert.equal((await call(foreignId, `/${cycleId}/result`)).status, 404);
         assert.equal((await call(ownerId, '/bad-id/participants')).status, 400);
+        await t.test('department examination, monthly attendance and combined bonuses', async () => {
+          await require('./helpers/peerExaminationWorkflow')({ call, ownerId, ids, tenantId, foreignId, foreignTenant });
+        });
+        await t.test('individual exam recipients restrict access and use correct bonus components', async () => {
+          await require('./helpers/peerSelectedRecipientsWorkflow')({ call, ownerId, ids, tenantId, foreignId });
+        });
+        await t.test('private source bank, frozen ten-question papers and attendance date range', async () => {
+          await require('./helpers/peerPersonalizedExamWorkflow')({ call, ownerId, ids, tenantId });
+        });
+        await t.test('weighted marks, explicit start, server deadline and timed-out closure', async () => {
+          await require('./helpers/peerTimedExamWorkflow')({ call, ownerId, ids, tenantId, foreignId });
+        });
+        await t.test('expired examination grades settle on employee reads and owner progress', async () => {
+          await require('./helpers/peerTimedExamWorkflow')({ call, ownerId, ids, tenantId, foreignId, settlement: 'read' });
+        });
+        await t.test('only selected appraisers submit, while every participant receives a bonus result', async () => {
+          const created = await call(ownerId, '', 'POST', { name: 'Selected appraisers' });
+          const selectedId = created.body.data._id;
+          const path = `/${selectedId}`;
+          const participants = ids.map((employee, i) => ({ employee: String(employee), bonusAmount: [50000, 25000, 10000][i], isAppraiser: i < 2 }));
+          const saved = await call(ownerId, `${path}/participants`, 'PUT', { expectedRevision: 0, participants });
+          assert.equal(saved.status, 200);
+          assert.equal((await call(ownerId, `${path}/participants`, 'PUT', { expectedRevision: 0, participants })).status, 409);
+          const progress = await call(ownerId, `${path}/participants`);
+          assert.equal(progress.body.data.appraiserTotal, 2);
+          assert.deepEqual(progress.body.data.participants.map(p => p.isAppraiser), [true, true, false]);
+          assert.equal((await call(ownerId, `${path}/launch`, 'POST')).status, 200);
+          assert.equal((await call(ownerId, `${path}/participants`, 'PUT', { expectedRevision: 2, participants })).status, 409);
+          const nonReviewer = await call(ids[2], `${path}/review`);
+          assert.equal(nonReviewer.status, 200);
+          assert.equal(nonReviewer.body.data.isAppraiser, false);
+          assert.deepEqual(nonReviewer.body.data.colleagues, []);
+          assert.deepEqual(nonReviewer.body.data.ratings, []);
+          const mine = await call(ids[2], '/my');
+          assert.equal(mine.body.data.find(c => c._id === selectedId).isAppraiser, false);
+          for (const endpoint of [['review', 'PATCH'], ['submit', 'POST']]) {
+            assert.equal((await call(ids[2], `${path}/${endpoint[0]}`, endpoint[1], { expectedRevision: 0, ratings: [{ subject: String(ids[0]), rating: 1 }] })).status, 403);
+          }
+          assert.equal((await call(foreignId, `${path}/submit`, 'POST', { expectedRevision: 0, ratings: [] })).status, 404);
+          assert.equal((await call(ids[0], `${path}/submit`, 'POST', { expectedRevision: 0, ratings: [{ subject: String(ids[0]), rating: 5 }] })).status, 400);
+          assert.equal((await call(ownerId, `${path}/close`, 'POST')).status, 409);
+          const ratingsA = [{ subject: String(ids[1]), rating: 5 }, { subject: String(ids[2]), rating: 1 }];
+          const ratingsB = [{ subject: String(ids[0]), rating: 4 }, { subject: String(ids[2]), rating: 3 }];
+          assert.equal((await call(ids[0], `${path}/submit`, 'POST', { expectedRevision: 0, ratings: ratingsA })).status, 200);
+          assert.equal((await call(ownerId, `${path}/close`, 'POST')).status, 409);
+          assert.equal((await call(ids[1], `${path}/submit`, 'POST', { expectedRevision: 0, ratings: ratingsB })).status, 200);
+          const ready = (await call(ownerId, `${path}/participants`)).body.data;
+          assert.equal(ready.total, 3);
+          assert.equal(ready.appraiserTotal, 2);
+          assert.equal(ready.submitted, 2);
+          assert.equal((await call(ids[2], `${path}/result`)).status, 409);
+          assert.equal((await call(ownerId, `${path}/close`, 'POST')).status, 200);
+          for (let i = 0; i < ids.length; i++) {
+            const result = (await call(ids[i], `${path}/result`)).body.data;
+            assert.equal(result.averageScore, [4, 5, 2][i]);
+            assert.equal(result.ratingCount, [1, 1, 2][i]);
+            assert.equal(result.bonusMinor, [4000000, 2500000, 400000][i]);
+          }
+          assert.equal((await call(ids[0], `${path}/submit`, 'POST', { expectedRevision: 0, ratings: ratingsA })).status, 200);
+          assert.equal(await R.countDocuments({ cycle: selectedId, reviewer: ids[2] }), 0);
+        });
+
       } finally {
         await new Promise(resolve => server.close(resolve));
         if (previousSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = previousSecret;

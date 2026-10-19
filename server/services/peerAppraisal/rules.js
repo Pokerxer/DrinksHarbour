@@ -5,7 +5,7 @@ const MAX_MINOR = Number.MAX_SAFE_INTEGER;
 function validateRoster(participants) {
   if (!Array.isArray(participants) || participants.length < 2) fail('Select at least two employees.');
   const seen = new Set();
-  return participants.map((p) => {
+  const entries = participants.map((p) => {
     if (!p || typeof p.employee !== 'string' || !p.employee || seen.has(p.employee)) fail('Select distinct employees.');
     seen.add(p.employee);
     const amount = p.bonusAmount;
@@ -14,8 +14,11 @@ function validateRoster(participants) {
         !Number.isSafeInteger(minor) || minor > MAX_MINOR || Math.abs(amount * 100 - minor) > 0.000001) {
       fail('Bonus allocations must be nonnegative amounts with at most two decimal places.');
     }
-    return { employee: p.employee, allocationMinor: minor };
+    if (p.isAppraiser !== undefined && typeof p.isAppraiser !== 'boolean') fail('Appraiser selection must be boolean.');
+    return { employee: p.employee, allocationMinor: minor, isAppraiser: p.isAppraiser !== false };
   });
+  if (entries.filter(p => p.isAppraiser).length < 2) fail('Select at least two appraisers so everyone receives a rating.');
+  return entries;
 }
 function validateRatings(subjectIds, ratings, { complete = false } = {}) {
   if (!Array.isArray(ratings)) fail('Ratings must be a list.');

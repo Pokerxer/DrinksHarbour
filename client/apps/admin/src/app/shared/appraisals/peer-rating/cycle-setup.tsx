@@ -1,140 +1,33 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import {
-  replacePeerRoster,
-  fetchPeerParticipants,
-  type PeerEmployee,
-  type PeerParticipant,
-} from '@/services/peerAppraisal.service';
-export default function CycleSetup({
-  cycleId,
-  rosterRevision = 0,
-  employees,
-  participants,
-  onSaved,
-  onDirty,
-}: {
-  cycleId: string;
-  rosterRevision?: number;
-  employees: PeerEmployee[];
-  participants: PeerParticipant[];
-  onSaved: () => void;
-  onDirty?: () => void;
-}) {
-  const [selected, setSelected] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      participants.map((p) => [p.employee, String(p.allocationMinor / 100)])
-    )
-  );
-  const [revision, setRevision] = useState(rosterRevision);
-  const dirty = useRef(false);
-  const [confirmReload, setConfirmReload] = useState(false);
-  const [recovered, setRecovered] = useState<PeerParticipant[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const lock = useRef(false);
-  const [message, setMessage] = useState('');
+import { useState } from 'react';
+import useCycleSetup from './use-cycle-setup';
+import SetupEmployee from './setup-employee';
+export default function CycleSetup(props: Parameters<typeof useCycleSetup>[0]) {
+  const {
+    selected,
+    update,
+    options,
+    eligibleIds,
+    hasUnavailable,
+    valid,
+    busy,
+    message,
+    error,
+    confirmReload,
+    setConfirmReload,
+    save,
+    reloadSaved,
+  } = useCycleSetup(props);
   const [search, setSearch] = useState('');
-  const [error, setError] = useState('');
-  useEffect(() => {
-    if (dirty.current || lock.current) return;
-    setSelected(
-      Object.fromEntries(
-        participants.map((p) => [p.employee, String(p.allocationMinor / 100)])
-      )
-    );
-    setRevision(rosterRevision);
-    setRecovered(null);
-  }, [participants, rosterRevision]);
-  const eligibleIds = new Set(employees.map((p) => p.employee));
-  const options = [
-    ...employees,
-    ...(recovered ?? participants).filter((p) => !eligibleIds.has(p.employee)),
-  ];
-  const hasUnavailable = Object.keys(selected).some(
-    (id) => !eligibleIds.has(id)
-  );
-  const valid =
-    !hasUnavailable &&
-    Object.values(selected).length >= 2 &&
-    Object.values(selected).every(
-      (v) =>
-        /^\d+(\.\d{1,2})?$/.test(v) &&
-        Number.isSafeInteger(Math.round(Number(v) * 100))
-    );
-  function update(next: Record<string, string>) {
-    dirty.current = true;
-    setSelected(next);
-    setMessage('');
-    onDirty?.();
-  }
-  async function save() {
-    if (lock.current || !valid) return;
-    lock.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      const saved = await replacePeerRoster(
-        cycleId,
-        Object.entries(selected).map(([employee, value]) => ({
-          employee,
-          bonusAmount: Number(value),
-        })),
-        revision
-      );
-      setRevision(saved.revision);
-      dirty.current = false;
-      setMessage('Roster saved');
-      onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save the roster.');
-    } finally {
-      lock.current = false;
-      setBusy(false);
-    }
-  }
-  async function reloadSaved() {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      const saved = await fetchPeerParticipants(cycleId);
-      if (saved.status !== 'draft') {
-        setConfirmReload(false);
-        onSaved();
-        return;
-      }
-      setSelected(
-        Object.fromEntries(
-          saved.participants.map((p) => [
-            p.employee,
-            String(p.allocationMinor / 100),
-          ])
-        )
-      );
-      setRecovered(saved.participants);
-      setRevision(saved.revision ?? 0);
-      dirty.current = false;
-      setConfirmReload(false);
-      setMessage('Saved roster reloaded');
-      onSaved();
-    } catch (e) {
-      setError(
-        e instanceof Error ? e.message : 'Could not reload saved roster.'
-      );
-    } finally {
-      lock.current = false;
-      setBusy(false);
-    }
-  }
   return (
     <section className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5">
       <h2 className="text-lg font-semibold">
         Participants and bonus allocations
       </h2>
       <p className="text-sm text-gray-500">
-        Everyone selected rates everyone else. Save at least two employees.
-        Allocations and participants are fixed after launch.
+        Select who receives an appraisal, then choose who can appraise.
+        Appraisers rate every other selected employee. Roster, appraisers and
+        allocations are fixed after launch.
       </p>
       <label className="block text-sm">
         Find an employee
@@ -144,57 +37,29 @@ export default function CycleSetup({
           className="mt-1 w-full rounded-lg border p-2"
         />
       </label>
-      <p className="text-sm">{Object.keys(selected).length} selected</p>
+      <p className="text-sm">
+        {Object.keys(selected).length} selected ·{' '}
+        {Object.values(selected).filter((p) => p.isAppraiser).length} appraisers
+      </p>
       <div className="max-h-96 space-y-3 overflow-auto">
         {options
           .filter((p) =>
             p.displayName.toLowerCase().includes(search.toLowerCase())
           )
           .map((p) => (
-            <div
+            <SetupEmployee
               key={p.employee}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-100 p-3"
-            >
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  aria-label={`Include ${p.displayName}`}
-                  disabled={
-                    busy ||
-                    (!eligibleIds.has(p.employee) && !(p.employee in selected))
-                  }
-                  checked={p.employee in selected}
-                  onChange={(e) => {
-                    const next = { ...selected };
-                    if (e.target.checked) next[p.employee] = '0';
-                    else delete next[p.employee];
-                    update(next);
-                  }}
-                />
-                {p.displayName}
-                {!eligibleIds.has(p.employee) && (
-                  <span className="text-xs text-amber-700">
-                    Unavailable — remove from roster
-                  </span>
-                )}
-              </label>
-              {p.employee in selected && (
-                <label className="text-xs text-gray-500">
-                  {p.displayName} bonus allocation (₦)
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    disabled={busy}
-                    value={selected[p.employee]}
-                    onChange={(e) =>
-                      update({ ...selected, [p.employee]: e.target.value })
-                    }
-                    className="mt-1 block w-40 rounded-lg border p-2 text-sm text-gray-900"
-                  />
-                </label>
-              )}
-            </div>
+              employee={p}
+              eligible={eligibleIds.has(p.employee)}
+              choice={selected[p.employee]}
+              busy={busy}
+              onChange={(choice) => {
+                const next = { ...selected };
+                if (choice) next[p.employee] = choice;
+                else delete next[p.employee];
+                update(next);
+              }}
+            />
           ))}
       </div>
       {hasUnavailable && (
@@ -204,8 +69,8 @@ export default function CycleSetup({
       )}
       {!valid && (
         <p className="text-sm text-gray-500">
-          Select at least two employees and enter nonnegative amounts with at
-          most two decimal places.
+          Select at least two appraisers so everyone receives a rating, and
+          enter nonnegative allocations with at most two decimal places.
         </p>
       )}
       {error && (
@@ -226,8 +91,8 @@ export default function CycleSetup({
       {confirmReload && (
         <div className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm">
           <p>
-            Discard your unsaved edits and load the latest saved bonus
-            allocations?
+            Discard your unsaved edits and load the latest saved roster,
+            appraisers and bonus allocations?
           </p>
           <button
             type="button"

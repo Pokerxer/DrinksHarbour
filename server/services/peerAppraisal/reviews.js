@@ -1,6 +1,6 @@
 const P = require('../../models/PeerAppraisalParticipant');
 const R = require('../../models/PeerAppraisalRating');
-const { NotFoundError, ConflictError, ValidationError } = require('../../utils/errors');
+const { NotFoundError, ConflictError, ValidationError, ForbiddenError } = require('../../utils/errors');
 const { validateRatings } = require('./rules');
 const { mutate, requireState } = require('./store');
 async function save({ tenantId, cycleId, reviewerId, ratings, expectedRevision }, submit) {
@@ -9,6 +9,7 @@ async function save({ tenantId, cycleId, reviewerId, ratings, expectedRevision }
     const people = await P.find({ tenant: tenantId, cycle: cycleId }).session(session).lean();
     const me = people.find(p => String(p.employee) === String(reviewerId));
     if (!me) throw new NotFoundError('Appraisal not found.');
+    if (me.isAppraiser === false) throw new ForbiddenError('You are not selected to appraise in this cycle.');
     const normalized = validateRatings(people.filter(p => String(p.employee) !== String(reviewerId)).map(p => p.employee), ratings, { complete: submit });
     if (me.submittedAt) {
       const existing = await R.find({ tenant: tenantId, cycle: cycleId, reviewer: reviewerId }).session(session).lean();

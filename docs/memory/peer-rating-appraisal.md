@@ -42,3 +42,16 @@ types. Full project errors remain outside this module; no CI scripts changed.
 Shared header/stages/metrics/action sidebar and clearer participant table; no
 scoring or API changes. Appraisal tests 305 passed and scoped types passed.
 See `docs/superpowers/specs/RESUME-appraisal-cycle-detail-design.md`.
+
+2026-10-19: selected appraisers implemented. HR chooses appraisers from the draft
+participants; at least two, no self-rating. Only selected appraisers submit, all
+participants receive private results. Legacy cycles keep all-participant behavior.
+See `docs/superpowers/specs/RESUME-peer-appraiser-selection.md` for verification.
+Final selection verification: server 4,041 passed / 36 skipped, appraisal UI 312
+passed, real Mongo/HTTP integration 6 passed, scoped types and formatting passed.
+
+2026-10-19 examination extension: optional draft examination/monthly configuration
+now combines appraisal and attendance equally, plus auto-marked MCQ score in
+selected departments. Combined fraction determines bonus; original cycles with
+no configuration retain old behavior. See
+`docs/superpowers/specs/RESUME-examination-combined-appraisal.md` for rules and tests.

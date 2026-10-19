@@ -1,5 +1,6 @@
 import type { PeerParticipant } from '@/services/peerAppraisal.service';
 import { formatMoney } from './result-card';
+import ScoreBreakdown from '../examination/score-breakdown';
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   return `${parts[0]?.[0] ?? '?'}${parts.length > 1 ? parts[parts.length - 1][0] : ''}`.toUpperCase();
@@ -63,13 +64,17 @@ export default function ParticipantTable({
               </td>
               <td className="px-5 py-4">
                 <span
-                  className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${p.submittedAt ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}
+                  className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${p.isAppraiser === false ? 'bg-gray-100 text-gray-600' : p.submittedAt ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}
                 >
                   <span
                     aria-hidden="true"
                     className="h-1.5 w-1.5 rounded-full bg-current"
                   />
-                  {p.submittedAt ? 'Submitted' : 'Pending'}
+                  {p.isAppraiser === false
+                    ? 'Not an appraiser'
+                    : p.submittedAt
+                      ? 'Submitted'
+                      : 'Pending'}
                 </span>
               </td>
               <td className="whitespace-nowrap px-5 py-4 text-right tabular-nums text-gray-600">
@@ -78,7 +83,21 @@ export default function ParticipantTable({
               {closed && (
                 <>
                   <td className="whitespace-nowrap px-5 py-4 text-right tabular-nums text-gray-900">
-                    {p.result ? `${p.result.averageScore.toFixed(2)} / 5` : '—'}
+                    {p.result?.composite ? (
+                      <ScoreBreakdown result={p.result.composite} compact />
+                    ) : p.result ? (
+                      `${p.result.averageScore.toFixed(2)} / 5`
+                    ) : (
+                      '—'
+                    )}
+                    {p.result && (
+                      <span className="mt-1 block text-xs font-normal text-gray-500">
+                        Based on {p.result.ratingCount} eligible{' '}
+                        {p.result.ratingCount === 1
+                          ? 'appraiser'
+                          : 'appraisers'}
+                      </span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums text-gray-900">
                     {p.result ? formatMoney(p.result.bonusMinor) : '—'}

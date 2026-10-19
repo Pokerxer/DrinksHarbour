@@ -1,4 +1,5 @@
 import type { PeerResult } from '@/services/peerAppraisal.service';
+import ScoreBreakdown from '../examination/score-breakdown';
 export const formatMoney = (minor: number) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(
     minor / 100
@@ -18,6 +19,11 @@ export default function ResultCard({ result }: { result: PeerResult }) {
       <p className="mt-1 text-sm text-gray-500">
         Based on {result.ratingCount} colleague ratings
       </p>
+      {result.composite && (
+        <div className="mt-5">
+          <ScoreBreakdown result={result.composite} />
+        </div>
+      )}
       <dl className="mt-6 grid gap-4 sm:grid-cols-2">
         <div>
           <dt className="text-sm text-gray-500">Bonus allocation</dt>
@@ -33,8 +39,10 @@ export default function ResultCard({ result }: { result: PeerResult }) {
         </div>
       </dl>
       <p className="mt-5 text-xs text-gray-500">
-        Bonus = average rating ÷ 5 × allocation. This is your calculated bonus,
-        not a payment confirmation.
+        {result.composite
+          ? 'Bonus = combined score ÷ 100 × allocation.'
+          : 'Bonus = average rating ÷ 5 × allocation.'}{' '}
+        This is your calculated bonus, not a payment confirmation.
       </p>
     </section>
   );

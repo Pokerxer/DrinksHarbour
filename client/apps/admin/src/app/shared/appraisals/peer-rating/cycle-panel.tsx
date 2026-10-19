@@ -13,6 +13,8 @@ import PeerSummary from '../cycle-workspace/peer-summary';
 import PeerActions from '../cycle-workspace/peer-actions';
 import CycleSetup from './cycle-setup';
 import ParticipantTable from './participant-table';
+import ExaminationSetup from '../examination/setup';
+import ExaminationProgress from '../examination/progress';
 export default function PeerCyclePanel({
   cycle: initial,
 }: {
@@ -23,7 +25,11 @@ export default function PeerCyclePanel({
   const [employees, setEmployees] = useState<PeerEmployee[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[] | null>(null);
+  const [rosterDirty, setDirty] = useState(false);
+  const [rosterSavedRevision, setRosterSavedRevision] = useState<number>();
+  const [examDirty, setExamDirty] = useState(false);
+  const dirty = rosterDirty || examDirty;
   const [confirm, setConfirm] = useState<'launch' | 'close' | 'cancel' | null>(
     null
   );
@@ -42,6 +48,7 @@ export default function PeerCyclePanel({
       if (currentStatus.current !== p.status) {
         setConfirm(null);
         setDirty(false);
+        setExamDirty(false);
       }
       currentStatus.current = p.status;
       setCycle((current) => ({ ...current, status: p.status }));
@@ -80,7 +87,11 @@ export default function PeerCyclePanel({
       header={
         <CycleHeader
           cycle={cycle}
-          modeLabel="Colleague bonus appraisal"
+          modeLabel={
+            progress?.examination
+              ? 'Monthly performance appraisal'
+              : 'Colleague bonus appraisal'
+          }
           description="A shared view of colleague ratings, completion and bonus allocations."
           actions={
             <button
@@ -130,20 +141,49 @@ export default function PeerCyclePanel({
               rosterRevision={progress.revision ?? 0}
               employees={employees}
               participants={progress.participants}
+              onSelectionChange={setSelectedIds}
               onDirty={() => setDirty(true)}
-              onSaved={() => {
+              onSaved={(revision) => {
+                if (revision !== undefined) setRosterSavedRevision(revision);
                 setDirty(false);
                 void load();
               }}
             />
           )}
+          {cycle.status === 'draft' && (
+            <ExaminationSetup
+              cycleId={cycle._id}
+              initial={progress.examination ?? null}
+              banks={progress.availableQuestionBanks ?? []}
+              recipients={employees.filter((p) =>
+                (
+                  selectedIds ??
+                  progress.participants.map((person) => person.employee)
+                ).includes(p.employee)
+              )}
+              rosterDirty={rosterDirty}
+              rosterSavedRevision={rosterSavedRevision}
+              revision={progress.revision ?? 0}
+              disabled={busy}
+              onDirty={setExamDirty}
+              onSaved={() => {
+                void load();
+              }}
+            />
+          )}
+          {progress.examination && cycle.status !== 'draft' && (
+            <ExaminationProgress examination={progress.examination} />
+          )}
           {progress.participants.some(
-            (p) => p.unavailable && !p.submittedAt
+            (p) =>
+              p.unavailable &&
+              !p.submittedAt &&
+              (cycle.status === 'draft' || p.isAppraiser !== false)
           ) && (
             <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
               {cycle.status === 'draft'
                 ? 'An employee is unavailable. Remove them from the draft roster and save before launching.'
-                : 'An employee is unavailable. The launched roster stays fixed. If they cannot finish, cancel this cycle and create a new one.'}
+                : 'An appraiser is unavailable. The launched roster stays fixed. If they cannot finish, cancel this cycle and create a new one.'}
             </p>
           )}
           {progress.total > 0 && (
@@ -157,8 +197,10 @@ export default function PeerCyclePanel({
                   </h2>
                   <p className="mt-1 text-xs text-gray-500">
                     {cycle.status === 'closed'
-                      ? 'Final results for everyone included in this cycle.'
-                      : `${progress.submitted} of ${progress.total} participants submitted`}
+                      ? progress.examination
+                        ? 'Final combined scores determine bonuses. Component weights are equal; self-ratings are excluded.'
+                        : 'Final scores average all eligible appraisers. Self-ratings are excluded.'
+                      : `${progress.submitted} of ${progress.appraiserTotal ?? progress.total} appraisers submitted`}
                   </p>
                 </div>
                 <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">

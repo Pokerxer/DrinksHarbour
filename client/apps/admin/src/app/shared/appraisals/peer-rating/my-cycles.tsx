@@ -69,9 +69,13 @@ export default function MyPeerCycles() {
               ? 'View score and bonus →'
               : c.status === 'cancelled'
                 ? 'Cancelled'
-                : c.submittedAt
-                  ? 'Submitted · awaiting results'
-                  : 'Rate colleagues →'}
+                : c.examAssigned && !c.examSubmittedAt
+                  ? 'Take examination →'
+                  : c.isAppraiser === false
+                    ? 'Awaiting your results'
+                    : c.submittedAt
+                      ? 'Submitted · awaiting results'
+                      : 'Rate colleagues →'}
           </span>
         </Link>
       ))}

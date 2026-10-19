@@ -46,8 +46,8 @@ export default function CreatePeerCycle() {
         >
           <h2 className="text-xl font-semibold">New colleague bonus cycle</h2>
           <p className="text-sm text-gray-500">
-            Each employee rates everyone else from 1–5. Set each employee’s
-            bonus allocation before launching.
+            Choose which employees can appraise their colleagues from 1–5. Set
+            the participants, appraisers and bonus allocations before launching.
           </p>
           <label className="block text-sm">
             Cycle name

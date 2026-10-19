@@ -35,8 +35,8 @@ it('saves selected colleagues and validates bonus amounts without a template', a
   expect(api.replacePeerRoster).toHaveBeenCalledWith(
     'cycle',
     [
-      { employee: 'a', bonusAmount: 50000 },
-      { employee: 'b', bonusAmount: 0 },
+      { employee: 'a', bonusAmount: 50000, isAppraiser: true },
+      { employee: 'b', bonusAmount: 0, isAppraiser: true },
     ],
     0
   );
@@ -111,8 +111,8 @@ it('keeps unavailable draft participants visible so HR can remove them', async (
   expect(api.replacePeerRoster).toHaveBeenLastCalledWith(
     'cycle',
     [
-      { employee: 'a', bonusAmount: 100 },
-      { employee: 'b', bonusAmount: 100 },
+      { employee: 'a', bonusAmount: 100, isAppraiser: true },
+      { employee: 'b', bonusAmount: 100, isAppraiser: true },
     ],
     0
   );
@@ -151,8 +151,8 @@ it('saves against the revision the HR form was opened with', async () => {
   expect(api.replacePeerRoster).toHaveBeenLastCalledWith(
     'cycle',
     [
-      { employee: 'a', bonusAmount: 100 },
-      { employee: 'b', bonusAmount: 100 },
+      { employee: 'a', bonusAmount: 100, isAppraiser: true },
+      { employee: 'b', bonusAmount: 100, isAppraiser: true },
     ],
     7
   );
@@ -224,4 +224,94 @@ it('retains stale edits until HR explicitly discards them and reloads', async ()
   );
   await screen.findByText('Saved roster reloaded');
   expect(amount.value).toBe('500');
+});
+
+it('saves appraiser choices with allocations and requires two selected appraisers', async () => {
+  vi.mocked(api.replacePeerRoster).mockResolvedValue({ saved: 3, revision: 2 });
+  render(
+    <CycleSetup
+      cycleId="cycle"
+      rosterRevision={1}
+      employees={['Ada', 'Ben', 'Chris'].map((displayName, i) => ({
+        employee: String(i),
+        displayName,
+      }))}
+      participants={['Ada', 'Ben', 'Chris'].map((displayName, i) => ({
+        employee: String(i),
+        displayName,
+        allocationMinor: 10000,
+        submittedAt: null,
+        unavailable: false,
+        isAppraiser: true,
+      }))}
+      onSaved={() => {}}
+    />
+  );
+  const save = screen.getByRole('button', {
+    name: 'Save roster',
+  }) as HTMLButtonElement;
+  fireEvent.click(
+    screen.getByRole('checkbox', { name: 'Allow Chris to appraise' })
+  );
+  fireEvent.click(
+    screen.getByRole('checkbox', { name: 'Allow Ben to appraise' })
+  );
+  expect(save.disabled).toBe(true);
+  expect(screen.getByText(/at least two appraisers/i)).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole('checkbox', { name: 'Allow Ben to appraise' })
+  );
+  fireEvent.click(save);
+  await screen.findByText('Roster saved');
+  expect(api.replacePeerRoster).toHaveBeenCalledWith(
+    'cycle',
+    [
+      { employee: '0', bonusAmount: 100, isAppraiser: true },
+      { employee: '1', bonusAmount: 100, isAppraiser: true },
+      { employee: '2', bonusAmount: 100, isAppraiser: false },
+    ],
+    1
+  );
+});
+it('reloads saved appraiser permissions only after explicitly discarding stale edits', async () => {
+  const participants = ['Ada', 'Ben', 'Chris'].map((displayName, i) => ({
+    employee: String(i),
+    displayName,
+    allocationMinor: 10000,
+    submittedAt: null,
+    unavailable: false,
+    isAppraiser: true,
+  }));
+  vi.mocked(api.replacePeerRoster).mockRejectedValue(
+    new Error('Roster changed in another session.')
+  );
+  vi.mocked(api.fetchPeerParticipants).mockResolvedValue({
+    status: 'draft',
+    revision: 2,
+    total: 3,
+    submitted: 0,
+    participants: participants.map((p, i) => ({ ...p, isAppraiser: i < 2 })),
+  });
+  render(
+    <CycleSetup
+      cycleId="cycle"
+      rosterRevision={1}
+      employees={participants}
+      participants={participants}
+      onSaved={() => {}}
+    />
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Save roster' }));
+  await screen.findByText('Roster changed in another session.');
+  const chris = screen.getByRole('checkbox', {
+    name: 'Allow Chris to appraise',
+  }) as HTMLInputElement;
+  expect(chris.checked).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Reload saved roster' }));
+  expect(chris.checked).toBe(true);
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Discard edits and reload' })
+  );
+  await screen.findByText('Saved roster reloaded');
+  expect(chris.checked).toBe(false);
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import AppraisalSelect from './appraisal-select';
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input, Textarea } from 'rizzui';
@@ -213,9 +214,7 @@ export default function TemplateAiModal({
           // Expanding an existing section must not silently re-scope it — the
           // section already has an audience HR chose, and the new questions
           // join it. Only a brand-new section takes the picker's scope.
-          section: expand
-            ? section
-            : scopeSections([section], departmentId)[0],
+          section: expand ? section : scopeSections([section], departmentId)[0],
           expandIndex: expand ? expand.index : null,
         });
       }
@@ -300,35 +299,29 @@ export default function TemplateAiModal({
                     />
                   </div>
                   <div>
-                    <label
-                      htmlFor="ai-department"
-                      className="mb-1.5 block text-[11px] font-semibold text-gray-500"
-                    >
-                      Department
-                    </label>
-                    <select
-                      id="ai-department"
+                    <AppraisalSelect
+                      label="Department"
                       value={departmentId}
-                      onChange={(e) => setDepartmentId(e.target.value)}
+                      onChange={setDepartmentId}
                       disabled={generating || departmentOptions.length === 0}
-                      className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 transition-colors focus:border-[#b20202]/40 focus:outline-none focus:ring-2 focus:ring-[#b20202]/15 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
-                    >
-                      <option value="">
-                        {departmentOptions.length === 0
-                          ? 'No departments set up'
-                          : 'Everyone (no department)'}
-                      </option>
-                      {departmentOptions.map((d) => (
-                        <option key={d._id} value={d._id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        {
+                          value: '',
+                          label:
+                            departmentOptions.length === 0
+                              ? 'No departments set up'
+                              : 'Everyone (no department)',
+                        },
+                        ...departmentOptions.map((d) => ({
+                          value: d._id,
+                          label: d.name,
+                        })),
+                      ]}
+                    />
                     {departmentId ? (
                       <p className="mt-1 text-[11px] text-gray-400">
-                        These questions will be asked only of{' '}
-                        {departmentName} employees. You can change that per
-                        section afterwards.
+                        These questions will be asked only of {departmentName}{' '}
+                        employees. You can change that per section afterwards.
                       </p>
                     ) : null}
                   </div>

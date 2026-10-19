@@ -10,6 +10,7 @@ export default function PeerSummary({
   status: AppraisalCycle['status'];
 }) {
   const total = progress?.total ?? 0;
+  const appraisers = progress?.appraiserTotal ?? total;
   const submitted = progress?.submitted ?? 0;
   const pool = progress?.participants.reduce(
     (sum, p) => sum + p.allocationMinor,
@@ -37,19 +38,19 @@ export default function PeerSummary({
         label="Submitted"
         value={progress ? String(submitted) : '—'}
         detail={
-          total > 0
-            ? `${Math.round((submitted / total) * 100)}% of participants finished`
-            : 'No participants yet'
+          appraisers > 0
+            ? `${submitted} of ${appraisers} appraisers finished`
+            : 'No appraisers yet'
         }
         accent
       />
       <CycleMetric
         label="Awaiting submission"
-        value={progress ? String(Math.max(0, total - submitted)) : '—'}
+        value={progress ? String(Math.max(0, appraisers - submitted)) : '—'}
         detail={
           status === 'cancelled'
             ? 'This cycle is no longer collecting'
-            : 'Everyone must submit before closure'
+            : 'All selected appraisers must submit'
         }
       />
       <CycleMetric

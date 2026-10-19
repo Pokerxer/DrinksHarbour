@@ -9,6 +9,7 @@ export default defineConfig({
   esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
+    setupFiles: ['./src/test/browser-observers.ts'],
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     // `auth-options.ts` imports `env.mjs`, which validates the schema at import
     // time. Supply the minimum so importing it under test does not throw.
@@ -22,10 +23,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
       // Matches tsconfig: @core is the shared isomorphic-core package, not a
       // local folder. The old ./src/@core target does not exist.
-      '@core': path.resolve(
-        __dirname,
-        '../../packages/isomorphic-core/src'
-      ),
+      '@core': path.resolve(__dirname, '../../packages/isomorphic-core/src'),
     },
   },
 });

@@ -1,0 +1,307 @@
+{
+  "name": "Wyn City Drinks Knowledge — Updated 30-question bank",
+  "questionsPerEmployee": 10,
+  "marksPerQuestion": 2,
+  "questions": [
+    {
+      "prompt": "What does “vintage” mean on a bottle of wine?",
+      "options": [
+        "The year the wine was bottled",
+        "The year the grapes were harvested",
+        "The number of years the wine spent in oak barrels",
+        "The year the winery was established"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What is the difference between Bourbon and Scotch whisky?",
+      "options": [
+        "Bourbon is made primarily from barley, while Scotch is made primarily from corn",
+        "Bourbon must be made in Scotland, while Scotch must be made in the United States",
+        "Bourbon must contain at least 51% corn and be made in the United States, while Scotch must be made and matured in Scotland under Scotch whisky regulations",
+        "Bourbon is always aged for longer than Scotch whisky"
+      ],
+      "correctOption": 2
+    },
+    {
+      "prompt": "What do Brut and Demi-Sec mean on sparkling wine labels?",
+      "options": [
+        "They indicate the wine’s alcohol strength",
+        "Brut generally indicates a drier style, while Demi-Sec is noticeably sweeter",
+        "Brut means the wine is aged in oak, while Demi-Sec means it is aged in steel tanks",
+        "Brut is exclusively made in France, while Demi-Sec is exclusively made in Italy"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What is the difference between Blanco, Reposado and Añejo tequila?",
+      "options": [
+        "They indicate different levels of sweetness",
+        "They indicate the type of agave used",
+        "They are categories primarily distinguished by ageing and maturation",
+        "They indicate whether the tequila is made in Mexico or Spain"
+      ],
+      "correctOption": 2
+    },
+    {
+      "prompt": "What is rum primarily made from?",
+      "options": [
+        "Fermented grapes or grape juice",
+        "Sugar cane juice or molasses",
+        "Malted barley and corn",
+        "Blue Weber agave"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What does “Blanc de Blancs” mean?",
+      "options": [
+        "White wine made exclusively from white grapes",
+        "White wine made exclusively from red grapes",
+        "A wine made only from Pinot Noir",
+        "A wine made from a blend of red and white grapes"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "A customer wants a wine under ₦10,000. What is the best way to recommend a suitable bottle?",
+      "options": [
+        "Recommend the cheapest wine without asking questions",
+        "Recommend the most popular wine regardless of the customer’s taste",
+        "Ask about preferred sweetness, colour, occasion and budget, then suggest a suitable available bottle",
+        "Recommend a wine above their budget because it is likely to be better"
+      ],
+      "correctOption": 2
+    },
+    {
+      "prompt": "What is the difference between Cognac and whisky?",
+      "options": [
+        "Cognac is a grape-based spirit from the Cognac region of France, while whisky is a grain-based spirit",
+        "Cognac is made from sugar cane, while whisky is made from grapes",
+        "Cognac must be made in Scotland, while whisky must be made in France",
+        "Cognac is always sweeter and weaker than whisky"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "A customer requests a drink that is out of stock. What should you do?",
+      "options": [
+        "Substitute another product without informing the customer",
+        "Tell the customer to come back another day without checking alternatives",
+        "Ask about the customer’s preferences and recommend a suitable alternative, explaining differences in price or taste",
+        "Recommend the most expensive drink available"
+      ],
+      "correctOption": 2
+    },
+    {
+      "prompt": "A customer asks why one whisky costs more than another. What is the best explanation?",
+      "options": [
+        "The more expensive whisky is always better quality",
+        "Price differences may reflect age, production methods, cask selection, rarity, brand positioning and demand",
+        "The more expensive whisky must always have a higher alcohol percentage",
+        "The cheaper whisky is likely to be counterfeit"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What is the main difference between single malt and blended Scotch whisky?",
+      "options": [
+        "Single malt must come from one cask, while blended Scotch combines whiskies from one distillery",
+        "Single malt is made at one distillery from malted barley; blended Scotch combines single malt and grain Scotch whiskies",
+        "Single malt is always older than blended Scotch",
+        "Single malt is distilled once, while blended Scotch is distilled twice"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What does “oaked” generally mean when describing wine?",
+      "options": [
+        "The wine has been fermented with oak leaves",
+        "The wine has been matured in or exposed to oak, which can influence flavour and texture",
+        "The wine has a naturally high sugar content",
+        "The wine has been blended exclusively with older wines"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What does VSOP indicate on a Cognac label?",
+      "options": [
+        "The youngest eau-de-vie in the blend has a minimum age of four years under Cognac rules",
+        "The Cognac has been aged for at least ten years",
+        "The Cognac comes from a single vineyard",
+        "The Cognac has been distilled five times"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "What gives peated whisky its characteristic smoky flavour?",
+      "options": [
+        "The use of charred oak casks alone",
+        "The addition of smoked flavouring after distillation",
+        "Exposure to peat smoke during the drying of malted barley",
+        "The use of grain spirit instead of malt spirit"
+      ],
+      "correctOption": 2
+    },
+    {
+      "prompt": "What is the key difference between triple distillation and triple cask maturation?",
+      "options": [
+        "Triple distillation refers to three distillation stages; triple cask refers to maturation involving three types of cask",
+        "Triple distillation means three years of ageing; triple cask means three distillation stages",
+        "Both terms describe the number of years the whisky spends in oak",
+        "Triple cask means the whisky must be distilled in three countries"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "Which statement best describes Chardonnay?",
+      "options": [
+        "It is a red grape mainly associated with tannic wines",
+        "It is a white grape that can produce styles from crisp and unoaked to rich and oak-influenced",
+        "It is used exclusively for sweet dessert wines",
+        "It always produces highly aromatic, floral wines"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "Which plant is essential to the production of tequila?",
+      "options": [
+        "Blue Weber agave",
+        "Sugar cane",
+        "Juniper berries",
+        "Malted barley"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "A bottle states 40% ABV. What does this mean?",
+      "options": [
+        "Forty per cent of the bottle’s weight is pure alcohol",
+        "Forty per cent of the liquid’s volume is alcohol",
+        "The drink contains 40 grams of alcohol per 100 millilitres",
+        "The drink is 40 years old"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What is the best first step when a customer says they prefer a “smooth” whisky?",
+      "options": [
+        "Assume they want the oldest bottle in stock",
+        "Ask what flavours they enjoy and what budget they have, then suggest suitable options",
+        "Recommend the highest-ABV whisky because it tastes smoother",
+        "Recommend any whisky with a dark colour"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What is the most reliable way to explain a drink’s flavour profile to a customer?",
+      "options": [
+        "Promise the customer they will taste exactly the same notes as the staff member",
+        "Use clear, accurate descriptors and explain that individual perception can vary",
+        "Describe every whisky as smoky and every wine as fruity",
+        "Use only technical terms and avoid asking what the customer likes"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "Which grape is most closely associated with many classic Sauvignon Blanc wines?",
+      "options": [
+        "Sauvignon Blanc",
+        "Merlot",
+        "Syrah",
+        "Tempranillo"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "What does “dry” generally mean when describing wine?",
+      "options": [
+        "The wine has no liquid left in it",
+        "The wine has little residual sugar and is not noticeably sweet",
+        "The wine has been aged in a dry climate",
+        "The wine has a high alcohol percentage"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What does “cask strength” generally mean on a whisky bottle?",
+      "options": [
+        "The whisky is bottled at or close to its strength from the cask, rather than reduced to a standard strength",
+        "The whisky has been matured for the full legal ageing period in one cask",
+        "The whisky has exactly 40% ABV",
+        "The whisky has been matured in a cask made from one type of grain"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "What is the main flavouring botanical traditionally required for gin?",
+      "options": [
+        "Juniper",
+        "Vanilla",
+        "Cinnamon",
+        "Ginger"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "Which statement best describes the difference between gin and vodka?",
+      "options": [
+        "Gin must have a predominant juniper flavour; vodka is not defined by that requirement",
+        "Gin must be aged in oak, while vodka must be aged in steel",
+        "Vodka is made only from potatoes, while gin is made only from grapes",
+        "Gin always has a higher ABV than vodka"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "What does XO generally indicate on a Cognac label under current rules?",
+      "options": [
+        "The youngest eau-de-vie in the blend has a minimum age of ten years",
+        "The Cognac has been bottled for at least ten years",
+        "The oldest eau-de-vie is exactly ten years old",
+        "The grapes were harvested ten years ago"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "What is the difference between sparkling wine and Champagne?",
+      "options": [
+        "All sparkling wine is Champagne, regardless of where it is made",
+        "Champagne is a protected sparkling wine from the Champagne region of France, while sparkling wine is the broader category",
+        "Champagne is always sweeter than every other sparkling wine",
+        "Sparkling wine must be made in Italy, while Champagne is made in France"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What is the best way to help a customer choose a gift bottle?",
+      "options": [
+        "Recommend the most expensive bottle regardless of context",
+        "Ask about the recipient’s preferences, the occasion and the budget before recommending options",
+        "Recommend the same bottle to every customer",
+        "Choose a bottle based only on the label colour"
+      ],
+      "correctOption": 1
+    },
+    {
+      "prompt": "What is the difference between a liqueur and a typical unsweetened spirit such as vodka?",
+      "options": [
+        "Liqueurs are generally sweetened and flavoured; vodka is generally an unsweetened spirit",
+        "Liqueurs must be made from grapes, while vodka must be made from corn",
+        "Vodka is always aged in oak, while liqueurs are never aged",
+        "They are exactly the same category of drink"
+      ],
+      "correctOption": 0
+    },
+    {
+      "prompt": "A customer asks how to store an opened bottle of wine. What is the best general advice?",
+      "options": [
+        "Leave it uncorked at room temperature for a week",
+        "Reseal it, refrigerate it where appropriate, and consume it within a few days depending on the style",
+        "Store it beside a hot window to preserve the aroma",
+        "Transfer it to an open glass and leave it in direct sunlight"
+      ],
+      "correctOption": 1
+    }
+  ]
+}

@@ -41,7 +41,9 @@ it('requires one rating per colleague and preserves entries after failure', asyn
   fireEvent.click(screen.getByRole('radio', { name: 'Ben: 5' }));
   expect(submit.disabled).toBe(false);
   fireEvent.click(submit);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm and submit' }));
   await screen.findByText(/Connection lost/);
+  fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
   expect(
     (screen.getByRole('radio', { name: 'Ada: 4' }) as HTMLInputElement).checked
   ).toBe(true);
@@ -62,6 +64,7 @@ it('saves a draft and submits with the returned revision', async () => {
   await screen.findByText('Draft saved');
   fireEvent.click(screen.getByRole('radio', { name: 'Ben: 5' }));
   fireEvent.click(screen.getByRole('button', { name: 'Submit ratings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm and submit' }));
   await waitFor(() => expect(done).toHaveBeenCalled());
   expect(api.submitPeerRatings).toHaveBeenCalledWith(
     'cycle',
