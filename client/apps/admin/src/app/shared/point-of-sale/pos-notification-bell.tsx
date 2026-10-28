@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import { announceIncomingOrders } from '@/app/shared/point-of-sale/pos-order-announce';
 import {
   usePOSAuth,
   usePOSNotifications,
@@ -29,6 +30,13 @@ export default function POSNotificationBell() {
   );
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // The first poll fills the bell with the last 24h of "old" orders — those
+  // must never pop. Every poll after that announces genuinely-new arrivals,
+  // so the cashier still learns about an order within 30s even without
+  // websockets (serverless deploys). announceIncomingOrders dedupes against
+  // whatever the socket path already announced.
+  const firstPollDone = useRef(false);
+
   // Poll for new notifications every 30s
   useEffect(() => {
     if (!token) return;
@@ -37,9 +45,18 @@ export default function POSNotificationBell() {
       try {
         const data = await posApi.getNotifications(token!, sinceRef.current);
         if (data.notifications.length) {
-          addNotifications(data.notifications);
-          sinceRef.current = new Date().toISOString();
+          if (firstPollDone.current) {
+            announceIncomingOrders(data.notifications, { addNotifications });
+          } else {
+            addNotifications(data.notifications);
+          }
         }
+        // Advance the window on every successful poll — otherwise an empty
+        // first poll would re-scan the whole 24h window later and "announce"
+        // old orders. The original code only advanced it on results, which
+        // also replayed the window on quiet days.
+        sinceRef.current = new Date().toISOString();
+        firstPollDone.current = true;
       } catch {
         // silent — network blips shouldn't break the sell page
       }

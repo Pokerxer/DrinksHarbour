@@ -8,7 +8,10 @@ import {
   usePOSAuth,
   usePOSShopScope,
   usePOSRealtimeTick,
+  usePOSNotifications,
 } from '@/app/shared/point-of-sale/store';
+import { announceIncomingOrders } from '@/app/shared/point-of-sale/pos-order-announce';
+import type { POSNotification } from '@/app/shared/point-of-sale/types';
 import { routes } from '@/config/routes';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -23,6 +26,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
  *     closing is meant to prevent.
  *   – cashier switched / session opened / order created → bump the realtime
  *     tick that session views refetch on.
+ *   – marketplace:new_order → a customer just bought this tenant's stock on
+ *     the main platform — pop it for the cashier and feed the bell store.
  *
  * Everything degrades to today's behaviour when the socket never connects
  * (offline terminal, serverless deploy without websockets): REST polling and
@@ -33,6 +38,7 @@ export function usePOSRealtime() {
   const { token, terminal } = usePOSAuth();
   const router = useRouter();
   const { bumpRealtimeTick } = usePOSRealtimeTick();
+  const { addNotifications } = usePOSNotifications();
 
   useEffect(() => {
     if (!token) return;
@@ -63,8 +69,16 @@ export function usePOSRealtime() {
     socket.on('session:opened', () => bumpRealtimeTick());
     socket.on('order:created', () => bumpRealtimeTick());
 
+    // A marketplace order just landed for this tenant — pop it for the
+    // cashier immediately and feed the bell store so the badge is current.
+    // The payload shape mirrors getPOSNotifications rows (POSNotification).
+    socket.on('marketplace:new_order', (payload?: POSNotification) => {
+      if (payload) announceIncomingOrders([payload], { addNotifications });
+      bumpRealtimeTick();
+    });
+
     return () => {
       socket.disconnect();
     };
-  }, [token, terminal, shopId, router, bumpRealtimeTick]);
+  }, [token, terminal, shopId, router, bumpRealtimeTick, addNotifications]);
 }
