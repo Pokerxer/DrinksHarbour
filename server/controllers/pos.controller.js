@@ -4301,9 +4301,9 @@ exports.getPOSNotifications = asyncHandler(async (req, res) => {
     total:       o.totalAmount,
     source:      o.source,
     status:      o.status,
-    customer: o.user
-      ? `${o.user.firstName || ''} ${o.user.lastName || ''}`.trim() || o.user.email || 'Customer'
-      : 'Customer',
+    // Marketplace customers belong to the platform — the cashier never
+    // sees their name or contact, just a neutral label.
+    customer: 'Online customer',
     itemCount: (o.items || []).reduce((s, i) => s + (i.quantity || 1), 0),
     items: (o.items || []).slice(0, 5).map((i) => ({
       name:     i.name || i.productName || i.product?.name || i.subproduct?.name || 'Item',

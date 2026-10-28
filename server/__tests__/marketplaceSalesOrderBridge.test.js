@@ -96,7 +96,14 @@ test('bridges a tenant slice as a frozen-price draft SalesOrder', async (t) => {
   assert.equal(body.amountPaid, 15000);
   assert.equal(body.shippingFee, 0);
   assert.ok(body.marketplaceOrderId, 'the bridge must record the marketplace order link');
-  assert.equal(body.customerSnapshot.name, 'Ada Obi');
+  // PII CONTRACT: the customer belongs to the platform. The tenant gets a
+  // neutral label + the delivery address, never name/phone/email.
+  assert.equal(body.customerSnapshot.name, 'Online customer');
+  assert.equal(body.customerSnapshot.email || '', '');
+  assert.equal(body.customerSnapshot.phone || '', '');
+  assert.equal(body.deliveryAddress.name, 'Online customer');
+  assert.equal(body.deliveryAddress.phone || '', '');
+  assert.equal(body.deliveryAddress.street, '12 Wuse St', 'address survives — the tenant must know where to deliver');
   assert.equal(body.items.length, 1, "the other tenant's line must not leak");
   assert.equal(body.items[0].name, 'Kopke Fine Tawny Porto');
   assert.equal(body.items[0].quantity, 2);
@@ -126,7 +133,7 @@ test('single-tenant orders include shipping in the merchant slice', async (t) =>
   // shipping fee belongs to the platform, not to the tenant's sale.
   assert.equal(captured.body.shippingFee, 0);
   assert.equal(captured.body.amountPaid, 15000);
-  assert.equal(captured.body.customerSnapshot.name, 'a@b.ng');
+  assert.equal(captured.body.customerSnapshot.name, 'Online customer');
 });
 
 test('is idempotent — an already-bridged order never creates twice', async (t) => {

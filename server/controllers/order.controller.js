@@ -483,10 +483,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
               total: order.totalAmount,
               source: order.source || 'web',
               status: order.status,
-              customer:
-                `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
-                customer?.email ||
-                'Customer',
+              // Marketplace customers belong to the platform — the cashier
+              // sees a neutral label, never the customer's identity.
+              customer: 'Online customer',
               itemCount: ownItems.reduce((s, i) => s + (i.quantity || 1), 0),
               items: ownItems.slice(0, 5).map((i) => ({
                 name:

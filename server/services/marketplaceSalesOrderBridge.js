@@ -25,14 +25,6 @@
 const SalesOrder = require('../models/SalesOrder');
 const salesOrderService = require('./salesOrder.service');
 
-function customerNameOf(customer) {
-  return (
-    `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
-    customer?.email ||
-    'Customer'
-  );
-}
-
 async function bridgeMarketplaceOrder({ order, tenantId, customer }) {
   const ownItems = (order.items || []).filter(
     (i) => String(i.tenant) === String(tenantId)
@@ -78,15 +70,13 @@ async function bridgeMarketplaceOrder({ order, tenantId, customer }) {
       // slice; COD stays unpaid until the driver collects.
       paymentStatus: order.paymentStatus === 'paid' ? 'paid' : 'unpaid',
       amountPaid: order.paymentStatus === 'paid' ? tenantTotal : 0,
-      customerSnapshot: {
-        name: customerNameOf(customer),
-        email: customer?.email || '',
-        phone: customer?.phone || '',
-      },
+      // PII: the customer belongs to the PLATFORM. The tenant fulfils the
+      // delivery, so they get the address — never the customer's name,
+      // phone or email (those exist only on the platform's Order doc).
+      customerSnapshot: { name: 'Online customer' },
       deliveryAddress: order.shippingAddress
         ? {
-            name: order.shippingAddress.fullName,
-            phone: order.shippingAddress.phone,
+            name: 'Online customer',
             street: order.shippingAddress.addressLine1,
             city: order.shippingAddress.city,
             state: order.shippingAddress.state,
