@@ -3,7 +3,7 @@ import { requestDocumentExport } from '@/utils/print/document-export';
 import { buildPOSRefund, posStore } from '@/utils/print/pos-documents';
 import { printInvoice } from '@/utils/invoice';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth, usePOSSettings } from '@/app/shared/point-of-sale/store';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -24,6 +24,10 @@ import {
   PiDeviceMobile,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
+import { ReceiptPaper } from './pos-receipt';
+import { printReceiptElement } from './pos-receipt-print';
+import { receiptTax } from './pos-receipt-tax';
+import type { POSOrderResponse } from '@/app/shared/point-of-sale/types';
 
 // ── Local cn ─────────────────────────────────────────────────────────────────
 function cn(...classes: (string | false | undefined | null)[]) {
@@ -1043,6 +1047,34 @@ export default function POSOrderDetail({
     printInvoice(order, posStore(tenant));
   }
 
+  // Reprint the original THERMAL receipt: an always-mounted offscreen
+  // ReceiptPaper rebuilt from the stored order, printed through the same
+  // hidden-iframe printer the checkout ReceiptScreen uses.
+  const reprintRef = useRef<HTMLDivElement>(null);
+  function handleReprintReceipt() {
+    const el = reprintRef.current;
+    if (!el) return;
+    void printReceiptElement(el, {
+      title: order.receiptNumber || order.orderNumber,
+      copies: settings.receiptCopies ?? 1,
+    });
+  }
+
+  const reprintOrder = {
+    ...order,
+    subtotal: order.subtotal ?? order.total,
+    discountTotal: order.discountTotal ?? 0,
+    amountTendered: order.paymentDetails?.amount,
+    change: order.paymentDetails?.change ?? 0,
+    note: (order as { note?: string }).note,
+  } as unknown as POSOrderResponse;
+  const reprintStaffName = order.posStaff
+    ? order.posStaff.posName || `${order.posStaff.firstName} ${order.posStaff.lastName}`.trim()
+    : '—';
+  const reprintCustomerName = order.customer
+    ? `${order.customer.firstName ?? ''} ${order.customer.lastName ?? ''}`.trim() || null
+    : null;
+
   // ── Submit refund — Odoo flow: open dialog first ──────────────────────────
 
   function handleRefundClick() {
@@ -1348,6 +1380,15 @@ export default function POSOrderDetail({
                 <span className="tabular-nums">−{formatCurrency(totalRefunded)}</span>
               </div>
             )}
+            {/* Thermal reprint of the original slip — same paper the
+                checkout ReceiptScreen prints, rebuilt from the stored order. */}
+            <button
+              type="button"
+              onClick={handleReprintReceipt}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-300 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <PiPrinter className="h-3.5 w-3.5" /> Reprint receipt
+            </button>
           </div>
 
           {isPaid ? (
@@ -1666,6 +1707,24 @@ export default function POSOrderDetail({
           )}
         </div>
       )}
+
+      {/* ══ Offscreen receipt paper — the reprint target ══ */}
+      <div style={{ position: 'fixed', left: -20000, top: 0, width: 0, height: 0, overflow: 'hidden' }} aria-hidden>
+        <ReceiptPaper
+          paperRef={reprintRef}
+          order={reprintOrder}
+          settings={settings}
+          staffName={reprintStaffName}
+          customerName={reprintCustomerName}
+          storeName={(tenant?.name || 'DRINKS HARBOUR').toUpperCase()}
+          displayedTax={receiptTax(reprintOrder, settings)}
+          displayDiscount={order.discountTotal ?? 0}
+          displayNote={(order as { note?: string }).note || null}
+          paymentLines={[]}
+          cartSnapshot={[]}
+          autoDiscounts={[]}
+        />
+      </div>
     </div>
   );
 }
