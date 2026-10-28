@@ -11,7 +11,7 @@
 
 const jwt = require('jsonwebtoken');
 const Tenant = require('../models/Tenant');
-const { terminalRoom, kdsRoom } = require('../services/pos.realtime');
+const { terminalRoom, kdsRoom, ordersRoom } = require('../services/pos.realtime');
 
 function attachPosGateway(io) {
   // Authenticate once at handshake. Reject anything that is not a POS token;
@@ -30,6 +30,13 @@ function attachPosGateway(io) {
   });
 
   io.on('connection', (socket) => {
+    // Marketplace-order feed. Joined automatically at connection — there is
+    // no join message, so the client never names a room and the tenant comes
+    // only from the verified token (same trust shape as kds:join). A
+    // marketplace order emitted on `orders:<tenantId>` reaches every terminal
+    // and KDS screen of this tenant the moment it is placed.
+    socket.join(ordersRoom(socket.data.tenantId));
+
     socket.on('pos:join', async ({ shopId = 'retail' } = {}, ack) => {
       try {
         if (shopId !== 'retail') {

@@ -28,6 +28,17 @@ function kdsRoom(tenantId) {
   return `kds:${tenantId}`;
 }
 
+/**
+ * Room name for one tenant's marketplace-order feed. Every POS device of the
+ * tenant joins this room automatically at connection (see socket/index.js) —
+ * there is no join message, so the client never names a room and the tenant
+ * comes only from the verified token. A marketplace order emitted here
+ * reaches every terminal and KDS screen of the tenant the moment it is placed.
+ */
+function ordersRoom(tenantId) {
+  return `orders:${tenantId}`;
+}
+
 function getIo(app) {
   return app?.get?.('io') || null;
 }
@@ -54,4 +65,19 @@ function emitToKds(req, tenantId, event, payload) {
   return true;
 }
 
-module.exports = { terminalRoom, kdsRoom, emitToTerminal, emitToKds };
+/**
+ * Broadcast a marketplace-order event to every connected POS device of one
+ * tenant (terminals + KDS — all auto-joined). Same contract as emitToKds:
+ * no io means no-op; callers never branch on it.
+ */
+function emitToTenantOrders(req, tenantId, event, payload) {
+  const io = getIo(req?.app);
+  if (!io || !tenantId) return false;
+  io.to(ordersRoom(tenantId)).emit(event, {
+    ...payload,
+    at: new Date().toISOString(),
+  });
+  return true;
+}
+
+module.exports = { terminalRoom, kdsRoom, ordersRoom, emitToTerminal, emitToKds, emitToTenantOrders };

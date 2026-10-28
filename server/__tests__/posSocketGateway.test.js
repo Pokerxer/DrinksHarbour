@@ -148,6 +148,30 @@ test('kds:join derives the room from the pinned tenant, not the payload', () => 
   );
 });
 
+test('connection auto-joins the tenant orders room from the token', () => {
+  // The marketplace-order feed is joined automatically at connection —
+  // there is no join message, so a screen can neither name the room nor
+  // subscribe to another tenant's feed by asking.
+  const h = makeHarness();
+  const socket = makeSocket({ token: signPOS('64f000000000000000000003') });
+  socket.data.tenantId = '64f000000000000000000003';
+  const registered = {};
+  socket.on = (event, fn) => {
+    registered[event] = fn;
+  };
+
+  h.connectionHandler(socket);
+
+  assert.ok(
+    socket.joinedRooms.has('orders:64f000000000000000000003'),
+    `joined ${[...socket.joinedRooms]} — the orders feed must be automatic`
+  );
+  assert.ok(
+    !socket.joinedRooms.has('orders:SOMEONE_ELSE'),
+    'a client-supplied tenant leaked into the marketplace room name'
+  );
+});
+
 test('an unknown terminal type falls back to retail', () => {
   const h = makeHarness();
   const socket = makeSocket({ token: signPOS('64f000000000000000000002') });
