@@ -10,8 +10,7 @@ import {
   POSCartItem,
   POSNextOrderCouponConfig,
 } from '@/app/shared/point-of-sale/types';
-import { requestDocumentExport } from '@/utils/print/document-export';
-import { buildPOSCheckout } from '@/utils/print/pos-documents';
+import { printReceiptElement } from './pos-receipt-print';
 import type { PaymentLine, AppliedCode, AppliedDiscount } from './pos-payment-types';
 
 // ── Receipt ───────────────────────────────────────────────────────────────────
@@ -95,7 +94,17 @@ export default function ReceiptScreen({
   });
 
   function handlePrint() {
-    requestDocumentExport(buildPOSCheckout(order, posTenant, customer, staff));
+    // Thermal receipt printing: reprint the rendered receipt DOM itself
+    // through a hidden iframe (384px receipt width) — NOT the A4 invoice
+    // builder. f46e4837 rewired this to requestDocumentExport(buildPOSCheckout)
+    // and every receipt printout became an invoice document; e4a33470 had it
+    // right. The A4 invoice lives in the order detail's Invoice tab.
+    const el = printRef.current;
+    if (!el) return;
+    void printReceiptElement(el, {
+      title: order.receiptNumber || order.orderNumber,
+      copies: settings.receiptCopies ?? 1,
+    });
   }
 
   // Shared row: label left, value right — all inline styles

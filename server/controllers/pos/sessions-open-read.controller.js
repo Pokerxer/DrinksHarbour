@@ -122,12 +122,27 @@ exports.getPOSSessionInfo = asyncHandler(async (req, res) => {
       .lean(),
   ]);
 
-  const enriched = await enrichSessionHistory([openSession, lastClosed].filter(Boolean), tenantId);
+  // Resume-over-scope: the sell page asks for the shop its (localStorage)
+  // selection points at — falling back to the literal 'retail' when the
+  // selection was lost. If that scope has no open drawer but THIS terminal
+  // type has one elsewhere, return it anyway: the cashier must RESUME the
+  // drawer that was left open, not be told to open a second one. The client
+  // adopts the returned session's shopId. Same terminalType only — a retail
+  // till must never adopt a wholesale drawer (or vice versa).
+  let resumedSession = openSession;
+  if (!resumedSession && terminalType) {
+    resumedSession = await POSSession.findOne({ tenant: tenantId, terminalType, status: 'open' })
+      .sort({ openedAt: -1 })
+      .populate('openedBy activeCashier', 'firstName lastName posName avatar')
+      .lean();
+  }
+
+  const enriched = await enrichSessionHistory([resumedSession, lastClosed].filter(Boolean), tenantId);
   const byId = new Map(enriched.map(row => [String(row._id), row]));
   res.json({
     success: true,
     data: {
-      currentSession: openSession ? byId.get(String(openSession._id)) : null,
+      currentSession: resumedSession ? byId.get(String(resumedSession._id)) : null,
       lastSession: lastClosed ? byId.get(String(lastClosed._id)) : null,
     },
   });

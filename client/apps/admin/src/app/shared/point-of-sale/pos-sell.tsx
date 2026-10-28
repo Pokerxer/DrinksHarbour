@@ -1,5 +1,5 @@
 'use client';
-import { usePOSShopScope } from '@/app/shared/point-of-sale/store';
+import { usePOSShopScope, usePOSActiveShop, usePOSRealtimeTick } from '@/app/shared/point-of-sale/store';
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -69,18 +69,41 @@ export default function POSSell() {
     }
   }, [hydrated, token, shopId, router, searchParams]);
 
-  // Check for an open session once we have a token
+  // Check for an open session once we have a token — and RE-CHECK when a
+  // session opens elsewhere (the realtime tick bumps on session:opened).
+  //
+  // Resume-over-scope: the server falls back to the most recent open drawer
+  // of the SAME terminal type when this page's shop selection (localStorage,
+  // defaulting to 'retail') has none — so a drawer left open is RESUMED
+  // instead of prompting for a second one the server would 409 anyway.
+  // Adopting the session's shopId re-scopes the whole page to that drawer.
+  // A lookup error retries once before showing the open-session modal, so a
+  // network blip can't fake "the drawer is closed".
+  const { tick: realtimeTick } = usePOSRealtimeTick();
+  const { setActiveShopId } = usePOSActiveShop();
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
     setHasSession(false); setSessionChecked(false);
-    posApi
-      .getSessionInfo(token, terminal ?? 'retail', shopId)
-      .then((data) => { if (!cancelled) setHasSession(!!data.currentSession); })
-      .catch(() => { if (!cancelled) setHasSession(false); })
-      .finally(() => { if (!cancelled) setSessionChecked(true); });
+    const check = (attempt = 0) => {
+      posApi
+        .getSessionInfo(token, terminal ?? 'retail', shopId)
+        .then((data) => {
+          if (cancelled) return;
+          const session = data.currentSession as (POSSession & { shopId?: string }) | null;
+          if (session?.shopId && session.shopId !== shopId) setActiveShopId(session.shopId);
+          setHasSession(!!session);
+          setSessionChecked(true);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt < 1) setTimeout(() => !cancelled && check(attempt + 1), 2000);
+          else { setHasSession(false); setSessionChecked(true); }
+        });
+    };
+    check();
     return () => { cancelled = true; };
-  }, [token, terminal, shopId]);
+  }, [token, terminal, shopId, realtimeTick, setActiveShopId]);
 
   // Session timeout — lock screen after inactivity
   useEffect(() => {
