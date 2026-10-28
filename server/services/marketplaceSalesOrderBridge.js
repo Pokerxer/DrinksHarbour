@@ -7,6 +7,12 @@
 // list and flows through the standard confirm → fulfil pipeline
 // (confirm reserves stock, fulfil deducts it and writes Sales rows).
 //
+// PRICING: the SalesOrder records the tenant's WHOLESALE leg — the price
+// the tenant sold the goods to the platform for (the per-line
+// `tenantRevenueShare` payout), NOT the customer retail price. The platform
+// owns the retail spread (its commission/markup) and the customer's
+// shipping fee.
+//
 // Pricing is FROZEN: the customer already paid the marketplace's
 // authoritative price, so the pricelist and promotion engines never re-price
 // these lines (`frozenPricing` → priceOverridden on every line).
@@ -53,16 +59,12 @@ async function bridgeMarketplaceOrder({ order, tenantId, customer }) {
     : [];
   const nameById = new Map(products.map((p) => [String(p._id), p.name]));
 
-  // Shipping (and tax) belong to the merchant slice only when the whole
-  // order is this tenant's — mirrors orderAccess.merchantSummary.
-  const mixed = (order.items || []).some((i) => String(i.tenant) !== String(tenantId));
-  const ownMerchandise =
-    Math.round(ownItems.reduce((s, i) => s + (i.itemSubtotal || 0), 0) * 100) / 100;
-  const tenantTotal = mixed
-    ? ownMerchandise
-    : Math.round(
-        (ownMerchandise + (order.shippingFee || 0) + (order.taxAmount || 0)) * 100
-      ) / 100;
+  // Shipping (and tax) belong to the platform's customer leg, never to the
+  // tenant's sale. The tenant's slice is purely their PAYOUT: what they sold
+  // it to the platform for (per-LINE tenantRevenueShare — markup model:
+  // cost×qty; commission model: their share of the merchandise subtotal).
+  const tenantTotal =
+    Math.round(ownItems.reduce((s, i) => s + (i.tenantRevenueShare || 0), 0) * 100) / 100;
 
   const so = await salesOrderService.createSalesOrderDoc({
     tenantId,
@@ -91,22 +93,29 @@ async function bridgeMarketplaceOrder({ order, tenantId, customer }) {
             country: order.shippingAddress.country,
           }
         : undefined,
-      items: ownItems.map((i) => ({
-        lineType: 'product',
-        product: i.product,
-        subproduct: i.subproduct,
-        size: i.size,
-        sku: i.sku || '',
-        name: i.name || i.productName || nameById.get(String(i.product)) || 'Item',
-        quantity: i.quantity || 1,
-        unitPrice: i.priceAtPurchase || 0,
-        discount: i.discountAmount || 0,
-        discountType: 'fixed',
-      })),
-      shippingFee: mixed ? 0 : order.shippingFee || 0,
+      items: ownItems.map((i) => {
+        // The SO records the WHOLESALE leg: unit price = the tenant's
+        // per-unit payout (tenantRevenueShare is the per-LINE total).
+        const qty = i.quantity || 1;
+        const share = i.tenantRevenueShare ?? 0;
+        const unitPayout = qty > 0 ? Math.round((share / qty) * 100) / 100 : 0;
+        return {
+          lineType: 'product',
+          product: i.product,
+          subproduct: i.subproduct,
+          size: i.size,
+          sku: i.sku || '',
+          name: i.name || i.productName || nameById.get(String(i.product)) || 'Item',
+          quantity: qty,
+          unitPrice: unitPayout,
+          discount: 0,
+          discountType: 'fixed',
+        };
+      }),
+      shippingFee: 0,
       notes: `Marketplace order ${order.orderNumber} — placed ${
         order.placedAt ? new Date(order.placedAt).toLocaleDateString('en-NG') : 'today'
-      }.`,
+      }. Priced at the tenant's payout to the platform.`,
     },
   });
 

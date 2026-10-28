@@ -40,10 +40,14 @@ function makeOrder(over = {}) {
     },
     items: [
       { product: PRODUCT, subproduct: SUBPRODUCT, size: SIZE, tenant: TENANT,
-        quantity: 2, priceAtPurchase: 10000, itemSubtotal: 20000, discountAmount: 0 },
+        quantity: 2, priceAtPurchase: 10000, itemSubtotal: 20000, discountAmount: 0,
+        // Revenue snapshot — per-LINE payout = what the tenant sold it to
+        // the platform for (markup: cost×qty; commission: share of subtotal).
+        tenantRevenueShare: 15000, vendorPriceAtPurchase: 7500, tenantRevenueModel: 'markup' },
       // another tenant's line — must never leak into this tenant's SalesOrder
       { product: oid(), subproduct: oid(), tenant: OTHER_TENANT,
-        quantity: 5, priceAtPurchase: 500, itemSubtotal: 2500, discountAmount: 0 },
+        quantity: 5, priceAtPurchase: 500, itemSubtotal: 2500, discountAmount: 0,
+        tenantRevenueShare: 1800, vendorPriceAtPurchase: 360, tenantRevenueModel: 'commission' },
     ],
     ...over,
   };
@@ -84,15 +88,18 @@ test('bridges a tenant slice as a frozen-price draft SalesOrder', async (t) => {
   assert.equal(body.docType, 'order');
   assert.equal(body.paymentStatus, 'paid');
   assert.equal(body.paymentMethod, 'bank_transfer');
-  // Mixed order: own merchandise only, no shipping/tax slice.
-  assert.equal(body.amountPaid, 20000);
+  // PRICING CONTRACT: the SO is the tenant's WHOLESALE leg — the price the
+  // tenant sold to the platform for (payout), never the customer retail price.
+  assert.equal(body.items[0].unitPrice, 7500, 'per-unit payout, not retail 10000');
+  assert.equal(body.items[0].discount, 0);
+  // Mixed order: payout slice only — no shipping/tax (the platform keeps those).
+  assert.equal(body.amountPaid, 15000);
   assert.equal(body.shippingFee, 0);
   assert.ok(body.marketplaceOrderId, 'the bridge must record the marketplace order link');
   assert.equal(body.customerSnapshot.name, 'Ada Obi');
   assert.equal(body.items.length, 1, "the other tenant's line must not leak");
   assert.equal(body.items[0].name, 'Kopke Fine Tawny Porto');
   assert.equal(body.items[0].quantity, 2);
-  assert.equal(body.items[0].unitPrice, 10000);
   assert.equal(captured.frozenPricing, true, 'bridge must freeze pricing');
 });
 
@@ -115,8 +122,10 @@ test('single-tenant orders include shipping in the merchant slice', async (t) =>
   const { bridgeMarketplaceOrder } = require('../services/marketplaceSalesOrderBridge');
   await bridgeMarketplaceOrder({ order, tenantId: TENANT, customer: { email: 'a@b.ng' } });
 
-  assert.equal(captured.body.shippingFee, 2000);
-  assert.equal(captured.body.amountPaid, 22000); // 20000 + 2000 shipping
+  // Single-tenant order: still the tenant's payout leg — the customer's
+  // shipping fee belongs to the platform, not to the tenant's sale.
+  assert.equal(captured.body.shippingFee, 0);
+  assert.equal(captured.body.amountPaid, 15000);
   assert.equal(captured.body.customerSnapshot.name, 'a@b.ng');
 });
 
