@@ -25,7 +25,13 @@ export function documentView(doc: AccountingDocument, side: PaymentSide) {
           ? routes.eCommerce.orderDetails(doc._id)
           : routes.eCommerce.salesDetails(doc._id)
       : routes.eCommerce.vendorBillDetails(doc._id),
-    sourceLabel: ar ? (invoice.source === 'pos' ? 'POS' : 'Sales') : '',
+    sourceLabel: ar
+      ? invoice.source === 'pos'
+        ? 'POS'
+        : invoice.salesChannel === 'online'
+          ? 'Online'
+          : 'Sales'
+      : '',
     total: ar ? invoice.total : bill.totalAmount,
     paid: ar ? invoice.amountPaid : bill.paidAmount,
     credited: ar ? invoice.creditedAmount || 0 : 0,

@@ -59,7 +59,10 @@ export function buildCustomerInvoice(invoice: SavedInvoice): DocumentModel {
       ['Date', fmtDate(invoice.date)],
       ['Due date', fmtDate(invoice.dueDate)],
       ['Currency', invoice.currency],
-      ['Source', invoice.sourceNumber || invoice.source],
+      [
+        'Source',
+        `${invoice.salesChannel === 'online' ? 'Online sale' : invoice.source === 'pos' ? 'POS sale' : 'Store sale'}${invoice.sourceNumber ? ` · ${invoice.sourceNumber}` : ''}`,
+      ],
     ],
     table: {
       columns: [

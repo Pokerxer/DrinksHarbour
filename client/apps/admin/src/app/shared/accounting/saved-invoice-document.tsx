@@ -37,8 +37,12 @@ export default function SavedInvoiceDocument({
             </p>
           )}
           <p className="mt-2 text-xs text-gray-500">
-            {invoice.source === 'pos' ? 'POS receipt' : 'Sales order'} ·{' '}
-            {invoice.sourceNumber}
+            {invoice.source === 'pos'
+              ? 'POS receipt'
+              : invoice.salesChannel === 'online'
+                ? 'Online sale'
+                : 'Sales order'}{' '}
+            · {invoice.sourceNumber}
           </p>
         </div>
         <div className="text-sm sm:text-right">

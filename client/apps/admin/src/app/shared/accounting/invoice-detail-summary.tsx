@@ -60,7 +60,12 @@ export default function InvoiceDetailSummary({
           }
           className="mt-3 inline-block break-all text-sm font-semibold text-brand hover:underline"
         >
-          Open {invoice.source === 'pos' ? 'POS receipt' : 'Sales order'}
+          Open{' '}
+          {invoice.source === 'pos'
+            ? 'POS receipt'
+            : invoice.salesChannel === 'online'
+              ? 'Online sale'
+              : 'Sales order'}
         </Link>
         <p className="mt-1 text-xs text-gray-500">{invoice.sourceNumber}</p>
         {invoice.checkedAt && (

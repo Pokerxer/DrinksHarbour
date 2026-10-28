@@ -58,6 +58,8 @@ export interface OpenInvoice {
   returnSummary?: InvoiceReturnSummary;
   orderStatus?: string;
   source?: 'sales' | 'pos';
+  /** 'online' = born from a marketplace-bridged SalesOrder (Online sale). */
+  salesChannel?: 'store' | 'online';
   persisted?: boolean;
   sourceId?: string;
   sourceNumber?: string;
