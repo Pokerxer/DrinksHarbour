@@ -36,6 +36,8 @@ export interface OrderItem {
   priceAtPurchase: number;
   itemSubtotal: number;
   discountAmount?: number;
+  /** Denormalized product name snapshotted on the item by the server. */
+  productName?: string;
   tenantRevenueShare?: number;
   platformCommission?: number;
   tenantRevenueModel?: string;
@@ -173,6 +175,8 @@ export interface Order {
   billingAddress?: ShippingAddress | null;
   ageVerifiedAtOrderTime?: boolean;
   appliedPricelist?: { pricelistName?: string; thresholdDiscount?: number };
+  /** Per-tenant fulfilment slice — tenant scope receives its own entry. */
+  fulfillmentStatus?: Record<string, string>;
 }
 
 export interface OrderListParams {
