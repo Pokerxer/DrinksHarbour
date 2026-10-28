@@ -4287,6 +4287,10 @@ exports.getPOSNotifications = asyncHandler(async (req, res) => {
     .sort({ placedAt: -1 })
     .limit(50)
     .populate('user', 'firstName lastName email phone')
+    // Item lines carry no name snapshot (older orders especially) — resolve
+    // the product name here, or the bell rows and popups degrade to "Item".
+    .populate('items.product', 'name')
+    .populate('items.subproduct', 'name')
     .select('orderNumber placedAt totalAmount source status items user')
     .lean();
 
@@ -4302,7 +4306,7 @@ exports.getPOSNotifications = asyncHandler(async (req, res) => {
       : 'Customer',
     itemCount: (o.items || []).reduce((s, i) => s + (i.quantity || 1), 0),
     items: (o.items || []).slice(0, 5).map((i) => ({
-      name:     i.name || i.productName || 'Item',
+      name:     i.name || i.productName || i.product?.name || i.subproduct?.name || 'Item',
       qty:      i.quantity || 1,
       subtotal: i.itemSubtotal ?? 0,
     })),

@@ -126,7 +126,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // Product docs are needed to recompute the authoritative platform price
   const orderProductIds = [...new Set(subProducts.map(sp => sp.product?.toString()).filter(Boolean))];
   const orderProducts = orderProductIds.length
-    ? await Product.find({ _id: { $in: orderProductIds } }).select('_id platformMarkup platformDiscount').lean()
+    ? await Product.find({ _id: { $in: orderProductIds } }).select('_id name platformMarkup platformDiscount').lean()
     : [];
   const productMap = new Map(orderProducts.map(p => [p._id.toString(), p]));
 
@@ -468,7 +468,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
           // fire-and-forget contract as the email/WhatsApp below: a socket
           // miss (serverless deploy, no io) is normal — the POS bell's 30s
           // poll is the fallback that still delivers. Only the tenant's own
-          // lines are included — never another tenant's.
+          // lines are included — never another tenant's. Item names resolve
+          // from the product map (order items carry no name snapshot).
           try {
             const ownItems = (order.items || []).filter(
               (i) => String(i.tenant) === String(tenant._id)
@@ -488,7 +489,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
                 'Customer',
               itemCount: ownItems.reduce((s, i) => s + (i.quantity || 1), 0),
               items: ownItems.slice(0, 5).map((i) => ({
-                name: i.name || i.productName || 'Item',
+                name:
+                  i.name ||
+                  i.productName ||
+                  productMap.get(String(i.product))?.name ||
+                  'Item',
                 qty: i.quantity || 1,
                 subtotal: i.itemSubtotal ?? 0,
               })),
