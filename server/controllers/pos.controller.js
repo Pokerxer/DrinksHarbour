@@ -4287,14 +4287,14 @@ exports.getPOSNotifications = asyncHandler(async (req, res) => {
     .sort({ placedAt: -1 })
     .limit(50)
     .populate('user', 'firstName lastName email phone')
-    .select('orderNumber placedAt total source status items user')
+    .select('orderNumber placedAt totalAmount source status items user')
     .lean();
 
   const notifications = orders.map((o) => ({
     _id:         String(o._id),
     orderNumber: o.orderNumber,
     placedAt:    o.placedAt,
-    total:       o.total,
+    total:       o.totalAmount,
     source:      o.source,
     status:      o.status,
     customer: o.user

@@ -37,6 +37,8 @@ const {
   sendNewOrderAlertWhatsApp,
 } = require('../services/whatsapp.service');
 
+const { emitToTenantOrders } = require('../services/pos.realtime');
+
 const { mutatePlatformLoyalty } = require('../services/platformLoyalty.service');
 const { earnMultiplierForTier, pointsForSpend } = require('../services/platformLoyalty.helpers');
 
@@ -460,6 +462,40 @@ exports.createOrder = asyncHandler(async (req, res) => {
         try {
           const tenant = await Tenant.findById(tenantId);
           if (!tenant) continue;
+
+          // Realtime — push this tenant's slice of the order into their POS
+          // order room (terminals + KDS auto-join at connection). Same
+          // fire-and-forget contract as the email/WhatsApp below: a socket
+          // miss (serverless deploy, no io) is normal — the POS bell's 30s
+          // poll is the fallback that still delivers. Only the tenant's own
+          // lines are included — never another tenant's.
+          try {
+            const ownItems = (order.items || []).filter(
+              (i) => String(i.tenant) === String(tenant._id)
+            );
+            emitToTenantOrders(req, String(tenant._id), 'marketplace:new_order', {
+              orderId: String(order._id),
+              orderNumber: order.orderNumber,
+              placedAt: order.placedAt
+                ? new Date(order.placedAt).toISOString()
+                : new Date().toISOString(),
+              total: order.totalAmount,
+              source: order.source || 'web',
+              status: order.status,
+              customer:
+                `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
+                customer?.email ||
+                'Customer',
+              itemCount: ownItems.reduce((s, i) => s + (i.quantity || 1), 0),
+              items: ownItems.slice(0, 5).map((i) => ({
+                name: i.name || i.productName || 'Item',
+                qty: i.quantity || 1,
+                subtotal: i.itemSubtotal ?? 0,
+              })),
+            });
+          } catch (pushErr) {
+            console.error(`❌ Realtime order push → tenant ${tenant.name} failed:`, pushErr.message);
+          }
 
           await Promise.allSettled([
             tenant.email
