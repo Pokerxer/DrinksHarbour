@@ -411,7 +411,7 @@ function checkedShipping(value) {
   return salesMoney.money(Number(value));
 }
 
-async function createSalesOrderDoc({ tenantId, salesperson, salespersonUser, body }) {
+async function createSalesOrderDoc({ tenantId, salesperson, salespersonUser, body, frozenPricing = false }) {
   const docType = body.docType === 'quotation' ? 'quotation' : 'order';
   await assertTenantOwnedRefs({
     tenantId,
@@ -433,9 +433,19 @@ async function createSalesOrderDoc({ tenantId, salesperson, salespersonUser, bod
     }
   }
 
-  const priced = await resolveLinePricing(body.items || [], { tenantId, pricelistId: body.pricelist });
-  const withPromos = await resolveLinePromotions(priced, { tenantId });
-  const items = withPromos.map(mapLine);
+  // Marketplace bridge (frozenPricing): the customer already paid the
+  // platform's authoritative price, so neither the pricelist engine nor the
+  // promotion engine may touch the lines — they only apply to documents
+  // priced by the tenant's current commercial policy.
+  let rawItems = body.items || [];
+  if (!frozenPricing) {
+    rawItems = await resolveLinePricing(rawItems, { tenantId, pricelistId: body.pricelist });
+    rawItems = await resolveLinePromotions(rawItems, { tenantId });
+  }
+  const items = (frozenPricing
+    ? rawItems.map((it) => ({ ...it, priceOverridden: true }))
+    : rawItems
+  ).map(mapLine);
   const totals = computeTotals(items);
   const paymentTerms = normalizePaymentTerms(body.paymentTerms);
 
@@ -472,6 +482,20 @@ async function createSalesOrderDoc({ tenantId, salesperson, salespersonUser, bod
     notes: body.notes, terms: body.terms,
     invoiceDraft: body.invoiceDraft === true,
     warehouseId: body.warehouseId || null,
+    // Marketplace bridge passthroughs — never sent by the HTTP controller
+    // (route validation doesn't accept them); only the checkout bridge sets
+    // them. Payment state reflects money already collected by the platform.
+    paymentMethod: body.paymentMethod || undefined,
+    ...(body.marketplaceOrderId ? { marketplaceOrderId: body.marketplaceOrderId } : {}),
+    ...(body.paymentStatus && ['unpaid', 'partial', 'paid'].includes(body.paymentStatus)
+      ? {
+          paymentStatus: body.paymentStatus,
+          amountPaid:
+            body.paymentStatus === 'paid'
+              ? Math.max(0, Number(body.amountPaid) || 0)
+              : Math.min(Math.max(0, Number(body.amountPaid) || 0), totals.total),
+        }
+      : {}),
     ...(docType === 'quotation' ? { quoteStatus: 'draft' } : { orderStatus: 'draft' }),
   }));
 }

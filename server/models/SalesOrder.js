@@ -154,6 +154,12 @@ const SalesOrderSchema = new Schema(
     relatedInvoice: { type: ObjectId, sparse: true },
     relatedSales:   [{ type: ObjectId, ref: 'Sales' }],
 
+    // Marketplace bridge — the platform checkout order (Order model) this
+    // document was born from. One SalesOrder per tenant per marketplace
+    // order; the compound index below makes a retried checkout unable to
+    // double-create. Null for hand-created quotations/orders.
+    marketplaceOrderId: { type: ObjectId, ref: 'Order', default: null, index: true },
+
     // Payment terms (Odoo-style): named term + its resolved due date
     paymentTerms: {
       type: String,
@@ -179,6 +185,10 @@ SalesOrderSchema.index({ tenant: 1, orderStatus: 1 });
 SalesOrderSchema.index({ tenant: 1, createdAt: -1 });
 SalesOrderSchema.index({ tenant: 1, salespersonUser: 1, createdAt: -1 });
 SalesOrderSchema.index({ tenant: 1, soNumber: 1 }, { unique: true });
+// Marketplace bridge idempotency: one SalesOrder per (marketplace order,
+// tenant). Sparse so hand-created documents (marketplaceOrderId: null) are
+// exempt from the uniqueness rule.
+SalesOrderSchema.index({ tenant: 1, marketplaceOrderId: 1 }, { unique: true, sparse: true });
 
 require('../services/salesSalesperson').protectFulfillmentAttribution(SalesOrderSchema);
 

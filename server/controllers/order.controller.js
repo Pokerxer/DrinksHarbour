@@ -502,6 +502,21 @@ exports.createOrder = asyncHandler(async (req, res) => {
             console.error(`❌ Realtime order push → tenant ${tenant.name} failed:`, pushErr.message);
           }
 
+          // ERM bridge — a native SalesOrder per tenant per marketplace
+          // order, so the sale appears in their Quotations & Orders list as
+          // a normal draft document and flows through the standard
+          // confirm → fulfil pipeline (confirm reserves stock, fulfil
+          // deducts it). Fire-and-forget like everything in this block.
+          try {
+            const { bridgeMarketplaceOrder } = require('../services/marketplaceSalesOrderBridge');
+            const bridged = await bridgeMarketplaceOrder({ order, tenantId: tenant._id, customer });
+            if (bridged.ok && !bridged.skipped) {
+              console.log(`✅ SalesOrder ${bridged.soNumber} bridged from marketplace order ${order.orderNumber} → tenant ${tenant.name}`);
+            }
+          } catch (soErr) {
+            console.error(`❌ SalesOrder bridge failed for order ${order.orderNumber} → tenant ${tenant.name}:`, soErr.message);
+          }
+
           await Promise.allSettled([
             tenant.email
               ? sendNewOrderNotificationToTenant(order, tenant, customer)
