@@ -726,10 +726,26 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
     if (_id in counts) counts[_id] = count;
   });
 
+  // Marketplace customers belong to the PLATFORM. Tenant admins see their
+  // slice of each order with a neutral customer label — never the customer's
+  // name/email (and no `user` doc at all). Their own POS walk-in data
+  // (source 'pos') stays: they captured it themselves.
+  const platformActor = ['super_admin', 'admin'].includes(req.user.role);
+  const visibleOrders = platformActor
+    ? orders
+    : orders.map((o) => ({
+        ...o,
+        user: null,
+        shippingAddress:
+          o.source === 'pos'
+            ? o.shippingAddress
+            : { ...o.shippingAddress, fullName: 'Online customer', email: undefined, phone: undefined },
+      }));
+
   res.json({
     success: true,
     data: {
-      orders,
+      orders: visibleOrders,
       pagination: {
         page: pageNum,
         limit: pageSize,
@@ -797,9 +813,28 @@ exports.getOrder = asyncHandler(async (req, res) => {
     });
   }
 
+  // Marketplace customers belong to the PLATFORM. Tenant staff fulfil their
+  // slice — they get the delivery address, never the customer's identity.
+  // The order's owner, guests (email-verified customers) and platform admins
+  // see everything. Their own POS walk-in data stays (they captured it).
+  const viewerIsPlatform = ['admin', 'super_admin'].includes(req.user?.role || '');
+  const viewerIsOwner = !!req.user && normalizeTenantId(order.user) === req.user._id.toString();
+  const maskCustomer = !!req.user?.tenant && !viewerIsPlatform && !viewerIsOwner;
+  const orderData = maskCustomer
+    ? {
+        ...(order.toObject ? order.toObject() : order),
+        user: undefined,
+        customer: undefined,
+        shippingAddress:
+          order.source === 'pos'
+            ? order.shippingAddress
+            : { ...order.shippingAddress, fullName: 'Online customer', email: undefined, phone: undefined },
+      }
+    : order;
+
   res.status(200).json({
     success: true,
-    data: { order },
+    data: { order: orderData },
   });
 });
 
