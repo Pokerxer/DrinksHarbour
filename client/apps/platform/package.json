@@ -9,7 +9,8 @@
     "type:check": "tsc --noEmit",
     "start": "next start -p 3002",
     "clean": "rm -rf node_modules .next .cache .turbo",
-    "cache:clean": "rm -rf .next .cache .turbo"
+    "cache:clean": "rm -rf .next .cache .turbo",
+    "test:shop": "vitest run --config vitest.shop.config.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
@@ -52,6 +53,9 @@
     "tailwind-config": "*",
     "tailwindcss": "^3.4.17",
     "typescript": "^5",
-    "typescript-config": "*"
+    "typescript-config": "*",
+    "vitest": "3.2.7",
+    "@testing-library/react": "16.3.3",
+    "jsdom": "30.1.1"
   }
 }

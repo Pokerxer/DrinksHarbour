@@ -176,3 +176,13 @@ longer renders a separate address row. Shop and Sale stay visible; Browse groups
 the other existing navigation links and closes on Escape, outside click or
 navigation. Logo and laptop cart label use less horizontal space. Mobile keeps
 its hamburger menu. Handoff: docs/memory/compact-header-menu.md.
+
+## Searchable shop filters
+
+The `/shop` drawer uses `components/Shop/filters/` for category, subcategory and
+brand search. Search covers complete catalogue facet lists and preserves pending
+selections; Apply commits them as before. Each list scrolls independently, with
+fixed search controls and visible scroll hints. Keep the drawer's min-height and
+nonshrinking header/footer boundaries so controls remain reachable on short screens.
+Checks: `pnpm exec vitest run --config vitest.shop.config.ts`. Handoff:
+`docs/memory/shop-searchable-filters.md` at the repository root.
