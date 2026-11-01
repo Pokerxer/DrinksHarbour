@@ -111,3 +111,10 @@ splits/coupon allocations are frozen with policy merchandise-v2. Delivery/tax/fe
 stay outside that gross split. Explicit commission marketplace price overrides are
 additive schema fields, separate from markup percentages. Rollout/history/refund
 limitations: [revenue policy notes](../docs/memory/revenue-agreement-pricing.md).
+
+## Standalone operation without Upstash
+
+Upstash/Redis is disconnected. Optional caches use authoritative MongoDB reads.
+API/mail/auth request limits use process-local memory at their existing thresholds;
+they reset on restart and are not shared across server instances. Redis settings
+cannot reactivate external caching. See docs/memory/standalone-without-upstash.md.

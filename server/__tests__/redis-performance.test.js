@@ -53,13 +53,13 @@ test('a concurrent edit or deletion requests a fresh authoritative query', async
   assert.equal(await cache.read('tenant','product',refs,async()=>[]),null);
   assert.equal(await cache.read('tenant','product',refs,async()=>[{_id:'a',updatedAt:new Date('2026-01-02')}]),null);
 });
-test('metadata caching requires explicit opt-in even when shared Redis is configured', () => {
+test('legacy metadata settings cannot reenable the disconnected cache', () => {
   const { metadataEnabled } = require('../config/redis');
   const url = process.env.REDIS_URL, setting = process.env.REDIS_PUBLIC_METADATA_CACHE;
   try {
     process.env.REDIS_URL = 'redis://localhost:1'; delete process.env.REDIS_PUBLIC_METADATA_CACHE;
     assert.equal(metadataEnabled(), false);
-    process.env.REDIS_PUBLIC_METADATA_CACHE = 'true'; assert.equal(metadataEnabled(), true);
+    process.env.REDIS_PUBLIC_METADATA_CACHE = 'true'; assert.equal(metadataEnabled(), false);
     delete process.env.REDIS_URL; assert.equal(metadataEnabled(), false);
   } finally {
     if (url === undefined) delete process.env.REDIS_URL; else process.env.REDIS_URL = url;

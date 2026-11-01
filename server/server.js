@@ -8,7 +8,6 @@ const morgan = require('morgan');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
-const { sharedStore } = require('./middleware/redisRateLimitStore');
 const { connectDB, disconnectDB } = require('./config/db');
 const { withDbStartupRetry } = require('./utils/db-startup');
 const { AppError } = require('./utils/errors');
@@ -158,7 +157,6 @@ app.use('/api', csrfProtection);
 // Rate Limiting
 // ────────────────────────────────────────────────
 const limiter = rateLimit({
-  ...sharedStore('api'),
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 100 : (parseInt(process.env.API_RATE_LIMIT_MAX, 10) || 1000),
   standardHeaders: true,
@@ -173,7 +171,6 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 const mailLimiter = rateLimit({
-  ...sharedStore('mail'),
   windowMs: 60 * 1000,
   max: 240,
   standardHeaders: true,
@@ -549,7 +546,6 @@ async function startServer() {
 
       server.close(async () => {
         console.log('   → HTTP server closed');
-        await require('./config/redis').closeRedis();
         await disconnectDB();
         console.log('   → Database disconnected');
         console.log('✅ Graceful shutdown complete\n');
