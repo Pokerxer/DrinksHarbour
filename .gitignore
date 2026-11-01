@@ -62,3 +62,15 @@ outputs/
 .pnpm-store/
 docs/tenant-outreach/build/
 docs/tenant-outreach/output/
+.local/
+
+# Isolated venue application browser build caches
+.next-venue-*/
+.next-dev/
+
+# Private generated PDF reports and rendering intermediates
+/output/pdf/
+/tmp/pdfs/
+
+# Disposable production audit build output
+.next-production-audit/
