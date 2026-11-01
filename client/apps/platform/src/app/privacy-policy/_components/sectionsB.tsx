@@ -215,8 +215,8 @@ export const SECTIONS_B: PolicySectionDef[] = [
         <P>For privacy enquiries, data-access requests, or to report a concern, contact our Data Protection Officer:</P>
         <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
           {([
-            { icon: Icon.PiBuildings, label: 'DrinksHarbour Technologies Ltd' },
-            { icon: Icon.PiMapPin,     label: 'Abuja, Federal Capital Territory, Nigeria' },
+            { icon: Icon.PiBuildings, label: 'DrinksHarbour Technologies Ltd', href: undefined },
+            { icon: Icon.PiMapPin,     label: 'Abuja, Federal Capital Territory, Nigeria', href: undefined },
             { icon: Icon.PiEnvelope,   label: 'privacy@drinksharbour.com', href: 'mailto:privacy@drinksharbour.com' },
             { icon: Icon.PiShieldCheck, label: 'security@drinksharbour.com', href: 'mailto:security@drinksharbour.com' },
             { icon: Icon.PiHeadset,    label: 'support@drinksharbour.com', href: 'mailto:support@drinksharbour.com' },

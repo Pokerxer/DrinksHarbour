@@ -6,6 +6,16 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 
+interface SaleDiscount {
+  value?: number;
+  type?: string;
+  hasDiscount?: boolean;
+  savings?: number;
+  percentage?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
 interface OnSaleProduct {
   _id: string;
   slug?: string;
@@ -21,9 +31,10 @@ interface OnSaleProduct {
     saleDiscountValue?: number;
     saleStartDate?: string;
     saleEndDate?: string;
-    discount?: { value: number; type?: string; startDate?: string; endDate?: string };
+    discount?: SaleDiscount;
     priceRange?: { min: number; max: number };
     sizes?: Array<{
+      discount?: SaleDiscount;
       pricing?: { websitePrice?: number; originalWebsitePrice?: number };
     }>;
   }>;
@@ -39,7 +50,7 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const isDiscountActive = (discount: any): boolean => {
+  const isDiscountActive = (discount?: SaleDiscount): boolean => {
     if (!discount || !discount.value) return false;
     const now = new Date();
     if (discount.startDate && now < new Date(discount.startDate)) return false;
@@ -51,8 +62,8 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
     return products.filter(p =>
       p.availableAt?.some((v) => {
         if (!v.isOnSale) return false;
-        const hasDiscountValue = v.saleDiscountValue > 0;
-        const hasActiveDiscount = v.discount?.value > 0 && isDiscountActive(v.discount);
+        const hasDiscountValue = (v.saleDiscountValue ?? 0) > 0;
+        const hasActiveDiscount = (v.discount?.value ?? 0) > 0 && isDiscountActive(v.discount);
         if (!hasDiscountValue && !hasActiveDiscount) return false;
         // Check if sale dates are valid
         const now = new Date();

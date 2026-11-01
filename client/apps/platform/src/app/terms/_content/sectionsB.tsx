@@ -208,8 +208,8 @@ export const TERMS_B: PolicySectionDef[] = [
         <P>For questions about these Terms, contact us:</P>
         <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
           {([
-            { icon: Icon.PiBuildings, label: 'DrinksHarbour Technologies Ltd' },
-            { icon: Icon.PiMapPin,     label: 'Abuja, Federal Capital Territory, Nigeria' },
+            { icon: Icon.PiBuildings, label: 'DrinksHarbour Technologies Ltd', href: undefined },
+            { icon: Icon.PiMapPin,     label: 'Abuja, Federal Capital Territory, Nigeria', href: undefined },
             { icon: Icon.PiEnvelope,   label: 'support@drinksharbour.com', href: 'mailto:support@drinksharbour.com' },
             { icon: Icon.PiScales,     label: 'legal@drinksharbour.com', href: 'mailto:legal@drinksharbour.com' },
           ] as const).map(({ icon: Ic, label, href }, i) => (

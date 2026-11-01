@@ -24,6 +24,8 @@ interface CartItem extends ProductType {
   selectedColor: string;
   selectedVendor: string;
   selectedVendorId: string;
+  /** Compatibility with carts persisted before selectedVendorId was introduced. */
+  tenantId?: string;
   selectedSizeId: string;
   selectedSubProductId: string;
   selectedProductId: string;
