@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { io, type Socket } from 'socket.io-client';
+import { openPOSRealtime } from './pos-realtime';
 import toast from 'react-hot-toast';
 import {
   usePOSAuth,
@@ -43,42 +43,38 @@ export function usePOSRealtime() {
   useEffect(() => {
     if (!token) return;
 
-    const socket: Socket = io(API_URL, {
-      auth: { token },
-      transports: ['websocket', 'polling'],
-      reconnectionDelayMax: 15_000,
-    });
+    const disconnect = openPOSRealtime(API_URL, token, (socket) => {
+      socket.on('connect', () => {
+        // Re-join after every (re)connect — rooms are per-connection.
+        socket.emit('pos:join', { shopId });
+      });
 
-    socket.on('connect', () => {
-      // Re-join after every (re)connect — rooms are per-connection.
-      socket.emit('pos:join', { shopId });
-    });
+      socket.on('session:closed', () => {
+        toast('Session was closed on another device', { icon: '🔒' });
+        router.replace(`${routes.pos.lock}?terminal=${terminal ?? 'retail'}`);
+      });
 
-    socket.on('session:closed', () => {
-      toast('Session was closed on another device', { icon: '🔒' });
-      router.replace(`${routes.pos.lock}?terminal=${terminal ?? 'retail'}`);
-    });
+      socket.on('session:cashier_switched', (payload?: { cashierName?: string }) => {
+        if (payload?.cashierName) {
+          toast(`Cashier switched to ${payload.cashierName}`, { icon: '👤' });
+        }
+        bumpRealtimeTick();
+      });
 
-    socket.on('session:cashier_switched', (payload?: { cashierName?: string }) => {
-      if (payload?.cashierName) {
-        toast(`Cashier switched to ${payload.cashierName}`, { icon: '👤' });
-      }
-      bumpRealtimeTick();
-    });
+      socket.on('session:opened', () => bumpRealtimeTick());
+      socket.on('order:created', () => bumpRealtimeTick());
 
-    socket.on('session:opened', () => bumpRealtimeTick());
-    socket.on('order:created', () => bumpRealtimeTick());
-
-    // A marketplace order just landed for this tenant — pop it for the
-    // cashier immediately and feed the bell store so the badge is current.
-    // The payload shape mirrors getPOSNotifications rows (POSNotification).
-    socket.on('marketplace:new_order', (payload?: POSNotification) => {
-      if (payload) announceIncomingOrders([payload], { addNotifications });
-      bumpRealtimeTick();
+      // A marketplace order just landed for this tenant — pop it for the
+      // cashier immediately and feed the bell store so the badge is current.
+      // The payload shape mirrors getPOSNotifications rows (POSNotification).
+      socket.on('marketplace:new_order', (payload?: POSNotification) => {
+        if (payload) announceIncomingOrders([payload], { addNotifications });
+        bumpRealtimeTick();
+      });
     });
 
     return () => {
-      socket.disconnect();
+      disconnect();
     };
   }, [token, terminal, shopId, router, bumpRealtimeTick, addNotifications]);
 }

@@ -301,6 +301,8 @@ app.use('/api/tts',                ttsRoutes);
 // ────────────────────────────────────────────────
  // Health Check Endpoint
 // ────────────────────────────────────────────────
+app.get('/realtime-status', require('./middleware/realtimeStatus'));
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'OK',

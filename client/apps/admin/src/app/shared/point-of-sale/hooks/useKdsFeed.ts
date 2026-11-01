@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { io, type Socket } from 'socket.io-client';
+import { openPOSRealtime } from './pos-realtime';
 import toast from 'react-hot-toast';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth } from '@/app/shared/point-of-sale/store';
@@ -67,25 +67,21 @@ export function useKdsFeed() {
   useEffect(() => {
     if (!token) return;
 
-    const socket: Socket = io(API_URL, {
-      auth: { token },
-      transports: ['websocket', 'polling'],
-      reconnectionDelayMax: 15_000,
-    });
-
-    socket.on('connect', () => {
-      setConnected(true);
-      // Re-join after every (re)connect — rooms are per-connection.
-      socket.emit('kds:join');
-    });
-    socket.on('disconnect', () => setConnected(false));
-    socket.on('kds:update', () => {
-      refresh().catch(() => {});
+    const disconnect = openPOSRealtime(API_URL, token, (socket) => {
+      socket.on('connect', () => {
+        setConnected(true);
+        // Re-join after every (re)connect — rooms are per-connection.
+        socket.emit('kds:join');
+      });
+      socket.on('disconnect', () => setConnected(false));
+      socket.on('kds:update', () => {
+        refresh().catch(() => {});
+      });
     });
 
     return () => {
       setConnected(false);
-      socket.disconnect();
+      disconnect();
     };
   }, [token, refresh]);
 
