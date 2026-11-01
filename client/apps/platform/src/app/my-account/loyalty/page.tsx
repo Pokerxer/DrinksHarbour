@@ -128,7 +128,7 @@ function MembershipCard({ tier, points, lifetimePoints, multiplier, nextTier, ne
         ) : (
           <div className="mb-6 flex items-center gap-2">
             <Icon.PiCrownSimpleBold size={14} style={{ color: t.accentText }} />
-            <span className="text-xs font-semibold" style={{ color: t.accentText }}>You're at the top tier — Vault Elite</span>
+            <span className="text-xs font-semibold" style={{ color: t.accentText }}>You&apos;re at the top tier — Vault Elite</span>
           </div>
         )}
 
@@ -170,7 +170,7 @@ function TierTimeline({ currentTier, lifetimePoints }: { currentTier: LoyaltyTie
                   style={{
                     background: unlocked ? meta.gradient : undefined,
                     backgroundColor: unlocked ? undefined : '#f5f5f4',
-                    ringColor: active ? meta.ringColor : undefined,
+                    boxShadow: active ? `0 0 0 4px ${meta.ringColor}` : undefined,
                   }}>
                   {unlocked
                     ? <Icon.PiCrownSimpleBold size={20} className="text-white" />

@@ -102,7 +102,7 @@ const CHIP_STYLES: Record<FilterChip['color'], ChipStyle> = {
 
 const chipVariants = {
   hidden:  { opacity: 0, scale: 0.75, y: -4 },
-  visible: { opacity: 1, scale: 1,    y:  0, transition: { type: 'spring', stiffness: 400, damping: 25 } },
+  visible: { opacity: 1, scale: 1,    y:  0, transition: { type: 'spring' as const, stiffness: 400, damping: 25 } },
   exit:    { opacity: 0, scale: 0.75, y: -4, transition: { duration: 0.15 } },
 };
 
