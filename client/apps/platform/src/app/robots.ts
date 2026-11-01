@@ -1,6 +1,23 @@
 import type { MetadataRoute } from "next";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
+const DEFAULT_ORIGIN = "https://www.drinksharbour.com";
+
+function sitemapUrl(): string {
+  try {
+    const url = new URL(process.env.NEXT_PUBLIC_BASE_URL || DEFAULT_ORIGIN);
+    if (!["http:", "https:"].includes(url.protocol)) throw new Error("Unsupported site protocol");
+    if (["drinksharbour.com", "www.drinksharbour.com"].includes(url.hostname)) {
+      return `${DEFAULT_ORIGIN}/sitemap.xml`;
+    }
+    // Keep explicit tenant/custom origins; local HTTP remains useful in development.
+    if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) url.protocol = "https:";
+    url.username = "";
+    url.password = "";
+    return new URL("/sitemap.xml", url.origin).href;
+  } catch {
+    return `${DEFAULT_ORIGIN}/sitemap.xml`;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // HOW ROBOTS.TXT MATCHING WORKS (read before editing)
@@ -25,6 +42,8 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.
 // What's left is the set where a crawler fetching the URL is itself the problem:
 // private data, or a GET with a side effect (a one-time token being consumed).
 const DISALLOWED_PATHS = [
+  "/api$", // bare API root (the slash rule below only covers descendants)
+  "/api?", // API root with a query string
   "/api/", // internal route handlers (auth, user, products, banners)
   "/my-account", // no trailing slash, so the bare /my-account URL is covered too
   "/order-confirmation", // carries an order reference
@@ -70,8 +89,14 @@ const DISALLOWED_PARAMS = [
 // photo — blocking it forfeits Google Images entirely. Do not re-add it.
 const DISALLOW = [
   ...DISALLOWED_PATHS,
-  ...DISALLOWED_PARAMS.map((param) => `/*?*${param}=`),
+  // Require a parameter boundary: a loose *q= also matches faq=.
+  ...DISALLOWED_PARAMS.flatMap((param) => [`/*?${param}=`, `/*?*&${param}=`]),
 ];
+
+// Image optimization uses ?q= for quality, not a search query. Explicitly
+// permit rendering resources so the global query rules cannot block them.
+// Use the same allowances for named bots and the wildcard crawler group.
+const ALLOW = ["/", "/_next/image?", "/_next/static/"];
 
 // AI retrieval, citation and training crawlers, granted the same access as any
 // search engine so our product and blog content can be cited.
@@ -117,16 +142,16 @@ export default function robots(): MetadataRoute.Robots {
       {
         // Every crawler not named below, including Googlebot and Bingbot.
         userAgent: "*",
-        allow: "/",
+        allow: ALLOW,
         disallow: DISALLOW,
       },
       {
         userAgent: AI_CRAWLERS,
-        allow: "/",
+        allow: ALLOW,
         disallow: DISALLOW,
       },
     ],
-    sitemap: `${BASE_URL}/sitemap.xml`,
+    sitemap: sitemapUrl(),
     // `Host:` intentionally omitted — a non-standard Yandex-only directive that
     // Yandex itself retired in 2018. The canonical host is declared via
     // <link rel="canonical"> and the sitemap's absolute URLs.
