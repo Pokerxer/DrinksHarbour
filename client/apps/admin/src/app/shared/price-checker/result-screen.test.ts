@@ -21,6 +21,8 @@ const config: KioskConfig = {
     displayDiscountPercentage: true,
     displayStoreName: true,
     displayBarcode: false,
+    enableCompare: true,
+    enablePhoneScan: true,
     manualEntry: true,
     fullscreen: true,
     resetSeconds: 8,

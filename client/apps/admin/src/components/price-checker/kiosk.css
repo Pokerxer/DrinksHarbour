@@ -319,3 +319,24 @@
 .kiosk-compare-rows[aria-label='Differences'] td[colspan] {
   text-align: center;
 }
+
+/* ── Phone pairing QR ────────────────────────────────────────────────────── */
+.kiosk-phone-qr {
+  text-align: center;
+  margin-top: 22px;
+  padding: 16px 20px;
+  background: var(--kiosk-panel);
+  border: 1px solid var(--kiosk-line);
+  border-radius: 14px;
+}
+.kiosk-phone-qr .kiosk-eyebrow {
+  margin-bottom: 10px;
+}
+.kiosk-phone-qr .kiosk-small {
+  margin-top: 8px;
+}
+.kiosk-result-pair {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+}

@@ -1,10 +1,13 @@
 'use client';
-import { useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import { useKiosk } from './use-kiosk';
 import { useCompare, compareKey } from './use-compare';
+import { usePhonePairing } from './use-phone-pairing';
+import { PhonePair } from './phone-pair';
 import { ProductResult } from './product-result';
 import { CompareTray } from './compare-tray';
 import { CompareScreen } from './compare-screen';
+import type { KioskProduct } from './types';
 import { ScannerMark } from './scanner-mark';
 import { validBarcode } from './scanner';
 import './kiosk.css';
@@ -13,6 +16,8 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
   const kiosk = useKiosk(slug);
   const compare = useCompare(slug);
   const [manual, setManual] = useState(false);
+  const [pairSession] = useState(() => crypto.randomUUID());
+  const pairApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
   const [barcodeError, setBarcodeError] = useState('');
@@ -26,8 +31,27 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
   const settings = config?.settings;
   const compareOn = Boolean(settings?.enableCompare && config);
   const showTray = compareOn && config && !['initializing', 'loading', 'compare', 'offline', 'closed'].includes(screen);
-  const productAlreadyHeld =
-    kiosk.product && compare.items.some((item) => compareKey(item) === compareKey(kiosk.product));
+  const product = kiosk.product;
+  const productAlreadyHeld = Boolean(
+    product && compare.items.some((item) => compareKey(item) === compareKey(product))
+  );
+  // Phone pairing: the QR session id doubles as the socket room name. Only
+  // shown while the kiosk is usable; scans land in the comparison tray.
+  const pairEnabled = Boolean(
+    config?.settings.enablePhoneScan &&
+      !['compare', 'initializing', 'offline', 'closed'].includes(screen)
+  );
+  const pairUrl =
+    pairEnabled && typeof window !== 'undefined'
+      ? `${window.location.origin}/kiosk/price-checker/${encodeURIComponent(
+          slug
+        )}/m/${pairSession}`
+      : '';
+  const onPhoneScan = useCallback(
+    (product: KioskProduct) => compare.add(product),
+    [compare]
+  );
+  usePhonePairing(pairUrl ? pairApiUrl : '', pairSession, onPhoneScan);
   async function fullscreen() {
     try {
       if (!document.fullscreenElement)
@@ -110,6 +134,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
             onClose={kiosk.reset}
           />
         ) : screen === 'result' && kiosk.product && config ? (
+          <>
           <ProductResult
             product={kiosk.product}
             config={config}
@@ -118,11 +143,17 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
                 ? {
                     added: productAlreadyHeld,
                     full: !compare.canAdd,
-                    onAdd: () => kiosk.product && compare.add(kiosk.product),
+                    onAdd: () => compare.add(kiosk.product as KioskProduct),
                   }
                 : undefined
             }
           />
+          {pairUrl && (
+            <div className="kiosk-result-pair">
+              <PhonePair url={pairUrl} />
+            </div>
+          )}
+          </>
         ) : ['idle', 'initializing', 'loading'].includes(screen) ? (
           <section className="kiosk-status">
             <span className="kiosk-eyebrow">Your in-store price guide</span>
@@ -152,6 +183,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
                 {config.store.name} — {config.store.location}
               </div>
             )}
+            {pairUrl && <PhonePair url={pairUrl} />}
           </section>
         ) : (
           <section className="kiosk-status">
