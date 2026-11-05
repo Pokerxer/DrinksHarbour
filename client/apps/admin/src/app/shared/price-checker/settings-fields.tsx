@@ -16,6 +16,8 @@ const toggles: [BooleanKey, string][] = [
   ['displayBarcode', 'Barcode'],
   ['manualEntry', 'Manual barcode entry'],
   ['fullscreen', 'Fullscreen button'],
+  ['enableCompare', 'Bottle comparison tool'],
+  ['enablePhoneScan', 'Scan with your phone (QR code)'],
 ];
 export function SettingsFields({ register }: { register: UseFormRegister<KioskInput> }) {
   return (

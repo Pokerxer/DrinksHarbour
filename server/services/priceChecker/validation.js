@@ -13,6 +13,8 @@ const displayDefaults = {
   displayBarcode: false,
   manualEntry: true,
   fullscreen: true,
+  enableCompare: true,
+  enablePhoneScan: true,
 };
 const defaults = {
   ...displayDefaults,

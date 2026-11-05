@@ -11,6 +11,8 @@ export interface KioskSettings {
   displayBarcode: boolean;
   manualEntry: boolean;
   fullscreen: boolean;
+  enableCompare: boolean;
+  enablePhoneScan: boolean;
   resetSeconds: number;
   outOfStock: 'DISPLAY' | 'HIDE' | 'STAFF_MESSAGE';
   theme: 'light' | 'dark';
@@ -44,6 +46,9 @@ export interface KioskProduct {
   originalPrice?: number;
   savings?: number;
   discountPercentage?: number;
+  abv?: number;
+  volume?: string;
+  origin?: string;
 }
 export interface ScanResult {
   config: KioskConfig;
@@ -56,6 +61,7 @@ export type Screen =
   | 'idle'
   | 'loading'
   | 'result'
+  | 'compare'
   | 'missing'
   | 'unavailable'
   | 'offline'

@@ -11,6 +11,8 @@ export interface KioskSettings {
   displayBarcode: boolean;
   manualEntry: boolean;
   fullscreen: boolean;
+  enableCompare: boolean;
+  enablePhoneScan: boolean;
   resetSeconds: number;
   outOfStock: 'DISPLAY' | 'HIDE' | 'STAFF_MESSAGE';
   theme: 'light' | 'dark';
