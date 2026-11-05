@@ -54,6 +54,17 @@ function safeImage(value) {
     return '';
   }
 }
+function scanOrigin(value) {
+  if (value === undefined || value === 'kiosk') return 'kiosk';
+  if (value === 'phone') return 'phone';
+  fail('Invalid scan origin.');
+}
+function pairingSession(value) {
+  if (value === undefined || value === '') return '';
+  if (typeof value !== 'string' || !/^[a-z0-9-]{10,64}$/.test(value))
+    fail('Invalid pairing session.');
+  return value;
+}
 function validateSettings(input = {}) {
   if (!object(input)) fail('Invalid kiosk settings.');
   const output = {};
@@ -130,4 +141,6 @@ module.exports = {
   validateKiosk,
   id,
   safeImage,
+  scanOrigin,
+  pairingSession,
 };

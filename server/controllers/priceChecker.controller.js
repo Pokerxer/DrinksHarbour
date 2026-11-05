@@ -1,7 +1,7 @@
 const Kiosk = require('../models/PriceCheckerKiosk');
 const { getTenantId } = require('../utils/tenantContext');
 const { ValidationError, NotFoundError } = require('../utils/errors');
-const { normalizeBarcode, id } = require('../services/priceChecker/validation');
+const { normalizeBarcode, id, scanOrigin, pairingSession } = require('../services/priceChecker/validation');
 const { getKiosk, saveKiosk, options } = require('../services/priceChecker/configuration');
 const { loadContext } = require('../services/priceChecker/context');
 const { issueSession } = require('../services/priceChecker/session');
@@ -20,13 +20,34 @@ exports.session = async (req, res) => {
 exports.config = async (req, res) =>
   res.json({ success: true, data: publicConfig(req.priceChecker) });
 exports.scan = async (req, res) => {
-  if (!req.body || Object.keys(req.body).some((key) => !['barcode', 'requestId'].includes(key)))
+  if (
+    !req.body ||
+    Object.keys(req.body).some((key) => !['barcode', 'requestId', 'origin', 'pairSession'].includes(key))
+  )
     throw new ValidationError('Invalid scan.');
   const barcode = normalizeBarcode(req.body.barcode);
   const requestId = scanRequestId(req.body.requestId);
+  const origin = scanOrigin(req.body.origin);
+  const pairSession = pairingSession(req.body.pairSession);
   const context = req.priceChecker;
   const result = await lookup(context, barcode);
-  await logScan(context, barcode, requestId, result);
+  await logScan(context, barcode, requestId, result, origin);
+  const io = req.app.get('io');
+  if (pairSession && io) {
+    // Mirror of the HTTP response payload — public fields only. The QR pairing
+    // session id is the capability; rooms deliver nothing the phone cannot
+    // already read from /scan.
+    io.to(`pkiosk:${pairSession}`).emit('kiosk:scan', {
+      found: result.outcome === 'FOUND',
+      status:
+        result.outcome === 'UNKNOWN'
+          ? 'NOT_FOUND'
+          : result.outcome === 'FOUND'
+            ? 'FOUND'
+            : 'UNAVAILABLE',
+      ...(result.product ? { product: result.product } : {}),
+    });
+  }
   res.json({
     success: true,
     data: {

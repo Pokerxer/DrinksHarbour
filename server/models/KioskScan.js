@@ -5,6 +5,7 @@ const schema = new Schema(
     tenant: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     kiosk: { type: Schema.Types.ObjectId, ref: 'PriceCheckerKiosk', required: true },
     location: { type: Schema.Types.ObjectId, ref: 'Warehouse', required: true },
+    origin: { type: String, enum: ['kiosk', 'phone'], default: 'kiosk' },
     requestId: { type: String, required: true, maxlength: 80 },
     kioskName: String,
     shopId: String,

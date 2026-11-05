@@ -115,7 +115,7 @@ app.use(compression());
 app.use(express.json({
   limit: '10mb',
   verify: (req, res, buf) => {
-    if (req.originalUrl && (req.originalUrl.startsWith('/api/erm/webhook') || req.originalUrl.split('?')[0] === '/api/payments/webhooks/paystack')) {
+    if (req.originalUrl && (req.originalUrl.startsWith('/api/merchant-carrier/webhooks/') || req.originalUrl.startsWith('/api/erm/webhook') || req.originalUrl.split('?')[0] === '/api/payments/webhooks/paystack')) {
       req.rawBody = buf;
     }
   },
@@ -233,9 +233,11 @@ app.use('/api/warehouses',         warehouseRoutes);
 app.use('/api/stock-transfers',    stockTransferRoutes);
 app.use('/api/reorder',            reorderRoutes);
 app.use('/api/deliveries',         deliveryRoutes);
+app.use('/api/venue-ops', require('./routes/venue-ops.routes'));
 app.use('/api/bookings',          bookingRoutes);
 app.use('/api/api-keys', require('./routes/apiKey.routes'));
 app.use('/api/integrations', require('./routes/integration.routes'));
+app.use('/api/venue-experience', require('./routes/venue-experience.routes'));
 app.use('/api/venues', require('./routes/venue.routes'));
 app.use('/api/drivers',            driverRoutes);
 app.use('/api/promotions',         promotionRoutes);
@@ -261,6 +263,16 @@ app.use('/api/mail',               require('./routes/mail.routes'));
 app.use('/api/blog',               blogRoutes);
 app.use('/api/chatbot',            chatbotRoutes);
 app.use('/api/places',             placesRoutes);
+app.use('/api', require('./routes/market-foundations.routes'));
+app.use('/api', require('./routes/merchant-operations.routes'));
+app.use('/api/stored-value-refund-policies', require('./routes/storedValueRefundPolicy.routes'));
+app.use('/api/merchant-shipping-refund-policies', require('./routes/merchantShippingRefundPolicy.routes'));
+app.use('/api/merchant-no-money-release-policies', require('./routes/merchantNoMoneyReleasePolicy.routes'));
+app.use('/api/merchant-component-refund-policies', require('./routes/merchantComponentRefundPolicy.routes'));
+app.use('/api/merchant-fee-treatment-policies', require('./routes/merchantFeeTreatmentPolicy.routes'));
+app.use('/api/merchant-kora-refund-policies', require('./routes/merchantKoraRefundPolicy.routes'));
+app.use('/api/merchant-payout-policies', require('./routes/merchantPayoutPolicy.routes'));
+app.use('/api', require('./routes/customer-order-operations.routes'));
 app.use('/api/tenants',            require('./routes/tenant.routes'));
 app.use('/api/stores',             require('./routes/store.routes'));
 app.use('/api/erm',                require('./routes/erm.routes'));
@@ -284,6 +296,7 @@ app.use('/api/appraisal-cycles',   appraisalRouters.cycleRouter);
 app.use('/api/appraisals',         appraisalRouters.appraisalRouter);
 app.use('/api/appraisal-feedback', appraisalRouters.feedbackRouter);
 app.use('/api/appraisal-templates', appraisalRouters.templateRouter);
+app.use('/api/occasion-requests', require('./routes/occasionRequest.routes'));
 app.use('/api/contacts',           require('./routes/contact.routes'));
 app.use('/api/sales-orders',       salesOrderRoutes);
 app.use('/api/scan',               scanRoutes);
@@ -312,6 +325,8 @@ app.get('/health', (req, res) => {
     mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
   });
 });
+
+app.get('/ready', require('./middleware/readiness').createReadinessHandler({ connection: mongoose.connection }));
 
 // Root endpoint for API info
 app.get('/', (req, res) => {
@@ -480,6 +495,7 @@ async function startServer() {
       startBlogLinkCheckCron();
       // Trial-ending warnings and the dunning follow-up. The FIRST
       // payment-failed email is sent from the webhook, not here.
+      require('./jobs/venueRecovery.job').startVenueRecoveryCron();
       const { startBillingNoticesCron } = require('./jobs/billingNotices.job');
       startBillingNoticesCron();
       require('./jobs/billingReconciliation.job').startBillingReconciliationCron();
@@ -535,8 +551,9 @@ async function startServer() {
       app.set('io', io);
 
       // POS session rooms — authenticated with the POS JWT at handshake.
-      const { attachPosGateway } = require('./socket');
+      const { attachPosGateway, attachKioskPairing } = require('./socket');
       attachPosGateway(io);
+      attachKioskPairing(io);
       console.log('   Socket.io attached (scan pairing + POS sessions ready)');
     } catch (err) {
       console.warn('   Socket.io not attached:', err.message);
@@ -548,6 +565,9 @@ async function startServer() {
 
       server.close(async () => {
         console.log('   → HTTP server closed');
+        await require('./utils/embeddings').disposeLocalPipeline().catch(error => {
+          console.error('Embedding runtime cleanup failed:', error.message);
+        });
         await disconnectDB();
         console.log('   → Database disconnected');
         console.log('✅ Graceful shutdown complete\n');

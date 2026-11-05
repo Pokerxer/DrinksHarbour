@@ -7,7 +7,7 @@ function scanRequestId(value) {
     throw new ValidationError('Invalid scan request.');
   return value;
 }
-async function logScan(context, barcode, requestId, result) {
+async function logScan(context, barcode, requestId, result, origin = 'kiosk') {
   scanRequestId(requestId);
   const { kiosk } = context;
   const key = { tenant: kiosk.tenant, kiosk: kiosk._id, requestId };
@@ -27,6 +27,7 @@ async function logScan(context, barcode, requestId, result) {
             ...key,
             location: kiosk.location,
             shopId: kiosk.shopId,
+            origin,
             kioskName: kiosk.name,
             barcode,
             scannedAt,
