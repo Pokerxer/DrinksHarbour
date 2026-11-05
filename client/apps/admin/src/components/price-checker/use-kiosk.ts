@@ -11,13 +11,19 @@ export function useKiosk(slug: string) {
   const latest = useRef(latestScan());
   const pending = useRef<AbortController | null>(null);
   const last = useRef({ code: '', at: 0 });
+  const sessionReady = useRef(false);
   const fail = useCallback((error: unknown) => {
     if (error instanceof Error && error.name === 'AbortError') return;
+    if (error instanceof KioskError && [403, 404].includes(error.status))
+      sessionReady.current = false;
     setScreen(
-      error instanceof KioskError && [403, 404].includes(error.status) ? 'closed' : 'offline'
+      error instanceof KioskError && [403, 404].includes(error.status)
+        ? 'closed'
+        : 'offline'
     );
   }, []);
   const initialize = useCallback(async () => {
+    sessionReady.current = false;
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
@@ -28,6 +34,7 @@ export function useKiosk(slug: string) {
     try {
       const next = await openKiosk(slug, controller.signal);
       if (latest.current.isCurrent(generation)) {
+        sessionReady.current = true;
         setConfig(next);
         setScreen('idle');
       }
@@ -38,6 +45,7 @@ export function useKiosk(slug: string) {
   useEffect(() => {
     void initialize();
     return () => {
+      sessionReady.current = false;
       latest.current.begin();
       pending.current?.abort();
     };
@@ -51,6 +59,7 @@ export function useKiosk(slug: string) {
   }, [screen, initialize]);
   const scan = useCallback(
     async (input: string) => {
+      if (!sessionReady.current) return;
       const code = validBarcode(input);
       if (!code) return;
       const now = Date.now();
@@ -64,12 +73,21 @@ export function useKiosk(slug: string) {
       pending.current = controller;
       const generation = latest.current.begin();
       try {
-        const result = await checkPrice(slug, code, crypto.randomUUID(), controller.signal);
+        const result = await checkPrice(
+          slug,
+          code,
+          crypto.randomUUID(),
+          controller.signal
+        );
         if (!latest.current.isCurrent(generation)) return;
         setConfig(result.config);
         setProduct(result.product || null);
         setScreen(
-          result.found ? 'result' : result.status === 'NOT_FOUND' ? 'missing' : 'unavailable'
+          result.found
+            ? 'result'
+            : result.status === 'NOT_FOUND'
+              ? 'missing'
+              : 'unavailable'
         );
       } catch (error) {
         if (latest.current.isCurrent(generation)) fail(error);
@@ -84,8 +102,21 @@ export function useKiosk(slug: string) {
     setRemaining(0);
     setScreen('idle');
   }, []);
+  // Enter the bottle-comparison view from the idle or result screens. The
+  // compare screen joins the auto-reset countdown, so an idle kiosk returns
+  // to the welcome screen (tray intact) without any customer action.
+  const openCompare = useCallback(() => {
+    if (!sessionReady.current) return;
+    latest.current.begin();
+    pending.current?.abort();
+    setRemaining(0);
+    setScreen((current) =>
+      ['idle', 'result', 'compare'].includes(current) ? 'compare' : current
+    );
+  }, []);
   useEffect(() => {
-    if (!['result', 'missing', 'unavailable'].includes(screen) || !config) return;
+    if (!['result', 'missing', 'unavailable', 'compare'].includes(screen) || !config)
+      return;
     const generation = latest.current.begin();
     const deadline = Date.now() + config.settings.resetSeconds * 1000;
     setRemaining(config.settings.resetSeconds);
@@ -100,9 +131,11 @@ export function useKiosk(slug: string) {
   useEffect(() => {
     const scanner = createScanner();
     const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing)
+        return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest('input,textarea,select,[contenteditable="true"]')) return;
+      if (target?.closest('input,textarea,select,[contenteditable="true"]'))
+        return;
       const code = scanner.feed(event.key, performance.now());
       if (code) {
         event.preventDefault();
@@ -117,5 +150,14 @@ export function useKiosk(slug: string) {
       window.removeEventListener('focus', focus);
     };
   }, [scan]);
-  return { config, product, screen, remaining, scan, reset, initialize };
+  return {
+    config,
+    product,
+    screen,
+    remaining,
+    scan,
+    reset,
+    initialize,
+    openCompare,
+  };
 }

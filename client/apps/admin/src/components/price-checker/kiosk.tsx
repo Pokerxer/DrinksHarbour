@@ -1,21 +1,37 @@
 'use client';
-import { useState, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import { useKiosk } from './use-kiosk';
+import { useCompare, compareKey } from './use-compare';
 import { ProductResult } from './product-result';
+import { CompareTray } from './compare-tray';
+import { CompareScreen } from './compare-screen';
 import { ScannerMark } from './scanner-mark';
 import { validBarcode } from './scanner';
 import './kiosk.css';
 import './kiosk-display.css';
 export default function PriceCheckerKiosk({ slug }: { slug: string }) {
   const kiosk = useKiosk(slug);
+  const compare = useCompare(slug);
   const [manual, setManual] = useState(false);
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
+  const [barcodeError, setBarcodeError] = useState('');
+  const manualTrigger = useRef<HTMLButtonElement>(null);
+  const closeManual = () => {
+    setManual(false);
+    setBarcodeError('');
+    manualTrigger.current?.focus();
+  };
   const { config, screen } = kiosk;
   const settings = config?.settings;
+  const compareOn = Boolean(settings?.enableCompare && config);
+  const showTray = compareOn && config && !['initializing', 'loading', 'compare', 'offline', 'closed'].includes(screen);
+  const productAlreadyHeld =
+    kiosk.product && compare.items.some((item) => compareKey(item) === compareKey(kiosk.product));
   async function fullscreen() {
     try {
-      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      if (!document.fullscreenElement)
+        await document.documentElement.requestFullscreen();
       else await document.exitFullscreen();
     } catch {
       setMessage('Use your browser’s fullscreen option to fill this screen.');
@@ -42,7 +58,9 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
       style={
         {
           '--kiosk-accent': settings?.accent || '#b20202',
-          ...(settings?.background ? { '--kiosk-bg': settings.background } : {}),
+          ...(settings?.background
+            ? { '--kiosk-bg': settings.background }
+            : {}),
         } as CSSProperties
       }
     >
@@ -56,7 +74,11 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
         {config?.store && (
           <div className="kiosk-location">
             {settings?.logo && (
-              <img src={settings.logo} alt="Store logo" referrerPolicy="no-referrer" />
+              <img
+                src={settings.logo}
+                alt="Store logo"
+                referrerPolicy="no-referrer"
+              />
             )}
             <span>
               {config.store.name}
@@ -65,7 +87,11 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
           </div>
         )}
         {settings?.fullscreen && (
-          <button className="kiosk-quiet" onClick={fullscreen} aria-label="Toggle fullscreen">
+          <button
+            className="kiosk-quiet"
+            onClick={fullscreen}
+            aria-label="Toggle fullscreen"
+          >
             ⛶ <span>Fullscreen</span>
           </button>
         )}
@@ -76,8 +102,27 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
         aria-atomic="true"
         aria-busy={screen === 'loading' || screen === 'initializing'}
       >
-        {screen === 'result' && kiosk.product && config ? (
-          <ProductResult product={kiosk.product} config={config} />
+        {screen === 'compare' && config && compare.items.length >= 2 ? (
+          <CompareScreen
+            items={compare.items}
+            currency={config.currency}
+            onRemove={compare.remove}
+            onClose={kiosk.reset}
+          />
+        ) : screen === 'result' && kiosk.product && config ? (
+          <ProductResult
+            product={kiosk.product}
+            config={config}
+            compareSlot={
+              settings?.enableCompare
+                ? {
+                    added: productAlreadyHeld,
+                    full: !compare.canAdd,
+                    onAdd: () => kiosk.product && compare.add(kiosk.product),
+                  }
+                : undefined
+            }
+          />
         ) : ['idle', 'initializing', 'loading'].includes(screen) ? (
           <section className="kiosk-status">
             <span className="kiosk-eyebrow">Your in-store price guide</span>
@@ -99,7 +144,9 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
                 ? 'Scan a product barcode to see its current price'
                 : 'Just a moment'}
             </p>
-            {settings?.welcomeMessage && <p className="kiosk-small">{settings.welcomeMessage}</p>}
+            {settings?.welcomeMessage && (
+              <p className="kiosk-small">{settings.welcomeMessage}</p>
+            )}
             {config?.store && (
               <div className="kiosk-store-pill">
                 {config.store.name} — {config.store.location}
@@ -119,7 +166,9 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
               <button
                 className="kiosk-primary"
                 onClick={() =>
-                  screen === 'offline' || !config ? void kiosk.initialize() : kiosk.reset()
+                  screen === 'offline' || !config
+                    ? void kiosk.initialize()
+                    : kiosk.reset()
                 }
               >
                 Try again
@@ -128,6 +177,16 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
           </section>
         )}
       </div>
+      {showTray && config && (
+        <CompareTray
+          items={compare.items}
+          currency={config.currency}
+          canAdd={compare.canAdd}
+          onRemove={compare.remove}
+          onClear={compare.clear}
+          onCompare={kiosk.openCompare}
+        />
+      )}
       <footer className="kiosk-footer">
         <div>
           <strong>
@@ -135,9 +194,11 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
               ? 'Please ask a member of staff'
               : screen === 'offline'
                 ? 'Waiting for connection'
-                : screen === 'idle'
-                  ? 'Ready to scan'
-                  : 'Scan another product'}
+                : screen === 'compare'
+                  ? 'Comparing bottles'
+                  : screen === 'idle'
+                    ? 'Ready to scan'
+                    : 'Scan another product'}
           </strong>
           <span>
             {kiosk.remaining > 0
@@ -145,51 +206,83 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
               : 'Hold the barcode under the scanner'}
           </span>
         </div>
-        {settings?.manualEntry && !['closed', 'initializing'].includes(screen) && (
-          <button
-            className="kiosk-quiet"
-            onClick={() => {
-              setManual(!manual);
+        {settings?.manualEntry &&
+          !['closed', 'initializing'].includes(screen) && (
+            <button
+              ref={manualTrigger}
+              className="kiosk-quiet"
+              aria-expanded={manual}
+              aria-controls={manual ? 'manual-entry-form' : undefined}
+              onClick={() => {
+                setManual(!manual);
+                setBarcodeError('');
+                setMessage('');
+              }}
+            >
+              Enter barcode
+            </button>
+          )}
+      </footer>
+      {manual &&
+        settings?.manualEntry &&
+        !['closed', 'initializing'].includes(screen) && (
+          <form
+            id="manual-entry-form"
+            className="kiosk-manual"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                closeManual();
+              }
+            }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const value = validBarcode(code);
+              if (!value) {
+                setBarcodeError(
+                  'Enter a barcode of 5 to 128 printable characters.'
+                );
+                return;
+              }
+              closeManual();
+              setCode('');
               setMessage('');
+              void kiosk.scan(value);
             }}
           >
-            Enter barcode
-          </button>
+            <label htmlFor="manual-barcode">Product barcode</label>
+            <input
+              id="manual-barcode"
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value);
+                setBarcodeError('');
+              }}
+              aria-invalid={barcodeError ? true : undefined}
+              aria-describedby={
+                barcodeError ? 'manual-barcode-error' : undefined
+              }
+              maxLength={128}
+              autoComplete="off"
+              autoFocus
+            />
+            <button className="kiosk-primary" type="submit">
+              Check price
+            </button>
+            <button className="kiosk-quiet" type="button" onClick={closeManual}>
+              Close
+            </button>
+            {barcodeError && (
+              <p
+                id="manual-barcode-error"
+                className="kiosk-manual-error"
+                role="alert"
+              >
+                {barcodeError}
+              </p>
+            )}
+          </form>
         )}
-      </footer>
-      {manual && settings?.manualEntry && !['closed', 'initializing'].includes(screen) && (
-        <form
-          className="kiosk-manual"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const value = validBarcode(code);
-            if (!value) {
-              setMessage('Enter a barcode of at least 5 characters.');
-              return;
-            }
-            setManual(false);
-            setCode('');
-            setMessage('');
-            void kiosk.scan(value);
-          }}
-        >
-          <label htmlFor="manual-barcode">Product barcode</label>
-          <input
-            id="manual-barcode"
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            maxLength={128}
-            autoComplete="off"
-            autoFocus
-          />
-          <button className="kiosk-primary" type="submit">
-            Check price
-          </button>
-          <button className="kiosk-quiet" type="button" onClick={() => setManual(false)}>
-            Close
-          </button>
-        </form>
-      )}
       {message && (
         <p className="kiosk-notice" role="status">
           {message}

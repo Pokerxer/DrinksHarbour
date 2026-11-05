@@ -2,7 +2,15 @@
 import React, { useState } from 'react';
 import type { KioskConfig, KioskProduct } from './types';
 import { ScannerMark } from './scanner-mark';
-export function ProductResult({ product, config }: { product: KioskProduct; config: KioskConfig }) {
+export function ProductResult({
+  product,
+  config,
+  compareSlot,
+}: {
+  product: KioskProduct;
+  config: KioskConfig;
+  compareSlot?: { added: boolean; full: boolean; onAdd: () => void };
+}) {
   const [confirmed, setConfirmed] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const money = (value: number) =>
@@ -83,6 +91,19 @@ export function ProductResult({ product, config }: { product: KioskProduct; conf
         {product.barcode && <p className="kiosk-small">Barcode {product.barcode}</p>}
         {config.settings.resultMessage && (
           <p className="kiosk-small">{config.settings.resultMessage}</p>
+        )}
+        {compareSlot && (
+          <button
+            className="kiosk-primary kiosk-add"
+            onClick={compareSlot.onAdd}
+            disabled={compareSlot.full && !compareSlot.added}
+          >
+            {compareSlot.added
+              ? 'Added ✓'
+              : compareSlot.full
+                ? 'Tray full — remove a bottle'
+                : 'Add to compare'}
+          </button>
         )}
       </div>
     </section>

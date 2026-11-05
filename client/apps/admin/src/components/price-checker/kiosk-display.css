@@ -232,3 +232,10 @@
 .price-kiosk[data-theme='dark'] .kiosk-scanner {
   color: #ff9f98;
 }
+
+.kiosk-manual-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--kiosk-ink);
+  font-size: 0.85em;
+}
