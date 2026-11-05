@@ -372,7 +372,12 @@ const CartPage = () => {
                             )}
                             {item.selectedSize && (
                               <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                                {item.selectedSize}
+                                {item.selectedSizeLabel || item.selectedSize}
+                              </span>
+                            )}
+                            {item.selectedColor && (
+                              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                                {item.selectedColor}
                               </span>
                             )}
                             {/* Validation status badges */}

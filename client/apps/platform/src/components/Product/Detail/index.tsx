@@ -279,7 +279,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     setIsAddingToCart(true);
     
     try {
-      await addToCart(productData, effectiveSize, '', selectedVendor.tenant.name, selectedVendor.tenant._id, localQuantity, selectedSizeData?._id, selectedVendor._id);
+      await addToCart(productData, effectiveSize, [selectedSizeData?.colorName, selectedSizeData?.optionName].filter(Boolean).join(' · '), selectedVendor.tenant.name, selectedVendor.tenant._id, localQuantity, selectedSizeData?._id, selectedVendor._id, selectedSizeData?.displayName || selectedSizeData?.optionName || undefined);
       setToast({ show: true, message: 'Added to cart successfully!', type: 'success' });
     } catch (error) {
       setToast({ show: true, message: 'Failed to add to cart', type: 'error' });

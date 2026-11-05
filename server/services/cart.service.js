@@ -443,7 +443,7 @@ const getCart = async (userId) => {
     })
     .populate({
       path: 'items.size',
-      select: 'size displayName sellingPrice costPrice stock availability currency unitsPerPack maxOrderQuantity minOrderQuantity discountValue discountType discountStart discountEnd commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct',
+      select: 'size displayName sizeLabel colorName sellingPrice costPrice stock availability currency unitsPerPack maxOrderQuantity minOrderQuantity discountValue discountType discountStart discountEnd commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct',
     })
     .lean();
 

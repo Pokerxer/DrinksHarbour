@@ -412,7 +412,12 @@ const ModalCart = () => {
                                   )}
                                   {item.selectedSize && (
                                     <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                                      {item.selectedSize}
+                                      {item.selectedSizeLabel || item.selectedSize}
+                                    </span>
+                                  )}
+                                  {item.selectedColor && (
+                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                                      {item.selectedColor}
                                     </span>
                                   )}
                                   {lineDiscountPct > 0 && (
@@ -433,7 +438,7 @@ const ModalCart = () => {
                                       Out of Stock
                                     </span>
                                     {item.selectedSize && (
-                                      <span className="text-xs text-gray-400">{item.selectedSize}</span>
+                                      <span className="text-xs text-gray-400">{item.selectedSizeLabel || item.selectedSize}</span>
                                     )}
                                   </div>
                                   <p className="text-xs text-gray-400">This item is no longer available.</p>

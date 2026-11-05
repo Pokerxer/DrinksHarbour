@@ -1262,7 +1262,7 @@ export default function CheckoutPage() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-bold text-gray-900 truncate">{item.name}</p>
-                              <p className="text-xs text-gray-400">Qty: {item.quantity || 1}{item.selectedSize ? ` · ${item.selectedSize}` : ''}</p>
+                              <p className="text-xs text-gray-400">Qty: {item.quantity || 1}{(item.selectedSizeLabel || item.selectedSize) ? ` · ${item.selectedSizeLabel || item.selectedSize}` : ''}{item.selectedColor ? ` · ${item.selectedColor}` : ''}</p>
                             </div>
                             <span className="text-sm font-black text-gray-900 flex-shrink-0">{fmt(getEffectiveUnitPrice(item) * (item.quantity || 1))}</span>
                           </div>

@@ -26,7 +26,10 @@ const buildCartLine = (item, pricing) => {
   if (!product || !subproduct || !size || !tenant) return null;
 
   const productId = String(product._id);
-  const sizeLabel = size.size || size.displayName || '';
+  // Human variant label first — displayName ("M · Emerald", "256 GB"), then the
+  // explicit size label, then the raw `size` channel code ("apparel") as a last
+  // resort. The cart page renders selectedSizeLabel, falling back to this.
+  const sizeLabel = size.displayName || size.sizeLabel || size.size || '';
   const vendorName = tenant.name || '';
 
   return {
@@ -50,7 +53,8 @@ const buildCartLine = (item, pricing) => {
     selectedVendorId: String(tenant._id),
     selectedVendor: vendorName,
     selectedSize: sizeLabel,
-    selectedColor: '',
+    selectedSizeLabel: sizeLabel,
+    selectedColor: size.colorName || '',
 
     // Pricing — platform price AFTER any sub-product sale, never size.sellingPrice.
     // The caller passes the applySubProductSale() output, so finalPrice already

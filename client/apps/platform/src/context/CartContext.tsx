@@ -21,6 +21,9 @@ interface CartItem extends ProductType {
   cartItemId: string;
   quantity: number;
   selectedSize: string;
+  /** Human variant label (e.g. "M · Emerald", "256 GB") — raw channel codes
+   *  like "apparel"/"electronics" go to selectedSize for price lookup keys. */
+  selectedSizeLabel?: string;
   selectedColor: string;
   selectedVendor: string;
   selectedVendorId: string;
@@ -191,7 +194,7 @@ const CartContext = createContext<CartContextProps | undefined>(undefined);
 const cartReducer = (state: CartState, action: CartAction): CartState => {
   switch (action.type) {
     case "ADD_TO_CART": {
-      const { product, size, color, vendor, vendorId, quantity, sizeId, subProductId } = action.payload;
+      const { product, size, color, vendor, vendorId, quantity, sizeId, subProductId, sizeLabel } = action.payload;
       const cartItemId = generateCartItemId(product._id || product.id, size, vendor, color);
       
       const existingItem = state.cartArray.find(item => item.cartItemId === cartItemId);
@@ -216,6 +219,7 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
       const selectedSizeId = sizeId || "";
       const selectedSubProductId = subProductId || "";
       const selectedProductId = product._id || product.id || "";
+      const selectedSizeLabel = sizeLabel || "";
       const itemPrice = getPriceFromAvailableAt(product, selectedVendor, selectedSize);
       
       const newItem: CartItem = {
@@ -223,6 +227,7 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
         cartItemId,
         quantity: qty,
         selectedSize,
+        selectedSizeLabel,
         selectedColor,
         selectedVendor,
         selectedVendorId,
@@ -465,7 +470,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [storageKey]);
 
-  const addToCart = (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string): AddToCartResult => {
+  const addToCart = (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string, sizeLabel?: string): AddToCartResult => {
     const productId = product._id || product.id;
     const cartItemId = generateCartItemId(productId, size || '', vendor || '', color || '');
     const qty = quantity || 1;
@@ -490,7 +495,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         vendorId: vendorId || '', 
         quantity: qty,
         sizeId: sizeId || '',
-        subProductId: subProductId || ''
+        subProductId: subProductId || '',
+        sizeLabel: sizeLabel || ''
       } 
     });
     
