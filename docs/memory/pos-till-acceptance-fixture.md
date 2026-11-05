@@ -26,6 +26,20 @@ Key facts for future work:
 - No physical POS terminal ran in that acceptance; the physical-till step remains an
   explicit gap until someone with hardware runs the same flow (seed helper:
   `server/scripts/seed-pos-staff.js` against a live `MONGODB_URI`).
+- 2026-11-05 board scope constraint (user-direct): the `/platform` route (main
+  marketplace surface) is **beverage-only**; POS/till and stock acceptance for the
+  new retail types must not change beverage marketplace eligibility there, and retail
+  stock flows stay on the tenant/ERM side. DRI-4's acceptance scope conforms (POS
+  stock deduction is tenant-warehouse-scoped; no catalogue/marketplace code touched).
+  CONTINUOUS WATCH: as of the same day, `server/constants/catalogKind.js` sets
+  `RETAIL_KINDS = [beverage, retail]` and the public retail channel
+  (`catalogChannel: 'retail'` → `retailWhereClause()` in `product.service.js`,
+  e.g. `getAllProducts`/`searchProducts`, trending/featured/new-arrivals/
+  bestsellers/related/suggestions strips at lines ~4096, 5989, 6048, 9091, 9179,
+  9190, 9297, 9791, 11044, 11072, 11517, 12867) admits `KINDS.retail` onto the
+  central public surfaces — enforcement task routed separately (beverage-only
+  platform gate; tenant stores keep retail sellability). Check this stays true
+  before any marketplace-facing feature claims beverage-only eligibility.
 - 2026-11-05 board environment change: the runner hosts disposable loopback Mongo
   fixtures, so the acceptance now runs from agent runs directly (ChatGPT quota
   irrelevant). Re-executed on the runner: 1 pass, 0 fail, plus the sales-reservation
