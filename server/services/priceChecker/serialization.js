@@ -24,6 +24,8 @@ function publicProduct({ product, size, pricing, stock, settings: overrides }) {
     if (typeof product.abv === 'number') result.abv = product.abv;
     if (typeof product.volumeMl === 'number') result.volume = `${product.volumeMl} ml`;
     if (product.originCountry) result.origin = product.originCountry;
+    if (typeof product.volumeMl === 'number') result.volumeMl = product.volumeMl;
+    if (product.type) result.beverageType = product.type;
   }
   if (settings.displayImages && image) result.image = image;
   if (settings.displayBrand && product.brand?.name) result.brand = product.brand.name;

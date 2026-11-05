@@ -35,7 +35,7 @@ async function lookup(context, input) {
     status: 'approved',
     isPublished: true,
   })
-    .select('_id name brand images isAlcoholic abv volumeMl originCountry')
+    .select('_id name brand images isAlcoholic abv volumeMl originCountry type')
     .populate('brand', 'name')
     .lean();
   if (!product) return { outcome: 'UNAVAILABLE' };

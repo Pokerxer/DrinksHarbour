@@ -49,6 +49,8 @@ export interface KioskProduct {
   abv?: number;
   volume?: string;
   origin?: string;
+  volumeMl?: number;
+  beverageType?: string;
 }
 export interface ScanResult {
   config: KioskConfig;

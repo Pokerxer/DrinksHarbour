@@ -9,6 +9,7 @@ const base = {
     abv: 40,
     volumeMl: 750,
     originCountry: 'Scotland',
+    type: 'spirit',
     images: [],
     brand: null,
   },
@@ -22,6 +23,8 @@ test('compare products expose abv, volume and origin when compare is enabled', (
   assert.equal(withCompare.abv, 40);
   assert.equal(withCompare.volume, '750 ml');
   assert.equal(withCompare.origin, 'Scotland');
+  assert.equal(withCompare.volumeMl, 750);
+  assert.equal(withCompare.beverageType, 'spirit');
 });
 
 test('compare fields are withheld when the kiosk disables the comparison tool', () => {
@@ -29,4 +32,6 @@ test('compare fields are withheld when the kiosk disables the comparison tool', 
   assert.equal(disabled.abv, undefined);
   assert.equal(disabled.volume, undefined);
   assert.equal(disabled.origin, undefined);
+  assert.equal(disabled.volumeMl, undefined);
+  assert.equal(disabled.beverageType, undefined);
 });
