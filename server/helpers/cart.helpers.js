@@ -26,14 +26,18 @@ const buildCartLine = (item, pricing) => {
   if (!product || !subproduct || !size || !tenant) return null;
 
   const productId = String(product._id);
-  // Human variant label first — displayName ("M · Emerald", "256 GB"), then the
-  // explicit size label, then the raw `size` channel code ("apparel") as a last
-  // resort. The cart page renders selectedSizeLabel, falling back to this.
-  const sizeLabel = size.displayName || size.sizeLabel || size.size || '';
+  // Identity stays on the RAW `size` code — the client's generateCartItemId
+  // and save echoes use the same string, so both sides must derive the same
+  // cartItemId (a display label here would split every merged line in two).
+  const idSizeLabel = size.size || size.displayName || '';
+  // Human label for display only — displayName ("M · Emerald", "256 GB"), then
+  // the explicit size label, then the raw channel code as a last resort. The
+  // cart page renders selectedSizeLabel, falling back to selectedSize.
+  const sizeLabel = size.displayName || size.sizeLabel || idSizeLabel;
   const vendorName = tenant.name || '';
 
   return {
-    cartItemId: buildCartItemId(productId, sizeLabel, vendorName, ''),
+    cartItemId: buildCartItemId(productId, idSizeLabel, vendorName, ''),
 
     // Product identity — the cart page reads _id/id, name, slug, images
     _id: productId,
@@ -52,7 +56,7 @@ const buildCartLine = (item, pricing) => {
     selectedSizeId: String(size._id),
     selectedVendorId: String(tenant._id),
     selectedVendor: vendorName,
-    selectedSize: sizeLabel,
+    selectedSize: idSizeLabel,
     selectedSizeLabel: sizeLabel,
     selectedColor: size.colorName || '',
 

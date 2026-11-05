@@ -60,8 +60,11 @@ colour, so the two same-size lines were indistinguishable.
 
 - `server/helpers/cart.helpers.js` — buildCartLine now emits
   `selectedSizeLabel` (displayName → sizeLabel → raw size) and
-  `selectedColor: size.colorName`. **Shared path, coordinated with the
-  Backend Engineer — display-only, additive fields.**
+  `selectedColor: size.colorName`. **Identity stays on the RAW size code**
+  (`selectedSize` + cartItemId) — the client's generateCartItemId and save
+  echo must derive the same key, so a display label must never feed
+  identity; the cart.helpers tests pin this split. **Shared path, coordinated
+  with the Backend Engineer — display-only, additive fields.**
 - `server/services/cart.service.js` — getCart's items.size select adds
   `sizeLabel colorName` (staged as a standalone one-liner; the file carried
   sibling-run edits).

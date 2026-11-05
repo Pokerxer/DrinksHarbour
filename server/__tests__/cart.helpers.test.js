@@ -104,6 +104,19 @@ test('buildCartLine sets selectedColor to empty string — the schema stores no 
   assert.strictEqual(buildCartLine(populatedItem(), pricing()).selectedColor, '');
 });
 
+test('buildCartLine keeps selectedSize on the raw code and puts the human label in selectedSizeLabel', () => {
+  const line = buildCartLine({
+    ...populatedItem(),
+    size: { _id: 'sz1', size: 'apparel', sizeLabel: 'size M', displayName: 'M · Emerald', colorName: 'Emerald Green' },
+  }, pricing());
+  // Identity agreement with the client's generateCartItemId: raw code.
+  assert.strictEqual(line.cartItemId, buildCartItemId('p1', 'apparel', 'Wyn City', ''));
+  assert.strictEqual(line.selectedSize, 'apparel');
+  // Display label + colour never bleed into the identity fields.
+  assert.strictEqual(line.selectedSizeLabel, 'M · Emerald');
+  assert.strictEqual(line.selectedColor, 'Emerald Green');
+});
+
 test('buildCartLine passes pack pricing through', () => {
   const line = buildCartLine(populatedItem(), pricing());
   assert.strictEqual(line.packUnitPrice, 122000);
