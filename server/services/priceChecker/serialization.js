@@ -20,6 +20,11 @@ function publicProduct({ product, size, pricing, stock, settings: overrides }) {
     alcoholic: product.isAlcoholic === true,
     taxLabel: pricing.taxLabel || '',
   };
+  if (settings.enableCompare) {
+    if (typeof product.abv === 'number') result.abv = product.abv;
+    if (typeof product.volumeMl === 'number') result.volume = `${product.volumeMl} ml`;
+    if (product.originCountry) result.origin = product.originCountry;
+  }
   if (settings.displayImages && image) result.image = image;
   if (settings.displayBrand && product.brand?.name) result.brand = product.brand.name;
   if (settings.displaySize) result.size = size.displayName || size.size;
