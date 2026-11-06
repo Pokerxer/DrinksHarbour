@@ -138,6 +138,9 @@ async function main() {
     { key: 'home2', name: 'Hearth Brass Table Lamp 30cm', type: 'home_lighting', approved: true },
     { key: 'general_beauty', name: 'Harbour Vitamin C Cream 30ml', type: 'beauty_skincare', approved: true },
     { key: 'general_fashion', name: 'Harbour Denim Jacket L', type: 'fashion_outerwear', approved: true },
+    // Beverage positive control (DRI-3/C3, post-DRI-9): the main marketplace
+    // must still assemble a buy offer for this product through the browser.
+    { key: 'beverage', name: 'Lakeside Craft Lager 330ml', type: 'beer', approved: true, isAlcoholic: true },
     { key: 'pending_candle', name: 'Hearth Beacon Candle', type: 'home_decor', approved: false },
   ];
   const products = {};
@@ -150,7 +153,7 @@ async function main() {
       // SELLABLE_PRODUCT_MATCH requires isPublished on approved products; the
       // pending product stays unpublished (marketplace-eligibility boundary).
       isPublished: !!def.approved,
-      isAlcoholic: false,
+      isAlcoholic: !!def.isAlcoholic,
       isPublic: def.approved,
     });
     products[def.key] = doc.insertedId;
@@ -223,6 +226,7 @@ async function main() {
     { tenant: 'beauty', product: 'beauty', name: 'Glow Night Serum 50ml', sub: 'DRGLOW-SERUM-001', price: 15000, cost: 8000, size: 'standard' },
     { tenant: 'home', product: 'home', name: 'Hearth Linen Cushion 45cm', sub: 'DRHEARTH-CUSH-001', price: 14000, cost: 7500, size: 'standard' },
     { tenant: 'general', product: 'general_beauty', name: 'Harbour Vitamin C Cream 30ml', sub: 'DRGEN-CREAM-001', price: 9500, cost: 5000, size: 'standard' },
+    { tenant: 'general', product: 'beverage', name: 'Lakeside Craft Lager 330ml', sub: 'DRGEN-LAGER-001', price: 3500, cost: 2200, size: 'standard' },
   ];
   for (const def of simpleDef) {
     const subproduct = oid(); const sizeId = oid();

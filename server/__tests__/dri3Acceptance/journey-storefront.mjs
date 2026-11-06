@@ -344,14 +344,34 @@ async function journeyC(browser) {
       !cardNames.some((n) => /Sample Shirt/i.test(n)),
       `cards=${JSON.stringify(cardNames.slice(0, 5))}`);
 
-    // C3 — the approved, sellable sibling is browsable (positive control):
-    // "Glow Night Serum 50ml" has a published listing sold by Glow Beauty Bar.
-    await page.goto(`${STORE_URL}/product/${slug('Glow Night Serum 50ml')}-beauty`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // C3 — post-DRI-9 positive controls, split by surface:
+    //   C3a: an approved BEVERAGE product is browsable WITH a seller offer on
+    //        the main marketplace (beverage exclusivity still sells).
+    //   C3b: the approved RETAIL sibling (Glow Night Serum) is STILL sellable
+    //        on its tenant-storefront surface (?_tenant= flags the surface in
+    //        dev, mirroring tenant subdomains) — retail stock keeps selling in
+    //        tenant stores while staying off the main marketplace (C5).
+    await page.goto(`${STORE_URL}/product/${slug('Lakeside Craft Lager 330ml')}-beverage`, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(5000);
-    await shot(page, 'journeyC-c3-approved-product-page');
-    const ok = await page.locator('main, body').first().innerText().catch(() => '');
-    stmt('C3: approved, published product page is browsable with a seller offer',
-      /Night Serum/i.test(ok) && /Glow Beauty Bar/i.test(ok));
+    await dismissOverlays(page);
+    await acceptAgeGate(page).catch(() => {});
+    await shot(page, 'journeyC-c3a-beverage-main-marketplace');
+    const okBev = await page.locator('main, body').first().innerText().catch(() => '');
+    const bevBuy = await page.locator('main button:has-text("Add to Cart"), main button:has-text("Add to cart")').count();
+    stmt('C3a: approved beverage product is browsable with a seller offer on the main marketplace',
+      /Craft Lager/i.test(okBev) && /Harbour General Store/i.test(okBev) && bevBuy > 0,
+      `loads=${/Craft Lager/i.test(okBev)}, seller=${/Harbour General Store/i.test(okBev)}, buy buttons=${bevBuy}`);
+
+    await page.goto(`${STORE_URL}/product/${slug('Glow Night Serum 50ml')}-beauty?_tenant=glow-beauty`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(5000);
+    await dismissOverlays(page);
+    await acceptAgeGate(page).catch(() => {});
+    await shot(page, 'journeyC-c3b-retail-sibling-tenant-store');
+    const okRetail = await page.locator('main, body').first().innerText().catch(() => '');
+    const retailBuy = await page.locator('main button:has-text("Add to Cart"), main button:has-text("Add to cart")').count();
+    stmt('C3b: approved retail sibling still sells on its tenant-storefront surface',
+      /Night Serum/i.test(okRetail) && /Glow Beauty Bar/i.test(okRetail) && retailBuy > 0,
+      `loads=${/Night Serum/i.test(okRetail)}, seller=${/Glow Beauty Bar/i.test(okRetail)}, buy buttons=${retailBuy}`);
 
     // C4 — marketplace eligibility: pending-product SubProduct must never surface
     // (card-scoped, see C2).
