@@ -1,13 +1,13 @@
-# DRI-3 browser acceptance — five new business types (2026-11-05)
+# DRI-3 browser acceptance — five new business types (2026-11-05, closed 2026-11-06)
 
 Authenticated Playwright acceptance (real admin + platform UIs) for the five
 newly added business types, against the disposable `drinks_dri3_browser`
 fixture on the :29127 venuePhase0 replica (DRI-4 conventions, dropped +
 reseeded per run).
 
-## Result snapshot (latest full runs)
+## Result snapshot (final, 2026-11-06 — after DRI-9 landed)
 
-- Journey A (admin listing create, all five verticals): **48/48** — quick-filter
+- Journey A (admin listing create, all five verticals): **49/49** — quick-filter
   industry scoping per vertical, catalog match, pricing inputs, size-variant
   row via the quick-add chip, real Save → POST /api/subproducts, listing
   visible on /sub-products. General Retail surfaces all FOUR legacy trees
@@ -18,13 +18,40 @@ reseeded per run).
   Amber colour pair, seller offer, both chips, ₦22k/₦24k price band, two
   separate cart lines, wallet checkout through real UI → order confirmation,
   tampered sizeId + unknown subProductId both rejected by POST /api/orders.
-- Journey C (boundaries): **6/7** — private (unpublished) listing never
-  purchasable or searchable, pending-product sub never surfaced/ordered,
-  approved sibling sells. **Open: C5** — the MAIN marketplace product-detail
-  surface (`GET /api/products/slug/:slug` with no tenant-site context) still
-  assembles buy offers for retail kinds — the one surface DRI-5's
-  beverage-only gate does not cover. Delegated to the Backend Engineer as a
-  follow-up issue; DRI-3 stays open to re-verify C5.
+- Journey C (boundaries): **8/8** — private (unpublished) listing never
+  purchasable or searchable; pending-product sub never surfaced/ordered;
+  **C5 verified closed** (see below).
+
+## C5 closure — DRI-9 beverage-only detail gate (2026-11-06)
+
+DRI-9 landed in the shared checkout as UNCOMMITTED working-tree edits
+(catalogKind.js + product.service.js surface gate + product.controller.js
+`x-is-tenant-site` surface derivation, backend's platformBeverageGate.mongo
+tests 19/19) while the fixture API process on :5301 predated it — the live
+stack silently kept the PRE-gate behavior (browser C5 kept failing although
+in-process router tests passed). Restarting the fixture API server after DRI-9
+landed is mandatory after pulling backend work; always re-probe
+`GET /api/products/slug/:slug` on :5301 before re-running journeys.
+
+Final assertions (real browser, localhost:3002):
+
+- C5 ✅ main marketplace offers no buy path for the approved retail product
+  (Skyline Tailored Shirt) — detail 404s server-side ("Product is not
+  currently available from any seller"), page renders not-found, 0 buy
+  buttons; direct surface probe: marketplace-surface 404, `x-is-tenant-site:
+  true` 200.
+- C3a ✅ (new beverage positive control) an approved BEVERAGE product
+  (Lakeside Craft Lager 330ml, added to the seed under the general tenant,
+  `type: 'beer'`, `isAlcoholic: true`) is browsable WITH a seller offer and an
+  Add-to-Cart button on the main marketplace — beverage exclusivity still
+  sells beverages.
+- C3b ✅ (retail positive control moved to its correct surface) the approved
+  retail sibling still sells on its TENANT-STOREFRONT surface
+  (`?_tenant=glow-beauty` in dev, mirroring the subdomain header the
+  middleware injects) — retail kinds stay sellable in tenant stores.
+
+Commit: `817a4d24` (seed beverage record + C3 surface split). Fixture DB was
+dropped + reseeded ("reseed7"); journeys re-ran on the final fixture.
 
 ## Scripts / fixtures
 
