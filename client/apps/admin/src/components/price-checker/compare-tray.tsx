@@ -1,6 +1,6 @@
 'use client';
 import type { KioskProduct } from './types';
-import { compareKey } from './use-compare';
+import { compareKey, MAX_COMPARE_ITEMS } from './use-compare';
 import { formatMoney } from './money';
 
 /** Persistent tray bar of bottles held for comparison, visible on the welcome
@@ -21,6 +21,7 @@ export function CompareTray({
   onCompare: () => void;
 }) {
   if (!items.length) return null;
+  const ready = items.length >= 2;
   return (
     <div className="kiosk-tray" role="region" aria-label="Bottles to compare">
       {items.map((product) => (
@@ -50,10 +51,14 @@ export function CompareTray({
         </button>
         <button
           className="kiosk-primary"
-          disabled={items.length < 2}
+          key={ready ? 'ready' : 'idle'}
+          data-pulse={ready ? '1' : '0'}
+          disabled={!ready}
           onClick={onCompare}
         >
-          {canAdd ? `Compare (${items.length})` : 'Tray full — compare'}
+          {items.length < MAX_COMPARE_ITEMS
+            ? `Compare (${items.length})`
+            : 'Tray full — compare'}
         </button>
       </div>
     </div>
