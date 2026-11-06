@@ -15,6 +15,17 @@ function midnight(value) {
     throw new ValidationError('Invalid report date.');
   return date;
 }
+function originSplit(rows) {
+  // Legacy documents carry no origin; anything that is not 'phone' counts
+  // as a hardware-kiosk scan.
+  const split = { kiosk: 0, phone: 0 };
+  for (const row of rows) {
+    if (row._id === 'phone') split.phone = row.scans;
+    else split.kiosk += row.scans;
+  }
+  return split;
+}
+
 function reportRange(query = {}) {
   const endDay = query.to || lagosDate(new Date());
   const end = new Date(midnight(endDay).getTime() + DAY);
@@ -196,6 +207,10 @@ async function getAnalytics(tenantId, query) {
     Scan.aggregate(interestPipeline(match, range.skip)),
     Scan.aggregate(interestPipeline(match, range.skip, true)),
   ]);
+  const originRows = await Scan.aggregate([
+    { $match: match },
+    { $group: { _id: '$origin', scans: { $sum: 1 } } },
+  ]);
   const contexts = new Map();
   async function enrich(row) {
     const key = String(row._id.kiosk);
@@ -250,6 +265,7 @@ async function getAnalytics(tenantId, query) {
       today: periods[0]?.today || 0,
       week: periods[0]?.week || 0,
       month: periods[0]?.month || 0,
+      byOrigin: originSplit(originRows),
     },
     hours: Array.from({ length: 24 }, (_, hour) => ({
       hour,
@@ -268,4 +284,4 @@ async function getAnalytics(tenantId, query) {
     hasMore: popular.length > 20 || lowStock.length > 20 || (result.unknown?.length || 0) > 20,
   };
 }
-module.exports = { reportRange, interestPipeline, getAnalytics };
+module.exports = { reportRange, interestPipeline, getAnalytics, originSplit };

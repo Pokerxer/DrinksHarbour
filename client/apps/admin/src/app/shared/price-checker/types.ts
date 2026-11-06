@@ -79,6 +79,7 @@ export interface KioskAnalytics {
     today: number;
     week: number;
     month: number;
+    byOrigin: { kiosk: number; phone: number };
   };
   hours: { hour: number; scans: number }[];
   popular: InterestRow[];

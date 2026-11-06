@@ -15,6 +15,7 @@ const data: KioskAnalytics = {
     today: 0,
     week: 0,
     month: 7,
+    byOrigin: { kiosk: 5, phone: 2 },
   },
   hours: [{ hour: 14, scans: 7 }],
   popular: [],

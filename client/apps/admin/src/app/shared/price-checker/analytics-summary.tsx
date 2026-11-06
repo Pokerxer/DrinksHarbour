@@ -1,6 +1,7 @@
 import {
   PiBarcode,
   PiCheckCircle,
+  PiDeviceMobileCamera,
   PiQuestion,
   PiWine,
   PiChartBar,
@@ -66,6 +67,12 @@ export function AnalyticsSummary({
             value: overview.uniqueProducts,
             hint: 'Distinct catalogue products',
             icon: PiWine,
+          },
+          {
+            label: 'Phone scans',
+            value: overview.byOrigin?.phone ?? 0,
+            hint: 'Scanned with a phone camera',
+            icon: PiDeviceMobileCamera,
           },
         ].map(({ label, value, hint, icon: Icon }) => (
           <div className="pc-card" key={label}>

@@ -46,6 +46,7 @@ function report(total = 15, page = 1): KioskAnalytics {
       today: 2,
       week: 8,
       month: 15,
+      byOrigin: { kiosk: 12, phone: 3 },
     },
     hours: Array.from({ length: 24 }, (_, hour) => ({
       hour,
