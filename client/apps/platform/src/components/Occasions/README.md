@@ -168,36 +168,21 @@ and the auth return path. jsdom gotchas: `window.matchMedia` does not exist
 there (stub it for coarse-pointer tests) and React-controlled textarea values
 leak into `document.body.textContent` — assert on the `[role=log]` node.
 
-Occasions funnel + engagement pass (DRI-24, 2026-11-06): per-occasion client
-draft + post-send status block + CTA band. Files: `lib/occasionDraft.ts`
-(localStorage key `drinksharbour-occasion-draft:<key>`; read/write/clear with
-revalidation on every read — the persisted set is category preferences,
-quantity list entries, the occasion choice and text fields {channel, city,
-date, guests, budget, notes}. Deliberately NOT persisted: the attachment File,
-name/email/WhatsApp and the consent checkbox — device storage is unencrypted,
-so contacts must be re-typed and consent re-given on every send; the page says
-so). Bridges: `OccasionRequestForm` (`draftKey` prop, restore-on-mount +
-persist-on-change + "Draft saved on this device — your attachment is never
-saved / re-add it before sending" note; clear() clears the whole draft when
-"Send another request" or "Clear brief" is used), `OccasionChatPlanner`
-(own-state preferences/items/picker persist; provider pages persist through
-`OccasionDrinksProvider`'s optional `draftKey`), `WeddingPlanner` (key
-`weddings`) and `OccasionsExplorer` (hub key `general` stores the occasion
-choice). Post-send status: `useOccasionThread` now also returns `status` from
-the GET /:id/messages request brief (DRI-19 payload); `PostSendChat`'s
-closed-state band is the status block — "with our team … about 30 minutes /
-longer during busy periods", "Your reviewed plan was sent", or "A human
-replied — open your conversation" (derived from staff senders in the same
-poll; no second loop, no countdown). `OccasionRequestForm`/`WeddingPlanner`
-both feed it through `onReceipt`, so weddings now gets the pane like the
-other three pages (the existing weddings call-count asserts now filter on
-POSTs). Sticky CTA: `planning/OccasionCtaBand.tsx` — a compact static
-"Send to our team" band anchored to #occasion-planner, mounted between the
-tools band and the planner on corporate/house-parties/gifting (page `below`
-slot) and after WeddingQuantities on weddings; it also ends the tools with an
-obvious next step (shared tool components must not embed #occasion-planner
-anchors — corporate.test.cjs asserts the composed corporate render contains
-none). Tests: `components/Occasions/occasionsDraft.test.cjs` (4 cases) and
-two status-block cases appended to postSendChat.test.cjs (6 total). Draft key
-partitions are per page: `general` (hub), `corporate`, `house-parties`,
-`gifting`, `weddings`.
+Integration pass (DRI-28, 2026-11-06): `chat/useOccasionThread.ts` now polls
+incrementally on DRI-26's `after` cursor. The initial load stays the full
+read; every later 10 s visible-tab tick reads
+`GET /:id/messages?after=<last server _id>` (via
+`customerConversation.read(id, { after })`), merges only strictly-newer
+messages plus the brief `status`, and — when a full 30-message page returns —
+re-pages immediately with the last id inside the same tick (bounded loop).
+Cursor math lives in `lib/incrementalThread.ts` (`newestServerId`,
+`incrementalSplit`, `FULL_PAGE`): optimistic `local:*` bubbles NEVER feed the
+cursor, and any error or unclear response (ids at-or-before the cursor, brief
+missing) degrades to a full read in the same tick. `lastCheckedAt` advances
+on every successful read either way; unread stays session-derived for the
+instant in-modal/continue-badge display while the reads themselves drain
+`lastCustomerReadAt` server-side (authoritative unread for closed surfaces is
+`customerUnreadCount` from `GET /mine` — see CustomerChat README). Tests:
+`chat/postSendChat.test.cjs` (16 cases) adds after-cursor merge + status
+update, 30-page immediate re-page, unclear-response and error fallbacks, and
+the placeholder-exclusion case.

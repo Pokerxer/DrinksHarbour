@@ -77,7 +77,7 @@ test('earlier messages from a previous conversation cannot enter the newly opene
  const prior = { window: global.window, document: global.document, fetch: global.fetch, IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT };
  Object.assign(global, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
  let finishOlder;
- const api = { read: async (id, cursor) => cursor ? new Promise(resolve => { finishOlder = resolve; }) : { ...initial, request: { ...initial.request, reference: id }, messages: [], olderCursor: id === 'first' ? 'older' : null } };
+ const api = { read: async (id, cursor) => cursor && cursor.before ? new Promise(resolve => { finishOlder = resolve; }) : { ...initial, request: { ...initial.request, reference: id }, messages: [], olderCursor: !cursor && id === 'first' ? 'older' : null } };
  const Page = load('components/CustomerChat/ConversationPage.tsx', { '@/lib/customerConversation': { customerConversation: api } }).default;
  const root = require('react-dom/client').createRoot(document.getElementById('root'));
  try {
@@ -128,8 +128,7 @@ test('the conversation header reports the backend status; Enter submits and coar
  } finally { await React.act(async () => root.unmount()); dom.window.close(); Object.assign(global, prior); }
 });
 
-test('profile-thread timestamps group by WAT day — Today, Yesterday and the plain legacy date', async () => {
- const formatting = load('lib/chatFormatting.ts');
+test('profile-thread timestamps group by WAT day — Today, Yesterday and the plain legacy date', async () => { const formatting = load('lib/chatFormatting.ts');
  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/my-account/chat/thread' });
  const prior = { window: global.window, document: global.document, fetch: global.fetch, IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT };
  Object.assign(global, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
@@ -173,4 +172,52 @@ test('auth failures on the profile thread offer a sign-in route back to the same
   assert.match(signIn.getAttribute('href'), /redirect=%2Fmy-account%2Fchat%2Fthread/, 'signing in returns to the same conversation');
   assert(alert.textContent.includes('Refresh conversation'), 'the reload affordance stays alongside');
  } finally { await React.act(async () => root.unmount()); dom.window.close(); Object.assign(global, prior); }
+});
+
+test('listed conversations surface the server-computed unread counts as accessible badges',async()=>{
+ const unreadRow={...initial.request,customerUnreadCount:2};
+ const quiet={...initial.request,_id:'quiet',reference:'DH-EVT-TWO'};
+
+ global.fetch=async()=>({ok:true,json:()=>Promise.resolve({success:true,data:{requests:[unreadRow,quiet],page:1,pages:1,total:2}})});
+ const List=load('components/CustomerChat/ConversationList.tsx').default;
+ const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/my-account/chat'}),prior={window:global.window,document:global.document,fetch:global.fetch,IS_REACT_ACT_ENVIRONMENT:global.IS_REACT_ACT_ENVIRONMENT};Object.assign(global,{window:dom.window,document:dom.window.document,IS_REACT_ACT_ENVIRONMENT:true});
+ const {createRoot}=require('react-dom/client'),root=createRoot(document.getElementById('root'));
+ try{
+  await React.act(async()=>root.render(React.createElement(List)));
+  assert(document.body.textContent.includes('2 unread replies from our team'),'the unread row names its count accessibly');
+  assert(!document.body.textContent.includes('0 unread replies'),'a read conversation never shows an unread badge');
+  const badge=[...document.querySelectorAll('span')].find(span=>span.textContent==='2 unread replies from our team');
+  assert(badge,'the unread row is reachable through describeable sr-only markup');
+ }finally{await React.act(async()=>root.unmount());dom.window.close();Object.assign(global,prior);}
+});
+
+test('the profile thread polls incrementally past the last id; every load doubles as the read call',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/my-account/chat/thread'});
+ const prior={window:global.window,document:global.document,fetch:global.fetch,setInterval:global.setInterval,clearInterval:global.clearInterval,IS_REACT_ACT_ENVIRONMENT:global.IS_REACT_ACT_ENVIRONMENT};
+ let poll=null;
+ Object.assign(global,{window:dom.window,document:dom.window.document,IS_REACT_ACT_ENVIRONMENT:true,setInterval:(callback,ms)=>{if(ms===10000)poll=callback;return 1;},clearInterval:()=>{}});
+ Object.defineProperty(document,'hidden',{value:false});
+ const server=[...initial.messages],calls=[];
+ global.fetch=async(url,options={})=>{
+  calls.push(String(url));
+  if(options.method==='POST')return{ok:true,json:async()=>({success:true,data:{_id:'0009',sender:'customer',content:'queued',createdAt:'2026-11-06T12:03:00Z'}})};
+  return{ok:true,json:()=>Promise.resolve({success:true,data:{...initial,messages:server}})};
+ };
+ const Page=load('components/CustomerChat/ConversationPage.tsx').default;
+ const root=require('react-dom/client').createRoot(document.getElementById('root'));
+ try{
+  await React.act(async()=>root.render(React.createElement(Page,{id:'thread'})));
+  assert(/\/api\/occasion-requests\/thread\/messages$/.test(calls[0]),`opening the conversation issues the server read call (${calls[0]})`);
+  assert(!calls[0].includes('after='),'the first read is a full read');
+  assert(document.querySelector('[role=log]'));
+  server.push({_id:'0003',sender:'staff',content:'A refreshed reviewed plan.',createdAt:'2026-11-06T12:05:00Z'});
+  await React.act(async()=>poll());
+  assert(calls[1].includes('after=0002'),`the tick re-reads past the newest server id (${calls[1]})`);
+  assert(document.querySelector('[role=log]').textContent.includes('A refreshed reviewed plan.'),'the incremental merge renders the new reply');
+  calls.length=0;
+  await React.act(async()=>poll());
+  assert(calls[0].includes('after='),'the tick still starts incremental');
+  assert(calls.some(url=>!url.includes('after=')),`an unclear response falls back to the full read (${calls.join(' | ')})`);
+  assert(document.querySelector('[role=log]').textContent.includes('A refreshed reviewed plan.'),'the fallback keeps the merged history');
+ }finally{await React.act(async()=>root.unmount());dom.window.close();Object.assign(global,prior);}
 });

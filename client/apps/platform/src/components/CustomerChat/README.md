@@ -36,3 +36,26 @@ Shift+Enter inserts a newline, IME composition and coarse-pointer/virtual
 keyboards keep default behaviour at event time; the button always works.
 customer-chat.test.cjs now also covers status header copy, Enter/Shift+Enter/
 coarse bail-outs, WAT day grouping and the sign-in return path (7 cases).
+
+DRI-28 integration pass (2026-11-06): the profile thread now shares the
+occasions pane's incremental polling contract. Initial load stays the full
+read (which doubles as the server-side `lastCustomerReadAt` drain — reading
+this page IS the read call); every later 10 s visible-tab tick reads
+`GET /:id/messages?after=<last server _id>`, merging only strictly-newer
+messages plus the brief `status` (keeps `olderCursor` and any earlier history
+already merged). Unclear responses (ids at-or-before the cursor) or errors
+degrade to a full read in the same tick via `mergeConversationHistory`.
+Shared cursor math: `lib/incrementalThread.ts` (`newestServerId`,
+`incrementalSplit`, `FULL_PAGE` — full 30-message pages re-page immediately
+within the tick). `lib/customerConversation.ts` `read` takes a
+`{ before?, after? }` cursor object and /mine rows type
+`customerUnreadCount`; `customerUnreadCountFor()` treats absent/legacy
+counts as zero. ConversationList renders the per-request server count as an
+accessible unread badge (visual pill + `sr-only` "N unread replies from our
+team", badge suppressed at zero). No new request loops. Nav (Sidebar/
+MobileNav) Chat badge is DEFERRED: the only existing /mine poll lives inside
+ConversationList on /my-account/chat, so a layout-wide badge would require a
+new global polling loop or a context provider + fetch waterfall in the
+my-account layout — both outside this issue's cheapness gate. Regressions:
+customer-chat.test.cjs (9 cases — adds the server-unread badge, the
+incremental page poll with read-call assertion, and full-read fallback).

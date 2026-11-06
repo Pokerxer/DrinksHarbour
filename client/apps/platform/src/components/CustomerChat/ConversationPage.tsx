@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { chatDayLabel, chatTimeLabel, isAuthChatError } from '@/lib/chatFormatting';
 import { chatStatusCopy } from '@/lib/chatStatus';
 import { enterSubmitsMessage } from '@/lib/chatKeyboard';
+import { FULL_PAGE, incrementalSplit, newestServerId } from '@/lib/incrementalThread';
 const unique = (messages: ChatMessage[]) => [...new Map(messages.map(message => [message._id, message])).values()].sort((a, b) => a._id.localeCompare(b._id));
 function dayGroups(messages: ChatMessage[]) {
   const groups: { label: string; items: ChatMessage[] }[] = [];
@@ -18,32 +19,75 @@ function dayGroups(messages: ChatMessage[]) {
   }
   return groups;
 }
+/** How many incremental pages one tick may chain when the server answers
+ * with full 30-message pages (same bound as useOccasionThread). */
+const MAX_CHAINED_PASSES = 60;
 export default function ConversationPage({ id }: { id: string }) {
   const { token, user } = useAuth();
-  const [data, setData] = useState<Conversation>(), [text, setText] = useState(''), [error, setError] = useState(''), [sending, setSending] = useState(false), [olderBusy, setOlderBusy] = useState(false), [loadError, setLoadError] = useState('');
+  const [data, setData] = useState<Conversation | undefined>(), [text, setText] = useState(''), [error, setError] = useState(''), [sending, setSending] = useState(false), [olderBusy, setOlderBusy] = useState(false), [loadError, setLoadError] = useState('');
   const pending = useRef(false), key = useRef({ text: '', value: '' }), alive = useRef(true), sequence = useRef(0), context = useRef(Symbol());
+  const pollBusy = useRef(false), cursorTrusted = useRef(false), dataRef = useRef<Conversation | undefined>(undefined);
   const invalidate = useCallback(() => { sequence.current++; }, []);
-  const load = useCallback(async () => {
-    if (!token) return;
+  /** Every subscribed write also mirrors into dataRef so the poller can read
+   * the latest server cursor without a state race (no optimistic sends live
+   * here — every document in dataRef is a server message). */
+  const write = useCallback((next: Conversation | undefined) => { dataRef.current = next; setData(next); }, []);
+  const fullRead = useCallback(async (current: number) => {
+    const value = await customerConversation.read(id);
+    if (!alive.current || current !== sequence.current) return;
+    const prior = dataRef.current, merged = { ...value, ...mergeConversationHistory(prior, value) };
+    write(merged);
+    setLoadError('');
+  }, [id, write]);
+
+  const poll = useCallback(async () => {
+    if (!token || !alive.current || pollBusy.current) return;
+    pollBusy.current = true;
     const current = ++sequence.current;
     try {
-      const value = await customerConversation.read(id);
-      if (alive.current && current === sequence.current) {
-        setData(prior => ({ ...value, ...mergeConversationHistory(prior, value) }));
-        setLoadError('');
+      for (let pass = 0; pass < MAX_CHAINED_PASSES; pass++) {
+        const prior = dataRef.current, after = prior ? newestServerId(prior.messages) : '';
+        if (!cursorTrusted.current || !prior || !after) {
+          await fullRead(current);
+          cursorTrusted.current = true;
+          break;
+        }
+        let value: Conversation;
+        try {
+          value = await customerConversation.read(id, { after });
+        } catch {
+          cursorTrusted.current = false; // degrade to the full read, this tick
+          continue;
+        }
+        if (!alive.current || current !== sequence.current) return;
+        const { newer, clear } = incrementalSplit(value.messages, after);
+        if (!clear || !value.request) {
+          cursorTrusted.current = false; // semantics unclear → full read (keeps earlier history merged)
+          continue;
+        }
+        write({ ...prior, request: value.request, messages: unique([...prior.messages, ...newer]), olderCursor: prior.olderCursor });
+        setError('');
+        if (newer.length < FULL_PAGE) break;
       }
     } catch (failure) {
       if (alive.current && current === sequence.current) {
         setLoadError(failure instanceof Error ? failure.message : 'Conversation unavailable.');
       }
+    } finally {
+      pollBusy.current = false;
     }
-  }, [id, token]);
+  }, [id, token, fullRead, write]);
+
+  const load = useCallback(() => poll(), [poll]);
 
   useEffect(() => {
     alive.current = true;
     context.current = Symbol();
     pending.current = false;
     key.current = { text: '', value: '' };
+    pollBusy.current = false;
+    cursorTrusted.current = false;
+    dataRef.current = undefined;
     setSending(false);
     setOlderBusy(false);
     setLoadError('');
@@ -51,14 +95,14 @@ export default function ConversationPage({ id }: { id: string }) {
     setText('');
     setError('');
     void load();
-    const timer = setInterval(() => { if (!document.hidden) void load(); }, 10000);
+    const timer = setInterval(() => { if (!document.hidden) void poll(); }, 10000);
     return () => {
       alive.current = false;
       context.current = Symbol();
       invalidate();
       clearInterval(timer);
     };
-  }, [load, user?._id, invalidate]);
+  }, [load, user?._id, poll, invalidate]);
 
   async function attemptSend() {
     const currentContext = context.current;
@@ -71,7 +115,8 @@ export default function ConversationPage({ id }: { id: string }) {
     try {
       const message = await customerConversation.send(id, content, key.current.value);
       if (alive.current && currentContext === context.current) {
-        setData(prior => prior ? { ...prior, messages: unique([...prior.messages, message]) } : prior);
+        const prior = dataRef.current;
+        if (prior) write({ ...prior, messages: unique([...prior.messages, message]) });
         setText('');
         key.current = { text: '', value: '' };
       }
@@ -99,14 +144,15 @@ export default function ConversationPage({ id }: { id: string }) {
   }
 
   async function earlier() {
-    if (!data?.olderCursor || olderBusy) return;
+    const prior = dataRef.current;
+    if (!prior?.olderCursor || olderBusy) return;
     const currentContext = context.current;
     setOlderBusy(true);
     setError('');
     try {
-      const result = await customerConversation.read(id, data.olderCursor);
+      const result = await customerConversation.read(id, { before: prior.olderCursor });
       if (alive.current && currentContext === context.current) {
-        setData(prior => prior ? { ...prior, messages: unique([...result.messages, ...prior.messages]), olderCursor: result.olderCursor } : result);
+        write({ ...prior, messages: unique([...result.messages, ...prior.messages]), olderCursor: result.olderCursor });
       }
     } catch {
       if (alive.current && currentContext === context.current) setError('Earlier messages could not be loaded. Try again.');

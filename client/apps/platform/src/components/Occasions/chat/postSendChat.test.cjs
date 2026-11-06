@@ -311,6 +311,152 @@ test('a reply arriving while the pane is closed flashes the title with a badge a
   } finally { await boot.finish(); }
 });
 
+const singleServerMessage = (suffix, content) => ({ _id: suffix, sender: 'staff', content, createdAt: '2026-11-06T12:09:00Z' });
+
+test('the visible-tab poll re-reads incrementally past the last server id — brief status rides along', async () => {
+  const calls = [], stored = [{ _id: '0001', sender: 'customer', content: 'Opening details.', createdAt: '2026-11-06T12:00:00Z' }];
+  let status = 'pending';
+  global.fetch = async url => {
+    calls.push(String(url));
+    const after = /after=([^&]+)/.exec(String(url))?.[1];
+    const page = after ? stored.filter(message => message._id.localeCompare(after) > 0).slice(0, 30) : stored;
+    return conversation(page, status);
+  };
+  const boot = start();
+  const Chat = load('components/Occasions/chat/PostSendChat.tsx').default;
+  try {
+    await React.act(async () => boot.root.render(React.createElement(Chat, { reference, conversationId })));
+    assert(!calls[0].includes('after='), 'the first read stays a full read');
+    assert(!calls[0].includes('before='), 'the first read sends no cursor at all');
+    status = 'delivery_failed';
+    await React.act(async () => boot.tick());
+    assert(calls[1].includes('after=0001'), `the next poll re-reads past the last server id (${calls[1]})`);
+    assert(`${document.body.textContent}`.includes('could not deliver'), 'the incremental brief updates the status band');
+    assert(`${document.body.textContent}`.includes('Checked'), 'lastCheckedAt advances after the incremental read too');
+    // A reply arriving while the pane is closed raises the badge from the same incremental merge.
+    await React.act(async () => document.querySelector('[aria-label="Close conversation"]').click());
+    stored.push(singleServerMessage('0002', 'Our team reviewed your list.'));
+    await React.act(async () => boot.tick());
+    assert(calls[2].includes('after=0001'), 'the cursor tracks the newest SERVER message, unchanged while nothing arrived');
+    const badge = document.querySelector('button[aria-label*="unread"]');
+    assert(badge, 'the incremental merge raises the closed-state unread badge');
+    assert.match(badge.getAttribute('aria-label'), /1 unread/);
+    await React.act(async () => boot.tick());
+    assert(calls[3].includes('after=0002'), 'the cursor advances onto the merged reply for the next tick');
+    assert(`${document.body.textContent}`.includes('Our team reviewed your list.') === false, 'the closed pane still exposes no message body');
+  } finally { await boot.finish(); }
+});
+
+test('a full 30-message incremental page is re-paged immediately with the last id', async () => {
+  const calls = [], stored = [{ _id: '0001', sender: 'customer', content: 'Opening details.', createdAt: '2026-11-06T12:00:00Z' }];
+  global.fetch = async url => {
+    calls.push(String(url));
+    const after = /after=([^&]+)/.exec(String(url))?.[1];
+    const page = after ? stored.filter(message => message._id.localeCompare(after) > 0).slice(0, 30) : stored;
+    return conversation(page);
+  };
+  const boot = start();
+  const Chat = load('components/Occasions/chat/PostSendChat.tsx').default;
+  try {
+    await React.act(async () => boot.root.render(React.createElement(Chat, { reference, conversationId })));
+    for (let index = 2; index <= 31; index++) stored.push(singleServerMessage(String(index).padStart(4, '0'), `Reply number ${index}.`));
+    await React.act(async () => boot.tick());
+    const afterCalls = calls.slice(1).filter(url => url.includes('after='));
+    assert.equal(afterCalls.length, 2, `one full page triggers the follow-up read inside the same tick (${afterCalls})`);
+    assert(afterCalls[0].includes('after=0001'));
+    assert(afterCalls[1].includes('after=0031'), 'the follow-up read pages from the last returned id');
+    for (let index = 32; index <= 33; index++) stored.push(singleServerMessage(String(index).padStart(4, '0'), `Reply number ${index}.`));
+    calls.length = 0;
+    await React.act(async () => boot.tick());
+    assert.equal(calls.filter(url => url.includes('after=')).length, 1, 'a short page waits for the next tick instead of chaining');
+    assert(`${document.body.textContent}`.includes('Reply number 33.'), 'every message from the chained reads lands in the log');
+  } finally { await boot.finish(); }
+});
+
+test('an unclear incremental response falls back to the full read in the same tick', async () => {
+  const calls = [], stored = [{ _id: '0001', sender: 'customer', content: 'Opening details.', createdAt: '2026-11-06T12:00:00Z' }];
+  let tolerateAfter = true;
+  global.fetch = async (url, options = {}) => {
+    calls.push(`${options.method || 'GET'} ${url}`);
+    if (tolerateAfter === false && String(url).includes('after=')) return conversation([...stored], 'pending');
+    return conversation([...stored]);
+  };
+  const boot = start();
+  const Chat = load('components/Occasions/chat/PostSendChat.tsx').default;
+  try {
+    await React.act(async () => boot.root.render(React.createElement(Chat, { reference, conversationId })));
+    await React.act(async () => document.querySelector('[aria-label="Close conversation"]').click());
+    stored.push(singleServerMessage('0002', 'Reply one.'));
+    // The cursor is abandoned server-side: the after-call echoes the whole thread
+    // (ids at-or-before the cursor) — semantics unclear → full read.
+    tolerateAfter = false;
+    await React.act(async () => boot.tick());
+    const tickCalls = calls.slice(1);
+    assert(tickCalls[0].includes('after=0001'), 'the tick still starts incremental');
+    assert(!tickCalls[1].includes('after='), `the unclear response is followed by a full read (${tickCalls.join(' | ')})`);
+    const badge = document.querySelector('button[aria-label*="unread"]');
+    assert(badge && /1 unread/.test(badge.getAttribute('aria-label')), 'unread stays correct after the fallback');
+  } finally { await boot.finish(); }
+});
+
+test('an errored incremental read degrades to the full read in the same tick', async () => {
+  const calls = [], stored = [{ _id: '0001', sender: 'customer', content: 'Opening details.', createdAt: '2026-11-06T12:00:00Z' }];
+  let breakAfter = true;
+  global.fetch = async (url, options = {}) => {
+    calls.push(String(url));
+    if (breakAfter && String(url).includes('after=')) throw Error('Network blip');
+    return conversation([...stored]);
+  };
+  const boot = start();
+  const Chat = load('components/Occasions/chat/PostSendChat.tsx').default;
+  try {
+    await React.act(async () => boot.root.render(React.createElement(Chat, { reference, conversationId })));
+    await React.act(async () => document.querySelector('[aria-label="Close conversation"]').click());
+    stored.push(singleServerMessage('0002', 'Reply one.'));
+    calls.length = 0;
+    await React.act(async () => boot.tick());
+    const tickCalls = calls.slice(0);
+    assert(tickCalls[0].includes('after=0001'), 'the tick attempts the incremental read first');
+    assert(!tickCalls[1].includes('after='), `the failed incremental read falls back to the full read (${tickCalls.join(' | ')})`);
+    assert(!`${document.body.textContent}`.includes('Network blip'), 'the cheap poll degrades silently instead of erroring the page');
+    const badge = document.querySelector('button[aria-label*="unread"]');
+    assert(badge && /1 unread/.test(badge.getAttribute('aria-label')), 'unread stays correct after the degraded read');
+  } finally { await boot.finish(); }
+});
+
+test('cursor math never consumes optimistic placeholders', async () => {
+  const calls = [], stored = [{ _id: '0001', sender: 'customer', content: 'Opening details.', createdAt: '2026-11-06T12:00:00Z' }];
+  const gates = [];
+  global.fetch = async (url, options = {}) => {
+    if (options.method === 'POST') {
+      const input = JSON.parse(options.body);
+      return new Promise(resolve => gates.push(() => resolve({ ok: true, json: async () => ({ success: true, data: { _id: '0003', sender: 'customer', content: input.content, createdAt: '2026-11-06T12:06:00Z' } }) })));
+    }
+    calls.push(String(url));
+    const after = /after=([^&]+)/.exec(String(url))?.[1];
+    const page = after ? stored.filter(message => message._id.localeCompare(after) > 0).slice(0, 30) : stored;
+    return conversation(page);
+  };
+  const boot = start();
+  const Chat = load('components/Occasions/chat/PostSendChat.tsx').default;
+  try {
+    await React.act(async () => boot.root.render(React.createElement(Chat, { reference, conversationId })));
+    await typeMessage(boot, 'Add 30 bottles.');
+    await React.act(async () => document.querySelector('form').dispatchEvent(new boot.dom.window.Event('submit', { bubbles: true, cancelable: true })));
+    assert(document.querySelector('[role=log]').textContent.includes('Sending…'), 'the optimistic bubble is queued');
+    await React.act(async () => boot.tick());
+    assert(calls.length && calls.every(url => !url.includes('after=local:')), `no local id ever reaches the cursor (${calls.join(' | ')})`);
+    assert(calls.some(url => url.includes('after=0001')), `the poll pages from the newest SERVER id (${calls.join(' | ')})`);
+    assert(document.querySelector('[role=log]').textContent.includes('Sending…'), 'the poll does not drop the pending bubble');
+    gates[0]();
+    await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    calls.length = 0;
+    await React.act(async () => boot.tick());
+    assert(calls.some(url => url.includes('after=0003')), `once the send confirms, the cursor advances past it (${calls.join(' | ')})`);
+    assert(!document.querySelector('[role=log]').textContent.includes('Sending…'));
+  } finally { await boot.finish(); }
+});
+
 test('auth failures offer a sign-in route back to the canonical conversation instead of dead-ending', async () => {
   global.fetch = async () => { throw Error('Please sign in to view this conversation.'); };
   const boot = start();
