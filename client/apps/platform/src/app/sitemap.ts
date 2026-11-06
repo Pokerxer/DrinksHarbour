@@ -1,5 +1,8 @@
 import type { MetadataRoute } from "next";
 import { getPosts } from "./blog/api";
+import { occasionPages } from '@/lib/commercialPages';
+import { getOccasionSubpages } from '@/lib/occasions';
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
 
 // Generated on request rather than at build. This route makes six API calls, so
 // prerendering it paid Vercel build CPU to sit and wait on the backend — and a
@@ -9,7 +12,7 @@ import { getPosts } from "./blog/api";
 // costs almost nothing.
 export const dynamic = "force-dynamic";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
+const BASE_URL = publicSiteOrigin();
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 // Next.js interpolates entry.url straight into <loc> without XML-escaping, so a
@@ -220,6 +223,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/shipping-info`,               changeFrequency: "monthly", priority: 0.4 },
     { url: `${BASE_URL}/delivery/abuja`,              changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE_URL}/delivery/lagos`,              changeFrequency: "monthly", priority: 0.7 },
+    { url: `${BASE_URL}/authenticity-guarantee`,      changeFrequency: "monthly", priority: 0.6 },
+    { url: `${BASE_URL}/bulk-drinks`,                changeFrequency: "monthly", priority: 0.7 },
+    { url: `${BASE_URL}/occasions`,                  changeFrequency: "monthly", priority: 0.6 },
+    // Occasion landing pages plus every registered subpage — subpages relied
+    // on SubpageNav alone for discovery before this sitemap expansion.
+    ...occasionPages.flatMap(page => [
+      { url: `${BASE_URL}${page.path}`, changeFrequency: 'monthly' as const, priority: 0.6 },
+      ...getOccasionSubpages(page.slug).map(sub => ({ url: `${BASE_URL}${page.path}/${sub.slug}`, changeFrequency: 'monthly' as const, priority: 0.5 })),
+    ]),
     { url: `${BASE_URL}/sustainability`,              changeFrequency: "monthly", priority: 0.4 },
     { url: `${BASE_URL}/brands`,                      changeFrequency: "weekly",  priority: 0.5 },
     { url: `${BASE_URL}/categories`,                  changeFrequency: "weekly",  priority: 0.5 },
