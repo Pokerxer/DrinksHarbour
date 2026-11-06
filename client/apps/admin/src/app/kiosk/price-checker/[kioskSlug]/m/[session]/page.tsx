@@ -6,15 +6,30 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PhoneScanner } from '@/components/price-checker/phone-scanner';
-import { formatMoney } from '@/components/price-checker/money';
-import { openSession, postPhoneScan, type PhoneScanResult } from './phone-api';
+import { PhoneResults, type Checked } from '@/components/price-checker/phone-results';
+import { openSession, postPhoneScan } from './phone-api';
 import '../../kiosk-phone.css';
 
 type Phase = 'opening' | 'live' | 'down';
 
-interface Checked {
-  barcode: string;
-  result: PhoneScanResult;
+function readStored(slug: string): Checked[] {
+  try {
+    const list: unknown = JSON.parse(
+      sessionStorage.getItem(`price-checker-phone-${slug}`) || '[]'
+    );
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter(
+        (row): row is Checked =>
+          !!row &&
+          typeof row === 'object' &&
+          typeof (row as Checked).barcode === 'string' &&
+          !!(row as Checked).result
+      )
+      .slice(0, 12);
+  } catch {
+    return [];
+  }
 }
 
 export default function PhonePriceCheckerPage({
@@ -23,13 +38,11 @@ export default function PhonePriceCheckerPage({
   params: Promise<{ kioskSlug: string; session: string }>;
 }) {
   const [phase, setPhase] = useState<Phase>('opening');
-  const [checked, setChecked] = useState<Checked[]>([]);
+  const [checked, setChecked] = useState<Checked[]>(() => readStored(''));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const sessionData = useRef({
-    slug: '',
-    session: '',
-  });
+  const sessionData = useRef({ slug: '', session: '' });
+  const slugState = useRef('');
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -43,6 +56,8 @@ export default function PhonePriceCheckerPage({
         return;
       }
       sessionData.current = { slug: kioskSlug, session };
+      slugState.current = kioskSlug;
+      setChecked(readStored(kioskSlug));
       try {
         await openSession(kioskSlug);
         if (!cancelled) setPhase('live');
@@ -68,6 +83,18 @@ export default function PhonePriceCheckerPage({
       setBusy(false);
     }
   }, []);
+  useEffect(() => {
+    const slug = slugState.current;
+    if (!slug) return;
+    try {
+      sessionStorage.setItem(
+        `price-checker-phone-${slug}`,
+        JSON.stringify(checked)
+      );
+    } catch {
+      /* private mode — history lives in memory only */
+    }
+  }, [checked]);
   if (phase === 'down')
     return (
       <main className="phone-page">
@@ -101,35 +128,7 @@ export default function PhonePriceCheckerPage({
             {error}
           </p>
         )}
-        <ul className="phone-results" aria-label="Scanned bottles">
-          {checked.map(({ barcode, result }) =>
-            result.found && result.product ? (
-              <li className="phone-hit" key={barcode}>
-                {result.product.image && (
-                  <img src={result.product.image} alt="" referrerPolicy="no-referrer" />
-                )}
-                <div>
-                  <p className="phone-name">{result.product.name}</p>
-                  <p className="phone-price">
-                    {formatMoney(result.product.price, result.product.currency)}
-                  </p>
-                  <p className="phone-toned">
-                    It is on the price checker screen in front of you.
-                  </p>
-                </div>
-              </li>
-            ) : (
-              <li className="phone-miss" key={barcode}>
-                <p className="phone-name">Barcode {barcode}</p>
-                <p className="phone-toned">
-                  {result.status === 'UNAVAILABLE'
-                    ? 'Not currently on sale — ask a member of staff.'
-                    : 'We could not find this barcode — ask a member of staff.'}
-                </p>
-              </li>
-            )
-          )}
-        </ul>
+        <PhoneResults results={checked} />
         {!checked.length && phase === 'live' && (
           <p className="phone-toned">Scans appear here as you check bottles.</p>
         )}

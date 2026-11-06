@@ -90,8 +90,8 @@ it('adds price-per-ml and cost-per-drink rows when volumes and ABV allow', () =>
       onClose={() => {}}
     />
   );
-  const labels: (string | undefined)[] = [
-    ...document.querySelectorAll<HTMLInputElement>('.kiosk-compare-rows th'),
+  const labels = [
+    ...document.querySelectorAll('.kiosk-compare-rows th'),
   ].map((cell) => cell.textContent);
   expect(labels).toContain('Price per ml');
   expect(labels).toContain('Cost per drink');

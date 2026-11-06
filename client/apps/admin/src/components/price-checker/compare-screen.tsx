@@ -65,7 +65,7 @@ export function CompareScreen({
   const headline = decisionHeadline(items, currency);
   // Currency glyph, whatever the kiosk is configured with (₦, $, …).
   const symbol =
-    formatMoney(1, currency).match(/[^\d.,\s]/u)?.[0] ?? '₦';
+    formatMoney(1, currency).match(/[^\d.,\s]/)?.[0] ?? '₦';
 
   const computed: CompareRow[] = [];
   const perMl = items.map((product) => pricePerMl(product.price, product.volumeMl));

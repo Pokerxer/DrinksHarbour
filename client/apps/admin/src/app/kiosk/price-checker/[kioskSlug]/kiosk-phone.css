@@ -108,3 +108,81 @@
     color: #c0b9b6;
   }
 }
+
+/* ── round 2 — ergonomics ───────────────────────────────────────────────── */
+.phone-viewfinder {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.phone-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: #b20202;
+  border-style: solid;
+  border-width: 0;
+  pointer-events: none;
+}
+.phone-corner.tl { top: 8px; left: 8px; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 8px; }
+.phone-corner.tr { top: 8px; right: 8px; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 8px; }
+.phone-corner.bl { bottom: 8px; left: 8px; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 8px; }
+.phone-corner.br { bottom: 8px; right: 8px; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 8px; }
+.phone-hint {
+  color: #68615e;
+  font-size: 13px;
+  text-align: center;
+  margin: 8px 0 0;
+}
+.phone-torch {
+  align-self: flex-start;
+  border: 1px solid #e5e0db;
+  border-radius: 999px;
+  background: #fff;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.phone-summary {
+  background: #fff7f5;
+  border: 1px solid #f2d9d5;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+.phone-badge {
+  display: inline-block;
+  margin-left: 8px;
+  background: #b20202;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.phone-stock {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 3px 10px;
+  border: 1px solid #e5e0db;
+}
+.phone-stock.in_stock { color: #136f3a; }
+.phone-stock.low_stock { color: #8a5a00; }
+.phone-stock.out_of_stock { color: #9a1111; }
+.phone-land { animation: phone-land 0.5s ease 1; }
+@keyframes phone-land {
+  from { opacity: 0.25; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.phone-sent { color: #136f3a; margin-top: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .phone-land { animation: none; }
+}
+@media (prefers-color-scheme: dark) {
+  .phone-corner { border-color: #e5786e; }
+  .phone-torch { background: #242326; border-color: #454044; }
+  .phone-summary { background: #2a2426; border-color: #5a3a36; }
+}

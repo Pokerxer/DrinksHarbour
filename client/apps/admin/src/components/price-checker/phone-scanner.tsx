@@ -10,13 +10,16 @@ interface Reader {
   ) => Promise<void>;
   stop: () => Promise<void>;
   clear: () => void;
+  applyVideoConstraints?: (constraints: unknown) => Promise<void>;
 }
 
-/**
- * Mobile companion of the kiosk price checker: points the customer's camera
- * at barcodes and relays each decoded code to the page, which asks the API
- * for the price and shares it with the paired kiosk screen.
- */
+interface TorchState {
+  supported: boolean;
+  on: boolean;
+}
+
+/** Relays each decoded code to the page, which asks the API for the price
+ *  and shares it with the paired kiosk screen. */
 export function PhoneScanner({
   slug,
   session,
@@ -27,6 +30,7 @@ export function PhoneScanner({
   onScan: (code: string) => void;
 }) {
   const [status, setStatus] = useState<'ready' | 'starting' | 'denied'>('ready');
+  const [torch, setTorch] = useState<TorchState>({ supported: false, on: false });
   const readerRef = useRef<Reader | null>(null);
   const last = useRef({ code: '', at: 0 });
   const decode = useCallback(
@@ -59,17 +63,59 @@ export function PhoneScanner({
         () => {}
       );
       setStatus('ready');
+      // Torch probe: capability-capable browsers keep the toggle; the rest
+      // honestly hide it. A probe failure never breaks scanning.
+      if (reader.applyVideoConstraints)
+        try {
+          await reader.applyVideoConstraints({ advanced: [{ torch: false }] });
+          setTorch({ supported: true, on: false });
+        } catch {
+          setTorch({ supported: false, on: false });
+        }
+      else setTorch({ supported: false, on: false });
     } catch (error) {
       readerRef.current = null;
-      setStatus(error instanceof Error && /permission|denied/i.test(error.message) ? 'denied' : 'ready');
+      setStatus(
+        error instanceof Error && /permission|denied/i.test(error.message)
+          ? 'denied'
+          : 'ready'
+      );
     }
   }, [decode]);
+  const toggleTorch = useCallback(async () => {
+    const reader = readerRef.current;
+    if (!reader?.applyVideoConstraints) return;
+    try {
+      await reader.applyVideoConstraints({ advanced: [{ torch: !torch.on }] });
+      setTorch((state) => ({ supported: true, on: !state.on }));
+    } catch {
+      /* dim store, no torch — the scanner keeps working */
+    }
+  }, [torch.on]);
   return (
     <section className="phone-scanner" aria-label="Camera scanner">
       <button className="phone-start" onClick={() => void start()}>
         Start camera
       </button>
-      <div id="phone-reader" />
+      <div className="phone-viewfinder">
+        <div id="phone-reader" />
+        <span className="phone-corner tl" aria-hidden="true" />
+        <span className="phone-corner tr" aria-hidden="true" />
+        <span className="phone-corner bl" aria-hidden="true" />
+        <span className="phone-corner br" aria-hidden="true" />
+      </div>
+      {status === 'ready' && (
+        <p className="phone-hint">Align the barcode inside the box</p>
+      )}
+      {torch.supported && (
+        <button
+          className="phone-torch"
+          aria-label="Toggle torch"
+          onClick={() => void toggleTorch()}
+        >
+          {torch.on ? 'Torch on 🔆' : 'Toggle torch 🔆'}
+        </button>
+      )}
       {status === 'starting' && <p role="status">Opening camera…</p>}
       {status === 'denied' && (
         <p role="alert">Allow camera access in your browser to scan bottles.</p>
