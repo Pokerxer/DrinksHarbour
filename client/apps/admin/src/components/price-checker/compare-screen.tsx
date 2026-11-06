@@ -1,31 +1,53 @@
 'use client';
 import type { KioskProduct } from './types';
 import { formatMoney } from './money';
+import { bestValueRank, pricePerDrink, pricePerMl } from './metrics';
+import { decisionHeadline, rowsFor, type CompareRow } from './compare-rows';
 import { compareKey } from './use-compare';
 
-const STOCK: Record<string, string> = {
-  IN_STOCK: 'In stock',
-  LOW_STOCK: 'Low stock',
-  OUT_OF_STOCK: 'Out of stock',
-};
+interface CardProps {
+  product: KioskProduct;
+  rank: number;
+  onRemove: (key: string) => void;
+  currency: string;
+}
 
-/** Per-bottle attribute rows. Shared values collapse to a single row below. */
-const rows: { label: string; value: (product: KioskProduct) => string | undefined }[] = [
-  { label: 'Size', value: (product) => product.size || product.volume },
-  {
-    label: 'ABV',
-    value: (product) => (product.abv !== undefined ? `${product.abv}%` : undefined),
-  },
-  { label: 'Origin', value: (product) => product.origin },
-  {
-    label: 'Type',
-    value: (product) => (product.alcoholic ? 'Alcoholic' : 'Non-alcoholic'),
-  },
-  {
-    label: 'Stock',
-    value: (product) => (product.availability ? STOCK[product.availability] : undefined),
-  },
-];
+function CompareCard({ product, rank, onRemove, currency }: CardProps) {
+  const money = (value: number) => formatMoney(value, currency);
+  return (
+    <div
+      className="kiosk-compare-card"
+      role="listitem"
+      data-rank={rank}
+      key={compareKey(product)}
+    >
+      <button
+        className="kiosk-compare-drop"
+        aria-label={`Remove ${product.name}`}
+        onClick={() => onRemove(compareKey(product))}
+      >
+        ✕
+      </button>
+      {product.image ? (
+        <img
+          src={product.image}
+          alt={product.name}
+          referrerPolicy="no-referrer"
+          onError={(event) => (event.currentTarget.style.visibility = 'hidden')}
+        />
+      ) : (
+        <span className="kiosk-compare-blank" aria-hidden="true" />
+      )}
+      <p className="kiosk-eyebrow">{product.brand || ' '}</p>
+      <p className="kiosk-compare-name">{product.name}</p>
+      {rank === 0 && <p className="kiosk-compare-best">Best value</p>}
+      <p className="kiosk-price">{money(product.price)}</p>
+      {product.originalPrice !== undefined && (
+        <p className="kiosk-small">Save {money(product.savings ?? 0)}</p>
+      )}
+    </div>
+  );
+}
 
 export function CompareScreen({
   items,
@@ -38,8 +60,56 @@ export function CompareScreen({
   onRemove: (key: string) => void;
   onClose: () => void;
 }) {
-  const cheapest = Math.min(...items.map((product) => product.price));
-  const money = (value: number) => formatMoney(value, currency);
+  const ranks = bestValueRank(items);
+  const rows = rowsFor(items);
+  const headline = decisionHeadline(items, currency);
+  // Currency glyph, whatever the kiosk is configured with (₦, $, …).
+  const symbol =
+    formatMoney(1, currency).match(/[^\d.,\s]/u)?.[0] ?? '₦';
+
+  const computed: CompareRow[] = [];
+  const perMl = items.map((product) => pricePerMl(product.price, product.volumeMl));
+  if (perMl.some(Boolean))
+    computed.push({
+      label: 'Price per ml',
+      values: perMl.map((value) =>
+        value === null ? undefined : `${symbol}${value.toFixed(2)}/ml`
+      ),
+      shared: new Set(perMl).size === 1 && perMl[0] !== null,
+    });
+  const perDrink = items.map((product) =>
+    pricePerDrink(product.price, product.volumeMl, product.abv)
+  );
+  if (perDrink.every(Boolean))
+    computed.push({
+      label: 'Cost per drink',
+      values: perDrink.map((value) =>
+        value === null ? undefined : `${symbol}${value.toFixed(2)}/drink`
+      ),
+      shared: new Set(perDrink).size === 1 && perDrink[0] !== null,
+    });
+  const table = [...rows, ...computed];
+
+  const renderRow = (row: CompareRow) => {
+    if (row.shared) {
+      const value = row.values[0];
+      return (
+        <tr key={row.label} aria-label={`All bottles: ${value}`}>
+          <th scope="row">{row.label}</th>
+          <td colSpan={items.length}>All: {value}</td>
+        </tr>
+      );
+    }
+    return (
+      <tr key={row.label}>
+        <th scope="row">{row.label}</th>
+        {row.values.map((value, index) => (
+          <td key={index}>{value || '—'}</td>
+        ))}
+      </tr>
+    );
+  };
+
   return (
     <section className="kiosk-compare" aria-label="Bottle comparison">
       <div className="kiosk-compare-head">
@@ -51,64 +121,27 @@ export function CompareScreen({
           Close
         </button>
       </div>
-      <div
-        className="kiosk-compare-grid"
-        role="list"
-        aria-label="Compared bottles"
-      >
-        {items.map((product) => (
-          <div className="kiosk-compare-card" role="listitem" key={compareKey(product)}>
-            <button
-              className="kiosk-compare-drop"
-              aria-label={`Remove ${product.name}`}
-              onClick={() => onRemove(compareKey(product))}
-            >
-              ✕
-            </button>
-            {product.image ? (
-              <img
-                src={product.image}
-                alt={product.name}
-                referrerPolicy="no-referrer"
-                onError={(event) => (event.currentTarget.style.visibility = 'hidden')}
-              />
-            ) : (
-              <span className="kiosk-compare-blank" aria-hidden="true" />
-            )}
-            <p className="kiosk-eyebrow">{product.brand || ' '}</p>
-            <p className="kiosk-compare-name">{product.name}</p>
-            {product.price === cheapest && <p className="kiosk-compare-best">Best value</p>}
-            <p className="kiosk-price">{money(product.price)}</p>
-            {product.originalPrice !== undefined && (
-              <p className="kiosk-small">Save {money(product.savings ?? 0)}</p>
-            )}
-          </div>
+      <div className="kiosk-compare-grid" role="list" aria-label="Compared bottles">
+        {items.map((product, index) => (
+          <CompareCard
+            key={compareKey(product)}
+            product={product}
+            rank={ranks[index]}
+            onRemove={onRemove}
+            currency={currency}
+          />
         ))}
       </div>
-      <table className="kiosk-compare-rows" aria-label="Differences">
-        <tbody>
-          {rows.map((row) => {
-            const values = items.map((product) => row.value(product));
-            const defined = values.filter((value) => value !== undefined);
-            if (!defined.length) return null;
-            if (defined.length === values.length && new Set(defined).size === 1)
-              return (
-                <tr key={row.label} aria-label={`All bottles: ${defined[0]}`}>
-                  <th scope="row">{row.label}</th>
-                  <td colSpan={values.length}>All: {defined[0]}</td>
-                </tr>
-              );
-            return (
-              <tr key={row.label}>
-                <th scope="row">{row.label}</th>
-                {values.map((value, index) => (
-                  <td key={index}>{value || '—'}</td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {headline && (
+        <p className="kiosk-compare-verdict" role="status">
+          {headline}
+        </p>
+      )}
+      {table.length > 0 && (
+        <table className="kiosk-compare-rows" aria-label="Differences">
+          <tbody>{table.map(renderRow)}</tbody>
+        </table>
+      )}
     </section>
   );
 }

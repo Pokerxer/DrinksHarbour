@@ -59,3 +59,56 @@ it('lets the customer remove a bottle and close the view', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+it('adds price-per-ml and cost-per-drink rows when volumes and ABV allow', () => {
+  render(
+    <CompareScreen
+      items={[
+        {
+          name: 'A',
+          price: 5000,
+          currency: 'NGN',
+          alcoholic: true,
+          taxLabel: '',
+          abv: 40,
+          volumeMl: 700,
+          beverageType: 'spirit',
+        },
+        {
+          name: 'B',
+          price: 7000,
+          currency: 'NGN',
+          alcoholic: true,
+          taxLabel: '',
+          abv: 40,
+          volumeMl: 1000,
+          beverageType: 'spirit',
+        },
+      ]}
+      currency="NGN"
+      onRemove={() => {}}
+      onClose={() => {}}
+    />
+  );
+  const labels: (string | undefined)[] = [
+    ...document.querySelectorAll<HTMLInputElement>('.kiosk-compare-rows th'),
+  ].map((cell) => cell.textContent);
+  expect(labels).toContain('Price per ml');
+  expect(labels).toContain('Cost per drink');
+});
+
+it('renders the decision headline above the table', () => {
+  render(
+    <CompareScreen
+      items={[
+        { ...bottle('A', 42000), size: '70cl', beverageType: 'spirit' },
+        { ...bottle('B', 57000), size: '70cl', beverageType: 'spirit' },
+      ]}
+      currency="NGN"
+      onRemove={() => {}}
+      onClose={() => {}}
+    />
+  );
+  const verdict = screen.getByRole('status');
+  expect(String(verdict.textContent)).toContain('Both bottles');
+});
