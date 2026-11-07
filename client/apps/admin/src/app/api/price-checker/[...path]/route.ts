@@ -17,9 +17,11 @@ const response = (data: unknown, status = 200) =>
 async function handle(req: NextRequest, params: Promise<{ path: string[] }>) {
   const operation = proxyAction((await params).path);
   if (!operation) return response({ success: false }, 404);
-  const { slug, action } = operation;
-  if ((action === 'config') !== (req.method === 'GET'))
+  const { slug, action, method } = operation;
+  if ((action === 'config' || action === 'book') !== (req.method === 'GET')) {
+    void method;
     return response({ success: false }, 405);
+  }
   if (
     req.method === 'POST' &&
     !sameOrigin(req.headers.get('origin'), req.url, req.headers.get('host'))
@@ -37,7 +39,20 @@ async function handle(req: NextRequest, params: Promise<{ path: string[] }>) {
   try {
     let body: string | undefined;
     if (action === 'session') body = JSON.stringify({ slug });
-    else if (action === 'scan') {
+    else if (action === 'sync') {
+      const raw = await req.text();
+      if (raw.length > 16384) return response({ success: false }, 413);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return response({ success: false }, 400);
+      }
+      const scans = (parsed as { scans?: unknown } | null)?.scans;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Array.isArray(scans))
+        return response({ success: false }, 400);
+      body = JSON.stringify({ scans });
+    } else if (action === 'scan') {
       const raw = await req.text();
       if (raw.length > 2048) return response({ success: false }, 413);
       let parsed: unknown;
