@@ -103,3 +103,46 @@ components in `client/apps/admin/src/components/price-checker/`) supports:
   torch tests in `phone-scanner.test.tsx`,
   `priceChecker.originSplit.test.js`; compare-screen/kiosk-interface tests
   extended. Suites green: 37 server / 98 client / tsc clean.
+
+## Round 3 — offline-first + scanner tuning (2026-11-07, spec `2026-11-07-kiosk-offline-scanner-design.md`)
+
+- **Server**: `GET /api/price-checker/book` (session token, `ipLimit`) returns
+  `services/priceChecker/book.js buildBook(context)` — whole-warehouse
+  compact pricebook (barcode-keyed public fields, no ids, same sellability
+  rules as /scan, pricelist-aware via resolvePrice, HIDE rule drops zero
+  stock, cap 4000 sizes) + `generatedAt`. `POST /api/price-checker/sync`
+  (same auth + limiters) takes `{ scans: [...] }` ≤50 entries
+  `{ barcode, requestId, scannedAt }`, validates each entry independently
+  (`buildSync`), runs lookup + `logScan` with an optional clamped
+  `scannedAt` (last 7 days, never future — `syncScannedAt`), and answers
+  `{ synced: [{requestId}], rejected: [{requestId,error}] }`. In-batch
+  duplicate requestIds are rejected. `logScan(context, barcode, requestId,
+  result, origin='kiosk', scannedAt?)` passes the timestamp through
+  (`KioskScan.scannedAt` keeps the queued time; UnknownBarcodeScan upserts
+  use the same occurrence).
+- **Proxy**: `proxyAction` now returns `{ slug, action, method }`; GET actions
+  `config`/`book`, POST actions `session`/`scan`/`sync`; sync bodies ≤16KB
+  and whitelisted to `{ scans: [...] }`.
+- **Client**: `offline.ts` — `saveBook/loadBook/lookupBook` (localStorage
+  `price-checker-book-<slug>`, post shape `{ generatedAt, config, items }`,
+  ~4MB guard) and queue helpers `readQueue/addQueue/dropQueue/flushQueue`
+  (`price-checker-queue-<slug>`, cap 500, `flushQueue` POSTs /sync and drops
+  confirmed requestIds). `use-offline.ts useOfflineBook(slug)` refreshes the
+  book on mount/`online`/10-minute timer and exposes an
+  `OfflineSupport { generatedAt, config?, lookup, onOfflineScan }`.
+- **`useKiosk(slug, offline?)`**: on `KioskError(502/503/504)` the scan falls
+  back to the cached book — cache hit ⇒ cached `result` screen + queued scan
+  record; miss ⇒ `missing` screen; no book ⇒ old failure path. `initialize()`
+  with the same network failure and a cached config boots straight to a
+  working idle screen. Returns `offline` boolean. `kiosk.tsx` renders an
+  "Offline · prices from <time>" pill in the header and flushes via the hook.
+- **Scanner tuning** (`phone-scanner.tsx`): restricted formatsToSupport
+  (EAN-13/8, UPC-A/E, CODE-128/39), `fps 15`, hi-res videoConstraints,
+  wide 300×140 horizontal scan band for 1-D symbols,
+  `useBarCodeDetectorIfSupported`, zoom slider (only when
+  `getRunningTrackCapabilities()` reports a zoom range), manual typed-barcode
+  fallback. Toron + viewfinder unchanged.
+- Tests: `priceChecker.book.test.js`, `priceChecker.sync.test.js`
+  (unit, mocked catalog/logging), `offline.test.ts`,
+  extended `use-kiosk.test.tsx` / `scanner.test.ts` /
+  `phone-scanner.test.tsx`. Suites: 43 server / 108 client / tsc clean.
