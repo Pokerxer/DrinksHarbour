@@ -2,7 +2,7 @@
   "installCommand": "npm ci",
   "functions": {
     "server.js": {
-      "excludeFiles": "node_modules/onnxruntime-node/bin/napi-v3/darwin/**, node_modules/onnxruntime-node/bin/napi-v3/win32/**, node_modules/sharp-wasm32/**, node_modules/@img/sharp-wasm32/**, node_modules/@img/sharp-libvips-linuxmusl-x64/**, node_modules/@img/sharp-linuxmusl-x64/**, node_modules/@img/sharp-libvips-linux-arm64/**, node_modules/@img/sharp-linux-arm64/**"
+      "excludeFiles": "node_modules/onnxruntime-node/bin/napi-v3/darwin/**, node_modules/onnxruntime-node/bin/napi-v3/win32/**, node_modules/onnxruntime-node/bin/napi-v3/linux/arm64/**"
     }
   }
 }
