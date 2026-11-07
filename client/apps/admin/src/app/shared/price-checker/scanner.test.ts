@@ -49,7 +49,11 @@ describe('keyboard scanner', () => {
 });
 describe('same-origin kiosk proxy', () => {
   it('accepts only fixed public operations and never administrative paths', () => {
-    expect(proxyAction(['shop-one', 'session'])).toEqual({ slug: 'shop-one', action: 'session' });
+    expect(proxyAction(['shop-one', 'session'])).toEqual({
+      slug: 'shop-one',
+      action: 'session',
+      method: 'POST',
+    });
     expect(proxyAction(['kiosks', 'delete', 'id'])).toBeNull();
     expect(proxyAction(['../admin', 'scan'])).toBeNull();
     expect(proxyAction(['shop-one', 'kiosks'])).toBeNull();
