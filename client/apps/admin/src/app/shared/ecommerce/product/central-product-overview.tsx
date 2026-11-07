@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { PiPencilSimple } from 'react-icons/pi';
 import { routes } from '@/config/routes';
+import { productTaxonomyLabel } from '@/utils/product-taxonomy-label';
 import {
   businessPresentation,
   catalogBusiness,
@@ -33,9 +34,14 @@ export default function CentralProductOverview({
   canEdit: boolean;
 }) {
   const business = catalogBusiness(product.type);
-  const taxonomy = [nameOf(product.category), nameOf(product.subCategory)]
-    .filter(Boolean)
-    .join(' / ');
+  // Category links can be absent on older products (or fixture/sync data).
+  // Derive the taxonomy from the type labels so the section never renders
+  // an empty "Category / Sub-Category" line, and show the real links when
+  // they exist.
+  const taxonomy =
+    [nameOf(product.category), nameOf(product.subCategory)]
+      .filter(Boolean)
+      .join(' / ') || productTaxonomyLabel(product.type) || '';
   const status = product.isPublished
     ? 'Published'
     : humanize(product.status) || 'Unpublished';
