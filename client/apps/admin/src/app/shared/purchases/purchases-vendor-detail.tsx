@@ -630,7 +630,7 @@ export default function PurchasesVendorDetail({ id }: { id: string }) {
   const [invoicedTotal, setInvoicedTotal] = useState(0);
   const [outstandingTotal, setOutstandingTotal] = useState(0);
   const photoInputRef = useRef<HTMLInputElement>(null);
-  const [editMode] = useState(true);
+  const [editMode, setEditMode] = useState(true);
   const [isDirty, setIsDirty] = useState(false);
   const [gearOpen, setGearOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>('contacts');
@@ -694,7 +694,7 @@ export default function PurchasesVendorDetail({ id }: { id: string }) {
       if (posRes.status === 'fulfilled') {
         const raw = posRes.value;
         const pos: any[] =
-          raw?.data ?? raw?.purchaseOrders ?? (Array.isArray(raw) ? raw : []);
+          raw.data ?? [];
         setPoCount(pos.length);
         const spend = pos.reduce(
           (s: number, p: any) => s + (p.totalAmount ?? p.total ?? 0),
@@ -3204,7 +3204,7 @@ export default function PurchasesVendorDetail({ id }: { id: string }) {
                     po.total ??
                     (po.items ?? []).reduce(
                       (s: number, i: any) =>
-                        s + (i.totalCost ?? i.packPrice * i.packQty ?? 0),
+                        s + (i.totalCost ?? (i.packPrice ?? 0) * (i.packQty ?? 0)),
                       0
                     );
                   const date =

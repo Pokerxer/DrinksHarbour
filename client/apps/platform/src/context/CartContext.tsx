@@ -43,7 +43,7 @@ interface CartState {
 }
 
 type CartAction =
-  | { type: "ADD_TO_CART"; payload: { product: ProductType; size: string; color: string; vendor: string; vendorId: string; quantity?: number; sizeId?: string; subProductId?: string } }
+  | { type: "ADD_TO_CART"; payload: { product: ProductType; size: string; color: string; vendor: string; vendorId: string; quantity?: number; sizeId?: string; subProductId?: string; sizeLabel?: string } }
   | { type: "REMOVE_FROM_CART"; payload: string }
   | {
       type: "UPDATE_CART";
@@ -115,7 +115,7 @@ export const getLineOriginPrice = (
 
 interface CartContextProps {
   cartState: CartState;
-  addToCart: (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string) => AddToCartResult;
+  addToCart: (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string, sizeLabel?: string) => AddToCartResult;
   removeFromCart: (cartItemId: string) => void;
   updateCart: (
     cartItemId: string,

@@ -1,9 +1,50 @@
 packages:
   - "apps/*"
   - "packages/*"
+# Scripts must not silently reinstall or purge an existing development tree.
+verifyDepsBeforeRun: error
 allowBuilds:
-  '@parcel/watcher': set this to true or false
-  core-js: set this to true or false
-  core-js-pure: set this to true or false
-  esbuild: set this to true or false
-  sharp: set this to true or false
+  '@parcel/watcher': true
+  core-js: false
+  core-js-pure: false
+  esbuild: true
+  # Optional msgpack string accelerator; reviewed native loader/local rebuild.
+  msgpackr-extract: true
+  sharp: true
+  # Native resolver used by Next/ESLint; reviewed napi-postinstall loader.
+  unrs-resolver: true
+
+# Resolver v4's Zod adapter expects the Zod3 API. Its manifest omits that
+# dependency, so workspace hoisting otherwise supplies mobile tooling's Zod4.
+packageExtensions:
+  '@hookform/resolvers@4.1.3':
+    dependencies:
+      zod: 3.25.76
+
+# Compatible security patches until the parent packages refresh exact pins.
+overrides:
+  # Both apps use Credentials providers; email delivery lives on the API server.
+  # Do not install the unused optional email-provider peer (v7 is vulnerable).
+  'next-auth@4.24.15>nodemailer': '-'
+  'effect@3.17.7': 3.20.0
+  'postcss@>=8.0.0 <8.5.31': 8.5.31
+  # Expo SDK54's Metro family stays on its 0.83 patch line. 0.83.8 replaces
+  # image-size with internal parsers; forcing image-size v2 would break its API.
+  'metro@0.83.3': 0.83.8
+  'metro-core@0.83.3': 0.83.8
+  'metro-cache@0.83.3': 0.83.8
+  'metro-config@0.83.3': 0.83.8
+  'metro-runtime@0.83.3': 0.83.8
+  'metro-file-map@0.83.3': 0.83.8
+  'metro-resolver@0.83.3': 0.83.8
+  'metro-cache-key@0.83.3': 0.83.8
+  'metro-source-map@0.83.3': 0.83.8
+  'metro-symbolicate@0.83.3': 0.83.8
+  'metro-minify-terser@0.83.3': 0.83.8
+  'metro-transform-worker@0.83.3': 0.83.8
+  'metro-babel-transformer@0.83.3': 0.83.8
+  'metro-transform-plugins@0.83.3': 0.83.8
+
+minimumReleaseAgeExclude:
+  - '@types/google.maps@3.66.10'
+  - sass@1.108.1

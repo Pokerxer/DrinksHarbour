@@ -1,0 +1,10 @@
+allowBuilds:
+  # Native ONNX runtime binding for the local embedding pipeline
+  # (@huggingface/transformers). Review: pnpm-approved, prebuilt binaries.
+  onnxruntime-node: true
+  protobufjs: true
+  # Image runtime used by product image processing and the scoped model image
+  # runtime (dependencyCompatibility.test.js exercises it directly).
+  sharp: true
+minimumReleaseAgeExclude:
+  - imapflow@2.11.0

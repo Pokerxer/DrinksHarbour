@@ -82,16 +82,30 @@ test('a non-POS token is rejected at the handshake', async () => {
   await assert.rejects(() => h.runHandshake(socket), /not a POS token/);
 });
 
-test('a garbage token and a missing token are rejected', async () => {
+test('a garbage token is rejected and a missing token is a tenant-less public socket', async () => {
   const h = makeHarness();
 
   await assert.rejects(
     () => h.runHandshake(makeSocket({ token: 'not-a-jwt' })),
     /invalid token/
   );
-  await assert.rejects(
-    () => h.runHandshake(makeSocket({})),
-    /auth required/
+
+  // Tokenless sockets exist purely for the public kiosk phone-pairing rooms
+  // (attachKioskPairing; pkiosk:<session>). They are tagged with a null
+  // tenantId at the handshake and join nothing privileged — no auto-joined
+  // orders room, nothing the gateway derives from a tenant.
+  const publicSocket = makeSocket({});
+  await h.runHandshake(publicSocket);
+
+  assert.equal(
+    publicSocket.data.tenantId,
+    null,
+    'the gateway still tagged a tokenless socket with a tenant'
+  );
+  assert.deepEqual(
+    [...publicSocket.joinedRooms],
+    [],
+    'a tokenless socket must not auto-join any room'
   );
 });
 

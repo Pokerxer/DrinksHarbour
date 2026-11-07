@@ -14,7 +14,11 @@ test('expiry aggregation casts tenant and recipient identities to stored ObjectI
   let match;
   await expiryRows(
     {
+      // Mongoose >= 9.12 reads model.db.config / model.base.options during
+      // Query#cast, so the stub must carry the same shape as a real model.
       schema: Notification.schema,
+      db: { config: {}, options: {} },
+      base: require('mongoose'),
       aggregate(p) {
         match = p[0].$match;
         return { option: async () => [] };

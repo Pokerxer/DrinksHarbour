@@ -34,7 +34,7 @@ export default function SalesEditorSelect({
       selectClassName="min-h-11 rounded-[10px] border-gray-200 bg-white text-sm text-gray-900 focus:ring-2 focus:ring-brand/20"
       options={options}
       value={value}
-      onChange={onChange}
+      onChange={(v: unknown) => onChange(String(v))}
       disabled={disabled}
       searchable={searchable}
       searchByKey="label"
