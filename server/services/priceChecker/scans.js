@@ -7,7 +7,8 @@ function scanRequestId(value) {
     throw new ValidationError('Invalid scan request.');
   return value;
 }
-async function logScan(context, barcode, requestId, result, origin = 'kiosk') {
+async function logScan(context, barcode, requestId, result, origin = 'kiosk', scannedAt = undefined) {
+  const scannedAtDate = scannedAt instanceof Date ? scannedAt : new Date();
   scanRequestId(requestId);
   const { kiosk } = context;
   const key = { tenant: kiosk.tenant, kiosk: kiosk._id, requestId };
@@ -20,7 +21,7 @@ async function logScan(context, barcode, requestId, result, origin = 'kiosk') {
         if (existing.barcode !== barcode) throw new ConflictError('Scan request already used.');
         return;
       }
-      const scannedAt = new Date();
+      const occurrence = scannedAtDate;
       await KioskScan.create(
         [
           {
@@ -30,7 +31,7 @@ async function logScan(context, barcode, requestId, result, origin = 'kiosk') {
             origin,
             kioskName: kiosk.name,
             barcode,
-            scannedAt,
+            scannedAt: occurrence,
             found: result.outcome === 'FOUND',
             outcome: result.outcome,
             ...result.record,
@@ -48,8 +49,8 @@ async function logScan(context, barcode, requestId, result, origin = 'kiosk') {
           },
           {
             $inc: { count: 1 },
-            $set: { lastSeen: scannedAt, kioskName: kiosk.name },
-            $setOnInsert: { firstSeen: scannedAt },
+            $set: { lastSeen: occurrence, kioskName: kiosk.name },
+            $setOnInsert: { firstSeen: occurrence },
           },
           { upsert: true, session }
         );

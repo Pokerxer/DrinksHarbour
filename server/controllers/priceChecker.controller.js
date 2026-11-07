@@ -7,6 +7,7 @@ const { loadContext } = require('../services/priceChecker/context');
 const { issueSession } = require('../services/priceChecker/session');
 const { lookup } = require('../services/priceChecker/lookup');
 const { publicConfig } = require('../services/priceChecker/serialization');
+const { buildBook, buildSync } = require('../services/priceChecker/book');
 const { logScan, scanRequestId } = require('../services/priceChecker/scans');
 const { getAnalytics } = require('../services/priceChecker/analytics');
 exports.session = async (req, res) => {
@@ -19,6 +20,16 @@ exports.session = async (req, res) => {
 };
 exports.config = async (req, res) =>
   res.json({ success: true, data: publicConfig(req.priceChecker) });
+exports.book = async (req, res) =>
+  res.json({ success: true, data: await buildBook(req.priceChecker) });
+exports.sync = async (req, res) => {
+  if (
+    !req.body ||
+    Object.keys(req.body).some((key) => key !== 'scans')
+  )
+    throw new ValidationError('Invalid sync request.');
+  res.json({ success: true, data: await buildSync(req.priceChecker, req.body) });
+};
 exports.scan = async (req, res) => {
   if (
     !req.body ||

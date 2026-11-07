@@ -37,7 +37,9 @@ router.use((req, res, next) => {
 // the resulting audience-bound token grants no attendance or admin privileges.
 router.post('/session', sessionLimit, c.session);
 router.get('/config', ipLimit, authenticatePriceChecker, c.config);
+router.get('/book', ipLimit, authenticatePriceChecker, c.book);
 router.post('/scan', ipLimit, authenticatePriceChecker, kioskLimit, c.scan);
+router.post('/sync', ipLimit, authenticatePriceChecker, kioskLimit, c.sync);
 router.use(protect, attachTenant, tenantAdminOrSuperAdmin);
 router.use((req, res, next) => {
   getTenantId(req);
