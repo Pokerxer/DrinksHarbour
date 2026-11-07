@@ -193,7 +193,9 @@ describe('buildPricelistDoc', () => {
     const m = buildPricelistDoc(
       [
         row({ currentQuantity: 0 }),
-        row({ subProductId: 'sp2', sizeId: 's2', currentQuantity: 7 }),
+        // Ascending sizeId (sz1 < sz2) — the DRI-30 identity-aware sort
+        // tie-breaks equal sizes lexically, so fixtures stay order-stable.
+        row({ subProductId: 'sp2', sizeId: 'sz2', currentQuantity: 7 }),
       ],
       null,
       opts({ showAvailability: true, groupByCategory: false })
