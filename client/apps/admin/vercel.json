@@ -1,5 +1,6 @@
 {
-  "ignoreCommand": "cd \"$(git rev-parse --show-toplevel)\" && git diff --quiet \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\" HEAD -- client/apps/admin client/packages client/package.json client/pnpm-lock.yaml client/pnpm-workspace.yaml scripts/quality package.json .nvmrc client/turbo.json || exit 1",
-  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm build"
+  "installCommand": "cd ../.. && corepack pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm build",
+  "outputDirectory": ".next",
+  "ignoreCommand": "cd \"$(git rev-parse --show-toplevel)\" && bash scripts/quality/vercel-ignore-admin.sh"
 }

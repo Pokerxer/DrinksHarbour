@@ -1,6 +1,11 @@
 // services/email.service.js
 const nodemailer = require('nodemailer');
-const { google } = require('googleapis');
+// Only google.auth.OAuth2 (=== the OAuth2Client class) was ever used from the
+// full `googleapis` SDK — whose install footprint (~246MB) blew past the Vercel
+// serverless function size limit. google-auth-library is the exact auth layer
+// underneath it, and OAuth2Client exposes the same setCredentials/getAccessToken
+// surface used here.
+const { OAuth2Client } = require('google-auth-library');
 const path = require('path');
 const fs   = require('fs');
 const { normalizeUrl, frontendBaseUrl } = require('../utils/frontendUrl');
@@ -77,7 +82,7 @@ const initializeEmailService = async () => {
 
   if (hasGoogleOAuth()) {
     try {
-      const oauth2Client = new google.auth.OAuth2(
+      const oauth2Client = new OAuth2Client(
         process.env.MAILING_SERVICE_CLIENT_ID,
         process.env.MAILING_SERVICE_CLIENT_SECRET,
         'https://developers.google.com/oauthplayground'

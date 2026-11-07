@@ -8,3 +8,9 @@ allowBuilds:
   sharp: true
 minimumReleaseAgeExclude:
   - imapflow@2.11.0
+patchedDependencies:
+  # Skips onnxruntime-node's linux postinstall that downloads ~200MB of
+  # CUDA/TensorRT providers. The embedding pipeline runs CPU-only
+  # (server/utils/localEmbeddingRuntime.js), and the GPU binaries alone pushed
+  # the Vercel serverless function past the 250MB uncompressed limit.
+  onnxruntime-node@1.21.0: patches/onnxruntime-node@1.21.0.patch
