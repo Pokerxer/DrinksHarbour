@@ -3,6 +3,7 @@ import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import { useKiosk } from './use-kiosk';
 import { useCompare, compareKey } from './use-compare';
 import { usePhonePairing } from './use-phone-pairing';
+import { useOfflineBook } from './use-offline';
 import { PhonePair } from './phone-pair';
 import { ProductResult } from './product-result';
 import { CompareTray } from './compare-tray';
@@ -13,7 +14,8 @@ import { validBarcode } from './scanner';
 import './kiosk.css';
 import './kiosk-display.css';
 export default function PriceCheckerKiosk({ slug }: { slug: string }) {
-  const kiosk = useKiosk(slug);
+  const offlineBook = useOfflineBook(slug);
+  const kiosk = useKiosk(slug, offlineBook.support ?? undefined);
   const compare = useCompare(slug);
   const [manual, setManual] = useState(false);
   const [pairSession] = useState(() => crypto.randomUUID());
@@ -95,6 +97,17 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
             Drinks<span className="kiosk-brand-accent">Harbour</span>
           </span>
         </div>
+        {kiosk.offline && (
+          <div className="kiosk-offline-pill" role="status">
+            Offline · prices from{' '}
+            {offlineBook.book
+              ? new Date(offlineBook.book.generatedAt).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : 'cache'}
+          </div>
+        )}
         {config?.store && (
           <div className="kiosk-location">
             {settings?.logo && (

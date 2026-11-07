@@ -435,3 +435,13 @@
     animation: none;
   }
 }
+
+/* ── round 3 — offline ───────────────────────────────────────────────────── */
+.kiosk-offline-pill {
+  font-size: clamp(13px, 1vw, 17px);
+  font-weight: 600;
+  color: var(--kiosk-muted);
+  border: 1px dashed var(--kiosk-line);
+  border-radius: 999px;
+  padding: 8px 16px;
+}

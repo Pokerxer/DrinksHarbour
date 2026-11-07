@@ -229,3 +229,79 @@ it('openCompare is ignored while the welcome screen loads offline', async () => 
   });
   expect(result.current.screen).toBe('offline');
 });
+
+const offlineBook = {
+  generatedAt: '2026-11-07T09:00:00Z',
+  config,
+  items: [
+    {
+      name: 'Cached bottle',
+      price: 900,
+      currency: 'NGN',
+      alcoholic: false,
+      taxLabel: '',
+      barcode: '4901877007131',
+    },
+  ],
+};
+it('serves a cached result when the API is unreachable and queues the scan', async () => {
+  vi.mocked(openKiosk).mockResolvedValue(config);
+  vi.mocked(checkPrice).mockRejectedValue(new KioskError(503));
+  const onOfflineScan = vi.fn();
+  const { result } = renderHook(() =>
+    useKiosk('counter', {
+      generatedAt: offlineBook.generatedAt,
+      lookup: (barcode) =>
+        offlineBook.items.find((item) => item.barcode === barcode) ?? null,
+      onOfflineScan,
+    })
+  );
+  await waitFor(() => expect(result.current.screen).toBe('idle'));
+  await act(async () => {
+    await result.current.scan('4901877007131');
+  });
+  expect(result.current.screen).toBe('result');
+  expect(result.current.product?.name).toBe('Cached bottle');
+  expect(result.current.offline).toBe(true);
+  expect(onOfflineScan).toHaveBeenCalledWith(
+    expect.objectContaining({ barcode: '4901877007131' })
+  );
+  // An unknown barcode offline still shows the not-found screen, not offline.
+  await act(async () => {
+    await result.current.scan('000999444222');
+  });
+  expect(result.current.screen).toBe('missing');
+  expect(onOfflineScan).toHaveBeenCalledTimes(1);
+});
+it('keeps offline identity only while the API is unreachable', async () => {
+  vi.mocked(openKiosk).mockResolvedValue(config);
+  vi.mocked(checkPrice).mockRejectedValueOnce(new KioskError(503)).mockResolvedValueOnce(found('Live bottle'));
+  const { result } = renderHook(() =>
+    useKiosk('counter', { generatedAt: offlineBook.generatedAt, lookup: () => null })
+  );
+  await waitFor(() => expect(result.current.screen).toBe('idle'));
+  await act(async () => {
+    await result.current.scan('00789');
+  });
+  expect(result.current.screen).toBe('missing'); // no cache for the barcode
+  expect(result.current.offline).toBe(true);
+  await act(async () => {
+    await result.current.scan('00790');
+  });
+  expect(result.current.screen).toBe('result');
+  expect(result.current.offline).toBe(false);
+});
+
+it('boots offline from the cached book config and keeps the kiosk usable', async () => {
+  vi.mocked(openKiosk).mockRejectedValue(new KioskError(503));
+  const { result } = renderHook(() =>
+    useKiosk('counter', {
+      generatedAt: '2026-11-07T09:00:00Z',
+      config,
+      lookup: () => null,
+    })
+  );
+  await waitFor(() => expect(result.current.screen).toBe('idle'));
+  expect(result.current.offline).toBe(true);
+  expect(result.current.config?.slug).toBe('counter');
+});
