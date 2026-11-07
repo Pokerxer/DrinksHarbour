@@ -43,25 +43,44 @@ anchor: `docs/superpowers/specs/RESUME-dri39-dependency-health.md`.
 - Admin `purchases-vendor-detail.tsx` nullish-coalescing TS2881 fixed
   (`i.totalCost ?? (i.packPrice ?? 0) * (i.packQty ?? 0)`; also kills a NaN
   fallback path).
+- `react-datepicker` — the tester resolves the calendar through the `@core/*`
+  alias so `apps/admin` AND `packages/isomorphic-core` must be pinned in
+  pairs; reverting admin alone did nothing. 8.10.0's grid a11y restructure
+  (days → `role="gridcell"`) broke the three promotion test files; both stay
+  at the 8.2.1 pin until a scheduled task migrates those queries.
+- Admin `src/middleware.ts` matcher gained `/subproducts/:path*` — the new
+  subproducts module bypassed the session allow-list entirely (fail-open),
+  caught by `middleware.test.ts`.
+- Admin vitest code-vs-test drift from later uncommitted work fixed:
+  category-meta picker `parent` normalization assertion updated, pricelist
+  fixture aligned to the DRI-30 identity sort tie-break.
 
 ## Verified check matrix
 
 `pnpm --filter admin type:check` ✓ · platform type:check ✓ · both lint scripts
-0 errors ✓ · platform vitest venue (14) + shop (27) ✓ · admin vitest (see
-RESUME for final counts) · commerce-core `pnpm test` ✓ · root quality scripts ✓
+0 errors ✓ · platform vitest venue (14) + shop (27) ✓ · admin vitest FINAL:
+557 files / 3800 tests all passing · commerce-core `pnpm test` ✓ · root
+quality scripts ✓
 (`npm run test:quality`, secret-scan 0 findings) · server suite with the
-`DRINKSHARBOUR_VENUE_TEST_MONGO_URI` env var ✓ (without it 87 tests fail on the
-URI guard — the env var is required, not optional).
+`DRINKSHARBOUR_VENUE_TEST_MONGO_URI` env var — final: 5085 tests, 5052 pass,
+8 load-timeout failures that all PASS standalone, 1 needs the missing
+`mongorestore` binary (without the env var 87 tests fail on the URI guard —
+the env var is required, not optional). Admin production build 196/196
+static pages ✓, platform production build 75/75 ✓ (both exit 0, BUILD_ID
+written).
 
 ## Deferred majors — deliberately not applied
 
-Each needs a dedicated migration+QA task (see RESUME file for the reasoning and
-usage counts): zod@4 (+resolvers coupling), tailwindcss@4, admin next@16,
+Each needs a dedicated migration+QA task (see RESUME file for the reasoning
+and usage counts — and all of them stay OUT of dep sweeps until scheduled):
+zod@4 (+resolvers coupling), tailwindcss@4, admin next@16,
 @tanstack/react-table@9, recharts@3, framer-motion@14 (133+66 files), jotai@3,
 rizzui@2, swiper@14, react-dropzone@20, react-player@3, eslint@10 +
 eslint-config-next@16, vitest@5, typescript@7 (Go-based, unsupported by the
 Next toolchain yet), @huggingface/transformers@4 (runtime rewrite; pinned
-3.8.1), chalk@6 (ESM-only; unused in server code anyway).
+3.8.1), chalk@6 (ESM-only; unused in server code anyway),
+react-datepicker@8.10 (grid a11y restructure → migrate the three promotion
+test files' day-role queries when re-lighting, mirrored in admin+core pins).
 `@headlessui/react@2.2.10` joins this list after the rizzui block above.
 Expo mobile SDK 54 set is internally coherent; SDK upgrades are their own
 `npx expo install --fix`+QA migration.
