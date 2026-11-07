@@ -20,12 +20,23 @@ function terminalRoom(tenantId, terminalType) {
 }
 
 /**
- * Room name for a tenant's kitchen display screens.
+ * Room name for one tenant's kitchen display screens.
  * One room per tenant — every KDS device sees every ticket for the business,
  * unlike terminals which split by retail/wholesale.
  */
 function kdsRoom(tenantId) {
   return `kds:${tenantId}`;
+}
+
+/**
+ * Room name for one LOCATION's venue preparation surfaces (S3 Task 5 —
+ * `venue.preparation.changed`). Scoped per location so a multi-location
+ * tenant's stations only hear their own tickets. The tenant id always comes
+ * from the verified token server-side; the location is within-tenant selection
+ * (same trust level as the kds room, which shows every location at once).
+ */
+function venuePrepRoom(tenantId, locationId) {
+  return `venue-prep:${tenantId}:${locationId}`;
 }
 
 /**
@@ -37,6 +48,16 @@ function kdsRoom(tenantId) {
  */
 function ordersRoom(tenantId) {
   return `orders:${tenantId}`;
+}
+
+/**
+ * Room name for one LOCATION's VIP host floor (Phase-4 E2 — `venue.vip.arrived`).
+ * Same scoping as the venue-prep room: per location, tenant from the verified
+ * token. The payload carries PERMITTED INFO ONLY (name/partySize/action +
+ * provenance) — never spend, notes, phone or guest history.
+ */
+function venueHostRoom(tenantId, locationId) {
+  return `venue-host:${tenantId}:${locationId}`;
 }
 
 function getIo(app) {
@@ -66,6 +87,20 @@ function emitToKds(req, tenantId, event, payload) {
 }
 
 /**
+ * Broadcast a venue preparation event to one location's room (S3 Task 5).
+ * Same contract as emitToKds: no io means no-op; callers never branch on it.
+ */
+function emitToVenuePrep(req, tenantId, locationId, event, payload) {
+  const io = getIo(req?.app);
+  if (!io || !tenantId || !locationId) return false;
+  io.to(venuePrepRoom(tenantId, locationId)).emit(event, {
+    ...payload,
+    at: new Date().toISOString(),
+  });
+  return true;
+}
+
+/**
  * Broadcast a marketplace-order event to every connected POS device of one
  * tenant (terminals + KDS — all auto-joined). Same contract as emitToKds:
  * no io means no-op; callers never branch on it.
@@ -80,4 +115,18 @@ function emitToTenantOrders(req, tenantId, event, payload) {
   return true;
 }
 
-module.exports = { terminalRoom, kdsRoom, ordersRoom, emitToTerminal, emitToKds, emitToTenantOrders };
+/**
+ * Broadcast a VIP host event to one location's host-floor room (Phase-4 E2).
+ * Same contract as emitToVenuePrep: no io means no-op; callers never branch on it.
+ */
+function emitToVenueHost(req, tenantId, locationId, event, payload) {
+  const io = getIo(req?.app);
+  if (!io || !tenantId || !locationId) return false;
+  io.to(venueHostRoom(tenantId, locationId)).emit(event, {
+    ...payload,
+    at: new Date().toISOString(),
+  });
+  return true;
+}
+
+module.exports = { terminalRoom, kdsRoom, venuePrepRoom, venueHostRoom, ordersRoom, emitToTerminal, emitToKds, emitToVenuePrep, emitToVenueHost, emitToTenantOrders };

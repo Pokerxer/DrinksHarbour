@@ -1,0 +1,44 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const mongoose = require('mongoose'), express = require('express'), jwt = require('jsonwebtoken');
+const fs = require('node:fs'), path = require('node:path');
+const { uri, connectVenueMongo } = require('./helpers/venueMongo');
+test('sales-channel real HTTP authority, audited revisions, direct identity and immutable order history', { skip: !uri }, async t => {
+ const managementPath = path.resolve(__dirname, '../services/salesChannels/management.js');
+ const management = fs.existsSync(managementPath) ? require(managementPath) : {};
+ assert.equal(typeof management.saveChannel, 'function', 'audited channel writer exists');
+ await connectVenueMongo(t, 'sales_channels');
+ const Channel = require('../models/SalesChannel'), Audit = require('../models/AuditLog'), User = require('../models/User');
+ await Channel.createIndexes();
+ const oid = () => new mongoose.Types.ObjectId(); const root = oid(), tenant = oid(), otherTenant = oid(), merchant = oid(), other = oid(), customer = oid();
+ await User.collection.insertMany([{_id:root,role:'super_admin',status:'active'}, {_id:merchant,role:'tenant_owner',tenant,status:'active'}, {_id:other,role:'tenant_owner',tenant:otherTenant,status:'active'}, {_id:customer,role:'customer',status:'active'}]);
+ await require('../models/Tenant').collection.insertOne({_id:tenant,status:'approved',subscriptionStatus:'active'});
+ const config = {tenant:String(tenant),code:'TEST_POS',kind:'pos',market:'NG',currency:'NGN',active:false,legalOwner:{type:'tenant',reference:String(tenant)},paymentOwner:{type:'tenant',reference:String(tenant),provider:'cash',account:'TEST_DRAWER'},pricingPolicy:{code:'RETAIL_TERMS',version:1,termsReference:'synthetic-contract-only'}};
+ const app = express(); app.use(express.json()); app.use('/channels', require('../routes/salesChannel.routes')); app.use((e,req,res,next)=>res.status(e.statusCode||500).json({message:e.message}));
+ const server = await new Promise(resolve=>{ const s=app.listen(0,'127.0.0.1',()=>resolve(s)); });
+ t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const secretBefore=process.env.JWT_SECRET; process.env.JWT_SECRET='local-sales-channel-test-secret'; t.after(()=>{ if(secretBefore===undefined)delete process.env.JWT_SECRET; else process.env.JWT_SECRET=secretBefore; });
+ const call=async(actor,method='GET',body,suffix='')=>{ const r=await fetch(`http://127.0.0.1:${server.address().port}/channels${suffix}`,{method,headers:{'Content-Type':'application/json',...(actor?{Authorization:`Bearer ${jwt.sign({userId:String(actor)},process.env.JWT_SECRET)}`}:{})},...(body?{body:JSON.stringify(body)}:{})}); return {status:r.status,body:await r.json(),cache:r.headers.get('cache-control')}; };
+ assert.equal((await call(null)).status,401); assert.equal((await call(customer)).status,403);
+ assert.equal((await call(merchant,'POST',{configuration:config,reason:'Reviewed synthetic configuration'})).status,403);
+ let result=await call(root,'POST',{configuration:config,reason:'Reviewed synthetic configuration'}); assert.equal(result.status,201,JSON.stringify(result.body));
+ const saved=result.body.data.channel; assert.equal(saved.version,1); assert.equal(await Audit.countDocuments({action:'SALES_CHANNEL_CONFIGURE'}),1);
+ assert.equal((await call(merchant)).body.data.channels.length,1); assert.equal((await call(other)).body.data.channels.length,0);
+ assert.equal((await call(other,'GET',undefined,`?tenant=${tenant}`)).body.data.channels.length,0);
+ const ownView=await call(merchant); assert.equal(ownView.cache,'private, no-store'); assert.equal(ownView.body.data.channels[0].paymentOwner.account,undefined); assert.equal(ownView.body.data.channels[0].reviewReason,undefined);
+ result=await call(root,'PUT',{configuration:{...config,code:'REASSIGNED'},expectedVersion:1,reason:'Attempt forbidden identity rewrite'},`/${saved._id}`); assert.equal(result.status,409);
+ const update={configuration:{...config,pricingPolicy:{...config.pricingPolicy,version:2}},expectedVersion:1,reason:'Reviewed revised synthetic terms'};
+ const parallel=await Promise.all([call(root,'PUT',update,`/${saved._id}`),call(root,'PUT',update,`/${saved._id}`)]); assert.deepEqual(parallel.map(r=>r.status).sort(),[200,409]);
+ assert.equal(await Audit.countDocuments({action:'SALES_CHANNEL_CONFIGURE'}),2);
+ assert.equal((await Channel.findById(saved._id).lean()).version,2);
+ await t.test('optional order snapshot persists once and cannot be changed by normal update/save',async()=>{
+  const Order=require('../models/Order'); const product=oid();
+  const snapshot={version:1,configVersion:2,code:config.code,kind:config.kind,market:'NG',currency:'NGN',legalOwner:config.legalOwner,paymentOwner:config.paymentOwner,pricingPolicy:config.pricingPolicy};
+  // Fixture insert avoids unrelated order hooks; follow-up writes exercise actual Mongoose immutability.
+  const order=oid(); await Order.collection.insertOne({_id:order,channelSnapshot:snapshot});
+  await assert.rejects(()=>Order.updateOne({_id:order},{$set:{'channelSnapshot.code':'FORGED'}}),/immutable/);
+  const row=await Order.findById(order); row.channelSnapshot={...snapshot,code:'FORGED'}; await row.save({validateBeforeSave:false});
+  assert.equal((await Order.findById(order).lean()).channelSnapshot.code,config.code);
+ });
+});

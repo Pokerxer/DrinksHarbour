@@ -1,3 +1,7 @@
+> Historical Redis implementation: disconnected by user request on 2026-10-31.
+> Current runtime: live MongoDB reads and local request limits. See
+> `docs/memory/standalone-without-upstash.md`; do not reconnect the provider.
+
 # Redis on admin SubProduct pages
 
 The authenticated `/sub-products` list and detail/edit pages use server-side Redis for expensive reusable lookups. Each request still loads its authorized SubProducts, central Product data, Sizes, Tenant pricing settings and any warehouse stock overlay from MongoDB.

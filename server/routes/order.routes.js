@@ -2,12 +2,15 @@
 
 const express = require('express');
 const router = express.Router();
+router.use((req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
 const orderController = require('../controllers/order.controller');
 const posController   = require('../controllers/pos.controller');
 const { protect, optionalProtect, attachTenant, superAdminOnly, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
-const { body, param, query } = require('express-validator');
+const { body, param, query, validationResult } = require('express-validator');
 const { ACCEPTED_PAYMENT_METHODS } = require('../utils/paymentMethods');
+const { assertRequestedDeliveryDate } = require('../config/giftPackaging');
+const { ValidationError } = require('../utils/errors');
 
 const createOrderValidation = [
   body('customer.firstName')
@@ -71,17 +74,77 @@ const createOrderValidation = [
   body('total')
     .isFloat({ min: 0 })
     .withMessage('Total must be a positive number'),
+  // ── Gift checkout (order-level, optional) ─────────────────────────────────
+  // Contract: docs/superpowers/specs/2026-10-27-gift-checkout-design.md. The
+  // whole block is optional; when `gift` is present, the full contract applies.
+  // The requested delivery date is a plan the team confirms — never a
+  // guaranteed date, so bounds are enforced but nothing more is promised.
+  body('gift')
+    .optional()
+    .isObject()
+    .withMessage('Gift must be an object'),
+  body('gift.isGift')
+    .if(body('gift').exists())
+    .custom((value) => value === true)
+    .withMessage('isGift must be true when the gift block is present'),
+  body('gift.from')
+    .if(body('gift').exists())
+    .isString()
+    .withMessage('Gift "from" must be text')
+    .trim()
+    .isLength({ min: 1, max: 80 })
+    .withMessage('Gift "from" must be between 1 and 80 characters'),
+  body('gift.to')
+    .if(body('gift').exists())
+    .isString()
+    .withMessage('Gift "to" must be text')
+    .trim()
+    .isLength({ min: 1, max: 80 })
+    .withMessage('Gift "to" must be between 1 and 80 characters'),
+  body('gift.message')
+    .if(body('gift').exists())
+    .optional({ checkFalsy: true })
+    .isString()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Gift message cannot exceed 500 characters'),
+  body('gift.requestedDeliveryDate')
+    .if(body('gift').exists())
+    .custom((value) => assertRequestedDeliveryDate(value))
+    .withMessage('Requested delivery date is invalid'),
+  body('gift.packagingRequested')
+    .if(body('gift').exists())
+    .isBoolean()
+    .withMessage('packagingRequested must be a boolean'),
 ];
+
+// validation.middleware's `validate` is a passthrough when mounted directly
+// (it only works in factory mode, which no route uses), so express-validator
+// records errors on req but nothing enforces them. Rather than flip the global
+// gate for the whole checkout contract — a behavior change far beyond gift
+// checkout — the gift rules get their own gate: only errors recorded against
+// gift paths reject the request. Contract:
+// docs/superpowers/specs/2026-10-27-gift-checkout-design.md
+const enforceGiftValidation = (req, res, next) => {
+  const errors = validationResult(req).array().filter(e =>
+    e.path === 'gift' || String(e.path || '').startsWith('gift.')
+  );
+  if (errors.length) {
+    return next(new ValidationError(errors.map(e => e.msg).join(', ')));
+  }
+  next();
+};
 
 router.post(
   '/',
   optionalProtect,
   createOrderValidation,
   validate,
-  orderController.createOrder
+  enforceGiftValidation,
+  require('../services/marketContext').handler(orderController.createOrder)
 );
 
-// Order lookup by number — requires auth + email verification (was public, leaked any order)
+// Order-number lookup uses authenticated ownership; an entered email grants no access.
 router.get(
   '/number/:orderNumber',
   protect,
@@ -90,6 +153,16 @@ router.get(
   query('email').optional().isEmail(),
   validate,
   orderController.getOrderByNumber
+);
+
+router.get('/my-orders', protect, attachTenant, orderController.getMyOrders);
+
+router.get(
+  '/:id',
+  optionalProtect,
+  param('id').isMongoId(),
+  validate,
+  orderController.getOrder
 );
 
 router.use(protect);
@@ -101,14 +174,8 @@ router.get('/', tenantAdminOrSuperAdmin, orderController.getAllOrders);
 // Lookup by receipt number (POS orders)
 router.get('/receipt/:receiptNumber', tenantAdminOrSuperAdmin, orderController.getOrderByReceipt);
 
-router.get('/my-orders', orderController.getMyOrders);
 
-router.get(
-  '/:id',
-  param('id').isMongoId(),
-  validate,
-  orderController.getOrder
-);
+
 
 router.post(
   '/:id/cancel',

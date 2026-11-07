@@ -112,15 +112,15 @@ describe('asLocalDate', () => {
     // `new Date('2026-08-01')` is midnight UTC. Rendering that in local time
     // shows 31 Jul for every timezone west of Greenwich, so a filter of
     // "1 Aug – 1 Aug" was captioned "31 Jul – 1 Aug".
-    const d = asLocalDate('2026-08-01');
+    const d = asLocalDate('2026-08-01')!;
     expect([d.getFullYear(), d.getMonth() + 1, d.getDate()]).toEqual([2026, 8, 1]);
-    expect(asLocalDate('2026-01-01').getDate()).toBe(1);
-    expect(asLocalDate('2026-12-31').getMonth() + 1).toBe(12);
+    expect(asLocalDate('2026-01-01')!.getDate()).toBe(1);
+    expect(asLocalDate('2026-12-31')!.getMonth() + 1).toBe(12);
   });
 
   it('leaves a real timestamp alone', () => {
     // An instant must stay an instant; shifting it would move it a day.
-    const d = asLocalDate('2026-08-01T23:30:00Z');
+    const d = asLocalDate('2026-08-01T23:30:00Z')!;
     expect(d.getTime()).toBe(Date.parse('2026-08-01T23:30:00Z'));
   });
 

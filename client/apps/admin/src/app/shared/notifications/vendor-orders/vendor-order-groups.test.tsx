@@ -64,7 +64,7 @@ it('searching an order by included SKU keeps every product in the prepared purch
   fireEvent.click(
     within(group).getByRole('button', { name: 'Prepare purchase' })
   );
-  const draft = JSON.parse(sessionStorage.getItem(draftKey('u:t'))!);
+  const draft = JSON.parse(sessionStorage.getItem(draftKey('u:t'))!) as {items: {quantity: number}[]};
   expect(draft.items.map((i: { quantity: number }) => i.quantity)).toEqual([
     12, 12,
   ]);

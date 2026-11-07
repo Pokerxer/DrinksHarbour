@@ -11,6 +11,7 @@ import React, {
 } from "react";
 import { ProductType } from "@/types/product.types";
 import { API_URL } from "@/lib/api";
+import { useTenant, isTenantHost } from "@/context/TenantContext";
 import { resolveProductPrice, resolveProductOriginPrice } from "@/utils/product.utils";
 
 interface CompareItem extends ProductType {}
@@ -90,6 +91,9 @@ const CompareReducer = (
 export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  // DRI-9: tenant storefronts refresh their retail compare items on the
+  // tenant-site surface; the flag comes from the root TenantProvider.
+  const { isMainSite } = useTenant();
   const [compareState, dispatch] = useReducer(CompareReducer, {
     compareArray: [],
   });
@@ -178,6 +182,12 @@ export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
   // Re-fetch live price/stock for stored items (localStorage snapshots go stale).
   // Runs at most 4 parallel requests; silently keeps the snapshot on any failure.
   const refreshCompareData = useCallback(async () => {
+    // DRI-9: surface flag for tenant storefronts. useTenant() is the primary
+    // source, but CompareProvider sits outside the tenant-aware provider, so
+    // the hostname (same rules as middleware.ts) is the fallback. Refreshes
+    // always run client-side — localStorage is a browser concept anyway.
+    const isTenantSite = !isMainSite
+      || (typeof window !== 'undefined' && isTenantHost(window.location.hostname));
     const items = compareRef.current;
     if (items.length === 0) return;
     setIsRefreshing(true);
@@ -186,7 +196,10 @@ export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
         items.map(async (item) => {
           if (!item.slug) return item;
           try {
-            const res = await fetch(`${API_URL}/api/products/slug/${item.slug}`);
+            const res = await fetch(
+              `${API_URL}/api/products/slug/${item.slug}`,
+              isTenantSite ? { headers: { 'x-is-tenant-site': 'true' } } : {},
+            );
             if (!res.ok) return item;
             const data = await res.json();
             const fresh = data?.data?.product || data?.data;
@@ -216,7 +229,7 @@ export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
     } finally {
       setIsRefreshing(false);
     }
-  }, []);
+  }, [isMainSite]);
 
   const isInCompare = useCallback(
     (itemId: string) => {

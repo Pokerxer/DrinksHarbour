@@ -9,7 +9,7 @@ async function syncSource({ tenantId, source, sourceId, forceDraft = false, sess
   if (!mongoose.isValidObjectId(tenantId) || !mongoose.isValidObjectId(sourceId) || !['sales', 'pos'].includes(source)) return null;
   const Model = source === 'sales' ? Sales : Order;
   const doc = await Model.findOne({ _id: sourceId, tenant: tenantId }).session(session || null).lean();
-  if (!doc || source === 'pos' && (doc.source !== 'pos' || doc.tableServiceBooking)) return null;
+  if (!doc || source === 'pos' && !(doc.venueIdentityVersion === 1 && doc.venueBillForSession) && (doc.source !== 'pos' || doc.tableServiceBooking)) return null;
   if (source === 'pos' && doc.linkedSalesOrder) {
     let sales = await Sales.findOne({ _id: doc.linkedSalesOrder, tenant: tenantId }).session(session || null).lean();
     if (sales?.docType === 'quotation' && sales.convertedTo) sales = await Sales.findOne({ _id: sales.convertedTo, tenant: tenantId }).session(session || null).lean();

@@ -36,7 +36,7 @@ async function priceCataloguePage(products, tenantId, options = {}) {
     throw new ValidationError("Invalid catalogue pricelist");
   const [tenant, pricelist] = await Promise.all([
     Tenant.findById(tenantId)
-      .select("revenueModel markupPercentage commissionPercentage")
+      .select("revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage")
       .lean(),
     options.pricelistId
       ? Pricelist.findOne({ _id: options.pricelistId, tenant: tenantId }).lean()

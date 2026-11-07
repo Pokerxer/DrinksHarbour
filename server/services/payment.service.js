@@ -93,44 +93,17 @@ const confirmStripePayment = async (paymentIntentId) => {
 /**
  * Attach payment to order after successful payment
  */
-const attachPaymentToOrder = async (orderId, paymentData) => {
-  try {
-    const order = await Order.findById(orderId);
-    if (!order) {
-      throw new NotFoundError('Order not found');
-    }
-
-    if (order.integrationCheckout) throw new ValidationError('Use checkout verification for tenant website payments');
-
-    if (order.tableServiceBooking) {
-      return await require('./tableCheckout.service').settleTablePayment(order);
-    }
-
-    order.paymentStatus = 'paid';
-    order.status = 'confirmed';
-    order.paidAt = new Date();
-    order.paymentDetails = paymentData;
-    
-    if (paymentData.transactionId) {
-      order.paymentIntentId = paymentData.transactionId;
-    }
-
-    await order.save();
-
-    // The "user closed the browser after paying" path. Real traffic reaches
-    // `paid` only here — settle the referral or it never pays out for them.
-    try {
-      const { settleReferralOnPaidOrder } = require('./referral.service');
-      await settleReferralOnPaidOrder(order);
-    } catch (refErr) {
-      console.error('❌ Referral settle (webhook) error:', refErr.message);
-    }
-
-    return order;
-  } catch (error) {
-    console.error('Attach payment to order error:', error);
-    throw new ValidationError(error.message || 'Failed to attach payment to order');
+const attachPaymentToOrder = async (orderId, paymentData, actor) => {
+  const order = await Order.findById(orderId);
+  if (!order) throw new NotFoundError('Order not found');
+  if (order.venueIdentityVersion === 1) require('./venue/legacy-guards').rejectCanonicalOrder(order);
+  if (order.integrationCheckout) throw new ValidationError('Use checkout verification for tenant website payments');
+  require('./orderAccess').assertMutation(order, actor, { customer: true });
+  if (order.tableServiceBooking) {
+    if (String(order.tenant) !== String(actor.tenant)) throw new NotFoundError('Order not found');
+    return require('./tableCheckout.service').settleTablePayment(order);
   }
+  return require('./marketplacePaymentTrust').attach(order, paymentData, actor);
 };
 
 /**
@@ -194,7 +167,7 @@ const createPaystackTransaction = async (amount, email, metadata = {}, options =
 /**
  * Verify Paystack transaction
  */
-const verifyPaystackTransaction = async (reference) => {
+const verifyPaystackTransaction = async (reference, options = {}) => {
   try {
     const response = await axios.get(
       `${PAYSTACK_BASE_URL}/transaction/verify/${reference}`,
@@ -212,10 +185,12 @@ const verifyPaystackTransaction = async (reference) => {
         return {
           success: true,
           status: 'paid',
+          providerStatus: data.status,
           data: {
             reference: data.reference,
             transactionId: data.id,
             amount: data.amount / 100,
+            amountMinor: data.amount,
             currency: data.currency,
             paidAt: data.paid_at,
             channel: data.channel,
@@ -226,7 +201,9 @@ const verifyPaystackTransaction = async (reference) => {
         return {
           success: false,
           status: 'failed',
+          providerStatus: data.status,
           message: `Payment ${data.status}`,
+          ...(options.includeFailureIdentity ? {data:{reference:data.reference,transactionId:data.id,amountMinor:data.amount,currency:data.currency}} : {}),
         };
       }
     } else {
@@ -259,7 +236,7 @@ const createKorapayCharge = async (amount, email, metadata = {}, options = {}) =
       options.reference || `DH-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
     const payload = {
-      amount: Math.round(amount),
+      amount: Math.round(amount * 100) / 100,
       currency: 'NGN',
       reference,
       narration: metadata.kind === 'wallet_fund'
@@ -466,72 +443,17 @@ const resolveGatewayPaymentMethod = async (claimedMethod, paymentDetails) => {
 /**
  * Process refund (Stripe only)
  */
-const createStripeRefund = async (orderId, amount = null) => {
-  try {
-    const order = await Order.findById(orderId);
-    if (!order) {
-      throw new NotFoundError('Order not found');
-    }
-
-    if (!order.paymentIntentId) {
-      throw new ValidationError('No payment found for this order');
-    }
-
-    const refundData = {
-      payment_intent: order.paymentIntentId,
-    };
-
-    if (amount) {
-      refundData.amount = Math.round(amount * 100);
-    }
-
-    const refund = await stripe.refunds.create(refundData);
-
-    if (refund.status === 'succeeded') {
-      order.paymentStatus = amount ? 'partially_refunded' : 'refunded';
-      order.refundDetails = {
-        refundId: refund.id,
-        amount: refund.amount / 100,
-        reason: refund.reason,
-        createdAt: new Date(),
-      };
-      await order.save();
-
-      return {
-        success: true,
-        refundId: refund.id,
-        amount: refund.amount / 100,
-      };
-    } else {
-      return {
-        success: false,
-        status: refund.status,
-      };
-    }
-  } catch (error) {
-    console.error('Stripe refund error:', error);
-    throw new ValidationError(error.message || 'Failed to process refund');
-  }
-};
+const createStripeRefund = (orderId, amount, actor) => require('./marketplaceRefund').execute(orderId, amount, actor);
 
 /**
  * Get payment status
  */
-const getPaymentStatus = async (orderId) => {
+const getPaymentStatus = async (orderId, actor) => {
   const order = await Order.findById(orderId);
-  if (!order) {
-    throw new NotFoundError('Order not found');
-  }
-
-  return {
-    orderId: order._id,
-    orderNumber: order.orderNumber,
-    paymentStatus: order.paymentStatus,
-    paymentMethod: order.paymentMethod,
-    total: order.total,
-    paidAt: order.paidAt,
-    paymentDetails: order.paymentDetails,
-  };
+  const view = require('./orderAccess').project(order, actor);
+  await require('./orderAccess').audit(order, actor, 'payment_status_read');
+  return { orderId: view._id, orderNumber: view.orderNumber, paymentStatus: view.paymentStatus,
+    paymentMethod: view.paymentMethod, total: view.totalAmount, currency: view.currency, paidAt: view.paidAt };
 };
 
 module.exports = {

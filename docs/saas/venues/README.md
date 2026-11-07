@@ -9,7 +9,15 @@ scope: venue operations dashboard and customer platform
 
 Venues need a hospitality operating system, not a shop dashboard with a different label. Keep the shared Tenant, Product, SubProduct, inventory, payment and accounting foundations; give restaurants, bars, lounges and clubs their own operating tools and customer journeys.
 
-This is the main Markdown handoff. Read the linked chapters for detailed requirements. It is a proposed design, not a claim that the features have been built or approved.
+This is the main Markdown handoff. Read the linked chapters for detailed requirements. The chapters describe the target design; implementation and approval status are recorded separately below.
+
+## Current implementation status — 24 October 2026
+
+For the27October backlog refresh, see [remaining venue work](16-remaining-work.md): separate production activation requirements from deferred Phase3/4/5 features. This refresh does not rerun the recorded25October verification.
+
+[Certain] Phase0/1 corrections and Phase2 capacity, booking advances, minimum-spend financial lines, exact payer portions, direct mixed tender and operator refunds are implemented locally. Fresh browser3/3, both builds/types, admin3221/platformvenue5/platformNode241 client tests pass. Remaining market failures were repaired; the full backend now passes4316 tests with0 failures/cancellations and18 explained nonvenue skips. Final browser continuity also passed3/3; local engineering verification is complete and production activation remains disabled. Read the [current Phase2 handoff](../../superpowers/specs/RESUME-venue-phase-2.md), [verification ledger](../../superpowers/plans/venue-phase-2/verification.md) and [activation review](../../superpowers/plans/venue-phase-2/activation-review.md).
+
+The earlier Phase1 review findings have retained fixes. The five named wider-suite checks passed in the prior execution, but the final backend/apps/build/browser evidence must cover the latest financial changes. Historical reviews and counts are retained as dated evidence, not current release approval. Phase3 food/recipes/devices and Phase4 events/admissions remain deferred. Customer booking continues to disclose request-only confirmation; no instant-booking or hosted-provider certification claim is made.
 
 ## 1. Confidence and evidence
 
@@ -35,6 +43,7 @@ The research supports the operational categories, not the exact configuration of
 | [Odoo-informed restaurant integration](10-restaurant-integration.md) | R01–R18: floor plans, courses, transfers, preparation, bills, QR and kiosk features |
 | [SevenRooms-informed nightlife integration](11-nightlife-integration.md) | N01–N18: onboarding, guest lists, VIP, messaging, events, imports and training |
 | [Shared-system integration contracts](12-integration-contracts.md) | Existing-service mapping, commands/events, adaptations and integrated acceptance journeys |
+| [Phase 0 implementation review](13-phase-0-review.md) | 18 October source/test review, reproduced defects and signoff conditions |
 
 ## 3. Vocabulary and ownership
 
@@ -129,3 +138,7 @@ This is one integrated DrinksHarbour implementation: existing Tenant and Product
 The expansion makes floor editing, service presets, controlled transfers/joins, courses, printer jobs, station corrections, customer status displays, QR/mobile/kiosk modes, venue onboarding, scoped guest insights, communication/marketing, branded widgets, import tooling and staff UAT explicit. Food/recipe support remains the original DrinksHarbour extension, not a feature attributed to the reviewed pages without evidence.
 
 Read chapter 12 for cross-feature contracts and chapters 10/11 for detailed requirements. These supplements extend chapters 2–8; the core isolation, bill, stock, payment and catalogue invariants continue to apply. The target scope is broader, but software implementation has not been performed by writing these documents.
+
+## Portion, menu and profitability implementation documentation
+
+The30October user-requested [implementation blueprint](19-catalog-costing-implementation.md) maps the official-software research to current source, including serving index compatibility, private menu hierarchy, actual recipe/batch stock/cost evidence, honest profit reports and existing club-package dependencies. It is documentation-only; no runtime work or activation is claimed. Start with its linked source audit and execution plan before changing code.

@@ -1,3 +1,4 @@
+import { readJson } from './response';
 // Services for subcategory API calls
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -78,7 +79,7 @@ function authHeaders(token: string): HeadersInit {
 
 async function apiFetch<T>(url: string, options: RequestInit): Promise<T> {
   const res = await fetch(url, options);
-  const json = await res.json();
+  const json = await readJson<{ data: T; message?: string }>(res);
   if (!res.ok) throw new Error(json.message || 'Request failed');
   return json.data;
 }
@@ -129,7 +130,7 @@ export async function deleteAdminSubCategory(token: string, id: string): Promise
     method: 'DELETE',
     headers: authHeaders(token),
   });
-  const json = await res.json();
+  const json = await readJson<{ message?: string }>(res);
   if (!res.ok) throw new Error(json.message || 'Delete failed');
 }
 

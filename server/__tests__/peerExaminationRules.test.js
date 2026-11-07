@@ -25,28 +25,28 @@ test('monthly boundaries follow the tenant calendar and reject invalid months', 
   assert.equal(monthRange('2028-02', 0).end.toISOString(), '2028-03-01T00:00:00.000Z');
   for (const value of ['bad', '2026-00', '2026-13', null]) assert.throws(() => monthRange(value, 60));
 });
-test('three components have equal weight and determine the bonus', () => {
+test('attendance has20% weight and exam/appraisal40% each', () => {
   const result = combineResult({ ratings: [4, 4], attendanceScore: 90, exam: { correctCount: 1, questionCount: 2 }, allocationMinor: 5000000 });
   assert.equal(result.appraisalScore, 80);
   assert.equal(result.examScore, 50);
-  assert.equal(result.combinedScore, 73.33);
-  assert.equal(result.bonusMinor, 3666667);
+  assert.equal(result.combinedScore, 70);
+  assert.equal(result.bonusMinor, 3500000);
 });
-test('non-exam departments use appraisal and attendance equally, not a zero exam', () => {
+test('non-exam employees use appraisal80% and attendance20%', () => {
   const result = combineResult({ ratings: [4, 4], attendanceScore: 90, allocationMinor: 5000000 });
   assert.equal(result.examScore, undefined);
-  assert.equal(result.combinedScore, 85);
-  assert.equal(result.bonusMinor, 4250000);
+  assert.equal(result.combinedScore, 82);
+  assert.equal(result.bonusMinor, 4100000);
 });
 test('unrated attendance blocks calculation while an actual zero is valid', () => {
   for (const attendanceScore of [null, undefined, -1, 101, NaN]) assert.throws(() => combineResult({ ratings: [5], attendanceScore, allocationMinor: 10000 }));
-  assert.equal(combineResult({ ratings: [5], attendanceScore: 0, allocationMinor: 10000 }).combinedScore, 50);
+  assert.equal(combineResult({ ratings: [5], attendanceScore: 0, allocationMinor: 10000 }).combinedScore, 80);
 });
 test('bonus rounds exact component fractions once, including large allocations', () => {
   const input = { ratings: [1, 1, 2], attendanceScore: 77, exam: { correctCount: 2, questionCount: 3 }, allocationMinor: Number.MAX_SAFE_INTEGER };
   const result = combineResult(input);
-  const num = 4n * 3n * 100n + 2n * 15n * 100n + 77n * 15n * 3n;
-  const den = 3n * 15n * 3n * 100n;
+  const num = 40n * 4n * 3n * 100n + 40n * 2n * 15n * 100n + 20n * 77n * 15n * 3n;
+  const den = 10000n * 15n * 3n;
   assert.equal(result.bonusMinor, Number((2n * num * BigInt(input.allocationMinor) + den) / (2n * den)));
 });
 

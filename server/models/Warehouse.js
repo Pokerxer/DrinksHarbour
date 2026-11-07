@@ -5,6 +5,11 @@ const { ObjectId } = Schema;
 
 const warehouseSchema = new Schema(
   {
+    venueServices: { type: require('./venue.schema').services, default: () => ({}) },
+    venueStaff: [{ type: ObjectId, ref: 'User' }],
+    venueMappingFingerprint: String,
+    venueMappingHash: String,
+    venueVersion: { type: Number, default: 0, min: 0 },
     tenant: { type: ObjectId, ref: 'Tenant', required: true, index: true },
     name: { type: String, required: true, trim: true, maxlength: 120 },
     code: { type: String, required: true, trim: true, uppercase: true, maxlength: 30 },
@@ -42,6 +47,16 @@ const warehouseSchema = new Schema(
 
 warehouseSchema.index({ tenant: 1, code: 1 }, { unique: true });
 warehouseSchema.index({ tenant: 1, isActive: 1 });
+
+// Locations are shared historical identities. Even empty locations must be
+// deactivated, never physically removed by an application/model operation.
+function preventHardDelete() {
+  throw new (require('../utils/errors').ValidationError)(
+    'Warehouses cannot be deleted. Deactivate the location to preserve stock and history.'
+  );
+}
+warehouseSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete'], { query: true, document: false }, preventHardDelete);
+warehouseSchema.pre('deleteOne', { document: true, query: false }, preventHardDelete);
 
 const Warehouse = mongoose.models.Warehouse || mongoose.model('Warehouse', warehouseSchema);
 module.exports = Warehouse;

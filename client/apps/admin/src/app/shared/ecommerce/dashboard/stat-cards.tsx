@@ -1,11 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import MetricCard from '@core/components/cards/metric-card';
-import { Text } from 'rizzui';
 import cn from '@core/utils/class-names';
+import { routes } from '@/config/routes';
+import { Text } from 'rizzui/typography';
 import {
-  PiCaretDoubleUpDuotone,
-  PiCaretDoubleDownDuotone,
   PiGiftDuotone,
   PiBankDuotone,
   PiChartPieSliceDuotone,
@@ -17,17 +17,18 @@ import {
   formatCompactNaira as fmt,
   percentChange as pct,
 } from './dashboard-format';
+import { DeltaBadge, usePrefersReducedMotion } from './widget-parts';
 
 function SkeletonCard() {
   return (
-    <div className="animate-pulse rounded-2xl border border-muted bg-gray-0 p-5">
+    <div className="animate-pulse rounded-lg border border-muted bg-gray-0 p-5 dark:bg-gray-50 lg:p-6">
       <div className="mb-4 flex items-start justify-between">
-        <div className="h-8 w-8 rounded bg-gray-200" />
-        <div className="h-4 w-16 rounded bg-gray-200" />
+        <div className="h-8 w-8 rounded bg-gray-200 dark:bg-gray-100/20" />
+        <div className="h-4 w-16 rounded bg-gray-200 dark:bg-gray-100/20" />
       </div>
-      <div className="mb-2 h-7 w-24 rounded bg-gray-200" />
+      <div className="mb-2 h-7 w-24 rounded bg-gray-200 dark:bg-gray-100/20" />
       <div className="mt-5 border-t border-dashed border-muted pt-4">
-        <div className="h-4 w-32 rounded bg-gray-200" />
+        <div className="h-4 w-32 rounded bg-gray-200 dark:bg-gray-100/20" />
       </div>
     </div>
   );
@@ -36,6 +37,7 @@ function SkeletonCard() {
 export default function StatCards({ className }: { className?: string }) {
   const data = useDashboard();
   const meta = useDashboardMeta();
+  const reducedMotion = usePrefersReducedMotion();
   const periodLabel = meta?.label ?? 'This month';
   const comparisonLabel = meta?.comparisonLabel ?? 'vs last month';
 
@@ -68,9 +70,22 @@ export default function StatCards({ className }: { className?: string }) {
     previous.orders > 0 ? Math.round(previous.revenue / previous.orders) : 0;
   const avgPct = pct(avgOrderValue, avgPrevious);
 
-  const stats = [
+  const stats: {
+    id: string;
+    href?: string;
+    icon: React.ReactNode;
+    title: string;
+    metric: string;
+    sub: string;
+    increased: boolean;
+    pct: number | null;
+    style: string;
+    fill: string;
+    chart: { day: string; sale: number }[];
+  }[] = [
     {
       id: '1',
+      href: routes.eCommerce.orders,
       icon: <PiGiftDuotone className="h-6 w-6" />,
       title: `Orders · ${periodLabel}`,
       metric: period.orders.toLocaleString(),
@@ -123,56 +138,92 @@ export default function StatCards({ className }: { className?: string }) {
     <div
       className={cn('grid grid-cols-1 gap-5 3xl:gap-8 4xl:gap-9', className)}
     >
-      {stats.map((stat) => (
-        <MetricCard
-          key={stat.id}
-          title={stat.title}
-          metric={stat.metric}
-          metricClassName="lg:text-[22px]"
-          icon={stat.icon}
-          iconClassName={cn(
-            '[&>svg]:w-10 [&>svg]:h-8 lg:[&>svg]:w-11 lg:[&>svg]:h-9 w-auto h-auto p-0 bg-transparent -mx-1.5',
-            stat.style
-          )}
-          chart={
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart barSize={5} barGap={2} data={stat.chart}>
-                <Bar dataKey="sale" fill={stat.fill} radius={5} />
-              </BarChart>
-            </ResponsiveContainer>
-          }
-          chartClassName="hidden @[200px]:flex @[200px]:items-center h-14 w-24"
-          className="@container [&>div]:items-center"
-        >
-          <Text className="mt-5 flex items-center border-t border-dashed border-muted pt-4 leading-none text-gray-500">
-            {stat.pct !== null ? (
-              <>
+      {stats.map((stat) => {
+        const card = (
+          <MetricCard
+            title={stat.title}
+            metric={stat.metric}
+            metricClassName="lg:text-[22px] tabular-nums"
+            titleClassName="text-xs font-medium uppercase tracking-wider text-gray-500"
+            icon={stat.icon}
+            iconClassName={cn(
+              '[&>svg]:w-10 [&>svg]:h-8 lg:[&>svg]:w-11 lg:[&>svg]:h-9 w-auto h-auto p-0 bg-transparent -mx-1.5',
+              stat.style
+            )}
+            chart={
+              <ResponsiveContainer width="100%" height="100%" aria-hidden="true">
+                <BarChart barSize={5} barGap={2} data={stat.chart}>
+                  <Bar
+                    dataKey="sale"
+                    fill={stat.fill}
+                    radius={2}
+                    isAnimationActive={!reducedMotion}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            }
+            chartClassName="hidden @[200px]:flex @[200px]:items-center h-14 w-24"
+            className="@container [&>div]:items-center"
+          >
+            <Text className="mt-5 flex items-center border-t border-dashed border-muted pt-4 leading-none">
+              {stat.pct !== null ? (
+                <>
+                  <DeltaBadge
+                    up={stat.increased}
+                    percent={stat.pct}
+                    ariaLabel={`${stat.increased ? 'Up' : 'Down'} ${stat.pct}% ${comparisonLabel}`}
+                    className="me-2"
+                  />
+                  <Text
+                    as="span"
+                    className="hidden text-xs text-gray-500 @[240px]:inline-flex"
+                  >
+                    {stat.increased ? 'up' : 'down'} {comparisonLabel}
+                  </Text>
+                </>
+              ) : (
                 <Text
                   as="span"
-                  className={cn(
-                    'me-2 inline-flex items-center font-medium',
-                    stat.increased ? 'text-green' : 'text-red'
-                  )}
+                  className="text-xs text-orange-dark dark:text-orange-400"
                 >
-                  {stat.increased ? (
-                    <PiCaretDoubleUpDuotone className="me-1 h-4 w-4" />
-                  ) : (
-                    <PiCaretDoubleDownDuotone className="me-1 h-4 w-4" />
-                  )}
-                  {stat.pct}%
+                  {stat.sub}
                 </Text>
-                <Text as="span" className="hidden @[240px]:inline-flex">
-                  {stat.increased ? 'up' : 'down'} {comparisonLabel}
-                </Text>
-              </>
-            ) : (
-              <Text as="span" className="text-sm text-orange-500">
-                {stat.sub}
-              </Text>
-            )}
-          </Text>
-        </MetricCard>
-      ))}
+              )}
+            </Text>
+          </MetricCard>
+        );
+
+        // Only the Orders card carries an approved deep link (verified route):
+        // Revenue/AOV have no dashboard-internal target and stay value-only.
+        return (
+          <StatWrapped href={stat.href} key={stat.id}>
+            {card}
+          </StatWrapped>
+        );
+      })}
     </div>
+  );
+}
+
+/**
+ * Wraps a stat card in a deep link when one is approved for it. The wrapper
+ * is the grid child so card spacing is untouched; focus shows the same
+ * primary ring the dashboard controls use.
+ */
+function StatWrapped({
+  href,
+  children,
+}: {
+  href: string | undefined;
+  children: React.ReactNode;
+}) {
+  if (!href) return <>{children}</>;
+  return (
+    <Link
+      href={href}
+      className="block rounded-lg transition-shadow hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    >
+      {children}
+    </Link>
   );
 }

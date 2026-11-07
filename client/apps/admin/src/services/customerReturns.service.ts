@@ -7,6 +7,19 @@ export interface CustomerReturn {
   reference?: string;
   product: string;
   size: string;
+  // Variant identity (DRI-34 contract, emit-only-with-identity like DRI-16/
+  // DRI-29): the backend may add these beside the stored `size` snapshot ONLY
+  // when the Size itself carries colour/option identity. Identity-less legacy
+  // rows keep their exact downstream payload shape.
+  colorName?: string;
+  colorHexCode?: string;
+  optionName?: string;
+  // Reserved restock-target contract (DRI-34, backend pending): when a row
+  // exposes the exact Size disposition target it may carry these fields. The
+  // browser UI surfaces them only when present; NO placeholder is invented
+  // while the payload does not carry the target yet (recorded contract gap).
+  restockSizeId?: string;
+  restockSizeName?: string;
   returned: number;
   restocked: number | null;
   notRestocked: number | null;

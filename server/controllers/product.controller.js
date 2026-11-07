@@ -2,6 +2,7 @@
 
 const asyncHandler = require('../utils/asyncHandler');
 const productService = require('../services/product.service');
+const Product = require('../models/Product');
 const { ForbiddenError, ValidationError } = require('../utils/errors');
 const cartService = require('../services/cart.service');
 const wishlistService = require('../services/wishlist.service');
@@ -10,6 +11,7 @@ const Order  = require('../models/Order');
 const cloudinaryService = require('../services/cloudinary.service');
 const notificationService = require('../services/notification.service');
 const { logPrivilegedAction } = require('../utils/auditLog');
+const catalogKind = require('../constants/catalogKind');
 
 /**
  * @desc    Create a new product (central catalog)
@@ -122,13 +124,29 @@ const approveProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const user = req.user;
 
+  // Capture the original record for the audit trail: the before-status must
+  // be the REAL state (approve also accepts rows coming from rejected/draft),
+  // and approving a tenant-private identity also promotes it to canonical
+  // (see constants/catalogScope.js), so the log must show the promotion.
+  const beforeProduct = await Product.findById(id)
+    .select('publicationScope owningTenant status')
+    .lean();
+  const fromScope = beforeProduct?.publicationScope || null;
+  const fromStatus = beforeProduct?.status || 'pending';
+
   const product = await productService.approveProduct(id, user);
 
   // Audit: super-admin approval of a pending product
   logPrivilegedAction(req, 'PRODUCT_APPROVE', 'approve', {
     targetType: 'Product',
     targetId: id,
-    changes: { before: { status: 'pending' }, after: { status: 'approved' } },
+    changes: {
+      before: { status: fromStatus, ...(fromScope ? { publicationScope: fromScope } : {}) },
+      after: {
+        status: 'approved',
+        ...(fromScope ? { publicationScope: 'canonical', promotedFromScope: true } : {}),
+      },
+    },
   });
 
   res.status(200).json({
@@ -316,21 +334,62 @@ const setProductPrimaryImage = asyncHandler(async (req, res) => {
  * @route   GET /api/products/pending
  * @access  Private (Super-admin)
  */
-const getPendingProducts = asyncHandler(async (req, res) => {
-  const filters = {
+/**
+ * Size guidance for the size pickers (industry-scoping round, 2026-11-03).
+ * Static, tenant-agnostic: mirrors constants/productTypes.getSizesForType so
+ * each business's size form shows only its own sizing systems (fashion gets
+ * apparel/numeric/waist/inseam/kids/shoes; beverage keeps its bottle
+ * families; electronics storage; beauty volumes; foodservice weights).
+ * 'custom'/'variable' are always present as the free-form escape hatch.
+ */
+const getSizeGuidance = asyncHandler(async (req, res) => {
+  const { getSizesForType, ALL_SIZE_ENUMS } = require('../constants/productTypes');
+  const { type } = req.query;
+  if (typeof type !== 'string' || !type.trim()) {
+    throw new ValidationError('type query parameter is required');
+  }
+  const guidance = getSizesForType(type.trim());
+  const sizes = Array.isArray(guidance) ? [...guidance] : [];
+  for (const escapeHatch of ['custom', 'variable']) {
+    if (!sizes.includes(escapeHatch)) sizes.push(escapeHatch);
+  }
+  // Unknown types get the generic guidance — keep the response honest by
+  // also reporting the full accepted enum so pickers can degrade gracefully.
+  res.status(200).json({
+    success: true,
+    data: { type, sizes, allSizes: ALL_SIZE_ENUMS },
+  });
+});
+
+const getPendingProducts = asyncHandler(async (req, res) => {  const filters = {
     submittingTenant: req.query.tenant,
     brand: req.query.brand,
     category: req.query.category,
     type: req.query.type,
-    search: req.query.search,
+    // Pending search feeds `new RegExp(...)` inside the service — escape the
+    // raw user input first (grep memory: regex-injection hygiene).
+    search: typeof req.query.search === 'string'
+      ? require('../utils/escapeRegex').escapeRegex(req.query.search)
+      : undefined,
   };
-
   const pagination = {
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 20,
     sort: req.query.sort || 'createdAt',
     order: req.query.order || 'desc',
   };
+
+  // Tenant-isolation hardening: the route intentionally lets tenant admins/
+  // owners browse their pending submissions, but a tenant role must ONLY ever
+  // see its OWN submissions — the submittingTenant filter is forced from the
+  // server-validated request context (req.user.tenant via getTenantId) and a
+  // client-supplied ?tenant= is ignored for them. Platform admins
+  // (super_admin/admin) may scope freely. Authority never comes from the
+  // query string (Workstream A rule).
+  const { getOptionalTenantId } = require('../utils/tenantContext');
+  if (!['super_admin', 'admin'].includes(req.user?.role)) {
+    filters.submittingTenant = getOptionalTenantId(req);
+  }
 
   const result = await productService.getPendingProducts(filters, pagination);
 
@@ -1229,6 +1288,39 @@ const getAllProducts = asyncHandler(async (req, res) => {
     tenantId: req.tenant?._id || filters.tenantId || undefined,
     status: 'approved',
     includeUnpublished: false,
+    // Venue Phase 3 S1: the retail channel lists beverage kinds only. The
+    // admin /admin/all route reaches searchProducts through
+    // getAllProductsAdmin (below), which omits this flag on purpose.
+    catalogChannel: 'retail',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result,
+  });
+});
+
+/**
+ * @desc    Admin default listing. Same funnel as the public shop listing above,
+ *          deliberately WITHOUT the retail catalog-kind gate — an operator view
+ *          must see every central catalog kind (venue kinds, ingredient,
+ *          consumable). Keep in sync method-for-method with getAllProducts.
+ * @route   GET /api/products/admin/all
+ * @access  Private/Admin (incl. tenant_admin/owner for read-only browsing)
+ */
+const getAllProductsAdmin = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 12, ...filters } = req.query;
+
+  const result = await productService.searchProducts({
+    ...filters,
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10),
+    shoppingLocation: req.shoppingLocation || null,
+    explicitSort: req.query.sort || req.query.sortBy || null,
+    tenantId: req.tenant?._id || filters.tenantId || undefined,
+    status: 'approved',
+    includeUnpublished: false,
+    // No catalogChannel: admin surfaces see all catalog kinds.
   });
 
   res.status(200).json({
@@ -1281,6 +1373,9 @@ const searchProductsPublic = asyncHandler(async (req, res) => {
     tenantId: req.tenant?._id || filters.tenantId || undefined,
     status: 'approved',
     includeUnpublished: false,
+    // Venue Phase 3 S1: retail channel lists beverage kinds only (pinned last,
+    // like the visibility keys above).
+    catalogChannel: 'retail',
   };
 
   const result = await productService.searchProducts(searchParams);
@@ -1301,8 +1396,12 @@ const searchProductsPublic = asyncHandler(async (req, res) => {
 const getProductFilterOptions = asyncHandler(async (req, res) => {
   const Product = require('../models/Product');
 
-  const [facets] = await Product.aggregate([
-    { $match: { status: 'approved', isPublished: true } },
+  const [facets] = await require('../services/marketCatalog').productAggregate([
+    { $match: { status: 'approved', isPublished: true,
+      // DRI-5 (2026-11-05): filter options serve the beverage-only platform
+      // marketplace — a retail-kind-only brand would otherwise appear in the
+      // filter rail with an empty (gated) grid behind it.
+      ...require('../constants/catalogKind').marketplaceWhereClause() } },
     {
       $facet: {
         brands: [
@@ -1475,7 +1574,18 @@ const getProductBySlug = asyncHandler(async (req, res) => {
     throw new ValidationError('Product slug is required');
   }
 
-  const product = await productService.getProductBySlug(slug, { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id });
+  // DRI-9 surface context: the platform middleware flags tenant-storefront
+  // requests with `x-is-tenant-site`; everything else (main marketplace
+  // fetches, browser refetches, quickviews, chatbot) defaults to the
+  // beverage-only main-marketplace surface. Header-derived by design: a
+  // caller can forge `x-is-tenant-site: true` to reach tenant-store content,
+  // which is what the header grants anyway — tenant data itself stays
+  // JWT-scoped.
+  const surface = req.get('x-is-tenant-site') === 'true'
+    ? catalogKind.DETAIL_SURFACES.TENANT_SITE
+    : catalogKind.DETAIL_SURFACES.MARKETPLACE;
+
+  const product = await productService.getProductBySlug(slug, { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id, surface });
 
   res.status(200).json({
     success: true,
@@ -1888,6 +1998,7 @@ module.exports = {
     reorderProductImages,
     setProductPrimaryImage,
     getPendingProducts,
+    getSizeGuidance,
     getRejectedProducts,
     getProductSubmissionStats,
     bulkApproveProducts,
@@ -1928,6 +2039,7 @@ module.exports = {
     exportTenantProducts,
     exportAllProducts,
     getAllProducts,
+    getAllProductsAdmin,
     searchProductsPublic,
     getProductFilterOptions,
     getFeaturedProducts,
@@ -1962,3 +2074,14 @@ module.exports = {
     updateProductImageMetadata,
     bulkDeleteProductImages,
 };
+
+// Only shopper-facing handlers enter market scope. Private catalogue/ERM readers stay independent.
+for (const name of [
+  'getAllProducts', 'searchProductsPublic', 'getFeaturedProducts', 'getNewArrivals', 'getBestsellers',
+  'getProductBySlug', 'getProductById', 'fetchProduct', 'getProductsByCategory', 'getProductsByBrand',
+  'getProductsByTags', 'getProductsByFlavors', 'getTrendingProducts', 'getSeasonalProducts',
+  'getProductFilterOptions', 'getProductByBarcode', 'getRelatedProducts', 'getProductRecommendations',
+  'getPersonalizedRecommendations', 'getProductCompetitors', 'getFrequentlyBoughtTogether',
+  'getProductCrossSells', 'getProductUpSells', 'getProductVariants', 'compareProductVariants',
+  'getProductStockStatus', 'getProductPriceRange', 'getProductAvailability',
+]) module.exports[name] = require('../services/marketContext').handler(module.exports[name]);

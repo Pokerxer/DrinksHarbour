@@ -1,3 +1,4 @@
+import { warehouseFixture } from '@/test/warehouse-fixture';
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -12,8 +13,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 const locations = [
-  { _id: 'w', name: 'Wyn City', code: 'WYN', type: 'warehouse', isActive: true },
-  { _id: 's', name: 'Abuja Shop', code: 'SHOP', type: 'store', isActive: false },
+  warehouseFixture({ _id: 'w', name: 'Wyn City', code: 'WYN', type: 'warehouse', isActive: true }),
+  warehouseFixture({ _id: 's', name: 'Abuja Shop', code: 'SHOP', type: 'store', isActive: false }),
 ];
 it('searches multiple products, combines filters, clears them and links analysis for each location', async () => {
   vi.spyOn(warehouseService, 'getWarehouses').mockResolvedValue({ success: true, data: locations });

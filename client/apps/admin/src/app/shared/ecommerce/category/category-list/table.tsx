@@ -10,6 +10,7 @@ import TableFooter from '@core/components/table/footer';
 import TablePagination from '@core/components/table/pagination';
 import Filters from './filters';
 import { getAdminCategories, deleteAdminCategory, AdminCategory } from '@/services/category.service';
+import { applyIndustryFilter } from './industry-scope';
 import { Button, Empty, Loader, Text } from 'rizzui';
 import { PiArrowClockwiseBold, PiTagBold } from 'react-icons/pi';
 import Link from 'next/link';
@@ -26,15 +27,19 @@ export default function CategoryTable() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [industryFilter, setIndustryFilter] = useState('');
 
   // Apply client-side filters
   const filtered = useMemo(() => {
-    return allCategories.filter((c) => {
-      if (statusFilter && c.status !== statusFilter) return false;
-      if (typeFilter && c.type !== typeFilter) return false;
-      return true;
-    });
-  }, [allCategories, statusFilter, typeFilter]);
+    return applyIndustryFilter(
+      allCategories.filter((c) => {
+        if (statusFilter && c.status !== statusFilter) return false;
+        if (typeFilter && c.type !== typeFilter) return false;
+        return true;
+      }),
+      industryFilter
+    );
+  }, [allCategories, statusFilter, typeFilter, industryFilter]);
 
   const { table, setData } = useTanStackTable<CategoryDataType>({
     tableData: filtered,
@@ -115,8 +120,10 @@ export default function CategoryTable() {
         table={table}
         statusFilter={statusFilter}
         typeFilter={typeFilter}
+        industryFilter={industryFilter}
         onStatusChange={setStatusFilter}
         onTypeChange={setTypeFilter}
+        onIndustryChange={setIndustryFilter}
       />
 
       {filtered.length === 0 ? (

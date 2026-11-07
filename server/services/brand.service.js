@@ -98,7 +98,6 @@ const getAllBrands = async (queryParams = {}) => {
     page = 1,
     limit = 20,
     featured,
-    status = 'active',
     sort = 'name',
     order = 'asc',
     search,
@@ -129,14 +128,10 @@ const getAllBrands = async (queryParams = {}) => {
   // Build filter with advanced options
   const query = {};
   
-  // Status filter (support multiple statuses)
-  if (status) {
-    if (Array.isArray(status)) {
-      query.status = { $in: status };
-    } else if (status !== 'all') {
-      query.status = status;
-    }
-  }
+  // Public discovery cannot include unpublished proposals, even when a caller
+  // supplies status=all, a non-active status, or an array of statuses.
+  const status = 'active';
+  query.status = status;
 
   // Boolean filters
   if (featured === 'true') query.isFeatured = true;
@@ -248,7 +243,7 @@ const getAllBrands = async (queryParams = {}) => {
   
   // Field selection - include all image fields and the storefront hero CTA
   // (bannerLink/bannerLinkType) used by the shop hero for brand filter pages.
-  let selectFields = 'name slug logo logoVariants featuredImage bannerImage gallery brandColors tagline description shortDescription productCount isFeatured verified countryOfOrigin primaryCategory brandType founded isPremium popularityScore createdAt updatedAt bannerLink bannerLinkType';
+  let selectFields = 'industry name slug logo logoVariants featuredImage bannerImage gallery brandColors tagline description shortDescription productCount isFeatured verified countryOfOrigin primaryCategory brandType founded isPremium popularityScore createdAt updatedAt bannerLink bannerLinkType';
   
   if (fields) {
     const allowedFields = fields.split(',').map(f => f.trim()).filter(f => 
@@ -355,7 +350,7 @@ const getPopularBrands = async (limit = 10) => {
  * Get brand by ID
  */
 const getBrandById = async (brandId) => {
-  const brand = await Brand.findById(brandId)
+  const brand = await Brand.findOne({ _id: brandId, status: 'active' })
     .select('-__v')
     .lean();
 
@@ -540,7 +535,7 @@ const getFilterOptions = async () => {
     
     // Get counts by status
     Brand.aggregate([
-      { $match: { status: { $exists: true } } },
+      { $match: { status: 'active' } },
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]),
     

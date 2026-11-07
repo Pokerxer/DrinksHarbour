@@ -14,12 +14,46 @@ import {
   reorderService,
   type ReorderSuggestion,
 } from '@/services/reorder.service';
+import {
+  populatedSizeIdentity,
+  sizeVariantLabel,
+} from '@/utils/size-variant-label';
+import { raisePoHref } from './inventory-procurement-helpers';
 
 const ngn = new Intl.NumberFormat('en-NG', {
   style: 'currency',
   currency: 'NGN',
   maximumFractionDigits: 0,
 });
+
+/**
+ * Shared variant label for a suggestion row (DRI-34). The backend emits the
+ * exact Size identity only when it exists (either flat sibling fields like
+ * DRI-16, or a populated Size object like DRI-29) — compose the full shared
+ * label then; SubProduct-aggregate (sizeless/legacy) suggestions resolve to
+ * null so their row renders exactly as before.
+ */
+/**
+ * Shared variant label for a suggestion row (DRI-34, contract: reorder slice
+ * DRI-33). Variant suggestions carry sizeId + size/displayName and — only when
+ * the Size has identity — verbatim colour/option. Compose the shared full
+ * label then; a populated-Size object shape is also consumed defensively. 
+ * SubProduct-aggregate (sizeless/legacy) suggestions resolve to null so their
+ * row renders exactly as before.
+ */
+export function suggestionSizeLabel(s: ReorderSuggestion): string | null {
+  const populated = populatedSizeIdentity(s.size);
+  if (populated) return sizeVariantLabel(populated) || null;
+  if (!s.sizeId) return null;
+  return (
+    sizeVariantLabel({
+      displayName: s.displayName ?? s.sizeName ?? null,
+      size: typeof s.size === 'string' ? s.size : null,
+      colorName: s.colorName ?? null,
+      optionName: s.optionName ?? null,
+    }) || null
+  );
+}
 
 const URGENCY_BADGE: Record<ReorderSuggestion['urgency'], string> = {
   critical: 'bg-red-50 text-red-600 ring-1 ring-inset ring-red-200',
@@ -144,7 +178,7 @@ export default function InventoryProcurement() {
               ) : (
                 suggestions.map((s) => (
                   <tr
-                    key={s.subProductId}
+                    key={s.sizeId ? `${s.subProductId}:${s.sizeId}` : s.subProductId}
                     className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60"
                   >
                     <td className="px-4 py-3">
@@ -154,6 +188,20 @@ export default function InventoryProcurement() {
                       <span className="ml-1.5 text-xs text-gray-400">
                         {s.sku}
                       </span>
+                      {suggestionSizeLabel(s) && (
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {suggestionSizeLabel(s)}
+                        </p>
+                      )}
+                      {s.sizeId && (
+                        <Link
+                          href={raisePoHref(s)}
+                          className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-[#b20202] hover:underline"
+                        >
+                          <PiShoppingCart className="h-3.5 w-3.5" />
+                          Raise PO
+                        </Link>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span

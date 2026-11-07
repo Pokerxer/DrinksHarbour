@@ -57,6 +57,7 @@ import {
 // Every href points at a route that exists. A few use literal paths on purpose
 // because the matching `routes` entry points somewhere else (noted inline).
 export const menuItems = [
+  { name: 'Occasion requests', href: '/occasion-requests', icon: <PiClipboardTextDuotone />, platformOnly: true },
   // ─── Overview ───────────────────────────────────────────────
   {
     name: 'Overview',
@@ -287,6 +288,7 @@ export const menuItems = [
     href: routes.eCommerce.orders,
     icon: <PiReceiptDuotone />,
   },
+  { name: 'Merchant fulfillment', href: '/merchant-orders', icon: <PiReceiptDuotone /> },
   {
     name: 'Live Carts',
     href: routes.eCommerce.carts,
@@ -403,6 +405,10 @@ export const menuItems = [
     icon: <PiGearDuotone />,
     dropdownItems: [
       { name: 'General Settings', href: '/settings' },
+      { name: 'Delivery settings', href: '/delivery-settings' },
+      { name: 'Market enrollment', href: '/settings/market-enrollment' },
+      { name: 'Sales channels', href: '/settings/sales-channels' },
+      { name: 'Countries', href: '/settings/countries' },
       { name: 'Billing', href: routes.billing },
     ],
   },

@@ -62,7 +62,8 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
     <div className="hidden lg:flex items-center gap-1 flex-shrink-0">
       {/* Wishlist */}
       <Link href="/wishlist" aria-label="Wishlist" className={iconBtn}>
-        <Icon.PiHeart size={22} />
+        <Icon.PiHeart size={22} aria-hidden="true" />
+        <span className="sr-only">Wishlist</span>
         {wishlistState.wishlistArray.length > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
             {wishlistState.wishlistArray.length}

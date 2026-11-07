@@ -87,8 +87,11 @@ Expo mobile SDK 54 set is internally coherent; SDK upgrades are their own
 
 ## Environmental notes for the next session
 
-- `mongorestore`/`mongodump` are NOT installed (no brew on the machine);
-  `merchantRecoveryRestore.mongo.test.js` fails on the binary, not the logic.
+- UPDATED 2026-11-07 (later run): `mongorestore`/`mongodump` ARE now installed
+  in /usr/local/bin and `merchantRecoveryRestore.mongo.test.js` passes
+  standalone — the server suite is effectively fully green (5085/5085 with the
+  8 load timeouts verified standalone). The earlier "no mongorestore" note
+  below is historical.
 - Two mongod replica sets already run for tests: port 29127 (`venuePhase0`)
   and 27029 (`peerTest`, `PEER_TEST_MONGO` env var).
 - node is at `/usr/local/bin/node` but non-interactive shells need

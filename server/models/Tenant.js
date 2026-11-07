@@ -3,12 +3,16 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
 const { applyTrialWindow } = require("../config/erm-plans");
+const { INDUSTRY_VALUES } = require("../constants/industries");
 
 const tenantSchema = new Schema(
   {
     // ────────────────────────────────────────────────
     // Identity & Branding
     // ────────────────────────────────────────────────
+    businessCapabilities: [{ type: String, enum: ["retail", "hospitality"] }],
+    venueSettings: { type: require("./venue.schema").settings, default: () => ({}) },
+    venueSubscriptionReadOnlySince: { type: Date, default: null },
     name: {
       type: String,
       required: true,
@@ -26,6 +30,8 @@ const tenantSchema = new Schema(
       index: true,
     },
 
+    // Operator-enabled channel binding; the channel record remains authority.
+    storefrontIntegrationEnabled: { type: Boolean, default: false },
     // Subdomain = slug.drinksharbour.com
     // (enforced via nginx/vercel routing + DNS wildcard)
 
@@ -139,10 +145,12 @@ const tenantSchema = new Schema(
     // ────────────────────────────────────────────────
     revenueModel: {
       type: String,
-      enum: ["markup", "commission"],
+      enum: ["markup", "commission", "selling_price_markup"],
       default: "markup",
       required: true,
     },
+
+    sellingPriceMarkupPercentage: { type: Number, min: 0, max: 500, default: 0 },
 
     markupPercentage: {
       type: Number,
@@ -324,8 +332,21 @@ const tenantSchema = new Schema(
         'Wine Merchant', 'Spirit Importer', 'Beverage Brand', 'Liquor Store',
         'Bar / Lounge', 'Nightclub / Club', 'Restaurant', 'Hotel',
         'Distributor', 'Other',
+        // General-retail verticals (2026-11-02, additive). Each maps to an
+        // industry profile via constants/industries.js
+        // (deriveIndustriesFromBusinessType); existing values unchanged.
+        'Fashion Retail', 'Electronics Retail', 'Beauty & Skincare',
+        'Home & Living', 'General Retail',
       ],
     },
+    // Industry profile (2026-11-02, additive): empty = not-yet-profiled, the
+    // legacy state — resolution (resolveTenantIndustries) then falls back to
+    // businessType, and 'Other'/unmapped means "see everything". Values are
+    // INDUSTRY_VALUES members; an explicitly saved non-empty array wins.
+    industries: [{
+      type: String,
+      enum: INDUSTRY_VALUES,
+    }],
     cacNumber: { type: String, trim: true, uppercase: true },
     tin: { type: String, trim: true, uppercase: true },
     bvn: { type: String, trim: true }, // hash in production — stored as-is for MVP

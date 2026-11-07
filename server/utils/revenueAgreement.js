@@ -27,7 +27,7 @@ function splitMerchandise({ amount, quantity = 1, model, rate, payout }) {
     quantity < 1
   )
     throw new ValidationError('Invalid merchandise amount or quantity');
-  if (!['markup', 'commission'].includes(model))
+  if (!['markup', 'commission', 'selling_price_markup'].includes(model))
     throw new ValidationError('Unknown revenue agreement');
   const basis = cents(amount);
   let share;

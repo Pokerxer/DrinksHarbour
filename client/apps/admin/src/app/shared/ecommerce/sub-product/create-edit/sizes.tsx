@@ -4,6 +4,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useFormContext, useFieldArray, Controller } from 'react-hook-form';
 import { Input, Text, Button, Switch, Badge } from 'rizzui';
+import { useTenant } from '@/context/TenantContext';
+import { resolveTenantIndustries } from '@/utils/industries';
+import { catalogBusiness } from '@/utils/catalog-business';
+import VariantImageField from './variant-image-field';
+import { availableCustomSize, businessSizeOptions, sizePresetMeasurements } from './business-size-options';
+import { SIZE_GROUPS } from '@/utils/retail-product-types';
 import SingleItemConfirmation from './components/SingleItemConfirmation';
 import RemoveSizeButton from './components/RemoveSizeButton';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
@@ -43,6 +49,14 @@ import {
 } from './animations';
 import toast from 'react-hot-toast';
 import cn from '@core/utils/class-names';
+import { useSession } from 'next-auth/react';
+import { productService } from '@/services/product.service';
+import { isBeverageProductType } from '@/utils/product-types';
+import {
+  normalizeColorHexInput,
+  isCompleteColorHex,
+  COLOR_NAME_MAX_LENGTH,
+} from './color-variant';
 
 // Enhanced animations
 const cardVariants = {
@@ -107,134 +121,6 @@ const quickAddVariants = {
   hidden: { opacity: 0, y: -10 },
   visible: { opacity: 1, y: 0 },
 };
-
-// Quick size presets for beverages
-const SIZE_PRESETS = {
-  wine: [
-    { value: '37.5cl', label: '37.5cl (Half)', quickAdd: true },
-    { value: '75cl', label: '75cl (Standard)', quickAdd: true },
-    { value: '150cl', label: '150cl (Magnum)', quickAdd: true },
-    { value: '300cl', label: '300cl (Double Mag)', quickAdd: true },
-  ],
-  spirit: [
-    { value: '5cl', label: '5cl (Mini)', quickAdd: true },
-    { value: '70cl', label: '70cl (Standard)', quickAdd: true },
-    { value: '1L', label: '1 Liter', quickAdd: true },
-    { value: '1.5L', label: '1.5 Liter', quickAdd: true },
-  ],
-  beer: [
-    { value: '33cl', label: '33cl', quickAdd: true },
-    { value: '50cl', label: '50cl', quickAdd: true },
-    { value: 'bottle-500ml', label: '500ml Bottle', quickAdd: true },
-    { value: 'can-440ml', label: '440ml Can', quickAdd: true },
-  ],
-  soft: [
-    { value: '250ml', label: '250ml', quickAdd: true },
-    { value: '500ml', label: '500ml', quickAdd: true },
-    { value: '1L', label: '1 Liter', quickAdd: true },
-    { value: '2L', label: '2 Liter', quickAdd: true },
-  ],
-  packs: [
-    { value: 'pack-6', label: '6-Pack', quickAdd: true },
-    { value: 'pack-12', label: '12-Pack', quickAdd: true },
-    { value: 'case-12', label: 'Case of 12', quickAdd: true },
-    { value: 'case-24', label: 'Case of 24', quickAdd: true },
-  ],
-  barware: [
-    { value: 'piece-single', label: 'Single Piece', quickAdd: true },
-    { value: 'pair', label: 'Pair', quickAdd: true },
-    { value: 'set-4', label: 'Set of 4', quickAdd: true },
-    { value: 'set-6', label: 'Set of 6', quickAdd: true },
-  ],
-  cigars: [
-    { value: 'cigar-single', label: 'Single', quickAdd: true },
-    { value: 'box-10', label: 'Box of 10', quickAdd: true },
-    { value: 'box-25', label: 'Box of 25', quickAdd: true },
-    { value: 'sampler-5', label: 'Sampler of 5', quickAdd: true },
-  ],
-  vapes: [
-    { value: '30ml', label: '30ml E-liquid', quickAdd: true },
-    { value: '60ml', label: '60ml E-liquid', quickAdd: true },
-    { value: 'puffs-600', label: '600 Puffs', quickAdd: true },
-    { value: 'pod-4', label: '4 Pods', quickAdd: true },
-  ],
-  gifts: [
-    { value: 'piece-single', label: 'Single Piece', quickAdd: true },
-    { value: 'pair', label: 'Pair (2)', quickAdd: true },
-    { value: 'set-2', label: 'Set of 2', quickAdd: true },
-    { value: 'set-4', label: 'Set of 4', quickAdd: true },
-    { value: 'set-6', label: 'Set of 6', quickAdd: true },
-    { value: 'gift-set', label: 'Gift Set', quickAdd: true },
-    { value: 'box-single', label: 'Single Box', quickAdd: true },
-  ],
-  snacks: [
-    { value: '240g', label: '240g', quickAdd: true },
-    { value: 'bar-single', label: 'Single Bar', quickAdd: true },
-    { value: 'bar-2', label: '2-Bar Pack', quickAdd: true },
-    { value: 'bag-250g', label: 'Bag 250g', quickAdd: true },
-    { value: 'bag-500g', label: 'Bag 500g', quickAdd: true },
-    { value: 'tin-single', label: 'Single Tin', quickAdd: true },
-    { value: 'tin-200g', label: 'Tin 200g', quickAdd: true },
-  ],
-};
-
-const BEVERAGE_CATEGORIES = [
-  { id: 'wine', label: 'Wine', icon: '🍷', color: 'bg-red-100 text-red-700' },
-  {
-    id: 'spirit',
-    label: 'Spirit',
-    icon: '🥃',
-    color: 'bg-amber-100 text-amber-700',
-  },
-  {
-    id: 'beer',
-    label: 'Beer',
-    icon: '🍺',
-    color: 'bg-yellow-100 text-yellow-700',
-  },
-  {
-    id: 'soft',
-    label: 'Soft Drinks',
-    icon: '🥤',
-    color: 'bg-blue-100 text-blue-700',
-  },
-  {
-    id: 'packs',
-    label: 'Multi-Packs',
-    icon: '📦',
-    color: 'bg-green-100 text-green-700',
-  },
-  {
-    id: 'barware',
-    label: 'Barware',
-    icon: '🍸',
-    color: 'bg-purple-100 text-purple-700',
-  },
-  {
-    id: 'cigars',
-    label: 'Cigars',
-    icon: '🚬',
-    color: 'bg-orange-100 text-orange-700',
-  },
-  {
-    id: 'vapes',
-    label: 'Vapes',
-    icon: '💨',
-    color: 'bg-cyan-100 text-cyan-700',
-  },
-  {
-    id: 'gifts',
-    label: 'Gifts & Lifestyle',
-    icon: '🎁',
-    color: 'bg-fuchsia-100 text-fuchsia-700',
-  },
-  {
-    id: 'snacks',
-    label: 'Snacks',
-    icon: '🍫',
-    color: 'bg-amber-100 text-amber-700',
-  },
-];
 
 const MARKUP_PRESETS = [10, 15, 20, 25, 30, 35, 50, 75, 100];
 
@@ -362,6 +248,11 @@ export const SIZE_OPTIONS = [
   { value: '1kg', label: '1kg', category: 'Coffee & Tea' },
   { value: '2kg', label: '2kg', category: 'Coffee & Tea' },
 
+  // Procurement weight codes also used by shisha and charcoal.
+  { value: 'kg-0.5', label: '0.5 kg', category: 'Procurement Weight' },
+  { value: 'kg-1', label: '1 kg', category: 'Procurement Weight' },
+  { value: 'kg-2', label: '2 kg', category: 'Procurement Weight' },
+
   // Tea Bags
   { value: 'teabag-20', label: '20 Tea Bags', category: 'Tea Bags' },
   { value: 'teabag-25', label: '25 Tea Bags', category: 'Tea Bags' },
@@ -477,7 +368,7 @@ export const SIZE_OPTIONS = [
 
   // Vapes & E-liquids
   { value: '10ml', label: '10ml E-liquid', category: 'Vapes & E-liquids' },
-  { value: '15ml', label: '15ml E-liquid', category: 'Vapes & E-liquids' },
+  { value: '15ml', label: '15 ml', category: 'Small Containers' },
   { value: '30ml', label: '30ml E-liquid', category: 'Vapes & E-liquids' },
   { value: '60ml', label: '60ml E-liquid', category: 'Vapes & E-liquids' },
   { value: '100ml', label: '100ml E-liquid', category: 'Vapes & E-liquids' },
@@ -498,6 +389,117 @@ export const SIZE_OPTIONS = [
   { value: 'puffs-5000', label: '5000 Puffs', category: 'Vapes & E-liquids' },
   { value: 'puffs-6000', label: '6000 Puffs', category: 'Vapes & E-liquids' },
   { value: 'puffs-10000', label: '10000 Puffs', category: 'Vapes & E-liquids' },
+
+  // ── Retail vertical canonical sizes (mirror of server/models/Size.js
+  // enum appends; constants/productTypes.js STANDARD_SIZES.APPAREL/SHOES/
+  // STORAGE — Apparel includes '6xl' and Shoes include 'us-m-8.5' exactly as
+  // the Size enum accepts them) ────────────────────────────────────────────
+  // Apparel (fashion_top/dress/bottom/outerwear/innerwear/kids)
+  { value: 'xs', label: 'XS', category: 'Apparel' },
+  { value: 's', label: 'S', category: 'Apparel' },
+  { value: 'm', label: 'M', category: 'Apparel' },
+  { value: 'l', label: 'L', category: 'Apparel' },
+  { value: 'xl', label: 'XL', category: 'Apparel' },
+  { value: '2xl', label: '2XL', category: 'Apparel' },
+  { value: '3xl', label: '3XL', category: 'Apparel' },
+  { value: '4xl', label: '4XL', category: 'Apparel' },
+  { value: '5xl', label: '5XL', category: 'Apparel' },
+  { value: '6xl', label: '6XL', category: 'Apparel' },
+  { value: 'one_size', label: 'One Size', category: 'Apparel' },
+
+  // Shoes (EU 35–47, US Men's 6–13 incl. 8.5, US Women's 4–12)
+  { value: 'eu-35', label: 'EU 35', category: 'Shoes' },
+  { value: 'eu-36', label: 'EU 36', category: 'Shoes' },
+  { value: 'eu-37', label: 'EU 37', category: 'Shoes' },
+  { value: 'eu-38', label: 'EU 38', category: 'Shoes' },
+  { value: 'eu-39', label: 'EU 39', category: 'Shoes' },
+  { value: 'eu-40', label: 'EU 40', category: 'Shoes' },
+  { value: 'eu-41', label: 'EU 41', category: 'Shoes' },
+  { value: 'eu-42', label: 'EU 42', category: 'Shoes' },
+  { value: 'eu-43', label: 'EU 43', category: 'Shoes' },
+  { value: 'eu-44', label: 'EU 44', category: 'Shoes' },
+  { value: 'eu-45', label: 'EU 45', category: 'Shoes' },
+  { value: 'eu-46', label: 'EU 46', category: 'Shoes' },
+  { value: 'eu-47', label: 'EU 47', category: 'Shoes' },
+  { value: 'us-m-6', label: "US Men's 6", category: 'Shoes' },
+  { value: 'us-m-7', label: "US Men's 7", category: 'Shoes' },
+  { value: 'us-m-8', label: "US Men's 8", category: 'Shoes' },
+  { value: 'us-m-8.5', label: "US Men's 8.5", category: 'Shoes' },
+  { value: 'us-m-9', label: "US Men's 9", category: 'Shoes' },
+  { value: 'us-m-10', label: "US Men's 10", category: 'Shoes' },
+  { value: 'us-m-11', label: "US Men's 11", category: 'Shoes' },
+  { value: 'us-m-12', label: "US Men's 12", category: 'Shoes' },
+  { value: 'us-m-13', label: "US Men's 13", category: 'Shoes' },
+  { value: 'us-w-4', label: "US Women's 4", category: 'Shoes' },
+  { value: 'us-w-5', label: "US Women's 5", category: 'Shoes' },
+  { value: 'us-w-6', label: "US Women's 6", category: 'Shoes' },
+  { value: 'us-w-7', label: "US Women's 7", category: 'Shoes' },
+  { value: 'us-w-8', label: "US Women's 8", category: 'Shoes' },
+  { value: 'us-w-9', label: "US Women's 9", category: 'Shoes' },
+  { value: 'us-w-10', label: "US Women's 10", category: 'Shoes' },
+  { value: 'us-w-11', label: "US Women's 11", category: 'Shoes' },
+  { value: 'us-w-12', label: "US Women's 12", category: 'Shoes' },
+
+  // Electronics — device storage tiers (phones/tablets/laptops/gaming)
+  {
+    value: 'storage-16gb',
+    label: '16GB Storage',
+    category: 'Device Storage',
+  },
+  {
+    value: 'storage-32gb',
+    label: '32GB Storage',
+    category: 'Device Storage',
+  },
+  {
+    value: 'storage-64gb',
+    label: '64GB Storage',
+    category: 'Device Storage',
+  },
+  {
+    value: 'storage-128gb',
+    label: '128GB Storage',
+    category: 'Device Storage',
+  },
+  {
+    value: 'storage-256gb',
+    label: '256GB Storage',
+    category: 'Device Storage',
+  },
+  {
+    value: 'storage-512gb',
+    label: '512GB Storage',
+    category: 'Device Storage',
+  },
+  { value: 'storage-1tb', label: '1TB Storage', category: 'Device Storage' },
+  { value: 'storage-2tb', label: '2TB Storage', category: 'Device Storage' },
+  { value: 'storage-4tb', label: '4TB Storage', category: 'Device Storage' },
+
+  // Electronics sizing systems (2026-11-03) — screen inches, RAM, battery
+  // capacity; scoped to electronics types via the server size-guidance
+  // endpoint (same contract as the fashion groups).
+  ...SIZE_GROUPS.portableScreen.values.map((value) => ({
+    value,
+    label: `${value.slice('screen-'.length)}-inch`,
+    category: SIZE_GROUPS.portableScreen.category,
+  })),
+  { value: 'screen-24', label: '24-inch', category: 'Screen Size' },
+  { value: 'screen-32', label: '32-inch', category: 'Screen Size' },
+  { value: 'screen-43', label: '43-inch', category: 'Screen Size' },
+  { value: 'screen-50', label: '50-inch', category: 'Screen Size' },
+  { value: 'screen-55', label: '55-inch', category: 'Screen Size' },
+  { value: 'screen-65', label: '65-inch', category: 'Screen Size' },
+  { value: 'screen-75', label: '75-inch', category: 'Screen Size' },
+  { value: 'screen-85', label: '85-inch', category: 'Screen Size' },
+  { value: 'ram-4gb', label: '4GB RAM', category: 'RAM' },
+  { value: 'ram-8gb', label: '8GB RAM', category: 'RAM' },
+  { value: 'ram-16gb', label: '16GB RAM', category: 'RAM' },
+  { value: 'ram-32gb', label: '32GB RAM', category: 'RAM' },
+  { value: 'ram-64gb', label: '64GB RAM', category: 'RAM' },
+  { value: 'battery-5000mah', label: '5,000mAh', category: 'Battery Capacity' },
+  { value: 'battery-10000mah', label: '10,000mAh', category: 'Battery Capacity' },
+  { value: 'battery-20000mah', label: '20,000mAh', category: 'Battery Capacity' },
+  { value: 'battery-26800mah', label: '26,800mAh', category: 'Battery Capacity' },
 
   // Custom
   { value: 'custom', label: 'Custom Size', category: 'Other' },
@@ -530,6 +532,88 @@ export default function SubProductSizes() {
   const defaultDiscount = watch?.('subProductData.saleDiscountPercentage') ?? 0;
   const defaultCurrency = watch?.('subProductData.currency') ?? 'NGN';
 
+  // ── Non-beverage color variants (industry Size rows) ──────────────────────
+  // The Color inputs only exist for non-beverage products: resolve the parent
+  // product's type from whichever signal the form currently carries —
+  // `createNewProduct` carries the type inline; a linked catalogue product is
+  // read (once, aborted on change) like Basic Info does.
+  const { data: sessionData } = useSession();
+  const { tenant } = useTenant();
+  const tenantIndustries = resolveTenantIndustries(tenant);
+  const parentProductId = watch?.('subProductData.product') || '';
+  const createNewProduct = watch?.('subProductData.createNewProduct');
+  const newProductType =
+    watch?.('subProductData.newProductData.type') || '';
+  const [linkedProduct, setLinkedProduct] = useState<{ id: string; type: string }>();
+
+  useEffect(() => {
+    setLinkedProduct(undefined);
+    if (!parentProductId || createNewProduct) return;
+    const controller = new AbortController();
+    let stale = false;
+    productService
+      .getProductById(
+        parentProductId,
+        sessionData?.user?.token || '',
+        true,
+        controller.signal
+      )
+      .then((response) => {
+        if (!stale) setLinkedProduct({ id: parentProductId, type: response?.data?.product?.type || '' });
+      })
+      .catch(() => {
+        if (!stale) setLinkedProduct(undefined);
+      });
+    return () => {
+      stale = true;
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parentProductId, createNewProduct, sessionData?.user?.token]);
+
+  const resolvedProductType = createNewProduct
+    ? newProductType
+    : linkedProduct?.id === parentProductId ? linkedProduct.type : '';
+  const isBeverage = !!resolvedProductType && isBeverageProductType(resolvedProductType);
+  const business = resolvedProductType
+    ? catalogBusiness(resolvedProductType)
+    : tenantIndustries?.length === 1 ? tenantIndustries[0] : 'all';
+  const optionLabel = ({
+    beauty: 'Scent or finish',
+    home: 'Finish or material',
+    electronics: 'Configuration',
+    'food-service': 'Pack format or grade',
+    hospitality: 'Format or finish',
+    beverage: 'Bottle, pack or serving format',
+  } as Record<string, string>)[business];
+  const showColorInputs = ['fashion', 'beauty', 'home', 'electronics', 'hospitality'].includes(business)
+    || (business === 'all' && !!resolvedProductType && !isBeverage);
+  const allowsOptions = showColorInputs || !!optionLabel;
+
+
+  const [guidance, setGuidance] = useState<{ type: string; sizes: string[] }>();
+  useEffect(() => {
+    const type = resolvedProductType;
+    setGuidance(undefined);
+    if (!type || !sessionData?.user?.token) return;
+    const controller = new AbortController();
+    productService
+      .getSizeGuidance(sessionData.user.token, type, controller.signal)
+      .then(sizes => {
+        if (!controller.signal.aborted) setGuidance({ type, sizes });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [resolvedProductType, sessionData?.user?.token]);
+
+  const allowedOptions = businessSizeOptions(
+    SIZE_OPTIONS,
+    resolvedProductType,
+    guidance?.type === resolvedProductType ? guidance?.sizes : undefined,
+    tenantIndustries
+  );
+  const quickAddOptions = allowedOptions.filter(({ value }) => value !== 'custom' && value !== 'variable').slice(0, 12);
+
   const calculateBasePrice = (
     variantCostPrice: number,
     variantMarkup: number,
@@ -557,7 +641,11 @@ export default function SubProductSizes() {
     return Number(salePrice.toFixed(2));
   };
 
-  const addSize = () => {
+  const addSize = (preset?: { value: string; label: string }) => {
+    if (!allowsOptions && preset && fields.some((_, i) => watch(`subProductData.sizes.${i}.size`) === preset.value)) {
+      toast.error(`${preset.label} already exists`);
+      return;
+    }
     const baseSellingPrice = defaultCostPrice
       ? calculateBasePrice(defaultCostPrice, defaultMarkup, defaultRoundUp)
       : null;
@@ -567,15 +655,11 @@ export default function SubProductSizes() {
         : null;
 
     append({
-      size: '',
-      displayName: '',
+      size: preset?.value || '',
+      displayName: preset?.label || '',
       sizeCategory: 'standard',
-      unitType: 'volume_ml',
-      volumeMl: null,
-      weightGrams: null,
+      ...sizePresetMeasurements(preset?.value || ''),
       servingsPerUnit: null,
-      unitsPerPack: 6,
-      packaging: 'pack-6',
       basePrice: baseSellingPrice,
       compareAtPrice: null,
       costPrice: defaultCostPrice ?? null,
@@ -593,7 +677,7 @@ export default function SubProductSizes() {
       roundUp: defaultRoundUp,
       saleDiscountPercentage: defaultDiscount,
       salePrice: salePrice,
-      isDefault: false,
+      isDefault: fields.length === 0,
       isOnSale: false,
       rank: fields.length + 1,
     });
@@ -601,18 +685,30 @@ export default function SubProductSizes() {
   };
 
   const duplicateSize = (index: number) => {
-    const currentSize = watch(`subProductData.sizes.${index}`);
-    if (currentSize) {
-      append({
-        ...currentSize,
-        size: `${currentSize.size} (Copy)`,
-        displayName: currentSize.displayName
-          ? `${currentSize.displayName} (Copy)`
-          : '',
-        rank: fields.length + 1,
-      });
-      toast.success('Size variant duplicated');
-    }
+    if (fields.length >= 20) return;
+    const variants = getValues('subProductData.sizes');
+    const current = variants[index];
+    const size = allowsOptions ? current?.size : availableCustomSize(variants.flatMap(variant => variant.size ? [variant.size] : []));
+    if (!current || !size) return;
+    append({
+      ...current,
+      _id: undefined,
+      size,
+      colorName: allowsOptions ? '' : current.colorName,
+      optionName: allowsOptions ? '' : current.optionName,
+      image: allowsOptions ? null : current.image,
+      imageScope: allowsOptions ? undefined : current.imageScope,
+      colorHexCode: allowsOptions ? undefined : current.colorHexCode,
+      displayName: `${current.displayName || current.size || 'Custom size'} (Copy)`,
+      sku: '',
+      barcode: '',
+      stock: 0,
+      reservedStock: 0,
+      availableStock: 0,
+      isDefault: false,
+      rank: fields.length + 1,
+    });
+    toast.success('Size variant duplicated');
   };
 
   const clearAllSizes = () => {
@@ -831,141 +927,29 @@ export default function SubProductSizes() {
               </motion.div>
             )}
 
-            {/* Quick Add Section with Category Tabs */}
-            {fields.length < 20 && (
+            {fields.length < 20 && quickAddOptions.length > 0 && (
               <motion.div
                 variants={quickAddVariants}
                 initial="hidden"
                 animate="visible"
                 className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
               >
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <PiSparkle className="h-4 w-4 text-amber-500" />
-                    <Text className="text-sm font-medium text-gray-700">
-                      Quick Add Common Sizes
-                    </Text>
-                  </div>
-                  <Badge variant="flat" color="secondary" size="sm">
-                    Click to add
-                  </Badge>
-                </div>
-
-                {/* Category Tabs */}
-                <div className="mb-4 flex flex-wrap gap-2">
-                  {BEVERAGE_CATEGORIES.map((cat) => (
-                    <motion.button
-                      key={cat.id}
-                      type="button"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className={cn(
-                        'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
-                        SIZE_PRESETS[cat.id as keyof typeof SIZE_PRESETS]
-                          ?.length > 0
-                          ? 'cursor-pointer hover:shadow-md'
-                          : 'cursor-not-allowed opacity-50'
-                      )}
-                    >
-                      <span>{cat.icon}</span>
-                      <span>{cat.label}</span>
-                    </motion.button>
+                <Text className="mb-3 flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <PiSparkle className="h-4 w-4 text-amber-500" />
+                  Quick Add Common Sizes
+                </Text>
+                <div className="flex flex-wrap gap-2">
+                  {quickAddOptions.map(size => (
+                    <button key={size.value} type="button" onClick={() => addSize(size)}
+                      className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100">
+                      + {size.label}
+                    </button>
                   ))}
                 </div>
-
-                {/* Size Buttons by Category */}
-                <div className="space-y-3">
-                  {BEVERAGE_CATEGORIES.map((cat) => {
-                    const sizes =
-                      SIZE_PRESETS[cat.id as keyof typeof SIZE_PRESETS];
-                    if (!sizes || sizes.length === 0) return null;
-
-                    return (
-                      <div key={cat.id} className="space-y-2">
-                        <Text className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                          {cat.icon} {cat.label}
-                        </Text>
-                        <div className="flex flex-wrap gap-2">
-                          {sizes.map((size) => (
-                            <motion.button
-                              key={size.value}
-                              type="button"
-                              whileHover={{ scale: 1.05 }}
-                              whileTap={{ scale: 0.95 }}
-                              onClick={() => {
-                                const exists = fields.some(
-                                  (_, i) =>
-                                    watch(`subProductData.sizes.${i}.size`) ===
-                                    size.value
-                                );
-                                if (exists) {
-                                  toast.error(`${size.label} already exists`);
-                                  return;
-                                }
-                                const baseSellingPrice = defaultCostPrice
-                                  ? calculateBasePrice(
-                                      defaultCostPrice,
-                                      defaultMarkup,
-                                      defaultRoundUp
-                                    )
-                                  : null;
-                                const salePrice =
-                                  baseSellingPrice && defaultDiscount > 0
-                                    ? calculateSalePrice(
-                                        baseSellingPrice,
-                                        defaultDiscount
-                                      )
-                                    : null;
-                                append({
-                                  size: size.value,
-                                  displayName: size.label,
-                                  sizeCategory: 'standard',
-                                  unitType: 'volume_cl',
-                                  volumeMl:
-                                    parseFloat(
-                                      size.value
-                                        .replace('cl', '')
-                                        .replace('ml', '')
-                                        .replace('L', '')
-                                    ) * 10 || null,
-                                  weightGrams: null,
-                                  servingsPerUnit: null,
-                                  unitsPerPack: 6,
-                                  packaging: 'pack-6',
-                                  basePrice: baseSellingPrice,
-                                  compareAtPrice: null,
-                                  costPrice: defaultCostPrice ?? null,
-                                  wholesalePrice: null,
-                                  currency: defaultCurrency,
-                                  stock: 0,
-                                  reservedStock: 0,
-                                  availableStock: 0,
-                                  lowStockThreshold: 10,
-                                  reorderPoint: 5,
-                                  reorderQuantity: 50,
-                                  sku: '',
-                                  barcode: '',
-                                  markupPercentage: defaultMarkup,
-                                  roundUp: defaultRoundUp,
-                                  saleDiscountPercentage: defaultDiscount,
-                                  salePrice: salePrice,
-                                  isDefault: fields.length === 0,
-                                  isOnSale: false,
-                                  rank: fields.length + 1,
-                                });
-                                toast.success(`Added ${size.label}`);
-                              }}
-                              className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
-                            >
-                              + {size.label}
-                            </motion.button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               </motion.div>
+            )}
+            {!resolvedProductType && quickAddOptions.length === 0 && (
+              <Text className="text-sm text-gray-500">Select a product or product type to see its size presets.</Text>
             )}
 
             {/* Size Variants */}
@@ -991,9 +975,14 @@ export default function SubProductSizes() {
                       clearErrors={clearErrors}
                       getValues={getValues}
                       remove={remove}
+                      onDuplicate={() => duplicateSize(index)}
                       totalSizes={fields.length}
                       calculateBasePrice={calculateBasePrice}
                       calculateSalePrice={calculateSalePrice}
+                      showColorInputs={showColorInputs}
+                      colorLabel={business === 'beauty' ? 'Shade' : 'Colour'}
+                      optionLabel={optionLabel}
+                      allowedOptions={allowedOptions}
                     />
                   </motion.div>
                 ))}
@@ -1010,7 +999,7 @@ export default function SubProductSizes() {
                 whileHover="hover"
                 whileTap="tap"
                 variants={buttonTapVariants}
-                onClick={addSize}
+                onClick={() => addSize()}
                 className="group flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-6 py-4 font-medium text-gray-600 transition-all hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-600"
               >
                 <motion.div
@@ -1043,7 +1032,7 @@ export default function SubProductSizes() {
                   Add size variants to manage different product sizes and their
                   stock levels
                 </Text>
-                <Button type="button" onClick={addSize} className="mx-auto">
+                <Button type="button" onClick={() => addSize()} className="mx-auto">
                   <PiPlus className="mr-2 h-4 w-4" />
                   Add Your First Size
                 </Button>
@@ -1075,9 +1064,14 @@ function SizeVariantRow({
   clearErrors,
   getValues,
   remove,
+  onDuplicate,
   totalSizes,
   calculateBasePrice,
   calculateSalePrice,
+  showColorInputs = false,
+  colorLabel,
+  optionLabel,
+  allowedOptions,
 }: {
   index: number;
   setValue: any;
@@ -1087,6 +1081,7 @@ function SizeVariantRow({
   clearErrors: any;
   getValues: any;
   remove: (index: number) => void;
+  onDuplicate: () => void;
   totalSizes: number;
   calculateBasePrice: (
     costPrice: number,
@@ -1094,6 +1089,10 @@ function SizeVariantRow({
     roundUp: string
   ) => number;
   calculateSalePrice: (basePrice: number, discount: number) => number | null;
+  showColorInputs?: boolean;
+  colorLabel: string;
+  optionLabel?: string;
+  allowedOptions: typeof SIZE_OPTIONS;
 }) {
   const variantCostPrice = watch(`subProductData.sizes.${index}.costPrice`);
   const variantMarkup =
@@ -1232,12 +1231,28 @@ function SizeVariantRow({
     }
   };
 
+  const currentSize = watch(`subProductData.sizes.${index}.size`) || '';
+  const variants: { size?: string }[] = watch('subProductData.sizes') || [];
+  const otherSizes = variants.flatMap((variant, row) =>
+    row === index || !variant.size ? [] : [variant.size]
+  );
+  const customCode = /^custom(?:-\d+)?$/.test(currentSize)
+    ? currentSize
+    : availableCustomSize(otherSizes);
+  const rowOptions = allowedOptions.filter(option => option.value !== 'custom');
+  if (customCode) rowOptions.push({ value: customCode, label: 'Custom Size', category: 'Other' });
+
   const handleSizeChange = (sizeValue: string) => {
     // Clear previous size error for this field
     clearErrors?.(`subProductData.sizes.${index}.size`);
 
+    if (!sizeValue) {
+      setValue(`subProductData.sizes.${index}.size`, '', { shouldDirty: true, shouldValidate: true });
+      return;
+    }
+
     // Check for duplicate size value across all rows (excluding current)
-    if (sizeValue) {
+    if (!showColorInputs && !optionLabel) {
       const allSizes = getValues?.('subProductData.sizes') || [];
       const duplicate = allSizes.findIndex(
         (s: any, i: number) =>
@@ -1252,13 +1267,18 @@ function SizeVariantRow({
       }
     }
 
-    const selectedOption = SIZE_OPTIONS.find((opt) => opt.value === sizeValue);
+    const selectedOption = rowOptions.find((opt) => opt.value === sizeValue);
     if (selectedOption) {
-      setValue(`subProductData.sizes.${index}.size`, sizeValue);
+      setValue(`subProductData.sizes.${index}.size`, sizeValue, { shouldDirty: true, shouldValidate: true });
       setValue(
         `subProductData.sizes.${index}.displayName`,
         selectedOption.label
       );
+      if (!/^custom(?:-\d+)?$/.test(sizeValue) && sizeValue !== 'variable') {
+        for (const [field, value] of Object.entries(sizePresetMeasurements(sizeValue))) {
+          setValue(`subProductData.sizes.${index}.${field}`, value);
+        }
+      }
     }
   };
 
@@ -1279,6 +1299,13 @@ function SizeVariantRow({
     { value: 'gift_set', label: 'Gift Set' },
     { value: 'variety_pack', label: 'Variety Pack' },
     { value: 'keg', label: 'Keg' },
+    { value: 'accessory', label: 'Accessory' },
+    { value: 'glassware', label: 'Glassware' },
+    { value: 'barware', label: 'Barware' },
+    // Non-beverage industry categories (mirror of server/models/Size.js)
+    { value: 'apparel', label: 'Apparel' },
+    { value: 'shoes', label: 'Shoes' },
+    { value: 'electronics', label: 'Electronics' },
   ];
 
   const packagingOptions = [
@@ -1300,6 +1327,12 @@ function SizeVariantRow({
     { value: 'tub', label: 'Tub' },
   ];
 
+  for (const { value, label } of allowedOptions) {
+    if (/^(pack|case)-/.test(value) && !packagingOptions.some(option => option.value === value)) {
+      packagingOptions.push({ value, label });
+    }
+  }
+
   const availabilityOptions = [
     { value: 'available', label: 'Available' },
     { value: 'low_stock', label: 'Low Stock' },
@@ -1312,7 +1345,7 @@ function SizeVariantRow({
   ];
 
   // Group sizes by category
-  const groupedOptions = SIZE_OPTIONS.reduce(
+  const groupedOptions = rowOptions.reduce(
     (acc, option) => {
       if (!acc[option.category]) {
         acc[option.category] = [];
@@ -1369,20 +1402,8 @@ function SizeVariantRow({
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => {
-              const currentSize = watch(`subProductData.sizes.${index}`);
-              if (currentSize) {
-                append({
-                  ...currentSize,
-                  size: `${currentSize.size} (Copy)`,
-                  displayName: currentSize.displayName
-                    ? `${currentSize.displayName} (Copy)`
-                    : '',
-                  rank: totalSizes + 1,
-                });
-                toast.success('Size variant duplicated');
-              }
-            }}
+            onClick={onDuplicate}
+            disabled={totalSizes >= 20}
             className="text-blue-600 hover:bg-blue-50"
           >
             <PiCopySimple className="h-4 w-4" />
@@ -1416,12 +1437,16 @@ function SizeVariantRow({
                   {...field}
                   value={field.value || ''}
                   onChange={(e) => {
-                    field.onChange(e.target.value);
                     handleSizeChange(e.target.value);
                   }}
                   className={`block w-full rounded-lg border bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-1 ${error ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'}`}
                 >
                   <option value="">Select size...</option>
+                  {field.value && !rowOptions.some((option) => option.value === field.value) && (
+                    <option value={field.value} hidden>
+                      {SIZE_OPTIONS.find((option) => option.value === field.value)?.label || field.value}
+                    </option>
+                  )}
                   {Object.entries(groupedOptions).map(([category, options]) => (
                     <optgroup key={category} label={category}>
                       {options.map((option) => (
@@ -1896,6 +1921,133 @@ function SizeVariantRow({
             )}
           />
         </div>
+
+        <VariantImageField index={index} colorLabel={colorLabel} optionLabel={optionLabel} />
+        {optionLabel && (
+          <label className="block text-sm font-medium text-gray-700">
+            {optionLabel} <span className="font-normal text-gray-500">(optional)</span>
+            <Controller
+              name={`subProductData.sizes.${index}.optionName`}
+              control={control}
+              render={({ field }) => (
+                <input {...field} value={field.value ?? ''} maxLength={100}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm" />
+              )}
+            />
+          </label>
+        )}
+
+        {/* Color Name — non-beverage variant dimension (server Size.colorName) */}
+        {(showColorInputs || watch(`subProductData.sizes.${index}.colorName`)) && (
+          <div>
+            <label
+              htmlFor={`size-color-name-${index}`}
+              className="mb-1.5 block text-sm font-medium text-gray-700"
+            >
+              {colorLabel}{' '}
+              <span className="text-xs font-normal text-gray-400">
+                (optional)
+              </span>
+            </label>
+            <Controller
+              name={`subProductData.sizes.${index}.colorName`}
+              control={control}
+              render={({ field }) => (
+                <input
+                  {...field}
+                  id={`size-color-name-${index}`}
+                  type="text"
+                  maxLength={COLOR_NAME_MAX_LENGTH}
+                  value={field.value ?? ''}
+                  placeholder="e.g., Amber"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              )}
+            />
+            <p className="mt-1 text-[11px] text-gray-400">
+              Optional — named after the label, e.g. Amber. Saved exactly as you
+              type it (no automatic casing), up to {COLOR_NAME_MAX_LENGTH}{' '}
+              characters.
+            </p>
+          </div>
+        )}
+
+        {/* Color — swatch + hex (server Size.colorHexCode, #RRGGBB) */}
+        {(showColorInputs || watch(`subProductData.sizes.${index}.colorName`)) && (
+          <div>
+            <label
+              htmlFor={`size-color-swatch-${index}`}
+              className="mb-1.5 block text-sm font-medium text-gray-700"
+            >
+              Color Swatch{' '}
+              <span className="text-xs font-normal text-gray-400">
+                (optional)
+              </span>
+            </label>
+            <Controller
+              name={`subProductData.sizes.${index}.colorHexCode`}
+              control={control}
+              render={({ field }) => {
+                const complete = isCompleteColorHex(field.value);
+                // An incomplete typed value is a visible validation state with
+                // cause + fix below the field (never a blocker — see
+                // ./color-variant.ts: it saves as unset).
+                const incomplete = typeof field.value === 'string' && field.value.length > 0 && !complete;
+                return (
+                  <>
+                    <div className="flex items-center gap-2">
+                      {/* The picker only emits complete #rrggbb values, so the
+                          swatch mirrors the typed hex live while valid. */}
+                      <input
+                        type="color"
+                        aria-label="Pick color"
+                        value={complete ? field.value : '#000000'}
+                        onChange={(e) =>
+                          field.onChange(e.target.value.toUpperCase())
+                        }
+                        className="h-9 w-9 shrink-0 cursor-pointer rounded border border-gray-300 bg-white p-0"
+                      />
+                      <input
+                        {...field}
+                        id={`size-color-swatch-${index}`}
+                        type="text"
+                        value={field.value ?? ''}
+                        maxLength={7}
+                        placeholder="#RRGGBB"
+                        aria-invalid={incomplete || undefined}
+                        aria-describedby={
+                          incomplete ? `size-color-hex-error-${index}` : undefined
+                        }
+                        onChange={(e) =>
+                          field.onChange(normalizeColorHexInput(e.target.value))
+                        }
+                        className={`w-full rounded-lg border bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-1 ${
+                          incomplete
+                            ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                            : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                        }`}
+                      />
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-400">
+                      6-digit hex (e.g. #1F2A44). A half-typed value is saved as
+                      unset.
+                    </p>
+                    {incomplete && (
+                      <p
+                        id={`size-color-hex-error-${index}`}
+                        className="mt-0.5 text-[11px] text-red-500"
+                      >
+                        {field.value} is incomplete — enter all 6 digits after
+                        the # (e.g. #1F2A44), or clear it to leave the color
+                        unset.
+                      </p>
+                    )}
+                  </>
+                );
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Expandable Fields */}

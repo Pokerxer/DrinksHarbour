@@ -2,12 +2,14 @@
 
 export const dynamic = 'force-dynamic';
 
+import { checkoutAttemptKey, finishCheckoutAttempt } from '@/lib/checkoutAttempt.mjs';
 import React, { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { useCart } from '@/context/CartContext';
+import type { GiftPayload } from '@/lib/giftCheckout';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,6 +113,8 @@ function VerifyContent() {
         shippingInfo?: Record<string, unknown> | null;
         total: number;
         couponCode?: string;
+        /** Order-level gift object, stashed by the checkout page when the toggle is on. */
+        gift?: GiftPayload;
         utmSource?: string;
         utmMedium?: string;
         utmCampaign?: string;
@@ -169,6 +173,9 @@ function VerifyContent() {
         shippingInfo: pending.shippingInfo ?? null,
         total: pending.total,
         couponCode: pending.couponCode || undefined,
+        // Pass the stashed gift through untouched — it was already validated
+        // client-side at checkout; the server revalidates the same contract.
+        ...(pending.gift ? { gift: pending.gift } : {}),
         utmSource: pending.utmSource || '',
         utmMedium: pending.utmMedium || '',
         utmCampaign: pending.utmCampaign || '',
@@ -178,6 +185,7 @@ function VerifyContent() {
 
       const orderRes = await fetchWithAuth(`${API_URL}/api/orders`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': checkoutAttemptKey(localStorage) },
         body: JSON.stringify(orderData),
       });
 
@@ -204,6 +212,7 @@ function VerifyContent() {
       clearCartEverywhere();
       setStage('success');
 
+      finishCheckoutAttempt(localStorage);
       router.replace(`/order-confirmation?orderId=${orderId}`);
     } catch (err: any) {
       console.error('Payment verification error:', err);

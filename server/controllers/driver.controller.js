@@ -106,25 +106,25 @@ exports.updateDriver = asyncHandler(async (req, res) => {
 
   const payload = pick(req.body, EDITABLE_FIELDS);
 
-  // Guard against desyncing a rider from the trip they are actually on.
-  if (payload.status && payload.status !== driver.status && driver.status === 'on_trip') {
-    throw new ValidationError(
-      'This driver is on an active trip. Complete or cancel the trip to change their status.'
-    );
+  const changesStatus = payload.status && payload.status !== driver.status;
+  if (changesStatus && (driver.status === 'on_trip' || driver.legacyTrip || driver.managedTrip)) {
+    throw new ValidationError('This driver is on an active trip. Complete or reconcile the trip to change their status.');
   }
-
-  Object.assign(driver, payload);
-
+  // An unchanged submitted status is not a status write; contact edits remain
+  // allowed while durable trip claims protect physical availability.
+  if (payload.status === driver.status) delete payload.status;
+  let saved;
   try {
-    await driver.save();
+    saved = await Driver.findOneAndUpdate(
+      { _id:driver._id, tenant:tenantId, ...(changesStatus ? {status:driver.status,legacyTrip:null,managedTrip:null}: {}) },
+      { $set:payload }, { returnDocument:'after', runValidators:true }
+    );
   } catch (err) {
-    if (err?.code === 11000) {
-      throw new ConflictError('A driver with that phone number already exists.');
-    }
+    if (err?.code === 11000) throw new ConflictError('A driver with that phone number already exists.');
     throw err;
   }
-
-  res.status(200).json({ success: true, message: 'Driver updated', data: { driver } });
+  if (!saved) throw new ValidationError('Driver changed or was claimed by a trip; reload before changing availability.');
+  res.status(200).json({ success: true, message: 'Driver updated', data: { driver:saved } });
 });
 
 /**
@@ -137,15 +137,13 @@ exports.deactivateDriver = asyncHandler(async (req, res) => {
   const driver = await Driver.findOne({ _id: req.params.id, tenant: tenantId });
   if (!driver) throw new NotFoundError('Driver not found.');
 
-  if (driver.status === 'on_trip') {
-    throw new ValidationError('This driver is on an active trip and cannot be deactivated yet.');
-  }
+  const saved=await Driver.findOneAndUpdate(
+    {_id:driver._id,tenant:tenantId,status:{$ne:'on_trip'},legacyTrip:null,managedTrip:null},
+    {$set:{isActive:false,status:'off_duty'}},{returnDocument:'after',runValidators:true}
+  );
+  if(!saved)throw new ValidationError('This driver is on an active trip and cannot be deactivated yet.');
 
-  driver.isActive = false;
-  driver.status = 'off_duty';
-  await driver.save();
-
-  res.status(200).json({ success: true, message: 'Driver deactivated', data: { driver } });
+  res.status(200).json({ success: true, message: 'Driver deactivated', data: { driver:saved } });
 });
 
 function pick(source, keys) {

@@ -186,7 +186,7 @@ export function readDraft(
   now = Date.now()
 ): RestockDraft | null {
   try {
-    const d: RestockDraft = JSON.parse(raw || 'null');
+    const d = JSON.parse(raw || 'null') as RestockDraft | null;
     if (
       !d ||
       d.scope !== scope ||

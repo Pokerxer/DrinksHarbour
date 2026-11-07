@@ -3,7 +3,8 @@ import {
   buildPriceColumnGrid,
   type PriceColumn,
 } from './inventory-pricelist-columns';
-import type { PricableStockLine } from './inventory-pricelist-print';
+import { type PricableStockLine } from './inventory-pricelist-print';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 export default function PricelistPreview({
   rows,
   columns,
@@ -53,7 +54,11 @@ export default function PricelistPreview({
               >
                 <td className="p-2">
                   {line.productName}
-                  <span className="block text-gray-500">{line.sizeName}</span>
+                  {/* Full shared variant label (DRI-30); legacy rows keep the
+                      stored sizeName byte-for-byte. */}
+                  <span className="block text-gray-500">
+                    {flatRowSizeLabel(line) || line.sizeName}
+                  </span>
                 </td>
                 {prices.map((q, i) => (
                   <td key={i} className="whitespace-nowrap p-2 text-right">

@@ -23,8 +23,10 @@ const isCogs = (type, code) =>
 
 // Sales/returns are movements on sales revenue, not cash received. VAT and tips
 // are balance-sheet liabilities; other income is shown after gross profit.
-function profitLossTotals(entries = [], taxSummary = {}, movementTotals = null, accounts = []) {
+function profitLossTotals(entries = [], taxSummary = {}, movementTotals = null, accounts = [], { costAccountCodes = [] } = {}) {
   const typeOf = accountTypeResolver(accounts);
+  // Only server-reviewed expense roles may extend the legacy prefix split.
+  const reviewedCosts = new Set(costAccountCodes.map(String));
   // With no chart loaded the seeded codes are all we have to go on, so fall
   // back to the canonical sales account rather than reporting no sales.
   const salesCodes = salesCodesFor(typeOf);
@@ -44,7 +46,7 @@ function profitLossTotals(entries = [], taxSummary = {}, movementTotals = null, 
       const debit = round2(line.debit), credit = round2(line.credit);
       const net = round2(debit - credit);
       if (isRevenue(type, code)) revenueTotal = round2(revenueTotal - net);
-      if (isCogs(type, code)) {
+      if (isCogs(type, code) || (type === 'expense' && reviewedCosts.has(code))) {
         cogsTotal = round2(cogsTotal + net);
         hasJournalCosts = true;
       } else if (isExpense(type, code)) {

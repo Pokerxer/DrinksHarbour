@@ -140,3 +140,23 @@ it('valuation shows carrying cost, method and available stock, includes zero lin
   expect(model.totals.find(t => t.label === 'Stock value')?.value).toContain('3,340');
   window.removeEventListener('drinksharbour:document-export', listener);
 });
+
+// Retail variant identity (DRI-30): same-size colour siblings render the full
+// shared label apart; the no-variant legacy beverage row keeps its byte shape.
+it('renders same-size colour variants with full labels while legacy rows stay byte-identical', async () => {
+  vi.mocked(warehouseStockService.getAllStock).mockResolvedValue({
+    success: true,
+    data: [
+      { ...row('e', 'Shirt', 'w1', 3), sizeId: 'sz-em', sizeName: 'M', colorName: 'Emerald' },
+      { ...row('i', 'Shirt', 'w1', 2), sizeId: 'sz-iv', sizeName: 'M', colorName: 'Ivory' },
+      row('l', 'Wine', 'w1', 9),
+    ],
+  });
+  render(<InventoryStockBrowser mode="stock" />);
+  await waitFor(() => expect(units()).toContain('14'));
+  expect(screen.getByLabelText('Select stock line Shirt w1 M · Emerald')).toBeTruthy();
+  expect(screen.getByLabelText('Select stock line Shirt w1 M · Ivory')).toBeTruthy();
+  // Legacy beverage byte-shape pin: bare stored sizeName, no composition.
+  expect(screen.getByLabelText('Select stock line Wine w1 75cl')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Select stock line Wine w1 75cl' }).closest('td')!.nextElementSibling?.nextElementSibling?.textContent).toBe('75cl');
+});

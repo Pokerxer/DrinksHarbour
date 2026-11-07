@@ -23,6 +23,7 @@ import StatusStepper from './status-stepper';
 import PaymentPanel from './payment-panel';
 import RefundHistory from './refund-history';
 import OrderItemsTable from './order-items-table';
+import GiftPanel from './gift-panel';
 import { WidgetCard, Field, Row, PaymentBadge, LoadingSkeleton } from './widgets';
 
 /**
@@ -206,6 +207,10 @@ export default function OrderView({
               </div>
             </div>
           </WidgetCard>
+
+          {/* Gift block is customer-supplied and read-only for staff — shown
+              only when checkout recorded one. */}
+          <GiftPanel order={order} />
 
           {addr && (addr.addressLine1 || addr.city) && (
             <WidgetCard

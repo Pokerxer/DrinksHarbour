@@ -1,4 +1,8 @@
 export interface ReviewPricing {
+  inheritedMarketplacePrice?: number;
+  inheritedSellingPriceMarkupPct?: number;
+  sellingPriceMarkupPct?: number;
+  isSellingPriceMarkupOverridden?: boolean;
   costPrice?: number;
   tenantSellingPrice?: number;
   platformCostPrice?: number;
@@ -39,6 +43,7 @@ export interface ReviewListing {
     name?: string;
     businessName?: string;
     revenueModel?: string;
+    sellingPriceMarkupPercentage?: number;
     markupPercentage?: number;
     commissionPercentage?: number;
     packCommissionPercentage?: number;
@@ -93,10 +98,17 @@ export interface PriceLine {
   packThreshold: number | null;
 }
 export interface ReviewOverrides {
+  useTenantDefault?: boolean;
   baseWebsitePrice?: number;
-  sizes?: { id: string; websitePrice?: number; packUnitPrice?: number }[];
+  sizes?: {
+    id: string;
+    useTenantDefault?: boolean;
+    websitePrice?: number;
+    packUnitPrice?: number;
+  }[];
 }
 export interface PriceDraft {
+  inherit?: string;
   normal: string;
   pack: string;
 }

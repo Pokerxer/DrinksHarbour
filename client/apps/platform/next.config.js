@@ -2,13 +2,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.VENUE_NEXT_DIST_DIR || '.next',
   transpilePackages: ['commerce-core'],
   reactStrictMode: true,
   sassOptions: {
     silenceDeprecations: ['import'],
   },
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   async rewrites() {
     return [

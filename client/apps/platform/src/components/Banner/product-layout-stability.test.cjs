@@ -11,6 +11,7 @@ function load(file) {
   const fixture = new Module(file, module);
   fixture.paths = module.paths;
   fixture.require = name => {
+    if (name === '@/lib/deliveryCopy') return load(path.resolve(__dirname, '../../lib/deliveryCopy.ts'));
     if (name === '@/lib/gtag') return { gtagEvent: () => {} };
     if (name === '@/context/FirstOrderPerkContext') return { useFirstOrderPerk: () => probe };
     if (name === 'commerce-core') return load(path.resolve(__dirname, '../../../../../packages/commerce-core/src/first-order-perk.ts'));
@@ -77,4 +78,16 @@ test('eligible offers remain dismissible and hidden states leave no replacement 
     probe = { perk: null, loading: true };
     dom.window.close(); Object.assign(global, previous);
   }
+});
+
+test('default delivery announcement qualifies both destinations and links the policy', () => {
+  const Banner = load(__dirname + '/AnnouncementBanner.tsx').default;
+  const html = renderToStaticMarkup(React.createElement(Banner, {
+    layout: 'static', initialBannersComplete: true,
+  }));
+  const text = html.replace(/<[^>]+>/g, '');
+  assert.match(text, /Abuja\/FCT/);
+  assert.match(text, /₦2,000,000/);
+  assert.match(text, /₦10,000,000/);
+  assert.match(html, /href="\/shipping-info"/);
 });

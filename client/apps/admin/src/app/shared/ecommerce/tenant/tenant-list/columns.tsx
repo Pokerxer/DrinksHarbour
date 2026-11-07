@@ -136,7 +136,7 @@ export const tenantsColumns = [
           variant="flat"
           className="text-xs font-medium capitalize"
         >
-          {val}
+          {val === 'selling_price_markup' ? 'Selling-price markup' : val}
         </Badge>
       );
     },

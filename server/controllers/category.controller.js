@@ -1,9 +1,12 @@
+const { categoryIndustryForCreate, validIndustry } = require('../utils/taxonomyIndustryWrite');
 const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
 const Product = require('../models/Product');
 const asyncHandler = require('../utils/asyncHandler');
 const { navigationCounts } = require('../services/navigationCounts');
 const cloudinaryService = require('../services/cloudinary.service');
+const industries = require('../constants/industries');
+const { listIndustriesFor, taxonomyPickerFilter } = require('../services/industryScope.service');
 
 async function uploadCategoryFile(file, altText) {
   const result = await cloudinaryService.uploadImage(file.buffer, {
@@ -27,13 +30,18 @@ async function uploadCategoryFile(file, altText) {
  * @route GET /api/categories
  * @access Public
  */
-const getCategories = asyncHandler(async (req, res) => {
+const listCategories = (picker) => asyncHandler(async (req, res) => {
   const { status = 'published' } = req.query;
 
-  const query = { status };
+  // Industry scoping (2026-11-02, flag-gated): authenticated tenant callers
+  // see their industry profile + legacy/global categories; everyone else —
+  // anonymous, platform admins, unprofiled/legacy tenants — is unfiltered.
+  const appliedIndustries = await listIndustriesFor(req);
+  const industryPredicate = industries.categoryIndustryFilter(appliedIndustries);
+  const query = picker ? taxonomyPickerFilter(industryPredicate) : { status, ...industryPredicate };
 
   const categories = await Category.find(query)
-    .select('name slug displayName type subType alcoholCategory description shortDescription tagline icon color featuredImage bannerImage bannerLink bannerLinkType thumbnailImage isFeatured isTrending isPopular displayOrder parent level metaTitle metaDescription metaKeywords updatedAt')
+    .select('industry name slug displayName type subType alcoholCategory description shortDescription tagline icon color featuredImage bannerImage bannerLink bannerLinkType thumbnailImage isFeatured isTrending isPopular displayOrder parent level metaTitle metaDescription metaKeywords updatedAt')
     .sort({ order: 1, name: 1 })
     .lean();
 
@@ -46,12 +54,16 @@ const getCategories = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
+    meta: { industries: appliedIndustries },
     data: {
       categories: categoriesWithCount,
       total: categoriesWithCount.length,
     },
   });
 });
+
+const getCategories = listCategories(false);
+const getCategoryPicker = listCategories(true);
 
 /**
  * Get featured categories (with most products)
@@ -233,6 +245,7 @@ const createCategory = asyncHandler(async (req, res) => {
     : 999;
 
   const categoryData = {
+    industry: categoryIndustryForCreate(req.body),
     name,
     slug,
     type,
@@ -329,6 +342,7 @@ const updateCategory = asyncHandler(async (req, res) => {
   } = req.body;
 
   const updateData = {};
+  if (req.body.industry !== undefined) updateData.industry = validIndustry(req.body.industry) || null;
 
   if (name !== undefined) updateData.name = name;
   if (slug !== undefined) updateData.slug = slug;
@@ -737,6 +751,7 @@ Return a JSON object with exactly these keys:
 
 module.exports = {
   getCategories,
+  getCategoryPicker,
   getFeaturedCategories,
   getCategoryById,
   getCategoryBySlug,

@@ -23,6 +23,7 @@ const {
   attendanceMinutes,
 } = require('./attendance.helpers');
 const { overlapsTimeOff } = require('./shift.helpers');
+const { prepareWeeklyAttendance } = require('./weeklyAttendance.helpers');
 
 const MS_PER_MINUTE = 60_000;
 
@@ -152,6 +153,17 @@ function component(numerator, denominator) {
   return { rate: numerator / denominator, of: denominator, count: numerator };
 }
 
+function weightedScore(components) {
+  let earned = 0, possible = 0;
+  for (const [name, weight] of Object.entries(RATING_WEIGHTS)) {
+    const { rate } = components[name];
+    if (rate === null) continue;
+    earned += rate * weight;
+    possible += weight;
+  }
+  return possible ? Math.round(earned / possible * 100) : null;
+}
+
 /**
  * Punches that no shift in the list accounts for.
  *
@@ -190,6 +202,19 @@ function unrosteredRecords(records = [], shifts = []) {
  * @param {{now?: Date, graceMinutes?: number, departureGraceMinutes?: number}} [opts]
  */
 function rateAttendance(data = {}, opts = {}) {
+  if (data.policy?.type === 'weekly_quota') {
+    const weekly = prepareWeeklyAttendance(data, opts);
+    const rating = rateAttendance({ shifts: weekly.shifts, records: weekly.records }, opts);
+    rating.components.attendance = component(weekly.attended, weekly.expected);
+    rating.score = weightedScore(rating.components);
+    rating.band = ratingBand(rating.score);
+    Object.assign(rating.counts, { rostered: weekly.expected + weekly.excused,
+      expected: weekly.expected, attended: weekly.attended, excused: weekly.excused,
+      absent: weekly.expected - weekly.attended, unrostered: weekly.unrostered,
+      minutesWorked: (data.records || []).reduce((sum, r) => sum + attendanceMinutes(r), 0) });
+    rating.weeklySummary = { daysPerWeek: data.policy.daysPerWeek, weeks: weekly.weeks };
+    return rating;
+  }
   const { shifts = [], records = [], timeOff = [] } = data;
   const {
     now = new Date(),
@@ -259,16 +284,7 @@ function rateAttendance(data = {}, opts = {}) {
 
   // Renormalised over the components that actually applied, so a missing
   // denominator neither passes for free nor fails for free.
-  let earned = 0;
-  let possible = 0;
-  for (const [name, weight] of Object.entries(RATING_WEIGHTS)) {
-    const { rate } = components[name];
-    if (rate === null) continue;
-    earned += rate * weight;
-    possible += weight;
-  }
-
-  const score = possible ? Math.round((earned / possible) * 100) : null;
+  const score = weightedScore(components);
 
   // A punch nothing accounts for is a normal thing — somebody turning up on a
   // day nothing was rostered, or a shift cancelled after they worked it — so it

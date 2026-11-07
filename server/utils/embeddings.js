@@ -128,21 +128,9 @@ async function getLocalPipeline() {
     try {
       console.log('🔄 Loading local embedding model (first request - may take a moment)...');
       
-      const { pipeline, env } = await import('@xenova/transformers');
-      
-      // Configure for server-side usage
-      env.allowLocalModels = false;
-      env.useBrowserCache = true;
-      
-      // Load the model
-      const extractor = await pipeline(
-        'feature-extraction',
-        EMBEDDING_CONFIG.local.model,
-        {
-          quantized: true, // Use quantized model for faster loading
-        }
-      );
-      
+      const extractor = await require('./localEmbeddingRuntime')
+        .loadLocalEmbeddingPipeline(EMBEDDING_CONFIG.local.model);
+
       localPipeline = extractor;
       console.log('✅ Local embedding model loaded successfully');
       
@@ -159,6 +147,13 @@ async function getLocalPipeline() {
   })();
   
   return localModelPromise;
+}
+
+async function disposeLocalPipeline() {
+  const pipeline = localPipeline || await localModelPromise?.catch(() => null);
+  localPipeline = null;
+  localModelPromise = null;
+  if (pipeline?.dispose) await pipeline.dispose();
 }
 
 /**
@@ -181,7 +176,7 @@ async function generateLocalEmbedding(text, options = {}) {
     const truncated = text.slice(0, config.maxLength);
     
     // Generate embedding
-    const output = pipeline(truncated, {
+    const output = await pipeline(truncated, {
       pooling: 'mean',
       normalize: true
     });
@@ -946,6 +941,7 @@ module.exports = {
   isEmbeddingAvailable,
   markProviderUnavailable,
   resetProviderAvailability,
+  disposeLocalPipeline,
   
   // Config
   EMBEDDING_CONFIG,

@@ -24,7 +24,7 @@ test('documentation switches examples and copies the selected server-side reques
   render(<WebsiteApiGuide />);
   fireEvent.click(screen.getByRole('button', { name: 'Checkout example' }));
   expect(
-    screen.getByText(/const response = await fetch.*checkout/s).textContent
+    screen.getByText(/const response = await fetch[\s\S]*checkout/).textContent
   ).toContain('Idempotency-Key');
   fireEvent.click(screen.getByRole('button', { name: 'Copy example' }));
   await waitFor(() =>

@@ -1,4 +1,9 @@
-import type { UseFormRegister, UseFormSetValue, UseFormWatch } from 'react-hook-form';
+import { useRef } from 'react';
+import type {
+  UseFormRegister,
+  UseFormSetValue,
+  UseFormWatch,
+} from 'react-hook-form';
 import type { KioskInput, KioskOptions } from './types';
 import { eligiblePricelists, kioskUrl } from './form-utils';
 import { suggestedSlug } from './workflow-utils';
@@ -7,12 +12,15 @@ export function IdentityFields({
   register,
   setValue,
   watch,
+  autoGenerate = false,
 }: {
+  autoGenerate?: boolean;
   options: KioskOptions;
   register: UseFormRegister<KioskInput>;
   setValue: UseFormSetValue<KioskInput>;
   watch: UseFormWatch<KioskInput>;
 }) {
+  const customized = useRef({ internalId: false, slug: false });
   const shop = watch('shopId'),
     location = watch('location'),
     currency = watch('currency'),
@@ -30,13 +38,35 @@ export function IdentityFields({
           <input
             required
             maxLength={120}
-            {...register('name')}
+            {...register('name', {
+              onChange: (event) => {
+                if (!autoGenerate) return;
+                const generated = suggestedSlug(event.target.value);
+                if (!customized.current.internalId)
+                  setValue(
+                    'internalId',
+                    generated.replaceAll('-', '_').toUpperCase(),
+                    { shouldDirty: true }
+                  );
+                if (!customized.current.slug)
+                  setValue('slug', generated, { shouldDirty: true });
+              },
+            })}
             placeholder="Maitama price checker"
           />
         </label>
         <label>
           Internal kiosk ID
-          <input required maxLength={120} {...register('internalId')} placeholder="MAITAMA_01" />
+          <input
+            required
+            maxLength={120}
+            {...register('internalId', {
+              onChange: () => {
+                customized.current.internalId = true;
+              },
+            })}
+            placeholder="MAITAMA_01"
+          />
         </label>
         <label>
           URL slug
@@ -44,15 +74,22 @@ export function IdentityFields({
             required
             pattern="[a-z0-9]+(-[a-z0-9]+)*"
             maxLength={120}
-            {...register('slug')}
+            {...register('slug', {
+              onChange: () => {
+                customized.current.slug = true;
+              },
+            })}
             placeholder="maitama-price-checker"
           />
           <button
             className="pc-inline-action"
             type="button"
-            onClick={() =>
-              setValue('slug', suggestedSlug(watch('name') || ''), { shouldDirty: true })
-            }
+            onClick={() => {
+              customized.current.slug = false;
+              setValue('slug', suggestedSlug(watch('name') || ''), {
+                shouldDirty: true,
+              });
+            }}
           >
             Suggest URL from name
           </button>
@@ -63,7 +100,9 @@ export function IdentityFields({
             required
             {...register('shopId', {
               onChange: (event) => {
-                const selected = options.shops.find((row) => row._id === event.target.value);
+                const selected = options.shops.find(
+                  (row) => row._id === event.target.value
+                );
                 setValue('location', selected?.location || '');
                 setValue('pricelist', null);
               },
@@ -87,11 +126,18 @@ export function IdentityFields({
               !options.locations.some(
                 (row) =>
                   row._id === location &&
-                  row._id === options.shops.find((item) => item._id === shop)?.location
-              ) && <option value={location}>Location unavailable — choose another store</option>}
+                  row._id ===
+                    options.shops.find((item) => item._id === shop)?.location
+              ) && (
+                <option value={location}>
+                  Location unavailable — choose another store
+                </option>
+              )}
             {options.locations
               .filter(
-                (row) => row._id === options.shops.find((item) => item._id === shop)?.location
+                (row) =>
+                  row._id ===
+                  options.shops.find((item) => item._id === shop)?.location
               )
               .map((row) => (
                 <option key={row._id} value={row._id}>
@@ -100,12 +146,17 @@ export function IdentityFields({
               ))}
           </select>
           <span className="pc-help">
-            Uses this store’s assigned location. Change the store binding in POS settings if needed.
+            Uses this store’s assigned location. Change the store binding in POS
+            settings if needed.
           </span>
         </label>
         <label>
           Currency
-          <select {...register('currency', { onChange: () => setValue('pricelist', null) })}>
+          <select
+            {...register('currency', {
+              onChange: () => setValue('pricelist', null),
+            })}
+          >
             {['NGN', 'USD', 'EUR', 'GBP', 'ZAR', 'KES', 'GHS'].map((value) => (
               <option key={value}>{value}</option>
             ))}
@@ -116,10 +167,22 @@ export function IdentityFields({
           <select {...register('pricelist')}>
             <option value="">Automatic: store → location → default</option>
             {pricelist &&
-              !eligiblePricelists(options.pricelists, shop, location, currency).some(
-                (row) => row._id === pricelist
-              ) && <option value={pricelist}>Pricelist unavailable — choose another</option>}
-            {eligiblePricelists(options.pricelists, shop, location, currency).map((row) => (
+              !eligiblePricelists(
+                options.pricelists,
+                shop,
+                location,
+                currency
+              ).some((row) => row._id === pricelist) && (
+                <option value={pricelist}>
+                  Pricelist unavailable — choose another
+                </option>
+              )}
+            {eligiblePricelists(
+              options.pricelists,
+              shop,
+              location,
+              currency
+            ).map((row) => (
               <option key={row._id} value={row._id}>
                 {row.name}
               </option>
@@ -140,7 +203,15 @@ export function IdentityFields({
         <input type="checkbox" {...register('enabled')} />
         Kiosk enabled
       </label>
-      <p className="pc-url">{slug ? kioskUrl(slug) : 'Your kiosk URL will appear here.'}</p>
+      {autoGenerate && (
+        <p className="pc-help">
+          The name automatically fills the internal ID and URL. You can
+          customize either field.
+        </p>
+      )}
+      <p className="pc-url">
+        {slug ? kioskUrl(slug) : 'Your kiosk URL will appear here.'}
+      </p>
     </section>
   );
 }

@@ -31,3 +31,15 @@ test('quotations and orders launcher card opens the sales overview', () => {
 
   expect(salesTile?.href).toBe('/sales');
 });
+
+test('market managers can discover enrollment/channels and staff can reach own fulfillment queue',()=>{
+ const linksFor=(role:string)=>buildTenantGroups('pro',role).flatMap(group=>group.tiles).flatMap(tile=>[tile.href,...(tile.children??[]).map(child=>child.href)]);
+ for(const role of ['tenant_owner','tenant_admin']){
+  expect(linksFor(role)).toContain('/settings/market-enrollment');
+  expect(linksFor(role)).toContain('/settings/sales-channels');
+ }
+ const staff=linksFor('tenant_staff');
+ expect(staff).toContain('/merchant-orders');
+ expect(staff).not.toContain('/settings/market-enrollment');
+ expect(staff).not.toContain('/settings/sales-channels');
+});

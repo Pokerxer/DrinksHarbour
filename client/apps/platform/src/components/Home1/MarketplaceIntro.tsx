@@ -17,9 +17,9 @@ export default function MarketplaceIntro() {
           before checkout. Alcohol is for adults aged 18 and over.
         </p>
         <p className="max-w-3xl leading-7 text-gray-700">
-          Every product on DrinksHarbour is original and sourced through verified
-          channels. We do not sell counterfeit drinks, and products are checked
-          before dispatch.
+          Compare the selected seller and bottle details before buying. Read our
+          authenticity and bottle-check guidance and contact support if a product
+          or delivered bottle raises a concern.
         </p>
         <nav aria-label="Explore drinks and delivery" className="flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold underline underline-offset-4">
           <Link href="/categories">Browse drink categories</Link>
@@ -27,6 +27,8 @@ export default function MarketplaceIntro() {
           <Link href="/shop">Browse all drinks</Link>
           <Link href="/shipping-info">Delivery areas and fees</Link>
           <Link href="/blog">Drinks guides and tasting notes</Link>
+          <Link href="/authenticity-guarantee">Authenticity and bottle checks</Link>
+          <Link href="/occasions">Plan drinks for an occasion</Link>
         </nav>
       </div>
     </section>

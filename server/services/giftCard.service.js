@@ -27,8 +27,8 @@ const QR_SECRET = process.env.GIFTCARD_QR_SECRET || '';
  * initialAmount, flip pending_payment → active, append an 'issue' row. Idempotent:
  * a card already past pending_payment is returned unchanged (alreadyIssued:true).
  */
-async function issueGiftCard({ giftCardId, paymentRef, createdBy }) {
-  const card = await GiftCard.findById(giftCardId);
+async function issueGiftCard({ giftCardId, paymentRef, createdBy, session }) {
+  const card = session ? await GiftCard.findById(giftCardId).session(session) : await GiftCard.findById(giftCardId);
   if (!card) return { ok: false, status: 404, message: 'Gift card not found' };
   if (card.status !== 'pending_payment') {
     return { ok: true, card, alreadyIssued: true };
@@ -59,15 +59,17 @@ async function issueGiftCard({ giftCardId, paymentRef, createdBy }) {
     card.claimToken = crypto.randomUUID();
   }
 
-  await card.save();
+  await card.save(session ? { session } : undefined);
 
-  await GiftCardTransaction.create({
+  const issuance = {
     giftCardId: card._id,
     type: 'issue',
     amount: card.initialAmount,
     balanceAfter: card.balance,
     createdBy,
-  });
+  };
+  if (session) await GiftCardTransaction.create([issuance], { session });
+  else await GiftCardTransaction.create(issuance);
 
   return { ok: true, card };
 }

@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // services/purchaseAnalytics.service.ts
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -85,11 +86,11 @@ export const purchaseAnalyticsService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch purchase analytics');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getByVendor(
@@ -113,10 +114,10 @@ export const purchaseAnalyticsService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch vendor analytics');
     }
 
-    return response.json();
+    return readJson(response);
   },
 };

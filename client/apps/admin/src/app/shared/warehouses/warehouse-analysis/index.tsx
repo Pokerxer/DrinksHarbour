@@ -296,9 +296,13 @@ export default function WarehouseAnalysis({ warehouseId }: { warehouseId?: strin
 
   function openDrill(label: string, list: StockRow[], seriesKey?: string) {
     if (list.length === 0) return;
-    const title = seriesKey
-      ? `${groupLabel}: ${label} · ${groupLabel2}: ${seriesKey || '—'}`
-      : `${groupLabel}: ${label}`;
+    // Series keys for the size dimension are exact Size IDs (DRI-17); present
+    // them through the computed full identity label. Legacy keys (stored
+    // size names) resolve to themselves, byte-identical to before.
+    const seriesPrefix = seriesKey
+      ? ` · ${groupLabel2}: ${multiSeries?.seriesLabels?.[seriesKey] || seriesKey || '—'}`
+      : '';
+    const title = `${groupLabel}: ${label}${seriesPrefix}`;
     setDrillData({ rows: list, title });
   }
 
@@ -456,6 +460,7 @@ export default function WarehouseAnalysis({ warehouseId }: { warehouseId?: strin
                 groupLabel={groupLabel}
                 measureLabel={measureLabel}
                 orderMap={multiSeries.orderMap}
+                seriesLabels={multiSeries.seriesLabels}
                 onSegmentClick={(rowLabel, seriesKey, list) => openDrill(rowLabel, list, seriesKey)}
               />
             ) : (

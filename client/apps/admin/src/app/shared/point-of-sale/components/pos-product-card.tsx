@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { POSProduct, POSSize } from '@/app/shared/point-of-sale/types';
+import { POSColorDot, variantLabel } from './pos-size-color';
 import {
   getImageUrl,
   resolveSubProductGallery,
@@ -315,19 +316,23 @@ function PricelistBreakdown({
           <p className="mb-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">
             Size variant
           </p>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             {validSizes.map((sz) => (
               <button
                 key={sz._id}
                 type="button"
                 onClick={() => setActiveSizeId(sz._id)}
-                className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                title={sz.colorName || undefined}
+                className={`inline-flex min-h-[44px] items-center justify-center rounded-lg px-2.5 py-2 text-[11px] font-semibold transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b20202] focus-visible:ring-offset-2 ${
                   activeSizeId === sz._id
                     ? 'bg-[#b20202] text-white shadow-sm'
                     : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {sz.displayName}
+                <span className="inline-flex items-center gap-1">
+                  <POSColorDot size={sz} />
+                  {variantLabel(sz)}
+                </span>
               </button>
             ))}
           </div>
@@ -503,7 +508,7 @@ function PricelistBreakdown({
 
       {hasSizes && activeSize && (
         <p className="text-right text-[10px] text-gray-400">
-          Prices for <strong>{activeSize.displayName}</strong>
+          Prices for <strong>{variantLabel(activeSize)}</strong>
         </p>
       )}
     </div>
@@ -858,7 +863,10 @@ function ProductInfoModal({
                               <td
                                 className={`px-3 py-2.5 font-semibold ${oos ? 'text-gray-400 line-through' : 'text-gray-800'}`}
                               >
-                                {size.displayName}
+                                <span className="inline-flex items-center gap-1.5">
+                                  <POSColorDot size={size} />
+                                  {variantLabel(size)}
+                                </span>
                               </td>
                               <td className="px-3 py-2.5 text-right tabular-nums text-gray-900">
                                 {(size as any).originalPrice && (
@@ -951,15 +959,19 @@ function ProductInfoModal({
                   <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
                     Apply discount to size
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-2">
                     {validSizes.map((sz) => (
                       <button
                         key={sz._id}
                         type="button"
                         onClick={() => setDiscountSizeId(sz._id)}
-                        className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${discountSizeId === sz._id ? 'bg-[#b20202] text-white shadow-sm' : 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
+                        title={sz.colorName || undefined}
+                        className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b20202] focus-visible:ring-offset-2 ${discountSizeId === sz._id ? 'bg-[#b20202] text-white shadow-sm' : 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
                       >
-                        {sz.displayName}
+                        <span className="inline-flex items-center gap-1">
+                          <POSColorDot size={sz} />
+                          {variantLabel(sz)}
+                        </span>
                         <span
                           className={`${discountSizeId === sz._id ? 'text-white/80' : 'text-gray-400'}`}
                         >
@@ -1329,8 +1341,9 @@ function ProductInfoModal({
                         className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 text-left text-sm transition-colors hover:border-[#b20202] hover:bg-red-50"
                       >
                         <div>
-                          <p className="font-semibold text-gray-800">
-                            {size.displayName}
+                          <p className="flex items-center gap-1.5 font-semibold text-gray-800">
+                            <POSColorDot size={size} />
+                            {variantLabel(size)}
                           </p>
                           {savingNaira > 0 && (
                             <p className="text-[10px] text-emerald-600">
@@ -1499,7 +1512,10 @@ function SizePickerModal({
                     <p
                       className={`text-sm font-semibold ${sel ? 'text-[#b20202]' : 'text-gray-800'} ${oos ? 'line-through' : ''}`}
                     >
-                      {size.displayName}
+                      <span className="inline-flex items-center gap-1.5">
+                        <POSColorDot size={size} />
+                        {variantLabel(size)}
+                      </span>
                     </p>
                     {(size.barcode || size.sku) && (
                       <p className="mt-0.5 font-mono text-[10px] text-gray-400">
@@ -1917,7 +1933,7 @@ export default function POSProductCard({
           {hasSizes && (
             <p className="mt-1 text-[10px] text-gray-400">
               {singleSize
-                ? singleSize.displayName
+                ? variantLabel(singleSize)
                 : `${validSizes.length} sizes · tap to pick`}
               {validSizes.filter((s) => s.availableStock > 0).length <
                 validSizes.length && (
@@ -2052,7 +2068,9 @@ export default function POSProductCard({
                 productId: product.product?._id || product._id,
                 sizeId: size?._id,
                 name: product.product?.name || 'Product',
-                variant: size?.displayName || '',
+                // Same "m · Amber" construction as the till's normal add path —
+                // discounted adds must not drop the color and lose line identity.
+                variant: variantLabel(size),
                 sku: size?.sku || product.sku,
                 image: getImageUrl(product),
                 price,

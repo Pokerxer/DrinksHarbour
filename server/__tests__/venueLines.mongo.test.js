@@ -1,0 +1,22 @@
+'use strict';
+const test = require('node:test'); const assert = require('node:assert/strict'); const mongoose = require('mongoose');
+const { uri, connectVenueMongo, fixture } = require('./helpers/venueMongo');
+test('accepted_lines_remain_priced_after_catalog_change_and_closing_blocks_edits', { skip: !uri }, async t => {
+  await connectVenueMongo(t, 'lines');
+  const sessions = require('../services/venue/service-sessions'); await sessions.ensureIndexes();
+  const args = await fixture(); const visit = await sessions.ensureServiceSession({ ...args, idempotencyKey: 'visit' });
+  const product = new mongoose.Types.ObjectId(), subproduct = new mongoose.Types.ObjectId(), size = new mongoose.Types.ObjectId();
+  await require('../models/Product').collection.insertOne({ _id: product, name: 'Bottle', type: 'beer', isAlcoholic: true });
+  await require('../models/SubProduct').collection.insertOne({ _id: subproduct, tenant: new mongoose.Types.ObjectId(args.tenantId), product, status: 'active', baseSellingPrice: 1000 });
+  await require('../models/Size').collection.insertOne({ _id: size, tenant: new mongoose.Types.ObjectId(args.tenantId), subproduct, sellingPrice: 1000 });
+  const service = require('../services/venue/lines');
+  const command = { tenantId: args.tenantId, sessionId: visit.id, actor: args.actor, expectedVersion: visit.version, lines: [{ subProductId: String(subproduct), sizeId: String(size), quantity: 2, price: 1 }], idempotencyKey: 'lines-1' };
+  const accepted = await service.setSessionLines(command);
+  assert.equal(accepted.lines[0].unitPriceMinor, 100000);
+  await require('../models/Size').updateOne({ _id: size }, { $set: { sellingPrice: 2000 } });
+  const more = await service.setSessionLines({ ...command, expectedVersion: accepted.version, lines: [{ ...command.lines[0], quantity: 3 }], idempotencyKey: 'lines-2' });
+  assert.deepEqual(more.lines.map(l => [l.quantity, l.unitPriceMinor]), [[2, 100000], [1, 200000]]);
+  await assert.rejects(service.setSessionLines({ ...command, idempotencyKey: 'stale' }), /changed/i);
+  await require('../models/VenueServiceSession').updateOne({ _id: visit.id }, { $set: { state: 'closing' } });
+  await assert.rejects(service.setSessionLines({ ...command, expectedVersion: more.version, idempotencyKey: 'closing' }), /closing/i);
+});

@@ -37,6 +37,7 @@ export const brandFormSchema = z.object({
 
   // Classification
   brandType: z.preprocess((v) => (v === '' ? undefined : v), z.enum(brandTypeValues).optional()),
+  industry: z.string().optional(),
   primaryCategory: z.preprocess((v) => (v === '' ? undefined : v), z.enum(primaryCategoryValues).optional()),
   specializations: z.string().optional(), // comma-separated
   countryOfOrigin: z.string().max(100).optional(),

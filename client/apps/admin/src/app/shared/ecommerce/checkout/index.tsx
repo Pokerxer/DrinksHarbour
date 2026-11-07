@@ -34,7 +34,7 @@ import {
 } from '@/validators/create-order.schema';
 import { orderService } from '@/services/order.service';
 import { useCart } from '@/store/quick-cart/cart.context';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 /** Split "First Last" into first/last names for the order's customer block. */
 function splitName(fullName: string): { firstName: string; lastName: string } {
@@ -52,6 +52,7 @@ export default function CheckoutPageWrapper({
 }) {
   const [isLoading, setLoading] = useState(false);
   const router = useRouter();
+  const checkoutKey = useRef<string | null>(null);
   const { data: session } = useSession();
   const token = (session?.user as any)?.token as string | undefined;
 
@@ -139,6 +140,7 @@ export default function CheckoutPageWrapper({
 
     setLoading(true);
     try {
+      checkoutKey.current ||= crypto.randomUUID();
       const order = await orderService.createOrder(token, {
         customer: {
           firstName,
@@ -159,7 +161,7 @@ export default function CheckoutPageWrapper({
         total,
         note: data?.note || undefined,
         couponCode: couponCode || undefined,
-      });
+      }, checkoutKey.current);
 
       resetCart();
       toast.success(

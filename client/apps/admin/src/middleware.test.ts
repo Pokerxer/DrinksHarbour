@@ -63,3 +63,10 @@ test('stale session retains document options on the sign-in return link', async 
   expect(location.pathname).toBe('/signin');
   expect(location.searchParams.get('callbackUrl')).toBe('/sales/123/print?type=proforma');
 });
+test('delivery settings has session protection and refuses tenant roles', async () => {
+  expect(config.matcher).toContain('/delivery-settings/:path*');
+  for (const role of ['tenant_owner', 'tenant_admin', 'tenant_staff']) {
+    expect((await middleware(request('/delivery-settings', role))).headers.get('location')).toContain('/access-denied');
+  }
+  expect((await middleware(request('/delivery-settings', 'admin', null))).status).toBe(200);
+});

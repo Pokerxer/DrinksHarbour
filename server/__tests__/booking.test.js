@@ -77,7 +77,11 @@ test('createBookingFor rejects invalid payloads', async () => {
   // missing guest name
   await assert.rejects(
     () => createBookingFor(TENANT_ID, 'actor', { ...body, guest: { name: '', phone: '+2341' } }),
-    { message: /guest name and phone/i }
+    { statusCode: 400, message: /guest name.*required/i }
+  );
+  await assert.rejects(
+    () => createBookingFor(TENANT_ID, 'actor', { ...body, guest: { name: 'Ada Obi', phone: '' } }),
+    { statusCode: 400, message: /guest phone.*required/i }
   );
   // bad partySize
   await assert.rejects(

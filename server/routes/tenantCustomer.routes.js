@@ -8,6 +8,14 @@ const {
 const auth = require('../services/tenantCustomer.service');
 const { fields } = require('../services/tenantCustomer.validation');
 router.use(requireStorefrontKey);
+router.get('/orders', asyncHandler(async (req, res) => {
+  const customer = await auth.me(req.integration.tenant, req.headers['x-customer-token']);
+  res.json({ success: true, ...await require('../services/storefrontOrders').listOrders(req.integration.tenant, req.integration.key, req.query, customer._id) });
+}));
+router.get('/orders/:id', asyncHandler(async (req, res) => {
+  const customer = await auth.me(req.integration.tenant, req.headers['x-customer-token']);
+  res.json({ success: true, data: await require('../services/storefrontOrders').getOrder(req.integration.tenant, req.integration.key, req.params.id, customer._id) });
+}));
 const limited = (limit, windowMs) =>
   rateLimit({
     limit,

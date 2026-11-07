@@ -1,8 +1,8 @@
 // server/routes/giftcard.routes.js
 //
 // Platform gift cards (account "Gift Cards" page). Purchase flow goes through
-// Paystack: initialize → user pays → verify → card issued. Reads are scoped to the
-// authenticated customer's own cards.
+// the active gateway (Korapay; PAYMENT_GATEWAY env): initialize → user pays →
+// verify → card issued. Reads are scoped to the authenticated customer's own cards.
 
 const express = require('express');
 const router = express.Router();
@@ -16,7 +16,7 @@ router.use(protect);
 // GET /api/gift-cards — list the customer's cards
 router.get('/', giftCardController.getMyGiftCards);
 
-// POST /api/gift-cards/purchase — initialize a Paystack purchase
+// POST /api/gift-cards/purchase — initialize a Kora Pay purchase
 router.post(
   '/purchase',
   [
@@ -47,7 +47,7 @@ router.get(
   giftCardController.getGiftCard
 );
 
-// POST /api/gift-cards/:id/complete-payment — re-verify Paystack for a pending card
+// POST /api/gift-cards/:id/complete-payment — re-verify Korapay for a pending card
 router.post(
   '/:id/complete-payment',
   [param('id').isMongoId().withMessage('Invalid gift card ID')],
@@ -66,7 +66,7 @@ router.post(
     body('amount').isInt({ min: 1 }).withMessage('Amount must be a positive integer'),
   ],
   validate,
-  giftCardController.payWithGiftCard
+  require('../services/marketContext').handler(giftCardController.payWithGiftCard)
 );
 
 // POST /api/gift-cards/:id/redeem — redeem a card the customer owns into their wallet

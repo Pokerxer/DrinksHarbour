@@ -1,76 +1,28 @@
 // @ts-nocheck
 'use client';
 
-import { Text } from 'rizzui';
 import cn from '@core/utils/class-names';
 import WidgetCard from '@core/components/cards/widget-card';
+import { CustomTooltip } from '@core/components/charts/custom-tooltip';
+import { CustomYAxisTick } from '@core/components/charts/custom-yaxis-tick';
 import {
-  AreaChart,
   Area,
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
   XAxis,
+  YAxis,
+  AreaChart,
 } from 'recharts';
-import { CustomTooltip } from '@core/components/charts/custom-tooltip';
-import {
-  PiCaretDoubleUpDuotone,
-  PiCaretDoubleDownDuotone,
-  PiInfoFill,
-} from 'react-icons/pi';
+import { PiInfoFill } from 'react-icons/pi';
 import { useDashboard, useDashboardMeta } from './use-dashboard';
+import { formatCompactNaira as fmt } from './dashboard-format';
 import { useTenant } from '@/context/TenantContext';
-
-function fmt(n: number): string {
-  if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `₦${(n / 1_000).toFixed(1)}K`;
-  return `₦${n.toLocaleString()}`;
-}
-
-function pct(curr: number, prev: number): number {
-  if (!prev) return curr > 0 ? 100 : 0;
-  return Math.round(((curr - prev) / prev) * 1000) / 10;
-}
-
-interface MetricBoxProps {
-  label: string;
-  value: string;
-  sub?: string;
-  color?: string;
-  highlight?: boolean;
-  accentColor?: string;
-}
-
-function MetricBox({
-  label,
-  value,
-  sub,
-  color,
-  highlight,
-  accentColor,
-}: MetricBoxProps) {
-  return (
-    <div
-      className={cn(
-        'rounded-xl border px-3 py-2.5',
-        !highlight && 'border-muted bg-gray-50 dark:bg-gray-100/10'
-      )}
-      style={
-        highlight && accentColor
-          ? { borderColor: `${accentColor}40`, background: `${accentColor}0e` }
-          : undefined
-      }
-    >
-      <p className="text-[11px] uppercase tracking-wide text-gray-400">
-        {label}
-      </p>
-      <p className={cn('mt-0.5 text-base font-bold', color ?? 'text-gray-900')}>
-        {value}
-      </p>
-      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
-    </div>
-  );
-}
+import {
+  DeltaBadge,
+  MetricBox,
+  usePrefersReducedMotion,
+} from './widget-parts';
 
 const FALLBACK = Array.from({ length: 12 }, (_, i) => ({
   month: [
@@ -90,6 +42,11 @@ const FALLBACK = Array.from({ length: 12 }, (_, i) => ({
   totalSales: 0,
 }));
 
+function pct(curr: number, prev: number): number {
+  if (!prev) return curr > 0 ? 100 : 0;
+  return Math.round(((curr - prev) / prev) * 1000) / 10;
+}
+
 export default function TenantRevenueWidget({
   className,
 }: {
@@ -97,6 +54,7 @@ export default function TenantRevenueWidget({
 }) {
   const data = useDashboard();
   const meta = useDashboardMeta();
+  const reducedMotion = usePrefersReducedMotion();
   const periodLabel = meta?.label ?? 'This month';
   const comparisonLabel = meta?.comparisonLabel ?? 'vs last month';
   const { tenant } = useTenant();
@@ -122,34 +80,26 @@ export default function TenantRevenueWidget({
       title="Store Revenue"
       description={
         !data ? (
-          <div className="mt-1 h-7 w-32 animate-pulse rounded bg-gray-200" />
+          <div className="mt-1 h-7 w-32 animate-pulse rounded bg-gray-200 dark:bg-gray-100/20" />
         ) : (
-          <span>{fmt(periodRevenue)}</span>
+          <span className="tabular-nums">{fmt(periodRevenue)}</span>
         )
       }
-      titleClassName="text-gray-500 font-normal font-inter !text-sm"
-      descriptionClassName="text-lg font-semibold sm:text-xl 3xl:text-2xl text-gray-900 font-lexend mt-1"
+      titleClassName="!text-xs font-medium uppercase tracking-wider text-gray-500"
+      descriptionClassName="font-lexend mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100 sm:text-xl 3xl:text-2xl"
       headerClassName="mb-4"
       className={cn('flex flex-col', className)}
     >
       <div className="flex flex-grow flex-col gap-3">
-        {/* comparison vs the previous window */}
+        {/* comparison vs the previous window — icon + % pill, never colour-only */}
         {data && (
-          <div className="flex items-center gap-1.5 text-xs">
-            <span
-              className={cn(
-                'flex items-center gap-0.5 font-medium',
-                revPct >= 0 ? 'text-green-600' : 'text-red-500'
-              )}
-            >
-              {revPct >= 0 ? (
-                <PiCaretDoubleUpDuotone className="h-3.5 w-3.5" />
-              ) : (
-                <PiCaretDoubleDownDuotone className="h-3.5 w-3.5" />
-              )}
-              {Math.abs(revPct)}%
-            </span>
-            <span className="text-gray-400">
+          <div className="flex items-center gap-2">
+            <DeltaBadge
+              up={revPct >= 0}
+              percent={Math.abs(revPct)}
+              ariaLabel={`${revPct >= 0 ? 'Up' : 'Down'} ${Math.abs(revPct)}% ${comparisonLabel}`}
+            />
+            <span className="text-xs text-gray-500 dark:text-gray-600">
               {comparisonLabel} ({fmt(prevRevenue)})
             </span>
           </div>
@@ -161,7 +111,7 @@ export default function TenantRevenueWidget({
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                className="h-16 animate-pulse rounded-xl bg-gray-100"
+                className="h-16 animate-pulse rounded-xl bg-gray-200 dark:bg-gray-100/20"
               />
             ))}
           </div>
@@ -171,7 +121,6 @@ export default function TenantRevenueWidget({
               label={periodLabel}
               value={fmt(periodRevenue)}
               sub={`${periodOrders} orders`}
-              color="text-gray-900"
               highlight
               accentColor={accentColor}
             />
@@ -179,19 +128,26 @@ export default function TenantRevenueWidget({
               label="Avg Order Value"
               value={fmt(avgOrderValue)}
               sub="per order"
-              color="text-gray-900"
             />
             <MetricBox
               label="Today"
               value={fmt(todayRevenue)}
               sub={`${todayShare}% of period`}
-              color={todayUp ? 'text-green-600' : 'text-orange-500'}
+              color={
+                todayUp
+                  ? 'text-green-dark dark:text-green-400'
+                  : 'text-orange-dark dark:text-orange-400'
+              }
             />
             <MetricBox
               label="Yesterday"
               value={fmt(yestRevenue)}
-              sub={todayUp ? '↑ better today' : '↓ was better'}
-              color="text-gray-600"
+              sub={
+                todayUp
+                  ? 'today did better'
+                  : `yesterday led by ${fmt(Math.max(yestRevenue - todayRevenue, 0))}`
+              }
+              color="text-gray-900 dark:text-gray-100"
             />
           </div>
         )}
@@ -199,66 +155,84 @@ export default function TenantRevenueWidget({
         {/* Revenue trend chart */}
         <div className="mt-auto h-44 w-full">
           {!data ? (
-            <div className="h-full animate-pulse rounded-xl bg-gray-100" />
+            <div className="h-full animate-pulse rounded-xl bg-gray-200 dark:bg-gray-100/20" />
           ) : (
-            <>
-              <p className="mb-2 text-xs text-gray-500">12-month trend</p>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={trend}
-                  margin={{ top: 4, bottom: 0, left: 0, right: 0 }}
-                >
-                  <defs>
-                    <linearGradient
-                      id="gradTenantRev"
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="5%"
-                        stopColor={accentColor}
-                        stopOpacity={0.2}
-                      />
-                      <stop
-                        offset="95%"
-                        stopColor={accentColor}
-                        stopOpacity={0}
-                      />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="6 8"
-                    strokeOpacity={0.4}
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="month"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 10, fill: '#9ca3af' }}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area
-                    type="bump"
-                    dataKey="totalSales"
-                    name="Revenue"
-                    stroke={accentColor}
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#gradTenantRev)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </>
+            <div
+              className="flex h-full flex-col"
+              role="img"
+              aria-label={`12-month revenue trend. ${revPct >= 0 ? 'Up' : 'Down'} ${Math.abs(revPct)}% ${comparisonLabel}.`}
+            >
+              <p className="mb-1 shrink-0 text-xs text-gray-500 dark:text-gray-600">
+                12-month trend
+              </p>
+              <div className="min-h-0 flex-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={trend}
+                    margin={{ top: 4, bottom: 0, left: 0, right: 0 }}
+                  >
+                    <defs>
+                      <linearGradient
+                        id="gradTenantRev"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor={accentColor}
+                          stopOpacity={0.2}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={accentColor}
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="6 8"
+                      strokeOpacity={0.4}
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="month"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 10, fill: '#9ca3af' }}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      width={46}
+                      tick={<CustomYAxisTick prefix="₦" />}
+                    />
+                    <Tooltip content={<CustomTooltip prefix="₦" />} />
+                    <Area
+                      type="monotone"
+                      dataKey="totalSales"
+                      name="Revenue"
+                      stroke={accentColor}
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#gradTenantRev)"
+                      isAnimationActive={!reducedMotion}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           )}
         </div>
 
-        <Text className="text-[11px] leading-tight text-gray-400">
-          <PiInfoFill className="inline-flex h-3.5 w-3.5 text-gray-400" />{' '}
+        <p className="flex items-start gap-1 text-[11px] leading-tight text-gray-500 dark:text-gray-600">
+          <PiInfoFill
+            className="inline-flex h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500"
+            aria-hidden="true"
+          />
           {`Revenue from all active orders placed in the selected period (${periodLabel}). Compared ${comparisonLabel}.`}
-        </Text>
+        </p>
       </div>
     </WidgetCard>
   );

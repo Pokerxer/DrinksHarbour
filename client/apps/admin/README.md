@@ -1,20 +1,32 @@
-## Isomorphic Starter Template with Internationalization support
+# DrinksHarbour admin
 
-**Run the following commands from the packages root**
+Back-office application for DrinksHarbour platform administrators and tenant
+teams. Includes POS, inventory, purchasing, sales, HR and reporting. Tenant access
+is enforced by the API as well as the dashboard navigation.
 
-First install the dependencies by running the following command.
-
-```bash
-pnpm install
-```
-
-Now to start the local development server run
+From the repository root, use Node from `.nvmrc` and pnpm11.9.0:
 
 ```bash
-pnpm iso:dev
+pnpm --dir client install --frozen-lockfile
+cp client/apps/admin/.env.local.example client/apps/admin/.env.local
+pnpm --dir client --filter admin dev
 ```
 
-To learn more please follow our [Documentation](https://isomorphic-doc.vercel.app/getting-started/installation)
+Use the app's `type:check`, `lint`, `test` and `build` scripts before release.
+See [release procedures](../../../docs/operations/release.md) and
+[source handover requirements](../../../docs/operations/source-handover.md).
+Internal shared-package names retain compatibility; product branding is
+DrinksHarbour. Third-party provenance and license notices must be retained.
+
+## Upload authorization
+
+UploadThing upload middleware verifies the server session against the current
+backend `/api/users/me` profile before issuing upload permissions. Use the
+configured backend origin; derive the tenant from its authenticated response.
+Do not restore starter fake identities or add blanket route authentication that
+would block UploadThing's signed completion callbacks. File deletion requires
+an explicit ownership and authorization design before adding a server action.
+See `docs/audits/client-dependencies-2026-10-23.md` at the repository root.
 
 ## Product editor header
 
@@ -38,6 +50,13 @@ are flagged. The modal does not create or release reservations. Deploy the serve
 and admin changes together; no schema migration is required.
 
 ## Development compiler memory
+
+Development writes generated files to `.next-dev`; production build/start use
+`.next`. Keep these separate: running a production build against a live dev
+server's output corrupts its vendor chunks and React client manifests. The
+`VENUE_NEXT_DIST_DIR` override remains available for isolated checks; use a unique
+directory per concurrent process. Stop the relevant server before clearing its
+output folder. `cache:clean` clears both default generated folders.
 
 The admin uses a 4 GB Node heap for `pnpm dev`. Webpack filesystem caching is
 intentionally disabled in development and production: cache serialization can
@@ -97,3 +116,22 @@ See [workspace behavior](../../../docs/memory/subproduct-review-workspace.md).
 Sub-Product review draft protection and identity header rules:
 `docs/memory/subproduct-review-edit-protection.md` at repository root. Close/reload
 prompt only when edits would be discarded; successful review writes close directly.
+
+Occasion planning: platform-only `/occasion-requests` queue and review screen share saved customer profile conversations. Private AI drafts require staff approval; WhatsApp is staff-sent. See `src/app/shared/occasion-requests/README.md`.
+
+## New operations workspace usability (2026-10-27)
+
+Merchant/country/enrollment/channel controls share the foundation workspace's
+focus, touch sizing and theme tokens. Delivery location failures offer Retry.
+Occasion queue results belong to their session/filter/page and reject late reads.
+Handoff: `docs/superpowers/specs/RESUME-ui-admin-polish.md` at repository root.
+
+## POS and KDS realtime availability
+
+Both socket hooks use `hooks/pos-realtime.ts` to probe the backend's public
+`/realtime-status` endpoint without credentials before opening a socket. Vercel
+reports unavailable because its handler never attaches Socket.IO. REST polling
+continues when unavailable, during probe failure, or with older backends. Supported
+servers allow three reconnect attempts per connector lifetime. Deploy the backend
+endpoint before or alongside this admin change. See
+`docs/memory/runtime-service-errors.md` at the repository root.

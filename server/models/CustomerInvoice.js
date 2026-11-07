@@ -12,6 +12,11 @@ const schema = new Schema({
   source: { type: String, enum: ['sales', 'pos'], required: true, immutable: true },
   sourceId: { type: ObjectId, required: true, immutable: true },
   sourceNumber: String,
+  // Sales channel label — NOT the `source` dispatcher (which stays 'sales'
+  // for every SalesOrder-born invoice). 'online' marks invoices born from
+  // marketplace-bridged SalesOrders (SalesOrder.marketplaceOrderId set), so
+  // the document view and printout can say "Online sale".
+  salesChannel: { type: String, enum: ['store', 'online'], default: 'store' },
   customer: { type: ObjectId, ref: 'POSCustomer' },
   customerSnapshot: { name: String, email: String, phone: String, customerId: ObjectId },
   currency: { type: String, default: 'NGN' },

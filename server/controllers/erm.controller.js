@@ -14,6 +14,7 @@ const {
   countedShops,
 } = require('../config/erm-plans');
 const { resolveEntitlements, readOnlyMessage } = require('../services/entitlements.service');
+const industries = require('../constants/industries');
 const { getUsage } = require('../services/ermUsage.service');
 const {
   initializeSubscription,
@@ -106,6 +107,11 @@ const getStatus = async (req, res) => {
       hasSubscription: Boolean(tenant.paystackSubscriptionCode),
       cancelAtPeriodEnd: Boolean(tenant.cancelAtPeriodEnd),
       revenueModel: tenant.revenueModel,
+      // Industry profile (2026-11-02, additive): the applied industry set for
+      // this tenant, or null when unprofiled/legacy ("see everything").
+      // Additive only — used by client forms to render industry-aware
+      // category/subcategory/product-type pickers.
+      industries: industries.resolveTenantIndustries(tenant),
       entitlementReason: entitlements.reason,
       // The same sentence the write gates put in their 403, so a tenant is not
       // warned in one wording here and refused in another wording there. Null

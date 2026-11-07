@@ -56,6 +56,15 @@ export interface ErmStatus {
   revenueModel?: string;
   entitlementReason: string;
   /**
+   * Additive 2026-11-02 industry taxonomy scope: the server-resolved tenant
+   * profile (explicit `Tenant.industries` first, then business-type
+   * derivation; empty/unprofiled or flag-off results in the field being
+   * absent or empty — never filter on it then). Consumed by
+   * `LiveErmTenant` into the tenant context and from there by the
+   * product/sub-product type pickers.
+   */
+  industries?: string[];
+  /**
    * The server's own explanation of the read-only state, from the same
    * `readOnlyMessage` the write gates put in their 403. Null when writes are
    * allowed. Render this rather than composing a sentence from

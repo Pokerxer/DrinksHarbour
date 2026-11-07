@@ -1,5 +1,7 @@
 'use client';
 
+import { DELIVERY_COPY } from '@/lib/deliveryCopy';
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -294,7 +296,7 @@ const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
           </a>
 
           <p className="text-gray-400 text-xs md:text-sm mt-3 lg:mt-4">
-            Free delivery on orders over ₦2,000,000
+            {DELIVERY_COPY.summary}
           </p>
         </div>
       </div>

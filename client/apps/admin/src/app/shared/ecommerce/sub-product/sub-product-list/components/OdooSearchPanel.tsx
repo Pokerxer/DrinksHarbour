@@ -1,6 +1,8 @@
 // @ts-nocheck
 'use client';
 
+import { productTypes as catalogTypeOptions } from '@/app/shared/ecommerce/product/create-edit/form-utils';
+
 import { useState, useEffect, useRef } from 'react';
 import {
   PiFunnel,
@@ -375,7 +377,7 @@ export default function OdooSearchPanel({
                   onClick={() => setAdvTab(tab)}
                   className={`relative px-4 py-2 text-xs font-medium capitalize transition-colors ${advTab === tab ? 'border-b-2 border-[#b20202] text-[#b20202]' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                  {tab}
+                  {tab === 'beverage' ? 'Product details' : tab}
                 </button>
               )
             )}
@@ -508,23 +510,10 @@ export default function OdooSearchPanel({
               <div className="space-y-4 p-4">
                 <div>
                   <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                    Beverage Type
+                    Product Type
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { v: 'wine', l: 'Wine🍷' },
-                      { v: 'beer', l: 'Beer🍺' },
-                      { v: 'whiskey', l: 'Whiskey🥃' },
-                      { v: 'vodka', l: 'Vodka🍸' },
-                      { v: 'gin', l: 'Gin🍸' },
-                      { v: 'rum', l: 'Rum🍹' },
-                      { v: 'tequila', l: 'Tequila🌵' },
-                      { v: 'champagne', l: 'Champagne🥂' },
-                      { v: 'soft_drink', l: 'Soft Drink🥤' },
-                      { v: 'juice', l: 'Juice🧃' },
-                      { v: 'water', l: 'Water💧' },
-                      { v: 'cocktail', l: 'Cocktail🍹' },
-                    ].map((o) => (
+                    {catalogTypeOptions.map(({ value: v, label: l }) => ({ v, l })).map((o) => (
                       <button
                         key={o.v}
                         type="button"

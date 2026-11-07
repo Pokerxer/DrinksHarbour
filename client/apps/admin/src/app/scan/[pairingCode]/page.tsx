@@ -9,12 +9,13 @@ import {
   PiWarningCircle,
   PiUploadSimple,
 } from 'react-icons/pi';
+import { useParams } from 'next/navigation';
 import { scanService } from '@/services/scan.service';
 
 type Phase = 'validating' | 'ready' | 'uploading' | 'analyzing' | 'done' | 'error' | 'expired';
 
-export default function MobileScanPage({ params }: { params: { pairingCode: string } }) {
-  const { pairingCode } = params;
+export default function MobileScanPage() {
+  const { pairingCode } = useParams<{ pairingCode: string }>();
   const [phase, setPhase] = useState<Phase>('validating');
   const [message, setMessage] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);

@@ -2,6 +2,7 @@ import type { Warehouse } from '@/services/warehouse.service';
 import type { StockRow } from '@/services/warehouseStock.service';
 import { finite } from './inventory-dashboard-analysis';
 import { lineValue } from './inventory-stock-search';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 export const LOCATION_TYPES = {
   warehouse: 'Warehouse',
   store: 'Store',
@@ -95,7 +96,9 @@ export function filterLocations(reports: LocationReport[], filters: LocationFilt
             .join(' '),
         ),
         ...rows.map((row) =>
-          normal([row.productName, row.sku, row.sizeName].filter(Boolean).join(' ')),
+          normal(
+            [row.productName, row.sku, flatRowSizeLabel(row)].filter(Boolean).join(' '),
+          ),
         ),
       ];
       return (

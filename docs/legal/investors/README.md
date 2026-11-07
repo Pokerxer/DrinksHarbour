@@ -1,5 +1,9 @@
 # Investor agreement drafts
 
+## Grant-first research — 20 October 2026
+
+Latest founder statement: seeking USD250,000, CAC-registered sinceMay2026, and currently pre-revenue. This replaces older paying-tenant/impliedMRR statements for current funding applications; neither registration nor revenue has been independently audited. See [grant research and ranked next steps](grant-research-2026-10-20.md) and `docs/superpowers/specs/RESUME-grant-funding.md`. Earlier loan/equity documents below remain historical proposals; no terms were changed or financing arranged in this research session.
+
 ## General investor agreement review
 
 Latest user instruction selects NGN5,000,000 for5% in `drinksharbour-investor-agreement.md` and `DrinksHarbour Investor Agreement.docx`. On the new-share subscription basis, implied valuations are95m pre-money/100m post-money. Schedules1–3 are updated; Schedule2 states5%/95% allocation with actual registered counts and holder names still needed for the closing annex. Schedule3 proposes a six-month5m advertising/acquisition budget following the existing marketing purpose. The ten-page Word copy was regenerated and visually inspected; ownership and all budgets reconcile. Earlier loan and60m valuation documents below remain separate historical proposals. Complete remaining identities, registered share data, approvals and thresholds and obtain Nigerian legal review before signing. See `docs/superpowers/specs/RESUME-investor-agreement.md` for the latest handoff.

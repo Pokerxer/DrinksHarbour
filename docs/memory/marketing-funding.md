@@ -4,6 +4,8 @@ description: Founder rejects about 14 percent dilution for a 5m marketing loan
 type: project
 ---
 
+2026-10-20 correction: Founder now explicitly states no revenue, CAC registrationMay2026 and USD250,000 fundraising target, preferring grants. Use this latest statement over earlier paying-tenant/impliedsubscription figures for current applications. See `docs/memory/grant-funding.md` and `docs/legal/investors/grant-research-2026-10-20.md`. Historical proposals below are retained; no new financing accepted.
+
 2026-10-07: user says 5m loan is for advertising/customer acquisition and does not want to give about14% equity. Recommend staged non-convertible company loan with zero conversion rights: 1m pilot then2m/2m gated draws. Proposed8% simple36mo each draw,6mo payment grace30mo amortisation; rate/lender acceptance and affordability unverified. Do not inflate valuation to obscure dilution.
 
 Canonical proposal `docs/legal/investors/marketing-funding-plan.md`; resume `docs/superpowers/specs/RESUME-marketing-funding.md`. Current convertible agreement is a retained alternative, not recommended for this stated preference. No new executed contract or ad campaign. Confirm audience and actual cash budget before funded commitments.

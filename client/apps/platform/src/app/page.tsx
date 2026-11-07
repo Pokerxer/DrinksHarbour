@@ -1,16 +1,31 @@
 import React, { Suspense } from "react";
+import { headers } from 'next/headers';
+import { notFound, redirect } from 'next/navigation';
+import { publicVenueGet } from '@/lib/venue/server';
+import { resolveTenant } from '@/lib/tenant';
 import { homeMetadata } from "./home-seo";
 import MarketplaceIntro from "@/components/Home1/MarketplaceIntro";
 import HomeHero from "@/components/Banner/HomeHero";
 import HomeCategoryDrawer from "@/components/Home1/HomeCategoryDrawer";
 import HomeFlashSale from "@/components/Home1/HomeFlashSale";
 import HomeSections from "@/components/Home1/HomeSections";
+import CommerceDiscovery from '@/components/CommerceGuides/CommerceDiscovery';
 
 export const metadata = homeMetadata;
 // Tenant resolution reads request headers, so this route remains dynamic.
 export const dynamic = "force-dynamic";
 
-export default function Home() {
+export default async function Home() {
+  if (process.env.VENUE_EXPERIENCE_ENABLED === 'true') {
+    const slug = (await headers()).get('x-tenant-slug');
+    if (slug) {
+      const published = await publicVenueGet<{ items: unknown[] }>(`/${encodeURIComponent(slug)}?limit=1`);
+      if (published.items.length) redirect(`/venues/${encodeURIComponent(slug)}`);
+      const { tenant } = await resolveTenant();
+      if (!tenant) notFound();
+      // Existing retail tenants keep their storefront while venue publication is independent.
+    }
+  }
   return (
     <div className="bg-gray-100 min-h-screen">
       <HomeCategoryDrawer />
@@ -36,6 +51,7 @@ export default function Home() {
         <Suspense fallback={<div className="min-h-[400px] bg-white" role="status" aria-label="Loading drinks" />}>
           <HomeSections />
         </Suspense>
+        <CommerceDiscovery />
       </div>
       <div className="h-[60px] lg:hidden" />
     </div>

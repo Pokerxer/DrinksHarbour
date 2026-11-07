@@ -13,6 +13,21 @@ const BOOKING_TRANSITIONS = {
 
 const bookingSchema = new mongoose.Schema(
   {
+    moneyState: { type: String, enum: ['none', 'deposit_pending', 'deposit_received', 'paid_needs_resolution'], default: 'none' },
+    financialTermsVersion: { type: Number, default: null }, financialTermsAcceptedAt: { type: Date, default: null },
+    financialPolicy: { type: mongoose.Schema.Types.Mixed, default: null },
+    depositDeadline: { type: Date, default: null },
+    capacityClaim: { type: mongoose.Schema.Types.ObjectId, ref: 'VenueCapacityClaim', default: null },
+    capacitySnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+    requestMode: { type: String, enum: ['request_only'], default: undefined },
+    requestReference: String,
+    requestVersion: { type: Number, default: 0 },
+    requestState: { type: String, enum: ['submitted', 'reviewed', 'declined', 'cancelled', 'expired'], default: undefined },
+    requestPolicy: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    location: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse', default: null },
+    serviceSession: { type: mongoose.Schema.Types.ObjectId, ref: 'VenueServiceSession', default: null },
+    venueIdentityVersion: { type: Number, enum: [0, 1], default: 0 },
+    acquisitionAuthority: { type: String, enum: ['legacy', 'server'], default: 'legacy' },
     tenant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Tenant',
@@ -62,7 +77,7 @@ const bookingSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ['pos', 'discovery', 'admin'],
+      enum: ['pos', 'discovery', 'admin', 'direct'],
       default: 'pos',
     },
     checkoutStartedAt: Date,
@@ -71,7 +86,14 @@ const bookingSchema = new mongoose.Schema(
 );
 
 bookingSchema.index({ tenant: 1, bookingAt: 1 });
+bookingSchema.index({ tenant: 1, location: 1, bookingAt: 1 });
+// Staff request-queue listing walks {tenant, location, requestMode} with an
+// _id cursor (services/venue/reservations.listRequests); without this index
+// every page re-sorted the tenant's full booking history in memory.
+bookingSchema.index({ tenant: 1, location: 1, requestMode: 1, _id: 1 });
 bookingSchema.index({ tenant: 1, status: 1 });
+bookingSchema.index({ requestReference: 1 }, { unique: true, partialFilterExpression: { requestReference: { $type: 'string' } } });
+bookingSchema.index({ createdBy: 1, requestMode: 1, bookingAt: -1 });
 
 module.exports = mongoose.model('Booking', bookingSchema);
 module.exports.BOOKING_STATUSES = BOOKING_STATUSES;

@@ -368,26 +368,7 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
  * @param {object} tenant   - Tenant document from req.tenant
  * @returns {{ sellingPrice, costPrice, revenueModel, markupPct, commissionPct }}
  */
-function computePOSPricing(sp, sizeDoc, tenant) {
-  const revenueModel      = tenant?.revenueModel        ?? 'markup';
-  // POS quantity/bulk pricing comes from tenant pricelists (minQuantity rules),
-  // not the platform pack trigger — always the normal rates here.
-  const { markupPct, commissionPct } = resolveRevenueRates(tenant, 1);
-  // Tenant retail prices are independent of marketplace markup and promotions.
-  // Zero on a Size means the price has not been configured.
-  const { costPrice, sellingPrice } = require('../services/retailPrice.service').retailPriceBasis(sp, sizeDoc);
-
-  return {
-    sellingPrice,
-    originalPrice: sellingPrice,
-    isOnSale: false,
-    isFlashSale: false,
-    costPrice,
-    revenueModel,
-    markupPct,
-    commissionPct,
-  };
-}
+const { computePOSPricing } = require('../services/posPricing');
 exports.computePOSPricing = computePOSPricing;
 
 /** Convenience wrapper — returns just the selling price (used by getPOSProducts). */
@@ -1591,7 +1572,10 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     // wholesalePrice: the stock-transfer create form defaults each line to the
     // size's wholesale rate (falling back to cost). Omitting it from this
     // projection is silent — every line would just read as cost.
-    .populate('sizes', 'displayName sellingPrice costPrice wholesalePrice availableStock stock _id sku barcode')
+    // colorName/colorHexCode: industry-variant support (2026-11-02) — the
+    // till shows a color swatch so same-size-different-color variants stay
+    // distinguishable (fashion et al.).
+    .populate('sizes', 'displayName colorName colorHexCode optionName sellingPrice costPrice wholesalePrice availableStock stock _id sku barcode')
     .populate({ path: 'vendor', select: 'firstName lastName email posName', strictPopulate: false })
     .sort({ isFeaturedByTenant: -1, totalSold: -1, availableStock: -1 })
     .limit(effectiveLimit + 1)
@@ -1882,6 +1866,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   }
 
   const session = await resolveSaleSession(req);
+  await require('../services/venue/legacy-guards').assertLegacySaleAllowed({ tenant: req.tenant, locationId: session.warehouse, heldOrderId, tableId });
   const orderTerminal = session.terminalType;
   if (heldOrderId && !await Order.findOne({ _id: heldOrderId, tenant: tenantId, ...shopFilter(req), status: 'hold' })) {
     return res.status(404).json({ success: false, message: 'Held order not found in this shop' });
@@ -2159,9 +2144,8 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       const itemDiscountAmount = parseFloat(Math.min(lineGross, itemDiscAmt + bundleDiscAmt).toFixed(2));
       const lineSubtotal       = parseFloat((lineGross - itemDiscountAmount).toFixed(2));
 
-      const tenantRevShare = sizePricing.revenueModel === 'commission'
-        ? parseFloat((lineSubtotal * (1 - sizePricing.commissionPct / 100)).toFixed(2))
-        : parseFloat((sizePricing.costPrice * quantity).toFixed(2));
+      const posSplit = require('../services/posRevenue').splitPOSRevenue(sizePricing, lineSubtotal, quantity);
+      const tenantRevShare = posSplit.tenantRevenueShare;
 
       // A quotation's agreed rate wins (including an explicit zero); otherwise
       // the tenant's registered rate applies, and is 0 while tax is off.
@@ -2195,7 +2179,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         tenantRevenueShare:    tenantRevShare,
         platformCommission:    parseFloat((lineSubtotal - tenantRevShare).toFixed(2)),
         tenantRevenueModel:    sizePricing.revenueModel,
-        revenueRateAtPurchase: sizePricing.revenueModel === 'commission' ? sizePricing.commissionPct : sizePricing.markupPct,
+        revenueRateAtPurchase: posSplit.revenueRateAtPurchase,
         tenant:                tenantId,
         _name:    sp?.product?.name || 'Product',
         _variant: item.variant || '',
@@ -2262,7 +2246,10 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       Math.min(lineGross, (it.discountAmount || 0) + (adj.discountAmount || 0)).toFixed(2)
     );
     it.itemSubtotal = parseFloat((lineGross - it.discountAmount).toFixed(2));
-    if (it.tenantRevenueModel === 'commission') {
+    if (it.tenantRevenueModel === 'selling_price_markup') {
+      it.tenantRevenueShare = it.itemSubtotal;
+      it.platformCommission = 0;
+    } else if (it.tenantRevenueModel === 'commission') {
       it.tenantRevenueShare = parseFloat(
         (it.itemSubtotal * (1 - (it.revenueRateAtPurchase || 0) / 100)).toFixed(2)
       );
@@ -2760,6 +2747,7 @@ async function reverseLoyaltyForOrder({ order, tenantId, reference, reason, staf
  * Optionally restores stock, creates RTN-YYYYMMDD-XXXX record
  */
 exports.refundPOSOrder = asyncHandler(async (req, res) => {
+  if (await require('../services/venue/pos-adapters').dispatchVenuePOS(req, res, 'refund')) return;
   const { items: refundItems = [], reason = '', refundPaymentMethod } = req.body;
   if (!refundItems.length) return res.status(400).json({ success: false, message: 'No items to refund' });
 
@@ -2992,6 +2980,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
  * Restores all stock, marks order as voided
  */
 exports.voidPOSOrder = asyncHandler(async (req, res) => {
+  if (await require('../services/venue/pos-adapters').dispatchVenuePOS(req, res, 'void')) return;
   const { reason = '' } = req.body;
   const order = await Order.findOne({ _id: req.params.id, ...tenantScope(req.tenant?._id), ...shopFilter(req) });
   if (!order)          return res.status(404).json({ success: false, message: 'Order not found' });
@@ -3081,6 +3070,47 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
  *  ObjectIds, which would turn a client typo into a CastError 500 downstream. */
 function isObjectIdString(v) {
   return typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
+}
+
+// ── Venue tab payload bounds (openTabAtTable / updateTab / venue holds) ──────
+// The till and the workspace forms already enforce these in the UI; the API
+// must hold the same line. Party size mirrors the platform partySize gate
+// (1–100 → 0 before a party is seated), and a tab mirrors the canonical line
+// gates: ≤100 lines, each quantity 1–100. Anything out of bounds returns a 400
+// that names the cause and the fix instead of storing the junk.
+const TAB_GUESTS_MAX = 100;
+const TAB_LINES_MAX = 100;
+const TAB_NOTE_MAX = 2000;
+function reject(res, message) { return res.status(400).json({ success: false, message }); }
+function validateGuests(res, guests) {
+  if (guests === undefined) return true;
+  if (!Number.isInteger(guests) || guests < 0 || guests > TAB_GUESTS_MAX) {
+    reject(res, `guests must be an integer from 0 to ${TAB_GUESTS_MAX}; correct the party size`);
+    return false;
+  }
+  return true;
+}
+function validateTabItems(res, items) {
+  if (items === undefined) return true;
+  if (!Array.isArray(items) || items.length > TAB_LINES_MAX) {
+    reject(res, `items must be an array of at most ${TAB_LINES_MAX} lines`);
+    return false;
+  }
+  for (const item of items) {
+    if (!item || typeof item !== 'object' || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > TAB_LINES_MAX) {
+      reject(res, `each cart line needs a quantity that is an integer from 1 to ${TAB_LINES_MAX}`);
+      return false;
+    }
+  }
+  return true;
+}
+function validateTabNote(res, note) {
+  if (note === undefined) return true;
+  if (typeof note !== 'string' || note.length > TAB_NOTE_MAX) {
+    reject(res, `note must be text of at most ${TAB_NOTE_MAX} characters`);
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -3230,9 +3260,14 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
   if (tableId !== undefined && !isObjectIdString(tableId)) {
     return res.status(400).json({ success: false, message: 'invalid tableId' });
   }
+  if (!validateGuests(res, guests)) return;
+  if (!validateTabNote(res, note)) return;
+  if (!validateTabItems(res, items)) return;
 
+  const drawer = await resolveSaleSession(req);
+  await require('../services/venue/legacy-guards').assertLegacySaleAllowed({ tenant: req.tenant, locationId: drawer.warehouse, tableId });
   const order = await createHoldOrder({
-    session: await resolveSaleSession(req),
+    session: drawer,
     tenantId,
     staffId,
     items,
@@ -3282,6 +3317,7 @@ exports.holdPOSOrder = asyncHandler(async (req, res) => {
  * bill pretending to sit at somebody else's table.
  */
 exports.openTabAtTable = asyncHandler(async (req, res) => {
+  if (await require('../services/venue/pos-adapters').dispatchVenuePOS(req, res, 'open')) return;
   if (venueBlocked(req, res)) return;
 
   const tenantId = req.tenant?._id;
@@ -3293,6 +3329,7 @@ exports.openTabAtTable = asyncHandler(async (req, res) => {
   if (!isObjectIdString(tableId)) {
     return res.status(400).json({ success: false, message: 'invalid tableId' });
   }
+  if (!validateGuests(res, guests)) return;
 
   const table = await POSTable.findOne({ _id: tableId, tenant: tenantId });
   if (!table) {
@@ -3350,6 +3387,7 @@ exports.openTabAtTable = asyncHandler(async (req, res) => {
  * every table pointing at the old one.
  */
 exports.updateTab = asyncHandler(async (req, res) => {
+  if (await require('../services/venue/pos-adapters').dispatchVenuePOS(req, res, 'update')) return;
   if (venueBlocked(req, res)) return;
 
   const tenantId = req.tenant?._id;
@@ -3361,6 +3399,11 @@ exports.updateTab = asyncHandler(async (req, res) => {
 
   const { items, customer, note, discountType, discountValue, appliedRewards } = req.body;
 
+  if (!validateTabItems(res, items)) return;
+  if (!validateTabNote(res, note)) return;
+  if (appliedRewards !== undefined && !Array.isArray(appliedRewards)) {
+    return reject(res, 'appliedRewards must be an array of loyalty rewards');
+  }
   if (!order.holdMetadata || typeof order.holdMetadata !== 'object') {
     // Legacy holds parked before holdMetadata existed still deserve edits.
     order.holdMetadata = {};
@@ -3392,7 +3435,7 @@ exports.getHeldPOSOrders = asyncHandler(async (req, res) => {
   // the schema) or `items.tenant` (every hold parked before that). Scoping on
   // the root alone would make existing holds unreachable.
   const holds = await Order.find({ ...tenantScope(tenantId), ...shopFilter(req), status: 'hold' })
-    .select('orderNumber items note createdAt holdMetadata')
+    .select('orderNumber items note createdAt holdMetadata venueServiceSession venueIdentityVersion')
     .sort({ createdAt: -1 })
     .lean();
 
@@ -3421,6 +3464,7 @@ exports.getHeldPOSOrders = asyncHandler(async (req, res) => {
  * Returns the full cart data from a held order and removes it.
  */
 exports.recallPOSOrder = asyncHandler(async (req, res) => {
+  if (await require('../services/venue/pos-adapters').dispatchVenuePOS(req, res, 'recall')) return;
   const tenantId = req.tenant?._id;
 
   const order = await Order.findOne({ _id: req.params.id, ...tenantScope(tenantId), ...shopFilter(req), status: 'hold' }).lean();
@@ -3542,6 +3586,7 @@ exports.nextRoundStatus = nextRoundStatus;
  * already-fired course expects a complaint, not a silently empty ticket.
  */
 exports.fireRoundFromCart = asyncHandler(async (req, res) => {
+  if (await require('../services/venue/pos-adapters').dispatchVenuePOS(req, res, 'fire')) return;
   if (venueBlocked(req, res)) return;
 
   const tenantId = req.tenant?._id;
@@ -3615,8 +3660,17 @@ exports.getKitchenActive = asyncHandler(async (req, res) => {
 
   const tenantId = req.tenant?._id;
 
+  let venueScope = {};
+  if (req.tenant.venueSettings?.identityVersion === 1) {
+    const actor = require('../middleware/venue.middleware').venueActor(req);
+    const locations = await Warehouse.find({ tenant: tenantId, isActive: true }).lean();
+    const allowed = locations.filter(location => require('../services/venue/eligibility').resolveVenueEligibility({ tenant: req.tenant.toObject?.() || req.tenant, location, actor, action: 'preparation.read' }).allowed).map(location => location._id);
+    venueScope = { posWarehouse: { $in: allowed } };
+  }
+
   const rows = await Order.find({
     ...tenantScope(tenantId), ...shopFilter(req),
+    ...venueScope,
     status: 'hold',
     'holdMetadata.firedRounds.0': { $exists: true },
   })
@@ -3682,6 +3736,8 @@ exports.bumpKitchenRound = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Held order not found' });
   }
 
+  if (order.venueServiceSession) await require('../services/venue/lines').visitContext({ tenantId: String(tenantId), sessionId: String(order.venueServiceSession), actor: require('../middleware/venue.middleware').venueActor(req), action: 'preparation.write' });
+
   const rounds = Array.isArray(order.holdMetadata?.firedRounds) ? order.holdMetadata.firedRounds : [];
   const round = rounds.find((r) => Number(r.roundNo) === Number(roundNo));
   if (!round) {
@@ -3738,7 +3794,10 @@ function reportOrderQuery(filter) {
         { path: 'subCategory', select: 'name' },
       ],
     })
-    .populate('items.size', 'displayName costPrice')
+    // Label fields included so legacy receipts (without the till's `_variant`
+    // snapshot) still compose their colour/option identity in reports — see
+    // sizeVariantLabel in services/posReportOrder.service.js.
+    .populate('items.size', 'displayName colorName optionName costPrice')
     .populate('items.subproduct', 'costPrice')
     .populate('items.warehouse', 'name code')
     .populate({ path: 'refunds.refundedBy', select: 'firstName lastName posName', strictPopulate: false });
@@ -4287,10 +4346,6 @@ exports.getPOSNotifications = asyncHandler(async (req, res) => {
     .sort({ placedAt: -1 })
     .limit(50)
     .populate('user', 'firstName lastName email phone')
-    // Item lines carry no name snapshot (older orders especially) — resolve
-    // the product name here, or the bell rows and popups degrade to "Item".
-    .populate('items.product', 'name')
-    .populate('items.subproduct', 'name')
     .select('orderNumber placedAt totalAmount source status items user')
     .lean();
 
@@ -4306,7 +4361,7 @@ exports.getPOSNotifications = asyncHandler(async (req, res) => {
     customer: 'Online customer',
     itemCount: (o.items || []).reduce((s, i) => s + (i.quantity || 1), 0),
     items: (o.items || []).slice(0, 5).map((i) => ({
-      name:     i.name || i.productName || i.product?.name || i.subproduct?.name || 'Item',
+      name:     i.name || i.productName || 'Item',
       qty:      i.quantity || 1,
       subtotal: i.itemSubtotal ?? 0,
     })),

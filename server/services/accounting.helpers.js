@@ -232,9 +232,9 @@ function sumType(entries, type, accounts) {
  * tenant's chart of accounts and drives classification; omit it to fall back to
  * code prefixes.
  */
-function buildProfitLoss(entries, taxSummary = {}, movementTotals = null, accounts = []) {
+function buildProfitLoss(entries, taxSummary = {}, movementTotals = null, accounts = [], options = {}) {
   return require('./accounting.report-totals').profitLossTotals(
-    entries, taxSummary, movementTotals, accounts
+    entries, taxSummary, movementTotals, accounts, options
   );
 }
 

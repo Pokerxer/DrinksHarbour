@@ -113,7 +113,7 @@ it('combines multiple products, source and status filters and searches either sa
     target: { value: 'POS products' },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  const stored = JSON.parse(localStorage.getItem('dh-inventory-delivery-searches')!)[0];
+  const stored = (JSON.parse(localStorage.getItem('dh-inventory-delivery-searches')!) as Record<string, unknown>[])[0];
   expect(stored).toMatchObject({ products: 'a,b', source: 'pos', status: 'confirmed' });
   fireEvent.change(screen.getByRole('textbox', { name: 'Search movements' }), {
     target: { value: 'ORDER-7' },

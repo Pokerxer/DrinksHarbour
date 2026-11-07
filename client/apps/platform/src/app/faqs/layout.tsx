@@ -1,10 +1,11 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: "FAQs — Frequently Asked Questions",
   description:
     "Find answers to DrinksHarbour questions about placing orders, delivery in Nigeria, payments, returns and accounts before shopping for your next bottle.",
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
     description: "Answers to common questions about ordering, delivery, payments, and returns.",
   },
   alternates: { canonical: `${BASE_URL}/faqs` },
-};
+});
 
 const FAQ_SCHEMA = {
   "@context": "https://schema.org",

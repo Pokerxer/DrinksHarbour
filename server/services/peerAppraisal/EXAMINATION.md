@@ -44,9 +44,12 @@ settings remain readable and default marks stay one. No migration is required.
 ## Scoring and attendance
 
 Appraisal percentage = unrounded average eligible colleague rating / 5 × 100.
-Selected exam recipients: equal mean of exam%, appraisal%, attendance%.
-All other participants, including unchecked employees in selected departments:
-equal mean of appraisal% and attendance% (no zero exam).
+New combined calculations use attendance20%,appraisal40%,examination40%.
+Participants without an exam use appraisal80% and attendance20%; they do not receive
+a zero exam. Weights are snapshotted in new composite results. Previously closed
+results retain stored scores/bonuses and their historical equal weighting when
+no weight snapshot is present. Open configured cycles use the new weights when
+closed; no released financial result is recalculated.
 Exam percentage uses earned marks / maximum marks of that employee’s assigned
 questions ×100. Mixed-weight samples can have different maximum marks. Both the
 exam grade and exact rational combined bonus use marks, not raw correct counts.
@@ -69,6 +72,16 @@ Configuration requires unrestricted HR, JWT tenant and expected cycle revision.
 Settings/keys/departments/recipients freeze at launch. The participant department refreshes
 from the tenant employee at launch, then freezes; selected departments must reach
 at least one cycle participant. All appraisers and exam assignees must submit.
+
+Unrestricted HR can reset an assigned employee's test while a cycle is collecting:
+POST /:cycleId/examination/attempts/:employeeId/reset accepts expectedRevision
+(attempt) and expectedCycleRevision. It clears answers, submission, grade and
+clock fields, increments revisions and records an audit in the cycle transaction.
+Question order, marks and duration remain fixed. The next explicit employee Start
+receives the full configured duration. Stale requests return409; released results,
+closed/cancelled cycles and unassigned employees cannot be reset. HR progress
+includes safe attempt status/revision metadata, never employee answer contents.
+The owner roster offers Reset test with explicit confirmation and progress refresh.
 
 - PUT /:cycleId/examination: draft settings + expectedRevision; enabled:false
   removes combined settings. Date-only saves remove a stale attendanceMonth.
@@ -167,3 +180,22 @@ settings. A successful local roster save supplies its revision to the examinatio
 editor while retaining unsaved recipient edits; a refresh/discard of the roster
 does not bypass examination conflict protection.
 Handoff: docs/superpowers/specs/RESUME-exam-recipient-selection.md.
+
+
+## HR employee score breakdown
+
+GET /:cycleId/participants/:employeeId/scores requires unrestricted HR and the
+JWT tenant. Both IDs are validated; subject must be in that scoped cycle. The
+response contains only aggregate appraisal,exam and attendance scores,statuses,
+weight/contribution data and a ready combined preview. It never includes examiner
+keys,answers,individual colleague ratings or reviewer identities. Saved ratings
+from unsubmitted appraisers do not contribute to the HR preview. Self is excluded
+from eligible appraisers; an incomplete received-rating mean is labelled provisional.
+
+Attendance uses the configured cycle range and existing published roster/weekly
+quota policy. Unrated attendance is null,not0; ongoing ranges/shifts stay provisional
+and prevent a combined preview. Submitted exams include marks and timed-out status.
+Closed employee details read stored composite/bonus snapshots and do not recompute
+attendance. Rating-only cycles keep appraisal100% with attendance not configured.
+Employee names on the owner participant table open an accessible score dialog with
+loading,retry,Escape,focus return and stale-response guards.

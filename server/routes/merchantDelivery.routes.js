@@ -1,0 +1,10 @@
+'use strict';
+const router=require('express').Router(),service=require('../services/deliveryProviders');
+const {protect,authorize}=require('../middleware/auth.middleware'),asyncHandler=require('../utils/asyncHandler');
+router.use(protect,authorize('super_admin','admin','tenant_owner','tenant_admin','tenant_staff'));
+router.use((req,res,next)=>{res.set('Cache-Control','private, no-store');next();});
+router.post('/orders/:id/quotes',asyncHandler(async(req,res)=>res.status(201).json({status:'success',data:{quote:await service.quote(req.params.id,req.body,req.user)}})));
+router.post('/orders/:id/bookings',asyncHandler(async(req,res)=>res.status(200).json({status:'success',data:{shipment:await service.book(req.params.id,req.body,req.user)}})));
+router.get('/shipments/:id',asyncHandler(async(req,res)=>res.json({status:'success',data:{shipment:await service.get(req.params.id,req.user)}})));
+router.post('/shipments/:id/tracking-refresh',asyncHandler(async(req,res)=>res.json({status:'success',data:{shipment:await service.refreshTracking(req.params.id,req.user)}})));
+module.exports=router;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { flattenOrders } from './flatten-orders';
+import { groupRows } from './group-rows';
 import type { PosOrder } from '../types';
 
 const order = (over: Partial<PosOrder> = {}): PosOrder => ({
@@ -108,5 +109,47 @@ describe('a split receipt is not one payment method', () => {
     const [row] = flattenOrders([order()]);
     expect(row.splitPayment).toBe(false);
     expect(row.paymentShares).toEqual([]);
+  });
+});
+
+describe('variant identity survives flatten and grouping end-to-end', () => {
+  // DRI-6 extension, DRI-7/DRI-10 seed shapes: one retail receipt carrying two
+  // same-size colour lines of one gown next to a legacy beverage line with no
+  // variant. The server-composed variant string must survive flatten verbatim
+  // and keep the two retail variants as separate groups by product — with no
+  // volume/ml assumption anywhere in the chain.
+  const receipt = order({
+    items: [
+      { name: 'Skyline Ankara Gown', variant: 'M · Emerald', quantity: 2,
+        priceAtPurchase: 22000, itemSubtotal: 44000, netQuantity: 2, netSales: 44000,
+        sizeCostPrice: 12000 },
+      { name: 'Skyline Ankara Gown', variant: 'M · Amber', quantity: 1,
+        priceAtPurchase: 24000, itemSubtotal: 24000, netQuantity: 1, netSales: 24000,
+        sizeCostPrice: 12000 },
+      { name: 'Lakeside Craft Lager 330ml', variant: '', quantity: 4,
+        priceAtPurchase: 3500, itemSubtotal: 14000, netQuantity: 4, netSales: 14000,
+        sizeCostPrice: 2200 },
+    ],
+  });
+
+  it('the flattened line carries the variant string verbatim', () => {
+    const rows = flattenOrders([receipt]);
+    expect(rows.map((r) => r.variant)).toEqual(['M · Emerald', 'M · Amber', '']);
+  });
+
+  it('grouping by product keeps the two variants separate and the lager bare', () => {
+    const rows = flattenOrders([receipt]);
+    const grouped = groupRows(rows, 'product', 'revenue', 'desc');
+    expect(grouped.map((g) => g.key)).toEqual([
+      'Skyline Ankara Gown (M · Emerald)',
+      'Skyline Ankara Gown (M · Amber)',
+      'Lakeside Craft Lager 330ml',
+    ]);
+  });
+
+  it('grouping a no-variant legacy line never renders a dangling marker', () => {
+    const [row] = flattenOrders([order()]);
+    const [g] = groupRows([row], 'product', 'revenue', 'desc');
+    expect(g.key).toBe('Wine');
   });
 });

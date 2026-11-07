@@ -13,6 +13,10 @@ import {
 import { fetchInitialRecommendations } from '@/components/Shop/recommendations';
 import { buildPageTitle } from '@/lib/seoTitle';
 import { jsonLdHtml } from '@/lib/jsonld';
+import { normalizeDescription } from '@/lib/seoDescription';
+import { categoryGuideForParams } from '@/lib/categoryBuyingGuide';
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
+import CategoryBuyingGuide from '@/components/SEO/CategoryBuyingGuide';
 import {
   resolveCategorySlug,
   fetchSubCategoryBySlug,
@@ -22,7 +26,7 @@ import {
   type DbBrand,
 } from './taxonomy';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+const BASE_URL = publicSiteOrigin();
 const SITE_NAME = 'DrinksHarbour';
 
 // Self-referencing canonical + en-NG/x-default hreflang. Reinforces Nigeria
@@ -1149,6 +1153,7 @@ function brandKeywords(brand: string, catLabel?: string): string[] {
 interface ResolvedEntry {
   label: string;
   titleOverride?: string; // admin-set metaTitle, used verbatim as the page title
+  descriptionOverride?: string;
   description?: string;
   keywords: string[];
   canonicalSlug: string;
@@ -1193,6 +1198,7 @@ async function resolveCategoryEntry(raw: string): Promise<ResolvedEntry> {
     return {
       label: curated?.title ?? c.name,
       titleOverride: c.metaTitle || undefined,
+      descriptionOverride: c.metaDescription || undefined,
       description: c.metaDescription || curated?.description || c.description?.trim() || undefined,
       keywords: Array.from(new Set([
         ...(c.metaKeywords ?? []),
@@ -1357,7 +1363,8 @@ function deriveHeroSeed(params: Record<string, string>, ctx: SeoContext): HeroSe
   }
 
   if (single(category)) {
-    return { label: ctx.cat?.label ?? toTitleCase(category), description: ctx.cat?.description };
+    const guide = !ctx.cat?.noindex && categoryGuideForParams(params);
+    return { label: guide ? `Buy ${guide.name} Online in Nigeria` : ctx.cat?.label ?? toTitleCase(category), description: guide ? guide.description : ctx.cat?.description };
   }
 
   // Default shop — keyword-matching heading aligned with the default <title>.
@@ -1627,11 +1634,13 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
       SITE_NAME,
     );
     const trimDot   = (s: string) => s.replace(/\.\s*$/, '');
-    const description = sub?.description
-      ? `${trimDot(sub.description)}. Fast delivery across all 36 states.`
-      : cat?.description
-        ? `${trimDot(cat.description)}. Fast delivery across all 36 states.`
-        : `Shop premium ${catLabel.toLowerCase()} online in Nigeria. Authentic products with fast delivery from Abuja.`;
+    const guide = categoryGuideForParams(params);
+    const description = normalizeDescription(
+      (!subcategory && cat?.descriptionOverride) || guide?.description ||
+      (sub?.description ? `${trimDot(sub.description)}. Check delivery options at checkout.` :
+        cat?.description ? `${trimDot(cat.description)}. Check delivery options at checkout.` : ''),
+      `Buy ${subLabel || catLabel} online in Nigeria. Compare available bottles, sizes and seller prices; check delivery fees and timing before payment.`,
+    );
     // Consolidate duplicate/alias slugs onto the real catalog slug so the two
     // near-identical pages don't cannibalize each other (e.g. ?category=tequilas
     // and ?category=scotch-whisky canonicalize to the DB slug).
@@ -1801,6 +1810,7 @@ export default async function ShopPage({
   // Same DB-driven resolution the metadata uses — underlying fetches are deduped.
   const ctx = await resolveSeoContext(params);
   const heroSeed = deriveHeroSeed(params, ctx);
+  const buyingGuide = !ctx.cat?.noindex && categoryGuideForParams(params);
   const [schemas, initial, initialRecommended] = await Promise.all([
     buildJsonLd(params, ctx),
     fetchInitialProducts(params, serverPaged ? { limit: SHOP_PAGE_SIZE, page } : {}),
@@ -1839,6 +1849,7 @@ export default async function ShopPage({
         initialRecommended={initialRecommended}
         heroSeed={heroSeed}
       />
+      {buyingGuide && <CategoryBuyingGuide guide={buyingGuide} />}
     </>
   );
 }

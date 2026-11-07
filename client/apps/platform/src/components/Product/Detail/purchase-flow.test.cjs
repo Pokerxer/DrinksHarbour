@@ -21,7 +21,7 @@ test('detail cart quantity follows stock, size and seller changes while keeping 
   if(name==='@/components/UI/OptimizedImage')return {__esModule:true,default:Empty};
   if(name==='@/components/WhatsApp/whatsappLink')return load(path.resolve(__dirname,'../../WhatsApp/whatsappLink.ts'));
   if(name.startsWith('@/components/')&&!name.includes('ShoppingLocation'))return {__esModule:true,default:Empty};
-  if(['./RelatedProducts','./ShareButton','./ProductSpecifications'].includes(name))return {__esModule:true,default:Empty};
+  if(['./RelatedProducts','./ShareButton'].includes(name))return {__esModule:true,default:Empty};
   if(name.startsWith('@/')||name.startsWith('.')){
    const base=name.startsWith('@/')?path.resolve(__dirname,'../../..',name.slice(2)):path.resolve(path.dirname(file),name);
    return load([base,base+'.ts',base+'.tsx'].find(f=>fs.existsSync(f)));
@@ -29,18 +29,20 @@ test('detail cart quantity follows stock, size and seller changes while keeping 
   return require(name);
  };m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,file);return m.exports;}
  const Detail=load(path.join(__dirname,'index.tsx')).default;
- const size=(id,stock,min=1)=>({_id:id,size:id,displayName:id,stock,minOrderQuantity:min,maxOrderQuantity:20,pricing:{websitePrice:1000,currencySymbol:'₦'}});
- let product={_id:'wine',name:'Wine',images:[],shoppingOffer:{subProductId:'a',sizeId:'large'},availableAt:[{_id:'a',tenant:{_id:'tenant-a',name:'Nearby seller'},sizes:[size('small',2),size('large',4)]},{_id:'b',tenant:{_id:'tenant-b',name:'Other seller'},sizes:[size('bottle',1),size('case',2,6)]}]};
+ const size=(id,stock,min=1)=>({_id:id,size:id,displayName:id,stock,minOrderQuantity:min,maxOrderQuantity:20,volumeMl:id==='large'?750:id==='small'?700:undefined,pricing:{websitePrice:1000,currencySymbol:'₦'}});
+ let product={_id:'wine',name:'Wine',volumeMl:1000,images:[],shoppingOffer:{subProductId:'a',sizeId:'large'},availableAt:[{_id:'a',tenant:{_id:'tenant-a',name:'Nearby seller'},sizes:[size('small',2),size('large',4)]},{_id:'b',tenant:{_id:'tenant-b',name:'Other seller'},sizes:[size('bottle',1),size('case',2,6)]}]};
  const root=createRoot(document.getElementById('root'));let blocked=false;
  const render=()=>root.render(React.createElement(Detail,{productData:product,purchaseBlocked:blocked}));
  const button=label=>[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')===label||b.textContent.includes(label));
  try{
   await React.act(async()=>render());
+  assert.match(document.body.textContent,/750ml/);assert.doesNotMatch(document.body.textContent,/1000ml/);
   assert.equal(button('large').getAttribute('aria-pressed'),'true','representative size is the default');
   for(let i=0;i<6;i++)await React.act(async()=>button('Increase quantity').click());
   assert.equal(document.querySelector('output').textContent,'4');assert.equal(button('Increase quantity').disabled,true);
   await React.act(async()=>button('Add to cart').click());assert.equal(added[5],4);assert.equal(added[6],'large');assert.equal(added[7],'a');
-  await React.act(async()=>button('small').click());assert.equal(document.querySelector('output').textContent,'2');
+  await React.act(async()=>button('small').click());assert.equal(document.querySelector('output').textContent,'2');assert.match(document.body.textContent,/700ml/);assert.doesNotMatch(document.body.textContent,/750ml|1000ml/);
+  await React.act(async()=>button('Specifications').click());assert.match(document.body.textContent,/Volume700ml/);assert.doesNotMatch(document.body.textContent,/1000ml/);
   await React.act(async()=>button('Other seller').click());assert.equal(document.querySelector('output').textContent,'1');assert.equal(button('case').disabled,true);
   product={...product,availableAt:[...product.availableAt].reverse()};await React.act(async()=>render());
   assert.equal(button('Other seller').getAttribute('aria-pressed'),'true');

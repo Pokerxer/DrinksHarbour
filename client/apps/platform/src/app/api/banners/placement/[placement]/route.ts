@@ -4,10 +4,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { placement: string } }
+  { params }: { params: Promise<{ placement: string }> }
 ) {
   try {
-    const { placement } = params;
+    const { placement } = await params;
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.toString();
 
@@ -28,7 +28,7 @@ export async function GET(
 // Track impression
 export async function POST(
   request: NextRequest,
-  { params }: { params: { placement: string } }
+  { params }: { params: Promise<{ placement: string }> }
 ) {
   return NextResponse.json({ success: false, message: 'Method not supported' }, { status: 405 });
 }

@@ -18,6 +18,7 @@ const journalLineSchema = new Schema(
 
 const JournalEntrySchema = new Schema(
   {
+    venueCostSnapshotIds: [{ type: ObjectId, ref: 'VenueCostSnapshot' }],
     tenant: { type: ObjectId, ref: 'Tenant', required: true, index: true },
     // Business document posted from. Undefined for manual entries; reversals
     // point at the ORIGINAL ENTRY's _id.

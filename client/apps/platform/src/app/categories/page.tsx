@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Fraunces } from 'next/font/google';
+import { fraunces } from '@/app/fonts';
 import * as Icon from 'react-icons/pi';
 import Image from '@/components/UI/OptimizedImage';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
@@ -12,12 +12,6 @@ const BASE_URL =
 const SITE_NAME = 'DrinksHarbour';
 
 // Display face for the "bottle label" treatment — soft old-style serif.
-const fraunces = Fraunces({
-  subsets: ['latin'],
-  style: ['normal', 'italic'],
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-});
 
 // Force dynamic rendering — root layout uses headers() for tenant resolution.
 // Data is still cached via the Next.js fetch cache (revalidate per fetch).

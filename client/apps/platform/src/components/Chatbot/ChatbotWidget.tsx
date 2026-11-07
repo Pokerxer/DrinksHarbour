@@ -6,6 +6,9 @@ import Link from 'next/link';
 import { useCart } from '@/context/CartContext';
 import TalkToHuman from './TalkToHuman';
 import ChatLauncher from './ChatLauncher';
+import PlanningDraftCard from './PlanningDraftCard';
+import { usePlanningDraft } from './usePlanningDraft';
+import { appendPlanningDraft } from '@/lib/chatPlanning';
 
 // ── Markdown-lite renderer ────────────────────────────────────────────────────
 // Supports: **bold**, [links](/path), bullet lists, **Section** headers.
@@ -254,6 +257,7 @@ const isNegative = (t: string) => NEGATIVE_RE.test(normalizeReply(t));
 // ── Main widget ───────────────────────────────────────────────────────────────
 export default function ChatbotWidget() {
   const [isOpen, setIsOpen]   = useState(false);
+  const { planningDraft, dismissPlanningDraft } = usePlanningDraft(setIsOpen);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput]     = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -448,7 +452,7 @@ export default function ChatbotWidget() {
   useEffect(() => {
     if (isOpen && messages.length === 0 && !restoredRef.current) {
       getGreeting();
-      refocusInput(350);
+      if (!planningDraft) refocusInput(350);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -753,6 +757,7 @@ export default function ChatbotWidget() {
 
       {/* ── Chat panel ───────────────────────────────────────────────────── */}
       <div
+        id="drinks-ai-panel"
         className={`
           fixed z-[9998] transition-[opacity,transform] duration-300 ease-out
           left-0 right-0 top-0 h-[100dvh] sm:inset-auto sm:bottom-40 lg:bottom-24 sm:right-5
@@ -802,6 +807,7 @@ export default function ChatbotWidget() {
               className="relative p-1.5 rounded-lg hover:bg-white/10 transition-colors text-red-300 hover:text-white touch-manipulation"
             >
               <CartIcon />
+              <span className="sr-only">View cart</span>
               {cartCount > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-0.5 bg-white text-red-700 rounded-full text-[8px] font-bold flex items-center justify-center shadow">
                   {cartCount > 99 ? '99+' : cartCount}
@@ -1047,6 +1053,12 @@ export default function ChatbotWidget() {
           )}
 
           {/* ── Attachment previews ─────────────────────────────────────── */}
+          {planningDraft && <PlanningDraftCard draft={planningDraft} onDismiss={dismissPlanningDraft} onUse={() => {
+            setInput(current => appendPlanningDraft(current, planningDraft.text));
+            dismissPlanningDraft();
+            if (inputRef.current) inputRef.current.style.height = '110px';
+            refocusInput();
+          }} />}
           {hasAttachments && (
             <div className="flex gap-2 px-4 py-2 bg-white border-t border-red-100 flex-shrink-0 flex-wrap items-center">
               {imagePreviews.map((src, i) => (
@@ -1109,6 +1121,7 @@ export default function ChatbotWidget() {
               </button>
 
               <textarea
+                aria-label="Message to DrinksHarbour AI"
                 ref={inputRef}
                 rows={1}
                 enterKeyHint="send"

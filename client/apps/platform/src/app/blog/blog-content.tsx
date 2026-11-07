@@ -3,6 +3,7 @@ import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import type { ContentBlock } from './data';
 import BlogImage from './BlogImage';
+import { resolveCatalogueHref } from '@/lib/catalogueLinks';
 
 // Parse inline markdown into styled nodes, leaving surrounding text intact:
 //   [anchor](/internal/path)      → internal Next link
@@ -27,7 +28,7 @@ export function renderRichText(text?: string): React.ReactNode {
     if (m[2]) {
       parts.push(
         m[2].startsWith('/') ? (
-          <Link key={`lnk-${key++}`} href={m[2]} className={LINK_CLASS}>
+          <Link key={`lnk-${key++}`} href={resolveCatalogueHref(m[2])} className={LINK_CLASS}>
             {m[1]}
           </Link>
         ) : (

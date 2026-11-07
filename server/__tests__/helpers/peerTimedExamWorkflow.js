@@ -91,7 +91,7 @@ module.exports = async function timedWorkflow({ call, ownerId, ids, tenantId, fo
   for (let i = 0; i < ids.length; i++) {
     const result = (await call(ids[i], `${path}/result`)).body.data;
     assert.equal(result.composite.examScore, [25, 100, 0][i]);
-    assert.equal(result.composite.combinedScore, [68.33, 93.33, 60][i]);
-    assert.equal(result.bonusMinor, [3416667, 4666667, 3000000][i]);
+    assert.equal(result.composite.combinedScore, [62, 92, 52][i]);
+    assert.equal(result.bonusMinor, [3100000, 4600000, 2600000][i]);
   }
 };

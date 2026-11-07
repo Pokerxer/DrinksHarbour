@@ -28,7 +28,8 @@ test('search includes active sold-out sizes only when stock filtering is disable
       await assert.rejects(service.searchProducts({ inStock, useEmbeddings: false, sortBy: 'newest' }), stop);
       const listings = pipeline.find(stage => stage.$lookup?.as === 'subProducts').$lookup;
       const sizes = listings.pipeline.find(stage => stage.$lookup?.as === 'sizes').$lookup;
-      const match = sizes.pipeline[0].$match;
+      const match = sizes.pipeline.find(stage => stage.$match?.status === 'active').$match;
+      assert.ok(sizes.pipeline.some(stage => stage.$match?.$and?.some(condition => condition.size?.$ne === 'venue_serving')), 'venue servings remain excluded independently of stock filtering');
       assert.equal(match.status, 'active');
       assert.equal(match.availability.$in.includes('out_of_stock'), !inStock);
       assert.equal(Boolean(match.$expr), inStock);

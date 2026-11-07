@@ -18,6 +18,10 @@ const {
   outstanding,
   buildPostingLines,
 } = require("../services/poReceive.helpers");
+// Shared variant-label parity with the client util size-variant-label.ts — the
+// same compositor POS reporting uses, so a size option reports the same label
+// on POS reports and purchase analytics.
+const { sizeVariantLabel } = require("../services/posReportOrder.service");
 const VendorBill = require("../models/VendorBill");
 const { syncVendorPricelistFromPO } = require("../services/vendorPricelistSync.service");
 const { effectiveTaxForFlow } = require("../services/tax.service");
@@ -477,7 +481,9 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
       select: "name sku imageUrl product",
       populate: { path: "product", select: "tracksBatch isAlcoholic" },
     })
-    .populate("items.sizeId", "size ml volume")
+    // Identity fields for variant-label composition (colour/option) on the
+    // detail + print surfaces; the stored sizeName snapshot stays authoritative.
+    .populate("items.sizeId", "size ml volume displayName colorName optionName")
     .populate("warehouse", "name code type address contact")
     .populate("partialReceipts.warehouseId", "name code")
     .populate("purchaseAgreement", "agreementNumber name status");
@@ -537,7 +543,9 @@ const getPurchaseOrders = asyncHandler(async (req, res) => {
     .populate("vendor", "name email")
     .populate("createdBy", CREATOR_FIELDS)
     .populate("items.subProductId", "name sku")
-    .populate("items.sizeId", "size volume")
+    // Identity fields so the receive-preview chips can compose retail variant
+    // labels via sizeVariantLabel; stored sizeName snapshots stay authoritative.
+    .populate("items.sizeId", "size volume displayName colorName optionName")
     .populate("warehouse", "name code type address contact");
 
   const totalCount = await PurchaseOrder.countDocuments(filter);
@@ -1053,7 +1061,13 @@ const receivePurchaseOrder = asyncHandler(async (req, res) => {
     const item = po.items.find((i) => i._id.toString() === ln.itemId);
     const rl = receiptLines.find((r) => String(r.itemId) === ln.itemId);
     item.receivedQty = ln.newReceivedQty;
-    if (rl.sizeId) item.sizeId = rl.sizeId;
+    if (!item.sizeId && rl.sizeId) {
+      const listing = await SubProduct.exists({ _id: item.subProductId, tenant: tenantId });
+      const size = listing && mongoose.isValidObjectId(rl.sizeId) &&
+        await Size.exists({ _id: rl.sizeId, subproduct: item.subProductId });
+      if (!size) throw new ValidationError("Receipt size must belong to the purchase order listing");
+      item.sizeId = rl.sizeId;
+    }
     if (rl.batchNumber) item.receivedBatchNumber = rl.batchNumber;
     if (rl.expiryDate) item.receivedExpiryDate = rl.expiryDate;
     receiptItems.push({
@@ -1417,7 +1431,12 @@ const getPurchaseAnalyticsByVendor = asyncHandler(async (req, res) => {
     query.confirmationDate = dateFilter;
   }
 
-  const purchaseOrders = await PurchaseOrder.find(query);
+  // Identity fields so the breakdown rows can label/colour variants via
+  // sizeVariantLabel (the four identity fields the detail/list payloads expose)
+  // — the stored sizeName/subProductName snapshots stay authoritative for every
+  // line whose Size carries no variant identity (legacy beverage rows).
+  const purchaseOrders = await PurchaseOrder.find(query)
+    .populate("items.sizeId", "size displayName colorName colorHexCode optionName");
 
   const vendorData = {};
   purchaseOrders.forEach(po => {
@@ -1437,26 +1456,58 @@ const getPurchaseAnalyticsByVendor = asyncHandler(async (req, res) => {
     vendorData[vendorName].totalOrders += 1;
     const poTotal = po.items?.reduce((s, item) => s + ((item.packPrice || 0) * (item.packQty || 1)), 0) || 0;
     vendorData[vendorName].totalAmount += poTotal;
-    
+
+    // Bucket keys are the EXACT Size/SubProduct ids — the established
+    // vendorReturn.quantities.js / poReceive.helpers matching semantics
+    // (String(id)). This keeps same-size colour variants ("M · Emerald" vs
+    // "M · Ivory" — distinct Size rows with distinct stock) in separate
+    // buckets instead of conflating their money/quantity under one stored
+    // sizeName string. Legacy rows without a stored id fall back to the
+    // stored snapshot string, which is byte-identical to the pre-fix grouping.
+    const refId = (ref) => (ref && typeof ref === "object" ? String(ref._id ?? ref.id) : ref ? String(ref) : null);
+    // Label parity with the client util size-variant-label.ts: compose
+    // displayName · colorName · optionName ONLY when the populated Size
+    // carries variant identity; otherwise the stored snapshot stays
+    // authoritative (legacy rows label exactly as before the fix).
+    const sizeIdentityOf = (item) => {
+      const size = item.sizeId && typeof item.sizeId === "object" ? item.sizeId : null;
+      return (size && (size.colorName || size.optionName)) ? size : null;
+    };
+    const sizeBreakdownRow = (item) => {
+      const size = sizeIdentityOf(item);
+      return {
+        sizeName: size
+          ? sizeVariantLabel({ displayName: size.displayName ?? size.size, colorName: size.colorName, optionName: size.optionName })
+          : item.sizeName || 'Default',
+        quantity: 0,
+        amount: 0,
+        // Identity fields so the client can render per-option colour swatches
+        // later without another server change (CEO decision: text labels
+        // suffice today) — never emitted on rows without identity, so legacy
+        // row shape stays byte-identical.
+        ...(size?.colorName ? { colorName: size.colorName } : {}),
+        ...(size?.colorHexCode ? { colorHexCode: size.colorHexCode } : {}),
+        ...(size?.optionName ? { optionName: size.optionName } : {}),
+      };
+    };
+
     po.items?.forEach(item => {
       const qty = item.quantity || 0;
       const price = (item.packPrice || 0) * (item.packQty || 1);
       vendorData[vendorName].totalQuantity += qty;
-      
-      // Size breakdown per vendor
-      const sizeName = item.sizeName || 'Default';
-      if (!vendorData[vendorName].sizeBreakdown[sizeName]) {
-        vendorData[vendorName].sizeBreakdown[sizeName] = {
-          sizeName,
-          quantity: 0,
-          amount: 0,
-        };
+
+      // Size breakdown per vendor — exact Size id, legacy snapshot fallback
+      const sizeId = refId(item.sizeId);
+      const sizeKey = sizeId ?? (item.sizeName || 'Default');
+      if (!vendorData[vendorName].sizeBreakdown[sizeKey]) {
+        vendorData[vendorName].sizeBreakdown[sizeKey] = sizeBreakdownRow(item);
       }
-      vendorData[vendorName].sizeBreakdown[sizeName].quantity += qty;
-      vendorData[vendorName].sizeBreakdown[sizeName].amount += price;
-      
-      // Product breakdown per vendor
-      const prodKey = item.subProductName || 'Unknown';
+      vendorData[vendorName].sizeBreakdown[sizeKey].quantity += qty;
+      vendorData[vendorName].sizeBreakdown[sizeKey].amount += price;
+
+      // Product breakdown per vendor — exact SubProduct id, legacy snapshot fallback
+      const subId = refId(item.subProductId);
+      const prodKey = subId ?? (item.subProductName || 'Unknown');
       if (!vendorData[vendorName].productBreakdown[prodKey]) {
         vendorData[vendorName].productBreakdown[prodKey] = {
           productName: item.subProductName,

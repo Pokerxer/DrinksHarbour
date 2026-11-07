@@ -5,6 +5,7 @@ import { useFormContext } from 'react-hook-form';
 import { Input, Checkbox, Text, Tooltip, Badge, Button } from 'rizzui';
 import cn from '@core/utils/class-names';
 import { CreateProductInput } from '@/validators/create-product.schema';
+import { localSizeGuidance } from '../../sub-product/create-edit/business-size-options';
 import { standardSizes } from './form-utils';
 import FormGroup from '@/app/shared/form-group';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -91,6 +92,10 @@ export default function ProductBeverageInfo({
   const proof = watch('proof');
   const productName = watch('name') || '';
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const recordedSizeLabels = new Map(standardSizes.map(size => [size.value, size.label]));
+  const availableSizes = [...new Set([...localSizeGuidance(watch('type') || ''), ...selectedSizes])]
+    .map(value => ({ value, label: recordedSizeLabels.get(value) || value }));
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
 
@@ -553,7 +558,7 @@ export default function ProductBeverageInfo({
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <label className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-900">
               <Box className="h-4 w-4 text-emerald-500" />
-              Available Bottle Sizes
+              Available Product Sizes
               <span className="text-xs font-normal text-gray-500">
                 ({selectedSizes.length} selected)
               </span>
@@ -569,7 +574,7 @@ export default function ProductBeverageInfo({
               className="grid grid-cols-2 gap-3 @md:grid-cols-4 @lg:grid-cols-6"
               variants={staggerContainer}
             >
-              {standardSizes.map((size, index) => (
+              {availableSizes.map((size) => (
                 <motion.button
                   key={size.value}
                   type="button"

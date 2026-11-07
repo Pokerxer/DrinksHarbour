@@ -1,4 +1,6 @@
 'use client';
+import { venueCartLines } from '@/services/venue/cart-lines';
+import { setLines } from '@/services/venue/api';
 
 import React, {
   useState,
@@ -374,6 +376,7 @@ export default function POSCart() {
     itemCount,
     tableBinding,
     unbindTable,
+    bindTable,
     setFiredLog,
     removeItem,
     addItem,
@@ -732,11 +735,19 @@ export default function POSCart() {
       const itemKeys = unfired.flatMap(({ key, remaining }) =>
         Array.from({ length: remaining }, () => key)
       );
-      const { round } = await posApi.fireTableTab(
+      let expectedVersion = tableBinding.version;
+      if (tableBinding.serviceSessionId) {
+        if (expectedVersion === undefined) throw new Error('Reload this table before sending a round.');
+        const accepted = await setLines(token, tableBinding.serviceSessionId, { expectedVersion, lines: venueCartLines(items, discountValue, appliedRewards) }, 'pos');
+        expectedVersion = accepted.version;
+        bindTable({ ...tableBinding, version: accepted.version, lineVersion: accepted.lineVersion });
+      }
+      const { round, serviceSession } = await posApi.fireTableTab(
         token,
         tableBinding.heldOrderId,
-        { itemKeys }
+        { itemKeys, ...(tableBinding.serviceSessionId ? { expectedVersion } : {}) }
       );
+      if (serviceSession) bindTable({ ...tableBinding, version: serviceSession.version, lineVersion: serviceSession.lineVersion });
       setFiredLog([
         ...(tableBinding.firedLog ?? []),
         ...round.items.map((ri) => ({
@@ -854,7 +865,10 @@ export default function POSCart() {
         >
           {/* Row 1: "Free Product - Name"  +  negative line total  +  remove */}
           <div className="flex items-start justify-between gap-2">
-            <span className="flex-1 text-sm font-semibold italic leading-tight text-gray-800">
+            <span
+              title={item.variant || undefined}
+              className="flex-1 break-words text-sm font-semibold italic leading-tight text-gray-800"
+            >
               {label} - {item.name}
               {item.variant ? ` - ${item.variant}` : ''}
             </span>
@@ -900,7 +914,10 @@ export default function POSCart() {
       >
         {/* Row 1: name + total */}
         <div className="flex items-start justify-between gap-2">
-          <span className="flex-1 text-sm font-semibold leading-tight text-gray-900">
+          <span
+            title={item.variant || undefined}
+            className="flex-1 break-words text-sm font-semibold leading-tight text-gray-900"
+          >
             {item.name}
             {item.variant ? ` - ${item.variant}` : ''}
           </span>
@@ -1427,7 +1444,10 @@ export default function POSCart() {
                       key={item.subProductId + (item.sizeId || '')}
                       className="flex items-start gap-2 text-[10px]"
                     >
-                      <span className="max-w-[100px] truncate text-gray-500">
+                      <span
+                        title={item.variant || undefined}
+                        className="max-w-[100px] truncate text-gray-500"
+                      >
                         {item.name}
                         {item.variant ? ` (${item.variant})` : ''}
                       </span>

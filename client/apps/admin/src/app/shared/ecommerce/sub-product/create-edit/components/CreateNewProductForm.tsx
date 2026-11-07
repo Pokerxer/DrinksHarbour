@@ -23,6 +23,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import { geminiService } from '@/services/gemini.service';
 import { categoryService } from '@/services/category.service';
+import { useTenant } from '@/context/TenantContext';
+import { resolveTenantIndustries, industriesForProductType, INDUSTRY_SELECT_OPTIONS, taxonomyMatchesBusiness } from '@/utils/industries';
+import { isBeverageProductType } from '@/utils/product-types';
+import { productTypes as catalogTypeOptions } from '@/app/shared/ecommerce/product/create-edit/form-utils';
 import toast from 'react-hot-toast';
 import cn from '@core/utils/class-names';
 import ClosestProductMatches from './ClosestProductMatches';
@@ -54,6 +58,7 @@ interface Category {
   name: string;
   slug: string;
   type: string;
+  industry?: string;
 }
 
 interface SubCategory {
@@ -62,6 +67,7 @@ interface SubCategory {
   slug: string;
   type: string;
   parent: string;
+  industry?: string;
 }
 
 interface CreateNewProductFormProps {
@@ -72,44 +78,7 @@ interface CreateNewProductFormProps {
   onProductSelect?: (product: Product) => void;
 }
 
-const PRODUCT_TYPE_OPTIONS = [
-  { value: '', label: 'Select type...' },
-  { value: 'beer', label: 'Beer' },
-  { value: 'lager', label: 'Lager' },
-  { value: 'ale', label: 'Ale' },
-  { value: 'stout', label: 'Stout' },
-  { value: 'ipa', label: 'IPA (India Pale Ale)' },
-  { value: 'wine', label: 'Wine' },
-  { value: 'red_wine', label: 'Red Wine' },
-  { value: 'white_wine', label: 'White Wine' },
-  { value: 'rose_wine', label: 'Rosé Wine' },
-  { value: 'sparkling_wine', label: 'Sparkling Wine' },
-  { value: 'champagne', label: 'Champagne' },
-  { value: 'spirit', label: 'Spirit' },
-  { value: 'whiskey', label: 'Whiskey' },
-  { value: 'bourbon', label: 'Bourbon' },
-  { value: 'scotch', label: 'Scotch' },
-  { value: 'vodka', label: 'Vodka' },
-  { value: 'gin', label: 'Gin' },
-  { value: 'rum', label: 'Rum' },
-  { value: 'tequila', label: 'Tequila' },
-  { value: 'cognac', label: 'Cognac' },
-  { value: 'liqueur', label: 'Liqueur' },
-  { value: 'cocktail_ready_to_drink', label: 'Ready-to-Drink Cocktail' },
-  { value: 'cider', label: 'Cider' },
-  { value: 'non_alcoholic', label: 'Non-Alcoholic' },
-  { value: 'soft_drink', label: 'Soft Drink' },
-  { value: 'juice', label: 'Juice' },
-  { value: 'water', label: 'Water' },
-  { value: 'energy_drink', label: 'Energy Drink' },
-  { value: 'coffee', label: 'Coffee' },
-  { value: 'tea', label: 'Tea' },
-  { value: 'mixer', label: 'Mixer' },
-  { value: 'other', label: 'Other' },
-  { value: 'vape', label: 'Vape' },
-  { value: 'snack', label: 'Snack' },
-  { value: 'nuts', label: 'Nuts' },
-];
+const PRODUCT_TYPE_OPTIONS = [{ value: '', label: 'Select product type...' }, ...catalogTypeOptions];
 
 const COUNTRY_OPTIONS = [
   { value: '', label: 'Select country...' },
@@ -188,12 +157,29 @@ export function CreateNewProductForm({
 }: CreateNewProductFormProps) {
   const { data: session } = useSession();
   const formData = value || { ...defaultFormData, name: initialName || '' };
+  const { tenant } = useTenant();
+  const profile = resolveTenantIndustries(tenant);
+  const [chosenBusiness, setChosenBusiness] = useState('');
+  const business = chosenBusiness || industriesForProductType(formData.type) ||
+    (formData.type ? 'general' : profile?.length === 1 ? profile[0] : '');
+  const visibleTypes = PRODUCT_TYPE_OPTIONS.filter(({ value }) =>
+    !value || (industriesForProductType(value) || 'general') === business
+  );
+  const isBeverage = isBeverageProductType(formData.type);
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
+  const [allCategories, setCategories] = useState<Category[]>([]);
+  const [allSubCategories, setSubCategories] = useState<SubCategory[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [isLoadingSubCategories, setIsLoadingSubCategories] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  const categoriesFor = (scope: string) => allCategories.filter(row => scope === 'general'
+    ? !row.industry && !industriesForProductType(row.type)
+    : taxonomyMatchesBusiness(row, scope));
+  const categories = categoriesFor(business);
+  const subCategories = allSubCategories.filter(row =>
+    row.parent === formData.category && (!row.industry || row.industry === business)
+  );
 
   const handleChange = (
     field: keyof NewProductFormData,
@@ -202,6 +188,11 @@ export function CreateNewProductForm({
     onChange({
       ...formData,
       [field]: fieldValue,
+      ...(field === 'type' && industriesForProductType(String(fieldValue)) !== industriesForProductType(formData.type)
+        ? { category: '', subCategory: '', brand: '' } : {}),
+      ...(field === 'type' && typeof fieldValue === 'string' && !isBeverageProductType(fieldValue)
+        ? { isAlcoholic: false, abv: '', proof: '' }
+        : {}),
     });
   };
 
@@ -212,7 +203,7 @@ export function CreateNewProductForm({
 
       setIsLoadingCategories(true);
       try {
-        const cats = await categoryService.getCategories(session.user.token);
+        const cats = await categoryService.getCategories(session.user.token, 'picker');
         setCategories(Array.isArray(cats) ? cats : []);
       } catch (error) {
         console.error('Failed to fetch categories:', error);
@@ -237,7 +228,7 @@ export function CreateNewProductForm({
       try {
         const subCats = await categoryService.getSubCategories(
           session.user.token,
-          formData.category
+          formData.category, 'picker'
         );
         setSubCategories(Array.isArray(subCats) ? subCats : []);
       } catch (error) {
@@ -345,10 +336,12 @@ export function CreateNewProductForm({
       const response = await geminiService.generateProductDetails(
         productName,
         session.user.token,
-        formData.type
+        formData.type,
+        business
       );
 
       const data = response.data;
+      const categories = categoriesFor(industriesForProductType(data.type) || 'general');
 
       // The server already resolves and returns the matched category _id.
       // Use it directly when it's a known id; fall back to name matching otherwise.
@@ -386,7 +379,7 @@ export function CreateNewProductForm({
           try {
             const subCats = await categoryService.getSubCategories(
               session.user.token,
-              matchedCategoryId
+              matchedCategoryId, 'picker'
             );
             const freshSubCategories = Array.isArray(subCats) ? subCats : [];
             const foundSubCategoryId =
@@ -437,15 +430,17 @@ export function CreateNewProductForm({
         }
       }
 
+      const type = data.type || formData.type;
+      const beverage = isBeverageProductType(type);
       onChange({
         ...formData,
         name: data.name || formData.name || initialName,
-        type: data.type || formData.type,
+        type,
         subType: data.subType || formData.subType,
         brand: data.brand || formData.brand,
         volumeMl: data.volumeMl?.toString() || formData.volumeMl,
-        abv: data.abv?.toString() || formData.abv,
-        proof: data.proof?.toString() || formData.proof,
+        abv: beverage ? data.abv?.toString() || formData.abv : '',
+        proof: beverage ? data.proof?.toString() || formData.proof : '',
         barcode: data.barcode || formData.barcode,
         category: matchedCategoryId,
         subCategory: matchedSubCategoryId,
@@ -454,7 +449,7 @@ export function CreateNewProductForm({
         producer: data.producer || formData.producer,
         description: data.description || formData.description,
         shortDescription: data.shortDescription || formData.shortDescription,
-        isAlcoholic: data.isAlcoholic ?? formData.isAlcoholic,
+        isAlcoholic: beverage && (data.isAlcoholic ?? formData.isAlcoholic),
         style: data.style || formData.style,
         vintage: data.vintage?.toString() || formData.vintage,
       });
@@ -495,7 +490,7 @@ export function CreateNewProductForm({
     findSubCategoryByName,
   ]);
 
-  const showAlcoholFields = formData.isAlcoholic;
+  const showAlcoholFields = isBeverage && formData.isAlcoholic;
   const canUseAI = (formData.name || initialName).length >= 3;
 
   return (
@@ -566,12 +561,28 @@ export function CreateNewProductForm({
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
             Type <span className="text-red-500">*</span>
           </label>
+          <label className="mb-2 block text-sm">
+            Business
+            <select className="ml-2 rounded border p-2" value={business} onChange={event => {
+              setChosenBusiness(event.target.value);
+              onChange({ ...formData, type: '', category: '', subCategory: '', brand: '' });
+            }}>
+              <option value="">Select a business</option>
+              {INDUSTRY_SELECT_OPTIONS.filter(option => !profile || profile.some(value => value === option.value)).map(option =>
+                <option key={option.value} value={option.value}>{option.label}</option>
+              )}
+              <option value="general">General catalog</option>
+            </select>
+          </label>
           <select
             value={formData.type}
             onChange={(e) => handleChange('type', e.target.value)}
             className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            {PRODUCT_TYPE_OPTIONS.map((opt) => (
+            {formData.type && !visibleTypes.some((option) => option.value === formData.type) && (
+              <option value={formData.type}>{formData.type}</option>
+            )}
+            {visibleTypes.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -933,7 +944,8 @@ export function CreateNewProductForm({
         <input
           type="checkbox"
           id="isAlcoholic"
-          checked={formData.isAlcoholic}
+          checked={showAlcoholFields}
+          disabled={!isBeverage}
           onChange={(e) => handleChange('isAlcoholic', e.target.checked)}
           className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
         />

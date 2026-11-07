@@ -1,0 +1,19 @@
+# Market access management
+
+Local continuation, 25 October 2026. Existing failing HTTP tests referenced missing management/models/routes. Implement append-only `MarketCategoryPolicy` and `MarketEnrollment` revisions with unique scope/version indexes, optimistic expected versions and transactional audit. Tenant application identity comes only from authenticated user; super-admin review does not alter ERM subscription. Application is allowed to configured inactive markets, activation is not implied.
+
+Files: `validation.js` owns input contracts; `management.js` owns revisions/audit; `index.js` resolves latest records for `decision.js`; models share immutable schema guards; enrollment/policy routers expose private authenticated workflows. Latest revisions supersede older approval, including rejection/closed or future-dated revisions (fail closed; no fallback to an old approval). Explicit indexes must be prepared before concurrent writes. No production configuration or exclusivity is seeded.
+
+Verify with the strict disposable venue Mongo helper and `marketEnrollment.http.mongo.test.js`, plus retained policy decision/ingress tests. Keep country/tenant/channel/category scope independent and retain legacy behavior only at existing disabled-feature caller gates.
+
+## Verification and rollout
+
+Existing HTTP regressions reproduced2 missing-module failures, then passed2/2 after implementation. Added retained regressions reproduced the missing-index safety failure; after repair, policy/HTTP suites pass9/9 with no skips/cancellations (`/private/tmp/market-management-edge-green.log`). Audit rollback, concurrent application creation, latest-revision eligibility, channel isolation and tenant suspension are exercised against real Mongo transactions. Test fixtures supply trusted actor objects to internal services; HTTP routes use current `protect()` user authority.
+
+Mutations inspect the real collection indexes and return503 `MARKET_INDEXES_REQUIRED` unless exact nonpartial/nonsparse unique scope/version indexes exist. `management.ensureIndexes()` is an explicit preparation function, never called automatically by request handlers. Prepare only against an explicitly reviewed target after previewing existing records/duplicate scope+versions; index failure must halt activation. Models block save/update/delete/replace/bulk-write mutation of existing revisions. Production collection access remains a privileged operator boundary.
+
+The latest revision supersedes older terms immediately. Scheduling a future-dated revision therefore denies access until its start; it does not leave an older approval active. This conservative behavior is intentional and must be shown in operator review. Approval/rejection/suspension appends history and audit without altering Tenant subscription fields.
+
+ERM expiry follow-up: status-only eligibility incorrectly allowed elapsed trials. A retained pure regression failed5pass/1fail, then the resolver and catalogue ID projection were switched to the shared `resolveEntitlements(tenant, at).writesAllowed` authority while retaining active/trial status and independent marketplace approval. Real Mongo regression confirms an elapsed trial disappears from ERM eligible IDs. Final focused suites10/10 passed,0fail/cancel/skip (`/private/tmp/market-erm-expiry-green.log`).
+
+Tenant reapplications cannot replace a latest approved revision whose effectiveUntil is still in the future (including approvals that have not started). Management checks this inside the append transaction and returns409 MARKET_APPROVAL_REVIEW_REQUIRED. Renewals/changes require platform review; pending/rejected/expired scopes can still apply. The tenant form disables that protected scope and explains the restriction. This never changes ERM subscription or accepted fulfillment.

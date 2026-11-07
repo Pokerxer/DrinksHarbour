@@ -276,7 +276,7 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
           <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
             <div className="flex flex-col items-center gap-2 text-center px-4">
               <Icon.PiWarningCircle size={18} className="text-amber-500" />
-              <span className="text-xs text-gray-500">Couldn't load the map</span>
+              <span className="text-xs text-gray-500">Couldn&apos;t load the map</span>
               <button
                 type="button"
                 onClick={beginLoad}
@@ -297,7 +297,7 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
 
         {ready && !(lat && lon) && !geocoding && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm text-xs text-gray-500 px-3 py-1.5 rounded-full shadow whitespace-nowrap pointer-events-none">
-            Click the map or press "Use my location"
+            Click the map or press &quot;Use my location&quot;
           </div>
         )}
       </div>

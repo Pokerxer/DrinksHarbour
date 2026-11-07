@@ -105,6 +105,20 @@ async function sendSMS(to, text) {
 // ── Notification templates ────────────────────────────────────────────────────
 
 /**
+ * Short gift mention for the customer confirmation SMS. '' for normal orders,
+ * so existing message text stays byte-identical. The requested date is a plan
+ * the team confirms — the SMS says "requested", never "guaranteed".
+ */
+const orderGiftSmsLine = (order) => {
+  const gift = order?.gift;
+  if (!gift || gift.isGift !== true) return '';
+  const date = typeof gift.requestedDeliveryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(gift.requestedDeliveryDate)
+    ? ` — requested delivery ${gift.requestedDeliveryDate} (the team confirms the exact window)`
+    : '';
+  return `🎁 Gift for ${gift.to}${date}`;
+};
+
+/**
  * Order confirmation SMS sent to the customer right after checkout.
  */
 async function sendOrderConfirmationSMS(order, customer) {
@@ -114,9 +128,11 @@ async function sendOrderConfirmationSMS(order, customer) {
   const name  = customer?.firstName || customer?.name || 'Customer';
   const num   = order.orderNumber || order._id?.toString().slice(-8).toUpperCase();
   const total = fmt(order.totalAmount || order.total);
+  const giftLine = orderGiftSmsLine(order);
 
   const text =
     `Hi ${name}, your DrinksHarbour order #${num} for ${total} has been received!\n` +
+    (giftLine ? `${giftLine}\n` : '') +
     `We'll update you when it ships. Track at drinksharbour.com/order-tracking\n` +
     `Questions? WhatsApp us: +2348000000000`;
 
@@ -166,6 +182,7 @@ async function sendPasswordResetSMS(phone, code) {
 
 module.exports = {
   sendSMS,
+  orderGiftSmsLine,
   sendOrderConfirmationSMS,
   sendOrderStatusSMS,
   sendVerificationSMS,

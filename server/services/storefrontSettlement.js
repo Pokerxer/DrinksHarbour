@@ -49,7 +49,7 @@ async function cancelCheckout(tenant, key, value) {
   if (['pending', 'initializing'].includes(row.state) && Date.now() - new Date(row.initializedAt || row.createdAt || Date.now()).getTime() < 60000) {
     throw new ConflictError('Payment initialization is in progress; retry shortly');
   }
-  const payment = await gateway.verify(row.reference);
+  const payment = await gateway.verify(row.reference, row.paymentAccount);
   if (payment.status === 'success') {
     await settlePayment(row.reference, payment);
     throw new ConflictError('Checkout has already been paid');
@@ -66,7 +66,8 @@ async function cancelCheckout(tenant, key, value) {
       const order = await Order.findOne(filter).session(session).lean();
       if (!order || order.paymentStatus === 'paid' || !['pending', 'cancelled'].includes(order.status)) throw new ConflictError('Order is no longer cancellable');
       if (order.status !== 'cancelled') {
-        await stock.releaseStock(order.items, session);
+        if (order.onlineStockVersion === 1) await require('./storefrontLocationStock').transition(order, 'release', session);
+        else await stock.releaseStock(order.items, session);
         await Order.updateOne(filter, { $set: { status: 'cancelled', paymentStatus: 'failed', cancelledAt: new Date(),
           cancelReason: 'Tenant website checkout cancelled', [`fulfillmentStatus.${tenant._id}`]: 'cancelled' } }, { session });
       }

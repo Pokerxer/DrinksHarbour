@@ -35,7 +35,7 @@ function toStoreCard(tenant) {
 /**
  * @route  GET /api/stores
  * @access Public
- * @query  page, limit, search, state, city
+ * @query  page, limit, search, location, state, city, sort
  */
 exports.getStores = asyncHandler(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -47,23 +47,31 @@ exports.getStores = asyncHandler(async (req, res) => {
     status: 'approved',
   };
 
-  if (req.query.search) {
-    filter.name = { $regex: String(req.query.search).trim(), $options: 'i' };
-  }
+  const literal = value => typeof value === 'string'
+    ? value.trim().slice(0, 200).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+  const search = literal(req.query.search);
+  const location = literal(req.query.location);
+  const state = literal(req.query.state);
+  const city = literal(req.query.city);
+  if (search) filter.name = { $regex: search, $options: 'i' };
 
-  if (req.query.state) {
-    const rx = { $regex: String(req.query.state).trim(), $options: 'i' };
+  if (location) {
+    const rx = { $regex: location, $options: 'i' };
+    filter.$or = [{ 'address.city': rx }, { 'address.state': rx }, { canonicalState: rx }];
+  } else if (state) {
+    const rx = { $regex: state, $options: 'i' };
     filter.$or = [{ 'address.state': rx }, { canonicalState: rx }];
   }
 
-  if (req.query.city) {
-    filter['address.city'] = { $regex: String(req.query.city).trim(), $options: 'i' };
-  }
+  if (city) filter['address.city'] = { $regex: city, $options: 'i' };
+  const sort = req.query.sort === 'name_asc' ? { name: 1, _id: 1 }
+    : req.query.sort === 'name_desc' ? { name: -1, _id: 1 }
+      : { productCount: -1, name: 1, _id: 1 };
 
   const [tenants, total] = await Promise.all([
     Tenant.find(filter)
       .select(PUBLIC_TENANT_FIELDS)
-      .sort({ productCount: -1, name: 1 })
+      .sort(sort)
       .skip(skip)
       .limit(limit)
       .lean(),
@@ -141,6 +149,7 @@ exports.getStoreBySlug = asyncHandler(async (req, res) => {
       page: 1,
       limit: 60,
       inStock: false, // storefront lists all published products, in stock or not
+      catalogChannel: 'store', // DRI-4/DRI-5: tenant storefront sells retail kinds too (unlike the beverage-only platform marketplace)
     });
     products = (result.products || []).map(toStoreProduct);
   } catch (err) {

@@ -1,0 +1,22 @@
+'use strict';
+const test = require('node:test'); const assert = require('node:assert/strict');
+const { uri, connectVenueMongo, fixture, beverage } = require('./helpers/venueMongo');
+test('booking_pos_bill_race_has_one_order_and_one_owned_stock_reservation', { skip: !uri }, async t => {
+  await connectVenueMongo(t, 'bills');
+  const sessions = require('../services/venue/service-sessions'); await sessions.ensureIndexes();
+  const args = await fixture(); const input = await beverage(args);
+  const visit = await sessions.ensureServiceSession({ ...args, idempotencyKey: 'open' });
+  const accepted = await require('../services/venue/lines').setSessionLines({ ...args, sessionId: visit.id, expectedVersion: visit.version, lines: [input], idempotencyKey: 'lines' });
+  const billing = require('../services/venue/billing'); await billing.ensureIndexes();
+  const command = { ...args, sessionId: visit.id, expectedVersion: accepted.version, lineVersion: accepted.lineVersion, ageVerified: true };
+  const results = await Promise.allSettled(Array.from({ length: 8 }, (_, n) => billing.ensureBillOrder({ ...command, idempotencyKey: `bill-${n}` })));
+  const bills = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+  assert.ok(bills.length > 0);
+  assert.equal(new Set(bills.map(b => b.orderId)).size, 1);
+  assert.equal(await require('../models/Order').countDocuments({ tenant: args.tenantId, venueBillForSession: visit.id }), 1);
+  const stock = await require('../models/WarehouseStock').findOne({ tenant: args.tenantId }).lean();
+  assert.equal(stock.currentQuantity, 10); assert.equal(stock.reservedQuantity, 5);
+  assert.equal(await require('../models/VenueStockEffect').countDocuments({ tenant: args.tenantId, state: 'reserved' }), 1);
+  assert.equal(bills[0].totalMinor, 300000); assert.equal(bills[0].commissionMinor, 0);
+  assert.equal(await require('../models/JournalEntry').countDocuments({ tenant: args.tenantId }), 0);
+});

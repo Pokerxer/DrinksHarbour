@@ -23,6 +23,8 @@ export const SHIPPING_DETAILS = [
       addressCountry: 'NG',
       addressRegion: 'FCT',
     },
+    description: 'Standard delivery in Abuja/FCT. Free delivery starts at ₦2,000,000. See checkout for the final fee and eligible offers.',
+    shippingSettingsLink: 'https://www.drinksharbour.com/shipping-info',
     shippingRate: {
       '@type': 'MonetaryAmount',
       currency: CURRENCY,
@@ -53,16 +55,10 @@ export const SHIPPING_DETAILS = [
       minValue: 10000,
       maxValue: 60000,
     },
-    // Free nationwide delivery kicks in at ₦2,000,000.
-    freeShippingThreshold: {
-      '@type': 'DeliveryChargeSpecification',
-      priceCurrency: CURRENCY,
-      eligibleTransactionVolume: {
-        '@type': 'PriceSpecification',
-        priceCurrency: CURRENCY,
-        minPrice: 2000000,
-      },
-    },
+    // Thresholds are destination-specific; do not publish an unsupported
+    // freeShippingThreshold property on OfferShippingDetails.
+    description: 'Standard delivery fees vary by destination and order. Free delivery starts at ₦10,000,000 outside Abuja/FCT. See checkout for the final fee and eligible offers.',
+    shippingSettingsLink: 'https://www.drinksharbour.com/shipping-info',
     deliveryTime: {
       '@type': 'ShippingDeliveryTime',
       businessDays: {

@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Text } from 'rizzui';
+import { Text, Badge } from 'rizzui';
 import cn from '@core/utils/class-names';
 import {
   PiPackageBold,

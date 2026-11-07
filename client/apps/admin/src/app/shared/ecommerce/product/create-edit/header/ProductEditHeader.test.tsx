@@ -125,3 +125,21 @@ it('distinguishes local draft persistence from saving changes to the platform', 
   expect(screen.getByText(/Draft saved on this device/)).toBeTruthy();
   expect(screen.queryByText('Changes saved')).toBeNull();
 });
+it('shows the catalogue scope tag only when the product carries a publication scope', () => {
+  // Legacy rows have no scope field — zero visual change.
+  const legacy = props();
+  render(<ProductEditHeader {...legacy} />);
+  expect(screen.queryByText('Store-only')).toBeNull();
+  expect(screen.queryByText('Marketplace')).toBeNull();
+
+  cleanup();
+  render(
+    <ProductEditHeader
+      {...props()}
+      status="pending"
+      publicationScope="tenant_private"
+      owningTenantName="Havour Wine"
+    />
+  );
+  expect(screen.getByText('Store-only · Havour Wine')).toBeTruthy();
+});

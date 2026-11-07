@@ -1,11 +1,19 @@
 import Image from 'next/image';
+import { tenantDefaultRate } from './selling-markup';
 import type { ReviewListing } from './types';
 const quantity = (v?: number) =>
   typeof v === 'number' && Number.isFinite(v)
     ? v.toLocaleString('en-NG')
     : 'Unknown';
-export default function ReviewOverview({ listing: sp }: { listing: ReviewListing }) {
-  const images = sp.imagesOverride?.length ? sp.imagesOverride : sp.product?.images;
+export default function ReviewOverview({
+  listing: sp,
+}: {
+  listing: ReviewListing;
+}) {
+  const defaultMarkup = tenantDefaultRate({ pricing: sp.pricing || {} }, sp);
+  const images = sp.imagesOverride?.length
+    ? sp.imagesOverride
+    : sp.product?.images;
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-gray-200 bg-white p-5">
@@ -20,22 +28,39 @@ export default function ReviewOverview({ listing: sp }: { listing: ReviewListing
             ['SKU', sp.sku || 'Not supplied'],
             [
               'Revenue model',
-              sp.tenant?.revenueModel || sp.pricing?.revenueModel || 'Unknown',
+              (sp.tenant?.revenueModel || sp.pricing?.revenueModel) ===
+              'selling_price_markup'
+                ? 'Selling-price markup'
+                : sp.tenant?.revenueModel ||
+                  sp.pricing?.revenueModel ||
+                  'Unknown',
             ],
-            (sp.tenant?.revenueModel || sp.pricing?.revenueModel) === 'commission'
+            (sp.tenant?.revenueModel || sp.pricing?.revenueModel) ===
+            'commission'
               ? [
                   'Agreed commission',
                   sp.tenant?.commissionPercentage != null
                     ? `${sp.tenant.commissionPercentage}% of final merchandise`
                     : 'Not supplied',
                 ]
-              : [
-                  'Agreed tenant markup',
-                  sp.tenant?.markupPercentage != null
-                    ? `${sp.tenant.markupPercentage}% on cost basis`
-                    : 'Not supplied',
-                ],
-            ['ABV', sp.product?.abv != null ? `${sp.product.abv}%` : 'Not supplied'],
+              : (sp.tenant?.revenueModel || sp.pricing?.revenueModel) ===
+                  'selling_price_markup'
+                ? [
+                    'Tenant default markup',
+                    defaultMarkup === null
+                      ? 'Unavailable'
+                      : `${defaultMarkup}% on tenant selling price`,
+                  ]
+                : [
+                    'Agreed tenant markup',
+                    sp.tenant?.markupPercentage != null
+                      ? `${sp.tenant.markupPercentage}% on cost basis`
+                      : 'Not supplied',
+                  ],
+            [
+              'ABV',
+              sp.product?.abv != null ? `${sp.product.abv}%` : 'Not supplied',
+            ],
             ['Origin', sp.product?.originCountry || 'Not supplied'],
           ].map(([label, value]) => (
             <div key={label} className="flex justify-between gap-3 text-xs">
@@ -155,7 +180,10 @@ export function ReviewInventory({ listing: sp }: { listing: ReviewListing }) {
                   quantity(r.reserved),
                   quantity(r.available),
                 ].map((value, i) => (
-                  <td key={i} className="border-b border-gray-100 p-3 tabular-nums">
+                  <td
+                    key={i}
+                    className="border-b border-gray-100 p-3 tabular-nums"
+                  >
                     {value}
                   </td>
                 ))}

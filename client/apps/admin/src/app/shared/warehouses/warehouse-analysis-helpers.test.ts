@@ -5,10 +5,14 @@ import {
   availableQty,
   buildGroupedTableCSV,
   computeGroupData,
+  computeHierarchicalPivot,
   computeKpis,
+  computeMultiSeries,
   csvEscapeField,
   expiryBucket,
   fmtMeasureVal,
+  formatG1Label,
+  sizeRowLabel,
   stockStatus,
 } from './warehouse-analysis-helpers';
 
@@ -232,4 +236,127 @@ it('uses the server stock status when filtering and grouping low stock', () => {
   });
   expect(stockStatus(flagged)).toBe('low');
   expect(applyFilters([flagged], ['low_stock'], {})).toHaveLength(1);
+});
+
+// ── DRI-17 size-variant identity ──────────────────────────────────────────────
+//
+// CEO decision on record (/warehouses extension — 2026-11-06): report rows are
+// keyed by exact Size ID and presented through the shared full label; colour
+// siblings must never collapse. Every new fixture row carries the DRI-16
+// additive identity fields; the legacy beverage control rows never do.
+
+describe('size dimension identity (DRI-17)', () => {
+  const emerald = row({
+    _id: 'e',
+    sizeId: 'sz-emerald',
+    sizeName: 'm',
+    colorName: 'Emerald',
+    currentQuantity: 3,
+    costPrice: 500,
+  });
+  const ivory = row({
+    _id: 'i',
+    sizeId: 'sz-ivory',
+    sizeName: 'm',
+    colorName: 'Ivory',
+    currentQuantity: 2,
+    costPrice: 500,
+  });
+  const legacy = row({
+    _id: 'l',
+    sizeId: 'sz-70cl',
+    sizeName: '70cl',
+    currentQuantity: 4,
+    costPrice: 100,
+  });
+  const unkeyedLegacy = row({
+    _id: 'ul',
+    sizeId: '',
+    sizeName: '500ml',
+    currentQuantity: 1,
+    costPrice: 100,
+  });
+
+  it('keeps colour siblings distinct and labels the full identity', () => {
+    const out = computeGroupData([emerald, ivory, legacy], 'size', 'on_hand_qty', {}, identity, [
+      { field: 'label', dir: 'asc' },
+    ]);
+    expect(out.map((g) => [g.isoKey, g.label])).toEqual([
+      ['sz-70cl', '70cl'],
+      ['sz-emerald', 'm · Emerald'],
+      ['sz-ivory', 'm · Ivory'],
+    ]);
+  });
+
+  it('falls back to sizeName for legacy rows lacking an ID', () => {
+    const out = computeGroupData([unkeyedLegacy], 'size', 'on_hand_qty', {}, identity, []);
+    expect(out).toHaveLength(1);
+    expect(out[0].isoKey).toBe('500ml');
+    expect(out[0].label).toBe('500ml');
+  });
+
+  it('legacy beverage label resolves byte-for-byte to the stored sizeName', () => {
+    expect(sizeRowLabel(legacy)).toBe('70cl');
+    expect(sizeRowLabel(legacy)).toBe(legacy.sizeName);
+  });
+
+  it('scatters colour siblings distinct across the grouped CSV export', () => {
+    const out = computeGroupData(
+      [emerald, ivory, legacy],
+      'size',
+      'on_hand_qty',
+      {},
+      identity,
+      [],
+    );
+    const csv = buildGroupedTableCSV(out, 'Size', 'On-hand Quantity', 'on_hand_qty');
+    expect(csv).toContain('m · Emerald');
+    expect(csv).toContain('m · Ivory');
+    expect(csv).toContain('70cl');
+    expect(csv).not.toContain('sz-emerald');
+  });
+
+  it('keeps two-level series distinct with full-label display names', () => {
+    const multi = computeMultiSeries(
+      [emerald, ivory, legacy],
+      'warehouse',
+      'size',
+      'on_hand_qty',
+      {},
+      identity,
+      [],
+    );
+    expect(multi.series.sort()).toEqual(['sz-70cl', 'sz-emerald', 'sz-ivory']);
+    expect(multi.seriesLabels).toEqual({
+      'sz-70cl': '70cl',
+      'sz-emerald': 'm · Emerald',
+      'sz-ivory': 'm · Ivory',
+    });
+    expect(multi.rows).toHaveLength(1);
+  });
+
+  it('keeps hierarchical pivot values distinct per variant with full labels', () => {
+    const pivot = computeHierarchicalPivot(
+      [emerald, ivory, legacy],
+      ['size'],
+      [],
+      'on_hand_qty',
+      {},
+      identity,
+    );
+    expect(pivot).not.toBeNull();
+    expect(pivot!.rowVals0.sort()).toEqual(['sz-70cl', 'sz-emerald', 'sz-ivory']);
+    expect(pivot!.keyLabels).toEqual({
+      'sz-70cl': '70cl',
+      'sz-emerald': 'm · Emerald',
+      'sz-ivory': 'm · Ivory',
+    });
+  });
+
+  it('formatG1Label prefers the keyLabels map and falls back to the key', () => {
+    expect(formatG1Label('sz-emerald', 'size', { 'sz-emerald': 'm · Emerald' })).toBe(
+      'm · Emerald',
+    );
+    expect(formatG1Label('sz-emerald', 'size')).toBe('sz-emerald');
+  });
 });

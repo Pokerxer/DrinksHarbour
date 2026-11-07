@@ -1,5 +1,7 @@
 // client/apps/admin/src/app/shared/sales/product-line-search.tsx
 'use client';
+
+import { sizeVariantLabel } from '@/utils/size-variant-label';
 import { EDITOR_MENU, SUGGESTION_ROW } from './sales-dropdown-styles';
 
 import { useState, useEffect, useRef } from 'react';
@@ -70,7 +72,7 @@ function mapProducts(raw: any[]): ProductOption[] {
     bundleDeals: sp.bundleDeals ?? [],
     sizes: (sp.sizes ?? []).map((s: any) => ({
       size: String(s._id ?? s.size ?? ''),
-      displayName: s.displayName ?? s.size ?? '',
+      displayName: sizeVariantLabel(s),
       sku: s.sku ?? sp.sku ?? '',
       sellingPrice: s.sellingPrice ?? 0,
       costPrice: s.costPrice ?? sp.costPrice ?? 0,
@@ -116,7 +118,7 @@ export default function ProductLineSearch({
     if (initialLoaded || !token) return;
     setLoading(true);
     try {
-      const res = await subproductService.getSubProducts(token, {
+      const res = await subproductService.getSubProducts<{data: {subProducts: unknown[]}}>(token, {
         limit: 50,
         ...(warehouseId ? { warehouseId } : {}),
       });
@@ -141,7 +143,7 @@ export default function ProductLineSearch({
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await subproductService.getSubProducts(token, {
+        const res = await subproductService.getSubProducts<{data: {subProducts: unknown[]}}>(token, {
           search: text.trim(),
           limit: 50,
           ...(warehouseId ? { warehouseId } : {}),
@@ -167,7 +169,7 @@ export default function ProductLineSearch({
               bundleDeals: item.bundleDeals ?? [],
               sizes: (item.sizes ?? []).map((s: any) => ({
                 size: String(s._id ?? s.size ?? ''),
-                displayName: s.displayName ?? s.size ?? '',
+                displayName: sizeVariantLabel(s),
                 sku: s.sku ?? item.sku ?? '',
                 sellingPrice: s.sellingPrice ?? 0,
                 costPrice: s.costPrice ?? item.costPrice ?? 0,

@@ -33,7 +33,7 @@ function extractTenantSlug(req: NextRequest): string | null {
 
   // Local dev fallback: ?_tenant=acme
   const devSlug = req.nextUrl.searchParams.get('_tenant');
-  if (devSlug) return devSlug;
+  if (process.env.NODE_ENV !== 'production' && devSlug) return devSlug;
 
   // Known non-tenant hostnames — main marketplace
   if (RESERVED_SUBDOMAINS.some((r) => host === r || host.startsWith(`${r}.`))) {
@@ -52,6 +52,11 @@ function extractTenantSlug(req: NextRequest): string | null {
 export function middleware(req: NextRequest) {
   const tenantSlug = extractTenantSlug(req);
 
+  const venueSlug = /^\/venues\/([^/]+)/.exec(req.nextUrl.pathname)?.[1];
+  if (tenantSlug && venueSlug && venueSlug !== tenantSlug) {
+    return new NextResponse('Venue not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  }
+
   // Inject x-tenant-slug header for downstream Server Components / API routes
   const requestHeaders = new Headers(req.headers);
   if (tenantSlug) {
@@ -60,6 +65,7 @@ export function middleware(req: NextRequest) {
     requestHeaders.delete('x-tenant-slug');
   }
 
+  requestHeaders.delete('x-is-tenant-site');
   // Also set x-is-tenant-site flag so the backend knows this is a tenant storefront
   if (tenantSlug) {
     requestHeaders.set('x-is-tenant-site', 'true');

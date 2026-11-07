@@ -14,6 +14,7 @@ import {
 } from 'react-icons/pi';
 import { GroupItem } from '@/components/list-controls';
 import type { InventoryMovement } from '@/services/inventory.service';
+import { populatedSizeIdentity, sizeVariantLabel } from '@/utils/size-variant-label';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -240,7 +241,18 @@ export function productLabel(m: InventoryMovement): string {
   const spProduct = typeof sp?.product === 'object' ? sp?.product?.name : undefined;
   return p?.name ?? spProduct ?? sp?.name ?? sp?.sku ?? m.reference ?? '—';
 }
+/**
+ * Size label for a movement line (DRI-30). When the populated Size ref carries
+ * retail variant identity (colour/option — which legacy beverage Size rows
+ * never have), compose the full shared label via the size-variant-label util.
+ * Emission is additive: once the server populate ships the identity fields
+ * (DRI-29, already landed in `inventoryService.getMovements`) those rows show
+ * it automatically; unpopulated/legacy movements keep the exact pre-change
+ * fallback chain — `sizeName ?? size.displayName ?? size.size ?? null`.
+ */
 export function sizeLabel(m: InventoryMovement): string | null {
+  const identity = populatedSizeIdentity(m.size);
+  if (identity) return sizeVariantLabel(identity);
   return (
     m.sizeName ??
     (typeof m.size === 'object' ? (m.size?.displayName ?? m.size?.size ?? null) : null)

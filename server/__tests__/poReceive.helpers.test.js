@@ -510,3 +510,37 @@ test('postReceivedStock uses a manual batch number when provided', async () => {
   });
   assert.strictEqual(batchCalls[0].batchNumber, 'LOT-MANUAL');
 });
+
+test('a receipt cannot redirect an ordered variant to its same-size sibling', () => {
+  const items = [
+    { _id: 'line-navy', sizeId: 'navy', quantity: 5 },
+    { _id: 'line-black', sizeId: 'black', quantity: 5 },
+  ];
+  assert.throws(
+    () => applyReceipt(items, [
+      { itemId: 'line-navy', receivedQty: 2, sizeId: 'black' },
+    ]),
+    /size must match the purchase order line/i
+  );
+});
+
+test('partial receipt posts stock only for the ordered Size ID', async () => {
+  const items = [
+    { _id: 'line-navy', subProductId: 'shirt', sizeId: 'navy', quantity: 5, receivedQty: 3, postedQty: 3 },
+    { _id: 'line-black', subProductId: 'shirt', sizeId: 'black', quantity: 5, receivedQty: 0 },
+  ];
+  const { lines: [receipt] } = applyReceipt(items, [
+    { itemId: 'line-navy', receivedQty: 2 },
+  ]);
+  items[0].receivedQty = receipt.newReceivedQty;
+
+  const writes = [];
+  await postReceivedStock({
+    purchaseOrder: { poNumber: 'PO-shirt', items: buildPostingLines(items) },
+    targetWarehouseId: 'warehouse',
+    tenantId: 'tenant',
+    adjustStock: async ({ size, quantity }) => { writes.push({ size, quantity }); },
+    logger: silentLogger,
+  });
+  assert.deepStrictEqual(writes, [{ size: 'navy', quantity: 2 }]);
+});

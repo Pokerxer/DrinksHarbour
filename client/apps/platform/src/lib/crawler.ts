@@ -1,11 +1,10 @@
 /**
- * Crawler detection for product pages.
+ * User-agent classification utility.
  *
- * Product pages render some content — buying guides, cross-link collections —
- * exclusively for search-engine and AI crawlers, keeping the surface a human
- * visitor actually sees focused on the purchase flow. This module holds the
- * pure User-Agent check (unit-testable without Next.js); the request-scoped
- * async helper lives in crawlerRequest.ts.
+ * Buying guides and product content must remain the same for people and
+ * crawlers. This text match is not crawler identity verification and must not
+ * be used to bypass age verification. The request helper lives in
+ * crawlerRequest.ts.
  */
 
 // Major search engines, social/link previews, and AI summarisers. Kept to a

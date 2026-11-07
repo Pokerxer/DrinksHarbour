@@ -1,6 +1,8 @@
 // @ts-nocheck
 'use client';
 
+import BusinessListView, { useBusinessView } from '@/app/shared/ecommerce/business-catalog/business-list-view';
+import { matchesBusiness } from '@/utils/catalog-business';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -143,6 +145,7 @@ export default function SubProductsTable({
   classNames?: TableClassNameProps;
   paginationClassName?: string;
 }) {
+  const { business, setBusiness } = useBusinessView();
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
 
@@ -302,7 +305,7 @@ export default function SubProductsTable({
 
   const filteredSubProducts = useMemo(
     () =>
-      filterSubProducts(allSubProducts, {
+      filterSubProducts(allSubProducts.filter(p => matchesBusiness(p.product?.type, business)), {
         statusFilter,
         visibilityFilter,
         searchQuery,
@@ -313,6 +316,7 @@ export default function SubProductsTable({
       }),
     [
       allSubProducts,
+      business,
       statusFilter,
       visibilityFilter,
       searchQuery,
@@ -701,6 +705,7 @@ export default function SubProductsTable({
   ) {
     return (
       <div className="space-y-4 pb-24">
+      <BusinessListView business={business} onChange={setBusiness} count={filteredSubProducts.length} />
         <SubProductsHeader
           total={allSubProducts.length}
           lowStock={catalogStats.lowStock}
@@ -717,6 +722,7 @@ export default function SubProductsTable({
   if (error && allSubProducts.length === 0) {
     return (
       <div className="space-y-6 pb-24">
+      <BusinessListView business={business} onChange={setBusiness} count={filteredSubProducts.length} />
         <SubProductsHeader
           total={catalogStats.total}
           lowStock={catalogStats.lowStock}
@@ -741,6 +747,7 @@ export default function SubProductsTable({
   if (allSubProducts.length === 0 && !isLoading) {
     return (
       <div className="space-y-6 pb-24">
+      <BusinessListView business={business} onChange={setBusiness} count={filteredSubProducts.length} />
         <SubProductsHeader
           total={catalogStats.total}
           lowStock={catalogStats.lowStock}
@@ -771,6 +778,7 @@ export default function SubProductsTable({
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-24">
+      <BusinessListView business={business} onChange={setBusiness} count={filteredSubProducts.length} />
       <SubProductsHeader
         total={allSubProducts.length}
         lowStock={catalogStats.lowStock}

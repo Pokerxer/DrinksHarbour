@@ -33,7 +33,7 @@ export default function DetailMetadata({
   onPatch,
 }: {
   pl: VendorPricelist;
-  onPatch: (p: Partial<VendorPricelist>) => void;
+  onPatch: (p: Partial<Omit<VendorPricelist, 'items'>>) => void;
 }) {
   const autoManaged = Boolean(pl.autoManaged || pl.source === 'auto');
 

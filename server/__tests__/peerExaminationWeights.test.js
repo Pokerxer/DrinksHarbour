@@ -12,8 +12,8 @@ test('unequal question marks determine exam percentage and the exact combined bo
   assert.equal(grade.score, 25); // One of two correct, but only one of four marks.
   const result = combineResult({ ratings: [4, 4], attendanceScore: 100, allocationMinor: 1000000, exam: { ...grade } });
   assert.equal(result.examScore, 25);
-  assert.equal(result.combinedScore, 68.33);
-  assert.equal(result.bonusMinor, 683333);
+  assert.equal(result.combinedScore, 62);
+  assert.equal(result.bonusMinor, 620000);
 });
 test('partial expired papers count unanswered questions as zero and retain full maximum', () => {
   const grade = gradeAnswers(questions, [{ question: 'hard', option: 1 }], { complete: false });

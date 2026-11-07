@@ -339,7 +339,7 @@ async function seed() {
   try {
     // Connect to PRODUCTION MongoDB
     const MONGODB_URI =
-      "mongodb+srv://jrwaldehzx:NWXdpyCMP7yB7a4N@cluster0.ukrr40p.mongodb.net/drinksharbour?retryWrites=true&w=majority";
+      require('../utils/requireMongoUri').requireMongoUri();
     await mongoose.connect(MONGODB_URI);
     console.log("Connected to PRODUCTION MongoDB\n");
 

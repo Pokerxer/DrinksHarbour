@@ -31,6 +31,9 @@ const productSchema = z
     volumeMl: numberSchema,
     abv: numberSchema,
     status: z.string().optional(),
+    // Future-proofing: keep the central catalogue scope on picker candidates
+    // if/when the endpoint supplies it. Absent → legacy canon.
+    publicationScope: z.string().optional(),
     matchKind: z.enum(['exact', 'close', 'related']).optional(),
     matchReason: z.string().optional(),
   })

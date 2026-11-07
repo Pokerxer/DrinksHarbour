@@ -1,4 +1,6 @@
 'use client';
+import { locationMode } from '@/services/venue/location-mode';
+import POSVenueCheckout from '@/app/shared/venue/pos-venue-checkout';
 
 import { useState, useCallback, useEffect } from 'react';
 import toast from 'react-hot-toast';
@@ -255,6 +257,8 @@ export default function POSPaymentModal() {
   >([]);
   const { setActiveView } = usePOSUI();
   const { token, terminal, tenant } = usePOSAuth();
+  const [canonicalLocation, setCanonicalLocation] = useState(false);
+  useEffect(() => { if (token) void locationMode(token).then(setCanonicalLocation).catch(() => undefined); }, [token]);
   const { notifySale } = usePOSSaleSignal();
   const { selectedPricelist, shopKey } = usePOSPricelist();
   const { activeShop } = usePOSActiveShop();
@@ -384,7 +388,7 @@ export default function POSPaymentModal() {
   const paidTotal = lines.reduce((s, l) => s + l.amount, 0);
   const remaining = payableTotal - paidTotal;
   const change = Math.max(0, paidTotal - payableTotal);
-  const canValidate = remaining <= 0.01 && lines.length > 0;
+  const canValidate = !canonicalLocation && !tableBinding?.serviceSessionId && remaining <= 0.01 && lines.length > 0;
   const activeLine = lines.find((l) => l.id === activeId) ?? null;
 
   // ── Line helpers ─────────────────────────────────────────────────────────────
@@ -687,6 +691,7 @@ export default function POSPaymentModal() {
   // ── Validate ─────────────────────────────────────────────────────────────────
 
   async function handleValidate() {
+    if (canonicalLocation || tableBinding?.serviceSessionId) { toast.error('Use this visit’s venue bill checkout.'); return; }
     if (!canValidate || loading || !token) return;
 
     // Wallet single-tender contract — the server is authoritative, but enforce it
@@ -1020,6 +1025,8 @@ export default function POSPaymentModal() {
     : '—';
 
   // ── Render ────────────────────────────────────────────────────────────────────
+
+  if (canonicalLocation || tableBinding?.serviceSessionId) return <POSVenueCheckout />;
 
   return (
     <div className="fixed inset-0 z-50 flex bg-[#f0f0f0]">

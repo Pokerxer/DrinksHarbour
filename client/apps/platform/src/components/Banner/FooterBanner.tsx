@@ -1,5 +1,7 @@
 'use client';
 
+import { DELIVERY_COPY } from '@/lib/deliveryCopy';
+
 import React, { useState, useEffect } from 'react';
 import Image from '@/components/UI/OptimizedImage';
 import Link from 'next/link';
@@ -244,7 +246,7 @@ const FooterBanner: React.FC<FooterBannerProps> = ({
         <div className="container mx-auto px-4">
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { icon: '🚚', title: 'Free Delivery', desc: 'Orders over ₦2,000,000' },
+              { icon: '🚚', title: 'Free Delivery', desc: DELIVERY_COPY.compact },
               { icon: '💯', title: 'Quality Guaranteed', desc: '100% authentic products' },
               { icon: '🔒', title: 'Secure Payment', desc: 'SSL encrypted checkout' },
               { icon: '⭐', title: '24/7 Support', desc: 'Dedicated customer service' }

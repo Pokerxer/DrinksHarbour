@@ -1,13 +1,15 @@
 // client/apps/admin/src/app/shared/purchases/purchases-product-line-search.tsx
 'use client';
 
+import { sizeVariantLabel } from '@/utils/size-variant-label';
+
 import { useState, useEffect, useRef } from 'react';
 import { PiMagnifyingGlass, PiCaretRight, PiPlus } from 'react-icons/pi';
 import { subproductService } from '@/services/subproduct.service';
 import { scanService } from '@/services/scan.service';
 import { routes } from '@/config/routes';
 import type { PurchaseLineOverride } from './purchases-scan-selection';
-import { fmtAmount } from './types';
+import { defaultPackagingForLine, fmtAmount } from './types';
 
 // Purchases-side twin of sales/product-line-search.tsx. Same catalogue search
 // and same AI `smart-search` fallback, but every number shown and returned is
@@ -21,6 +23,11 @@ interface SizeOption {
   costPrice: number;
   unitsPerPack: number;
   availableStock?: number;
+  // Retail variant identity (absent on every beverage Size row) — carried so a
+  // picked line gets its packaging default at entry.
+  colorName?: string | null;
+  optionName?: string | null;
+  unitType?: string | null;
 }
 
 interface ProductOption {
@@ -49,13 +56,16 @@ function mapProducts(raw: any[]): ProductOption[] {
     sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
     sizes: (sp.sizes ?? []).map((s: any) => ({
       size: String(s._id ?? s.size ?? ''),
-      displayName: s.displayName ?? s.size ?? '',
+      displayName: sizeVariantLabel(s),
       sku: s.sku ?? sp.sku ?? '',
       costPrice: s.costPrice ?? sp.costPrice ?? 0,
       // A Size row that predates unitsPerPack arrives undefined or 0; either
       // would divide-by-zero the PO form's pack totals.
       unitsPerPack: s.unitsPerPack || 1,
       availableStock: s.availableStock ?? s.stock ?? 0,
+      colorName: s.colorName ?? undefined,
+      optionName: s.optionName ?? undefined,
+      unitType: s.unitType ?? undefined,
     })),
   }));
 }
@@ -168,6 +178,9 @@ export default function PurchasesProductLineSearch({
       packSize: s.unitsPerPack,
       sizeId: s.size,
       sizeName: displaySize,
+      // Line-entry packaging default ('units'/'pieces' retail rows, undefined
+      // keeps beverage rows byte-identical).
+      packaging: defaultPackagingForLine(s),
       taxRate: p.taxRate,
     });
     setText(`${p.name} – ${displaySize}`);

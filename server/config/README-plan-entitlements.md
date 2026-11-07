@@ -548,3 +548,23 @@ unconditional plan gate reads their `undefined` plan as `free_trial` and locks
 the platform team out of the modules they administer. **Every** gate — server
 middleware, Next middleware, the layout guard, and the nav filters — short-
 circuits for platform roles first.
+
+## Venue Phase 0 — reviewed identity and paid access
+
+A mode flag or plan name does not independently grant canonical venue operations.
+`server/services/venue/eligibility.js` combines business identity, reviewed location
+services, paid capability, current staff/explicit denies, location assignment and
+subscription state. Migration requires active paid table_management eligibility;
+there is no legacy operational entitlement. Custom paid plans may qualify by capability.
+
+Publication is separate. Preserve reviewed existing listings with explicit grants
+before deploying the new directory policy; new listings need explicit approval.
+Future platform-sourced visits snapshot 9% and require Paystack. Direct/walk-in
+visits have no new venue commission; cash requires their verified POS drawer.
+Existing retail terms/paid history are not rewritten.
+
+A trusted first lapse boundary permits only pre-boundary paid-capability visits to
+read/freeze accepted lines, collect, reconcile and close. No new visits/lines/rounds
+are authorised; suspension/foreign tenant/explicit denies/assignment checks still
+apply. Active restoration clears the boundary. Rollout is off by default and uses
+reviewed mapping tooling; see docs/superpowers/plans/venue-phase-0/implementation-and-verification.md.

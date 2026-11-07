@@ -84,6 +84,7 @@ export default function EntityBannerOverlay({
         onClick={trackClick}
       >
         {affordance}
+        <span className="sr-only">{ariaLabel}</span>
       </a>
     );
   }
@@ -97,6 +98,7 @@ export default function EntityBannerOverlay({
       onClick={trackClick}
     >
       {affordance}
+      <span className="sr-only">{ariaLabel}</span>
     </Link>
   );
 }

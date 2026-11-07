@@ -453,7 +453,7 @@ export default function PurchasesVendorOnTime({
     try {
       const [v, poRes] = await Promise.all([
         vendorService.getById(vendorId, token),
-        purchaseOrderService.fetchPurchaseOrders({ vendor: vendorId }, token),
+        purchaseOrderService.getPurchaseOrders(token, { vendor: vendorId }),
       ]);
       setVendor(v);
       const list: PurchaseOrder[] =

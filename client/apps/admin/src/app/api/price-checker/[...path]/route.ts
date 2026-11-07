@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { proxyAction, sameOrigin } from '../../../../components/price-checker/proxy-policy';
+import {
+  proxyAction,
+  sameOrigin,
+} from '../../../../components/price-checker/proxy-policy';
 export const dynamic = 'force-dynamic';
 const API = (
   process.env.API_URL ||
@@ -7,19 +10,25 @@ const API = (
   'http://localhost:5001'
 ).replace(/\/$/, '');
 const response = (data: unknown, status = 200) =>
-  NextResponse.json(data, { status, headers: { 'Cache-Control': 'private, no-store' } });
+  NextResponse.json(data, {
+    status,
+    headers: { 'Cache-Control': 'private, no-store' },
+  });
 async function handle(req: NextRequest, params: Promise<{ path: string[] }>) {
   const operation = proxyAction((await params).path);
   if (!operation) return response({ success: false }, 404);
   const { slug, action } = operation;
-  if ((action === 'config') !== (req.method === 'GET')) return response({ success: false }, 405);
+  if ((action === 'config') !== (req.method === 'GET'))
+    return response({ success: false }, 405);
   if (
     req.method === 'POST' &&
     !sameOrigin(req.headers.get('origin'), req.url, req.headers.get('host'))
   )
     return response({ success: false }, 403);
   const cookie = `dh_price_checker_${slug}`;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
   if (action !== 'session') {
     const token = req.cookies.get(cookie)?.value;
     if (!token) return response({ success: false }, 401);
@@ -31,7 +40,12 @@ async function handle(req: NextRequest, params: Promise<{ path: string[] }>) {
     else if (action === 'scan') {
       const raw = await req.text();
       if (raw.length > 2048) return response({ success: false }, 413);
-      const parsed: unknown = JSON.parse(raw);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return response({ success: false }, 400);
+      }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
         return response({ success: false }, 400);
       body = JSON.stringify(parsed);
@@ -46,7 +60,9 @@ async function handle(req: NextRequest, params: Promise<{ path: string[] }>) {
     if (!upstream.ok)
       return response(
         { success: false },
-        [400, 401, 403, 404, 409, 429].includes(upstream.status) ? upstream.status : 503
+        [400, 401, 403, 404, 409, 429].includes(upstream.status)
+          ? upstream.status
+          : 503
       );
     const payload: unknown = await upstream.json();
     if (!payload || typeof payload !== 'object' || Array.isArray(payload))
@@ -65,13 +81,19 @@ async function handle(req: NextRequest, params: Promise<{ path: string[] }>) {
       });
     }
     return result;
-  } catch (error) {
-    return response({ success: false }, error instanceof SyntaxError ? 400 : 503);
+  } catch {
+    return response({ success: false }, 503);
   }
 }
-export async function POST(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<{ path: string[] }> }
+) {
   return handle(req, context.params);
 }
-export async function GET(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+export async function GET(
+  req: NextRequest,
+  context: { params: Promise<{ path: string[] }> }
+) {
   return handle(req, context.params);
 }

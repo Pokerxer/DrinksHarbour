@@ -75,6 +75,7 @@ const brandSchema = new Schema(
     // ════════════════════════════════════════════════════════════
     // BRAND TYPE & CATEGORY
     // ════════════════════════════════════════════════════════════
+    industry: { type: String, enum: require('../constants/industries').INDUSTRY_VALUES },
     brandType: {
       type: String,
       enum: [

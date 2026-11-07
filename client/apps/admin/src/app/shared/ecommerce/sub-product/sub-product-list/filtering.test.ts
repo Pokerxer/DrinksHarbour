@@ -438,3 +438,10 @@ describe('helpers', () => {
     expect(currencySymbol(undefined)).toBe('');
   });
 });
+
+it('filters registered business types and keeps non-beverage goods out of alcohol filters', () => {
+  const goods = item({ product: { _id: 'home', name: 'Lamp', slug: 'lamp', type: 'home_lighting', isAlcoholic: false } });
+  const drink = item({ product: { _id: 'water', name: 'Water', slug: 'water', type: 'water', isAlcoholic: false } });
+  expect(filter([goods, drink], { advancedFilters: af({ beverageTypes: ['home_lighting'] }) })).toEqual([goods]);
+  expect(filter([goods, drink], { advancedFilters: af({ isAlcoholic: false }) })).toEqual([drink]);
+});

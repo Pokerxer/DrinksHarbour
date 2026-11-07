@@ -2,6 +2,12 @@
 
 Audience: prospective beverage shop or distributor. Purpose: invite the business to a short DrinksHarbour demonstration and provide a clear offer to review.
 
+Local Harvey prospecting and outreach setup is documented in [harvey.md](harvey.md).
+Its default targeting is Abuja beverage businesses. Mailbox and verifier connections
+passed; sending remains paused pending explicit instructions. The first nationwide
+[prospect research batch](prospects/2026-10-19-nigeria.md) contains ten sourced
+businesses imported into Harvey Companies, with unconfirmed software needs.
+
 Deliverables are a copy-ready email in `tenant-email.md`, a branded HTML email in `tenant-email.html`, a seven-page PDF in `output/DrinksHarbour Tenant Introduction.pdf`, and the earlier editable presentation in `output/`. No email is sent by this task.
 
 The offer follows current configured platform prices. Custom website design starts at NGN 500,000 once. Management at NGN 35,000/month is a proposed service tariff, subject to a written quote. Domain, hosting and platform subscription are separate. Neither outreach item promises sales, profit or unlimited service work.

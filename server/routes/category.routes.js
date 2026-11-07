@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const categoryController = require('../controllers/category.controller');
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { protect, optionalProtect, authorize } = require('../middleware/auth.middleware');
+const { TENANT_ROLES } = require('../services/industryScope.service');
 const { uploadCategoryImages } = require('../middleware/imageUpload.middleware');
 
 // Category is platform-wide: its only tenant-ish field is tenantPresenceCount,
@@ -16,8 +17,11 @@ router.post('/admin', protect, authorize(...adminRoles), uploadCategoryImages, c
 router.put('/admin/:id', protect, authorize(...adminRoles), uploadCategoryImages, categoryController.updateCategory);
 router.delete('/admin/:id', protect, authorize(...adminRoles), categoryController.deleteCategory);
 
-// Public routes
-router.get('/', categoryController.getCategories);
+router.get('/picker', protect, authorize(...adminRoles, ...TENANT_ROLES), categoryController.getCategoryPicker);
+
+// Public routes (optionalProtect: lets INDUSTRY_TAXONOMY_SCOPE_ENABLED scope
+// GET / for authenticated tenant callers; anonymous browsing stays public)
+router.get('/', optionalProtect, categoryController.getCategories);
 
 router.get('/featured', categoryController.getFeaturedCategories);
 

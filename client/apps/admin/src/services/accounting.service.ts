@@ -39,7 +39,7 @@ export interface JournalLine {
   accountId?: string;
   debit: number;
   credit: number;
-  memo?: string;
+  memo?: string | null;
 }
 
 export interface JournalEntry {
@@ -51,7 +51,7 @@ export interface JournalEntry {
   period: string;
   source: string;
   lines: JournalLine[];
-  memo?: string;
+  memo?: string | null;
   status: 'draft' | 'posted';
   postedBy?: { _id: string; name?: string } | null;
 }
@@ -126,7 +126,7 @@ export interface GeneralLedger {
     date: string;
     entryId: string;
     refDocType: string;
-    memo?: string;
+    memo?: string | null;
     debit: number;
     credit: number;
     balance: number;
@@ -188,7 +188,7 @@ interface Envelope<T> {
   pagination?: Pagination;
 }
 
-type QueryParams = Record<string, string | number | undefined>;
+type QueryParams = Record<string, string | number | boolean | undefined>;
 
 function toQuery(params?: QueryParams): string {
   const q = new URLSearchParams();

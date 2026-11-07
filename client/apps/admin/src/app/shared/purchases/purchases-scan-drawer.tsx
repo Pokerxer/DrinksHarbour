@@ -1,6 +1,8 @@
 // client/apps/admin/src/app/shared/purchases/purchases-scan-drawer.tsx
 'use client';
 
+import { sizeVariantLabel } from '@/utils/size-variant-label';
+
 import {
   useCallback,
   useEffect,
@@ -661,7 +663,7 @@ function ReviewList({
                       >
                         {sp.sizes.map((s) => (
                           <option key={s.size} value={s.size}>
-                            {s.displayName ?? s.size}
+                            {sizeVariantLabel(s)}
                             {s.costPrice || sp.costPrice
                               ? ` · ${fmtCur(s.costPrice || sp.costPrice, 'NGN')}`
                               : ''}

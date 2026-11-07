@@ -50,6 +50,7 @@ export default async function EditCategoryPage({ params }: Props) {
         type: c.type || '',
         subType: c.subType || '',
         alcoholCategory: c.alcoholCategory || 'alcoholic',
+        industry: c.industry || '',
         description: c.description || '',
         shortDescription: c.shortDescription || '',
         parentCategory: c.parent ? String(c.parent) : '',

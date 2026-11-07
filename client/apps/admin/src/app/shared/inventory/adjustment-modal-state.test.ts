@@ -1,3 +1,4 @@
+import { warehouseFixture } from '@/test/warehouse-fixture';
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -28,9 +29,10 @@ async function setup() {
     data: [row, { ...row, sizeId: 'large', sizeName: 'Large' }],
   });
   vi.spyOn(warehouseService, 'getWarehouses').mockResolvedValue({
+    success: true,
     data: [
-      { _id: 'a', name: 'A' },
-      { _id: 'b', name: 'B' },
+      warehouseFixture({ _id: 'a', name: 'A' }),
+      warehouseFixture({ _id: 'b', name: 'B' }),
     ],
   });
   const hook = renderHook(() => useAdjustmentEntry('t', vi.fn()));

@@ -127,7 +127,11 @@ const getVendorBill = asyncHandler(async (req, res) => {
     .populate("vendor", "name email phone")
     .populate("purchaseOrder", "poNumber status")
     .populate("createdBy", "name")
-    .populate("payments.recordedBy", "name");
+    .populate("payments.recordedBy", "name")
+    // Identity fields so the bill print can compose retail variant labels via
+    // sizeVariantLabel; the stored sizeName snapshot stays authoritative.
+    // (Bill line sizeId carries no ref — set the model explicitly.)
+    .populate({ path: "items.sizeId", model: "Size", select: "size displayName colorName optionName" });
 
   if (!vendorBill) {
     throw new NotFoundError("Vendor Bill not found");

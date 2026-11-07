@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import ProductDetailsGallery from './product-details-gallery';
 
 vi.mock('next/image', () => ({
-  default: ({ fill, priority, ...props }: Record<string, unknown>) => (
-    <img {...props} />
+  default: ({ fill, priority, alt, ...props }: Record<string, unknown>) => (
+    // Mirrors next/image's behavior contract for the a11y lint (alt required).
+    <img alt={typeof alt === 'string' ? alt : ''} {...props} />
   ),
 }));
 afterEach(cleanup);

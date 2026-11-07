@@ -3,7 +3,7 @@ const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 
 const PRODUCT_FIELDS =
-  "product sku baseSellingPrice commissionPriceOverride basePriceBeforePricelist costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals sizes";
+  "product sku baseSellingPrice sellingPriceMarkupOverridePct commissionPriceOverride basePriceBeforePricelist costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals sizes";
 const idOf = (id) => String(id?._id || id || "");
 const uniqueIds = (values) => [
   ...new Set(values.map(idOf).filter((id) => mongoose.isValidObjectId(id))),
@@ -28,7 +28,7 @@ async function loadPricingRecords(items, tenantId) {
       sizeIds.length
         ? Size.find({ tenant: tenantId, _id: { $in: sizeIds } })
             .select(
-              "subproduct costPrice sellingPrice commissionPriceOverride wholesalePrice unitsPerPack",
+              "subproduct costPrice sellingPrice sellingPriceMarkupOverridePct commissionPriceOverride wholesalePrice unitsPerPack",
             )
             .lean()
         : [],

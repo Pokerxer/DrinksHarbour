@@ -227,7 +227,7 @@ router.get('/combos', protectPOS, async (req, res, next) => {
         select:  'sku baseSellingPrice costPrice sizes sellWithoutSizeVariants availableStock product',
         populate: [
           { path: 'product', select: 'name images type' },
-          { path: 'sizes',   select: 'displayName sellingPrice costPrice unitsPerPack availableStock _id sku' },
+          { path: 'sizes',   select: 'displayName colorName colorHexCode sellingPrice costPrice unitsPerPack availableStock _id sku' },
         ],
       })
       .lean();
@@ -303,6 +303,9 @@ router.get('/reports/session/:id',            protectPOSOrAdmin, getSessionRepor
 
 // ── Admin-JWT protected ───────────────────────────────────────────────────────
 // rejectPOSTokens ensures POS tokens can't slip through the protect() check.
+router.use('/venue', require('./venue-ops.routes').createPosRouter());
+router.get('/tables', protectPOSOrAdmin, require('../controllers/posTable.controller').listTables);
+
 router.use(rejectPOSTokens, protect, attachTenant, tenantUserOnly);
 
 // A second `router.get('/sessions', getSessionList)` sat here until 2026-08-07.
@@ -343,9 +346,9 @@ router.delete('/shops/:shopId',      tenantAdminOrSuperAdmin, deletePOSShop);
 // ahead of any future parametric sibling (/tables/:id/...) so nothing shadows
 // the collection routes.
 const pt = require('../controllers/posTable.controller');
-router.get('/tables',        tenantAdminOrSuperAdmin, pt.listTables);
 router.post('/tables',       tenantAdminOrSuperAdmin, pt.createTable);
 router.put('/tables/:id',    tenantAdminOrSuperAdmin, pt.updateTable);
 router.delete('/tables/:id', tenantAdminOrSuperAdmin, pt.deleteTable);
+
 
 module.exports = router;

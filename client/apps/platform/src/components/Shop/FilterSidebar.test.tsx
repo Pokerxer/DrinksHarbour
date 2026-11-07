@@ -3,6 +3,15 @@ import { afterEach, expect, it, vi } from 'vitest';
 import FilterSidebar from './FilterSidebar';
 import type { FilterOptions, FilterState } from '@/types/filter.types';
 afterEach(cleanup);
+it('keeps the drawer and backdrop above the floating support launcher', () => {
+  setup();
+  const dialog = screen.getByRole('dialog', { name: 'Product filters' });
+  const backdrop = document.querySelector('[aria-hidden="true"].fixed');
+  expect(backdrop).toBeTruthy();
+  // Support uses z-index 55; neither modal layer may leave it interactive.
+  expect(Number(getComputedStyle(backdrop!).zIndex)).toBeGreaterThan(55);
+  expect(Number(getComputedStyle(dialog).zIndex)).toBeGreaterThan(Number(getComputedStyle(backdrop!).zIndex));
+});
 const filters: FilterState = { size: null, color: null, brand: ['Existing Brand'], originCountry: null,
   categoryType: null, subCategoryType: null, flavorCategory: null, priceRange: { min: 0, max: 10000 },
   showOnlySale: false, sortOption: '', minRating: null, abvRange: null, volumeRange: null };

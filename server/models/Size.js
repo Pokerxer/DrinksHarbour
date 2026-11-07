@@ -1,5 +1,6 @@
 // models/Size.js - Enhanced Version
 
+const { extraSizeCodes } = require('../constants/businessSizePresets');
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
@@ -48,6 +49,7 @@ const sizeSchema = new Schema(
       type: String,
       required: true,
       enum: [
+        ...extraSizeCodes,
         // Wine & Champagne Bottles
         '10cl', '18.7cl', '20cl', '25cl', '37.5cl', '50cl', '75cl', '100cl',
         '150cl',  // Magnum (2 bottles)
@@ -142,7 +144,57 @@ const sizeSchema = new Schema(
         'pouch-20',
 
         // Custom/Other
-        'custom', 'variable', 'assorted',
+        'custom', 'variable', 'assorted', 'venue_serving',
+
+        // ── Non-beverage verticals — appends only ───────────────────────
+        // The SECOND variant dimension for non-beverage listings lives ON
+        // Size (size + colorName/colorHexCode below), never a per-listing
+        // color array on SubProduct. Beverage entries above are untouched;
+        // these are pure appends. Appended at the tail — including after the
+        // Custom/Other catch-alls — so no existing entry changes position
+        // (per-tenant SKU uniqueness contract resumed work against the
+        // enum as-is; reordering risks no behavioral change but zero need).
+        //
+        // Apparel: letter sizes — 'one_size' covers listings sold as a
+        // single universal cut.
+        'xs', 's', 'm', 'l', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', 'one_size',
+
+        // Fashion sizing systems (2026-11-03): numeric US dress/top sizes,
+        // jeans waist codes, inseam lengths, kids ages — additive; mirrored
+        // in constants/productTypes.js STANDARD_SIZES (NUMERIC_US/WAIST/
+        // INSEAM/KIDS_AGE) and the admin size pickers.
+        'us-0', 'us-2', 'us-4', 'us-6', 'us-8', 'us-10', 'us-12', 'us-14',
+        'us-16', 'us-18',
+        'w28', 'w30', 'w32', 'w34', 'w36', 'w38', 'w40',
+        'l30', 'l32', 'l34', 'l36',
+        'kids-2-3', 'kids-4-5', 'kids-6-7', 'kids-8-9', 'kids-10-11',
+        'kids-12-13',
+
+        // Shoes: EU (35–47) and US men's / US women's codes.
+        'eu-35', 'eu-36', 'eu-37', 'eu-38', 'eu-39', 'eu-40', 'eu-41',
+        'eu-42', 'eu-43', 'eu-44', 'eu-45', 'eu-46', 'eu-47',
+        'us-m-6', 'us-m-7', 'us-m-8', 'us-m-8.5', 'us-m-9', 'us-m-10',
+        'us-m-11', 'us-m-12', 'us-m-13',
+        'us-w-4', 'us-w-5', 'us-w-6', 'us-w-7', 'us-w-8', 'us-w-9',
+        'us-w-10', 'us-w-11', 'us-w-12',
+
+        // Electronics sizing systems (2026-11-03): screen inches, RAM, battery
+        // capacity (+ the 4TB storage tier) — additive; mirrored in
+        // constants/productTypes.js (SCREEN_INCH/RAM/BATTERY/STORAGE).
+        'screen-24', 'screen-32', 'screen-43', 'screen-50', 'screen-55',
+        'screen-65', 'screen-75', 'screen-85',
+        // Portable display sizes share the screen-<inches> code format.
+        'screen-7', 'screen-8', 'screen-8.7', 'screen-9', 'screen-10.1', 'screen-10.9',
+        'screen-11', 'screen-12.4', 'screen-12.5', 'screen-12.9', 'screen-13', 'screen-13.3',
+        'screen-14', 'screen-15', 'screen-15.6', 'screen-16', 'screen-17.3', 'screen-18',
+        'ram-4gb', 'ram-8gb', 'ram-16gb', 'ram-32gb', 'ram-64gb',
+        'battery-5000mah', 'battery-10000mah', 'battery-20000mah',
+        'battery-26800mah',
+        'storage-4tb',
+
+        // Electronics: device storage tiers (phones/tablets/laptops).
+        'storage-16gb', 'storage-32gb', 'storage-64gb', 'storage-128gb',
+        'storage-256gb', 'storage-512gb', 'storage-1tb', 'storage-2tb',
       ],
       index: true,
     },
@@ -154,15 +206,52 @@ const sizeSchema = new Schema(
       // e.g., "750ml Premium Bottle", "6-Pack Cans"
     },
     
+    // Venue labels reuse retail prices and measurements, never retail identity.
+    servingSchemaVersion: { type: Number, enum: [1, 2], default: 1 },
+    venueServing: {
+      type: new Schema({
+        code: { type: String, required: true, immutable: true, maxlength: 50, match: /^[a-z0-9]+(?:-[a-z0-9]+)*$/ },
+        mode: { type: String, required: true, enum: ['sealed', 'pour', 'made_to_order', 'prepared_batch'] },
+        saleUnit: { type: String, required: true, enum: ['portion', 'plate', 'bowl', 'tray', 'piece', 'bottle', 'glass'] },
+        channels: { type: [String], required: true, validate: value => value.length === 1 && value[0] === 'venue' },
+        version: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
+      }, { _id: false }),
+      default: undefined,
+    },
+
     sizeCategory: {
       type: String,
       enum: [
         'miniature', 'single_serve', 'standard', 'large', 'extra_large',
         'multi_pack', 'bulk', 'gift_set', 'variety_pack', 'keg',
         'accessory', 'glassware', 'barware',
+        // Non-beverage industry categories (additive; no default change —
+        // legacy beverage rows keep 'standard').
+        'apparel', 'shoes', 'electronics',
       ],
       default: 'standard',
       index: true,
+    },
+
+    // ════════════════════════════════════════════════════════════
+    // INDUSTRY COLOR VARIANTS (non-beverage verticals)
+    // ════════════════════════════════════════════════════════════
+    // The second variant dimension for apparel/shoes/electronics listings is
+    // size + color, carried per Size row. PURE DATA: no defaults, no hooks,
+    // absent on legacy rows and every beverage size. colorName stores the
+    // user's color name verbatim; colorHexCode only when explicitly supplied.
+    optionName: { type: String, trim: true, maxlength: 100 },
+    variantColorKey: { type: String, default: null, select: false },
+    colorName: {
+      type: String,
+      trim: true,
+      maxlength: 60,
+    },
+    colorHexCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      match: /^#[0-9A-F]{6}$/,
     },
 
     // ════════════════════════════════════════════════════════════
@@ -179,7 +268,7 @@ const sizeSchema = new Schema(
         'pair', 'kit', 'box', 'bundle', 'puff', 'pouch',
         'bag', 'bar', 'tin',
       ],
-      default: 'volume_ml',
+      default: function() { return this.servingSchemaVersion === 2 ? 'serving' : 'volume_ml'; },
     },
     
     volumeMl: {
@@ -197,7 +286,7 @@ const sizeSchema = new Schema(
     servingsPerUnit: {
       type: Number,
       min: 0,
-      default: 0,
+      default: function() { return this.servingSchemaVersion === 2 ? undefined : 0; },
       // How many servings in this size (0 for non-serving products like bottles)
     },
     
@@ -220,7 +309,7 @@ const sizeSchema = new Schema(
     costPrice: {
       type: Number,
       min: 0,
-      default: 0,
+      default: function() { return this.servingSchemaVersion === 2 ? null : 0; },
       // Can be derived from supplierPrice if not set
     },
     // ── Tenant cost→selling inputs ────────────────────────────────
@@ -253,6 +342,7 @@ const sizeSchema = new Schema(
     // Admin price-override as the effective platform markup % for this size —
     // survives tenant cost/price changes (see SubProduct.platformMarkupOverridePct)
     // Explicit pre-catalogue-discount marketplace price for commission agreements.
+    sellingPriceMarkupOverridePct: { type: Number, min: 0, max: 500, default: null },
     commissionPriceOverride: { type: Number, min: 0, default: null },
     packCommissionPriceOverride: { type: Number, min: 0, default: null },
     platformMarkupOverridePct: {
@@ -367,13 +457,17 @@ const sizeSchema = new Schema(
       bin: String,
     },
 
+    // ── IDENTIFICATION & BARCODES
     // ════════════════════════════════════════════════════════════
-    // IDENTIFICATION & BARCODES
-    // ════════════════════════════════════════════════════════════
+    // `sku` is unique PER TENANT via the explicit partial index declared at the
+    // bottom of this file (constants/... — see config/catalogueIndexes.js).
+    // Do NOT put unique:true back on this field: Mongoose autoIndex would
+    // rebuild the legacy cross-tenant `sku_1` index on every server start and
+    // two tenants selling the same producer SKU string would collide again
+    // (docs/audits/general-saas-evolution; uniqueness lives per tenant, like
+    // barcode below).
     sku: {
       type: String,
-      sparse: true,
-      unique: true,
       trim: true,
       uppercase: true,
     },
@@ -415,6 +509,8 @@ const sizeSchema = new Schema(
       type: { 
         type: String, 
         enum: [
+          ...extraSizeCodes.filter(code => /^(pack|case)-/.test(code)),
+          'pack-3',
           'bottle', 'can', 'glass_bottle', 'plastic_bottle', 'tetra_pak',
           'keg', 'barrel', 'box', 'bag', 'pouch', 'carton',
           'jar', 'tin', 'tub', 'pod', 'capsule', 'sachet',
@@ -493,6 +589,7 @@ const sizeSchema = new Schema(
     // MEDIA
     // ════════════════════════════════════════════════════════════
     image: MediaItemSchema,
+    imageScope: { type: String, enum: ['variant', 'color', 'option'] },
     
     images: [MediaItemSchema],
 
@@ -750,6 +847,14 @@ sizeSchema.pre('validate', function() {
   if (this.availability === 'in_stock') {
     this.availability = 'available';
   }
+  if (this.servingSchemaVersion === 2) {
+    if (this.size !== 'venue_serving' || !this.venueServing || !this.displayName?.trim()) this.invalidate('venueServing', 'Explicit venue serving metadata and display name required');
+    for (const field of ['weightGrams', 'volumeMl', 'servingsPerUnit']) {
+      const value = this[field];
+      if (value != null && (!Number.isFinite(value) || value <= 0 || !Number.isSafeInteger(Math.round(value * 100)) || Math.abs(value * 100 - Math.round(value * 100)) > 1e-8)) this.invalidate(field, 'Declared serving measurements must be positive with at most two decimal places');
+    }
+    if (this.venueServing?.mode === 'pour' && !(this.volumeMl > 0)) this.invalidate('volumeMl', 'Pour volume is required');
+  } else if (this.size === 'venue_serving' || this.venueServing) this.invalidate('venueServing', 'Venue serving requires schema version 2');
 });
 
 sizeSchema.pre('save', function() {
@@ -780,14 +885,36 @@ sizeSchema.pre('save', function() {
 // INDEXES
 // ════════════════════════════════════════════════════════════
 
-sizeSchema.index({ subproduct: 1, size: 1 }, { unique: true });
-// sku index comes from unique:true + sparse:true in the field definition
+sizeSchema.pre('validate', function () {
+  if (this.isNew || this.isModified('colorName') || this.isModified('optionName')) {
+    this.variantColorKey = require('../utils/retailVariantIdentity').variantOptionKey(this.colorName, this.optionName);
+  }
+});
+
+// Old live guard stays until reviewed migration; import never synchronises indexes.
+for (const row of require('../services/venue/serving-indexes').SERVING_MODEL_INDEXES) {
+  sizeSchema.index(row.key, { unique: true, ...row.options });
+}
 // Per-tenant barcode uniqueness — non-empty barcodes must be unique within a tenant
 sizeSchema.index(
   { tenant: 1, barcode: 1 },
   {
     unique: true,
     partialFilterExpression: { barcode: { $gt: '' } }
+  }
+);
+// Per-tenant SKU uniqueness — non-empty SKUs must be unique within a tenant,
+// mirroring the barcode contract. Previously global (unique:true on the field);
+// the legacy `sku_1` index is retired per environment by
+// scripts/ensure-catalogue-uniqueness.js --retire-global-size-sku. Declared ON
+// THE SCHEMA (like barcode) so every environment keeps SKU enforcement from
+// server start; the legacy cross-tenant index is the operator-retire step.
+sizeSchema.index(
+  { tenant: 1, sku: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { sku: { $gt: '' } },
+    name: 'tenant_sku_unique',
   }
 );
 // Remove duplicate index: sizeSchema.index({ availability: 1 });

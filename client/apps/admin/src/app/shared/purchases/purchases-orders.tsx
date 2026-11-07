@@ -538,8 +538,8 @@ function GraphView({
             ? `${o.warehouse.name} (${o.warehouse.code})`
             : o.warehouse.name
           : 'Unassigned';
-      const prev = map.get(wh) ?? { spend: 0, count: 0 };
-      map.set(wh, {
+      const prev = map.get(wh || 'Unassigned') ?? { spend: 0, count: 0 };
+      map.set(wh || 'Unassigned', {
         spend: prev.spend + orderTotal(o),
         count: prev.count + 1,
       });
@@ -1084,7 +1084,7 @@ export default function PurchasesOrders() {
       const params: Record<string, string> = {};
       if (vendorParam) params.vendor = vendorParam;
       const res = await purchaseOrderService.getPurchaseOrders(token, params);
-      const data: PurchaseOrder[] = res.data ?? res.purchaseOrders ?? [];
+      const data: PurchaseOrder[] = res.data ?? res.data ?? [];
       setOrders(data);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to load orders');

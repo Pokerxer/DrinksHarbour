@@ -4,6 +4,7 @@ import {
   returnQuantity,
   returnStatus,
 } from './customer-return-status';
+import { customerReturnSizeLabel } from './customer-return-identity';
 function Badge({ row }: { row: CustomerReturn }) {
   const status = returnStatus(row);
   return (
@@ -67,7 +68,9 @@ export default function CustomerReturnList({
                 </td>
                 <td className="px-4 py-4">
                   <p className="font-medium text-gray-900">{row.product}</p>
-                  <p className="mt-1 text-xs text-gray-500">{row.size}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {customerReturnSizeLabel(row)}
+                  </p>
                 </td>
                 <td className="px-4 py-4 font-semibold tabular-nums">
                   {returnQuantity(row.returned)}
@@ -99,7 +102,8 @@ export default function CustomerReturnList({
             <div>
               <p className="font-semibold text-gray-900">{row.product}</p>
               <p className="text-xs text-gray-500">
-                {row.size} · {row.source.toUpperCase()} · {row.sourceNumber}
+                {customerReturnSizeLabel(row)} · {row.source.toUpperCase()} ·{' '}
+                {row.sourceNumber}
               </p>
             </div>
             <dl className="grid grid-cols-3 gap-2 text-xs">

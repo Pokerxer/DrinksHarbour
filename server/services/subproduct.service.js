@@ -1,3 +1,4 @@
+const { variantIdentity, variantColorFields, variantImageFields } = require('../utils/retailVariantIdentity');
 // services/subproduct.service.js
 
 const mongoose = require('mongoose');
@@ -21,6 +22,25 @@ const { SUBPRODUCT_LIST_FIELDS, SIZE_LIST_FIELDS } = require('./subproduct-list-
 const { assessSubProductDeletion } = require('./warehouseStock.helpers');
 const { assertSizesDeletable, sizeDeletionStatus, removedSizes } = require('./size-deletion');
 const { calculateSubProductPricing, calculateSizePricing, isDiscountActive, resolveRevenueRates, calcPlatformCostPrice } = require('../utils/pricing');
+
+// ── Catalog-kind pivot (constants/catalogKind.js — single source) ──────────
+// Industry size-variant slice: every central Product created here gets its
+// catalogKind derived once from the Product type through the helper in
+// constants/catalogKind.js. The peer helper `catalogKindForType` maps
+// electronics_/fashion_/beauty_/home_ retail verticals to KINDS.retail and
+// everything else (incl. unknown) to KINDS.beverage — exactly the Product
+// schema default — so legacy behavior is unchanged.
+const catalogKindConstants = require('../constants/catalogKind');
+const catalogKindForType = catalogKindConstants.catalogKindForType;
+const industries = require('../constants/industries');
+const INDUSTRY_WRITE_MESSAGE = 'Selected category is not in your industry profile';
+// Age-restricted deliverables (vape + HOSPITALITY tobacco, additive
+// 2026-11-02): OR-clause age gate below. Tobacco/shisha types are always
+// created isAlcoholic:false, so the alcoholic default alone would leave
+// requiresAgeVerification false — the OR clause adds them additively. Only
+// AGE_RESTRICTED_TYPES members (plus alcoholics) flip true; nothing else
+// changes (see constants/productTypes.js for the canon list).
+const { AGE_RESTRICTED_TYPES } = require('../constants/productTypes');
 
 // Tenant-sensitive fields that must NEVER be exposed via public endpoints
 const PRIVATE_SUBPRODUCT_FIELDS = '-costPrice -supplierPrice -vendorNotes -vendorContactName -vendorPhone -vendorEmail -vendorWebsite -vendorAddress -tenantNotes -marginPercentage -markupPercentage -reservedStock -reorderPoint -reorderQuantity -lowStockThreshold -embeddingOverride';
@@ -237,7 +257,10 @@ const getMySubProducts = async (tenantId, options) => {
   const populateOptions = [
     {
       path: 'product',
-      select: 'name slug type images isAlcoholic abv volumeMl originCountry brand category status',
+      // publicationScope: additive catalogue-scope label (constants/
+      // catalogScope.js) — legacy rows omit it; owningTenant is deliberately
+      // NOT selected here so tenant identities never leak as data.
+      select: 'name slug type images isAlcoholic abv volumeMl originCountry brand category status publicationScope',
       populate: [
         { path: 'brand', select: 'name slug logo' },
         { path: 'category', select: 'name slug' },
@@ -440,12 +463,18 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     warehouse = {},
   } = subProductData;
 
+  const warehouseReference = await require('./subproductWarehouse').resolveWarehouseReference(
+    warehouse, null, tenantId, session
+  );
+
   // Extract product ID - handle both string ID and object with _id
   const productId = typeof productInput === 'object' ? productInput?._id || productInput?.id : productInput;
   const createNewProduct = subProductData.createNewProduct || false;
   const newProductData = subProductData.newProductData || null;
 
   console.log('🔍 After extraction:', { productId, createNewProduct: !!createNewProduct, hasNewProductData: !!newProductData });
+
+  await require('./marketPublication').assertListingChange(tenantId, null, { ...subProductData, product: productId });
 
   // Validate required fields
   if (!productId && !createNewProduct) {
@@ -465,17 +494,35 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
 
   if (productId) {
     productObjectId = new ObjectId(productId);
-    const tenantObjectId = new ObjectId(tenantId);
 
-    // Allow super_admin to select pending products, others require approved
-    const statusFilter = user?.role === 'super_admin' 
-      ? { $in: ['approved', 'pending'] }
-      : 'approved';
+    // Link-by-ID authority (docs/audits/general-saas-evolution F4 — the two
+    // contradictory rules collapse here):
+    //  • super_admin may pick pending or approved central candidates (review queue).
+    //  • Tenants may link canonical APPROVED supply (the shared catalogue) and
+    //    — once GENERAL_CATALOG_SCOPE_ENABLED is on — their OWN tenant-private
+    //    identities. Never another tenant's private or pending record.
+    // The criteria are a TOP-LEVEL clause per branch (spread into findOne).
+    // Never nest $or under a status field position: `{ status: { $or: [...] } }`
+    // is not a valid MongoDB query (this was caught by review 2026-11-02).
+    const catalogueScope = require('../constants/catalogScope');
+    let productCriteria;
+    if (user?.role === 'super_admin') {
+      productCriteria = { status: { $in: ['approved', 'pending'] } };
+    } else if (catalogueScope.enabled()) {
+      productCriteria = {
+        $or: [
+          { status: 'approved', publicationScope: { $ne: catalogueScope.TENANT_PRIVATE } },
+          { publicationScope: catalogueScope.TENANT_PRIVATE, owningTenant: tenantObjectId },
+        ],
+      };
+    } else {
+      productCriteria = { status: 'approved' };
+    }
 
-    // Verify product exists and is approved (or pending for super_admin)
+    // Verify product exists (approval/ownership rules above)
     const productQuery = Product.findOne({
       _id: productObjectId,
-      status: statusFilter,
+      ...productCriteria,
     }).lean();
     
     if (session) {
@@ -527,6 +574,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     
     // Handle category lookup - support both ObjectId and name
     let categoryId = null;
+    let existingCategoryDoc = null; // loaded doc for industry-scope validation
     if (newProductData.category && typeof newProductData.category === 'string' && newProductData.category.trim()) {
       try {
         const Category = require('../models/Category');
@@ -538,7 +586,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
         let existingCategory;
         if (isObjectId) {
           // If it's an ObjectId, find by ID
-          existingCategory = await Category.findById(newProductData.category).select('_id').lean();
+          existingCategory = await Category.findById(newProductData.category).select('_id industry').lean();
         } else {
           // If it's a name, search by name/slug
           existingCategory = await Category.findOne({ 
@@ -546,10 +594,11 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
               { name: { $regex: new RegExp(`^${newProductData.category}$`, 'i') } },
               { slug: new RegExp(newProductData.category.toLowerCase().replace(/\s+/g, '-'), 'i') }
             ]
-          }).select('_id').lean();
+          }).select('_id industry').lean();
         }
         
         if (existingCategory) {
+          existingCategoryDoc = existingCategory;
           categoryId = existingCategory._id;
         }
       } catch (categoryError) {
@@ -565,6 +614,42 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
         subCategoryId = await resolveSubcategory(newProductData.subCategory, categoryId);
       } catch (subCategoryError) {
         console.log('⚠️ SubCategory lookup failed:', subCategoryError.message);
+      }
+    }
+
+    // ── Industry scope (2026-11-02, additive; INDUSTRY_TAXONOMY_SCOPE_ENABLED).
+    // Same boundary as product.service.js tenant submissions, applied to this
+    // tenant create-with-new-product path. Only tenants with a FILTERED
+    // profile (industry array) are validated; unprofiled/legacy tenants and
+    // the flag-OFF state bypass.
+    if (industries.enabled() && (categoryId || subCategoryId)) {
+      let inds = null;
+      try {
+        const tenantDoc = await Tenant.findById(tenantId)
+          .select('businessType industries')
+          .lean();
+        inds = tenantDoc ? industries.resolveTenantIndustries(tenantDoc) : null;
+      } catch (_) {
+        inds = null; // unresolvable tenant keeps the legacy bypass
+      }
+      if (Array.isArray(inds) && inds.length) {
+        const SubCategoryModel = require('../models/SubCategory');
+        const categoryDoc = categoryId
+          ? (existingCategoryDoc || await Category.findById(categoryId).select('industry').lean())
+          : null;
+        if (!industries.categoryAllowedInIndustries(categoryDoc, inds)) {
+          throw new ValidationError(INDUSTRY_WRITE_MESSAGE);
+        }
+        if (subCategoryId) {
+          const subDoc = await SubCategoryModel.findById(subCategoryId).select('industry parent').lean();
+          let parentDoc = categoryDoc;
+          if (subDoc?.parent && (!parentDoc || String(parentDoc._id) !== String(subDoc.parent))) {
+            parentDoc = await Category.findById(subDoc.parent).select('industry').lean();
+          }
+          if (!industries.subCategoryAllowedInIndustries(subDoc, parentDoc, inds)) {
+            throw new ValidationError(INDUSTRY_WRITE_MESSAGE);
+          }
+        }
       }
     }
     
@@ -589,19 +674,29 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       : undefined;
     
     // ────────────────────────────────────────────────────────────────────────
-    // Link-by-name guard: before creating a new central Product, check whether
-    // an approved/pending Product with the same name already exists. The
-    // central catalog is the single source of truth — duplicates are not
-    // allowed. If found, link the SubProduct to the existing Product instead
-    // of creating a new (timestamp-suffixed-slug) duplicate. This is the root
-    // behavior the AGENTS.md workflow mandates ("Match found in central
-    // catalog → Tenant links to that Product").
+    // Link-by-name guard — association rules (docs/audits/general-saas-evolution
+    // F1/D1): before creating a new central Product, look for a catalogue
+    // identity the caller may legitimately adopt. A name match alone is NOT
+    // ownership evidence, so the candidate families are strictly:
+    //   1. canonical APPROVED supply (the shared, super-admin-modded identity
+    //      that AGENTS.md's "Match found in central catalog" workflow means),
+    //   2. the tenant's OWN tenant-private identities (catalogScope),
+    //   3. the tenant's OWN submissions (pending provenance).
+    // Another tenant's pending/tenant-private row with the same name is
+    // therefore ignored and the caller gets their own identity instead of a
+    // silent cross-tenant association.
     // ────────────────────────────────────────────────────────────────────────
     const escapeRegexLocal = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const catalogueScope = require('../constants/catalogScope');
     const existingProductByName = await Product.findOne({
       name: new RegExp(`^${escapeRegexLocal(newProductData.name.trim())}$`, 'i'),
-      status: { $in: ['pending', 'approved'] },
-    }).select('_id name status').lean();
+      $or: [
+        { status: 'approved', publicationScope: { $ne: catalogueScope.TENANT_PRIVATE } },
+        { owningTenant: tenantObjectId },
+        { submittingTenant: tenantObjectId },
+      ],
+    }).select('_id name status publicationScope owningTenant').lean();
+
     if (existingProductByName) {
       console.log(
         '🔗 Link-by-name: existing Product found for "' + existingProductByName.name +
@@ -634,10 +729,16 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       // (fall through to the SubProduct.create step later in the function)
     } else {
     // (original Product.create path follows — only runs if no existing-by-name)
+    const typeCatalogKind = catalogKindForType(newProductData.type);
+    const isAlcoholic = typeCatalogKind === catalogKindConstants.KINDS.beverage
+      && newProductData.isAlcoholic !== false;
     const productPayload = {
       name: newProductData.name,
       slug: `${slug}-${Date.now()}`,
       type: newProductData.type,
+      // The Product model enforces registered stock kinds. Legacy types can
+      // still carry an explicit venue kind (e.g. an independently defined dish).
+      catalogKind: newProductData.catalogKind || typeCatalogKind,
       subType: newProductData.subType || '',
       brand: brandId,
       volumeMl: volumeMlValue,
@@ -654,17 +755,32 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       vintage: vintageValue,
       description: newProductData.description || '',
       shortDescription: newProductData.shortDescription || '',
-      isAlcoholic: newProductData.isAlcoholic !== false,
+      isAlcoholic,
       status: 'pending', // Set to pending - requires admin approval
       isFeatured: false,
       allowReviews: true,
-      requiresAgeVerification: newProductData.isAlcoholic !== false,
+      // Tobacco products retain age verification even though they are non-alcoholic.
+      requiresAgeVerification: isAlcoholic || AGE_RESTRICTED_TYPES.includes(newProductData.type),
       addedAt: new Date(),
       metadata: {
         createdBy: user?._id,
         source: 'tenant_subproduct_form',
       },
     };
+
+    // ── Catalogue scope + provenance (docs/audits/general-saas-evolution) ────
+    // The identity provenance must be recorded on the central row so the
+    // tenant's own pending submissions stay matchable for later listing forms
+    // and visible to the review queue. With GENERAL_CATALOG_SCOPE_ENABLED,
+    // tenant-created identities stay tenant-private (owner-only; approval
+    // promotes them to canonical).
+    if (user && ['tenant_owner', 'tenant_admin'].includes(user.role)) {
+      productPayload.submittingTenant = tenantObjectId;
+    }
+    if (catalogueScope.enabled() && user && ['tenant_owner', 'tenant_admin'].includes(user.role)) {
+      productPayload.publicationScope = catalogueScope.TENANT_PRIVATE;
+      productPayload.owningTenant = tenantObjectId;
+    }
     
     // Create the product
     let createdProduct;
@@ -688,45 +804,24 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     throw new NotFoundError('Product not found or not approved');
   }
 
-  // Check if SubProduct already exists for this tenant
-  console.log('🔍 DEBUG: Checking for existing SubProduct:');
-  console.log('  productObjectId:', productObjectId);
-  console.log('  tenantObjectId:', tenantObjectId);
-  console.log('  productObjectId type:', typeof productObjectId);
-  console.log('  tenantObjectId type:', typeof tenantObjectId);
-  console.log('  productObjectId.toString():', productObjectId.toString());
-  console.log('  tenantObjectId.toString():', tenantObjectId.toString());
-  
-  // First, try to find ALL subproducts for this tenant to debug
-  const allTenantSubProducts = await SubProduct.find({
-    tenant: tenantObjectId
-  }).select('product sku createdAt').lean();
-  
-  console.log('🔍 DEBUG: All SubProducts for tenant:', allTenantSubProducts.length);
-  allTenantSubProducts.forEach((sp, i) => {
-    console.log(`  ${i + 1}. Product: ${sp.product}, SKU: ${sp.sku}, Created: ${sp.createdAt}`);
-  });
-  
+  // Check if SubProduct already exists for this tenant. This lookup is
+  // session-aware so the trimmed check + the (tenant, product) contract index
+  // (config/catalogueIndexes.js, applied by
+  // scripts/ensure-catalogue-uniqueness.js) together make duplicate creation
+  // impossible — the wasted all-tenant debug dump that used to run on every
+  // creation is gone (docs/audits/general-saas-evolution F2).
   const existingQuery = SubProduct.findOne({
     product: productObjectId,
     tenant: tenantObjectId,
   }).lean();
-  
+
   if (session) {
     existingQuery.session(session);
   }
-  
+
   const existingSubProduct = await existingQuery;
-  
-  console.log('🔍 DEBUG: Existing SubProduct found:', existingSubProduct ? 'YES' : 'NO');
+
   if (existingSubProduct) {
-    console.log('  Existing SubProduct details:', {
-      _id: existingSubProduct._id,
-      product: existingSubProduct.product,
-      tenant: existingSubProduct.tenant,
-      sku: existingSubProduct.sku,
-      createdAt: existingSubProduct.createdAt
-    });
     const conflict = new ConflictError(
       `"${product.name || 'This product'}" is already in your catalog ` +
       `(SKU ${existingSubProduct.sku}). Open the existing listing to add this size or variant.`
@@ -792,6 +887,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
   const subProductPayload = {
     product: productObjectId,
     tenant: tenantObjectId,
+    warehouse: warehouseReference,
     sku: generatedSKU,
     baseSellingPrice: finalBaseSellingPrice || 0,
     costPrice: finalCostPrice || 0,
@@ -931,55 +1027,8 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
   // ========================================================================
 
   // ========================================================================
-  // CREATE WAREHOUSE RECORD
+  // Locations are shared references, validated before catalogue writes above.
   // ========================================================================
-  let createdWarehouse = null;
-  const warehouseData = warehouse || {};
-  const hasWarehouseData = (
-    warehouseData.location || 
-    warehouseData.zone || 
-    warehouseData.aisle || 
-    warehouseData.shelf || 
-    warehouseData.bin
-  );
-
-  if (hasWarehouseData) {
-    const warehousePayload = {
-      subProduct: createdSubProduct._id,
-      tenant: tenantObjectId,
-      product: productObjectId,
-      location: warehouseData?.location || '',
-      zone: warehouseData?.zone || '',
-      aisle: warehouseData?.aisle || '',
-      shelf: warehouseData?.shelf || '',
-      bin: warehouseData?.bin || '',
-      capacity: 0,
-      currentQuantity: 0,
-      isActive: true,
-      status: 'active',
-    };
-
-    try {
-      if (session) {
-        const warehouseDocs = await Warehouse.create([warehousePayload], { session });
-        createdWarehouse = warehouseDocs[0];
-      } else {
-        createdWarehouse = await Warehouse.create(warehousePayload);
-      }
-
-      // Link warehouse to SubProduct
-      createdSubProduct.warehouse = createdWarehouse._id;
-      if (session) {
-        await createdSubProduct.save({ session });
-      } else {
-        await createdSubProduct.save();
-      }
-      console.log('✅ Warehouse record created:', createdWarehouse._id);
-    } catch (warehouseError) {
-      console.error('❌ Error creating warehouse record:', warehouseError.message);
-      // Continue without warehouse - don't fail the whole operation
-    }
-  }
 
   // Create sizes if provided and not selling without variants
   if (!sellWithoutSizeVariants && sizes && sizes.length > 0) {
@@ -1103,6 +1152,8 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
  */
 const createSubProduct = async (data, tenantId, user) => {
   try {
+    const input = data.subProductData || data;
+    if (!input.sellWithoutSizeVariants) await validateRetailVariantsForWrite(input.sizes);
     let createdSubProduct;
     console.log('data', data);
 
@@ -1128,7 +1179,10 @@ const createSubProduct = async (data, tenantId, user) => {
     const populatedSubProduct = await SubProduct.findById(createdSubProduct._id)
       .populate({
         path: 'product',
-        select: 'name slug type images isAlcoholic abv volumeMl brand category',
+        // Catalogue-scope label added (see getSubProducts populate comment):
+        // lets the create flow confirm "sellable now; marketplace review
+        // pending" for tenant_private identities.
+        select: 'name slug type images isAlcoholic abv volumeMl brand category status publicationScope',
         populate: [
           { path: 'brand', select: 'name slug logo' },
           { path: 'category', select: 'name slug' },
@@ -1136,7 +1190,7 @@ const createSubProduct = async (data, tenantId, user) => {
       })
       .populate({
         path: 'sizes',
-        select: 'size displayName unitType sellingPrice costPrice unitsPerPack commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
+        select: 'size displayName unitType sellingPrice costPrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
       })
       .populate({
         path: 'vendor',
@@ -1215,7 +1269,9 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
   const populateFields = [
     {
       path: 'product',
-      select: 'name slug type subType style images isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes platformMarkup platformDiscount',
+      // publicationScope: additive catalogue-scope label (see the list
+      // populate comment); owningTenant deliberately excluded.
+      select: 'name slug type subType style images isAlcoholic abv volumeMl originCountry region producer ingredients allergens specifications vintage ageStatement flavorProfile foodPairings brand category subCategory tags flavors description shortDescription tastingNotes platformMarkup platformDiscount status publicationScope',
       populate: [
         { path: 'brand', select: 'name slug logo description' },
         { path: 'category', select: 'name slug type' },
@@ -1226,11 +1282,11 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
     },
     {
       path: 'tenant',
-      select: 'name businessName revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency',
+      select: 'name slug businessName revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency',
     },
     {
       path: 'sizes',
-      select: 'size displayName sizeCategory unitType sellingPrice costPrice unitsPerPack commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice currency stock reservedStock availableStock lowStockThreshold reorderLevel reorderQuantity availability sku barcode packaging weightGrams volumeMl servingsPerUnit discountValue discountType discountStart discountEnd isDefault isOnSale rank totalSold',
+      select: 'size displayName sizeCategory unitType colorName optionName image imageScope dimensions shelfLifeDays venueServing servingSchemaVersion minOrderQuantity sellingPrice costPrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice currency stock reservedStock availableStock lowStockThreshold reorderLevel reorderQuantity availability sku barcode packaging weightGrams volumeMl servingsPerUnit discountValue discountType discountStart discountEnd isDefault isOnSale rank totalSold',
     },
     {
       path: 'vendor',
@@ -1327,7 +1383,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
  * Mutates `sizeLean` in place (a plain/lean Size object) and returns it.
  */
 const preserveEffectivePlatformMarkupOnCostChange = (sizeLean, product, tenant, fallbackCost, fallbackSelling) => {
-  if (!sizeLean || !tenant || tenant.revenueModel === 'commission') return sizeLean;
+  if (!sizeLean || !tenant || ['commission', 'selling_price_markup'].includes(tenant.revenueModel)) return sizeLean;
   const pricing = calculateSizePricing(sizeLean, product, tenant, fallbackCost, fallbackSelling);
   if (!pricing) return sizeLean;
 
@@ -1379,12 +1435,24 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
 
   // Handle both direct data and nested subProductData format from frontend
   const data = updateData.subProductData || updateData;
+  let existingSizes;
+  if (Array.isArray(data.sizes)) {
+    if (!data.sellWithoutSizeVariants) await validateRetailVariantsForWrite(data.sizes);
+    existingSizes = await Size.find({ subproduct: subProductId, tenant: tenantObjectId }).lean();
+    if (data.sizes.some(size => size.servingSchemaVersion === 2 || size.venueServing || size.size === 'venue_serving')
+      || existingSizes.some(size => size.servingSchemaVersion === 2)) {
+      throw new ValidationError('Use the versioned serving command to change venue servings');
+    }
+  }
+  const warehouseReference = await require('./subproductWarehouse').resolveWarehouseReference(
+    data.warehouse, subProduct.warehouse, tenantObjectId
+  );
+  await require('./marketPublication').assertListingChange(tenantId, subProduct, data);
 
   // Check removals before saving any product/pricing edits. Never trust stock
   // counters sent by the browser to decide whether history can be deleted.
   if (Array.isArray(data.sizes)) {
-    const existing = await Size.find({ subproduct: subProductId, tenant: tenantObjectId }).lean();
-    await assertSizesDeletable(removedSizes(existing, data.sizes, data.sellWithoutSizeVariants), tenantObjectId);
+    await assertSizesDeletable(removedSizes(existingSizes, data.sizes, data.sellWithoutSizeVariants), tenantObjectId);
   }
 
   // Stock rollup fields are derived from WarehouseStock by recalcSubProductStock().
@@ -1438,7 +1506,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
     ) {
       const t = await require('../models/Tenant')
         .findById(subProduct.tenant)
-        .select('revenueModel markupPercentage commissionPercentage')
+        .select('revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage')
         .lean()
         .catch(() => null);
       const p = await require('../models/Product')
@@ -1446,7 +1514,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
         .select('platformMarkup platformDiscount')
         .lean()
         .catch(() => null);
-      if (t && t.revenueModel !== 'commission') {
+      if (t && !['commission', 'selling_price_markup'].includes(t.revenueModel)) {
         const basePricing = calculateSubProductPricing(subProduct, p, t);
         if (basePricing?.platformCostPrice > 0 && basePricing?.platformSellingPrice > 0) {
           subProduct.platformMarkupOverridePct = parseFloat(
@@ -1560,6 +1628,10 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
   // ========================================================================
   // OVERRIDE FIELDS
   // ========================================================================
+  for (const field of ['metaTitle', 'metaDescription', 'metaKeywords', 'seoH1']) {
+    if (data[field] !== undefined) subProduct[field] = data[field];
+  }
+
   if (data.shortDescriptionOverride !== undefined) {
     subProduct.shortDescriptionOverride = data.shortDescriptionOverride;
   }
@@ -1783,50 +1855,10 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
   }
 
   // ========================================================================
-  // WAREHOUSE FIELDS (Using separate Warehouse model)
+  // Shared location reference only. Product edits cannot mutate/delete it.
   // ========================================================================
   if (data.warehouse !== undefined) {
-    // Get warehouse ID - could be ObjectId (new) or object with _id (old populated)
-    const warehouseId = subProduct.warehouse?._id || subProduct.warehouse;
-    const hasWarehouseData = data.warehouse && (
-      data.warehouse.location || data.warehouse.zone || data.warehouse.aisle || 
-      data.warehouse.shelf || data.warehouse.bin
-    );
-
-    if (hasWarehouseData) {
-      if (warehouseId) {
-        // Update existing warehouse record
-        await Warehouse.findByIdAndUpdate(warehouseId, {
-          location: data.warehouse?.location || '',
-          zone: data.warehouse?.zone || '',
-          aisle: data.warehouse?.aisle || '',
-          shelf: data.warehouse?.shelf || '',
-          bin: data.warehouse?.bin || '',
-        });
-      } else {
-        // Create new warehouse record
-        const warehousePayload = {
-          subProduct: subProduct._id,
-          tenant: subProduct.tenant,
-          product: subProduct.product,
-          location: data.warehouse?.location || '',
-          zone: data.warehouse?.zone || '',
-          aisle: data.warehouse?.aisle || '',
-          shelf: data.warehouse?.shelf || '',
-          bin: data.warehouse?.bin || '',
-          capacity: 0,
-          currentQuantity: 0,
-          isActive: true,
-          status: 'active',
-        };
-        const newWarehouse = await Warehouse.create(warehousePayload);
-        subProduct.warehouse = newWarehouse._id;
-      }
-    } else if (warehouseId) {
-      // Delete warehouse record if all fields are empty
-      await Warehouse.findByIdAndDelete(warehouseId);
-      subProduct.warehouse = null;
-    }
+    subProduct.warehouse = warehouseReference;
   }
 
   // ========================================================================
@@ -1968,7 +2000,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       // markup so a cost change preserves the last selling-price relationship.
       const pricingTenant = await require('../models/Tenant')
         .findById(subProduct.tenant)
-        .select('revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+        .select('revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
         .lean()
         .catch(() => null);
       const pricingProduct = await require('../models/Product')
@@ -1987,8 +2019,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       const existingSizeMap = new Map();
       for (const s of existingSizes) {
         existingSizeById.set(String(s._id), s);
-        existingSizeMap.set(s.size.toLowerCase(), s);
-        existingSizeMap.set(s.size, s); // Also store exact match
+        existingSizeMap.set(variantIdentity(s.size, s.colorName, s.optionName), s);
       }
       
       const updatedSizeIds = [];
@@ -2001,9 +2032,8 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
         if (sizeData._id) {
           existingSize = existingSizeById.get(String(sizeData._id));
         }
-        if (!existingSize) {
-          const sizeKey = sizeData.size?.toLowerCase();
-          existingSize = existingSizeMap.get(sizeData.size) || existingSizeMap.get(sizeKey);
+        if (!sizeData._id) {
+          existingSize = existingSizeMap.get(variantIdentity(sizeData.size, sizeData.colorName, sizeData.optionName));
         }
         console.log(`📦 Matching size "${sizeData.size}":`, existingSize ? `Found (${existingSize._id})` : 'Not found - will create new');
         
@@ -2037,6 +2067,8 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
           // (e.g. 75cl → 1L) updates the same document instead of recreating it.
           Object.assign(existingSize, {
             size: sizeData.size || existingSize.size,
+            ...variantColorFields({ ...existingSize, ...sizeData }),
+            ...variantImageFields(sizeData),
             displayName: sizeData.displayName || existingSize.displayName,
             // Map empty string to 'standard' for valid enum
             sizeCategory: sizeData.sizeCategory || existingSize.sizeCategory || 'standard',
@@ -2045,7 +2077,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             weightGrams: sizeData.weightGrams ?? existingSize.weightGrams,
             servingsPerUnit: sizeData.servingsPerUnit ?? existingSize.servingsPerUnit,
             unitsPerPack: sizeData.unitsPerPack ?? existingSize.unitsPerPack ?? 6,
-            packaging: normalizePackaging(sizeData.packaging ?? existingSize.packaging ?? 'pack-6'),
+            packaging: normalizePackaging(sizeData.packaging ?? existingSize.packaging),
             // NOTE: no `basePrice` path exists on Size — the form's basePrice is
             // persisted as `sellingPrice` below.
             compareAtPrice: sizeData.compareAtPrice ?? existingSize.compareAtPrice,
@@ -2085,6 +2117,8 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             product: subProduct.product,
             tenant: tenantObjectId,
             size: sizeData.size,
+            ...variantColorFields(sizeData),
+        ...variantImageFields(sizeData),
             displayName: sizeData.displayName || sizeData.size,
             // Map empty string to 'standard' for valid enum
             sizeCategory: sizeData.sizeCategory || 'standard',
@@ -2093,7 +2127,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             weightGrams: sizeData.weightGrams ?? null,
             servingsPerUnit: sizeData.servingsPerUnit ?? 0,
             unitsPerPack: sizeData.unitsPerPack ?? 6,
-            packaging: normalizePackaging(sizeData.packaging ?? 'pack-6'),
+            packaging: normalizePackaging(sizeData.packaging),
             compareAtPrice: sizeData.compareAtPrice ?? null,
             costPrice: sizeData.costPrice ?? subProduct.costPrice ?? 0,
             wholesalePrice: sizeData.wholesalePrice ?? null,
@@ -2105,7 +2139,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             reorderPoint: sizeData.reorderPoint ?? 5,
             reorderQuantity: sizeData.reorderQuantity ?? 50,
             // Generate unique SKU if empty to avoid duplicate key errors
-            sku: sizeData.sku || `${subProduct.sku}-${sizeData.size}`.toUpperCase().replace(/\s+/g, ''),
+            sku: sizeData.sku || await generateSizeSKU(subProductId, sizeData.size),
             barcode: sizeData.barcode || '',
             markupPercentage: sizeData.markupPercentage ?? subProduct.markupPercentage,
             roundUp: sizeData.roundUp || '100',
@@ -2392,13 +2426,31 @@ function validateDuplicateSizes(sizes) {
     const val = sizes[i]?.size;
     if (!val) continue;
     // Case-insensitive + trimmed comparison so "75cl" and "75CL" are duplicates.
-    const key = String(val).toLowerCase().trim();
+    const key = variantIdentity(val, sizes[i].colorName, sizes[i].optionName);
     if (seen.has(key)) {
       throw new ValidationError(
-        `Duplicate size value "${val}" at index ${i}. Each size value can only appear once per product.`
+        `Duplicate size value "${val}" at index ${i}. Each size and option combination can only appear once per product.`
       );
     }
     seen.add(key);
+  }
+}
+
+async function validateRetailVariantsForWrite(sizes) {
+  validateDuplicateSizes(sizes);
+  if (!Array.isArray(sizes)) return;
+  for (const size of sizes) {
+    variantColorFields(size);
+    variantImageFields(size);
+  }
+  const codes = sizes.filter(row => row.size).map(row => String(row.size).trim().toLowerCase());
+  if (new Set(codes).size === codes.length) return;
+  const { SERVING_MODEL_INDEXES, exactIndex } = require('./venue/serving-indexes');
+  const indexes = await Size.collection.indexes();
+  const oldGuard = indexes.some(index => index.unique &&
+    JSON.stringify(index.key) === JSON.stringify({ subproduct: 1, size: 1 }));
+  if (oldGuard || !indexes.some(index => exactIndex(index, SERVING_MODEL_INDEXES[0]))) {
+    throw new ValidationError('Multiple options for the same size are unavailable until the variant migration is complete.');
   }
 }
 
@@ -2407,7 +2459,7 @@ function validateDuplicateSizes(sizes) {
  * is stored as the object the Size model expects: { type: 'pack-6' }.
  * - Already an object with a valid type → pass through.
  * - String → { type: string }.
- * - Empty/null/undefined → { type: 'pack-6' } (platform default).
+ * - Empty/null/undefined → no packaging recorded.
  */
 function normalizePackaging(packaging) {
   if (packaging && typeof packaging === 'object' && !Array.isArray(packaging)) {
@@ -2416,7 +2468,7 @@ function normalizePackaging(packaging) {
   if (typeof packaging === 'string' && packaging.trim() !== '') {
     return { type: packaging.trim() };
   }
-  return { type: 'pack-6' };
+  return undefined;
 }
 
 /**
@@ -2450,47 +2502,6 @@ async function validateBarcodeUniqueness(barcode, tenantId, excludeSizeId = null
  */
 const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId) => {
   let parentSubProduct = null; // cached parent fetch for price fallback
-  const VALID_SIZE_ENUMS = [
-    // Wine & Champagne
-    '10cl', '18.7cl', '20cl', '25cl', '37.5cl', '50cl', '75cl', '100cl',
-    '150cl', '300cl', '450cl', '600cl', '900cl', '1200cl', '1500cl', '1800cl',
-    // Spirits
-    '5cl', '10cl', '20cl', '35cl', '50ml', '70cl', '1L', '1.5L', '1.75L', '3L',
-    // Beer & Cider
-    '27.5cl', '33cl', '35cl', '44cl', '50cl', '56.8cl', '66cl',
-    'bottle-275ml', 'bottle-330ml', 'bottle-355ml', 'bottle-500ml',
-    'bottle-568ml', 'bottle-600ml', 'bottle-650ml', 'bottle-750ml',
-    // Beer Cans
-    'can-200ml', 'can-250ml', 'can-330ml', 'can-355ml', 'can-440ml',
-    'can-473ml', 'can-500ml', 'can-568ml',
-    // Soft Drinks & Water
-    '200ml', '250ml', '300ml', '330ml', '355ml', '500ml', '600ml', '750ml',
-    '1L', '1.25L', '1.5L', '2L', '2.5L', '3L', '5L',
-    // Multi-Packs
-    'pack-4', 'pack-6', 'pack-8', 'pack-10', 'pack-12', 'pack-18',
-    'pack-24', 'pack-30', 'pack-36', 'case-6', 'case-12', 'case-24',
-    // Coffee & Tea
-    '50g', '100g', '125g', '200g', '250g', '340g', '500g', '1kg', '2kg',
-    // Tea Bags
-    'teabag-20', 'teabag-25', 'teabag-40', 'teabag-50', 'teabag-100',
-    // Single Serve
-    'unit-single', 'shot-25ml', 'shot-35ml', 'shot-50ml',
-    // Gift Sets
-    'set-2', 'set-3', 'set-4', 'set-6', 'set-12', 'gift-set', 'tasting-set', 'variety-pack',
-    // Accessories, Glassware & Barware
-    'piece-single', 'pair', 'set-barware',
-    'set-5', 'set-8', 'set-10', 'set-16', 'set-24',
-    'pack-2', 'pack-3', 'pack-5',
-    'kit-3', 'kit-5', 'kit-8', 'kit-10',
-    'box-single', 'box-5', 'box-10', 'box-20', 'box-24', 'box-25', 'box-50',
-    // Gifts, Lifestyle & Snacks
-    'bar-single', 'bar-2',
-    'bag-100g', 'bag-200g', 'bag-250g', 'bag-500g', 'bag-1kg',
-    'tin-single', 'tin-200g', 'tin-500g',
-    // Custom
-    'custom', 'variable', 'assorted',
-  ];
-
   if (!sizes || sizes.length === 0) {
     return [];
   }
@@ -2555,11 +2566,6 @@ const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId
         throw new ValidationError(`Size at index ${i} is required`);
       }
 
-      // Validate size enum
-      if (!VALID_SIZE_ENUMS.includes(size)) {
-        console.warn(`Size enum "${size}" not in validated list, allowing anyway`);
-      }
-
       // Calculate selling price if not provided but cost price and markup are
       let finalSellingPrice = sellingPrice ?? sizeData.sellingPrice;
       if ((!finalSellingPrice || finalSellingPrice === 0) && sizeCostPrice && sizeCostPrice > 0 && markupPercentage) {
@@ -2602,6 +2608,8 @@ const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId
       }
 
       const sizePayload = {
+        ...variantColorFields(sizeData),
+        ...variantImageFields(sizeData),
         subproduct: subProductId,
         tenant: tenantId,
         size,
@@ -2790,6 +2798,8 @@ const createSizeVariantsWithTransaction = async (sizes, subProductId, defaultCur
       }
 
       const sizePayload = {
+        ...variantColorFields(sizeData),
+        ...variantImageFields(sizeData),
         subproduct: subProductId,
         tenant: tenantId,
         size,
@@ -2952,6 +2962,8 @@ const createSizeVariantsWithoutTransaction = async (sizes, subProductId, default
       }
 
       const sizePayload = {
+        ...variantColorFields(sizeData),
+        ...variantImageFields(sizeData),
         subproduct: subProductId,
         tenant: tenantId,
         size,
@@ -3281,6 +3293,8 @@ const transferSubProduct = async (subProductId, newTenantId, user) => {
     throw new ValidationError('Product already exists for target tenant');
   }
 
+  if (subProduct.isPublished && subProduct.visibleInOnlineStore !== false) await require('./marketPublication').assertPublication(newTenantId, subProduct.product);
+
   const oldTenantId = subProduct.tenant._id;
 
   // Generate new SKU for new tenant
@@ -3401,6 +3415,7 @@ const restoreSubProduct = async (subProductId, tenantId) => {
 
   // Restore to previous status or default to active
   const restoredStatus = subProduct.metadata?.previousStatus || 'active';
+  await require('./marketPublication').assertListingChange(tenantId, subProduct, { status: restoredStatus });
 
   subProduct.status = restoredStatus;
   subProduct.metadata = {
@@ -4667,7 +4682,7 @@ const getAllSubProducts = async (filters = {}) => {
   } = filters;
 
   // Public endpoint: only return published, active SubProducts
-  const query = { isPublished: true, status: 'active' };
+  const query = { isPublished: true, status: 'active', visibleInOnlineStore: { $ne: false } };
   if (status) query.status = status;
   if (search) {
     query.$or = [
@@ -4682,7 +4697,7 @@ const getAllSubProducts = async (filters = {}) => {
     SubProduct.find(query)
       .populate('product', 'name slug images')
       .populate('tenant', 'name businessName')
-      .populate('sizes', PRIVATE_SIZE_FIELDS)
+      .populate({ path: 'sizes', select: PRIVATE_SIZE_FIELDS, match: require('../constants/sizeChannels').retailSizeWhereClause() })
       .select(PRIVATE_SUBPRODUCT_FIELDS)
       .sort({ [sort]: sortOrder })
       .skip(skip)
@@ -4709,7 +4724,7 @@ const getSubProductsByTenant = async (tenantId, filters = {}) => {
   const { page = 1, limit = 20, status } = filters;
 
   // Public endpoint: only return published, active SubProducts by default
-  const query = { tenant: tenantId, isPublished: true, status: 'active' };
+  const query = { tenant: tenantId, isPublished: true, status: 'active', visibleInOnlineStore: { $ne: false } };
   if (status) query.status = status;
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -4717,7 +4732,7 @@ const getSubProductsByTenant = async (tenantId, filters = {}) => {
   const [subProducts, total] = await Promise.all([
     SubProduct.find(query)
       .populate('product', 'name slug images')
-      .populate('sizes', PRIVATE_SIZE_FIELDS)
+      .populate({ path: 'sizes', select: PRIVATE_SIZE_FIELDS, match: require('../constants/sizeChannels').retailSizeWhereClause() })
       .select(PRIVATE_SUBPRODUCT_FIELDS)
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -4746,12 +4761,12 @@ const getSubProductsByProduct = async (productId, { includeAll = false } = {}) =
   // (status defaults to 'pending') — those are the whole point of that screen.
   const query = includeAll
     ? { product: productId }
-    : { product: productId, isPublished: true, status: 'active' };
+    : { product: productId, isPublished: true, status: 'active', visibleInOnlineStore: { $ne: false } };
 
   const subProducts = await SubProduct.find(query)
     .populate('product', 'name slug images type isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes platformMarkup platformDiscount')
-    .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
-    .populate('sizes', PRIVATE_SIZE_FIELDS)
+    .populate('tenant', 'name businessName revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+    .populate({ path: 'sizes', select: PRIVATE_SIZE_FIELDS, match: includeAll ? {} : require('../constants/sizeChannels').retailSizeWhereClause() })
     .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
 
@@ -4782,10 +4797,10 @@ const getSubProductsByProduct = async (productId, { includeAll = false } = {}) =
  */
 const getSubProductById = async (id) => {
   // Public endpoint: only return published, active SubProducts
-  const subProduct = await SubProduct.findOne({ _id: id, isPublished: true, status: 'active' })
+  const subProduct = await SubProduct.findOne({ _id: id, isPublished: true, status: 'active', visibleInOnlineStore: { $ne: false } })
     .populate('product', 'name slug images type isAlcoholic abv volumeMl originCountry brand category subCategory description platformMarkup platformDiscount')
-    .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
-    .populate('sizes', PRIVATE_SIZE_FIELDS)
+    .populate('tenant', 'name businessName revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+    .populate({ path: 'sizes', select: PRIVATE_SIZE_FIELDS, match: require('../constants/sizeChannels').retailSizeWhereClause() })
     .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
 
@@ -4811,10 +4826,10 @@ const getSubProductById = async (id) => {
  */
 const getSubProductBySKU = async (sku) => {
   // Public endpoint: only return published, active SubProducts
-  const subProduct = await SubProduct.findOne({ sku, isPublished: true, status: 'active' })
+  const subProduct = await SubProduct.findOne({ sku, isPublished: true, status: 'active', visibleInOnlineStore: { $ne: false } })
     .populate('product', 'name slug images description')
     .populate('tenant', 'name businessName')
-    .populate('sizes', PRIVATE_SIZE_FIELDS)
+    .populate({ path: 'sizes', select: PRIVATE_SIZE_FIELDS, match: require('../constants/sizeChannels').retailSizeWhereClause() })
     .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
 
@@ -4846,6 +4861,8 @@ const resolveSystemTenant = async (tenantId, user) => {
  * Add size to SubProduct
  */
 const addSize = async (subProductId, sizeData, tenantId, user = null) => {
+  if (Object.keys(sizeData).some(key => key.split('.')[0] === 'sellingPriceMarkupOverridePct' || key.startsWith('$'))) throw new ForbiddenError('Marketplace overrides must be changed through platform review');
+  if (sizeData.servingSchemaVersion === 2 || sizeData.venueServing || sizeData.size === 'venue_serving') throw new ValidationError('Use the versioned serving command to create venue servings');
   // Resolve system tenant for super admin
   tenantId = await resolveSystemTenant(tenantId, user);
 
@@ -4862,18 +4879,9 @@ const addSize = async (subProductId, sizeData, tenantId, user = null) => {
     subProduct.sizes = [];
   }
 
-  // Validate no duplicate size value on this SubProduct (case-insensitive)
-  if (sizeData.size) {
-    const existingSize = await Size.findOne({
-      subproduct: subProductId,
-      size: { $regex: new RegExp(`^${sizeData.size.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-    });
-    if (existingSize) {
-      throw new ValidationError(
-        `A size with value "${sizeData.size}" already exists on this product.`
-      );
-    }
-  }
+  const existingVariants = await Size.find({ subproduct: subProductId, tenant: tenantId, servingSchemaVersion: { $ne: 2 } })
+    .select('size colorName optionName').lean();
+  await validateRetailVariantsForWrite([...existingVariants, sizeData]);
 
   // Validate barcode uniqueness within tenant
   if (sizeData.barcode) {
@@ -4882,12 +4890,12 @@ const addSize = async (subProductId, sizeData, tenantId, user = null) => {
 
   const newSize = {
     ...sizeData,
+    ...variantImageFields(sizeData),
     packaging: normalizePackaging(sizeData.packaging),
     subproduct: subProductId,
     tenant: tenantId,
   };
 
-  const Size = require('../models/Size');
   const size = new Size(newSize);
   await size.save();
 
@@ -4901,6 +4909,7 @@ const addSize = async (subProductId, sizeData, tenantId, user = null) => {
  * Update size
  */
 const updateSize = async (subProductId, sizeId, updateData, tenantId, user = null) => {
+  if (Object.keys(updateData).some(key => ['sellingPriceMarkupOverridePct', 'variantColorKey'].includes(key.split('.')[0]) || key.startsWith('$'))) throw new ForbiddenError('Marketplace overrides must be changed through platform review');
   // Resolve system tenant for super admin
   tenantId = await resolveSystemTenant(tenantId, user);
 
@@ -4914,24 +4923,22 @@ const updateSize = async (subProductId, sizeId, updateData, tenantId, user = nul
   }
 
   const Size = require('../models/Size');
-  const size = await Size.findOne({ _id: sizeId, subproduct: subProductId });
+  const size = await Size.findOne({ _id: sizeId, subproduct: subProductId, tenant: tenantId });
 
   if (!size) {
     throw new NotFoundError('Size not found');
   }
 
-  // Validate duplicate size value if changing the size field (case-insensitive)
-  if (updateData.size && updateData.size.toLowerCase() !== size.size.toLowerCase()) {
-    const existingSize = await Size.findOne({
-      subproduct: subProductId,
-      size: { $regex: new RegExp(`^${updateData.size.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-      _id: { $ne: sizeId },
-    });
-    if (existingSize) {
-      throw new ValidationError(
-        `A size with value "${updateData.size}" already exists on this product.`
-      );
-    }
+  if (size.servingSchemaVersion === 2 || updateData.servingSchemaVersion === 2 || updateData.venueServing || updateData.size === 'venue_serving') throw new ValidationError('Use the versioned serving command to change venue servings');
+
+  if (updateData.size !== undefined || updateData.colorName !== undefined || updateData.optionName !== undefined) {
+    const otherVariants = await Size.find({ subproduct: subProductId, tenant: tenantId, _id: { $ne: sizeId }, servingSchemaVersion: { $ne: 2 } })
+      .select('size colorName optionName').lean();
+    await validateRetailVariantsForWrite([...otherVariants, {
+      size: updateData.size ?? size.size,
+      colorName: updateData.colorName ?? size.colorName,
+      optionName: updateData.optionName ?? size.optionName,
+    }]);
   }
 
   // Validate barcode uniqueness within tenant if changing barcode
@@ -4943,7 +4950,7 @@ const updateSize = async (subProductId, sizeId, updateData, tenantId, user = nul
   if (updateData.packaging !== undefined) {
     updateData.packaging = normalizePackaging(updateData.packaging);
   }
-  Object.assign(size, updateData);
+  Object.assign(size, updateData, variantImageFields(updateData));
   await size.save();
 
   return size;
@@ -5033,8 +5040,8 @@ const updateStock = async (subProductId, stockData, tenantId, user = null) => {
  * Get stock status for SubProduct
  */
 const getStockStatus = async (subProductId) => {
-  const subProduct = await SubProduct.findOne({ _id: subProductId, isPublished: true, status: 'active' })
-    .populate('sizes', PRIVATE_SIZE_FIELDS)
+  const subProduct = await SubProduct.findOne({ _id: subProductId, isPublished: true, status: 'active', visibleInOnlineStore: { $ne: false } })
+    .populate({ path: 'sizes', select: PRIVATE_SIZE_FIELDS, match: require('../constants/sizeChannels').retailSizeWhereClause() })
     .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
 
@@ -5067,13 +5074,11 @@ const getStockStatus = async (subProductId) => {
  * Admin-only: set sub-product status without tenant ownership check.
  * Used by platform admins to approve/decline any tenant's sub-product.
  *
- * priceOverrides: { baseWebsitePrice?, sizes: [{ id, websitePrice }] }
- *   websitePrice = desired platformSellingPrice (what customer pays on drinksharbour.com)
- *
- *   Back-calculation (accounting for platform markup):
- *     platformCostPrice = websitePrice / (1 + platformMarkupPct/100)
- *     Markup model:     costPrice     = platformCostPrice / (1 + markupPct/100)
- *     Commission model: sellingPrice  = platformCostPrice / (1 − commissionPct/100)
+ * priceOverrides accepts baseWebsitePrice or owned Size websitePrice/packUnitPrice.
+ * Markup prices persist effective percentages; commission prices persist explicit
+ * marketplace amounts. Selling-price markup persists a separate percentage of
+ * tenant retail; useTenantDefault clears that override. Tenant retail and supplier
+ * cost are never rewritten by review. New-model overrides are platform-only.
  *
  * declineReason: optional string stored in metadata when declining
  */
@@ -5090,11 +5095,16 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
     ? SubProduct.findById(subProductId)
     : SubProduct.findOne({ _id: subProductId, tenant: tenantId });
   const subProduct = await lookup
-    .populate('tenant', 'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
-    .populate('product', 'platformMarkup platformDiscount');
+    .populate('tenant', 'revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+    .populate('product', 'type platformMarkup platformDiscount');
   if (!subProduct) {
     throw new NotFoundError('Sub-product not found');
   }
+
+  if (status === 'active' && subProduct.visibleInOnlineStore !== false) await require('./marketPublication').assertPublication(subProduct.tenant, subProduct.product);
+
+  if (!platformAdmin && subProduct.tenant?.revenueModel === 'selling_price_markup' && (priceOverrides.baseWebsitePrice !== undefined || priceOverrides.useTenantDefault !== undefined || priceOverrides.sizes?.length))
+    throw new ForbiddenError('Only platform operators can change marketplace price overrides');
 
   // Validate every supplied price and size ownership before changing any document.
   const prepared = status === 'active'
@@ -5104,6 +5114,7 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
   subProduct.status = status;
   subProduct.isPublished = status === 'active';
   if (status === 'active' && !subProduct.activatedAt) subProduct.activatedAt = new Date();
+  if (Object.prototype.hasOwnProperty.call(prepared, 'baseSellingMarkupPct')) subProduct.sellingPriceMarkupOverridePct = prepared.baseSellingMarkupPct;
   if (prepared.base !== null) subProduct.platformMarkupOverridePct = prepared.base;
   if (prepared.baseCommissionPrice != null) subProduct.commissionPriceOverride = prepared.baseCommissionPrice;
   for (const { doc, values } of prepared.sizes) {
@@ -5154,6 +5165,9 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
 module.exports = {
   getMySubProducts,
   createSubProduct,
+  // Core variant (no transaction wrapper) — used by tests that assert the
+  // catalogue-linking authority rules without touching SKU/stock side effects.
+  createSubProductCore,
   getSubProduct,
   updateSubProduct,
   deleteSubProduct,

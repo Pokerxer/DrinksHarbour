@@ -6,7 +6,20 @@ import {
   warehouseStockService,
   type WarehouseStockRow,
 } from '@/services/warehouseStock.service';
-import { warehouseNameOf, sizeLabelOf } from './warehouse-ref-helpers';
+import { warehouseNameOf, sizeLabelOf, isPopulated } from './warehouse-ref-helpers';
+import { lineSizeLabel } from '@/utils/size-variant-label';
+
+/**
+ * Full identity label for the line's Size ref (DRI-17 audit alignment): when
+ * the populated Size carries retail variant data, the shared lineSizeLabel
+ * composes colour/option; legacy/colourless sizes resolve to the stored name
+ * byte-for-byte — same pattern as the purchases receive/edit surfaces.
+ */
+function sizeIdentityLabelOf(r: WarehouseStockRow): string {
+  const base = sizeLabelOf(r);
+  if (!isPopulated(r.size)) return base;
+  return lineSizeLabel({ sizeName: base }, r.size) || base;
+}
 
 export default function SubproductWarehouseBreakdown({
   subProductId,
@@ -47,7 +60,7 @@ export default function SubproductWarehouseBreakdown({
               <span>
                 {warehouseNameOf(r) || 'Unknown warehouse'}{' '}
                 <span className="text-gray-400">
-                  · {sizeLabelOf(r) || 'Unknown size'}
+                  · {sizeIdentityLabelOf(r) || 'Unknown size'}
                 </span>
               </span>
               <span className="font-medium">{r.currentQuantity}</span>

@@ -59,7 +59,9 @@ import {
   summarizeProductSearchContext,
 } from '../product-list/search-context';
 import { defaultValues, formParts } from './form-utils';
-import { isBeverageProductType } from '@/utils/product-types';
+import { catalogBusiness, businessPresentation } from '@/utils/catalog-business';
+import BusinessSpecifications from './business-specifications';
+import specificationRegistry from '@/utils/business-specifications.json';
 import ProductSubProductsPanel from './product-subproducts';
 import { ValidationSummary } from '@/components/validation-summary';
 
@@ -251,6 +253,7 @@ const transformFormData = (data: CreateProductInput) => {
     flavors: data.flavors,
     style: data.style || undefined,
     shortDescription: data.shortDescription,
+    specifications: data.specifications,
     description: data.description,
     tastingNotes: data.tastingNotes,
     flavorProfile: data.flavorProfile?.map((fp: string) =>
@@ -330,6 +333,9 @@ export default function CreateEditProduct({
   const [headerMeta, setHeaderMeta] = useState<{
     status?: string;
     isPublished?: boolean;
+    // Catalogue publication scope (constants/catalogScope.js) — shown in the
+    // header when the detail endpoint returns it; undefined means legacy/no tag.
+    publicationScope?: string;
     onHand: number;
     sold: number;
     variants: number;
@@ -418,6 +424,7 @@ export default function CreateEditProduct({
       set('finish', data.finish);
 
       // ── Descriptions ────────────────────────────────────────────────────
+      set('specifications', data.specifications || {});
       set('shortDescription', data.shortDescription);
       set('description', data.description);
 
@@ -465,11 +472,10 @@ export default function CreateEditProduct({
       set('metaDescription', data.metaDescription);
       setArr('metaKeywords', data.keywords || data.metaKeywords);
 
-      const spCount = res.metadata?.subProductCount ?? 0;
       toast.success(
-        spCount > 0
-          ? `Details generated from ${spCount} sub-product${spCount !== 1 ? 's' : ''}`
-          : 'Details generated with AI',
+        Array.isArray(res.unverified) && res.unverified.length
+          ? 'Draft generated. Unverified specifications are blank; review before saving.'
+          : 'Draft generated. Review the details before saving.',
         { id: toastId }
       );
     } catch (err: any) {
@@ -738,12 +744,24 @@ export default function CreateEditProduct({
     ? productName || 'Edit Product'
     : productName || 'Create Product';
 
-  // Non-beverage products (accessory / glassware / gift_set / snack / …) don't
-  // need the Beverage Info step — drop it from navigation so it can't block save.
   const watchedType = watch('type');
-  const displaySteps = isBeverageProductType(watchedType)
-    ? STEPS
-    : STEPS.filter((step) => step.key !== formParts.beverageInfo);
+  const business = catalogBusiness(watchedType);
+  const isBeverage = business === 'beverage';
+  const hasSpecifications = Object.prototype.hasOwnProperty.call(specificationRegistry, business);
+  const displaySteps = STEPS
+    .filter(step => step.key !== formParts.beverageInfo || isBeverage || hasSpecifications)
+    .map(step => {
+      if (step.key === formParts.beverageInfo && hasSpecifications) {
+        return { ...step, label: 'Specifications', icon: PiTag, description: businessPresentation[business].title };
+      }
+      if (!isBeverage && step.key === formParts.origin) {
+        return { ...step, label: 'Origin', description: 'Manufacturer and country of origin' };
+      }
+      if (!isBeverage && step.key === formParts.description) {
+        return { ...step, description: 'Product copy' };
+      }
+      return step;
+    });
 
   useEffect(() => {
     if (displaySteps.length > 0 && currentStep >= displaySteps.length) {
@@ -781,6 +799,7 @@ export default function CreateEditProduct({
         setHeaderMeta({
           status: p.status,
           isPublished: p.isPublished,
+          publicationScope: p.publicationScope ?? undefined,
           onHand,
           sold,
           variants: sps.length,
@@ -993,6 +1012,7 @@ export default function CreateEditProduct({
             ...prev,
             status: saved.status ?? prev.status,
             isPublished: saved.isPublished ?? prev.isPublished,
+            publicationScope: saved.publicationScope ?? prev.publicationScope,
           }));
         }
         toast.success('Product updated successfully!');
@@ -1155,6 +1175,7 @@ export default function CreateEditProduct({
             title={displayTitle}
             isEditMode={isEditMode}
             status={headerMeta.status}
+            publicationScope={headerMeta.publicationScope}
             saving={isLoading}
             generating={isGenerating}
             canGenerate={!!(isEditMode && id)}
@@ -1416,7 +1437,9 @@ export default function CreateEditProduct({
                 animate="visible"
               >
                 {(() => {
-                  const Component = COMPONENTS[displaySteps[currentStep].key];
+                  const key = displaySteps[currentStep].key;
+                  const Component = key === formParts.beverageInfo && hasSpecifications
+                    ? BusinessSpecifications : COMPONENTS[key];
                   return Component ? <Component /> : null;
                 })()}
               </motion.div>

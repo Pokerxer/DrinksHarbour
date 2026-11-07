@@ -299,7 +299,8 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
     // the submission omits it — and that number is on a card in somebody's
     // pocket, so losing it silently stops the card working. An explicit value
     // still wins: overwriting is how an employee moves to a pre-printed card.
-    user.employeeProfile = carryOverBadgeNumber(profile, user.employeeProfile);
+    const { preserveAttendancePolicy } = require('../services/weeklyAttendance.helpers');
+    user.employeeProfile = carryOverBadgeNumber(preserveAttendancePolicy(profile, user.employeeProfile), user.employeeProfile);
     user.markModified('employeeProfile');
   }
 

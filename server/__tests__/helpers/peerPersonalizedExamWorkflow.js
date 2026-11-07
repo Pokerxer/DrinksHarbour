@@ -59,7 +59,7 @@ module.exports = async function personalized({ call, ownerId, ids, tenantId }) {
     assert.equal(result.composite.attendanceScore, 100); // The missed shift outside the selected range does not count.
     assert.equal(result.composite.attendanceFrom, '2020-02-10');
     assert.equal(result.composite.attendanceTo, '2020-02-20');
-    assert.equal(result.composite.combinedScore, i === 0 ? 90 : 93.33);
-    assert.equal(result.bonusMinor, i === 0 ? 4500000 : 4666667);
+    assert.equal(result.composite.combinedScore, i === 0 ? 88 : 92);
+    assert.equal(result.bonusMinor, i === 0 ? 4400000 : 4600000);
   }
 };

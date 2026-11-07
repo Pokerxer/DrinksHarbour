@@ -1,3 +1,4 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 
 const BASE_URL  = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
@@ -7,7 +8,7 @@ const LAST_UPDATED_ISO = "2026-07-12";
 const description =
   "Read DrinksHarbour's terms for using our beverage marketplace, including age requirements, accounts, payments, delivery, refunds and merchant responsibilities.";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: "Terms of Service",
   description,
   keywords: [
@@ -33,7 +34,7 @@ export const metadata: Metadata = {
     title: "Terms of Service | DrinksHarbour",
     description,
   },
-};
+});
 
 const jsonLd = {
   "@context": "https://schema.org",

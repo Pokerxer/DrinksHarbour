@@ -2,9 +2,9 @@
 
 import Image from 'next/image';
 import {
-  PiStorefront,
-  PiGlobeSimple,
-  PiUsersThree,
+  PiStorefrontFill,
+  PiGlobeSimpleFill,
+  PiUsersThreeFill,
   PiCheckCircle,
   PiProhibit,
   PiPauseCircle,
@@ -26,19 +26,19 @@ export const SOURCE_META: Record<
     label: 'In-store',
     bg: 'bg-amber-50 text-amber-700',
     color: '#b45309',
-    icon: <PiStorefront weight="fill" className="h-3.5 w-3.5" />,
+    icon: <PiStorefrontFill className="h-3.5 w-3.5" />,
   },
   ecommerce: {
     label: 'Online',
     bg: 'bg-sky-50 text-sky-700',
     color: '#0369a1',
-    icon: <PiGlobeSimple weight="fill" className="h-3.5 w-3.5" />,
+    icon: <PiGlobeSimpleFill className="h-3.5 w-3.5" />,
   },
   both: {
     label: 'In both',
     bg: 'bg-[#b20202]/10 text-[#b20202]',
     color: '#b20202',
-    icon: <PiUsersThree weight="fill" className="h-3.5 w-3.5" />,
+    icon: <PiUsersThreeFill className="h-3.5 w-3.5" />,
   },
 };
 

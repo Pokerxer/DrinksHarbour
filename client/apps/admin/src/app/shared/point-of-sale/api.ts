@@ -1,3 +1,5 @@
+import { requestKey } from '@/services/venue/api';
+import type { VenueSession } from '@/services/venue/types';
 import { scopePOSRequest } from './shop-scope';
 import type { AnalysisMeta, AnalysisPayloadRow } from './analysis/decode';
 
@@ -254,7 +256,11 @@ export const posApi = {
     );
   },
 
-  async getCategories() {
+  async getCategories(token?: string) {
+    // Industry-scope round (2026-11-02): with the POS tenant token attached,
+    // the server filters this list to the business's industries (same
+    // endpoint as the admin forms); without a token the legacy full list is
+    // returned — flag OFF behaves byte-identically either way.
     return request<{
       categories: {
         _id: string;
@@ -263,9 +269,12 @@ export const posApi = {
         level?: number;
       }[];
       total: number;
-    }>(`${API_URL}/api/categories`);
+      meta?: { industries: string[] | null };
+    }>(`${API_URL}/api/categories`, {
+      headers: token ? authHeaders(token) : undefined,
+      cache: 'no-store' as RequestCache,
+    });
   },
-
   async getBrands(params?: { search?: string; limit?: number }) {
     const qs = new URLSearchParams({
       status: 'active',
@@ -327,13 +336,13 @@ export const posApi = {
 
   async openTableTab(
     token: string,
-    body: { tableId: string; guests?: number; terminalType?: string }
+    body: { tableId: string; guests?: number; terminalType?: string; expectedTableVersion?: number }
   ) {
-    return request<{ table: POSTableSummary; tab: Record<string, unknown> }>(
+    return request<{ table: POSTableSummary; tab: Record<string, unknown>; serviceSession?: VenueSession }>(
       `${API_URL}/api/pos/tables/${body.tableId}/open-tab`,
       {
         method: 'POST',
-        headers: authHeaders(token),
+        headers: { ...authHeaders(token), 'Idempotency-Key': await requestKey(JSON.stringify([token, 'open-tab', body])) },
         body: JSON.stringify(body),
       }
     );
@@ -343,6 +352,7 @@ export const posApi = {
     token: string,
     heldOrderId: string,
     body: {
+      expectedVersion?: number;
       items?: unknown[];
       customer?: Record<string, unknown>;
       note?: string;
@@ -351,18 +361,19 @@ export const posApi = {
       appliedRewards?: unknown[];
     }
   ) {
-    return request<{ tab: Record<string, unknown> }>(
+    return request<{ tab: Record<string, unknown>; serviceSession?: VenueSession }>(
       `${API_URL}/api/pos/tabs/${heldOrderId}`,
-      { method: 'PUT', headers: authHeaders(token), body: JSON.stringify(body) }
+      { method: 'PUT', headers: { ...authHeaders(token), 'Idempotency-Key': await requestKey(JSON.stringify([token, 'update-tab', heldOrderId, body])) }, body: JSON.stringify(body) }
     );
   },
 
   async fireTableTab(
     token: string,
     heldOrderId: string,
-    body: { itemKeys: string[] }
+    body: { itemKeys: string[]; expectedVersion?: number }
   ) {
     return request<{
+      serviceSession?: VenueSession;
       round: {
         roundNo: number;
         status: string;
@@ -375,7 +386,7 @@ export const posApi = {
       };
     }>(`${API_URL}/api/pos/tabs/${heldOrderId}/fire`, {
       method: 'POST',
-      headers: authHeaders(token),
+      headers: { ...authHeaders(token), 'Idempotency-Key': await requestKey(JSON.stringify([token, 'fire-tab', heldOrderId, body])) },
       body: JSON.stringify(body),
     });
   },

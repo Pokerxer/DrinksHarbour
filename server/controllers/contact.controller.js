@@ -75,9 +75,9 @@ exports.listContacts = asyncHandler(async (req, res) => {
   // hand-entered on in-store POSCustomers (ecommerce rows carry none), so when a
   // contact has actual orders we trust those; otherwise we keep the stored value.
   const orderDocs = await Order.find({ 'items.tenant': tenantId })
-    .select('user totalAmount paymentDetails.customer.customerId paymentDetails.customer.phone shippingAddress.email shippingAddress.phone')
+    .select('items shippingFee taxAmount user totalAmount paymentDetails.customer.customerId paymentDetails.customer.phone shippingAddress.email shippingAddress.phone')
     .lean();
-  const orderIndex = buildOrderIndex(orderDocs);
+  const orderIndex = buildOrderIndex(orderDocs.map(o => require('../services/orderAccess').merchantSummary(o, tenantId)));
   for (const c of contacts) {
     const { totalOrders, totalSpent } = contactOrderTotals(c, orderIndex);
     if (totalOrders > 0) {
@@ -135,11 +135,11 @@ exports.getContact = asyncHandler(async (req, res) => {
   const or = buildContactOrderMatch(contact);
   if (or.length > 0) {
     const orderDocs = await Order.find({ 'items.tenant': tenantId, $or: or })
-      .select('totalAmount')
+      .select('items shippingFee taxAmount totalAmount')
       .lean();
     if (orderDocs.length > 0) {
       contact.totalOrders = orderDocs.length;
-      contact.totalSpent = orderDocs.reduce((s, o) => s + (o.totalAmount || 0), 0);
+      contact.totalSpent = orderDocs.reduce((s, o) => s + (require('../services/orderAccess').merchantSummary(o, tenantId).totalAmount || 0), 0);
     }
   }
 
@@ -269,7 +269,7 @@ exports.listContactOrders = asyncHandler(async (req, res) => {
   // Stats are lifetime (identity-only), so the cards stay stable as the table is
   // filtered by status / date; the table + count honour the active filters.
   const [statDocs, total, orders] = await Promise.all([
-    Order.find(baseMatch).select('status totalAmount').lean(),
+    Order.find(baseMatch).select('items shippingFee taxAmount status totalAmount').lean(),
     Order.countDocuments(listMatch),
     Order.find(listMatch)
       .sort({ placedAt: -1 })
@@ -282,7 +282,7 @@ exports.listContactOrders = asyncHandler(async (req, res) => {
 
   const stats = {
     count: statDocs.length,
-    totalSpent: statDocs.reduce((s, o) => s + (o.totalAmount || 0), 0),
+    totalSpent: statDocs.reduce((s, o) => s + (require('../services/orderAccess').merchantSummary(o, tenantId).totalAmount || 0), 0),
     delivered: statDocs.filter((o) => o.status === 'delivered').length,
     cancelled: statDocs.filter((o) => o.status === 'cancelled').length,
   };
@@ -291,7 +291,7 @@ exports.listContactOrders = asyncHandler(async (req, res) => {
     success: true,
     data: {
       contact: present(contact),
-      orders,
+      orders: orders.map(o => require('../services/orderAccess').project(o, req.user)),
       stats,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     },
@@ -318,7 +318,7 @@ exports.getContactSpending = asyncHandler(async (req, res) => {
   let orders = [];
   if (or.length > 0) {
     orders = await Order.find({ 'items.tenant': tenantId, $or: or })
-      .select('totalAmount status paymentMethod placedAt createdAt items.product items.subproduct items.quantity items.itemSubtotal')
+      .select('shippingFee taxAmount user totalAmount status paymentMethod placedAt createdAt items')
       .populate('items.product', 'name')
       .populate('items.subproduct', 'name')
       .lean();
@@ -326,7 +326,7 @@ exports.getContactSpending = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: { contact: present(contact), spending: summarizeSpending(orders) },
+    data: { contact: present(contact), spending: summarizeSpending(orders.map(o => require('../services/orderAccess').merchantSummary(o, tenantId))) },
   });
 });
 

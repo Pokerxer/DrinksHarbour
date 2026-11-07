@@ -10,6 +10,8 @@ export interface Brand {
   slug: string;
   description?: string;
   primaryCategory?: string;
+  brandType?: string;
+  industry?: string;
   countryOfOrigin?: string;
   isFeatured?: boolean;
   isPremium?: boolean;
@@ -197,7 +199,8 @@ export const brandService = {
    * Fetch single brand by ID
    */
   async getBrandById(token: string, brandId: string): Promise<Brand | null> {
-    const response = await fetch(`${API_URL}/api/brands/${brandId}`, {
+    const response = await fetch(`${API_URL}/api/brands/admin/${brandId}`, {
+      cache: 'no-store',
       headers: {
         'Authorization': `Bearer ${token}`,
       },
@@ -210,6 +213,6 @@ export const brandService = {
     }
 
     const result = await response.json();
-    return result.data || null;
+    return result.data?.brand || null;
   },
 };

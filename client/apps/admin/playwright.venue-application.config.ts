@@ -1,0 +1,7 @@
+import {defineConfig} from '@playwright/test';
+const shared={NEXT_PUBLIC_API_URL:'http://127.0.0.1:39130',NEXT_PUBLIC_PLATFORM_URL:'http://127.0.0.1:39131',VENUE_EXPERIENCE_ENABLED:'true',NEXT_PUBLIC_VENUE_EXPERIENCE_ENABLED:'true',VENUE_CHANNEL_SECRET:'venue-application-test-channel',VENUE_NEXT_DIST_DIR:process.env.VENUE_TEST_DIST_DIR||'.next-venue-application'};
+export default defineConfig({testDir:'./e2e',testMatch:'venue-application.spec.ts',workers:1,timeout:180000,expect:{timeout:15000},reporter:'list',outputDir:'/private/tmp/venue-application-browser-results',use:{channel:'chrome',headless:true,screenshot:'only-on-failure',trace:'retain-on-failure'},webServer:[
+ {command:'node ../../../server/__tests__/helpers/venueApplicationServer.js',url:'http://127.0.0.1:39130/__test/state',timeout:180000,reuseExistingServer:false,env:{DRINKSHARBOUR_VENUE_TEST_MONGO_URI:'mongodb://127.0.0.1:29127/drinks_venue_test_phase1?replicaSet=venuePhase0'}},
+ {command:'../platform/node_modules/.bin/next dev ../platform --webpack --hostname 127.0.0.1 --port 39131',url:'http://127.0.0.1:39131/venues',timeout:240000,reuseExistingServer:false,env:shared},
+ {command:'./node_modules/.bin/next dev --hostname 127.0.0.1 --port 39132',url:'http://127.0.0.1:39132/signin',timeout:240000,reuseExistingServer:false,env:{...shared,NEXTAUTH_URL:'http://127.0.0.1:39132',NEXTAUTH_SECRET:'venue-application-nextauth-test'}},
+]});

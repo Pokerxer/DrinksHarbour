@@ -32,6 +32,7 @@ export function useTenantSubmit(id: string | undefined, logoFile: File | null, o
         currentPeriodStart: data.currentPeriodStart || '',
         currentPeriodEnd: data.currentPeriodEnd || '',
         revenueModel: data.revenueModel || undefined,
+        sellingPriceMarkupPercentage: data.sellingPriceMarkupPercentage,
         markupPercentage: data.markupPercentage,
         commissionPercentage: data.commissionPercentage,
         platformMarkupPercentage: data.platformMarkupPercentage,
@@ -51,6 +52,9 @@ export function useTenantSubmit(id: string | undefined, logoFile: File | null, o
         addressZipCode: data.addressZipCode || '',
         addressCountry: data.addressCountry || '',
         businessType: data.businessType || '',
+        // Empty array clears the profile server-side; save sends the array so
+        // unchecking every box reverts the tenant to legacy/global scope.
+        industries: data.industries ?? [],
         cacNumber: data.cacNumber || '',
         tin: data.tin || '',
         idType: data.idType || '',

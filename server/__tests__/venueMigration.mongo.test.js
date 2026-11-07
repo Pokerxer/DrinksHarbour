@@ -1,0 +1,24 @@
+'use strict';
+const test = require('node:test'); const assert = require('node:assert/strict');
+const { uri, connectVenueMongo, fixture } = require('./helpers/venueMongo');
+test('reviewed_mapping_previews_applies_once_and_blocks_legacy_obligations', { skip: !uri }, async t => {
+  await connectVenueMongo(t, 'mapping'); const args = await fixture();
+  const Tenant = require('../models/Tenant'); await Tenant.updateOne({ _id: args.tenantId }, { $set: { name: 'Test venue', slug: 'test-venue', revenueModel: 'commission', venueSettings: { identityVersion: 0 } } });
+  await require('../services/venue/service-sessions').ensureIndexes(); await require('../services/venue/billing').ensureIndexes(); await require('../services/venue/collections').ensureIndexes();
+  await require('../services/chartOfAccounts.service').ensureDefaultCOA(args.tenantId);
+  const mapping = { tenantId: args.tenantId, locationId: args.locationId, expectedTenantVersion: 0, expectedLocationVersion: 0, timezone: 'Africa/Lagos', businessDayStartMinutes: 240, termsVersion: 1, reviewedBy: args.actor.userId, publicListed: false, reviewedExistingListing: true, canonicalCheckoutEnabled: false, staffIds: [args.actor.userId], tableIds: args.tableIds };
+  const migration = require('../services/venue/migration'); const input = { tenantId: args.tenantId, mapping, actor: args.actor };
+  let preview = await migration.previewVenueMapping(input); assert.equal(preview.safe, true, JSON.stringify(preview));
+  const before = await Tenant.findById(args.tenantId).lean(); assert.equal(before.venueSettings.identityVersion, 0);
+  const legacy = await require('../models/Order').collection.insertOne({ tenant: before._id, status: 'hold', venueIdentityVersion: 0 });
+  assert.equal((await migration.previewVenueMapping(input)).safe, false);
+  await assert.rejects(migration.applyVenueMapping({ ...input, expectedFingerprint: preview.fingerprint }));
+  await require('../models/Order').deleteOne({ _id: legacy.insertedId, tenant: args.tenantId });
+  preview = await migration.previewVenueMapping(input);
+  await assert.rejects(migration.applyVenueMapping({ ...input, expectedFingerprint: 'stale' }));
+  const applied = await migration.applyVenueMapping({ ...input, expectedFingerprint: preview.fingerprint }); assert.equal(applied.applied, true);
+  const replay = await migration.applyVenueMapping({ ...input, expectedFingerprint: preview.fingerprint }); assert.equal(replay.replay, true);
+  const tenant = await Tenant.findById(args.tenantId).lean(); assert.equal(tenant.venueSettings.identityVersion, 1); assert.ok(tenant.venueSettings.legacyPublicGrantedAt);
+  assert.equal((await require('../models/Warehouse').findById(args.locationId).lean()).venueServices.canonicalCheckoutEnabled, false);
+  assert.equal(await require('../models/AuditLog').countDocuments({ targetTenantId: args.tenantId, action: 'VENUE_MAPPING_APPLY' }), 1);
+});

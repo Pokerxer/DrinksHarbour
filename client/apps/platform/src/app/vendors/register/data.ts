@@ -396,5 +396,12 @@ export const BUSINESS_TYPES: BusinessType[] = [
   { label: 'Restaurant', icon: Icon.PiForkKnifeBold, description: 'Dine-in with bar' },
   { label: 'Hotel', icon: Icon.PiBedBold, description: 'Hospitality with minibar' },
   { label: 'Distributor', icon: Icon.PiTruckBold, description: 'Wholesale distribution' },
+  // General-retail verticals (2026-11-02, additive) — must match the Tenant
+  // model enum and server/routes/tenant.routes.js applyValidation exactly.
+  { label: 'Fashion Retail', icon: Icon.PiTShirtBold, description: 'Sell clothing & apparel' },
+  { label: 'Electronics Retail', icon: Icon.PiDesktopTowerBold, description: 'Sell phones, laptops & devices' },
+  { label: 'Beauty & Skincare', icon: Icon.PiSparkleBold, description: 'Sell skincare & beauty products' },
+  { label: 'Home & Living', icon: Icon.PiHouseBold, description: 'Sell furniture & home goods' },
+  { label: 'General Retail', icon: Icon.PiShoppingCartBold, description: 'Mixed retail assortment' },
   { label: 'Other', icon: Icon.PiDotsThreeBold, description: 'Something else' },
 ];

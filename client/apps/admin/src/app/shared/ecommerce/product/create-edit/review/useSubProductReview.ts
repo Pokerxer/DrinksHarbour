@@ -78,7 +78,7 @@ export function useSubProductReview(id: string, token: string) {
             ...previous,
             drafts: {
               ...previous.drafts,
-              [lineId]: { ...previous.drafts[lineId], [field]: value },
+              [lineId]: { ...previous.drafts[lineId], ...(field === 'normal' ? { inherit: undefined } : {}), [field]: value },
             },
           }
         : previous

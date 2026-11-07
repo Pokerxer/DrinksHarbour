@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // Services for banner API calls
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -14,11 +15,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch banners');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getBannerById(id: string, token: string) {
@@ -29,11 +30,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch banner');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async createBanner(data: any, token: string) {
@@ -47,11 +48,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to create banner');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async updateBanner(id: string, data: any, token: string) {
@@ -65,11 +66,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to update banner');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async patchBanner(id: string, data: any, token: string) {
@@ -83,11 +84,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to patch banner');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async deleteBanner(id: string, token: string) {
@@ -99,11 +100,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to delete banner');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async updateBannerStatus(id: string, status: string, token: string) {
@@ -117,11 +118,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to update banner status');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async toggleBannerActive(id: string, token: string) {
@@ -133,11 +134,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to toggle banner active status');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async bulkUpdateStatus(bannerIds: string[], status: string, token: string) {
@@ -151,11 +152,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to bulk update banner status');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async cloneBanner(id: string, token: string) {
@@ -167,11 +168,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to clone banner');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getBannerAnalytics(id: string, token: string) {
@@ -182,11 +183,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch banner analytics');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getAnalyticsOverview(token: string, params?: Record<string, any>) {
@@ -196,10 +197,10 @@ export const bannerService = {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch analytics overview');
     }
-    return response.json();
+    return readJson(response);
   },
 
   async getEntityAnalytics(token: string) {
@@ -207,10 +208,10 @@ export const bannerService = {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch entity analytics');
     }
-    return response.json();
+    return readJson(response);
   },
 
   async trackImpression(id: string) {
@@ -235,11 +236,11 @@ export const bannerService = {
     const response = await fetch(url);
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch active banners');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async generateBannerContent(
@@ -265,11 +266,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to generate banner content');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async generateBannerSuggestions(
@@ -292,11 +293,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to generate banner suggestions');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async enhanceBannerContent(
@@ -319,11 +320,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to enhance banner content');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async enhanceBannerField(
@@ -345,11 +346,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to enhance field');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async generateImagePrompt(
@@ -371,11 +372,11 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to generate image prompt');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getBannerContextData(token: string) {
@@ -386,10 +387,10 @@ export const bannerService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch context data');
     }
 
-    return response.json();
+    return readJson(response);
   },
 };

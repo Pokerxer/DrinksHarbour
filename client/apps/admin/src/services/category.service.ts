@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // Services for category API calls
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -8,6 +9,7 @@ interface Category {
   slug: string;
   type: string;
   description?: string;
+  industry?: string;
 }
 
 interface SubCategory {
@@ -16,6 +18,7 @@ interface SubCategory {
   slug: string;
   type: string;
   parent: string;
+  industry?: string;
   description?: string;
 }
 
@@ -26,6 +29,8 @@ export interface AdminCategory {
   type: string;
   status: string;
   description?: string;
+  /** Industry scope — additive 2026-11-02; absent = legacy/global. */
+  industry?: string;
   thumbnailImage?: { url: string; alt?: string };
   featuredImage?: { url: string; alt?: string };
   bannerImage?: { url: string; alt?: string };
@@ -46,6 +51,8 @@ export interface CategoryFormData {
   alcoholCategory?: string;
   description?: string;
   shortDescription?: string;
+  /** Industry scope — additive 2026-11-02; '' = legacy/global. */
+  industry?: string;
   status?: string;
   displayOrder?: number;
   parent?: string;
@@ -76,7 +83,7 @@ function authHeaders(token: string): HeadersInit {
 
 async function apiFetch<T>(url: string, options: RequestInit): Promise<T> {
   const res = await fetch(url, options);
-  const json = await res.json();
+  const json = await readJson<{ data: T; message?: string }>(res);
   if (!res.ok) throw new Error(json.message || 'Request failed');
   return json.data;
 }
@@ -127,37 +134,58 @@ export async function deleteAdminCategory(token: string, id: string): Promise<vo
     method: 'DELETE',
     headers: authHeaders(token),
   });
-  const json = await res.json();
+  const json = await readJson<{ message?: string }>(res);
   if (!res.ok) throw new Error(json.message || 'Delete failed');
 }
 
 export const categoryService = {
   /**
-   * Fetch all categories
+   * Fetch all categories — compat wrapper (existing 8+ call sites keep the
+   * plain array). For the applied industry-scope fidelity use
+   * {@link getCategoriesWithMeta}.
    */
-  async getCategories(token: string): Promise<Category[]> {
-    const response = await fetch(`${API_URL}/api/categories`, {
+  async getCategories(token: string, mode?: 'picker'): Promise<Category[]> {
+    const { categories } = await this.getCategoriesWithMeta(token, mode);
+    return categories;
+  },
+
+  /**
+   * Fetch all categories WITH the server-applied industry scope echo
+   * (industries-industry-scope round, 2026-11-02): `GET /api/categories`
+   * responds additively with `meta.industries` — the exact set the server
+   * filtered this caller's list by, or null when the caller is
+   * unprofiled/legacy (or an anonymous request). Non-breaking: callers that
+   * only need the array keep using getCategories().
+   */
+  async getCategoriesWithMeta(token: string, mode?: 'picker'): Promise<{ categories: Category[]; industriesMeta: string[] | null }> {
+    const endpoint = mode === 'picker' ? '/api/categories/picker' : '/api/categories';
+    const response = await fetch(`${API_URL}${endpoint}`, {
       headers: {
         'Authorization': `Bearer ${token}`,
       },
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch categories');
     }
 
-    const result = await response.json();
-    return result.data?.categories || [];
+    // The echo lives at the envelope's `meta`; tolerate a `data.meta` shape
+    // defensively (server-side shape evolution).
+    const result = await readJson<{ data?: { categories?: Category[]; meta?: { industries?: string[] | null } }; meta?: { industries?: string[] | null } }>(response);
+    const industriesMeta = result.meta?.industries ?? result.data?.meta?.industries ?? null;
+    return { categories: result.data?.categories || [], industriesMeta };
   },
 
   /**
-   * Fetch subcategories by category ID
+   * Fetch subcategories by category ID WITH the applied-scope echo (same
+   * contract as getCategoriesWithMeta).
    */
-  async getSubCategories(token: string, categoryId?: string): Promise<SubCategory[]> {
+  async getSubCategoriesWithMeta(token: string, categoryId?: string, mode?: 'picker'): Promise<{ subCategories: SubCategory[]; industriesMeta: string[] | null }> {
+    const endpoint = mode === 'picker' ? '/api/subcategories/picker' : '/api/subcategories';
     const url = categoryId
-      ? `${API_URL}/api/subcategories?category=${categoryId}`
-      : `${API_URL}/api/subcategories`;
+      ? `${API_URL}${endpoint}?category=${encodeURIComponent(categoryId)}`
+      : `${API_URL}${endpoint}`;
 
     const response = await fetch(url, {
       headers: {
@@ -166,12 +194,23 @@ export const categoryService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch subcategories');
     }
 
-    const result = await response.json();
-    return result.data || [];
+    const result = await readJson<{ data?: SubCategory[]; meta?: { industries?: string[] | null } }>(response);
+    return { subCategories: result.data || [], industriesMeta: result.meta?.industries ?? null };
+  },
+
+  /**
+   * Fetch subcategories by category ID
+   */
+  async getSubCategories(token: string, categoryId?: string, mode?: 'picker'): Promise<SubCategory[]> {
+    const { subCategories } = await this.getSubCategoriesWithMeta(token, categoryId, mode);
+    return mode === 'picker' ? subCategories.map(row => ({
+      ...row,
+      parent: typeof row.parent === 'string' ? row.parent : (row.parent as { _id?: string } | null)?._id || categoryId || '',
+    })) : subCategories;
   },
 
   async generateCategory(

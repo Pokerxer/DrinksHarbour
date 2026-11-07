@@ -25,7 +25,7 @@ const ACTIVE_DELIVERY_STATUSES = ['draft', 'assigned', 'dispatched', 'in_progres
  * own TRIP-000001.
  */
 async function getNextDeliveryNumber(tenantId) {
-  const last = await Delivery.findOne({ tenant: tenantId })
+  const last = await Delivery.findOne({ tenant: tenantId, responsibilityVersion: { $ne: 2 } })
     .sort({ createdAt: -1 })
     .select('deliveryNumber')
     .lean();
@@ -88,6 +88,7 @@ function buildStop(order, sequence) {
  */
 async function getFailedRedeliveryIds(tenantId) {
   const closedTripsWithFailures = await Delivery.find({
+    responsibilityVersion: { $ne: 2 },
     tenant: tenantId,
     status: { $in: ['completed', 'cancelled'] },
     'stops.status': 'failed',
@@ -111,6 +112,7 @@ async function getFailedRedeliveryIds(tenantId) {
 async function getUnassignedOrders(tenantId, { zone, limit = 100 } = {}) {
   const [activeTrips, retryIds] = await Promise.all([
     Delivery.find({
+      responsibilityVersion: { $ne: 2 },
       tenant: tenantId,
       status: { $in: ACTIVE_DELIVERY_STATUSES },
     })
@@ -130,6 +132,8 @@ async function getUnassignedOrders(tenantId, { zone, limit = 100 } = {}) {
 
   const filter = {
     'items.tenant': tenantId,
+    ...require('./merchantFulfillment/identity').legacyFilter(),
+    items: { $not: { $elemMatch: { tenant: { $ne: new mongoose.Types.ObjectId(String(tenantId)) } } } },
     // Pickup orders are collected in store; they never need a rider.
     shippingMethod: { $ne: 'pickup' },
     $or: [
@@ -178,6 +182,8 @@ async function createDelivery(tenantId, { orderIds = [], driverId, scheduledFor,
   const orders = await Order.find({
     _id: { $in: ids },
     'items.tenant': tenantId,
+    ...require('./merchantFulfillment/identity').legacyFilter(),
+    items: { $not: { $elemMatch: { tenant: { $ne: new mongoose.Types.ObjectId(String(tenantId)) } } } },
     $or: [
       { status: { $in: DISPATCHABLE_ORDER_STATUSES } },
       ...(retryList.length ? [{ _id: { $in: retryList }, status: 'shipped' }] : []),
@@ -226,6 +232,8 @@ async function createDelivery(tenantId, { orderIds = [], driverId, scheduledFor,
 async function assertDriverAssignable(tenantId, driverId) {
   const driver = await Driver.findOne({ _id: driverId, tenant: tenantId });
   if (!driver) throw new NotFoundError('Driver not found.');
+  if (driver.legacyTrip) throw new ValidationError('Driver is owned by an active legacy trip.');
+  if (driver.managedTrip) throw new ValidationError('Driver is owned by a managed merchant trip.');
   if (!driver.isActive) throw new ValidationError(`${driver.name} is deactivated.`);
   if (driver.status === 'suspended') throw new ValidationError(`${driver.name} is suspended.`);
   return driver;
@@ -246,8 +254,13 @@ async function dispatchDelivery(tenantId, deliveryId, actorId) {
   if (!delivery.driver) throw new ValidationError('Assign a driver before dispatching.');
   if (!delivery.stops.length) throw new ValidationError('This trip has no stops.');
 
+  // Durable claim precedes every goods effect. Keep it after uncertain/partial
+  // legacy dispatch failures so only this exact trip can recover/retry.
+  await require('./delivery/driverClaim').claimLegacy(tenantId, delivery.driver, delivery._id);
+
   const orderIds = delivery.stops.map((s) => s.order);
   const orders = await Order.find({ _id: { $in: orderIds } });
+  for (const order of orders) require('./orderAccess').assertSingleTenant(order, tenantId);
 
   // Sequential, not Promise.all: each applyOrderStatus triggers stock movements
   // and these orders can share subproducts. Running them concurrently races the
@@ -260,7 +273,8 @@ async function dispatchDelivery(tenantId, deliveryId, actorId) {
   delivery.dispatchedAt = new Date();
   await delivery.save();
 
-  await Driver.updateOne({ _id: delivery.driver, tenant: tenantId }, { status: 'on_trip' });
+  const driverState = await Driver.updateOne({ _id: delivery.driver, tenant: tenantId, managedTrip: null, legacyTrip: delivery._id }, { status: 'on_trip' });
+  if (driverState.matchedCount !== 1) throw new ValidationError('Owned rider claim requires reconciliation.');
 
   return delivery;
 }
@@ -361,7 +375,7 @@ async function completeDelivery(tenantId, deliveryId) {
   await delivery.save();
 
   if (delivery.driver) {
-    await Driver.updateOne({ _id: delivery.driver, tenant: tenantId }, { status: 'available' });
+    await require('./delivery/driverClaim').releaseLegacy(tenantId, delivery.driver, delivery._id);
   }
 
   return delivery;
@@ -393,30 +407,14 @@ async function settleCod(tenantId, deliveryId, { notes } = {}, actorId) {
 
 /** Cancel a trip that has not left yet, releasing its orders. */
 async function cancelDelivery(tenantId, deliveryId, reason) {
-  const delivery = await loadDelivery(tenantId, deliveryId);
-
-  if (!['draft', 'assigned'].includes(delivery.status)) {
-    throw new ValidationError(
-      'Only a trip that has not been dispatched can be cancelled. Resolve its stops instead.'
-    );
-  }
-
-  delivery.status = 'cancelled';
-  delivery.cancelledReason = reason || 'Cancelled by dispatcher';
-  await delivery.save();
-
-  if (delivery.driver) {
-    await Driver.updateOne({ _id: delivery.driver, tenant: tenantId }, { status: 'available' });
-  }
-
-  // Orders were never moved to 'shipped', so they simply reappear in the
-  // unassigned queue once this trip stops being active.
-  return delivery;
+  return require('./delivery/driverClaim').editLegacyTrip(tenantId,deliveryId,async delivery=>{
+    delivery.status='cancelled';delivery.cancelledReason=reason||'Cancelled by dispatcher';
+  });
 }
 
 /** Edit an undispatched trip: driver, schedule, notes, stop order. */
 async function updateDelivery(tenantId, deliveryId, { driverId, scheduledFor, notes, stopOrder }) {
-  const delivery = await loadDelivery(tenantId, deliveryId);
+  return require('./delivery/driverClaim').editLegacyTrip(tenantId, deliveryId, async delivery => {
 
   if (!['draft', 'assigned'].includes(delivery.status)) {
     throw new ValidationError('A dispatched trip can no longer be edited.');
@@ -447,17 +445,17 @@ async function updateDelivery(tenantId, deliveryId, { driverId, scheduledFor, no
     delivery.stops.sort((a, b) => a.sequence - b.sequence);
   }
 
-  await delivery.save();
-  return delivery;
+  });
 }
 
 async function loadDelivery(tenantId, deliveryId) {
-  const delivery = await Delivery.findOne({ _id: deliveryId, tenant: tenantId });
+  const delivery = await Delivery.findOne({ _id: deliveryId, tenant: tenantId, responsibilityVersion: { $ne: 2 } });
   if (!delivery) throw new NotFoundError('Trip not found.');
   return delivery;
 }
 
 module.exports = {
+  ...require('./delivery/managedTrips'),
   getNextDeliveryNumber,
   computeCodExpected,
   buildStop,

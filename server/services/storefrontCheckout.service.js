@@ -14,7 +14,7 @@ function canonical(value) {
   if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(k => [k, canonical(value[k])]));
   return value;
 }
-function prepareCheckout(tenant, key, input, token) {
+function prepareCheckout(tenant, key, input, token, context = {}) {
   if (typeof token !== 'string' || !/^[\w.-]{8,128}$/.test(token)) throw new ValidationError('Idempotency-Key must contain 8–128 letters, numbers, dots, dashes or underscores');
   normalizeCart(input);
   onlyKeys(input.customer, ['firstName', 'lastName', 'email', 'phone']);
@@ -28,11 +28,14 @@ function prepareCheckout(tenant, key, input, token) {
     throw new ValidationError('Use an HTTPS return URL');
   }
   if (url.href.length > 2000) throw new ValidationError('Return URL is too long');
+  require('./storefrontChannels').assertReturnUrl(tenant, url.href);
   if ((input.shippingMethod || 'standard') !== 'pickup' && (typeof input.shipping?.address !== 'string' || !input.shipping.address.trim() || typeof input.shipping?.city !== 'string' || !input.shipping.city.trim())) {
     throw new ValidationError('Shipping address and city are required');
   }
   return { _id: digest(`${id(tenant)}:${id(key)}:${token}`), tenant: tenant._id, apiKey: key._id,
-    fingerprint: digest(JSON.stringify(canonical(input))), email: input.customer.email.trim(), returnUrl: url.href };
+    fingerprint: digest(JSON.stringify(canonical(context.customerId ? { input, customerId: id(context.customerId) } : input))),
+    ...(context.customerId ? { customer: context.customerId } : {}),
+    email: input.customer.email.trim(), returnUrl: url.href };
 }
 const owner = (tenant, key, value) => ({ _id: value, tenant: tenant._id, apiKey: key._id });
 const privateFields = '+fingerprint +email +returnUrl +authorizationUrl';
@@ -41,8 +44,8 @@ function publicCheckout(row) {
     currency: 'NGN', status: row.state, reference: row.reference,
     authorizationUrl: row.state === 'ready' ? row.authorizationUrl : null };
 }
-async function createCheckout(tenant, key, input, token) {
-  const prepared = prepareCheckout(tenant, key, input, token);
+async function createCheckout(tenant, key, input, token, context = {}) {
+  const prepared = prepareCheckout(tenant, key, input, token, context);
   let row;
   const session = await mongoose.startSession();
   try {
@@ -52,16 +55,21 @@ async function createCheckout(tenant, key, input, token) {
         if (row.fingerprint !== prepared.fingerprint) throw new ConflictError('Idempotency-Key already used for a different checkout');
         return;
       }
-      gateway.assertConfigured();
+      const channel = tenant.storefrontChannel;
+      const channelSnapshot = await require('./marketCommitment').directSnapshot(tenant);
+      gateway.assertConfigured(channel?.paymentAccount);
       const quote = await cart.quoteCart(tenant, input, session);
       const orderId = new mongoose.Types.ObjectId();
       const orderNumber = `WEB-${crypto.randomUUID()}`;
       row = { ...prepared, order: orderId, orderNumber, total: quote.total, amountKobo: Math.round(quote.total * 100),
-        reference: `dhw-${prepared._id}`, state: 'pending' };
-      await stock.reserveStock(quote.orderItems, session);
+        reference: `dhw-${prepared._id}`, state: 'pending', channelSnapshot,
+        ...(channel ? { salesChannel: channel.code, paymentAccount: channel.paymentAccount } : {}) };
+      if (channel) await require('./storefrontLocationStock').reserve(quote.orderItems, orderId, session);
+      else await stock.reserveStock(quote.orderItems, session);
       const c = input.customer, s = input.shipping || {};
       await Order.insertMany([{ _id: orderId, integrationCheckout: row._id, tenant: tenant._id, orderNumber,
-        items: quote.orderItems, subtotal: quote.subtotal, shippingFee: quote.shippingFee, totalAmount: quote.total,
+        items: quote.orderItems, channelSnapshot, user: prepared.customer, subtotal: quote.subtotal, shippingFee: quote.shippingFee, totalAmount: quote.total,
+        ...(channel ? { onlineStockVersion: 1, salesChannel: channel.code, settlementOwner: 'tenant', paymentAccount: channel.paymentAccount } : {}),
         currency: 'NGN', paymentMethod: 'card', paymentStatus: 'pending', paymentReference: row.reference,
         shippingMethod: input.shippingMethod || 'standard', ageVerifiedAtOrderTime: input.ageVerified === true,
         shippingAddress: { fullName: `${c.firstName.trim()} ${c.lastName.trim()}`, email: row.email, phone: c.phone.trim(),
@@ -110,7 +118,7 @@ async function getCheckout(tenant, key, value) {
 async function verifyCheckout(tenant, key, value) {
   const row = await findCheckout(tenant, key, value);
   if (!['paid', 'cancelled', 'needs_review'].includes(row.state)) {
-    const payment = await gateway.verify(row.reference);
+    const payment = await gateway.verify(row.reference, row.paymentAccount);
     if (payment.status === 'success') await require('./storefrontSettlement').settlePayment(row.reference, payment);
   }
   return getCheckout(tenant, key, value);

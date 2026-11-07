@@ -1,3 +1,4 @@
+import { warehouseFixture } from '@/test/warehouse-fixture';
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -11,7 +12,7 @@ afterEach(() => {
 it('keeps locations but clears failed stock and supports retry', async () => {
   vi.spyOn(warehouseService, 'getWarehouses').mockResolvedValue({
     success: true,
-    data: [{ _id: 'w' }],
+    data: [warehouseFixture({ _id: 'w' })],
   });
   const stock = vi
     .spyOn(warehouseStockService, 'getAllStock')
@@ -29,7 +30,7 @@ it('keeps locations but clears failed stock and supports retry', async () => {
   expect(result.current.stockError).toBe('');
 });
 it('ignores late requests and clears tenant data on sign out', async () => {
-  let complete!: (value: unknown) => void;
+  let complete!: (value: Awaited<ReturnType<typeof warehouseService.getWarehouses>>) => void;
   vi.spyOn(warehouseService, 'getWarehouses')
     .mockImplementationOnce(
       () =>
@@ -37,14 +38,14 @@ it('ignores late requests and clears tenant data on sign out', async () => {
           complete = resolve;
         }),
     )
-    .mockResolvedValue({ success: true, data: [{ _id: 'new' }] });
+    .mockResolvedValue({ success: true, data: [warehouseFixture({ _id: 'new' })] });
   vi.spyOn(warehouseStockService, 'getAllStock').mockResolvedValue({ success: true, data: [] });
   const { result, rerender } = renderHook(
     ({ token }) => useInventoryLocations(token, 'authenticated'),
     { initialProps: { token: 't' } },
   );
   await act(() => result.current.load());
-  await act(async () => complete({ success: true, data: [{ _id: 'old' }] }));
+  await act(async () => complete({ success: true, data: [warehouseFixture({ _id: 'old' })] }));
   expect(result.current.warehouses[0]._id).toBe('new');
   rerender({ token: '' });
   expect(result.current.warehouses).toEqual([]);

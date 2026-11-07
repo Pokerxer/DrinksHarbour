@@ -165,11 +165,67 @@ it('keeps invoice-linked returns scoped from the first history request', async (
   ).toBe(true);
 });
 
-it('initial empty search does not close a return detail after the debounce interval', async()=>{
+it('initial empty search does not close a return detail after the debounce interval', async () => {
   vi.useFakeTimers();
-  await act(async()=>{render(<CustomerReturns/>);});
-  fireEvent.click(screen.getAllByRole('button',{name:'View RET-1'})[0]);
-  expect(screen.getByRole('link',{name:'Open POS receipt'})).toBeTruthy();
-  await act(async()=>{await vi.advanceTimersByTimeAsync(350);});
-  expect(screen.getByRole('link',{name:'Open POS receipt'})).toBeTruthy();
+  await act(async () => {
+    render(<CustomerReturns />);
+  });
+  fireEvent.click(screen.getAllByRole('button', { name: 'View RET-1' })[0]);
+  expect(screen.getByRole('link', { name: 'Open POS receipt' })).toBeTruthy();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(350);
+  });
+  expect(screen.getByRole('link', { name: 'Open POS receipt' })).toBeTruthy();
+});
+
+it('opens a return detail when its row first enters the document', async () => {
+  let clicked = false;
+  const observer = new MutationObserver(() => {
+    if (clicked) return;
+    const row = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="View RET-1"]'
+    );
+    if (row) {
+      clicked = true;
+      fireEvent.click(row);
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  try {
+    render(<CustomerReturns />);
+    await screen.findByRole('link', { name: 'Open POS receipt' });
+    expect(clicked).toBe(true);
+  } finally {
+    observer.disconnect();
+  }
+});
+
+it('clears an opened detail on refresh even when the same history object returns', async () => {
+  render(<CustomerReturns />);
+  await screen.findAllByText('Damaged wine');
+  fireEvent.click(screen.getAllByRole('button', { name: 'View RET-1' })[0]);
+  expect(screen.getByRole('link', { name: 'Open POS receipt' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  await screen.findAllByText('Damaged wine');
+  expect(screen.queryByRole('link', { name: 'Open POS receipt' })).toBeNull();
+});
+
+it('invalidates old detail when a debounced search changes the loaded filter', async () => {
+  vi.useFakeTimers();
+  await act(async () => {
+    render(<CustomerReturns />);
+  });
+  fireEvent.click(screen.getAllByRole('button', { name: 'View RET-1' })[0]);
+  expect(screen.getByRole('link', { name: 'Open POS receipt' })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Search returns'), {
+    target: { value: 'wine' },
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(350);
+  });
+  expect(customerReturnsService.list).toHaveBeenLastCalledWith(
+    'tenant-token',
+    expect.objectContaining({ search: 'wine', page: 1 })
+  );
+  expect(screen.queryByRole('link', { name: 'Open POS receipt' })).toBeNull();
 });

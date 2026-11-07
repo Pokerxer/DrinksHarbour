@@ -20,13 +20,28 @@ export interface ExamConfiguration {
   departments: string[];
   questions: ExamQuestionDefinition[];
 }
+export interface ExaminationAttemptProgress {
+  employee: string;
+  revision: number;
+  durationMinutes?: number;
+  startedAt: string | null;
+  submittedAt: string | null;
+  timedOut?: boolean;
+}
 export interface ExaminationSettings extends ExamConfiguration {
+  attempts?: ExaminationAttemptProgress[];
   assigned: number;
   submitted: number;
   monthComplete: boolean;
   periodComplete?: boolean;
 }
+export interface ScoreWeights {
+  appraisal: number;
+  exam: number;
+  attendance: number;
+}
 export interface CompositeScore {
+  weights?: ScoreWeights;
   appraisalScore: number;
   examScore?: number;
   attendanceScore: number;
@@ -129,3 +144,17 @@ export const generateExamQuestions = (
 
 export const startExamination = (id: string) =>
   request<OwnExamination>(`${base(id)}/start`, { method: 'POST' });
+
+export const resetEmployeeExamination = (
+  id: string,
+  employee: string,
+  expectedRevision: number,
+  expectedCycleRevision: number
+) =>
+  request<{ revision: number; attemptRevision: number }>(
+    `${base(id)}/attempts/${encodeURIComponent(employee)}/reset`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ expectedRevision, expectedCycleRevision }),
+    }
+  );

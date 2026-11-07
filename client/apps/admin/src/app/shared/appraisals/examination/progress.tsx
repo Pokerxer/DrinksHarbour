@@ -30,9 +30,9 @@ export default function ExaminationProgress({
           : 'Final bonuses can be calculated after this period ends.'}
       </p>
       <p className="text-xs leading-5 text-gray-500">
-        Exam recipients use three equal components. Other employees use
-        appraisal and attendance equally. Final scores are fixed when the cycle
-        closes.
+        Attendance contributes 20% to new combined scores. Exam recipients use
+        40% examination and 40% appraisal; other employees use 80% appraisal.
+        Released results retain their saved weights.
       </p>
     </section>
   );

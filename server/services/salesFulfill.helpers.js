@@ -170,10 +170,13 @@ function buildSalesRow({ tenantId, item, qty, paymentMethod, unitCost = 0, reven
   const finalItemPrice = priceAtSale;
 
   const isCommission = revenue.revenueModel === 'commission';
-  const revenueModelUsed = isCommission ? 'commission' : 'markup';
+  const retail = revenue.revenueModel === 'selling_price_markup';
+  const revenueModelUsed = retail ? 'selling_price_markup' : isCommission ? 'commission' : 'markup';
 
   let tenantAmount;
-  if (isCommission) {
+  if (retail) {
+    tenantAmount = itemSubtotal;
+  } else if (isCommission) {
     const commissionPct = Number(revenue.commissionPct) || 0;
     tenantAmount = round2(itemSubtotal * (1 - commissionPct / 100));
   } else {

@@ -37,17 +37,17 @@ it('sorts all matching rows before pagination and resets the view to newest firs
     total: 51,
     truncated: false,
   });
-  render(<InventoryMovementsBrowser preset="moves" />);
+  const { container } = render(<InventoryMovementsBrowser preset="moves" />);
   await waitFor(() =>
-    expect(screen.getAllByRole('button', { name: 'Select line' })).toHaveLength(50),
+    expect(screen.getAllByLabelText('Select line')).toHaveLength(50),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
-  expect(screen.getAllByRole('button', { name: 'Select line' })).toHaveLength(1);
+  expect(screen.getAllByLabelText('Select line')).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: 'Sort by Product' }));
   await waitFor(() =>
-    expect(screen.getAllByRole('button', { name: 'Select line' })).toHaveLength(50),
+    expect(screen.getAllByLabelText('Select line')).toHaveLength(50),
   );
-  expect(screen.getAllByRole('link')[0].textContent).toBe('Beer');
+  expect(container.querySelector('tbody a')?.textContent).toBe('Beer');
   expect(
     screen
       .getByRole('button', { name: 'Sort by Product' })
@@ -57,12 +57,12 @@ it('sorts all matching rows before pagination and resets the view to newest firs
   fireEvent.change(screen.getByRole('textbox', { name: 'Search movements' }), {
     target: { value: 'missing, sku-b' },
   });
-  expect(screen.getAllByRole('button', { name: 'Select line' })).toHaveLength(1);
+  expect(screen.getAllByLabelText('Select line')).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
   await waitFor(() =>
-    expect(screen.getAllByRole('button', { name: 'Select line' })).toHaveLength(50),
+    expect(screen.getAllByLabelText('Select line')).toHaveLength(50),
   );
-  expect(screen.getAllByRole('link')[0].textContent).toBe('Château');
+  expect(container.querySelector('tbody a')?.textContent).toBe('Château');
   expect(
     screen
       .getByRole('button', { name: 'Sort by Recorded date' })
@@ -91,7 +91,7 @@ it('prints all matching records and keeps checked records across pages', async (
     container.querySelectorAll<HTMLButtonElement>('button[aria-label="Select line"]')[0],
   );
   fireEvent.click(container.querySelector<HTMLButtonElement>('button[aria-label="Next page"]')!);
-  fireEvent.click(screen.getByRole('button', { name: 'Select line' }));
+  fireEvent.click(screen.getByLabelText('Select line'));
   expect(screen.getByRole('button', { name: 'Print 2 Lines' })).toBeTruthy();
   fireEvent.change(screen.getByRole('textbox', { name: 'Search movements' }), {
     target: { value: 'sku-b, missing' },
@@ -126,7 +126,7 @@ it('combines multiple products with warehouse/status filters and restores a save
   });
   render(<InventoryMovementsBrowser preset="moves" />);
   await waitFor(() =>
-    expect(screen.getAllByRole('button', { name: 'Select line' })).toHaveLength(2),
+    expect(screen.getAllByLabelText('Select line')).toHaveLength(2),
   );
   fireEvent.focus(screen.getByRole('searchbox', { name: 'Search products' }));
   fireEvent.click(screen.getByRole('checkbox', { name: 'Château · SKU-A' }));
@@ -143,7 +143,7 @@ it('combines multiple products with warehouse/status filters and restores a save
     target: { value: 'City products' },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  const stored = JSON.parse(localStorage.getItem('dh-inventory-moves-searches')!)[0];
+  const stored = (JSON.parse(localStorage.getItem('dh-inventory-moves-searches')!) as Record<string, unknown>[])[0];
   expect(stored).toMatchObject({ products: 'a,b', warehouse: 'city', status: 'confirmed' });
   fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
   fireEvent.click(screen.getByRole('button', { name: 'City products' }));

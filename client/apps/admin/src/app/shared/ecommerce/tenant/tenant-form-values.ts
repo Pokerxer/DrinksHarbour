@@ -1,5 +1,6 @@
 import type { AdminTenant } from '@/services/tenant.service';
 import type { TenantFormInput } from '@/validators/create-tenant.schema';
+import { normalizeIndustries } from '@/utils/industries';
 
 export function tenantFormValues(tenant: AdminTenant): TenantFormInput {
         const ps = tenant.purchaseSettings;
@@ -26,6 +27,7 @@ export function tenantFormValues(tenant: AdminTenant): TenantFormInput {
             ? tenant.currentPeriodEnd.split('T')[0]
             : '',
           revenueModel: tenant.revenueModel || 'markup',
+          sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage ?? 0,
           markupPercentage: tenant.markupPercentage ?? 40,
           commissionPercentage: tenant.commissionPercentage ?? 12,
           platformMarkupPercentage: tenant.platformMarkupPercentage ?? 15,
@@ -45,6 +47,9 @@ export function tenantFormValues(tenant: AdminTenant): TenantFormInput {
           addressZipCode: tenant.address?.zipCode || '',
           addressCountry: tenant.address?.country || '',
           businessType: tenant.businessType || undefined,
+          // Defensive: normalise to canonical INDUSTRY values (drops unknown
+          // legacy junk); absent/empty stays the legacy empty profile.
+          industries: [...(normalizeIndustries(tenant.industries) ?? [])],
           cacNumber: tenant.cacNumber || '',
           tin: tenant.tin || '',
           idType: tenant.idType || undefined,

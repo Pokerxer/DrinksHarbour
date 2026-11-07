@@ -1,9 +1,10 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: "Shipping Information",
   description:
     "Delivery areas, shipping rates, and estimated times for DrinksHarbour orders across Nigeria. Fast, reliable beverage delivery.",
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
     description: "Delivery areas, shipping rates, and estimated delivery times across Nigeria.",
   },
   alternates: { canonical: `${BASE_URL}/shipping-info` },
-};
+});
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -45,6 +46,8 @@ export default function ShippingInfoLayout({ children }: { children: React.React
           { href: '/shop', label: 'Buy drinks online' },
           { href: '/categories', label: 'Browse drinks categories' },
           { href: '/faqs', label: 'Read delivery FAQs' },
+          { href: '/delivery/abuja', label: 'Delivery in Abuja and the FCT' },
+          { href: '/delivery/lagos', label: 'Delivery to Lagos' },
         ]}
       />
     </>

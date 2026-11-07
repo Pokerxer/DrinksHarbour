@@ -42,6 +42,39 @@ it('counts products once across sizes, retains signed units and separates unassi
     0,
   );
 });
+
+// Retail variant identity (DRI-30): the location search text composes the full
+// shared label, so colour/option identity is searchable; legacy rows stay
+// byte-identical (sizeName-only).
+it('searches retail variant identity through the composed size label', () => {
+  const retailStock = [
+    {
+      warehouseId: 'w',
+      subProductId: 'r1',
+      productName: 'Linen Shirt',
+      sku: 'LS-01',
+      sizeName: 'M',
+      colorName: 'Emerald',
+      currentQuantity: 3,
+    },
+    {
+      warehouseId: 'w',
+      subProductId: 'r2',
+      productName: 'Linen Shirt',
+      sku: 'LS-02',
+      sizeName: 'M',
+      colorName: 'Ivory',
+      currentQuantity: 1,
+    },
+  ] as StockRow[];
+  const reports = locationReports(warehouses, [...retailStock, stock[0]]);
+  // Named filters object mirrors the LocationFilters shape the module consumes.
+  const filters = (search: string) => ({ search, type: '', status: '', stock: '', sort: 'name' });
+  expect(filterLocations(reports, filters('emerald'))).toHaveLength(1);
+  expect(filterLocations(reports, filters('ivory'))).toHaveLength(1);
+  // Legacy beverage row: sizeName-only search behaviour unchanged.
+  expect(filterLocations(reports, filters('léon'))[0].warehouse._id).toBe('w');
+});
 it('matches multiple accent-insensitive product or location searches and intersects filters', () => {
   const reports = locationReports(warehouses, stock);
   expect(

@@ -16,7 +16,7 @@ import {
   Area,
   Line,
 } from 'recharts';
-import { Badge } from 'rizzui';
+import { Badge } from 'rizzui/badge';
 import { useDashboard } from './use-dashboard';
 
 const FALLBACK = Array.from({ length: 12 }, (_, i) => ({

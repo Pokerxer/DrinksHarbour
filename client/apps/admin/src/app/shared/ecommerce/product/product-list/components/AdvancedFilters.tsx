@@ -1,6 +1,10 @@
 // @ts-nocheck
 'use client';
 
+import { productTypes as catalogTypeOptions } from '@/app/shared/ecommerce/product/create-edit/form-utils';
+import { useTenant } from '@/context/TenantContext';
+import { resolveTenantIndustries, typesForIndustries } from '@/utils/industries';
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Text, Badge, Button, Flex, Input } from 'rizzui';
@@ -23,12 +27,18 @@ import {
   PiEyeBold,
 } from 'react-icons/pi';
 
+import type { PublicationScopeFilterValue } from '../scope-filter';
+
 // FilterConfig trimmed to fields the central product catalog actually has.
 export interface FilterConfig {
   // Status
   status: string[];
   stockStatus: string[];
   isPublished: boolean | null;
+
+  // Visibility (catalogue publication scope) — see ../scope-filter.ts
+  publicationScope: PublicationScopeFilterValue;
+
 
   // Inventory
   stockRange: [number, number];
@@ -77,33 +87,16 @@ const STOCK_STATUS_OPTIONS = [
   { value: 'out_of_stock', label: 'Out of Stock', color: 'danger', icon: '✕' },
 ];
 
-const BEVERAGE_TYPES = [
-  { value: 'wine', label: 'Wine', icon: '🍷' },
-  { value: 'red_wine', label: 'Red Wine', icon: '🍷' },
-  { value: 'white_wine', label: 'White Wine', icon: '🥂' },
-  { value: 'sparkling_wine', label: 'Sparkling', icon: '🍾' },
-  { value: 'rose_wine', label: 'Rosé', icon: '🌸' },
-  { value: 'champagne', label: 'Champagne', icon: '🥂' },
-  { value: 'beer', label: 'Beer', icon: '🍺' },
-  { value: 'craft_beer', label: 'Craft Beer', icon: '🍻' },
-  { value: 'lager', label: 'Lager', icon: '🍺' },
-  { value: 'ale', label: 'Ale', icon: '🍺' },
-  { value: 'stout', label: 'Stout', icon: '🍺' },
-  { value: 'whiskey', label: 'Whiskey', icon: '🥃' },
-  { value: 'vodka', label: 'Vodka', icon: '🍸' },
-  { value: 'gin', label: 'Gin', icon: '🍸' },
-  { value: 'rum', label: 'Rum', icon: '🍹' },
-  { value: 'tequila', label: 'Tequila', icon: '🌵' },
-  { value: 'brandy', label: 'Brandy', icon: '🥃' },
-  { value: 'cognac', label: 'Cognac', icon: '🥃' },
-  { value: 'liqueur', label: 'Liqueur', icon: '🍸' },
-  { value: 'cocktail', label: 'Cocktail', icon: '🍹' },
-  { value: 'soft_drink', label: 'Soft Drink', icon: '🥤' },
-  { value: 'juice', label: 'Juice', icon: '🧃' },
-  { value: 'water', label: 'Water', icon: '💧' },
-  { value: 'energy_drink', label: 'Energy Drink', icon: '⚡' },
-  { value: 'mixer', label: 'Mixer', icon: '🍋' },
+// Visibility facet — single-select buckets over catalogue publication scope.
+// Labels mirror the row-level PublicationScopeTag copy ("Marketplace" /
+// "Store-only"). 'all' is the default state (facet inactive).
+const VISIBILITY_SCOPE_OPTIONS = [
+  { value: 'all', label: 'All', icon: '🌐' },
+  { value: 'marketplace', label: 'Marketplace', icon: '🏬' },
+  { value: 'private', label: 'Store-only', icon: '🔒' },
 ];
+
+
 
 const ORIGIN_COUNTRIES = [
   { value: 'NG', label: 'Nigeria', flag: '🇳🇬' },
@@ -163,7 +156,9 @@ function FilterSection({
   return (
     <div className="border-b border-gray-100 last:border-0">
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
         className="flex w-full items-center justify-between px-4 py-3 transition-colors hover:bg-gray-50"
       >
         <Flex align="center" gap="2">
@@ -235,6 +230,8 @@ function PillSelect({
             key={option.value}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
+            type="button"
+            aria-pressed={isSelected}
             onClick={() => toggle(option.value)}
             className={cn(
               'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all',
@@ -246,6 +243,48 @@ function PillSelect({
             {(option.icon || option.flag) && (
               <span>{option.flag || option.icon}</span>
             )}
+            <span className="truncate">{option.label}</span>
+            {isSelected && <PiCheckBold className="h-3 w-3 flex-shrink-0" />}
+          </motion.button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Visibility scope pills — single-select variant of PillSelect: clicking a
+// value selects it outright (no toggle-off; "All" is the explicit reset).
+function ScopePills({
+  options,
+  value,
+  onChange,
+  columns = 3,
+}: {
+  options: { value: string; label: string; icon?: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  columns?: number;
+}) {
+  return (
+    <div className={cn('grid gap-2', `grid-cols-${columns}`)}>
+      {options.map((option) => {
+        const isSelected = value === option.value;
+        return (
+          <motion.button
+            key={option.value}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            type="button"
+            aria-pressed={isSelected}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all',
+              isSelected
+                ? 'border-[#b20202] bg-[#b20202] text-white shadow-sm'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-[#b20202]/40 hover:bg-red-50'
+            )}
+          >
+            {option.icon && <span>{option.icon}</span>}
             <span className="truncate">{option.label}</span>
             {isSelected && <PiCheckBold className="h-3 w-3 flex-shrink-0" />}
           </motion.button>
@@ -413,6 +452,13 @@ export default function AdvancedFilters({
   onReset,
   activeFilterCount,
 }: AdvancedFiltersProps) {
+  const { tenant } = useTenant();
+  const industryProfile = resolveTenantIndustries(tenant);
+  const typeOptions = typesForIndustries(
+    catalogTypeOptions,
+    industryProfile
+  );
+  const showBeverageFilters = !industryProfile || industryProfile.includes('beverage');
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'basic' | 'beverage' | 'dates'>(
     'basic'
@@ -443,7 +489,7 @@ export default function AdvancedFilters({
   // Tab navigation
   const tabs = [
     { id: 'basic', label: 'Basic', icon: PiTagBold },
-    { id: 'beverage', label: 'Beverage', icon: PiWineBold },
+    { id: 'beverage', label: 'Product details', icon: PiTagBold },
     { id: 'dates', label: 'Dates', icon: PiCalendarBold },
   ];
 
@@ -513,6 +559,7 @@ export default function AdvancedFilters({
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={() => setIsOpen(false)}
+                  aria-label="Close filters"
                   className="rounded-lg p-1 transition-colors hover:bg-gray-100"
                 >
                   <PiXBold className="h-4 w-4 text-gray-500" />
@@ -608,6 +655,33 @@ export default function AdvancedFilters({
                     />
                   </FilterSection>
 
+                  <FilterSection
+                    title="Visibility (Scope)"
+                    icon={PiGlobeBold}
+                    badge={filters.publicationScope !== 'all' ? 1 : undefined}
+                  >
+                    {/* Client-side facet over the admin-list payload — the
+                    server list endpoint has no scope param (see
+                    ../scope-filter.ts). Legacy rows without a publicationScope
+                    count as "Marketplace" only when that bucket is explicitly
+                    selected; "All" leaves every existing view unchanged. */}
+                    <ScopePills
+                      options={VISIBILITY_SCOPE_OPTIONS}
+                      value={filters.publicationScope}
+                      onChange={(value) =>
+                        updateFilter(
+                          'publicationScope',
+                          value as PublicationScopeFilterValue
+                        )
+                      }
+                      columns={3}
+                    />
+                    <Text className="mt-2 text-xs text-gray-400">
+                      Store-only products are sellable by their own store and
+                      hidden from the marketplace until approved.
+                    </Text>
+                  </FilterSection>
+
                   <FilterSection title="Product Flags" icon={PiEyeBold}>
                     <div className="space-y-1">
                       <ToggleRow
@@ -633,13 +707,13 @@ export default function AdvancedFilters({
               {activeTab === 'beverage' && (
                 <>
                   <FilterSection
-                    title="Beverage Type"
+                    title="Product Type"
                     icon={PiWineBold}
                     defaultOpen
                     badge={filters.beverageTypes.length}
                   >
                     <PillSelect
-                      options={BEVERAGE_TYPES}
+                      options={typeOptions}
                       selected={filters.beverageTypes}
                       onChange={(values) =>
                         updateFilter('beverageTypes', values)
@@ -648,6 +722,7 @@ export default function AdvancedFilters({
                     />
                   </FilterSection>
 
+                  {showBeverageFilters && <>
                   <FilterSection
                     title="Alcohol Content"
                     icon={PiThermometerBold}
@@ -673,7 +748,7 @@ export default function AdvancedFilters({
                     </div>
                   </FilterSection>
 
-                  <FilterSection title="Volume / Size" icon={PiDropBold}>
+                  <FilterSection title="Container volume" icon={PiDropBold}>
                     <RangeInputs
                       minValue={filters.volumeRange[0]}
                       maxValue={filters.volumeRange[1]}
@@ -683,6 +758,7 @@ export default function AdvancedFilters({
                     />
                   </FilterSection>
 
+                  </>}
                   <FilterSection
                     title="Origin Country"
                     icon={PiGlobeBold}

@@ -33,7 +33,7 @@ const MUTATING = new Set(['post', 'put', 'patch', 'delete']);
 // It answers "did this request claim to be a kiosk", which is the question
 // kioskOrAdmin asks before choosing a chain — used on its own in front of a
 // route it would authenticate precisely nobody.
-const NOT_A_GUARD = new Set(['optionalProtect', 'hasKioskToken']);
+const NOT_A_GUARD = new Set(['optionalProtect', 'hasKioskToken', 'bridgeTokenHash']);
 
 /** Every exported middleware that actually refuses an unauthenticated caller. */
 function collectGuards() {
@@ -52,6 +52,8 @@ function collectGuards() {
     '../middleware/priceChecker.middleware',
     // Dedicated tenant website keys, never JWT impersonation.
     '../middleware/integration.middleware',
+    // The print bridge proves a tenant/location-bound revocable device token.
+    '../middleware/venue-bridge.middleware',
   ]) {
     for (const [name, value] of Object.entries(require(mod))) {
       if (typeof value === 'function' && !NOT_A_GUARD.has(name)) guards.add(value);
@@ -103,6 +105,11 @@ const PUBLIC_ALLOWLIST = new Set([
   'POST payment.routes.js /webhooks/stripe',
   'POST payment.routes.js /webhooks/paystack',
   'POST payment.routes.js /webhooks/korapay',
+  // Separate merchant account: exact raw-body signature plus account-bound provider verification.
+  'POST storefrontIntegration.routes.js /webhooks/paystack/:account',
+  // Carrier callback: raw original-account HMAC, known booking binding, then
+  // authenticated provider retrieval; HTTP/JWT lifecycle tests reject unsigned bodies.
+  'POST merchantCarrier.routes.js /webhooks/:account',
   'POST erm.routes.js /webhook',
 
   // Authentication entry points — by definition reachable without a session.

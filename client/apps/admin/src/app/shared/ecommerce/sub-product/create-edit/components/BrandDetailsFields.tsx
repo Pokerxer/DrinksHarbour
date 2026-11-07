@@ -26,6 +26,7 @@ export default function BrandDetailsFields({
   setFormData,
   setIsGenerating,
   token,
+  showPrimaryCategory = true,
 }: {
   formData: BrandFormData;
   isSubmitting: boolean;
@@ -34,6 +35,7 @@ export default function BrandDetailsFields({
   setFormData: Dispatch<SetStateAction<BrandFormData>>;
   setIsGenerating: Dispatch<SetStateAction<boolean>>;
   token: string;
+  showPrimaryCategory?: boolean;
 }) {
   const id = useId();
   return (
@@ -221,8 +223,7 @@ export default function BrandDetailsFields({
         </div>
       </motion.div>
 
-      {/* Primary Category */}
-      <motion.div
+      {showPrimaryCategory && <motion.div
         variants={fieldVariants}
         custom={4}
         initial="hidden"
@@ -284,7 +285,7 @@ export default function BrandDetailsFields({
             </Button>
           )}
         </div>
-      </motion.div>
+      </motion.div>}
     </>
   );
 }

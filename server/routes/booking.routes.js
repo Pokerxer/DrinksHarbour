@@ -7,7 +7,7 @@ const {
   tenantAdminOrSuperAdmin,
   requireOwnTenant,
 } = require('../middleware/auth.middleware');
-const { requireCapability } = require('../middleware/plan.middleware');
+const { requireVenueAction } = require('../middleware/venue.middleware');
 
 router.use(protect);
 router.use(attachTenant);
@@ -16,14 +16,14 @@ router.use(attachTenant);
 router.use(requireOwnTenant);
 router.use(tenantAdminOrSuperAdmin);
 // Venue-only feature: venue Discover, table booking and guest-list capture.
-router.use(requireCapability('table_management'));
+router.use((req, res, next) => requireVenueAction(['GET', 'HEAD'].includes(req.method) ? 'bookings.read' : 'bookings.write')(req, res, next));
 
 router.get('/',   ctrl.getBookings);
 router.get('/menu', require('../utils/asyncHandler')(async (req, res) => {
   res.json({ success: true, data: await require('../services/tableCheckout.service').tableMenu(req.tenant._id) });
 }));
 router.post('/:id/checkout', require('../utils/asyncHandler')(async (req, res) => {
-  res.json({ success: true, data: await require('../services/tableCheckout.service').startTableCheckout(req.tenant, req.user._id, req.params.id, req.body) });
+  res.json({ success: true, data: await require('../services/tableCheckout.service').startTableCheckout(req.tenant, req.user._id, req.params.id, { ...req.body, idempotencyKey: req.get('Idempotency-Key') }) });
 }));
 router.post('/:id/reconcile-payment', require('../utils/asyncHandler')(async (req, res) => {
   const order = await require('../models/Order').findOne({ tableServiceBooking: req.params.id, tenant: req.tenant._id });

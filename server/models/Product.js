@@ -5,7 +5,8 @@ const { Schema } = mongoose;
 const { ObjectId } = Schema;
 const { computeRatingAggregate } = require('../services/review.helpers');
 const { expandedTypeValues } = require('../constants/expandedProductTypes');
-const { isBeverageType } = require('../constants/productTypes');
+const { isBeverageType, BEVERAGE_SIZE_CODES } = require('../constants/productTypes');
+const { KINDS, VALUES, catalogKindForType } = require('../constants/catalogKind');
 
 // Reusable MediaItem Schema
 const MediaItemSchema = new Schema({
@@ -46,6 +47,21 @@ const productSchema = new Schema(
       lowercase: true,
       // index: true removed - unique:true already creates index
       trim: true,
+      // NOTE (2026-11-02): re-activated by removing a later duplicate
+      // `slug: String` key that silently discarded these constraints. The
+      // maxlength cap was NOT restored: the canonical generation pattern
+      // `${slug}-${Date.now()}` can legitimately exceed 200 chars for long
+      // names, and a length cap there would break creation. Uniqueness must
+      // be reconciled via scripts/ensure-catalogue-uniqueness.js before any
+      // environment relying on this index goes live (autoIndex builds it at
+      // first start otherwise).
+    },
+    specifications: {
+      type: new Schema(Object.fromEntries(
+        require('../utils/businessSpecifications').allFields.map(key =>
+          [key, { type: String, trim: true, maxlength: 1000 }])
+      ), { _id: false }),
+      default: () => ({}),
     },
     barcode: {
       type: String,
@@ -248,7 +264,36 @@ const productSchema = new Schema(
       index: true,
       // Examples: 'Single Malt', 'Blended', 'Cask Strength', 'Small Batch'
     },
-    
+
+    // Additive catalog kind (docs/saas/venues/03 §2). Adapter, not a rename:
+    // existing beverage documents gain the default on next save and read as legacy.
+    catalogKind: {
+      type: String,
+      enum: VALUES,
+      default: KINDS.beverage,
+      index: true,
+    },
+
+    // ── Catalogue scope (docs/audits/general-saas-evolution) ────────────────
+    // A Product is either a canonical marketplace identity or a tenant-private
+    // identity owned by one business. Legacy documents (no field) read as
+    // canonical; see constants/catalogScope.js. Mongoose defaults apply on
+    // next save, so no backfill is required.
+    publicationScope: {
+      type: String,
+      enum: ['canonical', 'tenant_private'],
+    },
+    // Only tenant_private rows carry an owning tenant. Platform review promotes
+    // a private identity to canonical (approve flow); tenants never edit it.
+    owningTenant: {
+      type: ObjectId,
+      ref: 'Tenant',
+      sparse: true,
+    },
+
+    // Prepared-food portion weight (grams); food has no required ABV/volume.
+    portionGrams: { type: Number, min: 1 },
+
     isAlcoholic: {
       type: Boolean,
       required: true,
@@ -288,6 +333,7 @@ const productSchema = new Schema(
     standardSizes: [{
       type: String,
       enum: [
+        ...BEVERAGE_SIZE_CODES,
         // Wine & Champagne
         '10cl', '18.7cl', '20cl', '25cl', '37.5cl', '50cl',
         '75cl', '100cl', '150cl', // Magnum
@@ -679,6 +725,15 @@ const productSchema = new Schema(
       default: false,
       index: true,
     },
+    // Gift checkout — marks the single paid gift-packaging SKU the gift flow
+    // adds to carts as a normal line (see config/giftPackaging.js). Seeded by
+    // scripts/seed-gift-packaging.js; the super-admin approves and publishes it
+    // like any other pending product.
+    isGiftPackaging: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     isFeatured: {
       type: Boolean,
       default: false,
@@ -728,7 +783,10 @@ const productSchema = new Schema(
     seoH1: String,
     metaDescription: String,
     metaKeywords: [String],
-    slug: String,
+    // `slug` is declared ONCE at the top of this schema (see the
+    // identification block). Duplicate object keys are silently discarded in
+    // JS — a second `slug: String` here used to strip the first block's
+    // required/unique/lowercase/trim (pre-existing bug fixed 2026-11-02).
     canonicalUrl: String,
 
     // ════════════════════════════════════════════════════════════
@@ -836,7 +894,11 @@ const NON_BEVERAGE_CLEAR_PATHS = [
 ];
 
 productSchema.pre('validate', function () {
+  this.specifications = require('../utils/businessSpecifications').cleanSpecifications(this.specifications?.toObject?.() || this.specifications, this.type);
   const isBeverage = isBeverageType(this.type);
+  const typeKind = catalogKindForType(this.type);
+  // A classified stock type cannot be saved as a prepared menu item.
+  if (typeKind !== KINDS.beverage) this.catalogKind = typeKind;
 
   if (!isBeverage) {
     for (const path of NON_BEVERAGE_CLEAR_PATHS) {
@@ -896,6 +958,7 @@ productSchema.virtual('priceCategory').get(function () {
 
 productSchema.index({ name: 'text', description: 'text', tastingNotes: 'text' });
 productSchema.index({ type: 1, subType: 1, originCountry: 1, abv: 1 });
+productSchema.index({ catalogKind: 1, status: 1, isPublished: 1 });
 productSchema.index({ status: 1, isPublished: 1, publishedAt: -1 });
 productSchema.index({ slug: 1, status: 1 });
 productSchema.index({ type: 1, flavorProfile: 1 });
@@ -905,6 +968,8 @@ productSchema.index({ 'isDietary.vegan': 1, 'isDietary.glutenFree': 1 });
 productSchema.index({ vintage: 1, age: 1 });
 productSchema.index({ region: 1, originCountry: 1 });
 productSchema.index({ averageRating: -1, reviewCount: -1 });
+// Tenant-private lookup (own identities, and owner-scoped review queues).
+productSchema.index({ publicationScope: 1, owningTenant: 1 }, { sparse: true, name: 'publication_scope_tenant' });
 
 // ════════════════════════════════════════════════════════════
 // METHODS
@@ -935,6 +1000,29 @@ const { defaultTracksBatch } = require('../services/batch.helpers');
 productSchema.pre('validate', function applyTracksBatchDefault() {
   this.tracksBatch = defaultTracksBatch(this.isAlcoholic, this.tracksBatch);
 });
+
+const { TENANT_PRIVATE } = require('../constants/catalogScope');
+
+// Catalogue-scope guard (docs/audits/general-saas-evolution):
+// tenant_private identities are never publicly published and never carry an
+// owning-tenant field on canonical rows. Promotion to canonical happens ONLY
+// through the super-admin approve flow, which clears the scope explicitly.
+productSchema.pre('validate', function guardCatalogScope() {
+  if (this.publicationScope === TENANT_PRIVATE) {
+    if (!this.owningTenant) {
+      this.invalidate('owningTenant', 'A tenant-private product must name its owning tenant');
+    }
+    if (this.status === 'approved') {
+      this.invalidate('status', 'A tenant-private product must be reviewed before marketplace promotion');
+    }
+    if (this.isPublished) {
+      this.isPublished = false;
+    }
+  } else if (this.owningTenant) {
+    this.invalidate('owningTenant', 'Only tenant-private products carry an owning tenant');
+  }
+});
+
 
 const Product = mongoose.models.Product || mongoose.model('Product', productSchema);
 module.exports = Product;

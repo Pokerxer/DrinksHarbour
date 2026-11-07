@@ -617,6 +617,7 @@ export default function ShopHeroBanner({
   // The banner itself is pure artwork, so this is used only for the sr-only
   // <h1>, the banner's aria-label, and the chip rail's accessible name.
   const displayLabel = brandLabel ?? dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? seed?.label ?? DEFAULT_CONFIG.label;
+  const headingLabel = seed?.label ?? displayLabel;
 
   // Dedicated banner artwork — brand first, then a single active subcategory,
   // then its parent category. Missing banners use the main shop placement.
@@ -709,7 +710,7 @@ export default function ShopHeroBanner({
           frame becomes a link when the record has a Banner Link set. */}
       {!heroImage ? (
         <>
-          <h1 className={shopBannersEmpty || skipShopFallback ? 'container py-6 text-2xl font-semibold' : 'sr-only'}>{displayLabel}</h1>
+          <h1 className={shopBannersEmpty || skipShopFallback ? 'container py-6 text-2xl font-semibold' : 'sr-only'}>{headingLabel}</h1>
           {!skipShopFallback && !shopBannersEmpty && (
             <HeroBanner placement="shop" limit={5} autoPlay showControls showIndicators onEmpty={handleShopEmpty} />
           )}
@@ -724,7 +725,7 @@ export default function ShopHeroBanner({
       >
         {/* Visually hidden heading — invisible to shoppers, read by crawlers and
             screen readers so the category/brand page keeps its main <h1>. */}
-        <h1 className="sr-only">{displayLabel}</h1>
+        <h1 className="sr-only">{headingLabel}</h1>
 
           <Image
             src={heroImage}

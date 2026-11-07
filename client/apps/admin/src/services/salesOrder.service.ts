@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export interface SalesLineItem {
@@ -8,6 +9,10 @@ export interface SalesLineItem {
   size?: string;
   sku?: string;
   name?: string;
+  /** Variant identity when the source provides it (POS-parity with the
+   *  order-analysis rule: `name · variant` product keys). Legacy beverage
+   *  lines never carry it and key on their stored name. */
+  variant?: string;
   description?: string;
   quantity: number;
   /** Units per pack snapshot (Size.unitsPerPack); 1 = loose units. */
@@ -357,7 +362,7 @@ async function parseErrorOrThrow(response: Response, fallback: string) {
   if (response.ok) return;
   let message = fallback;
   try {
-    const body = await response.json();
+    const body = await readError(response);
     message = body.message || fallback;
   } catch {
     // non-JSON error body — keep fallback
@@ -407,7 +412,7 @@ export const salesOrderService = {
     const url = `${API_URL}/api/sales-orders${qs.toString() ? `?${qs}` : ''}`;
     const response = await fetch(url, { headers: authHeaders(token) });
     await parseErrorOrThrow(response, 'Failed to load sales orders');
-    return response.json();
+    return readJson(response);
   },
 
   async create(
@@ -420,7 +425,7 @@ export const salesOrderService = {
       body: JSON.stringify(input),
     });
     await parseErrorOrThrow(response, 'Failed to create sales order');
-    return response.json();
+    return readJson(response);
   },
 
   async get(id: string, token: string): Promise<SalesOrderResponse> {
@@ -428,7 +433,7 @@ export const salesOrderService = {
       headers: authHeaders(token),
     });
     await parseErrorOrThrow(response, 'Failed to load sales order');
-    return response.json();
+    return readJson(response);
   },
 
   async update(
@@ -442,7 +447,7 @@ export const salesOrderService = {
       body: JSON.stringify(patch),
     });
     await parseErrorOrThrow(response, 'Failed to update sales order');
-    return response.json();
+    return readJson(response);
   },
 
   async cancel(id: string, token: string): Promise<SalesOrderResponse> {
@@ -451,7 +456,7 @@ export const salesOrderService = {
       headers: authHeaders(token),
     });
     await parseErrorOrThrow(response, 'Failed to cancel sales order');
-    return response.json();
+    return readJson(response);
   },
 
   async setLocked(id: string, locked: boolean, token: string): Promise<SalesOrderResponse> {
@@ -468,7 +473,7 @@ export const salesOrderService = {
       headers: authHeaders(token),
     });
     await parseErrorOrThrow(response, 'Failed to send quotation');
-    return response.json();
+    return readJson(response);
   },
 
   async accept(id: string, token: string): Promise<SalesOrderResponse> {
@@ -477,7 +482,7 @@ export const salesOrderService = {
       headers: authHeaders(token),
     });
     await parseErrorOrThrow(response, 'Failed to accept quotation');
-    return response.json();
+    return readJson(response);
   },
 
   async reject(id: string, token: string): Promise<SalesOrderResponse> {
@@ -486,7 +491,7 @@ export const salesOrderService = {
       headers: authHeaders(token),
     });
     await parseErrorOrThrow(response, 'Failed to reject quotation');
-    return response.json();
+    return readJson(response);
   },
 
   async convert(id: string, token: string): Promise<SalesOrderResponse> {
@@ -495,7 +500,7 @@ export const salesOrderService = {
       headers: authHeaders(token),
     });
     await parseErrorOrThrow(response, 'Failed to convert quotation');
-    return response.json();
+    return readJson(response);
   },
 
   async confirmReservation(id: string, token: string): Promise<SalesOrderResponse> {
@@ -530,7 +535,7 @@ export const salesOrderService = {
       body: JSON.stringify(body),
     });
     await parseErrorOrThrow(response, 'Failed to confirm order');
-    return response.json();
+    return readJson(response);
   },
 
   async fulfill(
@@ -544,7 +549,7 @@ export const salesOrderService = {
       body: JSON.stringify(body),
     });
     await parseErrorOrThrow(response, 'Failed to fulfill order');
-    return response.json();
+    return readJson(response);
   },
 
   async return(
@@ -558,7 +563,7 @@ export const salesOrderService = {
       body: JSON.stringify(body),
     });
     await parseErrorOrThrow(response, 'Failed to return order items');
-    return response.json();
+    return readJson(response);
   },
 
   async duplicate(id: string, token: string): Promise<SalesOrderResponse> {
@@ -570,7 +575,7 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to duplicate order');
-    return response.json();
+    return readJson(response);
   },
 
   async importCsv(
@@ -587,7 +592,7 @@ export const salesOrderService = {
       body: JSON.stringify({ csv, docType }),
     });
     await parseErrorOrThrow(response, 'Failed to import orders');
-    return response.json();
+    return readJson(response);
   },
 
   async generatePaymentLink(
@@ -602,7 +607,7 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to generate payment link');
-    return response.json();
+    return readJson(response);
   },
 
   async accruedRevenue(id: string, token: string): Promise<SalesOrderResponse> {
@@ -614,7 +619,7 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to record accrued revenue');
-    return response.json();
+    return readJson(response);
   },
 
   async createProject(
@@ -632,7 +637,7 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to create project');
-    return response.json();
+    return readJson(response);
   },
 
   async getActivities(
@@ -646,7 +651,7 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to load activities');
-    return response.json();
+    return readJson(response);
   },
 
   async createActivity(
@@ -667,7 +672,7 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to create activity');
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -718,7 +723,7 @@ export const salesOrderService = {
       { headers: authHeaders(token) }
     );
     await parseErrorOrThrow(response, 'Failed to load customer cart');
-    return response.json();
+    return readJson(response);
   },
 
   async updatePrices(id: string, token: string): Promise<SalesOrderResponse> {
@@ -730,7 +735,7 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to update prices');
-    return response.json();
+    return readJson(response);
   },
 
   /** Apply (code) or clear (code = '') a coupon on an editable order. */
@@ -745,7 +750,7 @@ export const salesOrderService = {
       body: JSON.stringify({ code }),
     });
     await parseErrorOrThrow(response, 'Failed to apply coupon');
-    return response.json();
+    return readJson(response);
   },
 
   async getCustomFields(
@@ -755,7 +760,7 @@ export const salesOrderService = {
       headers: authHeaders(token),
     });
     await parseErrorOrThrow(response, 'Failed to load custom fields');
-    return response.json();
+    return readJson(response);
   },
 
   async createCustomField(
@@ -773,7 +778,7 @@ export const salesOrderService = {
       body: JSON.stringify(body),
     });
     await parseErrorOrThrow(response, 'Failed to create custom field');
-    return response.json();
+    return readJson(response);
   },
 
   async sendEmail(
@@ -788,7 +793,7 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to send email');
-    return response.json();
+    return readJson(response);
   },
 
   async requestSignature(
@@ -803,13 +808,13 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to request signature');
-    return response.json();
+    return readJson(response);
   },
 
   async bulkAction(
     endpoint: string,
     ids: string[],
-    extra?: Record<string, unknown>,
+    extra: Record<string, unknown> | undefined,
     token: string
   ): Promise<BulkActionResult> {
     const response = await fetch(`${API_URL}/api/sales/bulk/${endpoint}`, {
@@ -818,7 +823,7 @@ export const salesOrderService = {
       body: JSON.stringify({ ids, ...extra }),
     });
     await parseErrorOrThrow(response, 'Bulk action failed');
-    return response.json();
+    return readJson(response);
   },
 
   async markAsSent(ids: string[], token: string): Promise<BulkActionResult> {

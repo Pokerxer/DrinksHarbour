@@ -36,12 +36,12 @@ export interface OrderItem {
   priceAtPurchase: number;
   itemSubtotal: number;
   discountAmount?: number;
-  /** Denormalized product name snapshotted on the item by the server. */
-  productName?: string;
   tenantRevenueShare?: number;
   platformCommission?: number;
   tenantRevenueModel?: string;
   packRateApplied?: boolean;
+  /** Denormalized product name snapshotted on the item by the server. */
+  productName?: string;
 }
 
 export interface ShippingAddress {
@@ -140,6 +140,8 @@ export interface Order {
   shippingMethod?: string;
   shippingInfo?: ShippingInfo;
   platformCommissionTotal?: number;
+  /** Per-tenant fulfilment slice — tenant scope receives its own entry. */
+  fulfillmentStatus?: Record<string, string>;
   status: string;
   placedAt: string;
   confirmedAt?: string;
@@ -175,8 +177,6 @@ export interface Order {
   billingAddress?: ShippingAddress | null;
   ageVerifiedAtOrderTime?: boolean;
   appliedPricelist?: { pricelistName?: string; thresholdDiscount?: number };
-  /** Per-tenant fulfilment slice — tenant scope receives its own entry. */
-  fulfillmentStatus?: Record<string, string>;
 }
 
 export interface OrderListParams {
@@ -242,10 +242,10 @@ export const orderService = {
    * Create an order from the storefront checkout. Returns the created order's
    * `_id` + `orderNumber` (the server derives tenant + pricing itself).
    */
-  async createOrder(token: string, payload: CreateOrderPayload): Promise<Order> {
+  async createOrder(token: string, payload: CreateOrderPayload, idempotencyKey: string): Promise<Order> {
     const res = await fetch(`${API_URL}/api/orders`, {
       method: 'POST',
-      headers: authHeaders(token),
+      headers: { ...authHeaders(token), 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(payload),
     });
     const { order } = await unwrap<{ order: Order }>(

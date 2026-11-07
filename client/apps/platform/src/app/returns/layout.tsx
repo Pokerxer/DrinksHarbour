@@ -1,8 +1,9 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: "Returns & Refunds Policy",
   description:
     "Read DrinksHarbour's returns and refunds policy. Learn how to report an issue, provide evidence, arrange a return and follow the refund process for your order.",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
     description: "Our hassle-free returns and refunds policy. We stand behind every product we sell.",
   },
   alternates: { canonical: `${BASE_URL}/returns` },
-};
+});
 
 const jsonLd = {
   "@context": "https://schema.org",

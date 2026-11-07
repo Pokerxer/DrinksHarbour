@@ -6,7 +6,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://jrwaldehzx:NWXdpyCMP7yB7a4N@cluster0.ukrr40p.mongodb.net/drinksharbour';
+const MONGO_URI = process.env.MONGO_URI || require('../utils/requireMongoUri').requireMongoUri();
 
 function slugify(str) {
   return str.toLowerCase().trim()

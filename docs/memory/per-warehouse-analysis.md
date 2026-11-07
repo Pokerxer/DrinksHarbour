@@ -157,3 +157,51 @@ Server full3,293 tests passed. Local API PID57277 auto-restarted after backend
 edits; health200. No migration or deliberate business-data writes. See resume.
 Full admin2,313 tests /209 files passed; final typecheck baseline390 unrelated
 errors, changed paths clean. git diff --check passed. Logs in resume.
+
+
+## Selected transfer PDF — 2026-11-02
+
+Transfers / Documents on `/warehouses/[id]/analysis` now supports row checkboxes,
+select/deselect displayed page, clear selection, and Print selected transfers
+(PDF). Selection persists across pagination; changing filters or page size clears
+it. Product filtering selects documents, but export always loads every line of
+explicitly selected documents via existing authenticated stockTransferService.get.
+Fetch in batches of five; any failure prevents partial export and permits retry.
+Leaving/changing the view or selection cancels pending export. No server changes.
+
+`selected-transfers-report.ts` builds one DocumentModel using the existing PDF
+preview/template/export pipeline. Groups SubProduct + size + currency, quantities
+are document quantity less returnedQty (matching transfer invoice valuation, not
+receipts/current stock), prices are weighted average saved costPrice. Product
+values exclude discounts/tax/delivery; saved total/totalValue after returns are
+shown separately per currency. Includes selected references, statuses and route;
+drafts/cancelled documents retain their status and aren't treated as movements.
+Missing costs/totals show Unavailable rather than zero or a partial sum. Duplicate
+documents are deduplicated; unrelated warehouse documents are rejected.
+
+Verification: 26 focused warehouse-analysis/print test files, 136 tests passed,
+including actual PDF rendering with 120 products across multiple pages. Red phase
+confirmed missing implementation and missing selection controls. Existing unrelated
+changes (including index.test.tsx) were preserved. No browser validation, business
+data writes, dependency additions, backend changes, commit, push or deployment.
+
+Final checks: admin TypeScript passed (tsc --noEmit with build info redirected
+outside the repository); log is empty. Export lifecycle tests rechecked after the
+final token-change reset: 4 passed. Scoped git diff --check passed. Formatting
+used the same basic style without the unavailable Tailwind Prettier plugin.
+
+
+Tax addition (2026-11-02): combined transfer PDFs now show a Tax amount column
+per combined product and a tax-after-returns subtotal per currency. Reuse
+computeTransferTotals for each original line at quantity less returnedQty, applying
+line discounts before tax and rounding each line before aggregation. Mixed tax
+rates sum as amounts, never average percentages. Tax is already included in the
+saved transfer total, so it is not added again. Missing taxable costs make tax
+Unavailable; zero-tax lines remain zero. Verified 43 tests in 11 warehouse/money
+files, including mixed rates, returns, discounts, fractional rounding, currency
+separation and actual multipage PDF rendering. No deployment.
+
+Tax follow-up type check: 11 errors in unrelated product pending-queue files;
+none in selected-transfers-report, export, or transfer-money. Full diagnostics:
+/Users/mac/Documents/Codex/2026-11-02/in/work/transfer-pdf/typecheck-tax.log.
+Scoped diff whitespace checks passed.

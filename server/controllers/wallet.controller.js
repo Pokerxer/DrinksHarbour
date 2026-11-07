@@ -18,7 +18,7 @@ const paymentService = require('../services/payment.service');
 const emailService = require('../services/email.service');
 const { frontendBaseUrl } = require('../utils/frontendUrl');
 
-const MIN_FUND_AMOUNT = 500; // NGN — floor to keep Paystack fees sane.
+const MIN_FUND_AMOUNT = 500; // NGN — floor to keep gateway fees sane.
 const MAX_FUND_AMOUNT = 10000000; // NGN — single-transaction ceiling (₦10M).
 
 /**
@@ -128,21 +128,8 @@ const fundWallet = asyncHandler(async (req, res) => {
 
   const reference = `DHW-${user._id}-${Date.now()}`;
   const frontendUrl = frontendBaseUrl();
-  const payment = await paymentService.createGatewayTransaction(
-    n,
-    user.email,
-    {
-      kind: 'wallet_fund',
-      userId: String(user._id),
-      reference,
-    },
-    {
-      // Reuse our reference and return to the wallet page (not the cart callback),
-      // so the ?reference the gateway echoes back is the one we verify + credit.
-      reference,
-      callbackUrl: `${frontendUrl}/my-account/wallet`,
-    },
-  );
+  const payment = await require('../services/storedValueFunding').initialize({ user: user._id, amount: n, reference,
+    kind: 'wallet_fund', email: user.email, callbackUrl: `${frontendUrl}/my-account/wallet` });
 
   successResponse(res, {
     reference,
@@ -162,71 +149,14 @@ const verifyFundWallet = asyncHandler(async (req, res) => {
   const { reference } = req.body;
   if (!reference) return res.status(400).json({ success: false, message: 'Reference is required' });
 
-  const result = await paymentService.verifyGatewayTransaction(reference);
-  if (!result.success) {
-    return res.status(400).json({ success: false, message: result.message || 'Payment verification failed' });
-  }
-
-  const { amount, reference: txnRef } = result.data;
-  // Idempotency: if we already credited this reference, return the existing balance.
-  const existing = await PlatformWalletTransaction.findOne({ paymentRef: txnRef, userId: req.user._id }).lean();
-  if (existing) {
-    const user = await User.findById(req.user._id).select('platformWalletBalance');
-    return successResponse(res, { balance: user.platformWalletBalance, alreadyCredited: true }, 'Wallet already credited');
-  }
-
-  // The gateway service returns the amount in major units (NGN). The wallet
-  // ledger stores whole NGN. Apply an atomic, guarded credit via the service.
-  const credit = await mutatePlatformWallet({
-    owner: { userId: req.user._id },
-    value: { type: 'credit', amount, source: 'online_checkout', reason: 'Wallet funding' },
-    paymentRef: txnRef,
-    reference,
-    createdBy: req.user._id,
-  });
-
-  if (!credit.ok) {
-    return res.status(credit.status).json({ success: false, message: credit.message });
-  }
-
-  // Best-effort receipt email — never block the response on it.
-  try {
-    const user = await User.findById(req.user._id).select('email firstName');
-    if (user && emailService?.sendWalletFundingEmail) {
-      await emailService.sendWalletFundingEmail(user.email, {
-        firstName: user.firstName,
-        amount,
-        reference: txnRef,
-        balance: credit.balance,
-      });
-    }
-  } catch { /* non-fatal */ }
-
-  successResponse(res, { balance: credit.balance, amount }, 'Wallet funded successfully');
+  const result = await require('../services/storedValueFunding').wallet(reference, req.user._id);
+  successResponse(res, result, 'Wallet funded successfully');
 });
 
 // POST /api/wallet/pay — debit the wallet to pay for a checkout order
 const payWithWallet = asyncHandler(async (req, res) => {
-  const { amount } = req.body;
-  const n = Number(amount);
-  if (!Number.isInteger(n) || n <= 0) {
-    return res.status(400).json({ success: false, message: 'Amount must be a positive integer' });
-  }
-
-  const result = await mutatePlatformWallet({
-    owner: { userId: req.user._id },
-    value: { type: 'debit', amount: n, source: 'online_checkout', reason: 'Order payment via platform wallet' },
-    createdBy: req.user._id,
-  });
-
-  if (!result.ok) {
-    return res.status(result.status || 400).json({ success: false, message: result.message });
-  }
-
-  return successResponse(res, {
-    balance: result.balance,
-    transactionId: result.tx?._id,
-  }, 'Wallet payment successful');
+  const result = await require('../services/checkoutDebit').pay('wallet', req.user._id, req.body.amount, null, req.get('Idempotency-Key'));
+  return successResponse(res, result, 'Wallet payment successful');
 });
 
 module.exports = {

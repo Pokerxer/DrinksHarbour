@@ -1,4 +1,5 @@
 import type { StockRow } from '@/services/warehouseStock.service';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 import { finite } from './inventory-dashboard-analysis';
 import {
   availableOf,
@@ -70,7 +71,9 @@ export function stockViewCSV(rows: StockRow[]) {
       [
         row.productName,
         row.sku,
-        row.sizeName,
+        // Full shared variant label (DRI-30); legacy rows keep the stored
+        // sizeName byte-for-byte.
+        flatRowSizeLabel(row),
         row.warehouseName,
         finite(row.currentQuantity),
         finite(row.reservedQuantity),

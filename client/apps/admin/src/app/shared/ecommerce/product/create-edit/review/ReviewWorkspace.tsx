@@ -1,4 +1,5 @@
 'use client';
+import { isSellingMarkup } from './selling-markup';
 import { useMemo } from 'react';
 import {
   inspectRows,
@@ -6,7 +7,12 @@ import {
   applyUnchangedSuggestions,
   type RowFilter,
 } from './workspace';
-import type { PriceDraft, PriceLine, PriceTargets, ReviewListing } from './types';
+import type {
+  PriceDraft,
+  PriceLine,
+  PriceTargets,
+  ReviewListing,
+} from './types';
 import ReviewTargets from './ReviewTargets';
 import PricingCard from './PricingCard';
 import { isCommission, agreedCommission } from './agreement';
@@ -66,10 +72,12 @@ export default function ReviewWorkspace({
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Price review</h2>
+            <h2 className="text-base font-semibold text-gray-900">
+              Price review
+            </h2>
             <p className="mt-1 text-xs text-gray-500">
-              {lines.length} price {lines.length === 1 ? 'row' : 'rows'} · {edited}{' '}
-              edited · {blocked} blocked
+              {lines.length} price {lines.length === 1 ? 'row' : 'rows'} ·{' '}
+              {edited} edited · {blocked} blocked
             </p>
           </div>
           <span
@@ -108,7 +116,8 @@ export default function ReviewWorkspace({
               onClick={() => onFilter(value)}
               className={`${button} ${filter === value ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}
             >
-              {label} <span className="ml-1 tabular-nums opacity-70">{count}</span>
+              {label}{' '}
+              <span className="ml-1 tabular-nums opacity-70">{count}</span>
             </button>
           ))}
         </div>
@@ -145,9 +154,12 @@ export default function ReviewWorkspace({
         targets={targets}
         onChange={onTargets}
         disabled={disabled}
+        sellingMarkup={!!lines[0] && isSellingMarkup(lines[0], listing)}
         commission={!!lines[0] && isCommission(lines[0], listing)}
         rate={
-          lines[0] ? (agreedCommission(lines[0], listing) ?? undefined) : undefined
+          lines[0]
+            ? (agreedCommission(lines[0], listing) ?? undefined)
+            : undefined
         }
       />
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
@@ -168,8 +180,8 @@ export default function ReviewWorkspace({
         )}
       </div>
       <p className="text-xs leading-5 text-gray-400">
-        Per sellable unit. Gross estimates exclude taxes, payment fees, delivery and
-        operating costs.
+        Per sellable unit. Gross estimates exclude taxes, payment fees, delivery
+        and operating costs.
       </p>
       {visible.length ? (
         <div className="grid items-start gap-4 2xl:grid-cols-2">

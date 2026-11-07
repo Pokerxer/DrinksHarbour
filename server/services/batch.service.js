@@ -108,9 +108,10 @@ async function depleteBatchesFefo(
 
   const { allocations } = allocateFefo(batches, quantity, { order, excludeExpired });
   for (const a of allocations) {
-    const update = WarehouseBatch.updateOne({ _id: a.batch }, { $inc: { quantity: -a.quantity } });
+    const update = WarehouseBatch.updateOne({ _id: a.batch, tenant: tenantId, warehouse: warehouseId, subProduct, size, quantity: { $gte: a.quantity }, quarantined: { $ne: true } }, { $inc: { quantity: -a.quantity } });
     if (session) update.session(session);
-    await update;
+    const result = await update;
+    if (result?.modifiedCount === 0) throw Object.assign(new Error('Batch availability changed; retry with fresh stock'), { code: 'STOCK_UNAVAILABLE', statusCode: 409 });
   }
   return allocations;
 }

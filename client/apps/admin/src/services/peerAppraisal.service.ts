@@ -2,6 +2,7 @@ import type {
   ExaminationSettings,
   QuestionBankOption,
   CompositeScore,
+  ScoreWeights,
 } from './examination.service';
 import {
   appraisalRequest as request,
@@ -111,4 +112,48 @@ export const submitPeerRatings = (
   request<{ revision: number; submittedAt: string | null }>(
     `${base}/${id}/submit`,
     write('POST', { ratings, expectedRevision })
+  );
+
+export interface PeerEmployeeScores {
+  employee: string;
+  displayName: string;
+  cycleStatus: AppraisalCycle['status'];
+  final: boolean;
+  allocationMinor: number;
+  weights: ScoreWeights;
+  appraisal: {
+    score: number | null;
+    averageScore: number | null;
+    received: number;
+    eligible: number;
+    status: 'pending' | 'provisional' | 'complete';
+  };
+  exam: {
+    score: number | null;
+    earnedMarks?: number;
+    maxMarks?: number;
+    status:
+      | 'not_assigned'
+      | 'not_started'
+      | 'in_progress'
+      | 'submitted'
+      | 'timed_out';
+  };
+  attendance: {
+    score: number | null;
+    status: 'not_configured' | 'unrated' | 'provisional' | 'complete';
+    attendanceFrom?: string;
+    attendanceTo?: string;
+    counts?: {
+      expected: number;
+      attended: number;
+      absent: number;
+      excused: number;
+    };
+  };
+  combined: { score: number; bonusMinor: number } | null;
+}
+export const fetchPeerEmployeeScores = (cycleId: string, employeeId: string) =>
+  request<PeerEmployeeScores>(
+    `${base}/${cycleId}/participants/${encodeURIComponent(employeeId)}/scores`
   );

@@ -377,7 +377,8 @@ const FeaturedProductCard = ({
                 href={`/product/${product.slug}`}
                 className="px-4 py-3 bg-white/20 backdrop-blur-sm rounded-xl text-white hover:bg-white/30 transition-all flex items-center justify-center"
               >
-                <Icon.PiArrowRight size={20} />
+                <Icon.PiArrowRight size={20} aria-hidden="true" />
+                <span className="sr-only">View {product.name}</span>
               </Link>
             </div>
           </div>
@@ -791,7 +792,7 @@ const BestSellers: React.FC<BestSellersProps> = ({ limit = 5 }) => {
           </h2>
           
           <p className="text-gray-500 text-base sm:text-lg max-w-2xl mx-auto">
-            Discover our customers' absolute favorites - the products everyone loves
+            Discover our customers&apos; absolute favorites - the products everyone loves
           </p>
 
           {/* Stats */}

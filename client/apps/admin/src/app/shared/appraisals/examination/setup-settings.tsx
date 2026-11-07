@@ -72,7 +72,7 @@ export default function SetupSettings({
           ))}
         </div>
         <p className="mt-3 text-xs leading-5 text-gray-500">
-          Employees you leave unchecked use appraisal and attendance equally.
+          Employees you leave unchecked use 80% appraisal and 20% attendance.
         </p>
         <button
           type="button"

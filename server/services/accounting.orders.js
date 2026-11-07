@@ -17,7 +17,15 @@ function orderPostings(order) {
   const entries = [];
   for (const [tenantId, items] of groups) {
     let lines;
-    if (order.source === 'pos') {
+    if (order.settlementOwner === 'tenant' && order.source === 'web') {
+      if (groups.size !== 1 || String(order.tenant) !== tenantId) throw new Error('Direct website accounting requires its owning tenant');
+      const merchandise = round2(items.reduce((sum, i) => sum + (Number(i.itemSubtotal) || 0), 0));
+      const shipping = round2(order.shippingFee || 0);
+      if (round2(order.totalAmount) !== round2(merchandise + shipping) || order.taxAmount > 0 || order.discountTotal > 0 ||
+          items.some(i => Number(i.platformCommission) !== 0)) throw new Error('Direct website financial snapshots need review');
+      lines = [line(tenderAccount(order.paymentMethod), order.totalAmount), line('4000', 0, merchandise)];
+      if (shipping) lines.push(line('4100', 0, shipping));
+    } else if (order.source === 'pos') {
       if (groups.size !== 1) throw new Error('POS accounting requires one tenant per receipt');
       const total = round2(order.totalAmount);
       const tax = round2(order.taxAmount);
@@ -57,6 +65,7 @@ function orderPostings(order) {
 }
 
 async function captureOrderAccounting(order) {
+  if (order.venueIdentityVersion === 1) return;
   if (order.tableServiceBooking || !['paid', 'partially_refunded', 'refunded'].includes(order.paymentStatus)) return;
 
   const journal = require('./journalEntry.service');
@@ -81,7 +90,7 @@ async function captureOrderAccounting(order) {
       }
     }
     for (const entry of entries) {
-      await journal.postJournalEntry({ ...entry, refDoc: order._id, refDocType: 'Order', source: order.source === 'pos' ? 'pos' : 'marketplace',
+      await journal.postJournalEntry({ ...entry, refDoc: order._id, refDocType: 'Order', source: order.settlementOwner === 'tenant' ? 'storefront' : order.source === 'pos' ? 'pos' : 'marketplace',
         date: order.paidAt || order.placedAt || order.createdAt, postedBy: order.posStaff,
         memo: `${order.source === 'pos' ? 'POS receipt' : 'Marketplace order'} ${order.receiptNumber || order.orderNumber}` });
     }

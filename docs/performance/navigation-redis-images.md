@@ -1,3 +1,7 @@
+> Historical Redis implementation: disconnected by user request on 2026-10-31.
+> Current runtime: live MongoDB reads and local request limits. See
+> `docs/memory/standalone-without-upstash.md`; do not reconnect the provider.
+
 # Navigation Redis and image delivery — 2026-10-10
 
 Category/subcategory navigation queries records live, then reads approximate

@@ -10,6 +10,29 @@ const { orderReturnTotals } = require('./posReturnTotals.service');
 
 const money = (n) => Math.round(n * 100) / 100;
 
+
+// ── Server-side variant label ─────────────────────────────────────────────────
+// The till cart snaps an industry-aware variant label onto each new sale line
+// as `_variant` (pos.controller.js takes it from the cart, which composes
+// displayName · colorName · optionName joined with ' · ' — the semantics of
+// client util size-variant-label.ts). Orders snapshotted before that field
+// existed, and foreign-sourced orders, have no `_variant`, so the report
+// fallback composes the same colour/option identity from the populated Size
+// row instead of dropping it.
+//
+// Legacy rows without colour data compose exactly the old
+// `item._variant || size?.displayName || ''` string — byte-for-byte — because
+// empty colour/option terms are dropped by the join.
+function sizeVariantLabel(size) {
+  return [size?.displayName, size?.colorName, size?.optionName].filter(Boolean).join(' · ');
+}
+
+// One authority for "what is this line's variant" so the report mapper and the
+// session-report breakdown can never drift apart (they used two formulas once).
+function orderLineVariant(item) {
+  return (item._variant || sizeVariantLabel(item.size)) || '';
+}
+
 // The exact projection every report surface must receive. Kept as a constant so
 // the field list and this mapper cannot drift apart.
 const REPORT_ORDER_FIELDS =
@@ -21,7 +44,9 @@ function mapReportLine(item, netTotals) {
   return {
     ...netTotals,
     name:          item._name || item.product?.name || 'Product',
-    variant:       item._variant || item.size?.displayName || '',
+    // New sales carry the till-snapped `_variant`; legacy/foreign-sourced
+    // orders fall back to the composed Size label (see sizeVariantLabel).
+    variant:       orderLineVariant(item),
     quantity:      item.quantity,
     priceAtPurchase: item.priceAtPurchase,
     itemSubtotal:  item.itemSubtotal,
@@ -82,4 +107,4 @@ function mapReportOrder(order) {
   };
 }
 
-module.exports = { mapReportOrder, mapReportLine, REPORT_ORDER_FIELDS };
+module.exports = { mapReportOrder, mapReportLine, REPORT_ORDER_FIELDS, sizeVariantLabel, orderLineVariant };

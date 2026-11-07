@@ -3,6 +3,11 @@
 
 import { routes } from '@/config/routes';
 import { SubProductListItem, SizeVariant } from './table';
+import {
+  TENANT_PRIVATE_IDENTITY_LABEL,
+  TENANT_PRIVATE_IDENTITY_NOTE,
+  isTenantPrivateProduct,
+} from '../catalogue-scope';
 import { resolveSubProductImages } from '../image-utils';
 import { subProductListImage } from '../list-image';
 import { createColumnHelper } from '@tanstack/react-table';
@@ -659,6 +664,16 @@ export const subProductListColumns = [
               </span>
             ))}
           </div>
+          {/* Central-catalogue identity note — never a stock/POS state; only
+              renders when the row's central Product is explicitly private. */}
+          {isTenantPrivateProduct(row.original.product) && (
+            <span
+              title={TENANT_PRIVATE_IDENTITY_NOTE}
+              className="inline-flex w-fit items-center rounded-full bg-violet-50 px-1.5 py-px text-[9px] font-medium text-violet-600"
+            >
+              {TENANT_PRIVATE_IDENTITY_LABEL}
+            </span>
+          )}
         </div>
       );
     },

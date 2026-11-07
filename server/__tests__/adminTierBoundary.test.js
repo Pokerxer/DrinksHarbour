@@ -79,10 +79,47 @@ test('5. cross-tenant visibility is super_admin-only', () => {
     /const includeAll = req\.user\?\.role === 'super_admin';/,
     "subproduct.controller.js must gate includeAll on 'super_admin' alone"
   );
+  // Catalogue-visibility authority (docs/audits/general-saas-evolution F4):
+  //  • the ONLY wide branch (approved + pending candidates) is super_admin-only;
+  //  • tenant callers may link canonical approved supply, and — strictly only
+  //    when GENERAL_CATALOG_SCOPE_ENABLED is true — their OWN tenant-private
+  //    identities (owningTenant);
+  //  • with the flag off, tenant callers still see approved supply only.
+  // No branch may let a tenant read another tenant's pending/private records.
+  // Criteria are built TOP-LEVEL per branch (productCriteria) — a nested
+  // `status: { $or: ... }` is invalid at mongod and shipped once before the
+  // 2026-11-02 review caught it, so this guard also pins the flat shape.
   assert.match(
     service,
-    /const statusFilter =\s*\n?\s*user\?\.role === 'super_admin'/,
-    "subproduct.service.js must gate statusFilter on 'super_admin' alone"
+    /if \(user\?\.role === 'super_admin'\)\s*\{\s*\n\s*productCriteria = \{ status: \{ \$in: \['approved', 'pending'\] \}\s*\}\s*;/,
+    'subproduct.service.js must keep the ONLY wide criteria branch super_admin-only'
+  );
+  // The tenant branch must close its $or array and object — appending extra
+  // clauses after the pinned pair fails this closing bracket.
+  assert.match(
+    service,
+    /\{\s*status: 'approved', publicationScope: \{ \$ne: catalogueScope\.TENANT_PRIVATE \},?\s*\n?\s*\}\s*,?\s*\n\s*\{ publicationScope: catalogueScope\.TENANT_PRIVATE, owningTenant: tenantObjectId \}\s*,?\s*\n\s*\]\s*,?\s*\n\s*\}\s*;/,
+    'the tenant branch must be scoped to approved canonical supply plus own tenant-private identities, and the $or array must close right after them'
+  );
+  assert.match(
+    service,
+    /\} else \{\s*\n\s*productCriteria = \{ status: 'approved' \};/,
+    'tenant callers must stay approved-only when the scope flag is off'
+  );
+  assert.match(
+    service,
+    /catalogueScope\.enabled\(\)/,
+    'the own tenant-private case must be gated on GENERAL_CATALOG_SCOPE_ENABLED'
+  );
+  // Exactly one wide-visibility branch in the file — no second assignment can
+  // sneak past the first regex elsewhere.
+  assert.equal(
+    (service.match(/\$in: \['approved', 'pending'\]/g) || []).length, 1,
+    'exactly one wide (approved+pending) visibility branch may exist'
+  );
+  assert.equal(
+    (service.match(/productCriteria = \{\s*\n\s*\$or:/g) || []).length, 1,
+    'exactly one tenant candidate $or branch may exist inside productCriteria'
   );
 });
 

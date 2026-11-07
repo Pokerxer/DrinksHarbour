@@ -47,6 +47,7 @@ import {
 import { finite } from './inventory-dashboard-analysis';
 import { restoreStockView, type StockViewSettings } from './inventory-stock-saved-view';
 import StockDetail from './inventory-stock-detail-panel';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 import { useInventoryStockData } from './use-inventory-stock-data';
 import InventoryStockImport from './inventory-stock-import';
 import InventoryStockFilterPanel from './inventory-stock-filter-panel';
@@ -636,7 +637,7 @@ export default function InventoryStockBrowser({
         >
           <button
             type="button"
-            aria-label={`Select stock line ${r.productName} ${r.warehouseName} ${r.sizeName}`}
+            aria-label={`Select stock line ${r.productName} ${r.warehouseName} ${flatRowSizeLabel(r) || r.sizeName}`}
             aria-pressed={isChk}
             onClick={() => toggleOne(r._id)}
             className="text-gray-300 transition-colors hover:text-[#b20202]"
@@ -667,7 +668,7 @@ export default function InventoryStockBrowser({
           className={`px-3 py-2.5 text-xs ${isSel ? 'text-red-100' : 'text-gray-600'}`}
           onClick={() => setSelectedId(isSel ? null : r._id)}
         >
-          {r.sizeName}
+          {flatRowSizeLabel(r) || r.sizeName}
         </td>
         <td
           className={`px-3 py-2.5 text-xs ${isSel ? 'text-red-100' : 'text-gray-600'}`}

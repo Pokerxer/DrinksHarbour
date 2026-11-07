@@ -111,12 +111,12 @@ export default function CareersPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm p-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Don't see the right role?</h2>
-          <p className="text-gray-600 mb-6">Send us your resume and we'll reach out when a suitable position opens up.</p>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Don&apos;t see the right role?</h2>
+          <p className="text-gray-600 mb-6">Send us your resume and we&apos;ll reach out when a suitable position opens up.</p>
           
           {submitted ? (
             <div className="bg-green-50 text-green-800 p-4 rounded-lg">
-              Thank you! We'll be in touch soon.
+              Thank you! We&apos;ll be in touch soon.
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="flex gap-4">

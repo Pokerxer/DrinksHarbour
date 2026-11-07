@@ -43,6 +43,7 @@ async function reconcileSubscription(tenant, fetch = fetchSubscription) {
     ...revisionFilter(tenant),
   }, { $set: update, $inc: { billingRevision: 1 } });
   if (!result.matchedCount) throw new ConflictError('Billing changed during reconciliation; retry');
+  await require('./venue/subscription').recordVenueBoundary(tenant, update);
   // Retention ledger. Keyed on the subscription code, so the nightly sweep and a
   // redelivered webhook collapse onto one row instead of reporting the same
   // cancellation every day.

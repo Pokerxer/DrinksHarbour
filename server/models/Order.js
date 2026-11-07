@@ -5,6 +5,9 @@ const { ObjectId } = Schema;
 const { PAYMENT_METHODS } = require('../utils/paymentMethods');
 
 const orderItemSchema = new Schema({
+  fulfillmentLineId: { type: String, immutable: true, default: undefined },
+  venueLineId: { type: String, immutable: true },
+  venueLineRevision: { type: Number, immutable: true },
   product: {
     type: ObjectId,
     ref: 'Product',           // central product for description / images / ABV
@@ -93,7 +96,7 @@ const orderItemSchema = new Schema({
   // Tenant revenue model snapshot for reporting
   tenantRevenueModel: {
     type: String,
-    enum: ['markup', 'commission'],
+    enum: ['markup', 'commission', 'selling_price_markup'],
     default: 'markup',
   },
 
@@ -130,7 +133,25 @@ const orderItemSchema = new Schema({
 
 const orderSchema = new Schema(
   {
+    channelSnapshot: { type: require('./salesChannelSnapshot'), immutable: true, default: undefined },
+    merchantFulfillmentVersion: { type: Number, enum: [1, 2], immutable: true, default: undefined },
+    venueServiceSession: { type: ObjectId, ref: 'VenueServiceSession' },
+    venueBillForSession: { type: ObjectId, ref: 'VenueServiceSession' },
+    venueIdentityVersion: { type: Number, enum: [0, 1], default: 0 },
+    venueBillSnapshot: Schema.Types.Mixed,
+    venueCostRecognition: Schema.Types.Mixed,
+    venueMoneyLockVersion: {type:Number,default:0},
+    venueMoneyVersion: { type: Number, enum: [1, 2], default: 1 },
+    venueRefundedMinor: { type: Number, default: 0 },
+    venueAppliedMinor: { type: Number, default: 0 },
+    venueFinancialPolicy: Schema.Types.Mixed,
+    venueStockState: { type: String, enum: ['none', 'reserved', 'consumed', 'released'], default: 'none' },
+    venueSettlementState: { type: String, enum: ['unpaid', 'payment_pending', 'receipt_verified', 'settled', 'needs_review'], default: 'unpaid' },
     integrationCheckout: { type: String, index: true },
+    onlineStockVersion: { type: Number, immutable: true },
+    salesChannel: { type: String, immutable: true, index: true },
+    settlementOwner: { type: String, enum: ['tenant', 'platform'], immutable: true },
+    paymentAccount: { type: String, immutable: true },
     tableServiceBooking: { type: ObjectId, ref: 'Booking' },
     tableCheckoutUrl: { type: String, select: false },
     tableAccountingStatus: { type: String, enum: ['pending', 'posted'] },
@@ -429,6 +450,27 @@ const orderSchema = new Schema(
     },
 
     // ────────────────────────────────────────────────
+    // Gift checkout (order-level)
+    // ────────────────────────────────────────────────
+    // Present only on gift orders — the subdoc is written only when isGift is
+    // true (contract: docs/superpowers/specs/2026-10-27-gift-checkout-design.md).
+    // Order-level only; order.items stay untouched. requestedDeliveryDate is
+    // customer intent ('YYYY-MM-DD', >= tomorrow Lagos, <= +180 days): a plan
+    // the team confirms, never a guaranteed date. packagingRequested means the
+    // customer paid for the gift-packaging SKU line inside items.
+    gift: {
+      type: new Schema({
+        isGift:                { type: Boolean, required: true },
+        from:                  { type: String, trim: true, maxlength: 80, default: '' },
+        to:                    { type: String, trim: true, maxlength: 80, default: '' },
+        message:               { type: String, trim: true, maxlength: 500, default: '' },
+        requestedDeliveryDate: { type: String },
+        packagingRequested:    { type: Boolean, default: false },
+      }, { _id: false }),
+      default: null,
+    },
+
+    // ────────────────────────────────────────────────
     // Revenue & Platform Tracking
     // ────────────────────────────────────────────────
     platformCommissionTotal: {
@@ -533,6 +575,8 @@ const orderSchema = new Schema(
 // Virtuals
 // ────────────────────────────────────────────────
 
+require('./salesChannelSnapshotGuards')(orderSchema);
+
 orderSchema.virtual('itemCount').get(function () {
   return this.items.reduce((sum, item) => sum + item.quantity, 0);
 });
@@ -549,6 +593,8 @@ orderSchema.virtual('isMultiTenant').get(function () {
 orderSchema.index({ user: 1, placedAt: -1 });
 orderSchema.index({ status: 1, paymentStatus: 1 });
 orderSchema.index({ 'items.tenant': 1, status: 1 });
+orderSchema.index({ tenant: 1, venueBillForSession: 1 }, { unique: true, partialFilterExpression: { venueBillForSession: { $type: 'objectId' } } });
+orderSchema.index({ tenant: 1, venueServiceSession: 1 });
 orderSchema.index({ tableServiceBooking: 1 }, { unique: true,
   partialFilterExpression: { tableServiceBooking: { $type: 'objectId' } } });
 

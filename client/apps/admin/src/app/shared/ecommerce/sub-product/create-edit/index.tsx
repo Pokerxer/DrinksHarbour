@@ -33,6 +33,10 @@ import { resolveSubProductPricing } from '@/utils/sub-product-pricing';
 import { clearSubProductDraft } from './draft-cleanup';
 import { requestDuplicate } from './duplicate-intent';
 import { subProductSaveTarget } from './save-target';
+import {
+  getCreateConfirmationMessage,
+  CREATE_CONFIRMATION_LEGACY,
+} from './create-confirmation';
 import SubProductToolbar from './toolbar';
 import { navigateFromToolbar } from './toolbar-actions';
 import SubProductInventory from './inventory';
@@ -751,7 +755,24 @@ function SubProductForm({
             setCreatedSubProductId(createdId);
           }
 
-          if (!silent) toast.success('Sub Product created successfully!');
+          // Catalogue-scope aware: the populated central product in the create
+          // response is the ONLY client-side signal. tenant_private → the
+          // sellable-now confirmation; legacy (no publicationScope) and
+          // approved canonical keep the historic wording byte-for-byte.
+          if (!silent) {
+            const confirmationMessage = getCreateConfirmationMessage(
+              response?.data?.subProduct?.product
+            );
+            // The sellable-now confirmation is two sentences long — give it a
+            // dwell time that reads fully at 375px before the redirect. The
+            // legacy wording keeps the default (byte-for-byte flag-off) too.
+            toast.success(
+              confirmationMessage,
+              confirmationMessage === CREATE_CONFIRMATION_LEGACY
+                ? undefined
+                : { duration: 4500 }
+            );
+          }
         }
 
         // Mark as saved so unmount/beforeunload auto-save doesn't fire again

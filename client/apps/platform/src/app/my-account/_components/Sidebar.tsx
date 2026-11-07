@@ -49,7 +49,7 @@ export default function Sidebar() {
       </div>
       <nav className="p-2">
         {NAV_ITEMS.map(({ icon: Ic, label, href }) => {
-          const active = pathname === href;
+          const active = pathname === href || href === '/my-account/chat' && pathname?.startsWith('/my-account/chat/');
           return (
             <Link
               key={href}

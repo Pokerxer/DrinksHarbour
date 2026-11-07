@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const money = { type: Number, min: 0, validate: Number.isSafeInteger };
+const weight = { type: Number, min: 0, max: 100, required: true, validate: Number.isInteger };
+const weights = new Schema({ appraisal: weight, exam: weight, attendance: weight }, { _id: false });
 const schema = new Schema({
   tenant: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
   cycle: { type: Schema.Types.ObjectId, ref: 'AppraisalCycle', required: true },
@@ -11,7 +13,7 @@ const schema = new Schema({
   isAppraiser: { type: Boolean, default: true },
   reviewRevision: { type: Number, default: 0 },
   submittedAt: Date,
-  result: { type: new Schema({ averageScore: Number, ratingCount: Number, bonusMinor: money, composite: { type: new Schema({ appraisalScore: Number, examScore: Number, attendanceScore: Number, combinedScore: Number, attendanceMonth: String, attendanceFrom: String, attendanceTo: String, calculatedAt: Date }, { _id: false }), default: undefined } }, { _id: false }), default: undefined },
+  result: { type: new Schema({ averageScore: Number, ratingCount: Number, bonusMinor: money, composite: { type: new Schema({ weights: { type: weights, default: undefined, validate: value => !value || value.appraisal + value.exam + value.attendance === 100 }, appraisalScore: Number, examScore: Number, attendanceScore: Number, combinedScore: Number, attendanceMonth: String, attendanceFrom: String, attendanceTo: String, calculatedAt: Date }, { _id: false }), default: undefined } }, { _id: false }), default: undefined },
 }, { timestamps: true });
 schema.index({ tenant: 1, cycle: 1, employee: 1 }, { unique: true });
 module.exports = mongoose.model('PeerAppraisalParticipant', schema);

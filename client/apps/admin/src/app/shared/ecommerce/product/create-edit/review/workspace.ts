@@ -1,3 +1,4 @@
+import { isSellingMarkup } from './selling-markup';
 import {
   buildOverrides,
   evaluatePrice,
@@ -5,12 +6,19 @@ import {
   suggestPrice,
   saleActive,
 } from './pricing';
-import type { PriceDraft, PriceLine, PriceTargets, ReviewListing } from './types';
+import type {
+  PriceDraft,
+  PriceLine,
+  PriceTargets,
+  ReviewListing,
+} from './types';
 export type RowFilter = 'all' | 'changed' | 'attention' | 'blocked';
 const different = (entered: string, original: string) => {
   if (entered.trim() === original.trim()) return false;
   if (!entered.trim() || !original.trim()) return true;
-  return !Number.isFinite(Number(entered)) || Number(entered) !== Number(original);
+  return (
+    !Number.isFinite(Number(entered)) || Number(entered) !== Number(original)
+  );
 };
 export function inspectRows(
   lines: PriceLine[],
@@ -23,9 +31,20 @@ export function inspectRows(
     const draft = drafts[line.id] || originals[line.id];
     const normalChanged = different(draft.normal, originals[line.id].normal);
     const packChanged =
-      !!draft.pack.trim() && different(draft.pack, originals[line.id].pack);
-    const normal = evaluatePrice(line, draft.normal, listing, targets);
+      !isSellingMarkup(line, listing) &&
+      !!draft.pack.trim() &&
+      different(draft.pack, originals[line.id].pack);
+    const normal = evaluatePrice(
+      line,
+      draft.normal,
+      listing,
+      targets,
+      false,
+      undefined,
+      draft.inherit === 'true'
+    );
     const pack =
+      !isSellingMarkup(line, listing) &&
       draft.pack.trim() &&
       !saleActive(listing) &&
       !line.pricing.productDiscount?.active
@@ -55,7 +74,7 @@ export function inspectRows(
     return {
       line,
       draft,
-      changed: normalChanged || packChanged,
+      changed: normalChanged || packChanged || draft.inherit === 'true',
       normalChanged,
       packChanged,
       normal,
@@ -66,7 +85,11 @@ export function inspectRows(
   });
 }
 export type ReviewRow = ReturnType<typeof inspectRows>[number];
-export function filterRows(rows: ReviewRow[], query: string, filter: RowFilter) {
+export function filterRows(
+  rows: ReviewRow[],
+  query: string,
+  filter: RowFilter
+) {
   const search = query.trim().toLocaleLowerCase();
   return rows.filter(
     (row) =>
@@ -102,7 +125,12 @@ export function applyUnchangedSuggestions(
       continue;
     const suggestion = suggestPrice(row.line, listing, targets);
     if (suggestion === null) continue;
-    const outcome = evaluatePrice(row.line, String(suggestion), listing, targets);
+    const outcome = evaluatePrice(
+      row.line,
+      String(suggestion),
+      listing,
+      targets
+    );
     if (
       outcome.error ||
       outcome.tenantTargetMet === false ||

@@ -1,0 +1,11 @@
+'use strict';
+const router = require('express').Router();
+const asyncHandler = require('express-async-handler');
+const { protect } = require('../middleware/auth.middleware');
+const service = require('../services/marketPolicy/management');
+router.use(protect, (req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
+router.get('/mine', asyncHandler(async (req, res) => res.json({ success: true, data: await service.listEnrollments({ actor: req.user, mine: true }) })));
+router.get('/', asyncHandler(async (req, res) => res.json({ success: true, data: await service.listEnrollments({ actor: req.user }) })));
+router.post('/apply', asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.apply({ actor: req.user, input: req.body }) })));
+router.post('/:id/review', asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.review({ actor: req.user, enrollmentId: req.params.id, input: req.body }) })));
+module.exports = router;

@@ -187,3 +187,43 @@ test('extractCartProposal drops unknown products, clamps qty, tolerates bad JSON
   assert.strictEqual(none.proposal.length, 0);
   assert.strictEqual(none.text, 'Just a normal reply with no offer.');
 });
+
+test('occasion mode keeps uploads in the planning conversation instead of old file-list checkout handling', async (t) => {
+  stubEmptyCatalog(t);
+  let prompt;
+  t.mock.method(anthropic.messages, 'create', async input => { prompt = input; return textResponse('Let us refine your reception list.'); });
+  const result = await handleChatbotQuery({ mode: 'occasion', occasion: 'weddings', query: 'Review this', fileContent: '12 Apple Juice', fileName: 'wedding.txt', conversationHistory: [{ role: 'user', content: '80 guests in Abuja' }] });
+  assert.equal(result.intent, 'occasion_planning');
+  assert.ok(prompt.messages.some(turn => turn.content.includes('80 guests in Abuja')));
+  assert.ok(prompt.messages.some(turn => turn.content.includes('12 Apple Juice')));
+  assert.match(result.attachmentContext, /Apple Juice/);
+});
+
+test('occasion provider failures remain request failures so the customer can retry the draft', async (t) => {
+  stubEmptyCatalog(t);
+  t.mock.method(anthropic.messages, 'create', async () => { throw Error('provider offline'); });
+  await assert.rejects(handleChatbotQuery({ mode: 'occasion', query: 'Help plan a reception' }), /unavailable/);
+});
+
+test('category generation requests provider-enforced JSON output through the real chat pipeline',async t=>{
+ const mongoose=require('mongoose');const tenantId=new mongoose.Types.ObjectId(),productId=new mongoose.Types.ObjectId(),sizeId=new mongoose.Types.ObjectId();
+ t.mock.method(Tenant,'find',()=>chainable([{_id:tenantId,revenueModel:'markup',markupPercentage:0}]));
+ t.mock.method(Product,'find',()=>chainable([{_id:productId,name:'Reception Wine',slug:'reception-wine',type:'wine',abv:12}]));
+ t.mock.method(SubProduct,'find',()=>chainable([{product:productId,tenant:tenantId,costPrice:1000,baseSellingPrice:1000,availableStock:20,sizes:[sizeId]}]));
+ t.mock.method(Size,'find',()=>chainable([{_id:sizeId,size:'75cl',stock:20,costPrice:1000,sellingPrice:1000}]));
+ let sent;t.mock.method(anthropic.messages,'create',async input=>{sent=input;return textResponse(JSON.stringify({items:[{productId:productId.toString(),quantity:2}]}));});
+ const result=await handleChatbotQuery({mode:'occasion',tenantId,generation:{categories:['wine'],budget:10000,guests:20},query:'Generate my drinks list'});
+ assert.equal(sent.output_config?.format?.type,'json_schema');assert.equal(sent.output_config.format.schema.additionalProperties,false);
+ assert.equal(result.generatedList.items[0].quantity,2);
+});
+
+test('catalogue distinguishes a successful empty read from a database failure for occasion generation',async t=>{
+ stubEmptyCatalog(t);
+ const empty=await chatbotService.loadCatalog('empty-occasion-products');
+ assert.deepEqual(empty,{text:'',entries:[]});
+ t.mock.method(Product,'find',()=>chainable([{_id:'catalogue-item',name:'No linked offer',slug:'no-linked-offer'}]));
+ assert.deepEqual(await chatbotService.loadCatalog('empty-occasion-offers'),{text:'',entries:[]});
+ t.mock.method(Tenant,'find',()=>{throw Error('temporary database failure');});
+ assert.equal(await chatbotService.loadCatalog('failed-occasion-catalogue'),null);
+ await assert.rejects(handleChatbotQuery({mode:'occasion',tenantId:'failed-occasion-request',generation:{categories:['wine'],budget:5000000,guests:300},query:'Generate'}),error=>error.code==='OCCASION_CATALOGUE_UNAVAILABLE');
+});

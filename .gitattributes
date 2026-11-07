@@ -1,0 +1,24 @@
+# Keep private business material out of distributable source archives.
+/.backups export-ignore
+/outputs export-ignore
+/.local export-ignore
+/docs/memory export-ignore
+/docs/reports export-ignore
+/docs/superpowers export-ignore
+/docs/legal export-ignore
+/docs/partnerships export-ignore
+/docs/tenant-outreach export-ignore
+/docs/hr export-ignore
+*.xlsx export-ignore
+*.xlsx.* export-ignore
+*.pdf export-ignore
+**/.env export-ignore
+**/.env.* export-ignore
+**/.env.example -export-ignore
+**/.env.local.example -export-ignore
+**/.claude export-ignore
+**/.codex export-ignore
+/server/_insp.js export-ignore
+
+# Next generates these declarations with host-specific line endings.
+client/apps/*/next-env.d.ts text eol=lf

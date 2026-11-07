@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 // atomically alongside appending a row here; `balanceAfter` snapshots it.
 const GiftCardTransactionSchema = new mongoose.Schema(
   {
+    checkoutReceipt: { type: Boolean, default: false },
     giftCardId:   { type: mongoose.Schema.Types.ObjectId, ref: 'GiftCard', required: true, index: true },
     type:         { type: String, enum: ['issue', 'redeem', 'refund', 'adjustment'], required: true },
     amount:       { type: Number, required: true, min: 1 },

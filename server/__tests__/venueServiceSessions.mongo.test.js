@@ -1,0 +1,21 @@
+'use strict';
+const test = require('node:test'); const assert = require('node:assert/strict');
+const { uri, connectVenueMongo, fixture } = require('./helpers/venueMongo');
+test('concurrent_table_open_commits_one_hold_visit_and_table_claim', { skip: !uri }, async t => {
+  await connectVenueMongo(t, 'visits');
+  const service = require('../services/venue/service-sessions');
+  await service.ensureIndexes();
+  const args = await fixture();
+  const results = await Promise.allSettled(Array.from({ length: 12 }, (_, n) => service.ensureServiceSession({ ...args, idempotencyKey: `open-${n}` })));
+  const fulfilled = results.filter(r => r.status === 'fulfilled');
+  assert.ok(fulfilled.length >= 1);
+  const Session = require('../models/VenueServiceSession'), Order = require('../models/Order');
+  assert.equal(await Session.countDocuments({ tenant: args.tenantId }), 1);
+  assert.equal(await Order.countDocuments({ tenant: args.tenantId, status: 'hold' }), 1);
+  const session = await Session.findOne({ tenant: args.tenantId }).lean();
+  const table = await require('../models/POSTable').findOne({ _id: args.tableIds[0], tenant: args.tenantId }).lean();
+  assert.equal(String(table.currentTabId), String(session.heldOrder));
+  const replay = await service.ensureServiceSession({ ...args, idempotencyKey: 'open-0' }).catch(() => null);
+  if (results[0].status === 'fulfilled') assert.equal(replay.id, String(session._id));
+  await assert.rejects(service.ensureServiceSession({ ...args, actor: { ...args.actor, tenantId: '000000000000000000000099' }, idempotencyKey: 'foreign' }), /not found|tenant/i);
+});

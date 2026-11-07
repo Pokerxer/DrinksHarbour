@@ -5,6 +5,7 @@ import ToggleColumns from '@core/components/table-utils/toggle-columns';
 import { type Table as ReactTableType } from '@tanstack/react-table';
 import { PiMagnifyingGlassBold, PiFunnelBold } from 'react-icons/pi';
 import { Flex, Input, Select } from 'rizzui';
+import { INDUSTRY_FILTER_OPTIONS } from './industry-scope';
 
 const statusOptions = [
   { label: 'All Statuses', value: '' },
@@ -44,16 +45,20 @@ interface TableToolbarProps<T extends Record<string, any>> {
   table: ReactTableType<T>;
   statusFilter: string;
   typeFilter: string;
+  industryFilter: string;
   onStatusChange: (value: string) => void;
   onTypeChange: (value: string) => void;
+  onIndustryChange: (value: string) => void;
 }
 
 export default function Filters<TData extends Record<string, any>>({
   table,
   statusFilter,
   typeFilter,
+  industryFilter,
   onStatusChange,
   onTypeChange,
+  onIndustryChange,
 }: TableToolbarProps<TData>) {
   return (
     <Flex align="center" justify="between" wrap="wrap" className="mb-4 gap-3">
@@ -89,6 +94,16 @@ export default function Filters<TData extends Record<string, any>>({
           className="w-44"
           getOptionValue={(o) => o.value}
           displayValue={(o) => o?.label ?? 'Type'}
+        />
+        <Select
+          options={INDUSTRY_FILTER_OPTIONS as any}
+          value={industryFilter}
+          onChange={(opt) => onIndustryChange((opt as any)?.value ?? '')}
+          placeholder="Industry"
+          selectClassName="h-9 text-sm"
+          className="w-48"
+          getOptionValue={(o) => o.value}
+          displayValue={(o) => o?.label ?? 'Industry'}
         />
       </Flex>
       <ToggleColumns table={table} />

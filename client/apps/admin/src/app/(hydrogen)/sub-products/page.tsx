@@ -19,7 +19,20 @@ export default async function SubProductsPage({
 
   return (
     <>
-      {fromPOS ? <POSNavHeader /> : <EcommercePageHeader hideHero />}
+      {fromPOS ? (
+        // The layout's content canvas insets by px-4 md:px-10 lg:px-14; this
+        // re-expands to the full-bleed chrome line and re-applies the
+        // hydrogen-level inset so POSNavHeader lines up like every other
+        // module nav row (ModuleNavHeader for this group is hidden by the
+        // layout gate while ?from=pos is set — never two headers).
+        <div className="-mx-4 md:-mx-10 lg:-mx-14">
+          <div className="px-4 md:px-5 lg:px-6 3xl:px-8">
+            <POSNavHeader />
+          </div>
+        </div>
+      ) : (
+        <EcommercePageHeader hideHero />
+      )}
       <div className={fromPOS ? '' : 'mt-4'}>
         <SubProductsTable pageSize={DEFAULT_SUBPRODUCT_PAGE_SIZE} />
       </div>

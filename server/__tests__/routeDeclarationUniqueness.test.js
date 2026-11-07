@@ -124,3 +124,27 @@ test('the surviving POST /api/subproducts is the tenantAdminOrSuperAdmin one', (
     'POST /api/subproducts must be guarded by tenantAdminOrSuperAdmin'
   );
 });
+
+test('product size guidance matches before the generic product ID route', () => {
+  const router = require('../routes/product.routes');
+  const matchingGet = router.stack.find((layer) =>
+    layer.route?.methods.get && layer.match('/size-guidance')
+  );
+  assert.equal(matchingGet?.route.path, '/size-guidance');
+});
+
+test('central product creation accepts registered Beauty and Electronics types', async () => {
+  const router = require('../routes/product.routes');
+  const create = router.stack.find(({ route }) => route?.methods.post && route.path === '/');
+  const validators = create.route.stack.map(({ handle }) => handle).filter(({ run }) => typeof run === 'function');
+  const { validationResult } = require('express-validator');
+  assert.equal(validators.length, 2);
+  for (const type of ['beauty_nails', 'electronics_desktop']) {
+    const req = { body: { name: 'Retail product', type } };
+    for (const validator of validators) await validator.run(req);
+    assert.deepEqual(validationResult(req).array(), []);
+  }
+  const req = { body: { name: 'Unknown product', type: 'electronics_unregistered' } };
+  for (const validator of validators) await validator.run(req);
+  assert.equal(validationResult(req).array()[0]?.path, 'type');
+});

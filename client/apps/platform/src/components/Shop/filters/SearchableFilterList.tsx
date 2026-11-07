@@ -42,8 +42,10 @@ export default function SearchableFilterList({
         {matches.length > 5 && <span>Scroll to see more</span>}
       </div>
       <div role="region" aria-label={`${title} options`} tabIndex={0}
-        className="max-h-64 space-y-1 overflow-y-scroll overscroll-contain rounded-lg pr-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#b20202]"
-        style={{ scrollbarGutter: 'stable', scrollbarWidth: 'auto', scrollbarColor: '#9ca3af #f3f4f6', touchAction: 'pan-y' }}>
+        className="space-y-1 rounded-lg pr-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#b20202]"
+        // Keep containment with the component: missing generated overflow CSS
+        // must never let hundreds of options paint over adjacent sections.
+        style={{ maxHeight: '16rem', overflowY: 'auto', overscrollBehavior: 'contain', scrollbarGutter: 'stable', scrollbarWidth: 'auto', scrollbarColor: '#9ca3af #f3f4f6', touchAction: 'pan-y' }}>
         {matches.map(value => {
           const checked = contains(selected, value);
           const changed = checked !== contains(applied, value);

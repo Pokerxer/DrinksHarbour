@@ -17,6 +17,8 @@ import OrderStatusBreakdown from '@/app/shared/ecommerce/dashboard/order-status-
 import PaymentMethods from '@/app/shared/ecommerce/dashboard/payment-methods';
 import TopVendors from '@/app/shared/ecommerce/dashboard/top-vendors';
 import RecentOrder from '@/app/shared/ecommerce/dashboard/recent-order';
+import TodayMomentum from '@/app/shared/ecommerce/dashboard/today-momentum';
+import NeedsAttention from '@/app/shared/ecommerce/dashboard/needs-attention';
 import StockReport from '@/app/shared/ecommerce/dashboard/stock-report';
 import DashboardProvider from '@/app/shared/ecommerce/dashboard/dashboard-provider';
 import PeriodSwitcher, {
@@ -40,6 +42,7 @@ import HandWaveIcon from '@core/components/icons/hand-wave';
 import { getAuthenticatedUser } from '@/lib/server-auth';
 import {
   getDashboardData,
+  resolveDashboardParams,
   type DashboardData,
   type DashboardParams,
 } from '@/services/dashboard.service';
@@ -51,6 +54,12 @@ type LoadFailure = 'unauthenticated' | 'error' | null;
  * Full-width card used when the dashboard cannot render its widgets (session
  * expired or the analytics API failed). Keeps the nav shell visible so users
  * can navigate elsewhere instead of staring at infinite skeletons.
+ *
+ * Failure isolation note: the dashboard is fed by ONE analytics call, so
+ * per-report Suspense boundaries cannot stream earlier or fail independently —
+ * hard API failure keeps this whole-page card. Partial/partially-missing
+ * payloads ARE degraded per-widget in `normalizeDashboardData` (service),
+ * which fills missing sections so individual widgets render empty states.
  */
 function DashboardMessage({
   icon,
@@ -85,6 +94,17 @@ function DashboardMessage({
   );
 }
 
+/**
+ * Streaming decision: the page-level Suspense boundary in
+ * `(hydrogen)/ecommerce/page.tsx` stays the ONLY one. The nav header + hero
+ * read `DashboardContext` (today's sales figures), and the provider needs the
+ * resolved data payload — so splitting the data fetch into a nested Suspense
+ * bank would either strip the hero's figures or duplicate the fetch. Nothing
+ * below the hero would stream sooner since one analytics call feeds all
+ * widgets; keep-cached-while-refreshing on period switches is instead
+ * provided by the `useTransition` push in PeriodSwitcher (React holds the
+ * old UI while the new render streams in).
+ */
 export default async function EcommerceDashboard({
   period,
   from,
@@ -102,11 +122,13 @@ export default async function EcommerceDashboard({
       // stale session shows a sign-in path instead of endless skeletons.
       failure = 'unauthenticated';
     } else {
-      dashboardData = await getDashboardData(user.token as string, {
-        period,
-        from,
-        to,
-      });
+      // Validate params server-side BEFORE the analytics call: a hand-typed
+      // `?period=banana` (or a malformed custom range) renders the default
+      // period here while keeping the user's URL untouched.
+      dashboardData = await getDashboardData(
+        user.token as string,
+        resolveDashboardParams({ period, from, to })
+      );
       if (user.name) userName = user.name.split(' ')[0];
       isTenantUser = TENANT_ROLES.includes(user.role);
     }
@@ -237,6 +259,12 @@ export default async function EcommerceDashboard({
                     <TenantRevenueWidget className="h-[464px] @sm:h-[520px] @7xl:col-span-4 @7xl:h-full" />
                   </div>
 
+                  {/* Today's momentum + attention queue */}
+                  <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @7xl:grid-cols-12 3xl:gap-8">
+                    <TodayMomentum className="@7xl:col-span-5" />
+                    <NeedsAttention className="@7xl:col-span-7" />
+                  </div>
+
                   {/* Revenue trend */}
                   <SalesReport isTenant className="w-full" />
 
@@ -320,6 +348,12 @@ export default async function EcommerceDashboard({
                   <div className="grid grid-cols-1 gap-6 @7xl:grid-cols-12 3xl:gap-8">
                     <SalesReport className="@7xl:col-span-8" />
                     <OrderStatusBreakdown className="@7xl:col-span-4" />
+                  </div>
+
+                  {/* Band 2b — today's momentum + attention queue */}
+                  <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @7xl:grid-cols-12 3xl:gap-8">
+                    <TodayMomentum className="@7xl:col-span-5" />
+                    <NeedsAttention className="@7xl:col-span-7" />
                   </div>
 
                   {/* Band 3 — operational */}

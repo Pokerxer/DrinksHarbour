@@ -36,6 +36,28 @@ function subProduct(sizes) {
 }
 
 describe('buildResult size projection', () => {
+
+  test('carries retail options and the exact row ID through to the result', () => {
+    const result = buildResult(
+      { ...extracted, name: 'Shirt', type: 'fashion_top', sizeText: 'M' },
+      { _id: 'shirt', name: 'Shirt' },
+      [subProduct([
+        { _id: 'navy', displayName: 'M', colorName: 'Navy', optionName: 'Slim' },
+        { _id: 'black', displayName: 'M', colorName: 'Black', optionName: 'Regular' },
+      ])],
+      'exact',
+      null
+    );
+
+    const sizes = result.matchedSubProducts[0].sizes;
+    assert.deepEqual(sizes.map(({ size, colorName, optionName }) => ({
+      size, colorName, optionName,
+    })), [
+      { size: 'navy', colorName: 'Navy', optionName: 'Slim' },
+      { size: 'black', colorName: 'Black', optionName: 'Regular' },
+    ]);
+  });
+
   test('carries unitsPerPack through to the result', () => {
     const res = buildResult(
       extracted,

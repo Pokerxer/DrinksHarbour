@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { routes } from '@/config/routes';
-import type { HistoryKind, HistoryRow } from '@/services/warehouseHistory.service';
+import type {
+  HistoryKind,
+  HistoryRow,
+} from '@/services/warehouseHistory.service';
 export function historyLink(row: HistoryRow) {
   if (!row.documentId) return null;
   return row.documentType === 'purchase'
@@ -13,15 +16,44 @@ export { movementQuantity } from './history-tools';
 import { movementQuantity } from './history-tools';
 
 function statusClass(status: string) {
-  if (['received', 'completed', 'transfer_in', 'returned', 'paid'].includes(status))
+  if (
+    ['received', 'completed', 'transfer_in', 'returned', 'paid'].includes(
+      status
+    )
+  )
     return 'bg-emerald-50 text-emerald-700 ring-emerald-600/10';
   if (['cancelled', 'rejected', 'return_out'].includes(status))
     return 'bg-red-50 text-red-700 ring-red-600/10';
-  if (['pending_approval', 'partially_received', 'in_transit', 'confirmed'].includes(status))
+  if (
+    [
+      'pending_approval',
+      'partially_received',
+      'in_transit',
+      'confirmed',
+    ].includes(status)
+  )
     return 'bg-amber-50 text-amber-700 ring-amber-600/10';
   return 'bg-gray-100 text-gray-600 ring-gray-500/10';
 }
-export default function HistoryTable({ rows, kind }: { rows: HistoryRow[]; kind: HistoryKind }) {
+export default function HistoryTable({
+  rows,
+  kind,
+  selection,
+}: {
+  rows: HistoryRow[];
+  kind: HistoryKind;
+  selection?: { ids: string[]; change: (ids: string[]) => void };
+}) {
+  const selectable = kind === 'transfers' ? selection : undefined;
+  const pageIds = [
+    ...new Set(
+      rows
+        .filter((row) => row.documentType === 'transfer' && row.documentId)
+        .map((row) => row.documentId)
+    ),
+  ];
+  const allSelected =
+    !!pageIds.length && pageIds.every((id) => selectable?.ids.includes(id));
   const movements = kind === 'movements' || kind === 'transfer_movements';
   const cell = 'px-4 py-4 text-left';
   return (
@@ -29,6 +61,29 @@ export default function HistoryTable({ rows, kind }: { rows: HistoryRow[]; kind:
       <table className="w-full min-w-[760px] text-sm">
         <thead className="sticky top-0 z-10 bg-[#f8f5f0] text-xs font-semibold uppercase tracking-wide text-[#8b7a6b]">
           <tr>
+            {selectable && (
+              <th scope="col" className={cell}>
+                <input
+                  type="checkbox"
+                  aria-label="Select all transfers on this page"
+                  checked={allSelected}
+                  disabled={!pageIds.length}
+                  ref={(input) => {
+                    if (input)
+                      input.indeterminate =
+                        !allSelected &&
+                        pageIds.some((id) => selectable.ids.includes(id));
+                  }}
+                  onChange={(event) =>
+                    selectable.change(
+                      event.target.checked
+                        ? [...new Set([...selectable.ids, ...pageIds])]
+                        : selectable.ids.filter((id) => !pageIds.includes(id))
+                    )
+                  }
+                />
+              </th>
+            )}
             {[
               'Reference / Product',
               'Created',
@@ -40,7 +95,9 @@ export default function HistoryTable({ rows, kind }: { rows: HistoryRow[]; kind:
                   : 'Sent / Received',
               ...(movements
                 ? [
-                    ...(kind === 'transfer_movements' ? ['Transferred in', 'Transferred out'] : []),
+                    ...(kind === 'transfer_movements'
+                      ? ['Transferred in', 'Transferred out']
+                      : []),
                     'Balance before',
                     'Balance after',
                     'Recorded by',
@@ -52,7 +109,12 @@ export default function HistoryTable({ rows, kind }: { rows: HistoryRow[]; kind:
                       'Purchase value after returns',
                       'Order line total',
                     ]
-                  : ['Transferred in', 'Transferred out', 'Returned', 'Document value']),
+                  : [
+                      'Transferred in',
+                      'Transferred out',
+                      'Returned',
+                      'Document value',
+                    ]),
             ].map((label) => (
               <th scope="col" key={label} className={cell}>
                 {label}
@@ -67,9 +129,33 @@ export default function HistoryTable({ rows, kind }: { rows: HistoryRow[]; kind:
             const label = movements ? row.description : row.reference;
             return (
               <tr key={row.id} className="transition-colors hover:bg-[#fcfaf7]">
+                {selectable && (
+                  <td className={cell}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select transfer ${row.reference}`}
+                      disabled={
+                        row.documentType !== 'transfer' || !row.documentId
+                      }
+                      checked={selectable.ids.includes(row.documentId)}
+                      onChange={(event) =>
+                        selectable.change(
+                          event.target.checked
+                            ? [...new Set([...selectable.ids, row.documentId])]
+                            : selectable.ids.filter(
+                                (id) => id !== row.documentId
+                              )
+                        )
+                      }
+                    />
+                  </td>
+                )}
                 <td className={cell}>
                   {href ? (
-                    <Link className="font-semibold text-[#b20202] hover:underline" href={href}>
+                    <Link
+                      className="font-semibold text-[#b20202] hover:underline"
+                      href={href}
+                    >
                       {label}
                     </Link>
                   ) : (
@@ -105,7 +191,8 @@ export default function HistoryTable({ rows, kind }: { rows: HistoryRow[]; kind:
                   className={`${cell} font-semibold tabular-nums ${movements ? ((stockChange ?? 0) < 0 ? 'text-red-700' : (stockChange ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500') : 'text-gray-800'}`}
                 >
                   {movements && (stockChange ?? 0) > 0 ? '+' : ''}
-                  {(movements ? stockChange : row.quantity)?.toLocaleString() ?? '—'}
+                  {(movements ? stockChange : row.quantity)?.toLocaleString() ??
+                    '—'}
                   {movements && row.status === 'adjusted' && (
                     <div className="mt-1 text-xs font-normal text-gray-500">
                       Recount: {row.quantity.toLocaleString()}
@@ -124,8 +211,12 @@ export default function HistoryTable({ rows, kind }: { rows: HistoryRow[]; kind:
                         </td>
                       </>
                     )}
-                    <td className={cell}>{row.balanceBefore?.toLocaleString() ?? '—'}</td>
-                    <td className={cell}>{row.balanceAfter?.toLocaleString() ?? '—'}</td>
+                    <td className={cell}>
+                      {row.balanceBefore?.toLocaleString() ?? '—'}
+                    </td>
+                    <td className={cell}>
+                      {row.balanceAfter?.toLocaleString() ?? '—'}
+                    </td>
                     <td className={cell}>{row.actor}</td>
                   </>
                 ) : (
@@ -138,7 +229,9 @@ export default function HistoryTable({ rows, kind }: { rows: HistoryRow[]; kind:
                         <td className={`${cell} font-semibold tabular-nums`}>
                           {row.purchasedQuantity?.toLocaleString() ?? '—'}
                         </td>
-                        <td className={`${cell} whitespace-nowrap tabular-nums`}>
+                        <td
+                          className={`${cell} whitespace-nowrap tabular-nums`}
+                        >
                           {row.netPurchaseAmount === undefined
                             ? '—'
                             : `${row.currency || 'NGN'} ${row.netPurchaseAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -153,10 +246,14 @@ export default function HistoryTable({ rows, kind }: { rows: HistoryRow[]; kind:
                         <td className={`${cell} font-semibold tabular-nums`}>
                           {row.transferOutQuantity?.toLocaleString() ?? '—'}
                         </td>
-                        <td className={cell}>{row.returned?.toLocaleString() ?? '0'}</td>
+                        <td className={cell}>
+                          {row.returned?.toLocaleString() ?? '0'}
+                        </td>
                       </>
                     )}
-                    <td className={`${cell} whitespace-nowrap font-semibold tabular-nums`}>
+                    <td
+                      className={`${cell} whitespace-nowrap font-semibold tabular-nums`}
+                    >
                       {row.amount === undefined
                         ? '—'
                         : `${row.currency || 'NGN'} ${row.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}

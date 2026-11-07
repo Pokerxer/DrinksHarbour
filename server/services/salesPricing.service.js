@@ -112,7 +112,7 @@ async function computeAuthoritativeLinePrices(items, { tenantId, pricelistId }) 
 
   const [tenant, pricelist, records] = await Promise.all([
     Tenant.findById(tenantId)
-      .select('revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+      .select('revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
       .lean(),
     pricelistId
       ? Pricelist.findOne({ _id: pricelistId, tenant: tenantId }).lean()

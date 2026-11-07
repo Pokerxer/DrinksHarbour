@@ -46,9 +46,15 @@ const corsOptions = {
     'Origin',
     'x-tenant-slug',
     'x-shopping-location',
+    'x-market-code',
     'x-is-tenant-site',
     'x-mfa-token',
     'x-csrf-token',
+    'Idempotency-Key',
+    'X-Order-Access',
+    'x-venue-channel',
+    'x-venue-issued',
+    'x-venue-signature',
     // The public kiosk's device token. It is the ONLY credential a logged-out
     // clock has, so without this line the whole kiosk fails in a browser while
     // passing every server-side check.

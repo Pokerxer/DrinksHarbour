@@ -208,7 +208,7 @@ function GiftCardsPageInner() {
   const [verifying, setVerifying] = useState(false);
   const [verifyMsg, setVerifyMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const searchParams = useSearchParams();
-  // Paystack redirects back with ?reference=&trxref= (our own DHGC- reference).
+  // Korapay redirects back with ?reference= (our own DHGC- reference).
   // gc_ref is kept for backwards-compatibility with any in-flight links.
   const purchaseRef =
     searchParams.get('gc_ref') ||
@@ -218,7 +218,7 @@ function GiftCardsPageInner() {
 
   useEffect(() => {
     if (!purchaseRef || !token) return;
-    // gc_id is now embedded in the Paystack callbackUrl by the server, so
+    // gc_id is now embedded in the Korapay redirect_url by the server, so
     // giftCardIdParam is the primary source. sessionStorage is a fallback for
     // older in-flight links that pre-date the callbackUrl change.
     let gcId = giftCardIdParam;

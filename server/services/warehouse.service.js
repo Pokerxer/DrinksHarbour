@@ -36,6 +36,7 @@ async function generateWarehouseCode(tenantId, type) {
 }
 
 async function createWarehouse(data, userId, tenantId) {
+  require('./venue/protected-configuration').rejectOrdinaryVenueConfiguration(data);
   if (data.isDefault) {
     await Warehouse.updateMany({ tenant: tenantId }, { $set: { isDefault: false } });
   }
@@ -70,6 +71,7 @@ async function getWarehouseById(id, tenantId) {
 }
 
 async function updateWarehouse(id, data, tenantId) {
+  require('./venue/protected-configuration').rejectOrdinaryVenueConfiguration(data);
   if (data.isDefault) {
     await Warehouse.updateMany({ tenant: tenantId }, { $set: { isDefault: false } });
   }
@@ -83,19 +85,24 @@ async function updateWarehouse(id, data, tenantId) {
 }
 
 async function deleteWarehouse(id, tenantId) {
+  const current = await Warehouse.findOne({ _id: id, tenant: tenantId });
+  if (!current) throw new NotFoundError('Warehouse not found');
+  if (current.isDefault) throw new ValidationError('Assign another default location before deactivating this warehouse.');
   const hasStock = await WarehouseStock.exists({
     tenant: tenantId,
     warehouse: id,
-    currentQuantity: { $gt: 0 },
+    $or: [{ currentQuantity: { $gt: 0 } }, { reservedQuantity: { $gt: 0 } }],
   });
   if (hasStock) {
     throw new ValidationError(
       'Cannot delete a warehouse that still holds stock. Transfer or zero it out first.'
     );
   }
-  const wh = await Warehouse.findOneAndDelete({ _id: id, tenant: tenantId });
+  const wh = await Warehouse.findOneAndUpdate(
+    { _id: id, tenant: tenantId, isDefault: { $ne: true } },
+    { $set: { isActive: false } }, { new: true }
+  );
   if (!wh) throw new NotFoundError('Warehouse not found');
-  await WarehouseStock.deleteMany({ tenant: tenantId, warehouse: id });
   return wh;
 }
 
@@ -114,7 +121,11 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
       })
       // wholesalePrice + unitsPerPack feed the transfer create form's seeded
       // cost and packs breakdown (same defaults as the purchases module).
-      .populate('size', 'size sellingPrice costPrice wholesalePrice unitsPerPack')
+      .populate({
+        path: 'size',
+        match: { tenant: tenantId },
+        select: 'size displayName colorName colorHexCode optionName sku sellingPrice costPrice wholesalePrice unitsPerPack',
+      })
       .sort({ updatedAt: -1 })
       .lean(),
     WarehouseBatch.find({
@@ -516,7 +527,7 @@ async function getAllStock(tenantId, settings = null, { includeUnstocked = false
           populate: { path: 'category', select: 'name' },
         },
       })
-.populate('size', 'size costPrice sellingPrice wholesalePrice unitsPerPack')
+.populate('size', 'size colorName colorHexCode optionName costPrice sellingPrice wholesalePrice unitsPerPack')
       .populate('warehouse', 'name code')
       .lean(),
     WarehouseBatch.find({
@@ -571,6 +582,17 @@ async function getAllStock(tenantId, settings = null, { includeUnstocked = false
       sku: sp.sku || '',
       sizeId: szId,
       sizeName: sz.size || '—',
+      // Size variant identity (DRI-16) for the warehouse-analysis/StockRow
+      // surfaces: colour/option identity rides along verbatim so same-size
+      // colour variants ("M · Emerald" vs "M · Ivory") stay distinct rows keyed
+      // per exact sizeId. Conditional spread — rows whose Size carries no
+      // variant identity (legacy beverage rows) keep their exact pre-fix shape
+      // (byte-identical), per the DRI-14 emit-only-with-identity precedent.
+      // Pure data provision: the stored sizeName snapshot stays authoritative,
+      // no server label re-composition.
+      ...(sz.colorName ? { colorName: sz.colorName } : {}),
+      ...(sz.colorHexCode ? { colorHexCode: sz.colorHexCode } : {}),
+      ...(sz.optionName ? { optionName: sz.optionName } : {}),
       currentQuantity: r.currentQuantity || 0,
       reservedQuantity: r.reservedQuantity || 0,
       costPrice: cost,
@@ -607,7 +629,11 @@ async function getStockByWarehouse(subProductId, tenantId) {
       populate: { path: 'product', select: 'name slug images' },
     })
     .populate('warehouse', 'name code type')
-    .populate('size', 'size costPrice sellingPrice')
+    // colorName/colorHexCode/optionName ride along so the sub-product stock-by-
+    // warehouse breakdown can label same-size colour variants per exact sizeId
+    // (DRI-16). Stored docs without these columns simply omit them — legacy
+    // rows keep their exact shape.
+    .populate('size', 'size colorName colorHexCode optionName costPrice sellingPrice')
     .lean();
   const now = new Date();
   return rows.map(({ automaticMinimum, ...row }) => ({

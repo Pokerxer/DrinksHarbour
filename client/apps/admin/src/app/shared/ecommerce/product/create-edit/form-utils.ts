@@ -1,5 +1,8 @@
+import { legacyBeverageTypeOptions } from '@/utils/legacy-beverage-types';
 import { expandedProductTypeOptions } from '@/utils/expanded-product-types';
-import { CreateProductInput } from '@/validators/create-product.schema';
+import { hospitalityProductTypeOptions } from '@/utils/hospitality-product-types';
+import { retailProductTypeOptions } from '@/utils/retail-product-types';
+import { productFormSchema, CreateProductInput } from '@/validators/create-product.schema';
 import isEmpty from 'lodash/isEmpty';
 
 // Empty objects and arrays
@@ -10,13 +13,13 @@ export const emptyTastingNotes = {
   taste: [],
   finish: [],
   mouthfeel: [],
-  appearance: '',
-  color: '',
+  appearance: '' as const,
+  color: '' as const,
 };
 
 export const emptyServingSuggestions = {
-  temperature: '',
-  glassware: '',
+  temperature: '' as const,
+  glassware: '' as const,
   garnish: [],
   mixers: [],
 };
@@ -61,12 +64,12 @@ export const emptyAwards = [];
 export const emptyExternalLinks = [];
 
 export const emptySubProductData = {
-  sku: '',
+  sku: '' as const,
   baseSellingPrice: undefined,
   costPrice: undefined,
   markupPercentage: 25,
   platformMarkup: 15,
-  currency: 'NGN',
+  currency: 'NGN' as const,
   taxRate: 0,
   sizes: [],
   lowStockThreshold: 10,
@@ -84,6 +87,8 @@ export const emptySubProductData = {
     width: undefined,
     height: undefined,
     fragile: true,
+    requiresAgeVerification: true,
+    hazmat: false,
   },
 };
 
@@ -136,6 +141,7 @@ export function defaultValues(
 
     // Descriptive Content
     shortDescription: product?.shortDescription ?? '',
+    specifications: product?.specifications ?? {},
     description: product?.description ?? '',
     tastingNotes: product?.tastingNotes ?? emptyTastingNotes,
     flavorProfile: product?.flavorProfile ?? [],
@@ -178,7 +184,7 @@ export function defaultValues(
 
     // SEO
     metaTitle: product?.metaTitle ?? '',
-    seoH1: product?.seoH1 ?? product?.seo?.seoH1 ?? '',
+    seoH1: product?.seoH1 ?? '',
     metaDescription: product?.metaDescription ?? '',
     metaKeywords: product?.metaKeywords ?? [],
     canonicalUrl: product?.canonicalUrl ?? '',
@@ -204,12 +210,12 @@ export function defaultValues(
     wishlistCount: product?.wishlistCount ?? 0,
 
     // SubProduct Data
-    subProductData: product?.subProductData ?? emptySubProductData,
+    subProductData: product?.subProductData ?? productFormSchema.shape.subProductData.parse(emptySubProductData),
   };
 }
 
 // Product types options
-export const productTypes = [
+const existingProductTypes = [
   ...expandedProductTypeOptions,
   // Alcoholic Beverages
   { value: 'beer', label: 'Beer', category: 'Alcoholic' },
@@ -245,7 +251,16 @@ export const productTypes = [
   { value: 'glassware', label: 'Glassware', category: 'Gifts & Lifestyle' },
   { value: 'bar_tool', label: 'Bar Tool', category: 'Gifts & Lifestyle' },
   { value: 'gift_set', label: 'Gift Set', category: 'Gifts & Lifestyle' },
+
+  // Retail verticals (server retailTypes — electronics/fashion/beauty/home)
+  ...retailProductTypeOptions,
+
+  // Hospitality & foodservice (server hospitalityTypes — supply 'hospitality',
+  // all non-beverage)
+  ...hospitalityProductTypeOptions,
 ];
+
+export const productTypes = [...existingProductTypes, ...legacyBeverageTypeOptions.filter(option => !existingProductTypes.some(existing => existing.value === option.value))];
 
 // Standard sizes options
 export const standardSizes = [
@@ -1039,19 +1054,19 @@ export const mixerOptions = [
 ];
 
 export const formParts = {
-  identification: 'identification',
-  beverageInfo: 'beverage-info',
-  origin: 'origin',
-  description: 'description',
-  dietary: 'dietary',
-  certifications: 'certifications',
-  awards: 'awards',
-  ratings: 'ratings',
-  media: 'media',
-  pricing: 'pricing',
-  sale: 'sale',
-  seo: 'seo',
-  externalLinks: 'external-links',
+  identification: 'identification' as const,
+  beverageInfo: 'beverage-info' as const,
+  origin: 'origin' as const,
+  description: 'description' as const,
+  dietary: 'dietary' as const,
+  certifications: 'certifications' as const,
+  awards: 'awards' as const,
+  ratings: 'ratings' as const,
+  media: 'media' as const,
+  pricing: 'pricing' as const,
+  sale: 'sale' as const,
+  seo: 'seo' as const,
+  externalLinks: 'external-links' as const,
 } as const;
 
 // Allergens list

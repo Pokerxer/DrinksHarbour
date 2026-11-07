@@ -1,631 +1,73 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import Image from '@/components/UI/OptimizedImage';
-import { motion, AnimatePresence } from 'framer-motion';
-import * as Icon from 'react-icons/pi';
-import { API_URL } from '@/lib/api';
-import { displayableBrands } from './brand-results';
+import { PiShoppingCart, PiTag, PiWarningCircle } from 'react-icons/pi';
+import BrandCard from '@/components/Brands/BrandCard';
+import BrandsHero from '@/components/Brands/BrandsHero';
+import BrandSkeleton from '@/components/Brands/BrandSkeleton';
+import BrandsFilters from '@/components/Brands/BrandsFilters';
+import BrandAlphabet from '@/components/Brands/BrandAlphabet';
+import { useBrandsDirectory } from '@/components/Brands/useBrandsDirectory';
+import type { BrandSort } from '@/components/Brands/types';
+import type { BrandCardData } from './brand-results';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+const firstLetter = (name: string) => /^[A-Z]$/.test(name.trim().charAt(0).toUpperCase())
+  ? name.trim().charAt(0).toUpperCase() : '#';
 
-interface BrandLogo {
-  url: string;
-  publicId?: string;
-  alt?: string;
-  width?: number;
-  height?: number;
-  format?: string;
-}
-
-interface BrandLogoVariants {
-  primary?: string;
-  secondary?: string;
-  white?: string;
-  black?: string;
-  icon?: string;
-}
-
-interface Brand {
-  _id: string;
-  name: string;
-  slug: string;
-  logo?: BrandLogo;
-  logoVariants?: BrandLogoVariants;
-  featuredImage?: BrandLogo;
-  bannerImage?: BrandLogo;
-  brandColors?: {
-    primary?: string;
-    secondary?: string;
-    accent?: string;
-  };
-  description?: string;
-  shortDescription?: string;
-  productCount?: number;
-  countryOfOrigin?: string;
-  primaryCategory?: string;
-  brandType?: string;
-  founded?: number;
-  isFeatured?: boolean;
-  isPremium?: boolean;
-  verified?: boolean;
-  popularityScore?: number;
-  createdAt?: string;
-}
-
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  pages: number;
-}
-
-type SortKey = 'name_asc' | 'name_desc' | 'products' | 'newest';
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const COUNTRY_EMOJI: Record<string, string> = {
-  France: '\u{1F1EB}\u{1F1F7}',
-  Italy: '\u{1F1EE}\u{1F1F9}',
-  'United States': '\u{1F1FA}\u{1F1F8}',
-  USA: '\u{1F1FA}\u{1F1F8}',
-  'United Kingdom': '\u{1F1EC}\u{1F1E7}',
-  UK: '\u{1F1EC}\u{1F1E7}',
-  Germany: '\u{1F1E9}\u{1F1EA}',
-  Spain: '\u{1F1EA}\u{1F1F8}',
-  Mexico: '\u{1F1F2}\u{1F1FD}',
-  Japan: '\u{1F1EF}\u{1F1F5}',
-  Scotland: '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}',
-  Ireland: '\u{1F1EE}\u{1F1EA}',
-  Australia: '\u{1F1E6}\u{1F1FA}',
-  Canada: '\u{1F1E8}\u{1F1E6}',
-  Nigeria: '\u{1F1F3}\u{1F1EC}',
-  'South Africa': '\u{1F1FF}\u{1F1E6}',
-};
-
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'name_asc', label: 'Name A \u2192 Z' },
-  { value: 'name_desc', label: 'Name Z \u2192 A' },
-  { value: 'products', label: 'Most Products' },
-  { value: 'newest', label: 'Newest First' },
-];
-
-const ALPHABET = '#ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-
-function getCountryEmoji(country?: string): string {
-  if (!country) return '\u{1F30D}';
-  const trimmed = country.split(',')[0].trim();
-  return COUNTRY_EMOJI[trimmed] || COUNTRY_EMOJI[country] || '\u{1F30D}';
-}
-
-function initials(name: string) {
-  return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-}
-
-function nameToGradient(name: string): string {
-  const gradients = [
-    'from-red-700 to-red-900',
-    'from-purple-600 to-purple-900',
-    'from-blue-600 to-blue-900',
-    'from-emerald-600 to-emerald-900',
-    'from-amber-600 to-amber-800',
-    'from-rose-600 to-rose-900',
-    'from-indigo-600 to-indigo-900',
-    'from-teal-600 to-teal-900',
-    'from-orange-600 to-orange-900',
-    'from-cyan-600 to-cyan-900',
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return gradients[Math.abs(hash) % gradients.length];
-}
-
-function getBrandColor(brand: Brand): string {
-  return brand.brandColors?.primary || brand.brandColors?.accent || '#6366F1';
-}
-
-function getBrandImage(brand: Brand): string | null {
-  return brand.logo?.url ||
-    brand.logoVariants?.primary ||
-    brand.logoVariants?.white ||
-    brand.featuredImage?.url ||
-    null;
-}
-
-// ─── Hero ─────────────────────────────────────────────────────────────────────
-
-function Hero({ total, totalProducts }: { total?: number; totalProducts?: number }) {
-  return (
-    <div className="bg-gradient-to-br from-gray-900 via-red-950 to-gray-900 text-white py-14 px-4 relative overflow-hidden">
-      <div className="absolute inset-0 opacity-5 pointer-events-none">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-red-500 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-red-700 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
-      </div>
-
-      <div className="container mx-auto max-w-4xl text-center relative">
-        <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-1.5 text-xs font-medium text-red-300 mb-5">
-          <Icon.PiStar size={14} />
-          Premium Partners
-        </div>
-        <h1 className="text-3xl sm:text-4xl font-black mb-3 tracking-tight">
-          Our Brands
-        </h1>
-        <p className="text-gray-300 text-sm sm:text-base max-w-xl mx-auto leading-relaxed mb-8">
-          Discover the world&apos;s finest beverage brands available on DrinksHarbour.
-          From heritage distilleries to craft producers — every bottle tells a story.
-        </p>
-
-        <div className="flex items-center justify-center gap-8 sm:gap-12 text-center">
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="w-11 h-11 bg-white/10 rounded-xl flex items-center justify-center">
-              <Icon.PiStorefront size={20} className="text-red-300" />
-            </div>
-            <p className="text-lg font-black text-white">
-              {total != null ? total.toLocaleString() : '\u2014'}
-            </p>
-            <span className="text-xs text-gray-400">Brands</span>
-          </div>
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="w-11 h-11 bg-white/10 rounded-xl flex items-center justify-center">
-              <Icon.PiWine size={20} className="text-red-300" />
-            </div>
-            <p className="text-lg font-black text-white">
-              {totalProducts != null ? totalProducts.toLocaleString() : '\u2014'}
-            </p>
-            <span className="text-xs text-gray-400">Products</span>
-          </div>
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="w-11 h-11 bg-white/10 rounded-xl flex items-center justify-center">
-              <Icon.PiShieldCheck size={20} className="text-red-300" />
-            </div>
-            <p className="text-lg font-black text-white">100%</p>
-            <span className="text-xs text-gray-400">Authentic</span>
-          </div>
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="w-11 h-11 bg-white/10 rounded-xl flex items-center justify-center">
-              <Icon.PiGlobe size={20} className="text-red-300" />
-            </div>
-            <p className="text-lg font-black text-white">Global</p>
-            <span className="text-xs text-gray-400">Selection</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-
-function SkeletonCard() {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-pulse">
-      <div className="h-28 bg-gray-200" />
-      <div className="p-4 space-y-2">
-        <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto" />
-        <div className="h-3 bg-gray-100 rounded w-1/2 mx-auto" />
-        <div className="h-3 bg-gray-100 rounded w-2/3 mx-auto" />
-      </div>
-    </div>
-  );
-}
-
-// ─── Brand Card ───────────────────────────────────────────────────────────────
-
-function BrandCard({ brand }: { brand: Brand }) {
-  const brandImage = getBrandImage(brand);
-  const color = getBrandColor(brand);
-  const hasImage = Boolean(brandImage);
-  const initialsStr = brand.name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-
-  return (
-    <Link
-      href={brand.slug ? `/brands/${brand.slug}` : `/shop?brand=${encodeURIComponent(brand.name)}`}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition-all hover:-translate-y-1.5 hover:border-stone-300 hover:shadow-xl motion-reduce:transition-none motion-reduce:hover:translate-y-0"
-    >
-      {/* Hero — full-bleed logo/photo or gradient band */}
-      <div className="relative h-28 overflow-hidden" style={{ background: hasImage ? color : undefined }}>
-        {brandImage ? (
-          <>
-            <Image
-              src={brandImage}
-              alt={brand.name}
-              fill
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-105"
-            />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-black/30 to-transparent" />
-          </>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center" style={{ background: nameToGradient(brand.name) }}>
-            <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-white p-2 shadow-xl ring-2 ring-white/20">
-              {initialsStr}
-            </span>
-          </div>
-        )}
-        <span className="absolute right-2 top-2 rounded-full bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-white ring-1 ring-white/30 backdrop-blur-md">
-          {brand.productCount} products
-        </span>
-      </div>
-
-      {/* Body — left-aligned */}
-      <div className="flex flex-1 flex-col p-4 text-left">
-        {brand.countryOfOrigin && (
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 flex items-center gap-1">
-            {COUNTRY_EMOJI[brand.countryOfOrigin] || ''} {brand.countryOfOrigin}
-          </p>
-        )}
-        <h3 className="mt-1 text-lg font-black text-gray-900 transition-colors group-hover:underline">
-          {brand.name}
-        </h3>
-        {(brand.shortDescription || brand.description) && (
-          <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-gray-500">
-            {brand.shortDescription || brand.description}
-          </p>
-        )}
-        <div className="mt-auto flex items-center justify-between border-t border-stone-100 pt-3">
-          <span className="text-xs font-semibold" style={{ color }}>
-            Explore
-          </span>
-          <Icon.PiArrowRightBold
-            className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
-            style={{ color }}
-          />
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default function BrandsBrowser({
-  initialBrands = [],
-}: {
-  /**
-   * Brands the server component already fetched. Seeding them here is what puts
-   * the brand grid — names, logos and crawlable /brands/<slug> links — into the
-   * server HTML; previously this component mounted empty and rendered
-   * "0 Brands / 0 Products" for anything that doesn't run JavaScript.
-   */
-  initialBrands?: Brand[];
+export default function BrandsBrowser({ initialBrands, initialError }: {
+  initialBrands?: BrandCardData[];
+  initialError?: string;
 }) {
-  const [brands, setBrands] = useState<Brand[]>(initialBrands);
-  const [pagination, setPagination] = useState<Pagination | null>(null);
-  const [loading, setLoading] = useState(initialBrands.length === 0);
-  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [activeLetter, setActiveLetter] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('name_asc');
-  const [isSortOpen, setIsSortOpen] = useState(false);
-  const [countryFilter, setCountryFilter] = useState('');
-  const [debouncedCountry, setDebouncedCountry] = useState('');
-  const sortRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [country, setCountry] = useState('');
+  const [sort, setSort] = useState<BrandSort>('name_asc');
+  const [letter, setLetter] = useState<string | null>(null);
+  const { brands, catalog, hasCatalog, loading, error, retry } = useBrandsDirectory({ initialBrands, initialError, search, country });
+  const countries = useMemo(() => [...new Set(catalog.map(brand => brand.countryOfOrigin).filter((value): value is string => !!value))].sort((a, b) => a.localeCompare(b)), [catalog]);
+  const availableLetters = useMemo(() => [...new Set(catalog.map(brand => firstLetter(brand.name)))], [catalog]);
+  const visible = useMemo(() => {
+    const list = brands.filter(brand => !letter || firstLetter(brand.name) === letter);
+    return list.sort((a, b) => {
+      if (sort === 'name_desc') return b.name.localeCompare(a.name);
+      if (sort === 'products') return (b.productCount ?? 0) - (a.productCount ?? 0) || a.name.localeCompare(b.name);
+      if (sort === 'newest') return (Date.parse(b.createdAt ?? '') || 0) - (Date.parse(a.createdAt ?? '') || 0) || a.name.localeCompare(b.name);
+      return a.name.localeCompare(b.name);
+    });
+  }, [brands, letter, sort]);
+  const clear = () => { setSearch(''); setCountry(''); setSort('name_asc'); setLetter(null); };
+  const changeSearch = (value: string) => { setSearch(value); setLetter(null); };
+  const changeLetter = (value: string | null) => { setLetter(value); if (value) setSearch(''); };
+  const filtered = !!(search.trim() || country || letter);
 
-  // Debounce search
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setDebouncedSearch(search);
-      setActiveLetter(null);
-    }, 400);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [search]);
-
-  // Debounce country filter
-  useEffect(() => {
-    if (countryDebounceRef.current) clearTimeout(countryDebounceRef.current);
-    countryDebounceRef.current = setTimeout(() => {
-      setDebouncedCountry(countryFilter);
-    }, 400);
-    return () => { if (countryDebounceRef.current) clearTimeout(countryDebounceRef.current); };
-  }, [countryFilter]);
-
-  // Close sort on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (sortRef.current && !sortRef.current.contains(e.target as Node)) setIsSortOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const searchRequest = useRef<AbortController | null>(null);
-  const fetchBrands = useCallback(async () => {
-    searchRequest.current?.abort();
-    const controller = new AbortController();
-    searchRequest.current = controller;
-    setLoading(true);
-    setError('');
-    try {
-      // Fetch the whole storefront brand list in one pass (the API caps at 500).
-      // We deliberately do NOT filter productCount > 0: ~200 active brands carry
-      // a stale productCount of 0 despite linking real products, and houses with
-      // no products yet must still show ("Coming soon"). The grid is meant to
-      // showcase every brand.
-      const params = new URLSearchParams({ limit: '500', status: 'active' });
-      if (debouncedSearch) params.set('search', debouncedSearch.trim());
-      if (debouncedCountry) params.set('country', debouncedCountry);
-
-      const res = await fetch(`${API_URL}/api/brands?${params}`, { signal: controller.signal, cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to load brands');
-
-      if (controller.signal.aborted) return;
-      let list: Brand[] = data.data?.brands ?? data.data ?? [];
-      list = displayableBrands(Array.isArray(list) ? list : []);
-
-      // Client-side sort
-      if (sortKey === 'name_asc') list.sort((a, b) => a.name.localeCompare(b.name));
-      else if (sortKey === 'name_desc') list.sort((a, b) => b.name.localeCompare(a.name));
-      else if (sortKey === 'products') list.sort((a, b) => (b.productCount ?? 0) - (a.productCount ?? 0));
-      else if (sortKey === 'newest') list.sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
-
-      // Letter filter
-      if (activeLetter) {
-        if (activeLetter === '#') {
-          list = list.filter(b => /^[^a-zA-Z]/.test(b.name));
-        } else {
-          list = list.filter(b => b.name.toUpperCase().startsWith(activeLetter));
-        }
-      }
-
-      setBrands(list);
-      setPagination(data.data?.pagination ?? null);
-    } catch (err: any) {
-      if (controller.signal.aborted) return;
-      setError(err.message || 'Could not load brands.');
-      setBrands([]);
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
-  }, [debouncedSearch, debouncedCountry, sortKey, activeLetter]);
-
-  // Skip the mount fetch when the server already seeded an unfiltered list —
-  // it would return the identical payload. Any filter/sort change refetches.
-  const skipFirstFetch = useRef(initialBrands.length > 0);
-  useEffect(() => {
-    if (skipFirstFetch.current) {
-      skipFirstFetch.current = false;
-      return;
-    }
-    fetchBrands();
-    return () => searchRequest.current?.abort();
-  }, [fetchBrands]);
-
-  const handleLetterClick = (letter: string) => {
-    setActiveLetter(prev => prev === letter ? null : letter);
-    setSearch('');
-    setDebouncedSearch('');
-  };
-
-  // Country list extracted from brands
-  const countries = useMemo(() => {
-    const set = new Set<string>();
-    brands.forEach(b => { if (b.countryOfOrigin) set.add(b.countryOfOrigin); });
-    return Array.from(set).sort();
-  }, [brands]);
-
-  const sortLabel = SORT_OPTIONS.find(o => o.value === sortKey)?.label ?? 'Sort';
-  const activeFilters = [debouncedSearch, debouncedCountry, activeLetter].filter(Boolean).length;
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Hero total={pagination?.total ?? brands.length} totalProducts={brands.reduce((sum, b) => sum + (b.productCount ?? 0), 0)} />
-
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-
-        {/* ── Controls Bar ──────────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Icon.PiMagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={search}
-                onChange={e => { searchRequest.current?.abort(); setSearch(e.target.value); setActiveLetter(null); }}
-                placeholder="Search brands by name\u2026"
-                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:bg-white focus:border-red-300 focus:ring-2 focus:ring-red-50 outline-none transition-colors"
-              />
-              {search && (
-                <button onClick={() => { setSearch(''); setDebouncedSearch(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                  <Icon.PiX size={14} />
-                </button>
-              )}
-            </div>
-
-            {/* Country filter */}
-            <div className="relative sm:w-44">
-              <Icon.PiGlobe size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <input
-                type="text"
-                value={countryFilter}
-                onChange={e => setCountryFilter(e.target.value)}
-                placeholder="Country\u2026"
-                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:bg-white focus:border-red-300 focus:ring-2 focus:ring-red-50 outline-none transition-colors"
-              />
-              {countryFilter && (
-                <button onClick={() => { setCountryFilter(''); setDebouncedCountry(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                  <Icon.PiX size={14} />
-                </button>
-              )}
-            </div>
-
-            {/* Sort */}
-            <div className="relative" ref={sortRef}>
-              <button
-                onClick={() => setIsSortOpen(v => !v)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white text-sm font-medium text-gray-700 transition-colors whitespace-nowrap"
-              >
-                <Icon.PiArrowsDownUp size={15} />
-                {sortLabel}
-                <Icon.PiCaretDown size={13} className={`transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {isSortOpen && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-20">
-                  {SORT_OPTIONS.map(opt => (
-                    <button
-                      key={opt.value}
-                      onClick={() => { setSortKey(opt.value); setIsSortOpen(false); }}
-                      className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between transition-colors hover:bg-gray-50 ${
-                        sortKey === opt.value ? 'text-red-700 font-semibold' : 'text-gray-700'
-                      }`}
-                    >
-                      {opt.label}
-                      {sortKey === opt.value && <Icon.PiCheck size={15} />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Active filter chips */}
-          {activeFilters > 0 && (
-            <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-              <span className="text-xs text-gray-400">Filtering by:</span>
-              {debouncedSearch && (
-                <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 text-xs font-medium px-2.5 py-1 rounded-full">
-                  Name: &ldquo;{debouncedSearch}&rdquo;
-                  <button onClick={() => { setSearch(''); setDebouncedSearch(''); }} className="ml-0.5 hover:text-red-900"><Icon.PiX size={11} /></button>
-                </span>
-              )}
-              {debouncedCountry && (
-                <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-medium px-2.5 py-1 rounded-full">
-                  Country: &ldquo;{debouncedCountry}&rdquo;
-                  <button onClick={() => { setCountryFilter(''); setDebouncedCountry(''); }} className="ml-0.5 hover:text-blue-900"><Icon.PiX size={11} /></button>
-                </span>
-              )}
-              {activeLetter && (
-                <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-700 text-xs font-medium px-2.5 py-1 rounded-full">
-                  Letter: {activeLetter}
-                  <button onClick={() => setActiveLetter(null)} className="ml-0.5 hover:text-purple-900"><Icon.PiX size={11} /></button>
-                </span>
-              )}
-              {activeFilters > 1 && (
-                <button
-                  onClick={() => { setSearch(''); setDebouncedSearch(''); setCountryFilter(''); setDebouncedCountry(''); setActiveLetter(null); }}
-                  className="text-xs text-gray-400 hover:text-gray-600 underline"
-                >
-                  Clear all
-                </button>
-              )}
-              <span className="ml-auto text-xs text-gray-400">
-                {brands.length} brand{brands.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* ── Alphabet Filter ───────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 mb-6 overflow-x-auto">
-          <div className="flex items-center gap-1 min-w-max">
-            {ALPHABET.map(letter => {
-              const isActive = activeLetter === letter;
-              const hasBrands = letter === '#'
-                ? brands.some(b => /^[^a-zA-Z]/.test(b.name))
-                : brands.some(b => b.name.toUpperCase().startsWith(letter));
-              return (
-                <button
-                  key={letter}
-                  onClick={() => handleLetterClick(letter)}
-                  disabled={!hasBrands && !isActive}
-                  className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${
-                    isActive
-                      ? 'bg-red-600 text-white shadow-sm'
-                      : hasBrands
-                        ? 'text-gray-700 hover:bg-gray-100'
-                        : 'text-gray-300 cursor-not-allowed'
-                  }`}
-                >
-                  {letter}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── Error ─────────────────────────────────────────────────────── */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 mb-6">
-            <Icon.PiWarningCircle size={20} className="text-red-600 flex-shrink-0" />
-            <p className="text-sm text-red-700">{error}</p>
-            <button onClick={fetchBrands} className="ml-auto text-xs text-red-700 underline">Retry</button>
-          </div>
-        )}
-
-        {/* ── Loading ───────────────────────────────────────────────────── */}
-        {loading && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {Array.from({ length: 10 }).map((_, i) => <SkeletonCard key={i} />)}
-          </div>
-        )}
-
-        {/* ── Empty State ───────────────────────────────────────────────── */}
-        {!loading && brands.length === 0 && !error && (
-          <div className="text-center py-20">
-            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Icon.PiTag size={36} className="text-gray-300" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">No brands found</h3>
-            {activeFilters > 0 ? (
-              <>
-                <p className="text-gray-400 text-sm mb-4">No results for your current filters</p>
-                <button
-                  onClick={() => { setSearch(''); setDebouncedSearch(''); setCountryFilter(''); setDebouncedCountry(''); setActiveLetter(null); }}
-                  className="text-sm text-red-700 underline"
-                >
-                  Clear filters
-                </button>
-              </>
-            ) : (
-              <p className="text-gray-400 text-sm">Check back soon — we&apos;re adding new brands.</p>
-            )}
-          </div>
-        )}
-
-        {/* ── Brands Grid ──────────────────────────────────────────────── */}
-        {!loading && brands.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
-          >
-            <AnimatePresence mode="popLayout">
-              {displayableBrands(brands).map((brand, i) => (
-                <motion.div
-                  key={brand._id}
-                  layout
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.3, delay: i * 0.03 }}
-                >
-                  <BrandCard brand={brand} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </motion.div>
-        )}
-
-        {/* ── CTA ───────────────────────────────────────────────────────── */}
-        {!loading && brands.length > 0 && (
-          <div className="text-center mt-12">
-            <Link
-              href="/shop"
-              className="inline-flex items-center gap-2 bg-gradient-to-br from-red-700 to-red-900 text-white px-8 py-3.5 rounded-xl font-bold text-sm hover:from-red-800 hover:to-red-950 transition-all shadow-md"
-            >
-              <Icon.PiShoppingCart size={17} /> Browse All Products
-            </Link>
-          </div>
-        )}
+  return <div className="min-h-screen bg-gray-50">
+    <BrandsHero total={hasCatalog ? catalog.length : undefined} totalProducts={hasCatalog ? catalog.reduce((sum, brand) => sum + (brand.productCount ?? 0), 0) : undefined} />
+    <div className="container mx-auto max-w-6xl px-4 py-8">
+      <BrandsFilters search={search} country={country} sort={sort} countries={countries} resultCount={visible.length}
+        loading={loading} error={!!error} onSearchChange={changeSearch} onCountryChange={setCountry} onSortChange={setSort} onClearAll={clear} />
+      <BrandAlphabet availableLetters={availableLetters} value={letter} onChange={changeLetter} />
+      {error && !loading && <div role="alert" className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+        <PiWarningCircle aria-hidden="true" size={20} className="shrink-0 text-red-600" />
+        <p className="text-sm text-red-700">{error}</p>
+        <button type="button" onClick={retry} className="ml-auto rounded-lg px-3 py-2 text-sm text-red-700 underline focus-visible:outline-red-700">Retry</button>
+      </div>}
+      <div aria-busy={loading}>
+        {loading && <div aria-label="Loading brands" className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {Array.from({ length: 10 }, (_, index) => <BrandSkeleton key={index} />)}
+        </div>}
+        {!loading && !error && !visible.length && <div className="py-16 text-center">
+          <PiTag aria-hidden="true" size={36} className="mx-auto mb-4 text-gray-400" />
+          <h2 className="mb-2 text-lg font-semibold text-gray-700">No brands found</h2>
+          <p className="mb-4 text-sm text-gray-500">{filtered ? 'Try another name, country or letter.' : 'Check back soon for more brands.'}</p>
+          {filtered && <button type="button" onClick={clear} className="rounded-lg px-3 py-2 text-sm text-red-700 underline focus-visible:outline-red-700">Clear filters</button>}
+        </div>}
+        {!loading && !error && visible.length > 0 && <div role="list" aria-label="Brands" className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {visible.map(brand => <div role="listitem" key={brand._id} className="min-w-0"><BrandCard brand={brand} /></div>)}
+        </div>}
       </div>
+      {!loading && !error && !!visible.length && <div className="mt-12 text-center">
+        <Link href="/shop" className="inline-flex items-center gap-2 rounded-xl bg-red-800 px-8 py-3.5 text-sm font-bold text-white shadow-md hover:bg-red-900 focus-visible:outline-red-700"><PiShoppingCart aria-hidden="true" size={17} /> Browse All Products</Link>
+      </div>}
     </div>
-  );
+  </div>;
 }

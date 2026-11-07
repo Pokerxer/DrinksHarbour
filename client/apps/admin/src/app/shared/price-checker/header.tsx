@@ -1,7 +1,11 @@
 'use client';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { PiBarcode, PiChartBar, PiPlus } from 'react-icons/pi';
+import { PiBarcode, PiPlus } from 'react-icons/pi';
+
+// Kiosks + Analytics tabs live in the /retail-tools module chrome
+// (ModuleNavHeader) since the module header rollout — this header keeps only
+// the page title block and the "Create kiosk" CTA.
 const ROOT = '/retail-tools/price-checker';
 export function PriceCheckerHeader({ title, subtitle }: { title: string; subtitle: string }) {
   const path = usePathname();
@@ -18,15 +22,6 @@ export function PriceCheckerHeader({ title, subtitle }: { title: string; subtitl
         <p>{subtitle}</p>
       </div>
       <nav aria-label="Price checker">
-        <Link href={ROOT} aria-current={path === ROOT ? 'page' : undefined}>
-          Kiosks
-        </Link>
-        <Link
-          href={`${ROOT}/analytics`}
-          aria-current={path === `${ROOT}/analytics` ? 'page' : undefined}
-        >
-          <PiChartBar /> Analytics
-        </Link>
         {path !== `${ROOT}/create` && (
           <Link className="pc-button" href={`${ROOT}/create`}>
             <PiPlus /> Create kiosk

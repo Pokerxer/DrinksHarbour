@@ -13,6 +13,8 @@ const oid = () => new mongoose.Types.ObjectId();
 const query = value => ({ select() { return this; }, lean: async () => value });
 async function checkout(t, foreign = false) {
   const tenant = oid(), sp = oid(), size = oid(), product = oid();
+  // Pricing-only fixture: real request recovery is covered by the HTTP/Mongo suite.
+  t.mock.method(require('../services/marketCheckoutRecovery'), 'recover', async () => null);
   t.mock.method(Order, 'countDocuments', async () => 0);
   t.mock.method(SubProduct, 'find', () => query([{ _id: sp, tenant, product, costPrice: 6000, baseSellingPrice: 10000, isOnSale: true, saleType: 'fixed', saleDiscountValue: 1000 }]));
   t.mock.method(Size, 'find', () => query([{ _id: size, tenant: foreign ? oid() : tenant, subproduct: sp, costPrice: 6000, sellingPrice: 10000 }]));
@@ -23,9 +25,9 @@ async function checkout(t, foreign = false) {
   t.mock.method(inventory, 'releaseReserve', async () => {});
   let captured, failure, response;
   const stop = new Error('stop before database write');
-  t.mock.method(Order.prototype, 'save', async function () { captured = this.toObject(); throw stop; });
+  t.mock.method(require('../services/marketplacePaymentTrust'), 'createOrder', async data => { captured = data; throw stop; });
   const res = { status() { return this; }, json(value) { response = value; } };
-  await createOrder({ body: { items: [{ productId: product.toString(), subProductId: sp.toString(), sizeId: size.toString(), quantity: 2, price: 1 }],
+  await createOrder({ get: () => 'pricing-test', body: { items: [{ productId: product.toString(), subProductId: sp.toString(), sizeId: size.toString(), quantity: 2, price: 1 }],
     customer: { firstName: 'Ada', lastName: 'O', email: 'ada@example.com', phone: '08012345678' },
     shipping: { address: 'Address', city: 'Abuja', state: 'FCT', country: 'Nigeria' },
     paymentMethod: 'bank_transfer', shippingFee: 10000, total: 1, couponCode: 'TEN' } }, res, error => { failure = error; });

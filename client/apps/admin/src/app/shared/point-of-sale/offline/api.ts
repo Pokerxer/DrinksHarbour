@@ -1,3 +1,5 @@
+import { locationMode } from '@/services/venue/location-mode';
+import { assertLegacyCheckout } from '@/services/venue/legacy-guard';
 import { requestIdentity, completeRequest } from '../../sales/request-identity';
 import { readActiveShop } from '../shop-scope';
 import { posApi } from '../api';
@@ -296,6 +298,8 @@ export async function createOrder(
   terminal: string,
   payload: Record<string, unknown>
 ): Promise<any> {
+  assertLegacyCheckout(payload);
+  assertLegacyCheckout({ canonicalVenueLocation: await locationMode(token) });
   const scope = payload.linkedSalesOrderId ? `pos:${payload.linkedSalesOrderId}:${terminal}` : '';
   if (scope && !payload.requestId) payload = {...payload, requestId: requestIdentity(scope, payload)};
   if (isOnline()) {

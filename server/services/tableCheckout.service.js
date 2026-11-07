@@ -22,12 +22,13 @@ async function tableMenu(tenant) {
   const sizes = await Size.find({ tenant, subproduct: { $in: products.map(p => p._id) }, sellingPrice: { $gt: 0 } })
     .select('_id subproduct size sellingPrice').lean();
   return sizes.map(size => ({ _id: size._id, price: size.sellingPrice,
-    name: `${products.find(p => String(p._id) === String(size.subproduct))?.product?.name || 'Beverage'} · ${size.size}` }));
+    subProductId: String(size.subproduct), name: `${products.find(p => String(p._id) === String(size.subproduct))?.product?.name || 'Beverage'} · ${size.size}` }));
 }
 
 async function startTableCheckout(tenant, actor, bookingId, body = {}) {
   const booking = await Booking.findOne({ _id: bookingId, tenant: tenant._id });
   if (!booking) throw new NotFoundError('Booking not found');
+  if (booking.serviceSession) return require('./venue/booking-adapters').checkoutBooking(tenant, actor, booking, body);
   if (booking.status !== 'checked_in') throw new ConflictError('Check the guest in before checkout');
   const existing = await Order.findOne({ tableServiceBooking: booking._id, tenant: tenant._id }).select('+tableCheckoutUrl');
   if (existing) {
@@ -91,6 +92,7 @@ async function postTableAccounting(order) {
 }
 
 async function settleTablePayment(order) {
+  if (order.venueIdentityVersion === 1) return require('./venue/booking-adapters').reconcileBooking(order);
   if (order.status === 'cancelled') throw new ConflictError('Cancelled bill requires payment review');
   if (!['pending', 'paid'].includes(order.paymentStatus)) throw new ConflictError('This bill cannot be settled');
   if (order.paymentStatus === 'paid') {
@@ -128,6 +130,7 @@ async function completeTableBooking(tenantId, bookingId) {
       const bill = await Order.findOne({ tableServiceBooking: bookingId, tenant: tenantId }).session(session);
       if (!bill || bill.paymentStatus !== 'paid' || bill.tableAccountingStatus !== 'posted' ||
           bill.status === 'cancelled') throw new ConflictError('Settle and reconcile the bill before completing the booking');
+      if (bill.venueIdentityVersion === 1) throw new ConflictError('Use canonical visit reconciliation; stock cannot be shipped twice');
       if (!['shipped', 'delivered'].includes(bill.status)) {
         await inventory.commitShipment(bill.items, bill._id, booking.createdBy, { session });
       }

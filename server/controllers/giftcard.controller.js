@@ -1,7 +1,7 @@
 // server/controllers/giftcard.controller.js
 //
 // Platform gift cards (the "Gift Cards" account page). A customer buys a card with
-// a chosen amount (and optional recipient + design); payment is taken via Paystack;
+// a chosen amount (and optional recipient + design); payment is taken via Korapay;
 // on verified payment the card is "issued" (assigned a unique code + signed QR,
 // flipped pending_payment → active, balance set, 'issue' ledger row appended) by
 // the atomic giftCard.service. Cards are usable at any tenant. All read endpoints
@@ -28,7 +28,7 @@ const { frontendBaseUrl } = require('../utils/frontendUrl');
 const QRCode = require('qrcode');
 
 const MIN_AMOUNT = 1000; // NGN
-const MAX_AMOUNT = 20000000; // NGN — ceiling for the top "Black" (≥₦5M) tier; Paystack/fraud sanity cap
+const MAX_AMOUNT = 20000000; // NGN — ceiling for the top "Black" (≥₦5M) tier; gateway/fraud sanity cap
 const EXPIRY_MONTHS = 12;
 
 /**
@@ -153,27 +153,10 @@ const purchaseGiftCard = asyncHandler(async (req, res) => {
 
   const reference = `DHGC-${card._id}-${Date.now()}`;
   const frontendUrl = frontendBaseUrl();
-  const payment = await paymentService.createGatewayTransaction(
-    initialAmount,
-    req.user.email,
-    {
-      kind: 'gift_card_purchase',
-      giftCardId: String(card._id),
-      userId: String(req.user._id),
-      reference,
-    },
-    {
-      // Reuse our reference and embed gc_id in the callback URL so the gateway echoes
-      // it back on redirect — the frontend reads it from searchParams without needing
-      // sessionStorage (which can silently fail in certain browsers/modes).
-      reference,
-      callbackUrl: `${frontendUrl}/my-account/gift-cards?gc_id=${card._id}`,
-    },
-  );
-
-  // Persist the reference on the card so the complete-payment endpoint can retry
-  // verification without the client needing to supply the original reference.
   await GiftCard.updateOne({ _id: card._id }, { paymentRef: reference });
+  const payment = await require('../services/storedValueFunding').initialize({ user: req.user._id, amount: initialAmount,
+    reference, kind: 'gift_card_purchase', target: card._id, email: req.user.email,
+    callbackUrl: `${frontendUrl}/my-account/gift-cards?gc_id=${card._id}` });
 
   successResponse(res, {
     giftCardId: card._id,
@@ -196,20 +179,7 @@ const verifyPurchaseGiftCard = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Reference and giftCardId are required' });
   }
 
-  // Ownership: the card must belong to the authenticated user.
-  const card = await GiftCard.findOne({ _id: giftCardId, purchasedBy: req.user._id }).select('_id status');
-  if (!card) return res.status(404).json({ success: false, message: 'Gift card not found' });
-  if (card.status !== 'pending_payment') {
-    return successResponse(res, { alreadyIssued: true, giftCardId }, 'Gift card already issued');
-  }
-
-  const result = await paymentService.verifyGatewayTransaction(reference);
-  if (!result.success) {
-    return res.status(400).json({ success: false, message: result.message || 'Payment verification failed' });
-  }
-
-  const issued = await issueGiftCard({ giftCardId, paymentRef: result.data.reference, createdBy: req.user._id });
-  if (!issued.ok) return res.status(issued.status).json({ success: false, message: issued.message });
+  const issued = await require('../services/storedValueFunding').gift(reference, giftCardId, req.user._id);
 
   // Best-effort delivery email to recipient (or buyer) — never blocks the response.
   try {
@@ -254,13 +224,7 @@ const completeGiftCardPayment = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No payment reference on file — please contact support' });
   }
 
-  const result = await paymentService.verifyGatewayTransaction(card.paymentRef);
-  if (!result.success) {
-    return res.status(400).json({ success: false, message: result.message || 'Payment not confirmed by the payment gateway yet — please wait and try again' });
-  }
-
-  const issued = await issueGiftCard({ giftCardId: card._id, paymentRef: result.data.reference, createdBy: req.user._id });
-  if (!issued.ok) return res.status(issued.status).json({ success: false, message: issued.message });
+  const issued = await require('../services/storedValueFunding').gift(card.paymentRef, card._id, req.user._id);
 
   successResponse(res, {
     giftCardId: card._id,
@@ -345,19 +309,8 @@ const redeemMyGiftCard = asyncHandler(async (req, res) => {
 
 // POST /api/gift-cards/pay-checkout — spend a gift card at checkout (any bearer with the code)
 const payWithGiftCard = asyncHandler(async (req, res) => {
-  const { code, amount } = req.body;
-  if (!code) return res.status(400).json({ success: false, message: 'Gift card code is required' });
-  const n = Number(amount);
-  if (!Number.isInteger(n) || n <= 0) return res.status(400).json({ success: false, message: 'Amount must be a positive integer' });
-
-  const result = await redeemGiftCard({ code, amount: n, source: 'checkout', createdBy: req.user._id });
-  if (!result.ok) return res.status(result.status || 400).json({ success: false, message: result.message });
-
-  return successResponse(res, {
-    cardBalance: result.balance,
-    cardStatus: result.card.status,
-    transactionId: result.tx?._id,
-  }, 'Gift card payment successful');
+  const result = await require('../services/checkoutDebit').pay('gift_card', req.user._id, req.body.amount, req.body.code, req.get('Idempotency-Key'));
+  return successResponse(res, result, 'Gift card payment successful');
 });
 
 // GET /api/gift-cards/check?code=XXX — check an active gift card balance (pre-flight)

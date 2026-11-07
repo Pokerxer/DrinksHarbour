@@ -1,6 +1,6 @@
-const { generalTypes } = require('./generalProductTypes');
+const { generalTypes, retailTypes, foodserviceTypes, hospitalityTypes } = require('./generalProductTypes');
 // Additive catalog types. Existing values remain valid for historic products.
-const expandedTypes = [
+const base=[
   ['syrup','Syrup','MIXERS',false],
   ['flavoured_syrup','Flavoured Syrup','MIXERS',false],
   ['fruit_syrup','Fruit Syrup','MIXERS',false],
@@ -19,6 +19,14 @@ const expandedTypes = [
   ['baijiu','Baijiu','SPIRITS',true],
   ['cordial','Cordial','MIXERS',false],
   ['shrub','Shrub','MIXERS',false],
-].map(([value,label,group,alcoholic])=>({value,label,group,alcoholic,beverage:true})).concat(generalTypes);
+ ].map(([value,label,group,alcoholic])=>({value,label,group,alcoholic,beverage:true})).concat(generalTypes).concat(retailTypes);
+
+// Food Service & Venue verticals join the SAME additive stream (2026-11-02) so
+// Product.type (expandedTypeValues spread), PRODUCT_TYPES (uppercased-key
+// spread in constants/productTypes.js) and the TYPE_CATEGORIES additive loop
+// all pick the new types up automatically. Legacy behavior unchanged.
+const expandedTypes=base
+  .concat(foodserviceTypes)
+  .concat(hospitalityTypes);
 const expandedTypeValues=expandedTypes.map(t=>t.value);
 module.exports={expandedTypes,expandedTypeValues};

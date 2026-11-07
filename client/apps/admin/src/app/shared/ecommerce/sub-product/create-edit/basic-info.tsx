@@ -40,6 +40,9 @@ import { LatestRequest, isAbortError } from './latest-request';
 import { productService } from '@/services/product.service';
 import { searchCatalogueProducts } from '@/services/catalogue-search';
 import { ProductReadError } from '@/services/product-read';
+import { useTenant } from '@/context/TenantContext';
+import { resolveTenantIndustries, industriesForProductType } from '@/utils/industries';
+import { productTypes as catalogueTypes } from '@/app/shared/ecommerce/product/create-edit/form-utils';
 import { inheritedProductImages } from '../image-utils';
 
 interface SubProductBasicInfoProps {
@@ -68,15 +71,6 @@ const defaultNewProductData: NewProductFormData = {
   vintage: '',
 };
 
-const popularTypes = [
-  { label: 'Wine', icon: '🍷' },
-  { label: 'Beer', icon: '🍺' },
-  { label: 'Whiskey', icon: '🥃' },
-  { label: 'Vodka', icon: '🧊' },
-  { label: 'Rum', icon: '🏝️' },
-  { label: 'Gin', icon: '🌿' },
-];
-
 const currencies = [
   { value: 'NGN', label: 'NGN - Nigerian Naira', flag: '🇳🇬' },
   { value: 'USD', label: 'USD - US Dollar', flag: '🇺🇸' },
@@ -94,6 +88,21 @@ export default function SubProductBasicInfo({
   const { data: session } = useSession();
   const methods = useFormContext();
 
+  const { tenant } = useTenant();
+  const industries = resolveTenantIndustries(tenant);
+  // Multi-industry tenants (e.g. General Retail spans fashion, electronics,
+  // beauty and home) must see chips from EVERY taxonomy tree, not just the
+  // first 8 types of whichever tree comes first in the catalogue list. Split
+  // the 8-chip budget evenly across industries; single-industry tenants keep
+  // the original 8 chips.
+  const perIndustry = !industries?.length
+    ? 8
+    : industries.length > 1
+      ? Math.max(2, Math.floor(8 / industries.length))
+      : 8;
+  const quickTypes = (industries ?? [])
+    .flatMap((industry) => catalogueTypes.filter(({ value }) => industriesForProductType(value) === industry).slice(0, perIndustry))
+    .slice(0, 8);
   const [searchQuery, setSearchQuery] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -297,7 +306,7 @@ export default function SubProductBasicInfo({
     setSearchError('');
     try {
       const productList = await searchCatalogueProducts(query, {
-        token: session.user.token, signal, type: selectedTypeFilter,
+        token: session.user.token, signal, type: quickTypes.some(option => option.value === selectedTypeFilter) ? selectedTypeFilter : null,
       });
 
       // A response that is no longer the current query must be discarded, not
@@ -558,7 +567,7 @@ export default function SubProductBasicInfo({
       </div>
 
       {/* Type Filter Chips */}
-      {!isCreateMode && !selectedProductId && (
+      {!isCreateMode && !selectedProductId && quickTypes.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -579,21 +588,20 @@ export default function SubProductBasicInfo({
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            {popularTypes.map((type) => (
+            {quickTypes.map((type) => (
               <motion.button
-                key={type.label}
+                key={type.value}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 type="button"
-                onClick={() => handleTypeFilterClick(type.label)}
+                onClick={() => handleTypeFilterClick(type.value)}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all duration-200',
-                  selectedTypeFilter === type.label
+                  selectedTypeFilter === type.value
                     ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
                     : 'border border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
                 )}
               >
-                <span>{type.icon}</span>
                 <span>{type.label}</span>
               </motion.button>
             ))}

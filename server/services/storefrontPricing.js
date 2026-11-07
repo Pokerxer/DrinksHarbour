@@ -74,6 +74,7 @@ function normalizeCart(body) {
 }
 function paymentMatches(checkout, payment) {
   return payment?.status === 'success' && payment.reference === checkout.reference && payment.currency === 'NGN' &&
+    (!checkout.paymentAccount || payment.paymentAccount === checkout.paymentAccount) &&
     Number.isFinite(payment.amount) && Math.round(payment.amount * 100) === checkout.amountKobo;
 }
 module.exports = { id, money, objectId, onlyKeys, pagination, retailPrice, publicProduct, normalizeCart, paymentMatches };

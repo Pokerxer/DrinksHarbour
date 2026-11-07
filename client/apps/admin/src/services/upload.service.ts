@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // Services for upload API calls
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -57,11 +58,11 @@ export const uploadService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to upload image');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -83,11 +84,11 @@ export const uploadService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to upload images');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -112,11 +113,11 @@ export const uploadService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to upload gallery images');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -133,11 +134,11 @@ export const uploadService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to import images');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -152,7 +153,7 @@ export const uploadService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to delete image');
     }
   },
@@ -171,7 +172,7 @@ export const uploadService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to delete images');
     }
   },

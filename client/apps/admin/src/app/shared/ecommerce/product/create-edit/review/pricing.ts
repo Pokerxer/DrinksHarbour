@@ -1,3 +1,9 @@
+import {
+  isSellingMarkup,
+  sellingMarkupPreview,
+  tenantDefaultRate,
+  retailPayout,
+} from './selling-markup';
 import { isCommission, agreedCommission, commissionPayout } from './agreement';
 import type {
   ReviewListing,
@@ -17,35 +23,7 @@ export const money = (v: number | null | undefined, currency = 'NGN') =>
         maximumFractionDigits: 2,
       }).format(v)
     : 'Unknown';
-export function reviewLines(sp: ReviewListing): PriceLine[] {
-  const sizes = sp.sizes || [];
-  return sizes.length
-    ? sizes.map((s) => ({
-        id: s._id,
-        label: s.displayName || s.size || 'Unnamed size',
-        sku: s.sku,
-        currency: s.currency || sp.currency || 'NGN',
-        pricing: {
-          ...s.pricing,
-          packPlatformMarkupPct:
-            s.packPlatformMarkupOverridePct ?? s.pricing?.platformMarkupPct,
-        },
-        packThreshold:
-          (s.pricing?.packThreshold || s.unitsPerPack || 0) > 1
-            ? s.pricing?.packThreshold || s.unitsPerPack || null
-            : null,
-      }))
-    : [
-        {
-          id: 'base',
-          label: 'Base listing',
-          sku: sp.sku,
-          currency: sp.currency || 'NGN',
-          pricing: sp.pricing || {},
-          packThreshold: null,
-        },
-      ];
-}
+export { reviewLines, initialDrafts } from './review-lines';
 export function saleActive(sp: ReviewListing, now = Date.now()) {
   return (
     !!sp.isOnSale &&
@@ -74,10 +52,13 @@ export function targetRates(
   targets: PriceTargets,
   pack = false
 ) {
-  const pct =
-    (pack ? line.pricing.packPlatformMarkupPct : line.pricing.platformMarkupPct) ??
-    line.pricing.platformMarkupPct ??
-    sp.product?.platformMarkup;
+  const pct = isSellingMarkup(line, sp)
+    ? (line.pricing.sellingPriceMarkupPct ?? tenantDefaultRate(line, sp))
+    : ((pack
+        ? line.pricing.packPlatformMarkupPct
+        : line.pricing.platformMarkupPct) ??
+      line.pricing.platformMarkupPct ??
+      sp.product?.platformMarkup);
   const commission = isCommission(line, sp);
   const rate = agreedCommission(line, sp, pack);
   const configured =
@@ -90,9 +71,11 @@ export function targetRates(
   const payout =
     commission && rate !== null && positive(savedCustomer)
       ? commissionPayout(savedCustomer, rate)
-      : pack
-        ? line.pricing.packPlatformCostPrice
-        : line.pricing.platformCostPrice;
+      : isSellingMarkup(line, sp)
+        ? retailPayout(line)
+        : pack
+          ? line.pricing.packPlatformCostPrice
+          : line.pricing.platformCostPrice;
   const supplier = line.pricing.costPrice;
   const currentTenant =
     positive(payout) && positive(supplier)
@@ -109,14 +92,23 @@ export function evaluatePrice(
   sp: ReviewListing,
   targets: PriceTargets,
   pack = false,
-  normal?: number
+  normal?: number,
+  inherit = false
 ) {
   const entered = raw.trim() ? Number(raw) : NaN;
   const valid = Number.isFinite(entered) && entered > 0 && entered <= 1e12;
-  const customer = valid ? (pack ? entered : listingSalePrice(entered, sp)) : null;
-  const payoutRaw = pack
-    ? line.pricing.packPlatformCostPrice
-    : line.pricing.platformCostPrice;
+  const customer = valid
+    ? pack
+      ? entered
+      : listingSalePrice(entered, sp)
+    : null;
+  const selling = isSellingMarkup(line, sp);
+  const preview = selling ? sellingMarkupPreview(line, raw, sp, inherit) : null;
+  const payoutRaw = selling
+    ? retailPayout(line)
+    : pack
+      ? line.pricing.packPlatformCostPrice
+      : line.pricing.platformCostPrice;
   const commission = isCommission(line, sp);
   const rate = agreedCommission(line, sp, pack);
   const payout = commission
@@ -126,11 +118,15 @@ export function evaluatePrice(
     : positive(payoutRaw)
       ? payoutRaw
       : null;
-  const supplier = positive(line.pricing.costPrice) ? line.pricing.costPrice : null;
+  const supplier = positive(line.pricing.costPrice)
+    ? line.pricing.costPrice
+    : null;
   const tenantProfit =
     payout !== null && supplier !== null ? payout - supplier : null;
   const tenantMargin =
-    tenantProfit !== null && payout !== null ? (tenantProfit / payout) * 100 : null;
+    tenantProfit !== null && payout !== null
+      ? (tenantProfit / payout) * 100
+      : null;
   const platformProfit =
     customer !== null && payout !== null ? customer - payout : null;
   const platformMargin =
@@ -146,6 +142,9 @@ export function evaluatePrice(
     error = 'Round the website price to the nearest 100.';
   else if (customer === null || customer <= 0)
     error = 'Final merchandise price must be positive.';
+  else if (preview?.error) error = preview.error;
+  else if (selling && pack)
+    error = 'Selling-price markup uses the same percentage for all quantities.';
   else if (payout === null)
     error =
       'Tenant payout is unavailable; resolve the pricing data before approval.';
@@ -158,6 +157,7 @@ export function evaluatePrice(
   return {
     customer,
     commission,
+    sellingMarkupPct: preview?.rate ?? null,
     payout,
     supplier,
     tenantProfit,
@@ -187,18 +187,22 @@ export function suggestPrice(
   pack = false,
   normal?: number
 ): number | null {
-  const payout = pack
-    ? line.pricing.packPlatformCostPrice
-    : line.pricing.platformCostPrice;
+  const selling = isSellingMarkup(line, sp);
+  const payout = selling
+    ? retailPayout(line)
+    : pack
+      ? line.pricing.packPlatformCostPrice
+      : line.pricing.platformCostPrice;
   const rates = targetRates(line, sp, targets, pack);
   const commission = isCommission(line, sp);
   if (
-    !positive(line.pricing.costPrice) ||
+    (!selling && !positive(line.pricing.costPrice)) ||
     (!commission && !positive(payout)) ||
     rates.platform === null ||
     line.currency !== 'NGN' ||
     (pack &&
-      (!line.packThreshold ||
+      (selling ||
+        !line.packThreshold ||
         saleActive(sp) ||
         line.pricing.productDiscount?.active))
   )
@@ -220,25 +224,12 @@ export function suggestPrice(
   if (
     !Number.isFinite(result) ||
     result > 1e12 ||
+    (selling &&
+      sellingMarkupPreview(line, String(result), sp).error !== null) ||
     (pack && (!normal || result >= normal))
   )
     return null;
   return result;
-}
-export function initialDrafts(lines: PriceLine[]): Record<string, PriceDraft> {
-  return Object.fromEntries(
-    lines.map((line) => [
-      line.id,
-      {
-        normal: positive(line.pricing.platformSellingPrice)
-          ? String(line.pricing.platformSellingPrice)
-          : '',
-        pack: positive(line.pricing.packUnitPrice)
-          ? String(line.pricing.packUnitPrice)
-          : '',
-      },
-    ])
-  );
 }
 export function buildOverrides(
   lines: PriceLine[],
@@ -248,25 +239,42 @@ export function buildOverrides(
   const overrides: ReviewOverrides = {};
   for (const line of lines) {
     const draft = drafts[line.id] || { normal: '', pack: '' };
-    const normal = evaluatePrice(line, draft.normal, sp, {
-      platform: '',
-      tenant: '',
-    });
+    const normal = evaluatePrice(
+      line,
+      draft.normal,
+      sp,
+      {
+        platform: '',
+        tenant: '',
+      },
+      false,
+      undefined,
+      draft.inherit === 'true'
+    );
     if (normal.error) throw new Error(`${line.label}: ${normal.error}`);
     const value = Number(draft.normal);
     const websiteChanged =
       Math.abs(value - (line.pricing.platformSellingPrice || 0)) >= 1;
     if (line.id === 'base') {
+      if (draft.inherit === 'true') {
+        overrides.useTenantDefault = true;
+        continue;
+      }
       if (websiteChanged) overrides.baseWebsitePrice = value;
       continue;
     }
     const row: NonNullable<ReviewOverrides['sizes']>[number] = { id: line.id };
+    if (draft.inherit === 'true') {
+      row.useTenantDefault = true;
+      (overrides.sizes ||= []).push(row);
+      continue;
+    }
     if (websiteChanged) row.websitePrice = value;
     const enteredPack = Number(draft.pack);
     const packChanged =
       !Number.isFinite(enteredPack) ||
       Math.abs(enteredPack - (line.pricing.packUnitPrice || 0)) >= 1;
-    if (draft.pack.trim() && packChanged) {
+    if (!isSellingMarkup(line, sp) && draft.pack.trim() && packChanged) {
       const pack = evaluatePrice(
         line,
         draft.pack,

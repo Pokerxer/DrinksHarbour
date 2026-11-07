@@ -20,14 +20,22 @@ const AgeGate: React.FC<AgeGateProps> = ({
   // Lazy initializer reads localStorage synchronously on first render (client-only
   // because this component is loaded with ssr: false in layout.tsx).
   const [isVerified, setIsVerified] = useState<boolean>(() => {
-    const global  = localStorage.getItem(STORAGE_KEY);
-    const product = productId ? localStorage.getItem(`${STORAGE_KEY}_${productId}`) : null;
-    return global === 'true' || product === 'true';
+    try {
+      const global = localStorage.getItem(STORAGE_KEY);
+      const product = productId ? localStorage.getItem(`${STORAGE_KEY}_${productId}`) : null;
+      return global === 'true' || product === 'true';
+    } catch {
+      return false;
+    }
   });
 
   const verify = useCallback(() => {
-    localStorage.setItem(STORAGE_KEY, 'true');
-    if (productId) localStorage.setItem(`${STORAGE_KEY}_${productId}`, 'true');
+    try {
+      localStorage.setItem(STORAGE_KEY, 'true');
+      if (productId) localStorage.setItem(`${STORAGE_KEY}_${productId}`, 'true');
+    } catch {
+      // Still allow confirmation for this mount when persistence is unavailable.
+    }
     setIsVerified(true);
   }, [productId]);
 

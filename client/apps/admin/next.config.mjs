@@ -3,8 +3,11 @@ import withSerwist from '@serwist/next';
 /** @type {import('next').NextConfig} */
 
 const nextConfig = {
+  // A production build must not replace chunks used by a running dev server.
+  distDir: process.env.VENUE_NEXT_DIST_DIR ||
+    (process.env.NODE_ENV === 'development' ? '.next-dev' : '.next'),
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   // ESLint over the full project during `next build` OOMs Vercel's 8GB
   // container; lint runs as a separate CI step instead of blocking the build.
@@ -87,7 +90,7 @@ const nextConfig = {
       ],
     };
   },
-  transpilePackages: ['core', 'framer-motion'],
+  transpilePackages: ['core', 'framer-motion', 'commerce-core'],
   // Ignore specific build warnings that don't break the build
   webpack: (config, { dev }) => {
     config.ignoreWarnings = [

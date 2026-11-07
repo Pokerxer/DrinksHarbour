@@ -19,7 +19,7 @@ import {
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { vendorReturnService } from '@/services/vendorReturn.service';
-import type { VendorReturn } from './types';
+import type { VendorReturn } from '@/services/vendorReturn.service';
 import { STATUS_BADGE, returnStatusLabel } from './types';
 import { fmtCur } from './purchases-analytics-helpers';
 

@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { routes } from '@/config/routes';
 import type {
   CustomerReturn,
+  CustomerReturnPage,
   ReturnFilters,
 } from '@/services/customerReturns.service';
 import { requestDocumentExport } from '@/utils/print/document-export';
@@ -55,9 +56,21 @@ function ReturnWorkspace({
     ...(invoiceId ? { invoice: invoiceId } : {}),
   });
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<CustomerReturn | null>(null);
+  const [selection, setSelection] = useState<{
+    row: CustomerReturn;
+    data: CustomerReturnPage;
+    filters: ReturnFilters;
+  } | null>(null);
   const [printError, setPrintError] = useState('');
   const { data, loading, error, refresh } = useCustomerReturns(token, filters);
+  const selected =
+    selection?.data === data && selection?.filters === filters
+      ? selection.row
+      : null;
+  const refreshHistory = () => {
+    setSelection(null);
+    return refresh();
+  };
   useEffect(() => {
     const timer = setTimeout(
       () =>
@@ -71,7 +84,6 @@ function ReturnWorkspace({
     return () => clearTimeout(timer);
   }, [search]);
   useEffect(() => {
-    setSelected(null);
     setPrintError('');
   }, [data, filters]);
   const change = (value: Partial<ReturnFilters>) =>
@@ -110,7 +122,7 @@ function ReturnWorkspace({
           <button
             type="button"
             className={button}
-            onClick={() => void refresh()}
+            onClick={() => void refreshHistory()}
             disabled={loading}
           >
             Refresh
@@ -176,7 +188,7 @@ function ReturnWorkspace({
           {error || printError}
           <button
             type="button"
-            onClick={() => (error ? void refresh() : setPrintError(''))}
+            onClick={() => (error ? void refreshHistory() : setPrintError(''))}
             className="font-semibold underline"
           >
             {error ? 'Retry' : 'Dismiss'}
@@ -188,7 +200,10 @@ function ReturnWorkspace({
           Loading return history…
         </p>
       ) : data?.rows.length ? (
-        <CustomerReturnList rows={data.rows} onSelect={setSelected} />
+        <CustomerReturnList
+          rows={data.rows}
+          onSelect={(row) => setSelection({ row, data, filters })}
+        />
       ) : (
         !error && (
           <div className="p-10 text-center">
@@ -204,7 +219,7 @@ function ReturnWorkspace({
       {selected && data && !loading && (
         <CustomerReturnDetail
           row={selected}
-          onClose={() => setSelected(null)}
+          onClose={() => setSelection(null)}
           onPrint={() => print([selected], 'Selected return line')}
         />
       )}

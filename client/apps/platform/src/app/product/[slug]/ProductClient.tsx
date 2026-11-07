@@ -66,6 +66,7 @@ export default function ProductClient({
   initialProduct = null,
   initialRelated = [],
   initialBannerData,
+  isTenantSite = false,
 }: {
   slug: string;
   /**
@@ -76,6 +77,8 @@ export default function ProductClient({
    */
   initialProduct?: any;
   initialRelated?: ProductType[];
+  /** Tenant-site surface flag forwarded from the server component. */
+  isTenantSite?: boolean;
   initialBannerData?: ProductBannerSeed;
 }) {
   const { location, revision } = useShoppingLocation();
@@ -92,7 +95,17 @@ export default function ProductClient({
     const requestId = ++request.current;
     controller.current?.abort();
     const active = new AbortController(); controller.current = active;
-    const options = {signal: active.signal, headers: shoppingHeaders(location)};
+    const options = {
+      signal: active.signal,
+      headers: {
+        ...shoppingHeaders(location),
+        // DRI-9: keep the client refetch on the same backend surface the
+        // server component rendered with — tenant storefronts forward the
+        // middleware flag, so the retail storefront never 404s on a fresh
+        // load triggered by a shopping-location change.
+        ...(isTenantSite ? { 'x-is-tenant-site': 'true' } : {}),
+      },
+    };
     const updateRelated = (related: ProductType[]) => { if (requestId === request.current && !active.signal.aborted) setRelatedProducts(related); };
 
     // Already server-rendered — don't refetch the product on mount. Related

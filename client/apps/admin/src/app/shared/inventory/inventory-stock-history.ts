@@ -1,6 +1,7 @@
 import type { InventoryMovement } from '@/services/inventory.service';
 import type { StockRow } from '@/services/warehouseStock.service';
 import type { DocumentModel } from '@/utils/print/doc-model';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 import { finite, refId, isTransferReturn } from './inventory-dashboard-analysis';
 import {
   TYPE_LABEL,
@@ -100,7 +101,9 @@ export function buildStockHistoryDocument(
       ['SKU', row.sku || '—'],
       [
         'Scope',
-        scope === 'line' ? `${row.warehouseName} · ${row.sizeName}` : 'All warehouses and sizes',
+        scope === 'line'
+          ? `${row.warehouseName} · ${flatRowSizeLabel(row) || row.sizeName}`
+          : 'All warehouses and sizes',
       ],
       ['Date range', range || 'All dates'],
       ['Entries', String(moves.length)],

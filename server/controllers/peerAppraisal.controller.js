@@ -36,3 +36,9 @@ for (const [name, operation] of [['launch', life.launchPeerCycle], ['close', lif
 for (const [name, operation] of [['save', reviews.savePeerDraft], ['submit', reviews.submitPeerReview]]) {
   exports[name] = handle(req => operation({ tenantId: getTenantId(req), cycleId: req.params.cycleId, reviewerId: req.user._id, ratings: req.body.ratings, expectedRevision: req.body.expectedRevision }));
 }
+
+exports.scores = handle(async req => {
+  const tenantId = await requirePeerHr(req);
+  if (!validId(req.params.employeeId)) throw new ValidationError('Invalid employee ID.');
+  return require('../services/peerAppraisal/employee-scores').employeeScores(tenantId, req.params.cycleId, req.params.employeeId);
+});

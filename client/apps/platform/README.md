@@ -2,6 +2,18 @@ This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next
 
 ## Getting Started
 
+SEO maintenance: route-level OpenGraph overrides must include their own images;
+use `src/lib/socialMetadata.ts` to retain defaults. Blog list responses omit full
+article bodies. Audit decisions and validation: `docs/seo/audit-2026-10-19/README.md`
+at the repository root. Preserve private-page noindex and category canonicals.
+
+SEO growth release (2026-10-20): canonical shop categories gain visible buying
+guides; bulk, occasion and authenticity guidance has home/footer/sitemap entry
+points. Product buying content must be identical for shoppers and crawlers.
+Use `src/lib/publicSiteOrigin.ts` for touched public metadata. Paid-purchase
+reporting excludes shipping/tax; WhatsApp clicks are enquiry intent, not leads.
+Release checks and editorial/measurement work: `docs/seo/growth-2026-10/README.md`.
+
 First, run the development server:
 
 ```bash
@@ -176,6 +188,61 @@ longer renders a separate address row. Shop and Sale stay visible; Browse groups
 the other existing navigation links and closes on Escape, outside click or
 navigation. Logo and laptop cart label use less horizontal space. Mobile keeps
 its hamburger menu. Handoff: docs/memory/compact-header-menu.md.
+
+## Product shopping benefits
+
+`Product/Detail/ShoppingBenefits.tsx` owns the four benefit cards. Free delivery is
+₦2m+ in Abuja/FCT and ₦10m+ elsewhere, explicitly confirmed by the user on
+2026-10-19. Show NGN thresholds and link delivery information. Product benefits include Order
+updates linking /order-tracking; the user removed the returns policy card. Linked shipping-info
+copy must match regional checkout rules. Notes: docs/memory/product-benefits-delivery.md.
+
+## Competitive purchase clarity (2026-10-20)
+
+`utils/offerVolume.ts` makes selected selling-offer sizes authoritative in detail,
+size measurements, specifications and quick view. Explicit ml/cl/l bottle labels
+win over stale catalogue volume. Unknown selected variants never inherit the
+catalogue's bottle volume. Do not use this display fix to relabel inventory.
+
+Quick view shares the detail page's purchase quantity limits, including available
+stock and seller minimum/cap. Bulk card actions select quantity; they do not add
+to cart. Selected size, single-unit/bulk prices, pack total and savings stay visible.
+`lib/deliveryCopy.ts` centralises standard regional delivery wording; checkout and
+separate first-order eligibility remain authoritative. Admin-managed banners can
+still contain old copy and need review. See docs/memory/competitive-storefront.md
+at the repository root for evidence and release limitations.
+
+Occasion requests now use staff review with customer sign-in and saved profile Chat at `/my-account/chat`. Customers can leave and receive email/staff-sent WhatsApp replies; private AI is only in the staff queue. See `src/components/Occasions/README.md` and `src/components/CustomerChat/README.md`.
+
+## Customer shipment progress
+
+Account order detail and `/order-tracking` include recorded merchant shipment
+progress through `components/Orders/ShipmentProgress`. The read uses the current
+signed-in customer's original marketplace order; an order number or email alone
+provides no access. Separate shipment records are not inferred for legacy orders.
+User/session/order changes clear old results immediately. Partial orders display
+per-group quantities; updates do not claim live GPS or verified carrier proof.
+API boundaries and verification: `server/services/customerShipments/README.md`
+and `docs/superpowers/plans/global-phases/phase-d-customer-tracking.md`.
+
+## Frontend usability review (2026-10-27)
+
+Order tracking has a direct sign-in return path, field-linked errors and an
+explicit recorded-status refresh. Its lookup/display/types live beside shipment
+components in `src/components/Orders`; preserve the session-keyed route boundary.
+Customer chat guards late thread responses; occasion forms focus invalid fields.
+Venue reservation controls validate party size and guard pagination. Review and
+verification: `docs/superpowers/specs/RESUME-ui-frontend-polish.md` at repository root.
+
+## Product description audio
+
+The Description tab on `/product/[slug]` offers Listen to description and Stop.
+It reads the full rich-text description as prose through the same Fish Audio
+proxy as search, falling back to shortDescription only if needed. Keep requests
+under the existing 300-character server cap and play every section in order;
+never reuse the search preview's truncation. Stop/navigation cancels pending
+work and releases audio resources. Notes: docs/memory/product-description-audio.md
+at the repository root.
 
 ## Searchable shop filters
 

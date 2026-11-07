@@ -1,0 +1,17 @@
+diff --git a/harvey/collectors/discover.py b/harvey/collectors/discover.py
+index 1299a80..ebfdbcc 100644
+--- a/harvey/collectors/discover.py
++++ b/harvey/collectors/discover.py
+@@ -487,6 +487,12 @@ class OpenStreetMap(DiscoveryProvider):
+ 
+     # A friendly term maps to the OSM tags that actually carry those businesses.
+     TAG_MAP = {
++        "beverage shop": ['shop=beverages', 'shop=alcohol'],
++        "wine shop": ['shop=wine', 'shop=alcohol'],
++        "liquor store": ['shop=alcohol'],
++        "cocktail bar": ['amenity=bar'],
++        "nightclub": ['amenity=nightclub'],
++        "lounge": ['amenity=bar'],
+         "roof": ['craft=roofer', 'shop=roofing'],
+         "plumb": ['craft=plumber'],
+         "hvac": ['craft=hvac'],

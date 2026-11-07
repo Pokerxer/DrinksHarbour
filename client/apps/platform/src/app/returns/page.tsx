@@ -178,10 +178,10 @@ export default function ReturnsPage() {
             Returns & Refunds
           </div>
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight mb-3">
-            Not happy? We'll make it right.
+            Not happy? We&apos;ll make it right.
           </h1>
           <p className="text-gray-300 text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
-            We stand behind every product we sell. If something's wrong, our straightforward
+            We stand behind every product we sell. If something&apos;s wrong, our straightforward
             return process gets you a refund or replacement fast.
           </p>
 

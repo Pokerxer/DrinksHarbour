@@ -210,3 +210,5 @@ describe('upgrade targets', () => {
     ).toBeNull();
   });
 });
+
+it('completion entry remains available without granting venue creation or management',()=>{expect(checkPlanAccess({path:'/venue-completion',role:'tenant_owner',plan:'starter',capabilities:[]}).allowed).toBe(true);expect(checkPlanAccess({path:'/venue',role:'tenant_owner',plan:'starter',capabilities:[]}).allowed).toBe(false);});

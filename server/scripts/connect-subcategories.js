@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const Category = require("../models/Category");
 
 const MONGODB_URI =
-  "mongodb+srv://jrwaldehzx:NWXdpyCMP7yB7a4N@cluster0.ukrr40p.mongodb.net/drinksharbour?retryWrites=true&w=majority";
+  require('../utils/requireMongoUri').requireMongoUri();
 
 async function connectSubcategories() {
   try {

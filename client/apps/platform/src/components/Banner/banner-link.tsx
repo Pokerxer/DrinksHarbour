@@ -64,6 +64,7 @@ export function BannerClickArea({
       className={className}
     >
       {children}
+      <span className="sr-only">{ariaLabel || banner.title || 'Open banner link'}</span>
     </Link>
   );
 }
@@ -92,6 +93,8 @@ export function BannerClickLayer({
         ariaLabel || banner.title || 'Open banner link'
       }
       className="absolute inset-0 z-[5] cursor-pointer"
-    />
+    >
+      <span className="sr-only">{ariaLabel || banner.title || 'Open banner link'}</span>
+    </Link>
   );
 }

@@ -1,6 +1,10 @@
 export interface VendorSize {
   _id: string;
   size: string;
+  colorName?: string;
+  optionName?: string;
+  imageScope?: 'variant' | 'color' | 'option';
+  image?: { url: string; alt?: string } | null;
   displayName: string;
   stock: number;
   availableStock?: number;

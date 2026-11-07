@@ -14,7 +14,7 @@ export default function SeoContextBlock({ heading, paragraphs, links }: SeoConte
       <h2 id={headingId}>{heading}</h2>
       {paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
       <p>
-        DrinksHarbour sells original, authentic products sourced through verified channels. We do not sell counterfeit drinks, and products are checked before dispatch.
+        Check the selected seller and bottle details before ordering. Read our <Link href="/authenticity-guarantee">authenticity and bottle-check guidance</Link> for questions about your purchase.
       </p>
       <nav aria-label={`${heading} links`}>
         {links.map((link) => <Link key={link.href} href={link.href}>{link.label}</Link>)}

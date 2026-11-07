@@ -11,10 +11,13 @@ import { useWishlist } from "@/context/WishlistContext";
 import { useModalWishlistContext } from "@/context/ModalWishlistContext";
 import { useCompare } from "@/context/CompareContext";
 import { useModalCompareContext } from "@/context/ModalCompareContext";
+import { useTenant } from "@/context/TenantContext";
 import Rate from "../Other/Rate";
 import Link from "next/link";
 import PackPricingCard from "@/components/Product/PackPricingCard";
 import { resolvePackPricing } from "commerce-core";
+import { resolveOfferVolume } from "@/utils/offerVolume";
+import { purchaseLimits, clampPurchaseQuantity } from "@/components/Product/Detail/purchase-quantity";
 import {
   getInitials,
   VENDOR_PALETTE,
@@ -28,6 +31,7 @@ interface VendorSize {
   displayName?: string;
   stock: number;
   availability?: string;
+  inStock?: boolean;
   price: number;
   originalPrice?: number;
   displayPrice?: string;
@@ -74,6 +78,9 @@ interface Vendor {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 const ModalQuickview: React.FC = () => {
+  // DRI-9: tenant storefronts keep their retail quick view — the surface flag
+  // comes from the root TenantProvider, not transport headers.
+  const { isMainSite } = useTenant();
   const { selectedProduct, isOpen, closeQuickview } =
     useModalQuickviewContext();
   /**
@@ -142,7 +149,8 @@ const ModalQuickview: React.FC = () => {
         _id: sizeData._id,
         size: sizeData.size,
         displayName: sizeData.displayName || sizeData.size,
-        stock: sizeData.stock,
+        stock: sizeData.availableStock ?? sizeData.stock,
+        inStock: sizeData.inStock,
         availability: sizeData.availability,
         price: sizeData.pricing?.websitePrice || sizeData.price || 0,
         originalPrice:
@@ -150,7 +158,7 @@ const ModalQuickview: React.FC = () => {
         displayPrice: sizeData.pricing?.displayPrice,
         currencySymbol: sizeData.pricing?.currencySymbol,
         discount: sizeData.discount,
-        volumeMl: sizeData.volumeMl,
+        volumeMl: resolveOfferVolume(sizeData),
         minOrderQuantity: sizeData.minOrderQuantity || 1,
         maxOrderQuantity: sizeData.maxOrderQuantity,
         packUnitPrice: sizeData.pricing?.packUnitPrice ?? null,
@@ -187,10 +195,8 @@ const ModalQuickview: React.FC = () => {
   // a 6-unit pack quantity surviving onto a size with 4 left.
   useEffect(() => {
     if (!selectedSizeData) return;
-    const minQty = selectedSizeData.minOrderQuantity || 1;
-    const maxQty =
-      selectedSizeData.maxOrderQuantity || selectedSizeData.stock || 99;
-    setQuantity((prev) => Math.min(Math.max(prev, minQty), Math.max(minQty, maxQty)));
+    const bounds = purchaseLimits(selectedSizeData);
+    setQuantity((prev) => clampPurchaseQuantity(prev, bounds));
   }, [selectedSizeData]);
 
   useEffect(() => {
@@ -202,7 +208,10 @@ const ModalQuickview: React.FC = () => {
         // no-store: pricing/discounts recompute per request; no server-side
         // revalidation hook fires when tenants edit prices, so any cache here
         // shows the previous price until the window expires.
-        const res = await fetch(`${API_URL}/api/products/slug/${slug}`, { cache: 'no-store' });
+        const res = await fetch(`${API_URL}/api/products/slug/${slug}`, {
+          cache: 'no-store',
+          ...(isMainSite ? {} : { headers: { 'x-is-tenant-site': 'true' } }),
+        });
         if (!res.ok) return;
         const json = await res.json();
         const full = json?.data?.product ?? json?.data ?? null;
@@ -269,9 +278,8 @@ const ModalQuickview: React.FC = () => {
       });
       return;
     }
-    if (selectedSizeData.stock === 0) {
-      return;
-    }
+    const bounds = purchaseLimits(selectedSizeData);
+    if (!bounds.canBuy || quantity < bounds.min || quantity > bounds.max) return;
 
     // Get vendor name with fallback
     const vendorName =
@@ -367,13 +375,8 @@ const ModalQuickview: React.FC = () => {
   const handleQuantityChange = useCallback(
     (change: number) => {
       if (!selectedSizeData) return;
-      const newQuantity = quantity + change;
-      const minQty = selectedSizeData.minOrderQuantity || 1;
-      const maxQty =
-        selectedSizeData.maxOrderQuantity || selectedSizeData.stock || 10;
-      if (newQuantity >= minQty && newQuantity <= maxQty) {
-        setQuantity(newQuantity);
-      }
+      const bounds = purchaseLimits(selectedSizeData);
+      setQuantity(clampPurchaseQuantity(quantity + change, bounds));
     },
     [quantity, selectedSizeData],
   );
@@ -423,7 +426,9 @@ const ModalQuickview: React.FC = () => {
     }
     return 0;
   }, [selectedSizeData, displayOriginalPrice, displayPrice, showQuickviewDiscount]);
-  const inStock = (selectedSizeData?.stock || 0) > 0;
+  const selectedVolumeMl = resolveOfferVolume(selectedSizeData, selectedProduct?.volumeMl);
+  const limits = purchaseLimits(selectedSizeData);
+  const inStock = limits.canBuy;
 
   // ── Pack pricing (quantity-triggered) ──────────────────────────────────────
   // Same resolver the product page uses, so a shopper sees the same offer,
@@ -434,7 +439,7 @@ const ModalQuickview: React.FC = () => {
     packSavingsPct: selectedSizeData?.packSavingsPct,
     unitPrice: displayPrice,
     quantity,
-    stock: selectedSizeData?.stock,
+    stock: limits.canBuy ? limits.max : 0,
     maxOrderQuantity: selectedSizeData?.maxOrderQuantity,
     onSale: showQuickviewDiscount,
   });
@@ -442,9 +447,9 @@ const ModalQuickview: React.FC = () => {
 
   const handleSetQuantityToPack = useCallback(() => {
     if (!packPricing.packThreshold) return;
-    const maxQty =
-      selectedSizeData?.maxOrderQuantity || selectedSizeData?.stock || 99;
-    setQuantity(Math.min(packPricing.packThreshold, maxQty));
+    const bounds = purchaseLimits(selectedSizeData);
+    if (!bounds.canBuy) return;
+    setQuantity(clampPurchaseQuantity(packPricing.packThreshold, bounds));
   }, [packPricing.packThreshold, selectedSizeData]);
 
   if (!selectedProduct) return null;
@@ -868,7 +873,7 @@ const ModalQuickview: React.FC = () => {
                 <div className="flex flex-wrap gap-2">
                   {vendorSizes.map((size: VendorSize) => {
                     const isSelected = activeSize === size.size;
-                    const isOutOfStock = size.stock === 0;
+                    const isOutOfStock = !purchaseLimits(size).canBuy;
                     const hasDiscount =
                       size.originalPrice && size.originalPrice > size.price;
                     // Per-size offer, so a size holding less than one full pack
@@ -879,7 +884,7 @@ const ModalQuickview: React.FC = () => {
                       packSavingsPct: size.packSavingsPct,
                       unitPrice: size.price,
                       quantity: 1,
-                      stock: size.stock,
+                      stock: isOutOfStock ? 0 : size.stock,
                       maxOrderQuantity: size.maxOrderQuantity,
                       onSale: !!hasDiscount || !!size.discount,
                     });
@@ -959,6 +964,7 @@ const ModalQuickview: React.FC = () => {
             {hasPackPricing && (
               <div className="mb-4 lg:mb-5">
                 <PackPricingCard
+                  sizeLabel={selectedSizeData?.displayName || selectedSizeData?.size}
                   compact
                   currencySymbol={displayCurrencySymbol}
                   packUnitPrice={packPricing.packUnitPrice as number}
@@ -1009,10 +1015,9 @@ const ModalQuickview: React.FC = () => {
                     }`}
                   >
                     <button
+                      aria-label="Decrease quantity"
                       onClick={() => handleQuantityChange(-1)}
-                      disabled={
-                        quantity <= (selectedSizeData?.minOrderQuantity || 1)
-                      }
+                      disabled={!limits.canBuy || quantity <= limits.min}
                       className="w-9 h-9 lg:w-10 lg:h-10 flex items-center justify-center rounded-lg bg-white shadow-sm hover:bg-gray-100 disabled:opacity-40 transition-colors active:scale-95"
                     >
                       <Icon.PiMinus size={14} />
@@ -1030,12 +1035,9 @@ const ModalQuickview: React.FC = () => {
                       )}
                     </span>
                     <button
+                      aria-label="Increase quantity"
                       onClick={() => handleQuantityChange(1)}
-                      disabled={
-                        selectedSizeData?.maxOrderQuantity
-                          ? quantity >= selectedSizeData.maxOrderQuantity
-                          : false
-                      }
+                      disabled={!limits.canBuy || quantity >= limits.max}
                       className="w-9 h-9 lg:w-10 lg:h-10 flex items-center justify-center rounded-lg bg-white shadow-sm hover:bg-gray-100 disabled:opacity-40 transition-colors active:scale-95"
                     >
                       <Icon.PiPlus size={14} />
@@ -1048,14 +1050,15 @@ const ModalQuickview: React.FC = () => {
                     className="lg:hidden flex items-center justify-center w-10 h-10 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 transition-colors"
                     onClick={closeQuickview}
                   >
-                    <Icon.PiArrowRight size={18} />
+                    <Icon.PiArrowRight size={18} aria-hidden="true" />
+                    <span className="sr-only">View {selectedProduct.name} details</span>
                   </Link>
                 </div>
 
                 {/* Row 2: Add to Cart - Full width */}
                 <button
                   onClick={handleAddToCart}
-                  disabled={!inStock || !activeSize || isAddingToCart}
+                  disabled={!inStock || !activeSize || quantity < limits.min || quantity > limits.max || isAddingToCart}
                   className={`w-full py-2.5 lg:py-3 px-4 rounded-xl font-bold text-sm lg:text-base transition-all flex items-center justify-center gap-2 ${
                     !activeSize
                       ? "bg-gray-200 text-gray-500 cursor-not-allowed"
@@ -1143,11 +1146,11 @@ const ModalQuickview: React.FC = () => {
                   </span>
                 </div>
               )}
-              {selectedProduct.volumeMl && (
+              {selectedVolumeMl && (
                 <div className="flex justify-between p-2 bg-gray-50 rounded-lg">
                   <span className="text-gray-500">Volume:</span>
                   <span className="text-gray-900 font-medium">
-                    {selectedProduct.volumeMl}ml
+                    {selectedVolumeMl}ml
                   </span>
                 </div>
               )}

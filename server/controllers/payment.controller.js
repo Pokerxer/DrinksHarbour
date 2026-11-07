@@ -21,11 +21,7 @@ const initializeStripePayment = asyncHandler(async (req, res) => {
     });
   }
 
-  const paymentData = await paymentService.createStripePaymentIntent(
-    amount,
-    currency || 'ngn',
-    metadata
-  );
+  const paymentData = await require('../services/marketplacePaymentTrust').initialize('stripe', req.user, amount, currency || 'NGN', req.user.email, metadata, req.get('Idempotency-Key'));
 
   successResponse(res, paymentData, 'Stripe payment initialized successfully');
 });
@@ -46,6 +42,7 @@ const confirmStripePayment = asyncHandler(async (req, res) => {
   }
 
   const id = paymentIntentId || clientSecret.split('_secret_')[0];
+  await require('../services/marketplacePaymentReads').authorize('stripe', id, req.user);
   const result = await paymentService.confirmStripePayment(id);
 
   if (result.success) {
@@ -80,13 +77,8 @@ const attachPaymentToOrder = asyncHandler(async (req, res) => {
     });
   }
 
-  const target = await require('../models/Order').findById(orderId).select('tableServiceBooking tenant user');
-  if (target?.tableServiceBooking && String(target.tenant) !== String(req.user.tenant)) {
-    return res.status(403).json({ success: false, message: 'This bill belongs to another venue' });
-  }
-  const order = await paymentService.attachPaymentToOrder(orderId, paymentData);
-
-  successResponse(res, { order }, 'Payment attached to order successfully');
+  const order = await paymentService.attachPaymentToOrder(orderId, paymentData, req.user);
+  successResponse(res, { order: require('../services/orderAccess').project(order, req.user) }, 'Payment attached to order successfully');
 });
 
 /**
@@ -104,11 +96,7 @@ const initializePaystackPayment = asyncHandler(async (req, res) => {
     });
   }
 
-  const paymentData = await paymentService.createPaystackTransaction(
-    amount,
-    email,
-    metadata
-  );
+  const paymentData = await require('../services/marketplacePaymentTrust').initialize('paystack', req.user, amount, 'NGN', email, metadata, req.get('Idempotency-Key'));
 
   successResponse(res, paymentData, 'Paystack payment initialized successfully');
 });
@@ -128,10 +116,11 @@ const verifyPaystackPayment = asyncHandler(async (req, res) => {
     });
   }
 
+  await require('../services/marketplacePaymentReads').authorize('paystack', reference, req.user);
   const result = await paymentService.verifyPaystackTransaction(reference);
 
   if (result.success) {
-    successResponse(res, result.data, 'Payment verified successfully');
+    successResponse(res, require('../services/marketplacePaymentReads').publicReceipt(result.data), 'Payment verified successfully');
   } else {
     res.status(400).json({
       success: false,
@@ -155,11 +144,7 @@ const initializeKorapayPayment = asyncHandler(async (req, res) => {
     });
   }
 
-  const paymentData = await paymentService.createKorapayCharge(
-    amount,
-    email,
-    metadata
-  );
+  const paymentData = await require('../services/marketplacePaymentTrust').initialize('korapay', req.user, amount, 'NGN', email, metadata, req.get('Idempotency-Key'));
 
   successResponse(res, paymentData, 'Korapay payment initialized successfully');
 });
@@ -179,10 +164,11 @@ const verifyKorapayPayment = asyncHandler(async (req, res) => {
     });
   }
 
+  await require('../services/marketplacePaymentReads').authorize('korapay', reference, req.user);
   const result = await paymentService.verifyKorapayCharge(reference);
 
   if (result.success) {
-    successResponse(res, result.data, 'Payment verified successfully');
+    successResponse(res, require('../services/marketplacePaymentReads').publicReceipt(result.data), 'Payment verified successfully');
   } else {
     res.status(400).json({
       success: false,
@@ -199,7 +185,7 @@ const verifyKorapayPayment = asyncHandler(async (req, res) => {
 const getPaymentStatus = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
 
-  const status = await paymentService.getPaymentStatus(orderId);
+  const status = await paymentService.getPaymentStatus(orderId, req.user);
 
   successResponse(res, status, 'Payment status retrieved successfully');
 });
@@ -219,7 +205,7 @@ const createRefund = asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await paymentService.createStripeRefund(orderId, amount);
+  const result = await paymentService.createStripeRefund(orderId, amount, req.user);
 
   if (result.success) {
     successResponse(res, result, 'Refund processed successfully');
@@ -256,54 +242,7 @@ const handleStripeWebhook = asyncHandler(async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  switch (event.type) {
-    case 'payment_intent.succeeded': {
-      const pi = event.data.object;
-      console.log('[Stripe] payment_intent.succeeded:', pi.id);
-      try {
-        // Find order by stripePaymentIntentId or paymentIntentId
-        const order = await Order.findOne({
-          $or: [{ stripePaymentIntentId: pi.id }, { paymentIntentId: pi.id }],
-        });
-        if (order) {
-          if (order.paymentStatus !== 'paid') {
-            await paymentService.attachPaymentToOrder(order._id.toString(), {
-              method: 'stripe',
-              transactionId: pi.id,
-              amount: pi.amount / 100,
-              currency: pi.currency,
-              paidAt: new Date(),
-            });
-            console.log(`[Stripe] Order ${order.orderNumber} marked as paid via webhook`);
-          }
-        } else {
-          console.warn(`[Stripe] No order found for paymentIntent ${pi.id}`);
-        }
-      } catch (err) {
-        console.error('[Stripe] Failed to process payment_intent.succeeded webhook:', err.message);
-      }
-      break;
-    }
-    case 'payment_intent.payment_failed': {
-      const pi = event.data.object;
-      console.error('[Stripe] payment_intent.payment_failed:', pi.last_payment_error?.message);
-      try {
-        const order = await Order.findOne({
-          $or: [{ stripePaymentIntentId: pi.id }, { paymentIntentId: pi.id }],
-        });
-        if (order && order.paymentStatus === 'pending') {
-          order.paymentStatus = 'failed';
-          await order.save();
-          console.log(`[Stripe] Order ${order.orderNumber} payment marked failed via webhook`);
-        }
-      } catch (err) {
-        console.error('[Stripe] Failed to process payment_intent.payment_failed webhook:', err.message);
-      }
-      break;
-    }
-    default:
-      console.log(`[Stripe] Unhandled event: ${event.type}`);
-  }
+  if (event.type === 'payment_intent.succeeded') await require('../services/marketplaceWebhook').settle('stripe', event.data.object.id);
 
   res.json({ received: true });
 });
@@ -331,63 +270,14 @@ const handlePaystackWebhook = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const handleKorapayWebhook = asyncHandler(async (req, res) => {
-  // Always respond 200 immediately so Korapay doesn't retry
-  res.sendStatus(200);
-
-  if (!process.env.KORAPAY_SECRET_KEY) return;
-
-  // Korapay signs ONLY the `data` object of the payload (not the full body)
-  const hash = crypto
-    .createHmac('sha256', process.env.KORAPAY_SECRET_KEY)
-    .update(JSON.stringify(req.body?.data || {}))
-    .digest('hex');
-
-  if (hash !== req.headers['x-korapay-signature']) {
-    console.warn('[Korapay] Webhook signature mismatch — ignoring');
-    return;
+  if (!process.env.KORAPAY_SECRET_KEY) return res.sendStatus(503);
+  const expected = crypto.createHmac('sha256', process.env.KORAPAY_SECRET_KEY).update(JSON.stringify(req.body?.data || {})).digest('hex');
+  const signature = req.headers['x-korapay-signature'];
+  if (typeof signature !== 'string' || !/^[a-f0-9]{64}$/i.test(signature) || !crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'))) {
+    return res.status(401).json({ success: false, message: 'Invalid webhook signature' });
   }
-
-  const event = req.body;
-
-  switch (event.event) {
-    case 'charge.success': {
-      const data = event.data || {};
-      const ref = data.reference;
-      console.log(`[Korapay] charge.success — ref: ${ref}, amount: ₦${data.amount || 0}`);
-      // Safety net: if the frontend redirect already created/updated the order, this is a no-op.
-      // If the redirect failed (e.g. user closed browser), this webhook marks the order as paid.
-      try {
-        const order = await Order.findOne({ paymentReference: ref });
-        if (order) {
-          if (order.paymentStatus !== 'paid') {
-            await paymentService.attachPaymentToOrder(order._id.toString(), {
-              method: 'korapay',
-              transactionId: String(data.payment_reference || ref),
-              reference: ref,
-              // Korapay webhook amounts are in major units already
-              amount: Number(data.amount || 0),
-              currency: (data.currency || 'NGN').toUpperCase(),
-              paidAt: data.transaction_date ? new Date(data.transaction_date) : new Date(),
-              channel: data.payment_method,
-            });
-            console.log(`[Korapay] Order ${order.orderNumber} marked as paid via webhook`);
-          } else {
-            console.log(`[Korapay] Order ${order.orderNumber} already paid — webhook skipped`);
-          }
-        } else {
-          console.warn(`[Korapay] No order found for reference ${ref} — may be created by frontend redirect`);
-        }
-      } catch (err) {
-        console.error('[Korapay] Failed to process charge.success webhook:', err.message);
-      }
-      break;
-    }
-    case 'charge.failed':
-      console.error('[Korapay] charge.failed:', event.data?.reference, event.data?.status);
-      break;
-    default:
-      console.log(`[Korapay] Unhandled event: ${event.event}`);
-  }
+  if (req.body.event === 'charge.success') await require('../services/marketplaceWebhook').settle('korapay', req.body.data?.reference);
+  res.json({ received: true });
 });
 
 module.exports = {

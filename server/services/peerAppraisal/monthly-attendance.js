@@ -2,6 +2,7 @@ const Tenant = require('../../models/Tenant');
 const Shift = require('../../models/Shift');
 const Attendance = require('../../models/Attendance');
 const TimeOff = require('../../models/TimeOffRequest');
+const User = require('../../models/User');
 const { tenantOffsetMinutes } = require('../shift.helpers');
 const { rateAttendance } = require('../attendanceRating.helpers');
 const { requireCompletedAttendance } = require('./exam-rules');
@@ -22,10 +23,13 @@ async function monthlyScores(tenantId, people, month, session) {
   requireCompletedAttendance(range, shifts, now);
   const records = await Attendance.find({ tenant: tenantId, employee: { $in: ids }, clockIn: { $gte: range.start, $lt: range.end } }).session(session).lean();
   const timeOff = await TimeOff.find({ tenant: tenantId, employee: { $in: ids }, status: 'approved', startDate: { $lt: range.end }, endDate: { $gt: range.start } }).session(session).lean();
+  const employees = await User.find({ tenant: tenantId, _id: { $in: ids } })
+    .select('_id employeeProfile.planning.attendancePolicy').session(session).lean();
+  const policies = new Map(employees.map(e => [String(e._id), e.employeeProfile?.planning?.attendancePolicy]));
   const scores = new Map();
   for (const person of people) {
     const own = rows => rows.filter(r => String(r.employee) === String(person.employee));
-    const rating = rateAttendance({ shifts: own(shifts), records: own(records), timeOff: own(timeOff) }, { now });
+    const rating = rateAttendance({ shifts: own(shifts), records: own(records), timeOff: own(timeOff), policy: policies.get(String(person.employee)) }, { now, range, offsetMinutes: range.offsetMinutes });
     if (rating.score === null) throw new ConflictError(`${person.displayName} has no rated attendance for ${range.attendanceFrom} to ${range.attendanceTo}. Review their published shift roster before closing.`);
     scores.set(String(person.employee), rating.score);
   }

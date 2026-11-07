@@ -1,31 +1,38 @@
-// @ts-nocheck
 'use client';
 
+import BusinessDetails from '@/app/shared/ecommerce/business-catalog/business-details';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import ProductDetailsGallery from '@/app/shared/ecommerce/product/product-details-gallery';
-import ProductDetailsSummery from '@/app/shared/ecommerce/product/product-details-summery';
-import ProductDetailsDescription from '@/app/shared/ecommerce/product/product-details-description';
 import { productService } from '@/services/product.service';
-import { isBeverageProductType } from '@/utils/product-types';
 import { PiSpinner, PiMagnifyingGlassBold } from 'react-icons/pi';
 import { useProductPrimaryImage } from './use-product-primary-image';
 
-const toDisplayName = (value: any): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  return value?.name || value?.slug || '';
-};
+import CentralProductOverview, {
+  type CentralProductIdentity,
+} from './central-product-overview';
+import CentralProductListings, {
+  type CentralProductListing,
+} from './central-product-listings';
+import type { ProductGalleryImage } from './primary-image';
+
+type CatalogProduct = CentralProductIdentity &
+  Record<string, unknown> & {
+    description?: string;
+    images?: ProductGalleryImage[];
+    subProducts?: CentralProductListing[];
+  };
 
 export default function ProductDetails() {
-  const params = useParams();
+  const params = useParams<{ slug: string }>();
   const { data: session } = useSession();
-  const [product, setProduct] = useState<any>(null);
+  const [product, setProduct] = useState<CatalogProduct | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>(
     'loading'
   );
   const [errorMsg, setErrorMsg] = useState('');
+  const [retry, setRetry] = useState(0);
   const canManageImages = ['super_admin', 'admin'].includes(
     session?.user?.role || ''
   );
@@ -36,7 +43,9 @@ export default function ProductDetails() {
       canManageImages ? session?.user?.token : undefined,
       (images) =>
         setProduct((current) =>
-          current?._id === product?._id ? { ...current, images } : current
+          current && current._id === product?._id
+            ? { ...current, images }
+            : current
         )
     );
 
@@ -44,13 +53,25 @@ export default function ProductDetails() {
     const slug = params?.slug;
     if (!slug || !session?.user?.token) return;
 
-    let cancelled = false;
+    const controller = new AbortController();
     setStatus('loading');
-    productService
-      .getProductById(slug, session.user.token, true)
+    const request = canManageImages
+      ? productService.getAdminProductDetails(
+          slug,
+          session.user.token,
+          controller.signal
+        )
+      : productService.getProductById(
+          slug,
+          session.user.token,
+          false,
+          controller.signal
+        );
+    request
       .then((res) => {
-        if (cancelled) return;
-        const p = res?.data?.product;
+        if (controller.signal.aborted) return;
+        const p = (res as { data?: { product?: CatalogProduct } } | null)?.data
+          ?.product;
         if (!p) {
           setStatus('empty');
           return;
@@ -59,15 +80,17 @@ export default function ProductDetails() {
         setStatus('ready');
       })
       .catch((err) => {
-        if (cancelled) return;
-        setErrorMsg(err?.message || 'Unable to load this product');
+        if (controller.signal.aborted) return;
+        setErrorMsg(
+          err instanceof Error ? err.message : 'Unable to load this product'
+        );
         setStatus('error');
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [params?.slug, session?.user?.token]);
+  }, [params?.slug, session?.user?.token, canManageImages, retry]);
 
   if (status === 'loading') {
     return (
@@ -78,7 +101,7 @@ export default function ProductDetails() {
     );
   }
 
-  if (status === 'empty' || status === 'error') {
+  if (!product || status === 'empty' || status === 'error') {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white p-10 text-center">
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-400">
@@ -92,72 +115,65 @@ export default function ProductDetails() {
             ? 'This product does not exist or you do not have access to it.'
             : errorMsg}
         </p>
+        {status === 'error' && (
+          <button
+            type="button"
+            onClick={() => setRetry((value) => value + 1)}
+            className="mt-4 min-h-11 rounded-lg border border-muted px-4 text-sm font-medium"
+          >
+            Try again
+          </button>
+        )}
       </div>
     );
   }
 
-  const sps = product.subProducts || [];
-  const firstSp = sps.find((s: any) => s.isPublished) || sps[0] || {};
-  const isBeverage = isBeverageProductType(product.type);
-
-  const viewModel = {
-    isReal: true,
-    id: product._id,
-    name: product.name,
-    slug: product.slug,
-    type: product.type,
-    subType: product.subType,
-    style: product.style,
-    categoryName: toDisplayName(product.category),
-    subCategoryName: toDisplayName(product.subCategory),
-    brandName: toDisplayName(product.brand),
-    producer: product.producer || '',
-    originCountry: product.originCountry || '',
-    region: product.region || '',
-    isAlcoholic: !!product.isAlcoholic,
-    isBeverage,
-    abv: product.abv,
-    volumeMl: product.volumeMl,
-    shortDescription: product.shortDescription || '',
-    description: product.description || product.shortDescription || '',
-    material: product.material,
-    packCount: product.packCount,
-    shelfLifeDays: product.shelfLifeDays,
-    basePrice: firstSp.baseSellingPrice,
-    salePrice: firstSp.isOnSale ? firstSp.salePrice ?? firstSp.baseSellingPrice : undefined,
-    isOnSale: !!firstSp.isOnSale,
-    currency: firstSp.currency || 'NGN',
-    sizes: (firstSp.sizes || []).map((s: any) => ({
-      size: s.size,
-      displayName: s.displayName || s.size,
-    })),
-    images: product.images || [],
-    status: product.status,
-    isPublished: !!product.isPublished,
-  };
+  const listings = product.subProducts || [];
+  const sizes = listings.flatMap((listing) =>
+    (listing.sizes || []).filter((size) => size !== null)
+  );
+  const description = product.description?.trim();
 
   return (
-    <div className="@container">
-      <div className="@3xl:grid @3xl:grid-cols-12">
-        <div className="col-span-7 mb-7 @container @lg:mb-10 @3xl:pe-10">
+    <div className="space-y-6 @container">
+      <div className="grid gap-6 @3xl:grid-cols-2">
+        <CentralProductOverview product={product} canEdit={canManageImages} />
+        <section aria-label="Product media" className="min-w-0 @container">
           <ProductDetailsGallery
-            images={viewModel.images}
-            productName={viewModel.name}
+            images={product.images || []}
+            productName={product.name}
             onMakePrimary={canManageImages ? makePrimary : undefined}
             isSavingPrimary={isSavingPrimary}
           />
           {primaryError && (
-            <p role="alert" className="mt-3 text-sm text-red-600">{primaryError}</p>
+            <p role="alert" className="mt-3 text-sm text-red-600">
+              {primaryError}
+            </p>
           )}
           {primarySuccess && (
-            <p role="status" className="mt-3 text-sm text-green-600">{primarySuccess}</p>
+            <p role="status" className="mt-3 text-sm text-green-600">
+              {primarySuccess}
+            </p>
           )}
-        </div>
-        <div className="col-span-5 @container">
-          <ProductDetailsSummery product={viewModel} />
-          <ProductDetailsDescription product={viewModel} />
-        </div>
+        </section>
       </div>
+
+      <BusinessDetails product={product} sizes={sizes} />
+
+      {description && description !== product.shortDescription?.trim() && (
+        <section
+          aria-labelledby="catalog-description"
+          className="rounded-2xl border border-muted bg-white p-5 sm:p-6"
+        >
+          <h2 id="catalog-description" className="text-lg font-semibold">
+            Description
+          </h2>
+          <p className="mt-3 whitespace-pre-line break-words leading-relaxed text-gray-700">
+            {description}
+          </p>
+        </section>
+      )}
+      {canManageImages && <CentralProductListings listings={listings} />}
     </div>
   );
 }

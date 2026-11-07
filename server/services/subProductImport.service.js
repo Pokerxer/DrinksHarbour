@@ -6,7 +6,7 @@ const RealSubProduct = require('../models/SubProduct');
 const RealCategory = require('../models/Category');
 const RealTenant = require('../models/Tenant');
 
-const SIZE_ENUM = new Set(RealSize.schema.path('size').enumValues);
+const SIZE_ENUM = new Set(RealSize.schema.path('size').enumValues.filter(value => value !== 'venue_serving'));
 const PRODUCT_TYPES = new Set(RealProduct.schema.path('type').enumValues);
 
 // Keyword-based type fallback for when AI enrichment is unavailable or returns
@@ -451,7 +451,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         if (mode === 'update') {
           try {
             pricingTenant = (await d.Tenant?.findById?.(tenantId)
-              ?.select?.('revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+              ?.select?.('revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
               ?.lean?.()) ?? null;
           } catch { pricingTenant = null; }
           if (existingProduct) {

@@ -762,6 +762,8 @@ function buildResult(extracted, matchedProduct, subProducts, confidence, note) {
       sizes: (sp.sizes || []).map((s) => ({
         size: String(s._id ?? s.size ?? ''),
         displayName: s.displayName ?? s.size ?? '',
+        colorName: s.colorName,
+        optionName: s.optionName,
         volumeMl: s.volumeMl ?? null,
         sku: s.sku ?? sp.sku ?? '',
         // Fall back to sp.baseSellingPrice when the Size row has no price yet —

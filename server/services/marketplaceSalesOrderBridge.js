@@ -18,7 +18,7 @@
 // these lines (`frozenPricing` → priceOverridden on every line).
 //
 // Idempotency is enforced twice — a pre-check findOne (fast path) and the
-// unique sparse {tenant, marketplaceOrderId} index (backstop), so a retried
+// unique partial {tenant, marketplaceOrderId} index (backstop), so a retried
 // checkout can never double-create. Runs inside createOrder's fire-and-forget
 // block: a bridge failure must never fail an order already paid for.
 

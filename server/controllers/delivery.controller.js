@@ -124,6 +124,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     ]),
 
     Delivery.countDocuments({
+      responsibilityVersion: { $ne: 2 },
       tenant: tenantId,
       status: { $in: ['assigned', 'dispatched', 'in_progress'] },
     }),
@@ -137,6 +138,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     Delivery.aggregate([
       {
         $match: {
+          responsibilityVersion: { $ne: 2 },
           tenant: toObjectId(tenantId),
           'codSettlement.status': 'pending',
           status: { $in: ['dispatched', 'in_progress', 'completed'] },
@@ -194,7 +196,7 @@ exports.listDeliveries = asyncHandler(async (req, res) => {
   const tenantId = getTenantId(req);
   const { status, driver, zone, active, limit = 50 } = req.query;
 
-  const filter = { tenant: tenantId };
+  const filter = { tenant: tenantId, responsibilityVersion: { $ne: 2 } };
   if (status) filter.status = status;
   if (driver) filter.driver = driver;
   if (zone) filter.zone = zone;
@@ -219,7 +221,7 @@ exports.listDeliveries = asyncHandler(async (req, res) => {
 exports.getDelivery = asyncHandler(async (req, res) => {
   const tenantId = getTenantId(req);
 
-  const delivery = await Delivery.findOne({ _id: req.params.id, tenant: tenantId })
+  const delivery = await Delivery.findOne({ _id: req.params.id, tenant: tenantId, responsibilityVersion: { $ne: 2 } })
     .populate('driver', 'name phone vehicle status')
     .populate('stops.order', 'orderNumber totalAmount paymentMethod paymentStatus status placedAt')
     .lean({ virtuals: true });

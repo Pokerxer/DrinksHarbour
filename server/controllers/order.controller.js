@@ -2,6 +2,7 @@ const { calculateSubProductPricing } = require('../utils/pricing');
 // controllers/order.controller.js
 
 const mongoose = require('mongoose');
+const orderAccess = require('../services/orderAccess');
 const Order = require('../models/Order');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
@@ -18,8 +19,9 @@ const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
 const { calculateShipping, DISTANCE_MIN_FEE } = require('../data/shipping-zones');
 const { resolveFirstOrderPerk, recordPerkUsage } = require('../services/firstOrderPerk.service');
 const { normalizePaymentMethod, buildOrderPaymentFields } = require('../utils/paymentMethods');
+const { getGiftPackagingSku, normalizeGiftSubdoc } = require('../config/giftPackaging');
 const { resolveGatewayPaymentMethod } = require('../services/payment.service');
-const { ForbiddenError, ValidationError } = require('../utils/errors');
+const { ForbiddenError, ValidationError, ConflictError } = require('../utils/errors');
 const {
   sendOrderConfirmationToCustomer,
   sendNewOrderNotificationToTenant,
@@ -50,7 +52,12 @@ const LOYALTY_POINTS_PER_NGN = 1 / 100; // 1 pt per ₦100 base rate
  * @access  Private/Public (Guest checkout supported)
  */
 exports.createOrder = asyncHandler(async (req, res) => {
-  const { customer, shipping, paymentMethod, paymentDetails, items, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus, utmSource, utmMedium, utmCampaign, bannerId } = req.body;
+  const recovery = require('../services/marketCheckoutRecovery');
+  const accepted = await recovery.recover(req);
+  if (accepted) return res.status(200).json(recovery.response(accepted));
+  const marketContext = require('../services/marketContext');
+  if (marketContext.enabled()) await require('../services/country').resolveCountry(marketContext.currentMarket());
+  const { customer, shipping, paymentMethod, paymentDetails, items, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus, utmSource, utmMedium, utmCampaign, bannerId, gift } = req.body;
 
   // Fold accepted aliases ('bank', 'cod', …) into a storable enum value. The
   // route validator has already rejected anything unrecognisable, so a null here
@@ -63,7 +70,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // For hosted-gateway payments the browser only knows which button was pressed
   // before hand-off — Korapay's checkout offers card, bank transfer and USSD
   // behind one button — so ask the gateway what actually settled.
-  const resolvedPaymentMethod = await resolveGatewayPaymentMethod(canonicalPaymentMethod, paymentDetails);
+  const resolvedPaymentMethod = canonicalPaymentMethod;
+  if (!paymentDetails && (paymentStatus && paymentStatus !== 'pending' || status && status !== 'pending')) throw new ValidationError('Settlement and lifecycle require server evidence');
+  if (!paymentDetails && !['cash_on_delivery', 'bank_transfer'].includes(canonicalPaymentMethod)) throw new ValidationError('Verified payment receipt required');
 
   let appliedCoupon = null;
   let discountTotal = 0;
@@ -85,13 +94,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   const [subProducts, sizes] = await Promise.all([
     subProductIds.length
-      ? SubProduct.find({ _id: { $in: subProductIds }, isPublished: true, status: 'active' })
-          .select('_id costPrice baseSellingPrice commissionPriceOverride platformMarkupOverridePct tenant product isOnSale saleDiscountValue saleType saleStartDate saleEndDate')
+      ? SubProduct.find({ _id: { $in: subProductIds }, isPublished: true, status: 'active', visibleInOnlineStore: { $ne: false } })
+          .select('_id costPrice baseSellingPrice sellingPriceMarkupOverridePct commissionPriceOverride platformMarkupOverridePct tenant product sellWithoutSizeVariants isOnSale saleDiscountValue saleType saleStartDate saleEndDate')
           .lean()
       : Promise.resolve([]),
     sizeIds.length
-      ? Size.find({ _id: { $in: sizeIds } })
-          .select('_id subproduct costPrice sellingPrice wholesalePrice packPlatformMarkupOverridePct tenant unitsPerPack maxOrderQuantity commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct discountValue discountType discountStart discountEnd')
+      ? Size.find({ ...require('../constants/sizeChannels').retailSizeWhereClause(), _id: { $in: sizeIds } })
+          .select('_id subproduct costPrice sellingPrice wholesalePrice packPlatformMarkupOverridePct tenant unitsPerPack maxOrderQuantity sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct discountValue discountType discountStart discountEnd')
           .lean()
       : Promise.resolve([]),
   ]);
@@ -113,20 +122,23 @@ exports.createOrder = asyncHandler(async (req, res) => {
       message: 'One or more items are unavailable or no longer in stock',
     });
   }
+  if (items.some(item => !item.sizeId && subProductMap.get(item.subProductId.toString()).sellWithoutSizeVariants !== true)) {
+    return res.status(400).json({ success: false, message: 'Select a product variant before checking out' });
+  }
 
   // Build tenant map from the SubProducts' actual tenant field (server-authoritative)
   const resolvedTenantIds = [...new Set(
     subProducts.map(sp => sp.tenant?.toString()).filter(Boolean)
   )];
   const tenants = await Tenant.find({ _id: { $in: resolvedTenantIds } })
-    .select('_id name revenueModel markupPercentage commissionPercentage platformMarkupPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+    .select('_id name revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage platformMarkupPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits storefrontIntegrationEnabled')
     .lean();
   const tenantMap = new Map(tenants.map(t => [t._id.toString(), t]));
 
   // Product docs are needed to recompute the authoritative platform price
   const orderProductIds = [...new Set(subProducts.map(sp => sp.product?.toString()).filter(Boolean))];
   const orderProducts = orderProductIds.length
-    ? await Product.find({ _id: { $in: orderProductIds } }).select('_id name platformMarkup platformDiscount').lean()
+    ? await Product.find({ _id: { $in: orderProductIds } }).select('_id type platformMarkup platformDiscount').lean()
     : [];
   const productMap = new Map(orderProducts.map(p => [p._id.toString(), p]));
 
@@ -182,7 +194,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     const split = require('../utils/revenueAgreement').splitMerchandise({
       amount: itemSubtotal, quantity: qty, model: revenueModel,
-      rate: revenueModel === 'commission' ? commissionPct : markupPct,
+      rate: revenueModel === 'selling_price_markup' ? sizePricing.sellingPriceMarkupPct : revenueModel === 'commission' ? commissionPct : markupPct,
       payout: packApplied ? sizePricing.packPlatformCostPrice : sizePricing?.platformCostPrice,
     });
 
@@ -197,10 +209,35 @@ exports.createOrder = asyncHandler(async (req, res) => {
       discountAmount:        0,
       ...split,
       tenantRevenueModel:    revenueModel,
-      revenueRateAtPurchase: revenueModel === 'commission' ? commissionPct : markupPct,
+      revenueRateAtPurchase: revenueModel === 'selling_price_markup' ? sizePricing.sellingPriceMarkupPct : revenueModel === 'commission' ? commissionPct : markupPct,
       packRateApplied:       packApplied,
     };
   });
+
+  // ── Gift checkout (order-level) ───────────────────────────────────────────
+  //
+  // The client adds the configured gift-packaging SKU to the cart as a normal
+  // line, so this cross-check is the last server-side gate before money moves:
+  // packagingRequested without that line is rejected rather than accepted as an
+  // unfulfillable promise, and an unconfigured SKU is rejected outright. See
+  // docs/superpowers/specs/2026-10-27-gift-checkout-design.md.
+  let giftSubdoc;
+  if (gift && typeof gift === 'object') {
+    if (gift.packagingRequested === true) {
+      const sku = await getGiftPackagingSku();
+      if (!sku) {
+        return res.status(422).json({ success: false, message: 'Gift packaging is not available yet.' });
+      }
+      const packagingLines = orderItems.filter(item =>
+        String(item.product) === sku.productId &&
+        String(item.subproduct) === sku.subProductId
+      );
+      if (packagingLines.length !== 1) {
+        return res.status(422).json({ success: false, message: 'Add the gift packaging item to your cart, or untick gift packaging.' });
+      }
+    }
+    giftSubdoc = normalizeGiftSubdoc(gift);
+  }
 
    // Calculate order totals from items
   const calculatedSubtotal = orderItems.reduce((sum, item) => sum + item.itemSubtotal, 0);
@@ -321,7 +358,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     totalAmount: resolvedTotal,
     currency: 'NGN',
     paymentMethod: resolvedPaymentMethod,
-    paymentStatus: paymentStatus || 'pending',
+    paymentStatus: 'pending',
     shippingAddress: {
       fullName: `${customer.firstName} ${customer.lastName}`,
       email: customer.email,
@@ -341,41 +378,23 @@ exports.createOrder = asyncHandler(async (req, res) => {
     utmMedium: utmMedium || '',
     utmCampaign: utmCampaign || '',
     bannerId: bannerId || null,
-    status: status || 'pending',
+    status: canonicalPaymentMethod === 'cash_on_delivery' ? 'confirmed' : 'pending',
     platformCommissionTotal: calculatedPlatformCommission,
+    ...(giftSubdoc ? { gift: giftSubdoc } : {}),
   };
 
-  // Add payment details if provided (for orders created after payment)
-  if (paymentDetails) {
-    orderData.paymentDetails = paymentDetails;
-    Object.assign(orderData, buildOrderPaymentFields(paymentDetails));
-  }
+  const marketIngress = require('../services/marketIngress');
+  await marketIngress.assertLines(orderItems, orderProducts, tenants);
+  if (marketContext.enabled()) orderData.channelSnapshot = await marketIngress.snapshot({
+    kind: 'marketplace', currency: orderData.currency,
+    provider: paymentDetails?.method || canonicalPaymentMethod, account: 'platform',
+  });
+  const order = await require('../services/marketplacePaymentTrust').createOrder(orderData, tenants, paymentDetails, req.user, req.get('Idempotency-Key'), recovery.requestFingerprint(req.body));
 
-  // ── Reserve stock (availableStock--, reservedStock++) ─────────────────────
-  // Must happen before order save so a failed reserve aborts the whole request.
-  const stockItems = orderItems.filter(i => i.subproduct);
-  if (stockItems.length) {
-    const { success, failedItem } = await inventoryService.reserve(stockItems, null, userId);
-    if (!success) {
-      return res.status(400).json({
-        success: false,
-        message: `"${failedItem?.product || 'An item'}" is out of stock or has insufficient quantity`,
-      });
-    }
-  }
-  // ──────────────────────────────────────────────────────────────────────────
-
-  const order = new Order(orderData);
-
-  try {
-    await order.save();
-  } catch (saveErr) {
-    // Order save failed — release the reservation we just made
-    if (stockItems.length) {
-      await inventoryService.releaseReserve(stockItems, null, userId).catch(() => {});
-    }
-    throw saveErr;
-  }
+  if (order.$locals.checkoutReplayed) return res.status(200).json({ success: true, data: { guestAccessToken: require('../services/guestOrderProof').issue(order), order: {
+    _id: order._id, orderNumber: order.orderNumber, status: order.status, paymentStatus: order.paymentStatus,
+    subtotal: order.subtotal, discountTotal: order.discountTotal, shippingFee: order.shippingFee, totalAmount: order.totalAmount,
+  } } });
 
   // Record coupon usage only once the order actually exists, so usedBy[] carries
   // a real orderId. recordUsage increments timesUsed, accumulates the analytics
@@ -463,17 +482,21 @@ exports.createOrder = asyncHandler(async (req, res) => {
           const tenant = await Tenant.findById(tenantId);
           if (!tenant) continue;
 
+          // orderAccess.project whitelists fields for the tenant scope and
+          // strips order.gift; the gift block is customer content (not
+          // tenant-sensitive), so it is re-attached here so staff alerts can
+          // surface it (see the gift section in email/whatsapp services).
+          const tenantView = orderAccess.project(order, { _id: tenant._id, tenant: tenant._id, role: 'tenant_admin' });
+          if (order.gift) tenantView.gift = order.gift;
+
           // Realtime — push this tenant's slice of the order into their POS
           // order room (terminals + KDS auto-join at connection). Same
-          // fire-and-forget contract as the email/WhatsApp below: a socket
+          // fire-and-forget contract as the email/WhatsApp above: a socket
           // miss (serverless deploy, no io) is normal — the POS bell's 30s
-          // poll is the fallback that still delivers. Only the tenant's own
-          // lines are included — never another tenant's. Item names resolve
-          // from the product map (order items carry no name snapshot).
+          // poll is the fallback that still delivers. Payload shape mirrors
+          // getPOSNotifications rows so the client feeds its store directly.
           try {
-            const ownItems = (order.items || []).filter(
-              (i) => String(i.tenant) === String(tenant._id)
-            );
+            const ownItems = tenantView.items || [];
             emitToTenantOrders(req, String(tenant._id), 'marketplace:new_order', {
               orderId: String(order._id),
               orderNumber: order.orderNumber,
@@ -483,16 +506,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
               total: order.totalAmount,
               source: order.source || 'web',
               status: order.status,
-              // Marketplace customers belong to the platform — the cashier
-              // sees a neutral label, never the customer's identity.
-              customer: 'Online customer',
+              customer:
+                `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
+                customer?.email ||
+                'Customer',
               itemCount: ownItems.reduce((s, i) => s + (i.quantity || 1), 0),
               items: ownItems.slice(0, 5).map((i) => ({
-                name:
-                  i.name ||
-                  i.productName ||
-                  productMap.get(String(i.product))?.name ||
-                  'Item',
+                name: i.name || i.productName || 'Item',
                 qty: i.quantity || 1,
                 subtotal: i.itemSubtotal ?? 0,
               })),
@@ -501,24 +521,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
             console.error(`❌ Realtime order push → tenant ${tenant.name} failed:`, pushErr.message);
           }
 
-          // ERM bridge — a native SalesOrder per tenant per marketplace
-          // order, so the sale appears in their Quotations & Orders list as
-          // a normal draft document and flows through the standard
-          // confirm → fulfil pipeline (confirm reserves stock, fulfil
-          // deducts it). Fire-and-forget like everything in this block.
-          try {
-            const { bridgeMarketplaceOrder } = require('../services/marketplaceSalesOrderBridge');
-            const bridged = await bridgeMarketplaceOrder({ order, tenantId: tenant._id, customer });
-            if (bridged.ok && !bridged.skipped) {
-              console.log(`✅ SalesOrder ${bridged.soNumber} bridged from marketplace order ${order.orderNumber} → tenant ${tenant.name}`);
-            }
-          } catch (soErr) {
-            console.error(`❌ SalesOrder bridge failed for order ${order.orderNumber} → tenant ${tenant.name}:`, soErr.message);
-          }
-
           await Promise.allSettled([
             tenant.email
-              ? sendNewOrderNotificationToTenant(order, tenant, customer)
+              ? sendNewOrderNotificationToTenant(tenantView, tenant, customer)
                   .then(r => r?.success
                     ? console.log(`✅ Order email → tenant: ${tenant.name}`)
                     : console.error(`❌ Order email NOT sent → tenant ${tenant.name}:`, r?.error || 'unknown error'))
@@ -526,7 +531,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
               : Promise.resolve(),
 
             (tenant.phone || tenant.whatsapp)
-              ? sendNewOrderAlertWhatsApp(order, tenant)
+              ? sendNewOrderAlertWhatsApp(tenantView, tenant)
                   .then(r => r?.success && console.log(`✅ Order WhatsApp → tenant: ${tenant.name}`))
                   .catch(e => console.error(`❌ WhatsApp to tenant ${tenant.name} failed:`, e.message))
               : Promise.resolve(),
@@ -594,6 +599,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     success: true,
     message: 'Order placed successfully',
     data: {
+      guestAccessToken: require('../services/guestOrderProof').issue(order),
       order: {
         _id: order._id,
         orderNumber: order.orderNumber,
@@ -616,6 +622,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
  * @access  Private (admin/super_admin)
  */
 exports.getAllOrders = asyncHandler(async (req, res) => {
+  orderAccess.permit(req.user, 'orders:read');
+  await orderAccess.audit(null, req.user, 'order_list');
   const {
     page     = '1',
     limit    = '20',
@@ -664,6 +672,7 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
   }
 
   if (subProductId)  baseFilter['items.subproduct'] = toObjectId(subProductId) ?? new mongoose.Types.ObjectId();
+  if (subProductId && !orderAccess.platform(req.user)) baseFilter.items = { $elemMatch: { tenant: baseFilter['items.tenant'], subproduct: baseFilter['items.subproduct'] } };
 
   if (from || to) {
     baseFilter.placedAt = {};
@@ -726,26 +735,10 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
     if (_id in counts) counts[_id] = count;
   });
 
-  // Marketplace customers belong to the PLATFORM. Tenant admins see their
-  // slice of each order with a neutral customer label — never the customer's
-  // name/email (and no `user` doc at all). Their own POS walk-in data
-  // (source 'pos') stays: they captured it themselves.
-  const platformActor = ['super_admin', 'admin'].includes(req.user.role);
-  const visibleOrders = platformActor
-    ? orders
-    : orders.map((o) => ({
-        ...o,
-        user: null,
-        shippingAddress:
-          o.source === 'pos'
-            ? o.shippingAddress
-            : { ...o.shippingAddress, fullName: 'Online customer', email: undefined, phone: undefined },
-      }));
-
   res.json({
     success: true,
     data: {
-      orders: visibleOrders,
+      orders: orders.map(order => orderAccess.project(order, req.user)),
       pagination: {
         page: pageNum,
         limit: pageSize,
@@ -778,63 +771,13 @@ exports.getOrder = asyncHandler(async (req, res) => {
     });
   }
 
-  let canAccess = false;
-
-  if (req.user) {
-    // Logged-in user: order owner, platform admin, or tenant staff whose tenant
-    // has items on this order (mirrors the scoping in getAllOrders — without
-    // this, tenant admins can list an order but get 403 opening its detail page)
-    const callerTenantId  = normalizeTenantId(req.user.tenant);
-    const isOwner         = normalizeTenantId(order.user) === req.user._id.toString();
-    const isPlatformAdmin = ['admin', 'super_admin'].includes(req.user.role);
-    const isTenantStaff =
-      ['tenant_owner', 'tenant_admin', 'tenant_staff'].includes(req.user.role) &&
-      !!callerTenantId &&
-      order.items.some((i) => normalizeTenantId(i.tenant) === callerTenantId);
-
-    canAccess = isOwner || isPlatformAdmin || isTenantStaff;
-  } else {
-    // Guest user: require email verification
-    const { email } = req.query;
-    if (!email) {
-      return res.status(403).json({
-        success: false,
-        message: 'Email verification required for guest access',
-      });
-    }
-    canAccess = order.shippingAddress?.email?.toLowerCase() === email.toLowerCase() ||
-      order.customer?.email?.toLowerCase() === email.toLowerCase();
-  }
-
-  if (!canAccess) {
-    return res.status(403).json({
-      success: false,
-      message: 'Not authorized to view this order',
-    });
-  }
-
-  // Marketplace customers belong to the PLATFORM. Tenant staff fulfil their
-  // slice — they get the delivery address, never the customer's identity.
-  // The order's owner, guests (email-verified customers) and platform admins
-  // see everything. Their own POS walk-in data stays (they captured it).
-  const viewerIsPlatform = ['admin', 'super_admin'].includes(req.user?.role || '');
-  const viewerIsOwner = !!req.user && normalizeTenantId(order.user) === req.user._id.toString();
-  const maskCustomer = !!req.user?.tenant && !viewerIsPlatform && !viewerIsOwner;
-  const orderData = maskCustomer
-    ? {
-        ...(order.toObject ? order.toObject() : order),
-        user: undefined,
-        customer: undefined,
-        shippingAddress:
-          order.source === 'pos'
-            ? order.shippingAddress
-            : { ...order.shippingAddress, fullName: 'Online customer', email: undefined, phone: undefined },
-      }
-    : order;
+  const actor = require('../services/guestOrderProof').actor(req, order);
+  orderAccess.access(order, actor);
+  await orderAccess.audit(order, req.user, 'order_read');
 
   res.status(200).json({
     success: true,
-    data: { order: orderData },
+    data: { order: orderAccess.project(order, actor) },
   });
 });
 
@@ -861,29 +804,12 @@ exports.getOrderByNumber = asyncHandler(async (req, res) => {
     });
   }
 
-  // Access control: authenticated user can view if they own the order,
-  // are an admin, or verify via email match
-  let canAccess = false;
-  if (req.user) {
-    canAccess = order.user?.toString() === req.user._id.toString() ||
-      ['admin', 'super_admin'].includes(req.user.role);
-  }
-  if (!canAccess && email) {
-    const emailLower = email.toLowerCase();
-    canAccess = order.shippingAddress?.email?.toLowerCase() === emailLower ||
-      order.customer?.email?.toLowerCase() === emailLower;
-  }
-
-  if (!canAccess) {
-    return res.status(403).json({
-      success: false,
-      message: 'Email verification required to view this order',
-    });
-  }
+  orderAccess.access(order, req.user);
+  await orderAccess.audit(order, req.user, 'order_read');
 
   res.status(200).json({
     success: true,
-    data: { order },
+    data: { order: orderAccess.project(order, req.user) },
   });
 });
 
@@ -913,7 +839,8 @@ exports.getOrderByReceipt = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Order not found' });
   }
 
-  res.status(200).json({ success: true, data: { order } });
+  await orderAccess.audit(order, req.user, 'order_read');
+  res.status(200).json({ success: true, data: { order: orderAccess.project(order, req.user) } });
 });
 
 /**
@@ -926,18 +853,7 @@ exports.getOrderByReceipt = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const skip = (page - 1) * limit;
 
-  // Get user email for guest order lookup
-  const userEmail = req.user?.email?.toLowerCase();
-
-  // Find orders where:
-  // 1. User is logged in (user field matches)
-  // 2. OR shipping email matches user's email (guest orders)
-  const query = {
-    $or: [
-      { user: req.user._id },
-      { 'shippingAddress.email': userEmail }
-    ]
-  };
+  const query = { user: req.user._id };
 
   const orders = await Order.find(query)
     .sort({ placedAt: -1 })
@@ -946,14 +862,14 @@ exports.getOrderByReceipt = asyncHandler(async (req, res) => {
     .populate('items.product', 'name slug images')
     // paymentMethod was missing here, so a customer's own order list could never
     // show how they paid no matter what the UI did with it.
-    .select('orderNumber status paymentStatus paymentMethod totalAmount subtotal shippingFee placedAt createdAt items');
+    .select('user orderNumber status paymentStatus paymentMethod totalAmount subtotal shippingFee placedAt createdAt items');
 
   const total = await Order.countDocuments(query);
 
   res.status(200).json({
     success: true,
     data: {
-      orders,
+      orders: orders.map(order => orderAccess.project(order, req.user)),
       pagination: {
         page,
         limit,
@@ -979,19 +895,20 @@ exports.cancelOrder = asyncHandler(async (req, res) => {
     });
   }
 
-  // Access control: order owner, platform admin, or tenant staff for orders containing their tenant's items
-  const isOwner = order.user?.toString() === req.user._id.toString();
-  const isPlatformAdmin = ['admin', 'super_admin'].includes(req.user.role);
-  const isTenantStaff = ['tenant_admin', 'tenant_owner', 'tenant_staff'].includes(req.user.role) &&
-    order.items.some(i => i.tenant?.toString() === req.user.tenant?.toString());
+  require('../services/venue/legacy-guards').rejectCanonicalOrder(order);
+  const scope = orderAccess.assertMutation(order, req.user, { customer: true });
+  const isPlatformAdmin = scope === 'platform';
+  const isTenantStaff = scope === 'tenant';
+  await orderAccess.audit(order, req.user, 'order_cancel');
+  if (order.paymentStatus === 'paid') throw new ConflictError('Paid order requires refund review before cancellation');
 
-  if (!isOwner && !isPlatformAdmin && !isTenantStaff) {
-    return res.status(403).json({
-      success: false,
-      message: 'Not authorized to cancel this order',
-    });
+  require('../services/venue/legacy-guards').rejectCanonicalOrder(order);
+  if (order.integrationCheckout) throw new ConflictError('Use the website checkout cancellation API');
+  if (order.onlineStockVersion === 1) {
+    await require('../services/storefrontLocationOrders').applyStatus(order, 'cancelled', { actorId: req.user._id, cancelReason: req.body.reason,
+      ...(!isPlatformAdmin && isTenantStaff ? { tenantId: req.user.tenant } : {}) });
+    return res.json({ success: true, data: { order: orderAccess.project(order, req.user) } });
   }
-
   if (!['pending', 'processing'].includes(order.status)) {
     return res.status(400).json({
       success: false,
@@ -1021,7 +938,7 @@ exports.cancelOrder = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Order cancelled successfully',
-    data: { order },
+    data: { order: orderAccess.project(order, req.user) },
   });
 
   // Notify customer about cancellation (fire-and-forget)
@@ -1056,14 +973,9 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Order not found' });
   }
 
-  // Tenant scoping: non-platform-admins can only update orders containing their tenant's items
-  if (!['super_admin', 'admin'].includes(req.user.role)) {
-    const callerTenantId = req.user.tenant?.toString();
-    const orderHasTenantItem = order.items.some(i => i.tenant?.toString() === callerTenantId);
-    if (!orderHasTenantItem) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-  }
+  require('../services/venue/legacy-guards').rejectCanonicalOrder(order);
+  orderAccess.assertMutation(order, req.user);
+  await orderAccess.audit(order, req.user, 'order_updateOrderStatus');
 
   // Timestamps, save, and the inventory side effects all live in
   // orderStatus.service so the logistics dispatch module moves orders through
@@ -1071,12 +983,13 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const { previousStatus } = await applyOrderStatus(order, status, {
     actorId: req.user?._id,
     cancelReason: req.body.reason,
+    ...(!['admin', 'super_admin'].includes(req.user.role) ? { tenantId: req.user.tenant } : {}),
   });
 
   res.status(200).json({
     success: true,
     message: `Order status updated to ${status}`,
-    data: { order },
+    data: { order: orderAccess.project(order, req.user) },
   });
 
   // Notify customer via SMS + WhatsApp (fire-and-forget)
@@ -1107,19 +1020,26 @@ exports.updatePaymentStatus = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Order not found' });
   }
 
-  // Tenant scoping: non-platform-admins can only update payment for orders containing their tenant's items
-  if (!['super_admin', 'admin'].includes(req.user.role)) {
-    const callerTenantId = req.user.tenant?.toString();
-    const orderHasTenantItem = order.items.some(i => i.tenant?.toString() === callerTenantId);
-    if (!orderHasTenantItem) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-  }
+  require('../services/venue/legacy-guards').rejectCanonicalOrder(order);
+  orderAccess.assertMutation(order, req.user);
+  require('../services/merchantFulfillment/identity').assertLegacy(order, 'Use owned merchant collection or refund reconciliation');
+  await orderAccess.audit(order, req.user, 'order_updatePaymentStatus');
 
+  require('../services/venue/legacy-guards').rejectCanonicalOrder(order);
+  if (order.integrationCheckout) {
+    return res.status(409).json({ success: false, message: 'Use verified website collection and refund reconciliation' });
+  }
   if (order.tableServiceBooking) {
     return res.status(409).json({ success: false, message: 'Table-service payment state must be reconciled with the provider from the booking screen' });
   }
   const now = new Date();
+
+  if (action === 'mark_refunded') throw new ConflictError('Execute a verified provider refund or use channel refund review');
+  const eligibleCollectionState = ['pending', 'confirmed', 'processing'].includes(order.status) ||
+    (['cash', 'cash_on_delivery'].includes(order.paymentMethod) && ['shipped', 'delivered'].includes(order.status));
+  if (order.paymentStatus !== 'pending' || !eligibleCollectionState) throw new ConflictError('Payment state requires reconciliation');
+  if (action === 'mark_paid' && !['cash', 'cash_on_delivery'].includes(order.paymentMethod)) throw new ConflictError('Attach a verified receipt for electronic payments');
+  if (action === 'mark_failed') throw new ConflictError('Use order cancellation to release unpaid stock safely');
 
   switch (action) {
     case 'mark_paid': {
@@ -1152,19 +1072,6 @@ exports.updatePaymentStatus = asyncHandler(async (req, res) => {
       break;
     }
 
-    case 'mark_refunded': {
-      order.paymentStatus = amount && amount < order.totalAmount ? 'partially_refunded' : 'refunded';
-      order.status = 'refunded';
-      order.refundDetails = {
-        amount: amount || order.totalAmount,
-        reason: notes || 'Refunded by admin',
-        createdAt: now,
-        processedBy: req.user._id,
-        settlement: require('../utils/revenueAgreement').refundSettlement(order.items, amount || order.totalAmount, order.totalAmount),
-      };
-      break;
-    }
-
     default:
       return res.status(400).json({ success: false, message: 'Invalid action. Use: mark_paid, mark_failed, mark_refunded' });
   }
@@ -1182,36 +1089,10 @@ exports.updatePaymentStatus = asyncHandler(async (req, res) => {
     }
   }
 
-  // Referral reversal — admin REFUNDED the order, so the referrer's credit is
-  // clawed back. Wrapped: a referral failure must never fail an admin payment
-  // update.
-  if (action === 'mark_refunded') {
-    try {
-      const { reverseReferralForOrder } = require('../services/referral.service');
-      await reverseReferralForOrder(order);
-    } catch (refErr) {
-      console.error('❌ Referral reversal error:', refErr.message);
-    }
-  }
-
-  // ── Inventory adjustments for payment actions ────────────────────────────
-  const stockItems = order.items.filter(i => i.subproduct);
-  if (stockItems.length) {
-    if (action === 'mark_failed') {
-      // Payment failed: release the stock reservation (order won't be fulfilled)
-      inventoryService.releaseReserve(stockItems, order._id, req.user?._id).catch(() => {});
-    } else if (action === 'mark_refunded' && order.paymentStatus === 'refunded') {
-      // A full refund restores stock; amount-only partial refunds need item allocation.
-      // Refund: restore physical stock (item returned to warehouse)
-      inventoryService.restoreStock(stockItems, order._id, req.user?._id).catch(() => {});
-    }
-  }
-  // ─────────────────────────────────────────────────────────────────────────
-
   res.json({
     success: true,
     message: 'Payment updated successfully',
-    data: { order },
+    data: { order: orderAccess.project(order, req.user) },
   });
 });
 

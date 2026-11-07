@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // services/promotion.service.ts
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -249,11 +250,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to create promotion');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -285,7 +286,7 @@ export const promotionService = {
       if (!response.ok) {
         let errorMessage = 'Failed to fetch promotions';
         try {
-          const error = await response.json();
+          const error = await readError(response);
           errorMessage = error.message || errorMessage;
         } catch (e) {
           // Ignore JSON parse error
@@ -293,7 +294,7 @@ export const promotionService = {
         throw new Error(errorMessage);
       }
 
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       console.error('Fetch error:', error);
       throw new Error(error.message || 'Network error occurred');
@@ -311,11 +312,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch promotion');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -329,11 +330,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch promotion by code');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -350,11 +351,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to update promotion');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -369,11 +370,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to delete promotion');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -389,11 +390,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to activate promotion');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -409,11 +410,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to deactivate promotion');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -429,11 +430,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to duplicate promotion');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -448,11 +449,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch promotions for subproduct');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -469,11 +470,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to apply promotion to products');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -490,11 +491,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to remove products from promotion');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -511,11 +512,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to apply promotion to sizes');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -545,11 +546,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to calculate discount');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -572,11 +573,11 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Invalid promotion code');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   /**
@@ -590,10 +591,10 @@ export const promotionService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch promotion stats');
     }
 
-    return response.json();
+    return readJson(response);
   },
 };

@@ -20,6 +20,14 @@ test('exact size retail wins and website sale/markup never changes it', () => {
   assert.equal(resolvePrice(base).price, 1000);
   assert.equal(resolvePrice({...base, subProduct:{...base.subProduct, product:{platformMarkup:60}, flashSale:{isActive:true,discountPercentage:99}}}).price,1000);
 });
+test('pricelist setters can supply a missing base retail price, matching POS', () => {
+  const unpriced = {...base, size:{currency:'NGN',costPrice:600}, subProduct:{_id:'s'}};
+  assert.equal(resolvePrice({...unpriced,pricelist:{currency:'NGN',rules:[{priceType:'fixed',fixedPrice:1200}]}}).price,1200);
+  assert.equal(resolvePrice({...unpriced,pricelist:{currency:'NGN',rules:[{priceType:'formula',markupBase:'cost',markupPercentage:50}]}}).price,900);
+  assert.throws(()=>resolvePrice(unpriced), /Price unavailable/);
+  assert.throws(()=>resolvePrice({...unpriced,pricelist:{rules:[{priceType:'discount',discountPercentage:100}]}}), /Price unavailable/);
+  assert.equal(resolvePrice({...base,pricelist:{rules:[{priceType:'discount',discountPercentage:100}]}}).price,0);
+});
 test('pricelist modifiers follow base setters; original is the real pre-discount price', () => {
   const result = resolvePrice({...base, pricelist:{currency:'NGN', rules:[{priceType:'fixed',fixedPrice:1200,sequence:0},{priceType:'discount',discountPercentage:10,sequence:1}]}});
   assert.equal(result.price,1080); assert.equal(result.originalPrice,1200);

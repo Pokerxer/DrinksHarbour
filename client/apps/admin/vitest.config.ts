@@ -9,6 +9,9 @@ export default defineConfig({
   esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
+    // Bound concurrent browser emulators; a full run otherwise exhausts local/CI
+    // resources and times out tests that pass in isolation.
+    maxWorkers: 2,
     setupFiles: ['./src/test/browser-observers.ts'],
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     // `auth-options.ts` imports `env.mjs`, which validates the schema at import

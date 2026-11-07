@@ -74,7 +74,10 @@ test('catalog presents equivalent volumes once and retains genuinely different s
   t.mock.method(Size, 'find', () => chainable(sizes));
   const catalog = await chatbotService.loadCatalog(tenantId);
   assert.equal(catalog.entries[0].sizes.length, 2);
-  assert.match(catalog.text, /75cl/);
-  assert.match(catalog.text, /70cl/);
-  assert.doesNotMatch(catalog.text, /750ml/);
+  // Equivalent size labels are deduped to one bullet line; verified volume
+  // annotations are expected on the surviving labels, but no duplicated
+  // bullet-form 750ml label line may appear.
+  assert.match(catalog.text, /• 75cl \(750ml\)/);
+  assert.match(catalog.text, /• 70cl \(700ml\)/);
+  assert.doesNotMatch(catalog.text, /• 750ml/);
 });

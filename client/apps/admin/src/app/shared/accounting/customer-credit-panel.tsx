@@ -32,7 +32,7 @@ interface Props {
  * disagree with it.
  */
 export default function CustomerCreditPanel({ token, customer, onClose }: Props) {
-  const [notes, setNotes] = useState<Awaited<ReturnType<typeof arApService.customerCredits>>['data']>([]);
+  const [notes, setNotes] = useState<NonNullable<Awaited<ReturnType<typeof arApService.customerCredits>>['data']>['data']>([]);
   const [balance, setBalance] = useState(0);
   const [invoices, setInvoices] = useState<OpenInvoice[]>([]);
   const [showApply, setShowApply] = useState(false);

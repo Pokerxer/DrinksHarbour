@@ -7,6 +7,7 @@ export default function ScoreBreakdown({
   compact?: boolean;
 }) {
   const hasExam = result.examScore !== undefined;
+  const weights = result.weights;
   return (
     <section
       aria-label="Combined performance score"
@@ -44,9 +45,11 @@ export default function ScoreBreakdown({
         </div>
       </dl>
       <p className="text-xs leading-5 text-gray-500">
-        {hasExam
-          ? 'Examination, appraisal and attendance carry equal weight. Bonuses use the unrounded score.'
-          : 'Appraisal and attendance carry equal weight; no examination was assigned. Bonuses use the unrounded score.'}
+        {weights
+          ? `${hasExam ? `Examination ${weights.exam}%, ` : ''}appraisal ${weights.appraisal}%, attendance ${weights.attendance}%. Bonuses use the unrounded score.`
+          : hasExam
+            ? 'Examination, appraisal and attendance carry equal weight. Bonuses use the unrounded score.'
+            : 'Appraisal and attendance carry equal weight; no examination was assigned. Bonuses use the unrounded score.'}
       </p>
     </section>
   );

@@ -1,4 +1,6 @@
 'use client';
+
+import { sizeVariantLabel } from '@/utils/size-variant-label';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -210,7 +212,7 @@ function ProductPicker({
             });
           } else {
             sizes.forEach((s: any) => {
-              const sizeName = s.displayName ?? s.size ?? '';
+              const sizeName = sizeVariantLabel(s);
               picks.push({
                 subProductId: sp._id,
                 name: `${name} – ${sizeName}`,

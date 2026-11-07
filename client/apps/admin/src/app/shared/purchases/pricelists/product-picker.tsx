@@ -1,5 +1,7 @@
 'use client';
 
+import { sizeVariantLabel } from '@/utils/size-variant-label';
+
 import { useEffect, useRef, useState } from 'react';
 import { PiMagnifyingGlass, PiPlus } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
@@ -71,7 +73,7 @@ export function ProductPicker({
       productName: p.product?.name ?? '',
       sku: size?.sku ?? p.sku,
       sizeId: size?._id,
-      sizeName: size?.displayName,
+      sizeName: size ? sizeVariantLabel(size) : undefined,
       basePrice: base,
       unitPrice: base,
     });
@@ -116,7 +118,7 @@ export function ProductPicker({
                   onClick={() => commit(active, s)}
                   className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#FAF8F3]"
                 >
-                  <span className="text-[#2a2420]">{s.displayName}</span>
+                  <span className="text-[#2a2420]">{sizeVariantLabel(s)}</span>
                   <span className="tabular-nums text-gray-400">
                     {fmtCur(s.costPrice ?? 0, 'NGN')}
                   </span>

@@ -1,4 +1,5 @@
 'use client';
+import { getBill } from '@/services/venue/api';
 
 import { useState } from 'react';
 import toast from 'react-hot-toast';
@@ -78,8 +79,9 @@ export function useTabActions() {
     if (!token || opening) return;
     setOpening(true);
     try {
-      const { tab } = await posApi.openTableTab(token, {
+      const { tab, serviceSession } = await posApi.openTableTab(token, {
         tableId: table._id,
+        expectedTableVersion: table.venueVersion,
         guests,
         terminalType: terminal ?? 'retail',
       });
@@ -88,6 +90,7 @@ export function useTabActions() {
         name: table.name,
         guests,
         heldOrderId: String(tab._id),
+        ...(serviceSession ? { serviceSessionId: serviceSession.id, identityVersion: 1, version: serviceSession.version, lineVersion: serviceSession.lineVersion } : {}),
       });
       toast.success(`Tab opened on ${table.name}`);
       refresh(token);
@@ -114,18 +117,20 @@ export function useTabActions() {
         table.currentTabId
       );
       const snapshot = entry?.holdMetadata;
-      if (!snapshot?.cartItems?.length) {
+      if (!snapshot?.cartItems?.length && !table.tab?.serviceSessionId) {
         toast.error(`${table.name} has no saved lines to load`);
         return;
       }
+      const visit = table.tab?.serviceSessionId ? await getBill(token, table.tab.serviceSessionId, 'pos') : undefined;
       clearCart();
-      for (const line of recallCartToItems(tabToRecallCart(snapshot)))
+      for (const line of recallCartToItems(tabToRecallCart(snapshot || { cartItems: [] })))
         addItem(line);
       bindTable({
         tableId: table._id,
         name: table.name,
         guests: table.tab?.guests,
         heldOrderId: table.currentTabId,
+        ...(visit ? { serviceSessionId: visit.sessionId, identityVersion: 1, version: visit.version, lineVersion: visit.lineVersion } : {}),
       });
       toast.success(`${table.name} tab loaded`);
     } catch (err: unknown) {

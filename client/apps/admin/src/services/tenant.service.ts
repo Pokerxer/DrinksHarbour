@@ -9,6 +9,7 @@ export interface AdminTenant {
   subscriptionStatus: NonNullable<TenantFormInput['subscriptionStatus']>;
   status: NonNullable<TenantFormInput['status']>;
   revenueModel: NonNullable<TenantFormInput['revenueModel']>;
+  sellingPriceMarkupPercentage?: number;
   markupPercentage?: number;
   commissionPercentage?: number;
   platformMarkupPercentage?: number;
@@ -57,6 +58,8 @@ export interface AdminTenant {
   normalizedState?: string;
   // Business registration & compliance
   businessType?: TenantFormInput['businessType'];
+  /** Industry scope profile — additive 2026-11-02; absent = unprofiled/legacy. */
+  industries?: string[];
   cacNumber?: string;
   tin?: string;
   idType?: TenantFormInput['idType'];
@@ -140,6 +143,7 @@ export interface TenantFormData {
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
   revenueModel?: string;
+  sellingPriceMarkupPercentage?: number;
   markupPercentage?: number;
   commissionPercentage?: number;
   platformMarkupPercentage?: number;
@@ -163,6 +167,8 @@ export interface TenantFormData {
   notes?: string;
   // Business registration & compliance
   businessType?: string;
+  /** Industry scope profile — additive 2026-11-02. Empty array/omitted = unprofiled. */
+  industries?: string[];
   cacNumber?: string;
   tin?: string;
   idType?: string;

@@ -299,6 +299,41 @@ const getStockTransfers = asyncHandler(async (req, res) => {
   });
 });
 
+// ── DRI-16: Size identity on the transfer detail payload ────────────────────
+// The /warehouses selected-transfers report composes its product rows from
+// THIS detail endpoint's items. Attach the four Size identity fields
+// (colorName/colorHexCode/optionName verbatim; sizeName stays the stored
+// snapshot) so same-size colour variants ("M · Emerald" vs "M · Ivory") can be
+// keyed per exact sizeId client-side without another round-trip.
+//
+// Deliberately NOT an `items.sizeId` populate (the DRI-14 detail/list shape):
+// populating flips sizeId on the wire from a 24-char string to an embedded doc,
+// which breaks transfer consumers that expect string ids (stock-transfer-detail
+// line keys, invoice-return size matching, receive/return payloads). Identity
+// fields ride along additively instead, only on lines whose Size carries
+// variant identity — legacy/sizeless lines stay byte-identical, and the stored
+// sizeName snapshot remains authoritative (no label re-composition).
+const SIZE_IDENTITY_SELECT = 'colorName colorHexCode optionName';
+async function attachTransferSizeIdentity(transfer, tenantId) {
+  const ids = [...new Set((transfer?.items || [])
+    .map((it) => it.sizeId)
+    .filter(Boolean)
+    .map(String))];
+  if (!ids.length) return transfer;
+  const sizes = await Size.find({ _id: { $in: ids }, tenant: tenantId })
+    .select(SIZE_IDENTITY_SELECT)
+    .lean();
+  const byId = new Map(sizes.map((sz) => [String(sz._id), sz]));
+  for (const it of transfer.items) {
+    const sz = it.sizeId ? byId.get(String(it.sizeId._id ?? it.sizeId)) : null;
+    if (!sz) continue; // dangling ref or foreign size — leave the line untouched
+    if (sz.colorName) it.colorName = sz.colorName;
+    if (sz.colorHexCode) it.colorHexCode = sz.colorHexCode;
+    if (sz.optionName) it.optionName = sz.optionName;
+  }
+  return transfer;
+}
+
 // GET /api/stock-transfers/:id
 const getStockTransfer = asyncHandler(async (req, res) => {
   const tenantId = resolveTenantId(req);
@@ -319,6 +354,7 @@ const getStockTransfer = asyncHandler(async (req, res) => {
     .populate("dispatchedBy", "name")
     .lean();
   if (!transfer) throw new NotFoundError("Stock transfer not found");
+  await attachTransferSizeIdentity(transfer, tenantId);
   res.json({ success: true, data: withTransferCreatorName(transfer) });
 });
 

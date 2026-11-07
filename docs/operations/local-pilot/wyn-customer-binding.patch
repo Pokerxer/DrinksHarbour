@@ -1,0 +1,314 @@
+--- a/src/lib/drinks.ts
++++ b/src/lib/drinks.ts
+@@ -16,7 +16,7 @@
+ }
+ export async function drinks<T>(
+   path: string,
+-  options: { method?: string; body?: unknown; attempt?: string } = {},
++  options: { method?: string; body?: unknown; attempt?: string; customerToken?: string } = {},
+ ): Promise<T> {
+   if (isDemo())
+     throw new ApiError('Payments are disabled in design preview.', 409);
+@@ -25,7 +25,7 @@
+ 
+ async function requestDrinks(
+   path: string,
+-  options: { method?: string; body?: unknown; attempt?: string; advisory?: boolean } = {},
++  options: { method?: string; body?: unknown; attempt?: string; customerToken?: string; advisory?: boolean } = {},
+ ): Promise<{ data: unknown; pagination?: unknown }> {
+   const base = process.env.DRINKSHARBOUR_API_URL?.replace(/\/$/, '');
+   const key = process.env.DRINKSHARBOUR_API_KEY;
+@@ -42,6 +42,7 @@
+         Authorization: `Bearer ${key}`,
+         'Content-Type': 'application/json',
+         ...(options.attempt ? { 'Idempotency-Key': options.attempt } : {}),
++        ...(options.customerToken ? { 'X-Customer-Token': options.customerToken } : {}),
+       },
+       ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+     });
+--- a/src/lib/checkout-customer.ts
++++ b/src/lib/checkout-customer.ts
+@@ -5,6 +5,7 @@
+ import { openSession, sealSession, SESSION_TTL } from './auth-session';
+ import { currentCustomer } from './customer-auth';
+ import { sessionSecret } from './route-utils';
++import { checkoutBinding } from './checkout-session';
+ 
+ async function storedCustomer() {
+   const stored = openSession(
+@@ -43,6 +44,8 @@
+   if (isDemo()) return;
+   const stored = await storedCustomer();
+   const result = await currentCustomer(stored);
++  const tenantId = result.session.tenantId;
++  if (!tenantId) throw new ApiError('Please sign in to this store again.', 403);
+   if (result.session !== stored)
+     (await cookies()).set(
+       'wyn_customer',
+@@ -55,5 +58,9 @@
+         maxAge: SESSION_TTL,
+       },
+     );
+-  return result.customer;
++  return {
++    customer: result.customer,
++    token: result.session.token,
++    binding: checkoutBinding(result.customer.id, tenantId, process.env.DRINKSHARBOUR_API_KEY || ''),
++  };
+ }
+--- a/src/lib/checkout-session.ts
++++ b/src/lib/checkout-session.ts
+@@ -4,9 +4,10 @@
+   secret: string,
+   now = Math.floor(Date.now() / 1000),
+   attempt?: string,
++  binding?: string,
+ ) {
+   const payload = Buffer.from(
+-    JSON.stringify({ id, attempt, exp: now + 86400 * 7 }),
++    JSON.stringify({ id, attempt, binding, exp: now + 86400 * 7 }),
+   ).toString('base64url');
+   return (
+     payload +
+@@ -18,7 +19,7 @@
+   value: string | undefined,
+   secret: string,
+   now = Math.floor(Date.now() / 1000),
+-): { id: string; attempt?: string } | null {
++): { id: string; attempt?: string; binding?: string } | null {
+   if (!value) return null;
+   const [payload, signature, extra] = value.split('.');
+   if (!payload || !signature || extra) return null;
+@@ -38,6 +39,7 @@
+       ? {
+           id: data.id,
+           attempt: typeof data.attempt === 'string' ? data.attempt : undefined,
++          ...(typeof data.binding === 'string' ? { binding: data.binding } : {}),
+         }
+       : null;
+   } catch {
+@@ -52,3 +54,11 @@
+ ) {
+   return readCheckoutDetails(value, secret, now)?.id ?? null;
+ }
++
++/** Opaque customer and issuing-key identity; never store the private key in a cookie. */
++export function checkoutBinding(customerId: string, tenantId: string, storeKey: string) {
++  return createHmac('sha256', storeKey).update(JSON.stringify([tenantId, customerId])).digest('hex');
++}
++export function checkoutBelongsTo(saved: { binding?: string }, binding?: string) {
++  return typeof binding === 'string' && /^[a-f0-9]{64}$/.test(binding) && saved.binding === binding;
++}
+--- a/src/app/api/checkout/route.ts
++++ b/src/app/api/checkout/route.ts
+@@ -2,7 +2,7 @@
+ import { ApiError, drinks } from '@/lib/drinks';
+ import { cookies } from 'next/headers';
+ import { checkoutSchema } from '@/lib/checkout-contract';
+-import { readCheckoutDetails } from '@/lib/checkout-session';
++import { checkoutBelongsTo, readCheckoutDetails } from '@/lib/checkout-session';
+ import { orderInput } from '@/lib/request';
+ import {
+   failure,
+@@ -16,7 +16,7 @@
+ export async function POST(request: Request) {
+   try {
+     guard(request);
+-    await requireCheckoutCustomer();
++    const identity = await requireCheckoutCustomer();
+     const secret = sessionSecret();
+     const parsed = orderInput.parse(await readBody(request));
+     const { attempt, ...body } = parsed;
+@@ -29,9 +29,11 @@
+       (await cookies()).get('wc_checkout')?.value,
+       secret,
+     );
++    if (existing && !checkoutBelongsTo(existing, identity?.binding))
++      throw new ApiError('This checkout belongs to another customer or store connection. Sign in with the original account or contact the store.', 403);
+     if (existing && existing.attempt !== attempt) {
+       const current = checkoutSchema.parse(
+-        await drinks('/checkout/' + existing.id),
++        await drinks('/checkout/' + existing.id, { customerToken: identity?.token }),
+       );
+       if (!['paid', 'cancelled'].includes(current.status))
+         throw new ApiError(
+@@ -41,6 +43,7 @@
+     }
+     const raw = await drinks('/checkout', {
+       method: 'POST',
++      customerToken: identity?.token,
+       attempt,
+       body: { ...body, returnUrl: siteOrigin() + '/checkout/return' },
+     });
+@@ -59,7 +62,7 @@
+     );
+     response.cookies.set(
+       'wc_checkout',
+-      signCheckout(checkout.id, secret, undefined, attempt),
++      signCheckout(checkout.id, secret, undefined, attempt, identity?.binding),
+       {
+         httpOnly: true,
+         secure: process.env.NODE_ENV === 'production',
+--- a/src/app/api/checkout/status/route.ts
++++ b/src/app/api/checkout/status/route.ts
+@@ -2,7 +2,7 @@
+ import { checkoutSchema } from '@/lib/checkout-contract';
+ import { cookies } from 'next/headers';
+ import { ApiError, drinks } from '@/lib/drinks';
+-import { readCheckoutDetails } from '@/lib/checkout-session';
++import { checkoutBelongsTo, readCheckoutDetails } from '@/lib/checkout-session';
+ import {
+   failure,
+   guard,
+@@ -11,16 +11,19 @@
+   sessionSecret,
+ } from '@/lib/route-utils';
+ async function handle(action: '' | '/verify' | '/cancel') {
+-  await requireCheckoutCustomer();
++  const identity = await requireCheckoutCustomer();
+   const saved = readCheckoutDetails(
+     (await cookies()).get('wc_checkout')?.value,
+     sessionSecret(),
+   );
+   if (!saved)
+     throw new ApiError('No checkout is associated with this browser.', 404);
++  if (!checkoutBelongsTo(saved, identity?.binding))
++    throw new ApiError('This checkout belongs to another customer or store connection. Sign in with the original account or contact the store.', 403);
+   const result = checkoutSchema.safeParse(
+     await drinks('/checkout/' + saved.id + action, {
+       method: action ? 'POST' : 'GET',
++      customerToken: identity?.token,
+     }),
+   );
+   if (!result.success)
+--- a/src/app/api/quote/route.ts
++++ b/src/app/api/quote/route.ts
+@@ -7,11 +7,11 @@
+ export async function POST(request: Request) {
+   try {
+     guard(request);
+-    await requireCheckoutCustomer();
++    const identity = await requireCheckoutCustomer();
+     const body = orderInput.parse(await readBody(request));
+     const { customer, attempt, ...cart } = body;
+     const result = quoteSchema.safeParse(
+-      await drinks('/cart/quote', { method: 'POST', body: cart }),
++      await drinks('/cart/quote', { method: 'POST', body: cart, customerToken: identity?.token }),
+     );
+     if (!result.success || !quoteMatchesCart(result.data.items, cart.items))
+       throw new ApiError(
+--- a/tests/checkout.test.ts
++++ b/tests/checkout.test.ts
+@@ -110,3 +110,15 @@
+     null,
+   );
+ });
++
++
++import { checkoutBinding, checkoutBelongsTo } from '../src/lib/checkout-session';
++test('checkout cookie binding isolates customer, tenant and issuing key without exposing them', () => {
++  const binding = checkoutBinding('customer-a', 'tenant-a', 'private-key-a');
++  const saved = readCheckoutDetails(signCheckout('d'.repeat(64), 'secret', 100, undefined, binding), 'secret', 101)!;
++  assert.equal(checkoutBelongsTo(saved, binding), true);
++  for (const wrong of [checkoutBinding('customer-b','tenant-a','private-key-a'), checkoutBinding('customer-a','tenant-b','private-key-a'), checkoutBinding('customer-a','tenant-a','private-key-b')])
++    assert.equal(checkoutBelongsTo(saved, wrong), false);
++  assert.equal(binding.includes('private-key-a'), false);
++  assert.equal(checkoutBelongsTo({}, binding), false);
++});
+--- a/README.md
++++ b/README.md
+@@ -76,7 +76,7 @@
+ Verify payment through the server after Paystack returns; query parameters do
+ not establish payment. Failed/abandoned payments may be cancelled from the
+ return page. Keep attempt IDs across retries. Outstanding attempts remain bound
+-to their original DrinksHarbour key when rotating secrets.
++to their original DrinksHarbour key. Drain or reconcile outstanding attempts before replacing that key: automatic old-key recovery is not implemented, and a replacement key requires a fresh sign-in.
+ 
+ ## Check
+ 
+--- a/docs/customer-accounts.md
++++ b/docs/customer-accounts.md
+@@ -3,7 +3,7 @@
+ /sign-in, /sign-up, /account, /verify-email, /forgot-password and /reset-password
+ use independent Wyn City customer accounts. An account registered at another
+ DrinksHarbour tenant or on the platform cannot sign in here. The same email can
+-have independent passwords at multiple stores. Guest checkout remains available.
++have independent passwords at multiple stores. Live checkout requires a signed-in tenant customer session; the cart survives sign-in.
+ 
+ ## Private connection
+ 
+@@ -53,3 +53,12 @@
+ Browser tests use isolated REST fixtures; backend tests additionally exercise two
+ real local Mongo tenant accounts with the same email and different passwords,
+ cross-store token/code/reset/MFA rejection, session rotation and migration safety.
++
++
++## Checkout identity correction — 2026-10-26
++
++Quote, checkout and recovery requests forward only the access token obtained from
++validating the encrypted customer session, including a freshly rotated token.
++No incoming browser token, supplied email or customer ID determines backend order
++ownership. Tokens remain server-only; order history uses the resulting backend
++customer linkage.
+--- a/docs/checkout.md
++++ b/docs/checkout.md
+@@ -194,3 +194,26 @@
+ PaymentStatus starts busy until initial verification completes, preventing an
+ early cancellation click from being ignored. Actions also wait for cart readiness.
+ No real orders, payments, stock changes, commits, pushes or deployments.
++
++
++## Customer and issuing-key binding — 2026-10-26
++
++The validated customer access token is forwarded server-to-server for quote,
++checkout and recovery. Refresh remains in Route Handlers and persists the rotated
++encrypted auth cookie before checkout. The signed checkout cookie now contains an
++opaque binding to customer, tenant and issuing API key. Switching customer or key
++cannot read, verify, cancel, replay or replace that browser's checkout.
++
++Older checkout cookies without the binding fail closed with403. Do not silently
++clear an outstanding attempt or start another charge to bypass this boundary;
++reconcile it with the store. Another account using the same browser also needs
++its own clean checkout context after the original obligation is resolved.
++Automatic recovery under an old API key is not implemented: keep the issuing key
++available until its accepted attempts are drained/reconciled, then rotate and
++require sign-in. Restoring the original approved connection/account can recover
++its bound cookie; do not share keys with the browser.
++
++Local evidence comes from actual Wyn route/client/session/schema modules calling
++the actual DrinksHarbour Express/Mongo API on a disposable29128 fixture. Only Next
++request-cookie context and provider transport are replaced. This proves local
++contracts, not hosted Next cookie transport or a hosted Paystack roundtrip.
+--- a/docs/RESUME.md
++++ b/docs/RESUME.md
+@@ -1264,3 +1264,30 @@
+ PaymentStatus starts busy until initial verification completes, preventing an
+ early cancellation click from being ignored. Actions also wait for cart readiness.
+ No real orders, payments, stock changes, commits, pushes or deployments.
++
++
++## Phase C local integration correction — 2026-10-26
++
++The actual checkout Route Handler validated the customer but omitted its access
++token on the REST checkout call, creating guest/unlinked backend orders. It also
++allowed a second signed-in customer in the same browser to inspect the first
++customer's signed checkout handle. Both failures were reproduced through actual
++route modules against an isolated synthetic DrinksHarbour HTTP/Mongo fixture.
++
++Corrected six focused server modules: drinks REST client, checkout-customer,
++checkout-session and quote/create/status Route Handlers. Only post-validation
++(and post-refresh) access tokens are forwarded server-to-server; the signed
++checkout cookie binds customer, tenant and issuing key. Browser responses expose
++no tokens. New unit coverage checks owner binding. Legacy unbound checkout cookies
++and customer/key changes reject403 rather than silently create another charge.
++Drain/reconcile old attempts before key replacement; transparent old-key recovery
++is not implemented. See docs/checkout.md for this migration limit.
++
++Before external application, staged patch actual-module pilot5/5 passed: linked
++order/history and one provider initialization/order across retry; expired access
++refresh persisted encrypted cookie and forwarded fresh token; cross-customer
++create/status/cancel denied; legacy/key mismatch denied; channel withdrawal
++blocked new quotes while accepted status/retry recovered. Final applied-source
++pilot and required external units/types/build results will be appended after
++verification. No private env file, real provider, application data, messages,
++commit, push or deployment was used.

@@ -54,6 +54,10 @@ export interface TransferItem {
   sku: string;
   sizeId?: string;
   sizeName?: string;
+  /** Retail variant identity snapshot (DRI-16 additive) — only sizes that carry it. */
+  colorName?: string;
+  colorHexCode?: string;
+  optionName?: string;
   quantity: number;
   transferredQty: number;
   costPrice?: number;

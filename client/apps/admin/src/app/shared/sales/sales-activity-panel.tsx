@@ -37,8 +37,7 @@ export default function SalesActivityPanel({
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps — also re-run when refreshKey bumps
-  }, [orderId, refreshKey, token]);
+  }, [load, refreshKey]);
 
   const groups = groupByDay(items);
 

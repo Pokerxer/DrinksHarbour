@@ -73,3 +73,7 @@ Admin component paths above are relative to `client/apps/admin/src/app/shared/`;
 | Have the proposed extensions been implemented? | No; this pass updates Markdown requirements and integration contracts |
 
 The detailed chapters define acceptance conditions for each feature so future implementation can prove outcomes rather than claiming parity from a checkbox or a screenshot.
+
+## Menu and portion follow-up,30October2026
+
+The user's follow-up comparison adds official Toast, Square, Odoo19, Lightspeed O-Series, SevenRooms and Tablelist Pro evidence on portion identities, modifiers, recipe yield, menu taxonomy and club packages. See [menu and portion research](17-menu-portion-reference-research.md). Observations, adaptations and unknown private implementation details remain distinct; no runtime code or activation changed.

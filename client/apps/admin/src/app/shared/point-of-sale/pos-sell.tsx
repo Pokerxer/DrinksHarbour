@@ -18,6 +18,7 @@ import {
   usePOSCustomerPricelistSync,
 } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import { variantLabel } from '@/app/shared/point-of-sale/components/pos-size-color';
 import { getImageUrl } from '@/app/shared/point-of-sale/utils';
 import { POSProduct, POSSession } from '@/app/shared/point-of-sale/types';
 import { routes } from '@/config/routes';
@@ -171,7 +172,9 @@ export default function POSSell() {
         productId: product.product?._id || product._id,
         sizeId: size?._id,
         name: product.product?.name || 'Product',
-        variant: size?.displayName || '',
+        // Industry-variant support: the cart line must distinguish two Size
+        // rows of the same size value differing only by color ("m · Amber").
+        variant: variantLabel(size),
         sku: size?.sku || product.sku,
         image: getImageUrl(product),
         price,

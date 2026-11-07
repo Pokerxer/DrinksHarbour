@@ -1,6 +1,12 @@
+import { readJson, readError } from './response';
 // Services for subproduct API calls
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+export interface SubProductGenerationResult {
+  data: Record<string, string | string[]>;
+  metadata?: { provider?: string; model?: string };
+}
 
 export interface SizeData {
   size: string;
@@ -258,6 +264,7 @@ export interface CreateSubProductInput {
     url?: string;
     type?: string;
   }>;
+  seoH1?: string;
   metaTitle?: string;
   metaDescription?: string;
   metaKeywords?: string[];
@@ -271,8 +278,31 @@ export interface CreateSubProductInput {
   subProductData: SubProductData;
 }
 
+/** Response contract of POST /api/subproducts (controller wraps the populated
+ * SubProduct as `data.subProduct`; `product` is a populated object on the
+ * create-new-identity path, a bare id string when linking an existing one). */
+export interface CreateSubProductResponse {
+  success?: boolean;
+  message?: string;
+  data?: {
+    subProduct?: {
+      _id?: string;
+      id?: string;
+      product?: string | { name?: string; status?: string; publicationScope?: string };
+    };
+  };
+}
+
 export const subproductService = {
-  async createSubProduct(data: CreateSubProductInput, token: string) {
+  /** Shape of POST /api/subproducts. The populated central `product` is the
+   * create flow's only client-side catalogue-scope signal: with
+   * GENERAL_CATALOG_SCOPE_ENABLED it carries `status` AND `publicationScope`
+   * ('tenant_private' for Owner/Admin-created identities); legacy servers
+   * (flag off) return pending products with NO publicationScope field. */
+  async createSubProduct(
+    data: CreateSubProductInput,
+    token: string
+  ): Promise<CreateSubProductResponse> {
     const response = await fetch(`${API_URL}/api/subproducts`, {
       method: 'POST',
       headers: {
@@ -283,7 +313,7 @@ export const subproductService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readJson<{message?: string; details?: unknown}>(response);
       const err = new Error(error.message || 'Failed to create subproduct');
       // Preserve structured details (e.g. existingSubProductId on conflicts)
       // so callers can offer an actionable next step.
@@ -291,10 +321,10 @@ export const subproductService = {
       throw err;
     }
 
-    return response.json();
+    return readJson<CreateSubProductResponse>(response);
   },
 
-  async getSubProducts(token: string, params?: Record<string, any>) {
+  async getSubProducts<T = unknown>(token: string, params?: Record<string, any>): Promise<T> {
     // Convert all params to strings for URLSearchParams
     const stringParams: Record<string, string> = {};
     if (params) {
@@ -338,15 +368,15 @@ export const subproductService = {
       throw new Error(reason);
     }
 
-    return response.json();
+    return readJson<T>(response);
   },
 
-  async getSubProduct(
+  async getSubProduct<T = unknown>(
     id: string,
     token: string,
     params?: Record<string, string>,
     signal?: AbortSignal
-  ) {
+  ): Promise<T> {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : '';
     const response = await fetch(`${API_URL}/api/subproducts/${id}${qs}`, {
       signal,
@@ -357,33 +387,35 @@ export const subproductService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch subproduct');
     }
 
-    return response.json();
+    return readJson<T>(response);
   },
 
   async updateSubProduct(
     id: string,
     data: Partial<SubProductData>,
-    token: string
+    token: string,
+    tenantSlug?: string
   ) {
     const response = await fetch(`${API_URL}/api/subproducts/${id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
+        ...(tenantSlug ? { 'x-tenant-slug': tenantSlug } : {}),
       },
       body: JSON.stringify(data),
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to update subproduct');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async deleteSubProduct(id: string, token: string) {
@@ -395,11 +427,11 @@ export const subproductService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to delete subproduct');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getSubProductsByTenant(tenantId: string, token: string) {
@@ -413,11 +445,11 @@ export const subproductService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch tenant subproducts');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getSubProductsByProduct(productId: string, token: string) {
@@ -431,11 +463,11 @@ export const subproductService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch product subproducts');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async updateStock(id: string, stockData: any, token: string) {
@@ -449,11 +481,11 @@ export const subproductService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to update stock');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async applyDiscount(id: string, discountData: any, token: string) {
@@ -467,11 +499,11 @@ export const subproductService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to apply discount');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async removeDiscount(id: string, token: string) {
@@ -485,11 +517,11 @@ export const subproductService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to remove discount');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async duplicateSubProduct(id: string, token: string) {
@@ -501,11 +533,11 @@ export const subproductService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to duplicate subproduct');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async archiveSubProduct(id: string, token: string) {
@@ -514,10 +546,10 @@ export const subproductService = {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to archive subproduct');
     }
-    return response.json();
+    return readJson(response);
   },
 
   async bulkPromote(
@@ -540,10 +572,10 @@ export const subproductService = {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to apply promotion');
     }
-    return response.json();
+    return readJson(response);
   },
 
   async bulkUnpromote(
@@ -559,10 +591,10 @@ export const subproductService = {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to remove promotion');
     }
-    return response.json();
+    return readJson(response);
   },
 
   async restoreSubProduct(id: string, token: string) {
@@ -571,17 +603,18 @@ export const subproductService = {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to restore subproduct');
     }
-    return response.json();
+    return readJson(response);
   },
 
   async generateSubProductContent(
     productId: string | null,
     subProductId: string | null,
     token: string,
-    inlineContext?: Record<string, any> | null
+    inlineContext?: Record<string, any> | null,
+    mode: 'content' | 'seo' = 'content'
   ) {
     const response = await fetch(
       `${API_URL}/api/gemini/generate-subproduct-content`,
@@ -591,18 +624,18 @@ export const subproductService = {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ productId, subProductId, inlineContext }),
+        body: JSON.stringify({ productId, subProductId, inlineContext, mode }),
       }
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(
         error.message || 'Failed to generate sub-product content'
       );
     }
 
-    return response.json();
+    return readJson<SubProductGenerationResult>(response);
   },
 
   async adminSetSubProductStatus(
@@ -610,9 +643,11 @@ export const subproductService = {
     status: string,
     token: string,
     priceOverrides?: {
+      useTenantDefault?: boolean;
       baseWebsitePrice?: number;
       sizes?: Array<{
         id: string;
+        useTenantDefault?: boolean;
         websitePrice?: number;
         packUnitPrice?: number;
       }>;
@@ -632,10 +667,10 @@ export const subproductService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to update sub-product status');
     }
 
-    return response.json();
+    return readJson(response);
   },
 };

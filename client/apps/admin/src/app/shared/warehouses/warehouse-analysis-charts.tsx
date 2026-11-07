@@ -704,6 +704,7 @@ function StackedTableView({
   groupLabel,
   orderMap,
   onCellClick,
+  seriesLabels,
 }: {
   rows: GroupRow2[];
   series: string[];
@@ -711,7 +712,10 @@ function StackedTableView({
   groupLabel: string;
   orderMap: Record<string, Record<string, StockRow[]>>;
   onCellClick: (rowLabel: string, seriesKey: string, orders: StockRow[]) => void;
+  /** Series-key → full identity label (size keys are Size IDs). */
+  seriesLabels?: Record<string, string>;
 }) {
+  const seriesName = (s: string) => seriesLabels?.[s] ?? s;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -720,7 +724,7 @@ function StackedTableView({
             <th className="px-4 py-2.5 text-left font-medium text-gray-500">{groupLabel}</th>
             {series.map((s) => (
               <th key={s} className="px-4 py-2.5 text-right font-medium text-gray-500">
-                {s}
+                {seriesName(s)}
               </th>
             ))}
             <th className="px-4 py-2.5 text-right font-medium text-gray-500">Total</th>
@@ -787,6 +791,7 @@ function StackedLineView({
   measureLabel,
   orderMap,
   onCellClick,
+  seriesLabels,
 }: {
   rows: GroupRow2[];
   series: string[];
@@ -794,6 +799,8 @@ function StackedLineView({
   measureLabel: string;
   orderMap: Record<string, Record<string, StockRow[]>>;
   onCellClick: (rowLabel: string, seriesKey: string, orders: StockRow[]) => void;
+  /** Series-key → full identity label (size keys are Size IDs). */
+  seriesLabels?: Record<string, string>;
 }) {
   return (
     <div className="px-3 py-4" style={{ height: 420 }}>
@@ -823,7 +830,7 @@ function StackedLineView({
               key={s}
               type="monotone"
               dataKey={s}
-              name={s}
+              name={seriesLabels?.[s] ?? s}
               stroke={PALETTE[si % PALETTE.length]}
               strokeWidth={2}
               dot={{ r: 2 }}
@@ -842,6 +849,7 @@ function StackedBarView({
   measureLabel,
   orderMap,
   onCellClick,
+  seriesLabels,
 }: {
   rows: GroupRow2[];
   series: string[];
@@ -849,6 +857,8 @@ function StackedBarView({
   measureLabel: string;
   orderMap: Record<string, Record<string, StockRow[]>>;
   onCellClick: (rowLabel: string, seriesKey: string, orders: StockRow[]) => void;
+  /** Series-key → full identity label (size keys are Size IDs). */
+  seriesLabels?: Record<string, string>;
 }) {
   const height = Math.max(320, rows.length * 40 + 80);
   const [hoveredSeg, setHoveredSeg] = useState<{
@@ -891,7 +901,7 @@ function StackedBarView({
             <Bar
               key={s}
               dataKey={s}
-              name={s}
+              name={seriesLabels?.[s] ?? s}
               stackId="a"
               fill={`url(#sbv-grad-${si})`}
               isAnimationActive={false}
@@ -938,6 +948,7 @@ export function StackedChart({
   measureLabel,
   orderMap,
   onSegmentClick,
+  seriesLabels,
 }: {
   rows: GroupRow2[];
   series: string[];
@@ -947,6 +958,8 @@ export function StackedChart({
   measureLabel: string;
   orderMap: Record<string, Record<string, StockRow[]>>;
   onSegmentClick: (rowLabel: string, seriesKey: string, orders: StockRow[]) => void;
+  /** Series-key → full identity label (size keys are Size IDs, DRI-17). */
+  seriesLabels?: Record<string, string>;
 }) {
   if (rows.length === 0) return <EmptyState />;
 
@@ -983,6 +996,7 @@ export function StackedChart({
         groupLabel={groupLabel}
         orderMap={orderMap}
         onCellClick={onSegmentClick}
+        seriesLabels={seriesLabels}
       />
     );
   }
@@ -996,6 +1010,7 @@ export function StackedChart({
         measureLabel={measureLabel}
         orderMap={orderMap}
         onCellClick={onSegmentClick}
+        seriesLabels={seriesLabels}
       />
     );
   }
@@ -1013,6 +1028,7 @@ export function StackedChart({
         measureLabel={measureLabel}
         orderMap={orderMap}
         onCellClick={onSegmentClick}
+        seriesLabels={seriesLabels}
       />
     </div>
   );

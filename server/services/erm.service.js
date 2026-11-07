@@ -333,6 +333,8 @@ async function handleWebhookEvent(event, data) {
         trialEndsAt: null,
       });
 
+      await require('./venue/subscription').recordVenueBoundary(tenant, { plan: targetPlan, subscriptionStatus: 'active', trialEndsAt: null });
+
       // Same reason as charge.success: a tenant who has just subscribed is out
       // of dunning, and the next failure has to be able to speak.
       if (tenant.billingNotices?.pastDueSentAt) {
@@ -357,6 +359,7 @@ async function handleWebhookEvent(event, data) {
       if (data.paid_at) update.currentPeriodStart = new Date(data.paid_at);
       if (nextPayment) update.currentPeriodEnd = new Date(nextPayment);
       await Tenant.findByIdAndUpdate(tenantId, update);
+      await require('./venue/subscription').recordVenueBoundary(tenant, update);
 
       // This dunning cycle is over. Forget it, so that if the tenant lapses
       // again months from now they are told again — a stale `pastDueSentAt`
@@ -381,6 +384,7 @@ async function handleWebhookEvent(event, data) {
       // one `break` covers both, which is why the send sits below it.
       if (addOnType || !matchesBase) break;
       await Tenant.findByIdAndUpdate(tenantId, { subscriptionStatus: 'past_due' });
+      await require('./venue/subscription').recordVenueBoundary(tenant, { subscriptionStatus: 'past_due' });
 
       // Tell them. This is the moment it happens and there is no other hook for
       // it; the daily sweep only handles the follow-up.
@@ -434,6 +438,7 @@ async function handleWebhookEvent(event, data) {
       }
       if (!code || code !== tenant.paystackSubscriptionCode) break;
       await Tenant.findByIdAndUpdate(tenantId, { subscriptionStatus: 'canceled' });
+      await require('./venue/subscription').recordVenueBoundary(tenant, { subscriptionStatus: 'canceled' });
       break;
     }
   }

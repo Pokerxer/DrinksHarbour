@@ -2,25 +2,21 @@ import Image from '@/components/UI/OptimizedImage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Fraunces } from 'next/font/google';
+import { fraunces } from '@/app/fonts';
 import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
 import LinkableBanner from '@/components/Banner/linkable-banner';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
+import { normalizeDescription } from '@/lib/seoDescription';
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
+import DescriptionAudio from '@/components/UI/DescriptionAudio';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-const BASE_URL =
-  process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+const BASE_URL = publicSiteOrigin();
 const SITE_NAME = 'DrinksHarbour';
 
 // Display face for the "bottle label" treatment — soft old-style serif.
-const fraunces = Fraunces({
-  subsets: ['latin'],
-  style: ['normal', 'italic'],
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-});
 
 // Force dynamic rendering — root layout uses headers() for tenant resolution.
 // Data is still cached via the Next.js fetch cache (revalidate per fetch).
@@ -233,12 +229,16 @@ export async function generateMetadata({
   const title = capTitle(
     sub.metaTitle || `${name} — Buy ${name} Drinks Online in Nigeria`,
   );
-  const description = (
+  const descriptionCopy = (
     plainText(sub.metaDescription) ||
     plainText(sub.shortDescription) ||
     plainText(sub.description) ||
     `Shop authentic ${name} on DrinksHarbour with fast delivery across Nigeria.${sub.tagline ? ` ${sub.tagline}.` : ''}`
-  ).slice(0, 160);
+  );
+  const description = normalizeDescription(
+    descriptionCopy.length < 120 ? `Shop ${name} online in Nigeria. ${descriptionCopy}` : descriptionCopy,
+    `Browse ${name} on DrinksHarbour and compare available bottles and prices.`,
+  );
   const ogImage =
     sub.bannerImage?.url ||
     sub.featuredImage?.url ||
@@ -720,6 +720,11 @@ export default async function SubCategoryPage({
               >
                 About {name}
               </h2>
+              <div className="mt-4">
+                <DescriptionAudio subject="subcategory information"
+                  description={sub.description}
+                  shortDescription={sub.shortDescription} />
+              </div>
               <div className="mt-4 max-w-[9rem]">
                 <LabelRule tone={`${primary}55`} />
               </div>

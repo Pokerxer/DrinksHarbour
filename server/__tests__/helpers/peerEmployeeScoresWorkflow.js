@@ -1,0 +1,65 @@
+const assert=require('node:assert/strict');
+const mongoose=require('mongoose');
+const User=require('../../models/User');
+const Department=require('../../models/Department');
+const Shift=require('../../models/Shift');
+const Attendance=require('../../models/Attendance');
+const P=require('../../models/PeerAppraisalParticipant');
+module.exports=async function employeeScores({call,ownerId,ids,tenantId,foreignId,foreignTenant}){
+ const dept=new mongoose.Types.ObjectId();
+ await Department.collection.insertOne({_id:dept,tenant:tenantId,name:'Score detail department',isActive:true});
+ await User.collection.updateMany({_id:{$in:ids},tenant:tenantId},{$set:{'employeeProfile.work.department':dept}});
+ const id=(await call(ownerId,'','POST',{name:'Employee detail scores'})).body.data._id,path=`/${id}`;
+ await call(ownerId,`${path}/participants`,'PUT',{expectedRevision:0,participants:ids.map((employee,i)=>({employee:String(employee),bonusAmount:100,isAppraiser:i<2}))});
+ await call(ownerId,`${path}/examination`,'PUT',{expectedRevision:1,attendanceFrom:'2020-04-01',attendanceTo:'2020-04-30',recipientIds:[String(ids[0])],departments:[String(dept)],questions:[{prompt:'A score detail question',options:['Yes','No'],correctOption:0,marks:2}]});
+ await call(ownerId,`${path}/launch`,'POST');
+ const endpoint=`${path}/participants/${ids[0]}/scores`;
+ assert.equal((await call(null,endpoint)).status,401);
+ assert.equal((await call(ids[0],endpoint)).status,403);
+ assert.equal((await call(ownerId,`${path}/participants/bad/scores`)).status,400);
+ assert.equal((await call(ownerId,`${path}/participants/${foreignId}/scores`)).status,404);
+ const foreignOwner=new mongoose.Types.ObjectId();
+ await User.collection.insertOne({_id:foreignOwner,tenant:foreignTenant,role:'tenant_owner',status:'active',firstName:'Other owner'});
+ assert.equal((await call(foreignOwner,endpoint)).status,404);
+ const initial=await call(ownerId,endpoint);assert.equal(initial.status,200);
+ assert.equal(initial.body.data.appraisal.score,null);assert.equal(initial.body.data.attendance.score,null);
+ assert.equal(initial.body.data.combined,null);
+ // Unsubmitted saved ratings must not become an HR aggregate.
+ await call(ids[1],`${path}/review`,'PATCH',{expectedRevision:0,ratings:[{subject:String(ids[0]),rating:4}]});
+ assert.equal((await call(ownerId,endpoint)).body.data.appraisal.received,0);
+ for(let i=0;i<2;i++)assert.equal((await call(ids[i],`${path}/submit`,'POST',{expectedRevision:i===1?1:0,ratings:ids.filter(x=>String(x)!==String(ids[i])).map(subject=>({subject:String(subject),rating:4}))})).status,200);
+ const mine=(await call(ids[0],`${path}/examination`)).body.data;
+ await call(ids[0],`${path}/examination/submit`,'POST',{expectedRevision:0,answers:mine.questions.map(q=>({question:q.question,option:0}))});
+ let score=(await call(ownerId,endpoint)).body.data;
+ assert.equal(score.exam.score,100);assert.equal(score.appraisal.score,80);
+ assert.equal(score.appraisal.received,1);assert.equal(score.appraisal.eligible,1);
+ assert.equal(score.attendance.status,'unrated');assert.equal(score.combined,null);
+ for(const employee of ids){const shift=new mongoose.Types.ObjectId();await Shift.collection.insertOne({_id:shift,tenant:tenantId,employee,status:'published',start:new Date('2020-04-15T08:00:00Z'),end:new Date('2020-04-15T16:00:00Z')});await Attendance.collection.insertOne({tenant:tenantId,employee,shift,clockIn:new Date('2020-04-15T08:00:00Z'),clockOut:new Date('2020-04-15T16:00:00Z')});}
+ score=(await call(ownerId,endpoint)).body.data;
+ assert.equal(score.attendance.score,100);assert.equal(score.final,false);
+ assert.equal(score.combined.score,92);assert.equal(score.combined.bonusMinor,9200);
+ assert.deepEqual(score.weights,{appraisal:40,exam:40,attendance:20});
+ for(const field of ['correctOption','reviewer','answers','ratings'])assert.equal(JSON.stringify(score).includes(`"${field}"`),false);
+ const excluded=(await call(ownerId,`${path}/participants/${ids[2]}/scores`)).body.data;
+ assert.equal(excluded.exam.status,'not_assigned');assert.equal(excluded.appraisal.eligible,2);
+ assert.equal(excluded.combined.score,84);assert.deepEqual(excluded.weights,{appraisal:80,exam:0,attendance:20});
+ // A currently running attendance window is provisional even when its current score is100.
+ const Exam=require('../../models/PeerAppraisalExam');
+ const day=new Date(Date.now()-86400000);day.setUTCHours(8,0,0,0);
+ const end=new Date(day.getTime()+8*3600000),future=new Date(Date.now()+7*86400000);
+ const currentShift=new mongoose.Types.ObjectId();
+ await Shift.collection.insertOne({_id:currentShift,tenant:tenantId,employee:ids[0],status:'published',start:day,end});
+ await Attendance.collection.insertOne({tenant:tenantId,employee:ids[0],shift:currentShift,clockIn:day,clockOut:end});
+ await Exam.collection.updateOne({tenant:tenantId,cycle:new mongoose.Types.ObjectId(id)},{$set:{attendanceFrom:day.toISOString().slice(0,10),attendanceTo:future.toISOString().slice(0,10)}});
+ const provisional=(await call(ownerId,endpoint)).body.data;
+ assert.equal(provisional.attendance.score,100);assert.equal(provisional.attendance.status,'provisional');assert.equal(provisional.combined,null);
+ await Exam.collection.updateOne({tenant:tenantId,cycle:new mongoose.Types.ObjectId(id)},{$set:{attendanceFrom:'2020-04-01',attendanceTo:'2020-04-30'}});
+ assert.equal((await call(ownerId,`${path}/close`,'POST')).status,200);
+ const closed=(await call(ownerId,endpoint)).body.data;assert.equal(closed.final,true);assert.equal(closed.combined.score,92);
+ await Attendance.collection.updateMany({tenant:tenantId,employee:ids[0]},{$unset:{clockOut:''}});
+ assert.deepEqual((await call(ownerId,endpoint)).body.data,closed);
+ // Stored equal-weight legacy results keep their final historical interpretation.
+ await P.collection.updateOne({tenant:tenantId,cycle:new mongoose.Types.ObjectId(id),employee:ids[0]},{$unset:{'result.composite.weights':''},$set:{'result.composite.combinedScore':93.33,'result.bonusMinor':9333}});
+ const historical=(await call(ownerId,endpoint)).body.data;
+ assert.equal(historical.combined.score,93.33);assert.equal(historical.weights.attendance,100/3);
+};

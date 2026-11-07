@@ -2,24 +2,20 @@ import type { Metadata } from 'next';
 import Image from '@/components/UI/OptimizedImage';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Fraunces } from 'next/font/google';
+import { fraunces } from '@/app/fonts';
 import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
+import { normalizeDescription } from '@/lib/seoDescription';
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
+import DescriptionAudio from '@/components/UI/DescriptionAudio';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-const BASE_URL =
-  process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+const BASE_URL = publicSiteOrigin();
 const SITE_NAME = 'DrinksHarbour';
 
 // Display face for the "bottle label" treatment — soft old-style serif.
-const fraunces = Fraunces({
-  subsets: ['latin'],
-  style: ['normal', 'italic'],
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-});
 
 // Force dynamic rendering — root layout uses headers() for tenant resolution,
 // which makes static pre-generation incompatible. Data is still cached via
@@ -251,12 +247,16 @@ export async function generateMetadata({
   const title = capTitle(
     category.metaTitle || `${name} — Buy ${name} Drinks Online in Nigeria`,
   );
-  const description = (
+  const descriptionCopy = (
     plainText(category.metaDescription) ||
     plainText(category.shortDescription) ||
     plainText(category.description) ||
     `Shop authentic ${name} on DrinksHarbour with fast delivery across Nigeria.${category.tagline ? ` ${category.tagline}.` : ''}`
-  ).slice(0, 160);
+  );
+  const description = normalizeDescription(
+    descriptionCopy.length < 120 ? `Shop ${name} online in Nigeria. ${descriptionCopy}` : descriptionCopy,
+    `Browse ${name} on DrinksHarbour and compare available bottles and prices.`,
+  );
   const ogImage =
     category.ogImage ||
     category.bannerImage?.url ||
@@ -795,6 +795,11 @@ export default async function CategoryPage({
               >
                 About {name}
               </h2>
+              <div className="mt-4">
+                <DescriptionAudio subject="category information"
+                  description={category.description}
+                  shortDescription={category.shortDescription} />
+              </div>
               <div className="mt-4 max-w-[9rem]">
                 <LabelRule tone={`${primary}55`} />
               </div>

@@ -1,6 +1,7 @@
 import { quotePriceColumn } from './inventory-pricelist-quote';
 import {
   dedupeRowsForPricelist,
+  pricelistSizeCmp,
   type PricableStockLine,
   type PricelistLite,
 } from './inventory-pricelist-print';
@@ -29,7 +30,9 @@ export function buildPriceColumnGrid(
     (a, b) =>
       a.categoryName.localeCompare(b.categoryName) ||
       a.productName.localeCompare(b.productName) ||
-      a.sizeName.localeCompare(b.sizeName)
+      // Identity-aware Size sort (DRI-30): colour siblings order
+      // deterministically; legacy rows keep the stored-sizeName ordering.
+      pricelistSizeCmp(a, b)
   );
   const discount = Number.isFinite(discountPercent)
     ? Math.max(0, Math.min(90, discountPercent))

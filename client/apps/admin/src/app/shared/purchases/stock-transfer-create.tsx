@@ -1,5 +1,7 @@
 'use client';
 
+import { sizeVariantLabel } from '@/utils/size-variant-label';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -479,7 +481,7 @@ export default function StockTransferCreate({
             headers: { Authorization: `Bearer ${token}` },
           }
         );
-        const json = await res.json();
+        const json = await res.json() as {data?: unknown[]};
         const list: any[] = json?.data ?? [];
         const map: Record<string, number> = {};
         // Picker rows: one per stocked (subProduct, size) in the source
@@ -507,9 +509,9 @@ export default function StockTransferCreate({
           rowMap.set(k, {
             subProductId: String(spId),
             sizeId: szId ? String(szId) : undefined,
-            sizeName: sz?.size ?? undefined,
+            sizeName: sz ? sizeVariantLabel(sz) : undefined,
             name: sp?.product?.name ?? sp?.sku ?? 'Product',
-            sku: sp?.sku ?? '',
+            sku: sz?.sku ?? sp?.sku ?? '',
             quantity: qty,
             unitsPerPack:
               Number(sz?.unitsPerPack) > 0

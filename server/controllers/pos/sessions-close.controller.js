@@ -62,7 +62,9 @@ exports.closeSession = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
 
   // Atomically claim the session — only one close request wins.
-  const session = await POSSession.findOneAndUpdate(
+  const session = req.tenant?.venueSettings?.identityVersion === 1
+    ? await require('../../services/venue/drawer-close').claimDrawerClose({ tenantId, drawerId: req.params.id, actorId: req.user._id, scope: shopFilter(req) })
+    : await POSSession.findOneAndUpdate(
     { _id: req.params.id, ...shopFilter(req), tenant: tenantId, status: 'open' },
     { $set: { status: 'closed', closedBy: req.user._id, closedAt: new Date() } },
     { new: false }

@@ -33,13 +33,13 @@ const DELIVERY_OPTIONS = [
   {
     icon: Icon.PiPackageBold,
     title: 'Interstate Delivery',
-    badge: 'Free over ₦2M',
+    badge: 'Free from ₦10M',
     badgeColor: 'bg-green-100 text-green-700',
-    areas: 'All 36 states + FCT',
+    areas: 'All 36 states outside the FCT',
     cutoff: 'Ships within 24 h of payment',
-    fee: 'From ₦15,000 · Free on orders ≥ ₦2,000,000',
+    fee: 'From ₦15,000 · Free on orders ≥ ₦10,000,000',
     highlight: false,
-    details: 'We ship nationwide from our Abuja warehouse via trusted courier partners. Fees are based on your zone (distance from Abuja), the number of bottles, and whether your order includes full cartons — which require reinforced crating and incur a higher handling charge. The exact fee is shown at checkout. Free delivery is automatically applied on orders of ₦2,000,000 and above.',
+    details: 'We ship nationwide from our Abuja warehouse via trusted courier partners. Fees are based on your zone (distance from Abuja), the number of bottles, and whether your order includes full cartons — which require reinforced crating and incur a higher handling charge. The exact fee is shown at checkout. Outside Abuja/FCT, free delivery is automatically applied on orders of ₦10,000,000 and above.',
   },
 ];
 
@@ -162,7 +162,7 @@ export default function ShippingInfoPage() {
           </h1>
           <p className="text-gray-300 text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
             Same-day delivery within the FCT. Interstate fees calculated by zone distance from Abuja.
-            Free delivery on orders ₦2,000,000 and above.
+            Free delivery on orders ₦2,000,000+ in Abuja/FCT and ₦10,000,000+ elsewhere.
           </p>
 
           {/* Quick stats */}
@@ -293,7 +293,7 @@ export default function ShippingInfoPage() {
           </div>
           <p className="text-xs text-gray-400 mt-3 flex items-center gap-1.5">
             <Icon.PiInfo size={13} />
-            Free delivery on orders ≥ ₦2,000,000 — applied automatically at checkout regardless of zone.
+            Free delivery starts at ₦2,000,000 in Abuja/FCT and ₦10,000,000 in other states — applied automatically at checkout.
           </p>
         </Section>
 

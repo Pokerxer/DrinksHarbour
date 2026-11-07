@@ -30,6 +30,11 @@ export default function ProductDetailsSummery({
     return <RealProductSummary product={product as any} />;
   }
 
+  return <LegacyProductSummary product={product} />;
+}
+
+function LegacyProductSummary({ product }: { product: Product }) {
+
   const { addItemToCart } = useCart();
 
   const methods = useForm<ProductDetailsInput>({

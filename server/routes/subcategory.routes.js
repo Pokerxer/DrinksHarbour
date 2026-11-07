@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const subcategoryController = require('../controllers/subcategory.controller');
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { protect, optionalProtect, authorize } = require('../middleware/auth.middleware');
+const { TENANT_ROLES } = require('../services/industryScope.service');
 const { uploadCategoryImages } = require('../middleware/imageUpload.middleware');
 
 // SubCategory is platform-wide for the same reason as Category —
@@ -16,10 +17,14 @@ router.post('/admin', protect, authorize(...adminRoles), uploadCategoryImages, s
 router.put('/admin/:id', protect, authorize(...adminRoles), uploadCategoryImages, subcategoryController.updateSubCategory);
 router.delete('/admin/:id', protect, authorize(...adminRoles), subcategoryController.deleteSubCategory);
 
-// Public routes
-router.get('/', subcategoryController.getSubCategories);
+router.get('/picker', protect, authorize(...adminRoles, ...TENANT_ROLES), subcategoryController.getSubCategoryPicker);
 
-router.get('/by-category/:categoryId', subcategoryController.getSubCategoriesByCategory);
+// Public routes (optionalProtect: lets INDUSTRY_TAXONOMY_SCOPE_ENABLED scope
+// the list + the form's by-category chain for authenticated tenant callers;
+// anonymous browsing stays public)
+router.get('/', optionalProtect, subcategoryController.getSubCategories);
+
+router.get('/by-category/:categoryId', optionalProtect, subcategoryController.getSubCategoriesByCategory);
 
 router.get('/featured', subcategoryController.getFeaturedSubCategories);
 

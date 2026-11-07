@@ -1,4 +1,8 @@
-import { businessTypeValues, idTypeValues } from '@/validators/create-tenant.schema';
+import {
+  businessTypeValues,
+  idTypeValues,
+} from '@/validators/create-tenant.schema';
+import { INDUSTRY_SELECT_OPTIONS } from '@/utils/industries';
 
 export const PLAN_OPTIONS = [
   { value: 'free_trial', label: 'Free Trial' },
@@ -22,6 +26,7 @@ export const SUBSCRIPTION_STATUS_OPTIONS = [
 export const REVENUE_MODEL_OPTIONS = [
   { value: 'markup', label: 'Markup' },
   { value: 'commission', label: 'Commission' },
+  { value: 'selling_price_markup', label: 'Selling-price markup' },
 ];
 
 export const STATUS_OPTIONS = [
@@ -48,4 +53,13 @@ export const BUSINESS_TYPE_OPTIONS = businessTypeValues.map((v) => ({
   value: v,
   label: v,
 }));
-export const ID_TYPE_OPTIONS = idTypeValues.map((v) => ({ value: v, label: v }));
+export const ID_TYPE_OPTIONS = idTypeValues.map((v) => ({
+  value: v,
+  label: v,
+}));
+// Industry taxonomy scope (2026-11-02, additive): canonical INDUSTRY values
+// for the tenant editor's multi-select, reusing the labels from the canon file.
+export const INDUSTRIES_EDIT_OPTIONS = INDUSTRY_SELECT_OPTIONS.map((o) => ({
+  value: o.value,
+  label: o.label,
+}));

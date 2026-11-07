@@ -1,5 +1,7 @@
 'use client';
 
+import { sizeVariantLabel } from '@/utils/size-variant-label';
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -29,6 +31,7 @@ import { vendorService } from '@/services/vendor.service';
 import { subproductService } from '@/services/subproduct.service';
 import {
   CURRENCIES,
+  defaultPackagingForLine,
   fmtAmount,
   packsLabel,
 } from './types';
@@ -56,6 +59,11 @@ interface SizeOption {
   costPrice?: number | null;
   unitsPerPack?: number;
   availableStock?: number;
+  // Retail variant identity — present only on non-beverage Size rows. Buying
+  // rows carry it through so the line gets its packaging default at entry.
+  colorName?: string | null;
+  optionName?: string | null;
+  unitType?: string | null;
 }
 
 interface ProductOption {
@@ -73,6 +81,10 @@ interface LineItem {
   sku: string;
   sizeId?: string;
   sizeName?: string;
+  // Packaging noun set at line entry ('units'/'pieces' for retail rows,
+  // undefined for legacy beverage rows). Must be a string the prints can
+  // consume via packNounOf — see defaultPackagingForLine below.
+  packaging?: string;
   quantity: number;
   packSize: number;
   packQty: number;
@@ -337,7 +349,8 @@ function ProductSearch({
     packSize: number,
     subProductId: string,
     sizeId?: string,
-    sizeName?: string
+    sizeName?: string,
+    packaging?: string
   ) => void;
 }) {
   const [query, setQuery] = useState(value);
@@ -353,7 +366,7 @@ function ProductSearch({
   async function fetchFullSubproduct(id: string) {
     if (expandedData[id]) return;
     try {
-      const res = await subproductService.getSubProduct(id, token);
+      const res = await subproductService.getSubProduct<{data: unknown}>(id, token);
       const sp = res?.data ?? res;
       setExpandedData((prev) => ({ ...prev, [id]: sp }));
     } catch {
@@ -374,11 +387,14 @@ function ProductSearch({
       sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
       sizes: (sp.sizes ?? []).map((s: any) => ({
         size: String(s._id ?? s.size ?? ''),
-        displayName: s.displayName ?? s.size ?? '',
+        displayName: sizeVariantLabel(s),
         sku: s.sku ?? sp.sku ?? '',
         costPrice: s.costPrice ?? sp.costPrice ?? 0,
         unitsPerPack: s.unitsPerPack ?? 1,
         availableStock: s.availableStock ?? s.stock ?? 0,
+        colorName: s.colorName ?? undefined,
+        optionName: s.optionName ?? undefined,
+        unitType: s.unitType ?? undefined,
       })),
     }));
   }
@@ -387,7 +403,7 @@ function ProductSearch({
     if (initialLoaded || !token) return;
     setLoading(true);
     try {
-      const res = await subproductService.getSubProducts(token, { limit: 50 });
+      const res = await subproductService.getSubProducts<{data: {subProducts: unknown[]}}>(token, { limit: 50 });
       const list = mapProducts(res?.data?.subProducts ?? []);
       setInitial(list);
       setProducts(list);
@@ -408,7 +424,7 @@ function ProductSearch({
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await subproductService.getSubProducts(token, {
+        const res = await subproductService.getSubProducts<{data: {subProducts: unknown[]}}>(token, {
           search: query.trim(),
           limit: 50,
         });
@@ -449,7 +465,8 @@ function ProductSearch({
       s.unitsPerPack ?? 1,
       p._id,
       s.size, // sizeId (the MongoDB _id of the Size doc)
-      displaySize // sizeName for backend enrichment
+      displaySize, // sizeName for backend enrichment
+      defaultPackagingForLine(s) // packaging default ('units'/'pieces' retail rows)
     );
     setQuery(label);
     setOpen(false);
@@ -742,7 +759,8 @@ export default function PurchasesCreate() {
       packSize: number,
       subProductId: string,
       sizeId?: string,
-      sizeName?: string
+      sizeName?: string,
+      packaging?: string
     ) => {
       updateItem(index, {
         subProductId,
@@ -752,6 +770,7 @@ export default function PurchasesCreate() {
         packSize,
         sizeId,
         sizeName,
+        packaging,
       });
     },
     [updateItem]
@@ -1099,7 +1118,8 @@ export default function PurchasesCreate() {
                             packSize,
                             subProductId,
                             sizeId,
-                            sizeName
+                            sizeName,
+                            packaging
                           ) =>
                             handleProductSelect(
                               i,
@@ -1109,7 +1129,8 @@ export default function PurchasesCreate() {
                               packSize,
                               subProductId,
                               sizeId,
-                              sizeName
+                              sizeName,
+                              packaging
                             )
                           }
                         />

@@ -65,7 +65,9 @@ export default function PeerActions({
           </p>
           <p className="text-xs leading-5 text-gray-500">
             {examination
-              ? 'Bonus = combined percentage × allocation. Selected exam recipients average exam, appraisal and attendance equally; other employees average appraisal and attendance equally.'
+              ? cycle.status === 'closed'
+                ? 'Bonuses use the weights saved when this cycle closed. Open employee scores for the breakdown.'
+                : 'Bonus = combined percentage × allocation. Attendance 20%, examination 40%, appraisal 40%. Employees without an exam use 80% appraisal and 20% attendance.'
               : 'Average rating ÷ 5 × individual allocation. Ratings use a 1–5 scale; no self-rating.'}
           </p>
           <p className="text-xs leading-5 text-gray-500">

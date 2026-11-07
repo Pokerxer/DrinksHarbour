@@ -834,3 +834,95 @@ describe('stock overview parity', () => {
     expect(stockFieldValue(bad, 'available')).toBe(0);
   });
 });
+
+// ── Retail variant identity (DRI-30) ─────────────────────────────────────────
+//
+// The Stock browser /inventory sweep: exact Size ID is the bucket key
+// (warehouse-analysis `sizeRowKey` pattern), the full shared label
+// (`flatRowSizeLabel`) is the presentation. Emerald and Ivory of the same
+// named size 'M' stay distinct buckets and are searchable apart; a no-variant
+// legacy beverage row pins the byte shapes it must keep.
+
+describe('retail variant identity — size keys, labels, search and sort', () => {
+  const emerald = row({
+    _id: 're',
+    productName: 'Linen Shirt',
+    sizeId: 'sz-em',
+    sizeName: 'M',
+    colorName: 'Emerald',
+  });
+  const ivory = row({
+    _id: 'ri',
+    subProductId: 'sp2',
+    productName: 'Linen Shirt Ivory',
+    sizeId: 'sz-iv',
+    sizeName: 'M',
+    colorName: 'Ivory',
+  });
+  const legacy = row({ _id: 'rl', sizeId: 'sz-75', sizeName: '75cl' });
+
+  it('keeps same-size colour siblings as distinct Size buckets with full labels', () => {
+    const g = groupStockRows([emerald, ivory, legacy], 'size');
+    const buckets = g.map(([label, rows]) => [label, rows.length] as const);
+    expect(buckets).toContainEqual(['M · Emerald', 1]);
+    expect(buckets).toContainEqual(['M · Ivory', 1]);
+    expect(buckets).toContainEqual(['75cl', 1]);
+  });
+
+  it('pins the legacy no-variant group label byte-for-byte', () => {
+    const g = groupStockRows([legacy], 'size');
+    expect(g.map(([label]) => label)).toEqual(['75cl']);
+  });
+
+  it('still merges sizeless rows into the single "—" bucket', () => {
+    const a = row({ _id: 'x1', sizeId: '', sizeName: '' });
+    const b = row({ _id: 'x2', sizeId: '', sizeName: '' });
+    const g = groupStockRows([a, b], 'size');
+    expect(g).toHaveLength(1);
+    expect(g[0][0]).toBe('—');
+    expect(g[0][1]).toHaveLength(2);
+  });
+
+  it('matches the colour shorthand against the composed label only', () => {
+    const emeraldHit = searchStockRows([emerald, ivory, legacy], q('size:emerald'));
+    expect(emeraldHit.rows.map((r) => r._id)).toEqual(['re']);
+    const ivoryHit = searchStockRows([emerald, ivory], q('size:ivory'));
+    expect(ivoryHit.rows.map((r) => r._id)).toEqual(['ri']);
+    expect(searchStockRows([emerald, ivory], q('size:emerald')).rows).toHaveLength(1);
+  });
+
+  it('indexes the variant colour in the free-text surface', () => {
+    const free = searchStockRows([emerald, ivory, legacy], q('ivory'));
+    expect(free.approximate).toBe(false);
+    expect(free.rows.map((r) => r._id)).toEqual(['ri']);
+    // Legacy byte-shape pin: the keyword index composes the stored sizeName.
+    expect(fieldTextFor(legacy)).toBe(
+      'hennessy vs hn-vs-70 75cl cloud bay cognac fifo'
+    );
+  });
+
+  it('filters by the composed size label', () => {
+    const fv: FilterValue = {
+      fieldId: 'size',
+      operator: 'contains',
+      value: 'Emerald',
+      label: '',
+    };
+    expect(matchesFilter(emerald, fv)).toBe(true);
+    expect(matchesFilter(ivory, fv)).toBe(false);
+    const legacyFv: FilterValue = {
+      fieldId: 'size',
+      operator: 'contains',
+      value: '75cl',
+      label: '',
+    };
+    expect(matchesFilter(legacy, legacyFv)).toBe(true);
+  });
+
+  it('orders same-size colour siblings deterministically when sorting by size', () => {
+    const asc = sortStockRows([ivory, emerald], 'size', 'asc');
+    expect(asc.map((r) => r.colorName)).toEqual(['Emerald', 'Ivory']);
+    const desc = sortStockRows([ivory, emerald], 'size', 'desc');
+    expect(desc.map((r) => r.colorName)).toEqual(['Ivory', 'Emerald']);
+  });
+});

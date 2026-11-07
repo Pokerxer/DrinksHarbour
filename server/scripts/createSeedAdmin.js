@@ -1,4 +1,3 @@
-const { platformIdentity } = require('../utils/customerIdentity');
 #!/usr/bin/env node
 // scripts/createSeedAdmin.js
 //
@@ -14,6 +13,8 @@ const { platformIdentity } = require('../utils/customerIdentity');
 //   node -r dotenv/config scripts/createSeedAdmin.js --email a@b.com --password 'Xy!23456'
 
 'use strict';
+
+const { platformIdentity } = require('../utils/customerIdentity');
 
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');

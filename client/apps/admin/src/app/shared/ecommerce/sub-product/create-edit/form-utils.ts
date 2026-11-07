@@ -1,10 +1,12 @@
 import { expandedProductTypeOptions } from '@/utils/expanded-product-types';
+import { hospitalityProductTypeOptions } from '@/utils/hospitality-product-types';
+import { retailProductTypeOptions } from '@/utils/retail-product-types';
 import { SubProductInput } from '@/validators/sub-product.schema';
 import isEmpty from 'lodash/isEmpty';
 
-const VALID_STOCK_STATUSES = ['in_stock', 'low_stock', 'out_of_stock', 'pre_order', 'discontinued'];
-function normalizeStockStatus(v: any): string {
-  return VALID_STOCK_STATUSES.includes(v) ? v : 'in_stock';
+const VALID_STOCK_STATUSES = ['in_stock', 'low_stock', 'out_of_stock', 'pre_order', 'discontinued'] as const;
+function normalizeStockStatus(v: unknown): typeof VALID_STOCK_STATUSES[number] {
+  return VALID_STOCK_STATUSES.find(status => status === v) || 'in_stock';
 }
 
 // Empty objects and arrays
@@ -15,13 +17,13 @@ export const emptyTastingNotes = {
   taste: [],
   finish: [],
   mouthfeel: [],
-  appearance: '',
-  color: '',
+  appearance: '' as const,
+  color: '' as const,
 };
 
 export const emptyServingSuggestions = {
-  temperature: '',
-  glassware: '',
+  temperature: '' as const,
+  glassware: '' as const,
   garnish: [],
   mixers: [],
 };
@@ -67,33 +69,33 @@ export const emptyExternalLinks = [];
 
 export const emptySubProductData = {
   // Core Relationships
-  _id: '',
-  id: '',
-  product: '',
-  tenant: '',
+  _id: '' as const,
+  id: '' as const,
+  product: '' as const,
+  tenant: '' as const,
   createNewProduct: false,
   newProductData: null,
   
   // Commercial Data
-  sku: '',
+  sku: '' as const,
   baseSellingPrice: 0,
   costPrice: 0,
-  currency: 'NGN',
+  currency: 'NGN' as const,
   taxRate: 0,
   marginPercentage: 0,
   markupPercentage: 25,
-  roundUp: '100',
-  pricingStrategy: 'cost_plus',
-  minPrice: null,
-  maxPrice: null,
-  competitorPrice: '',
+  roundUp: '100' as const,
+  pricingStrategy: 'cost_plus' as const,
+  minPrice: undefined,
+  maxPrice: undefined,
+  competitorPrice: '' as const,
   saleDiscountPercentage: 0,
   
   // Sale / Discount Pricing
   salePrice: 0,
-  saleStartDate: '',
-  saleEndDate: '',
-  saleType: '',
+  saleStartDate: '' as const,
+  saleEndDate: '' as const,
+  saleType: 'percentage' as const,
   saleDiscountValue: 0,
   saleBanner: {
     url: '',
@@ -102,65 +104,65 @@ export const emptySubProductData = {
   isOnSale: false,
   
   // Tenant Overrides
-  shortDescriptionOverride: '',
-  descriptionOverride: '',
+  shortDescriptionOverride: '' as const,
+  descriptionOverride: '' as const,
   imagesOverride: [],
   customKeywords: [],
   embeddingOverride: [],
-  tenantNotes: '',
+  tenantNotes: '' as const,
   
   // Sizes
   sizes: [],
   sellWithoutSizeVariants: false,
-  defaultSize: '',
+  defaultSize: '' as const,
   
   // Inventory Management
-  stockStatus: 'in_stock',
+  stockStatus: 'in_stock' as const,
   totalStock: 0,
   reservedStock: 0,
   availableStock: 0,
   lowStockThreshold: 10,
   reorderPoint: 5,
   reorderQuantity: 50,
-  lastRestockDate: '',
-  nextRestockDate: '',
-  tracking: 'none',
-  valuation: 'fifo',
+  lastRestockDate: '' as const,
+  nextRestockDate: '' as const,
+  tracking: 'none' as const,
+  valuation: 'fifo' as const,
   routes: ['buy'],
   
   // Vendor & Sourcing
-  vendor: '',
-  supplierSKU: '',
+  vendor: '' as const,
+  supplierSKU: '' as const,
   supplierPrice: 0,
   leadTimeDays: 0,
   minimumOrderQuantity: 0,
   estimatedShippingCost: 0,
   supplierRating: 0,
-  vendorNotes: '',
-  vendorContactName: '',
-  vendorPhone: '',
-  vendorEmail: '',
-  vendorWebsite: '',
-  vendorAddress: '',
+  vendorNotes: '' as const,
+  vendorContactName: '' as const,
+  vendorPhone: '' as const,
+  vendorEmail: '' as const,
+  vendorWebsite: '' as const,
+  vendorAddress: '' as const,
   
   // Status fields
-  status: 'active',
+  status: 'active' as const,
   isFeaturedByTenant: false,
   isNewArrival: false,
   isBestSeller: false,
   isPublished: true,
   visibleInPOS: true,
   visibleInOnlineStore: true,
-  addedAt: '',
-  activatedAt: '',
-  deactivatedAt: '',
-  discontinuedAt: '',
+  addedAt: '' as const,
+  activatedAt: '' as const,
+  deactivatedAt: '' as const,
+  discontinuedAt: '' as const,
   
   // Promotions & Discounts
   discount: 0,
-  discountType: '',
-  discountStart: '',
-  discountEnd: '',
+  discountType: 'percentage' as const,
+  discountStart: '' as const,
+  discountEnd: '' as const,
   flashSale: {
     isActive: false,
     startDate: '',
@@ -174,7 +176,7 @@ export const emptySubProductData = {
   totalSold: 0,
   totalRevenue: 0,
   totalProfit: 0,
-  lastSoldDate: '',
+  lastSoldDate: '' as const,
   viewCount: 0,
   addToCartCount: 0,
   purchaseCount: 0,
@@ -283,6 +285,13 @@ export const productTypes = [
   { value: 'glassware', label: 'Glassware', category: 'Gifts & Lifestyle' },
   { value: 'bar_tool', label: 'Bar Tool', category: 'Gifts & Lifestyle' },
   { value: 'gift_set', label: 'Gift Set', category: 'Gifts & Lifestyle' },
+
+  // Retail verticals (server retailTypes — electronics/fashion/beauty/home)
+  ...retailProductTypeOptions,
+
+  // Hospitality & foodservice (server hospitalityTypes — supply 'hospitality',
+  // all non-beverage) — kept in parity with the product form
+  ...hospitalityProductTypeOptions,
 ];
 
 // Standard sizes options
@@ -660,16 +669,16 @@ export const mixerOptions = [
 ];
 
 export const formParts = {
-  basicPricingSizes: 'basic-pricing-sizes',
-  basicInfo: 'basic-info',
-  pricing: 'pricing',
-  inventory: 'inventory',
-  sizes: 'sizes',
-  vendor: 'vendor',
-  statusVisibility: 'status-visibility',
-  promotions: 'promotions',
-  shipping: 'shipping',
-  tenantOverrides: 'tenant-overrides',
+  basicPricingSizes: 'basic-pricing-sizes' as const,
+  basicInfo: 'basic-info' as const,
+  pricing: 'pricing' as const,
+  inventory: 'inventory' as const,
+  sizes: 'sizes' as const,
+  vendor: 'vendor' as const,
+  statusVisibility: 'status-visibility' as const,
+  promotions: 'promotions' as const,
+  shipping: 'shipping' as const,
+  tenantOverrides: 'tenant-overrides' as const,
 } as const;
 
 // Allergens list

@@ -1,3 +1,4 @@
+import { warehouseFixture } from '@/test/warehouse-fixture';
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -22,7 +23,8 @@ afterEach(() => {
 });
 it('retains the request ID after an uncertain failure and blocks duplicate submissions', async () => {
   vi.spyOn(warehouseService, 'getWarehouses').mockResolvedValue({
-    data: [{ _id: 'city', name: 'City', isActive: true }],
+    success: true,
+    data: [warehouseFixture({ _id: 'city', name: 'City', isActive: true })],
   });
   vi.spyOn(warehouseStockService, 'getAllStock').mockResolvedValue({
     success: true,
@@ -85,9 +87,10 @@ it('opens an adjustment independent of history, posts a local zero recount with 
     .spyOn(inventoryService, 'getAllMovements')
     .mockResolvedValue({ movements: [], total: 0, truncated: false });
   vi.spyOn(warehouseService, 'getWarehouses').mockResolvedValue({
+    success: true,
     data: [
-      { _id: 'city', name: 'Wyn City', isActive: true, isDefault: true },
-      { _id: 'other', name: 'Other', isActive: true },
+      warehouseFixture({ _id: 'city', name: 'Wyn City', isActive: true, isDefault: true }),
+      warehouseFixture({ _id: 'other', name: 'Other', isActive: true }),
     ],
   });
   vi.spyOn(warehouseStockService, 'getAllStock').mockResolvedValue({

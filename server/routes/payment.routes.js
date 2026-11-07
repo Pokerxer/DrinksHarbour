@@ -2,20 +2,21 @@
 
 const express = require('express');
 const router = express.Router();
+router.use((req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
 const paymentController = require('../controllers/payment.controller');
 const { protect } = require('../middleware/auth.middleware');
 
 // Stripe routes
-router.post('/stripe/initialize', protect, paymentController.initializeStripePayment);
+router.post('/stripe/initialize', protect, require('../services/marketContext').handler(paymentController.initializeStripePayment));
 router.post('/stripe/confirm', protect, paymentController.confirmStripePayment);
 
 // Korapay routes (active gateway)
-router.post('/korapay/initialize', protect, paymentController.initializeKorapayPayment);
-router.get('/korapay/verify/:reference', paymentController.verifyKorapayPayment);
+router.post('/korapay/initialize', protect, require('../services/marketContext').handler(paymentController.initializeKorapayPayment));
+router.get('/korapay/verify/:reference', protect, paymentController.verifyKorapayPayment);
 
 // Paystack routes (kept for re-enable — UI currently shows "Coming soon")
-router.post('/paystack/initialize', protect, paymentController.initializePaystackPayment);
-router.get('/paystack/verify/:reference', paymentController.verifyPaystackPayment);
+router.post('/paystack/initialize', protect, require('../services/marketContext').handler(paymentController.initializePaystackPayment));
+router.get('/paystack/verify/:reference', protect, paymentController.verifyPaystackPayment);
 
 // General routes
 router.post('/attach-to-order', protect, paymentController.attachPaymentToOrder);

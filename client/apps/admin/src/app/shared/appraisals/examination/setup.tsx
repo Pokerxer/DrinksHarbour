@@ -42,9 +42,9 @@ export default function ExaminationSetup(
         Include examination and attendance
       </label>
       <p className="text-sm leading-6 text-gray-500">
-        Selected employees use examination, appraisal and attendance equally.
-        Employees without an examination use appraisal and attendance equally.
-        The combined percentage determines each bonus.
+        Selected employees use 40% examination, 40% appraisal and 20%
+        attendance. Employees without an examination use 80% appraisal and 20%
+        attendance. The combined percentage determines each bonus.
       </p>
       {enabled && (
         <fieldset

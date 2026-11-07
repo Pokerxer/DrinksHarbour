@@ -2,7 +2,7 @@ import type { Post } from './data';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-function mapPost(raw: any): Post {
+function mapPost(raw: any, includeContent = true): Post {
   const iso = raw.publishedAt || raw.createdAt || new Date().toISOString();
   return {
     id: String(raw._id),
@@ -18,7 +18,9 @@ function mapPost(raw: any): Post {
     featured: Boolean(raw.featured),
     tags: raw.tags || [],
     author: raw.author || { name: '', role: '', bio: '' },
-    content: raw.content || [],
+    // Index and related-post cards never render article bodies. Keeping those
+    // out of client props avoids serializing every full article into the HTML.
+    content: includeContent ? raw.content || [] : [],
     seo: raw.seo || {},
   };
 }
@@ -28,7 +30,7 @@ export async function getPosts(): Promise<Post[]> {
     const res = await fetch(`${API_BASE}/api/blog?limit=100`, { next: { revalidate: 300 } });
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.posts || []).map(mapPost);
+    return (data.posts || []).map((post: Parameters<typeof mapPost>[0]) => mapPost(post, false));
   } catch {
     return [];
   }

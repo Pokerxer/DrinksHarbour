@@ -38,3 +38,22 @@ workspace lockfile; no unrelated dependency updates are included.
 Reviewed commit follow-up (2 November 2026): five isolated shop interaction checks
 pass. Required test packages reuse already-locked workspace resolutions. Type
 diagnostics for this feature match the original committed baseline. No deployment.
+
+2 November live overflow correction: the live stylesheet has the height utility
+but lacks `.overflow-y-scroll`, allowing options to paint over adjacent sections.
+Keep critical max-height/overflow/overscroll in SearchableFilterList's inline
+styles; do not move containment back solely into generated utility classes.
+Filter backdrop/dialog z-indices 60/61 keep the WhatsApp launcher (55) below the
+modal and its actions. Seven shop checks, 132 platform module checks and TypeScript
+pass. Real mobile (390×844) and desktop (1440×900) confirm final-option scrolling
+and reachable footer actions. Apply/clear URL transitions checked. Full server
+suite rerun with local-port access: 4,489 pass, 258 skip, 66 integration failures
+from unset `DRINKSHARBOUR_VENUE_TEST_MONGO_URI`. Full named failure list is in
+docs/superpowers/specs/shop-filter-verification-2026-11-02.md; no server changes.
+
+Screenshot follow-up on 2 November: retained the existing overflow/z-index repair.
+Fresh checks pass: 25 shop/brand/store component tests, 142 platform module tests,
+and TypeScript. Actual local catalog now has 206 subcategories and 287 brands.
+Mobile 390×844 verifies selecting the final subcategory with contained scrolling
+and reachable footer actions at y=830. No deployment; detailed fresh evidence is
+in RESUME-shop-searchable-filters.md.

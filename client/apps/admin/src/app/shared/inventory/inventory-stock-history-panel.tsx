@@ -20,6 +20,7 @@ import {
   type HistoryScope,
 } from './inventory-stock-history';
 import { useStockProductHistory } from './use-stock-product-history';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 export default function StockHistoryPanel({ row, token }: { row: StockRow; token: string }) {
   const [scope, setScope] = useState<HistoryScope>('line');
   const [from, setFrom] = useState('');
@@ -118,7 +119,7 @@ export default function StockHistoryPanel({ row, token }: { row: StockRow; token
         )}
         <p className="text-[11px] text-gray-500">
           {scope === 'line'
-            ? `${row.warehouseName} · ${row.sizeName}. Older entries without a warehouse or size appear in All product moves.`
+            ? `${row.warehouseName} · ${flatRowSizeLabel(row) || row.sizeName}. Older entries without a warehouse or size appear in All product moves.`
             : 'All warehouses and sizes, including entries with no location recorded.'}{' '}
           Dates use UTC.
         </p>

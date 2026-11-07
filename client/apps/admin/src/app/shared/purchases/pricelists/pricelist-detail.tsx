@@ -98,7 +98,7 @@ export default function PurchasesPricelistDetail({ id }: { id: string }) {
     load();
   }, [load]);
 
-  function patch(p: Partial<VendorPricelist>) {
+  function patch(p: Partial<DetailDoc>) {
     setPl((prev) => (prev ? { ...prev, ...p } : prev));
   }
 

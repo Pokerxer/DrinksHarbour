@@ -130,6 +130,7 @@ function buildTenantData(b, isUpdate = false) {
   if (b.currentPeriodEnd) data.currentPeriodEnd = new Date(b.currentPeriodEnd);
 
   // Number fields
+  if (b.sellingPriceMarkupPercentage !== undefined) data.sellingPriceMarkupPercentage = require('../utils/sellingPriceMarkup').markupRate(Number(b.sellingPriceMarkupPercentage));
   if (b.markupPercentage !== undefined) data.markupPercentage = Number(b.markupPercentage);
   if (b.commissionPercentage !== undefined) data.commissionPercentage = Number(b.commissionPercentage);
   if (b.platformMarkupPercentage !== undefined) data.platformMarkupPercentage = Number(b.platformMarkupPercentage);
@@ -292,7 +293,7 @@ exports.getOwnTenantById = asyncHandler(async (req, res) => {
  */
 exports.getAdminTenants = asyncHandler(async (req, res) => {
   const tenants = await Tenant.find()
-    .select('name slug plan subscriptionStatus status revenueModel markupPercentage commissionPercentage platformMarkupPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits logo primaryColor contactEmail contactPhone country isSystemTenant admin kycVerified createdAt')
+    .select('name slug plan subscriptionStatus status revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage platformMarkupPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits logo primaryColor contactEmail contactPhone country isSystemTenant admin kycVerified createdAt')
     .sort({ createdAt: -1 })
     .lean();
 
@@ -520,6 +521,7 @@ exports.updateAdminTenant = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Tenant not found' });
   }
 
+  await require('../services/venue/subscription').recordVenueBoundary(before, updateData);
   await regeocodeIfAddressChanged(tenant, flatUpdate, before);
 
   // Audit: platform admin updated a tenant
@@ -572,10 +574,12 @@ exports.deleteAdminTenant = asyncHandler(async (req, res) => {
 exports.getTenantBySlug = asyncHandler(async (req, res) => {
   const { slug } = req.params;
   const tenant = await Tenant.findOne({ slug, status: 'approved' })
-    .select('name slug logo primaryColor plan subscriptionStatus status isSystemTenant enforceAgeVerification contactEmail contactPhone country defaultCurrency')
+    .select('name slug logo primaryColor plan subscriptionStatus status isSystemTenant enforceAgeVerification contactEmail contactPhone country defaultCurrency businessType industries')
     .lean();
   if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
-  res.json({ success: true, data: { tenant } });
+  const { businessType, industries, ...publicTenant } = tenant;
+  const profile = require('../constants/industries').resolveTenantIndustries({ businessType, industries });
+  res.json({ success: true, data: { tenant: { ...publicTenant, industries: profile ?? [] } } });
 });
 
 // ─── Public: Vendor Application ─────────────────────────────────────────────────

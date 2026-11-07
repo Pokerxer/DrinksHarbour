@@ -6,6 +6,10 @@ import {
   returnQuantity,
   returnStatus,
 } from './customer-return-status';
+import {
+  customerReturnSizeLabel,
+  restockTargetLabel,
+} from './customer-return-identity';
 export default function CustomerReturnDetail({
   row,
   onClose,
@@ -49,7 +53,9 @@ export default function CustomerReturnDetail({
       </span>
       <p className="mt-4 font-semibold">
         {row.product}{' '}
-        <span className="font-normal text-gray-500">· {row.size}</span>
+        <span className="font-normal text-gray-500">
+          · {customerReturnSizeLabel(row)}
+        </span>
       </p>
       <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
         {[
@@ -72,6 +78,14 @@ export default function CustomerReturnDetail({
         ))}
       </dl>
       {row.reason && <p className="mt-4 text-sm text-gray-600">{row.reason}</p>}
+      {restockTargetLabel(row) && (
+        <p className="mt-2 text-sm text-gray-600">
+          Restock targets size{' '}
+          <span className="font-medium text-gray-800">
+            {restockTargetLabel(row)}
+          </span>
+        </p>
+      )}
       <p className="mt-4 rounded-lg bg-gray-50 p-3 text-xs leading-5 text-gray-500">
         {row.source === 'sales'
           ? 'Sales quantities are cumulative. The recorded date is the latest matching return movement. '

@@ -663,7 +663,17 @@ async function transferStock(data, performedBy, tenantId) {
  */
 async function createMovement(data, performedBy, tenantId) {
   if (['adjustment_in', 'adjustment_out'].includes(data?.type) || data?.category === 'adjustment') {
-    return require('./stockAdjustment').postStockAdjustment(data, performedBy, tenantId);
+    // DRI-31 — stockAdjustment's writer validates every id with a string-only
+    // 24-hex regex, while this route carries the tenant exactly as
+    // resolveTenantId() resolved it: the raw req.tenant._id / req.user.tenant
+    // ObjectId. That regex 400'd every API-direct adjustments write. Normalize
+    // to the string form getTenantId(req) produces for /api/inventory/adjust —
+    // the writer's own validation and tenant scoping are untouched.
+    return require('./stockAdjustment').postStockAdjustment(
+      data,
+      performedBy,
+      require('../utils/tenantContext').normalizeTenantId(tenantId)
+    );
   }
   const sp = await SubProduct.findOne({ _id: data.subProductId, tenant: tenantId }).select(
     'availableStock totalStock lowStockThreshold stockStatus costPrice product tenant'
@@ -765,7 +775,16 @@ async function getMovements(tenantId, options = {}) {
         // Product name through it so the UI can always show a real name.
         populate: { path: 'product', select: 'name' },
       })
-      .populate('size', 'displayName size')
+      // Size variant identity (DRI-29) for the /inventory movement feeds
+      // (adjustments entry picker source rows, receipts `sizeLabel`, dashboard
+      // movements, history scope labels): colour/option identity rides along
+      // verbatim in the populated Size so same-size colour variants stay
+      // distinguishable per exact size._id. Emission is only with identity —
+      // size docs carry these fields only on retail variant rows (Size schema:
+      // no defaults, absent keys on legacy beverage rows), so legacy movement
+      // payloads keep their exact pre-change wire shape. Pure data provision:
+      // no label composition, no display strings server-side.
+      .populate('size', 'displayName size colorName colorHexCode optionName')
       .populate('relatedOrder', 'orderNumber receiptNumber placedAt')
       .populate('warehouse', 'name code')
       .populate('sourceWarehouse', 'name code')

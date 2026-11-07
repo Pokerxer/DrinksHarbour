@@ -1,5 +1,10 @@
 export { default as AdvancedFilters } from './AdvancedFilters';
 export type { FilterConfig } from './AdvancedFilters';
+export {
+  default as PublicationScopeTag,
+  getApproveCopy,
+} from './PublicationScopeTag';
+export type { PublicationScope } from './PublicationScopeTag';
 export { default as EnhancedSearch } from './EnhancedSearch';
 export { default as ColumnToggle } from './ColumnToggle';
 export { default as StatusPills, StatusPillsInline } from './StatusPills';

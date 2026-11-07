@@ -1,0 +1,50 @@
+'use strict';
+const test = require('node:test'); const assert = require('node:assert/strict');
+const { uri, connectVenueMongo, fixture, beverage } = require('./helpers/venueMongo');
+async function billFixture(t, suffix) {
+  await connectVenueMongo(t, suffix); const args = await fixture(); const item = await beverage(args);
+  const sessions = require('../services/venue/service-sessions'); await sessions.ensureIndexes(); await require('../services/venue/billing').ensureIndexes(); await require('../services/venue/collections').ensureIndexes();
+  await require('../services/chartOfAccounts.service').ensureDefaultCOA(args.tenantId); await require('../models/JournalEntry').createIndexes();
+  const visit = await sessions.ensureServiceSession({ ...args, idempotencyKey: 'open' });
+  const accepted = await require('../services/venue/lines').setSessionLines({ ...args, sessionId: visit.id, expectedVersion: visit.version, lines: [item], idempotencyKey: 'lines' });
+  const bill = await require('../services/venue/billing').ensureBillOrder({ ...args, sessionId: visit.id, expectedVersion: accepted.version, lineVersion: accepted.lineVersion, ageVerified: true, idempotencyKey: 'freeze' });
+  return { args, visit, bill, command: { ...args, sessionId: visit.id, expectedVersion: bill.version, quoteId: bill.quoteId, method: 'paystack', email: 'guest@test.local' } };
+}
+test('parallel_collection_and_unknown_initialization_never_start_another_charge', { skip: !uri }, async t => {
+  const { args, bill, command } = await billFixture(t, 'payment_race'); let starts = 0;
+  t.mock.method(require('../services/venue/paystack'), 'initialize', async () => { starts++; throw new Error('Network timeout after provider accepted request'); });
+  const payments = require('../services/venue/collections');
+  const results = await Promise.allSettled(Array.from({ length: 6 }, (_, n) => payments.collectBill({ ...command, idempotencyKey: `collect-${n}` })));
+  assert.ok(results.some(result => result.status === 'fulfilled'));
+  await payments.collectBill({ ...command, idempotencyKey: 'another-device' });
+  assert.equal(starts, 1);
+  const attempt = await require('../models/VenuePaymentAttempt').findOne({ tenant: args.tenantId }).lean();
+  assert.equal(attempt.state, 'needs_review'); assert.equal(await require('../models/VenuePaymentAttempt').countDocuments({ tenant: args.tenantId }), 1);
+  await assert.rejects(payments.recordVerifiedPayment(attempt.reference, { success: true, status: 'paid', data: { reference: attempt.reference, currency: 'NGN', amountMinor: bill.totalMinor - 1, transactionId: '123' } }));
+  assert.equal(await require('../models/VenuePaymentReceipt').countDocuments({ tenant: args.tenantId }), 0);
+  assert.equal(await require('../models/JournalEntry').countDocuments({ tenant: args.tenantId }), 0);
+});
+test('receipt_survives_failed_settlement_and_retry_consumes_stock_and_posts_once', { skip: !uri }, async t => {
+  const { args, bill, command } = await billFixture(t, 'receipt_recovery');
+  t.mock.method(require('../services/venue/paystack'), 'initialize', async () => ({ authorizationUrl: 'https://checkout.paystack.com/fake' }));
+  await require('../services/venue/collections').collectBill({ ...command, idempotencyKey: 'collect' });
+  const attempt = await require('../models/VenuePaymentAttempt').findOne({ tenant: args.tenantId }).lean();
+  const paidAt = new Date();
+  const receiptId = await require('../services/venue/collections').recordVerifiedPayment(attempt.reference, { success: true, status: 'paid', data: { reference: attempt.reference, currency: 'NGN', amountMinor: bill.totalMinor, transactionId: '98765', paidAt } });
+  const Account = require('../models/Account'); await Account.updateOne({ tenant: args.tenantId, code: '4000' }, { $set: { isActive: false } });
+  const settle = () => require('../services/venue/settlement').settleVenueBill({ tenantId: args.tenantId, receiptId, actor: args.actor });
+  await assert.rejects(settle(), /accounts/i);
+  assert.equal(await require('../models/VenuePaymentReceipt').countDocuments({ tenant: args.tenantId, state: 'verified' }), 1);
+  assert.equal(await require('../models/VenuePaymentAllocation').countDocuments({ tenant: args.tenantId }), 0);
+  assert.equal(await require('../models/WarehouseMovement').countDocuments({ tenant: args.tenantId }), 0);
+  const stock = await require('../models/WarehouseStock').findOne({ tenant: args.tenantId }).lean(); assert.equal(stock.currentQuantity, 10); assert.equal(stock.reservedQuantity, 5);
+  await Account.updateOne({ tenant: args.tenantId, code: '4000' }, { $set: { isActive: true } });
+  await require('../models/Tenant').updateOne({ _id: args.tenantId }, { $set: { 'venueSettings.accountingClosedThrough': new Date(paidAt.getTime()+1000) } });
+  await assert.rejects(settle(), /period is closed/i);
+  await require('../models/Tenant').updateOne({ _id: args.tenantId }, { $set: { 'venueSettings.accountingClosedThrough': null } });
+  const settlements = await Promise.allSettled([settle(), settle(), settle()]); assert.ok(settlements.some(result => result.status === 'fulfilled'));
+  assert.equal((await settle()).state, 'settled');
+  assert.equal(await require('../models/VenuePaymentAllocation').countDocuments({ tenant: args.tenantId }), 1);
+  assert.equal(await require('../models/JournalEntry').countDocuments({ tenant: args.tenantId }), 2);
+  assert.equal(await require('../models/WarehouseMovement').countDocuments({ tenant: args.tenantId }), 1);
+});

@@ -1,0 +1,26 @@
+'use strict';
+const test = require('node:test'); const assert = require('node:assert/strict');
+const { uri, connectVenueMongo, fixture, beverage } = require('./helpers/venueMongo');
+test('short_batch_cover_aborts_bill_and_owned_stock_then_unpaid_support_release_is_exact', { skip: !uri }, async t => {
+  await connectVenueMongo(t, 'inventory'); const args = await fixture(); const item = await beverage(args);
+  const sessions = require('../services/venue/service-sessions'); await sessions.ensureIndexes();
+  const billing = require('../services/venue/billing'); await billing.ensureIndexes();
+  const visit = await sessions.ensureServiceSession({ ...args, idempotencyKey: 'open' });
+  const accepted = await require('../services/venue/lines').setSessionLines({ ...args, sessionId: visit.id, expectedVersion: visit.version, lines: [item], idempotencyKey: 'lines' });
+  const sub = await require('../models/SubProduct').findOne({ _id: item.subProductId, tenant: args.tenantId }).lean();
+  await require('../models/Product').updateOne({ _id: sub.product }, { $set: { tracksBatch: true } });
+  const Batch = require('../models/WarehouseBatch');
+  const batch = await Batch.create({ tenant: args.tenantId, warehouse: args.locationId, subProduct: item.subProductId, size: item.sizeId, batchNumber: 'test', quantity: 2 });
+  const command = { ...args, sessionId: visit.id, expectedVersion: accepted.version, lineVersion: accepted.lineVersion, ageVerified: true, idempotencyKey: 'freeze' };
+  await assert.rejects(billing.ensureBillOrder(command), /batch/i);
+  assert.equal((await Batch.findById(batch._id).lean()).quantity, 2);
+  assert.equal((await require('../models/WarehouseStock').findOne({ tenant: args.tenantId }).lean()).reservedQuantity, 2);
+  assert.equal(await require('../models/Order').countDocuments({ tenant: args.tenantId, venueBillForSession: visit.id }), 0);
+  await Batch.updateOne({ _id: batch._id }, { $inc: { quantity: 2 } });
+  const bill = await billing.ensureBillOrder(command); assert.equal((await Batch.findById(batch._id).lean()).quantity, 1);
+  const inventory = require('../services/venue/inventory');
+  await inventory.releaseUnpaidBillStock({ ...args, sessionId: visit.id, expectedVersion: bill.version, confirmedUnserved: true, reason: 'Sealed bottles were not served', idempotencyKey: 'support-release' });
+  assert.equal((await Batch.findById(batch._id).lean()).quantity, 4);
+  const stock = await require('../models/WarehouseStock').findOne({ tenant: args.tenantId }).lean(); assert.equal(stock.reservedQuantity, 2); assert.equal(stock.currentQuantity, 10);
+  assert.equal(await require('../models/VenueStockEffect').countDocuments({ tenant: args.tenantId, state: 'released' }), 1);
+});

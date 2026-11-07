@@ -25,14 +25,14 @@ function WalletPageInner() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const searchParams = useSearchParams();
-  // Paystack redirects back with ?reference=&trxref= (our own DHW- reference).
-  // Keep wallet_ref for backwards-compatibility with any in-flight links.
+  // Korapay redirects back with ?reference= (our own DHW- reference).
+  // wallet_ref is kept for backwards-compatibility with any in-flight links.
   const fundingRef =
     searchParams.get('wallet_ref') ||
     searchParams.get('reference') ||
     searchParams.get('trxref');
 
-  // Handle the return from Paystack after wallet funding.
+  // Handle the return from Korapay after wallet funding.
   useEffect(() => {
     if (!fundingRef || !token) return;
     setVerifying(true);
@@ -54,9 +54,9 @@ function WalletPageInner() {
   const handleFund = async (amount: number) => {
     const res = await fundWallet(amount);
     if (res.ok && res.reference && res.authUrl) {
-      // Persist reference so we can verify on return; Paystack callback also carries it.
+      // Persist reference so we can verify on return; Korapay's redirect also carries it.
       try { sessionStorage.setItem('dh_wallet_fund_ref', res.reference); } catch {}
-      // The return page is set server-side via Paystack's callback_url at init time;
+      // The return page is set server-side via Korapay's redirect_url at init time;
       // appending it to the checkout URL here has no effect, so redirect straight to it.
       window.location.href = res.authUrl;
     }

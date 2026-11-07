@@ -5,7 +5,6 @@ import { useFormContext } from 'react-hook-form';
 import { Input, Text, Tooltip, Badge, Button, Select, type SelectOption } from 'rizzui';
 import cn from '@core/utils/class-names';
 import { CreateProductInput } from '@/validators/create-product.schema';
-import { countries } from './form-utils';
 import FormGroup from '@/app/shared/form-group';
 import { motion } from 'framer-motion';
 import { useState, useEffect, Fragment } from 'react';
@@ -28,6 +27,11 @@ import { PiSparkle, PiSpinner } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
 import { geminiService } from '@/services/gemini.service';
 import { isBeverageProductType } from '@/utils/product-types';
+import {
+  SOURCING_COUNTRIES,
+  getSourceCountryFlag,
+  countryFlags as countryFlagsLegacy,
+} from './countries';
 import { brandService } from '@/services/brand.service';
 import toast from 'react-hot-toast';
 
@@ -50,43 +54,10 @@ const staggerContainer = {
   },
 };
 
-// Country flags mapping
-const countryFlags: Record<string, string> = {
-  scotland: '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
-  ireland: '🇮🇪',
-  usa: '🇺🇸',
-  canada: '🇨🇦',
-  japan: '🇯🇵',
-  france: '🇫🇷',
-  italy: '🇮🇹',
-  spain: '🇪🇸',
-  germany: '🇩🇪',
-  england: '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-  wales: '🏴󠁧󠁢󠁷󠁬󠁳󠁿',
-  india: '🇮🇳',
-  australia: '🇦🇺',
-  mexico: '🇲🇽',
-  'new_zealand': '🇳🇿',
-  argentina: '🇦🇷',
-  chile: '🇨🇱',
-  'south_africa': '🇿🇦',
-  portugal: '🇵🇹',
-  netherlands: '🇳🇱',
-  belgium: '🇧🇪',
-  sweden: '🇸🇪',
-  denmark: '🇩🇰',
-  norway: '🇳🇴',
-  finland: '🇫🇮',
-  poland: '🇵🇱',
-  russia: '🇷🇺',
-  china: '🇨🇳',
-  taiwan: '🇹🇼',
-  brazil: '🇧🇷',
-  cuba: '🇨🇺',
-  jamaica: '🇯🇲',
-  barbados: '🇧🇧',
-  guyana: '🇬🇾',
-};
+// Country flags — sourced from the colocated curated dictionary
+// (countries.ts). Legacy alias keys are preserved there; new sourcing
+// countries resolve by exact name.
+const countryFlags = countryFlagsLegacy;
 
 const productionMethods = [
   { value: '', label: 'Select production method', icon: Factory },
@@ -123,6 +94,7 @@ function AiBtn({
       disabled={isLoading || disabled}
       className="ml-1 inline-flex items-center rounded p-0.5 text-blue-500 hover:bg-blue-50 disabled:opacity-40"
       title="Generate with AI"
+      aria-label="Generate with AI"
     >
       {isLoading ? (
         <PiSpinner className="h-3.5 w-3.5 animate-spin" />
@@ -152,7 +124,8 @@ export default function ProductOrigin({
   const vintage = watch('vintage');
   const productionMethod = watch('productionMethod');
   const productName = watch('name') || '';
-  const isBeverage = isBeverageProductType(watch('type'));
+  const type = watch('type');
+  const isBeverage = !!type && isBeverageProductType(type);
   const currentYear = new Date().getFullYear();
 
   const hasName = productName.length >= 3;
@@ -177,8 +150,9 @@ export default function ProductOrigin({
     fetchBrands();
   }, [session]);
 
-  // Get flag for selected country
-  const getCountryFlag = (code: string) => countryFlags[code] || '🌍';
+  // Get flag for selected country — curated sourcing dictionary first, legacy
+  // aliases second, globe fallback.
+  const getCountryFlag = (code: string) => getSourceCountryFlag(code);
 
   // Calculate age from vintage if available
   const calculateAge = (year: number | undefined) => {
@@ -299,6 +273,20 @@ export default function ProductOrigin({
       );
       setValue('region', regionRes.data.region || '');
 
+      // Generate producer
+      const producerRes = await geminiService.generateProducer(
+        productName,
+        token,
+        watch('brand'),
+        watch('type')
+      );
+      setValue('producer', producerRes.data.producer || '');
+
+      if (!isBeverage) {
+        toast.success('Origin and manufacturer generated', { id: 'ai-origin' });
+        return;
+      }
+
       // Generate appellation (e.g., Champagne, Cognac, Scotch Whisky)
       const appellationRes = await geminiService.generateAppellation(
         productName,
@@ -308,15 +296,6 @@ export default function ProductOrigin({
         regionRes.data.region
       );
       setValue('appellation', appellationRes.data.appellation || '');
-
-      // Generate producer
-      const producerRes = await geminiService.generateProducer(
-        productName,
-        token,
-        watch('brand'),
-        watch('type')
-      );
-      setValue('producer', producerRes.data.producer || '');
 
       // Generate vintage
       const vintageRes = await geminiService.generateVintage(
@@ -374,7 +353,7 @@ export default function ProductOrigin({
 
   return (
     <FormGroup
-      title="Origin & Production"
+      title={isBeverage ? 'Origin & Production' : 'Origin & Manufacturer'}
       description="Details about where and how the product is made"
       className={cn(className)}
     >
@@ -412,7 +391,10 @@ export default function ProductOrigin({
         {/* Origin Country - Enhanced with flags */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <label
+              htmlFor="origin-country-input"
+              className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900"
+            >
               <Globe className="h-4 w-4 text-blue-500" />
               Origin Country
               {selectedCountry && (
@@ -421,33 +403,25 @@ export default function ProductOrigin({
               <AiBtn field="originCountry" generating={generating} onClick={genOriginCountry} disabled={!hasName} />
             </label>
 
-            <div className="relative">
-              <select
-                className="block w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-3 pr-10 text-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            <div>
+              <input
                 {...register('originCountry')}
-              >
-                <option value="">Select a country</option>
-                {countries.map((country) => (
-                  <option key={country.value} value={country.value}>
-                    {getCountryFlag(country.value)} {country.label}
+                id="origin-country-input"
+                list="origin-country-options"
+                autoComplete="off"
+                placeholder="e.g., Nigeria, Scotland, France — type to search"
+                className="block w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <datalist id="origin-country-options">
+                {SOURCING_COUNTRIES.map((country) => (
+                  <option key={country.name} value={country.name}>
+                    {country.name}
                   </option>
                 ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3">
-                <svg
-                  className="h-4 w-4 text-gray-500"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </div>
+              </datalist>
+              <Text className="mt-2 text-xs text-gray-500">
+                Start typing to pick a country — or enter your own exact name.
+              </Text>
             </div>
 
             {selectedCountry && (
@@ -457,10 +431,7 @@ export default function ProductOrigin({
                 className="mt-3"
               >
                 <Badge color="info" className="text-xs">
-                  {getCountryFlag(selectedCountry)}{' '}
-                  {
-                    countries.find((c) => c.value === selectedCountry)?.label
-                  }
+                  {getCountryFlag(selectedCountry)} {selectedCountry}
                 </Badge>
               </motion.div>
             )}
@@ -477,12 +448,32 @@ export default function ProductOrigin({
             </label>
 
             <Input
-              placeholder="e.g., Speyside, Napa Valley, Bordeaux, Islay"
+              placeholder={isBeverage ? 'e.g., Speyside, Napa Valley' : 'State or region'}
               {...register('region')}
             />
 
             <Text className="mt-2 text-xs text-gray-500">
               Specific geographical region within the country
+            </Text>
+          </div>
+        </motion.div>
+
+        {/* Producer */}
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <Building className="h-4 w-4 text-purple-500" />
+              {isBeverage ? 'Producer' : 'Manufacturer'}
+              <AiBtn field="producer" generating={generating} onClick={genProducer} disabled={!hasName} />
+            </label>
+
+            <Input
+              placeholder={isBeverage ? 'e.g., Midleton Distillery' : 'Manufacturer name'}
+              {...register('producer')}
+            />
+
+            <Text className="mt-2 text-xs text-gray-500">
+              The company or facility that makes the product
             </Text>
           </div>
         </motion.div>
@@ -508,26 +499,6 @@ export default function ProductOrigin({
 
             <Text className="mt-2 text-xs text-gray-500">
               Official protected designation of origin
-            </Text>
-          </div>
-        </motion.div>
-
-        {/* Producer */}
-        <motion.div variants={itemVariants}>
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
-              <Building className="h-4 w-4 text-purple-500" />
-              Producer
-              <AiBtn field="producer" generating={generating} onClick={genProducer} disabled={!hasName} />
-            </label>
-
-            <Input
-              placeholder="e.g., Midleton Distillery, Moët & Chandon"
-              {...register('producer')}
-            />
-
-            <Text className="mt-2 text-xs text-gray-500">
-              The company or facility that produces the beverage
             </Text>
           </div>
         </motion.div>

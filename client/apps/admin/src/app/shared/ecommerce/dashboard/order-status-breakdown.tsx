@@ -3,13 +3,19 @@
 
 import WidgetCard from '@core/components/cards/widget-card';
 import {
-  RadialBarChart,
-  RadialBar,
-  Legend,
+  Bar,
+  BarChart,
+  CartesianGrid,
   ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
   Cell,
+  LabelList,
 } from 'recharts';
-import { useMedia } from '@core/hooks/use-media';
+import { CustomTooltip } from '@core/components/charts/custom-tooltip';
+import { EmptyState, usePrefersReducedMotion } from './widget-parts';
+import { PiBagDuotone } from 'react-icons/pi';
 import { useDashboard, useDashboardMeta } from './use-dashboard';
 import cn from '@core/utils/class-names';
 
@@ -23,13 +29,22 @@ const STATUS_META: Record<string, { label: string; fill: string }> = {
   refunded: { label: 'Refunded', fill: '#6b7280' },
 };
 
-function SkeletonCard() {
+function SkeletonChart() {
   return (
-    <div className="animate-pulse">
-      <div className="mx-auto h-64 w-64 rounded-full bg-gray-100" />
-      <div className="mt-4 space-y-2">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="mx-auto h-3 w-32 rounded bg-gray-100" />
+    <div className="pt-4">
+      <div className="space-y-3">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="flex animate-pulse items-center gap-3"
+            aria-hidden="true"
+          >
+            <div className="h-3 w-16 shrink-0 rounded bg-gray-200 dark:bg-gray-100/20" />
+            <div
+              className="h-4 flex-1 rounded-e-lg bg-gray-200 dark:bg-gray-100/20"
+              style={{ maxWidth: `${20 + i * 15}%` }}
+            />
+          </div>
         ))}
       </div>
     </div>
@@ -41,7 +56,7 @@ export default function OrderStatusBreakdown({
 }: {
   className?: string;
 }) {
-  const isMobile = useMedia('(max-width: 480px)', false);
+  const reducedMotion = usePrefersReducedMotion();
   const data = useDashboard();
   const meta = useDashboardMeta();
   const periodLabel = meta?.label ?? 'This month';
@@ -63,43 +78,78 @@ export default function OrderStatusBreakdown({
       description={
         data ? `${total} orders · ${periodLabel}` : `Breakdown · ${periodLabel}`
       }
-      descriptionClassName="text-gray-500 mt-0.5"
+      descriptionClassName="text-gray-500 dark:text-gray-600 mt-0.5"
       className={cn('@container', className)}
     >
       {!data ? (
-        <div className="pt-4">
-          <SkeletonCard />
-        </div>
+        <SkeletonChart />
       ) : chartData.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-          <p className="text-sm">No orders {periodLabel.toLowerCase()} yet</p>
-        </div>
+        <EmptyState
+          icon={<PiBagDuotone className="h-6 w-6" aria-hidden="true" />}
+          message={`No orders ${periodLabel.toLowerCase()} yet`}
+        />
       ) : (
-        <div className="h-80 w-full pb-4 pt-4 @sm:h-96 @xl:pb-0">
-          <ResponsiveContainer
-            width="100%"
-            height="100%"
-            className="[&_.recharts-default-legend]:flex [&_.recharts-default-legend]:flex-wrap [&_.recharts-default-legend]:justify-center @xl:[&_.recharts-default-legend]:flex-col [&_.recharts-legend-wrapper]:!static [&_.recharts-legend-wrapper]:!-mt-[22px] [&_.recharts-legend-wrapper]:!leading-[22px] @xs:[&_.recharts-legend-wrapper]:!mt-0 @xl:[&_.recharts-legend-wrapper]:!absolute @xl:[&_.recharts-legend-wrapper]:!end-0 @xl:[&_.recharts-legend-wrapper]:!start-auto @xl:[&_.recharts-legend-wrapper]:!top-1/2 @xl:[&_.recharts-legend-wrapper]:!-translate-y-1/2 @xl:[&_.recharts-legend-wrapper]:!leading-9"
-          >
-            <RadialBarChart
-              innerRadius="20%"
-              outerRadius="110%"
-              barSize={isMobile ? 16 : 22}
+        <div
+          className="h-64 w-full pb-2 pt-4"
+          role="img"
+          aria-label={`Order status breakdown: ${chartData
+            .map((d) => `${d.sales.toLocaleString()} ${d.name.toLowerCase()}`)
+            .join(', ')} — ${total} orders ${periodLabel.toLowerCase()}`}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            {/* Comparison across statuses → horizontal bars. Categories are
+                directly labelled on the axis (the axis is the legend), exact
+                counts on hover/focus tooltip and as end labels. */}
+            <BarChart
+              layout="vertical"
               data={chartData}
-              className="rtl:[&_.recharts-legend-item>svg]:ml-1"
+              margin={{ top: 4, right: 32, bottom: 0, left: 0 }}
+              className="[&_.recharts-cartesian-axis-tick-value]:fill-gray-500"
             >
-              <RadialBar
-                label={{
-                  fill: '#ffffff',
-                  position: 'insideStart',
-                  fontSize: 11,
-                }}
-                background
-                dataKey="sales"
-                className="[&_.recharts-radial-bar-background-sector]:fill-gray-100"
+              <CartesianGrid
+                strokeDasharray="6 8"
+                strokeOpacity={0.4}
+                horizontal={false}
               />
-              <Legend iconSize={10} layout="vertical" verticalAlign="middle" />
-            </RadialBarChart>
+              <XAxis
+                type="number"
+                axisLine={false}
+                tickLine={false}
+                allowDecimals={false}
+                tick={{ fontSize: 11 }}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={76}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 12 }}
+              />
+              <Tooltip
+                cursor={false}
+                content={<CustomTooltip />}
+                formatter={(value: number) => value.toLocaleString('en-NG')}
+              />
+              <Bar
+                dataKey="sales"
+                name="Orders"
+                barSize={14}
+                radius={[0, 4, 4, 0]}
+                isAnimationActive={!reducedMotion}
+              >
+                {chartData.map((d) => (
+                  <Cell key={d.name} fill={d.fill} />
+                ))}
+                <LabelList
+                  dataKey="sales"
+                  position="right"
+                  formatter={(v: number) => v.toLocaleString()}
+                  className="fill-gray-500"
+                  fontSize={11}
+                />
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </div>
       )}

@@ -6,15 +6,25 @@ import type { QuoteStatus, SalesOrder } from '@/services/salesOrder.service';
 
 /** Inflate a PDF's page streams so drawn text is greppable. */
 function pageStreams(raw: string): string {
-  return Array.from(raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g))
-    .map((match) => {
-      try {
-        return inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1');
-      } catch {
-        return match[1];
-      }
-    })
-    .join('\n');
+  // Page content is compressed (renderDocument always passes compress:true).
+  // Deflate payloads can contain the literal bytes "endstream", so matching on
+  // that marker truncates streams. Instead, honour each object's declared
+  // /Length: the byte offset is char offset because output() is a latin1
+  // string (one byte per character).
+  const bytes = Buffer.from(raw, 'latin1');
+  // The object dict between /Length and the stream keyword spans newlines.
+  const dict = /\/Length (\d+)[^>]{0,200}>[>\s]*\r?\nstream\r?\n/g;
+  const inflated: string[] = [];
+  for (const match of raw.matchAll(dict)) {
+    const start = match.index + match[0].length;
+    const payload = bytes.subarray(start, start + Number(match[1]));
+    try {
+      inflated.push(inflateSync(payload).toString('latin1'));
+    } catch {
+      inflated.push(payload.toString('latin1'));
+    }
+  }
+  return inflated.join('\n');
 }
 
 const baseOrder: SalesOrder = {

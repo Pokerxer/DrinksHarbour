@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
-import { Elms_Sans, Kavoon } from "next/font/google";
+import { elmsSans, kavoon } from "./fonts";
 import "@/styles/styles.scss";
 import GlobalProvider from "./GlobalProvider";
 
@@ -26,7 +26,7 @@ configureCommerceCore({
 // Deferred — non-critical UI, code-split into separate chunks
 const ModalNewsletter = dynamic(() => import("@/components/Modal/ModalNewsletter"));
 const MobileBottomNav = dynamic(() => import("@/components/Navigation").then(mod => mod.MobileBottomNav));
-const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/ChatbotWidget"));
+const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/CustomerChatbot"));
 const WhatsAppButton  = dynamic(() => import("@/components/WhatsApp/WhatsAppButton"));
 const PopupBanner     = dynamic(() => import("@/components/Banner/PopupBanner"));
 const FooterPlacementBanner = dynamic(() => import("@/components/Banner/PlacementBanner"));
@@ -37,17 +37,10 @@ import ClientOverlays from "@/components/Layout/ClientOverlays";
 import CommerceModals from "@/components/Layout/CommerceModals";
 import ExtensionNoiseGuard from "@/components/Layout/ExtensionNoiseGuard";
 import CommerceCoreInit from "@/components/Layout/CommerceCoreInit";
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
 
-const elmsSans = Elms_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  style: ["normal", "italic"],
-  variable: "--font-elms",
-  display: "swap",
-});
-const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
+const BASE_URL = publicSiteOrigin();
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
@@ -150,8 +143,8 @@ const localBusinessJsonLd = {
   name: "DrinksHarbour",
   url: BASE_URL,
   parentOrganization: { "@id": `${BASE_URL}/#organization` },
-  logo: `${BASE_URL}/images/logo.png`,
-  image: `${BASE_URL}/images/logo.png`,
+  logo: `${BASE_URL}/logo.png`,
+  image: `${BASE_URL}/og-default.jpg`,
   description: "Nigeria's premier online premium beverages store — whisky, wine, spirits, beer and non-alcoholic drinks delivered to Lagos, Abuja, Port Harcourt and nationwide.",
   address: {
     "@type": "PostalAddress",
@@ -161,26 +154,10 @@ const localBusinessJsonLd = {
     postalCode: "900271",
     addressCountry: "NG",
   },
-  geo: {
-    "@type": "GeoCoordinates",
-    latitude: 9.0782726,
-    longitude: 7.5005914,
-  },
-  // Open 24 hours, every day. Per schema.org convention, a 00:00–23:59 span
-  // across all seven days signals round-the-clock availability.
-  openingHoursSpecification: [
-    {
-      "@type": "OpeningHoursSpecification",
-      dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-      opens: "00:00",
-      closes: "23:59",
-    },
-  ],
+  // OnlineStore inherits Organization, not LocalBusiness/Place. Keep physical
+  // opening hours, geo, paymentAccepted and priceRange off this node.
   telephone: "+2347048004020",
   email: "hello@drinksharbour.com",
-  currenciesAccepted: "NGN",
-  paymentAccepted: "Cash, Credit Card, Bank Transfer",
-  priceRange: "₦₦₦",
   areaServed: [
     { "@type": "City", name: "Abuja" },
     { "@type": "City", name: "Lagos" },
@@ -192,7 +169,6 @@ const localBusinessJsonLd = {
     "https://www.instagram.com/drinksharbour",
     "https://www.facebook.com/drinksharbour",
   ],
-  hasMap: `https://www.google.com/maps?q=9.0782726,7.5005914`,
 };
 
 const orgJsonLd = {

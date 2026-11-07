@@ -1,5 +1,6 @@
 // Add this at the top of the file with other imports/requires
 const NodeCache = require('node-cache');
+const Product = require('../models/Product');
 
 // Initialize search cache (TTL: 5 minutes)
 const searchCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
@@ -222,6 +223,8 @@ const searchProducts = async (searchParams = {}) => {
     isFeatured,
     onSale,
     minRating,
+    // Gift packaging SKU discovery (gift checkout)
+    isGiftPackaging,
     
     // Search mode
     searchMode = 'hybrid', // 'text', 'semantic', 'hybrid'
@@ -305,6 +308,9 @@ const searchProducts = async (searchParams = {}) => {
     if (subType) baseQuery.subType = Array.isArray(subType) ? { $in: subType } : subType;
     if (isFeatured !== undefined) baseQuery.isFeatured = isFeatured === 'true' || isFeatured === true;
     if (minRating) baseQuery.averageRating = { $gte: parseFloat(minRating) };
+    // Gift-packaging discovery: the checkout gift section filters on this flag
+    // instead of relying on a text match against the SKU's name.
+    if (isGiftPackaging !== undefined) baseQuery.isGiftPackaging = isGiftPackaging === 'true' || isGiftPackaging === true;
 
     // ============================================================
     // STEP 2: Build Text Search Query (Multi-Strategy)
@@ -445,7 +451,7 @@ const searchProducts = async (searchParams = {}) => {
           {
             $project: {
               tenant: {
-                _id: 1, name: 1, slug: 1, logo: 1, revenueModel: 1,
+                _id: 1, name: 1, slug: 1, logo: 1, revenueModel: 1, sellingPriceMarkupPercentage: 1,
                 markupPercentage: 1, commissionPercentage: 1, defaultCurrency: 1,
               },
               sku: 1, costPrice: 1, baseSellingPrice: 1, discount: 1,
@@ -640,6 +646,7 @@ const searchProducts = async (searchParams = {}) => {
         reviewCount: product.reviewCount || 0,
         totalSold: product.totalSold || 0,
         relevanceScore: product.relevanceScore,
+        isGiftPackaging: product.isGiftPackaging === true,
         createdAt: product.createdAt,
       };
     });

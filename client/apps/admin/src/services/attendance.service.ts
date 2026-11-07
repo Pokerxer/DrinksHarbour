@@ -96,6 +96,17 @@ export interface RatingComponent {
 }
 
 export interface AttendanceRating {
+  weeklySummary?: {
+    daysPerWeek: number;
+    weeks: Array<{
+      from: string;
+      to: string;
+      required: number;
+      attended: number;
+      recordedDays: number;
+      missed: number;
+    }>;
+  };
   /** null = unrated. Nothing countable in the window. */
   score: number | null;
   band: RatingBand;

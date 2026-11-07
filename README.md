@@ -38,7 +38,7 @@ app; the tenant slug in the hostname is what makes one a storefront (see
 
 | Path | What lives there |
 |---|---|
-| `server/` | Express API — 84 models, 63 route modules, 67 controllers, 98 services, 163 test files |
+| `server/` | Express API, authentication, tenant authorization, payments and business services |
 | `client/apps/platform/` | Public marketplace + tenant storefronts (shop, cart, checkout, order tracking, blog, SEO surfaces) |
 | `client/apps/admin/` | Back-office: POS, inventory, warehouses, purchasing, sales orders, contacts, employees, appraisals, logistics, analytics, tenant administration |
 | `client/apps/mobile/` | Expo/React Native client |
@@ -101,25 +101,20 @@ may decide what they can read or write.
 
 ## Running it locally
 
-**Prerequisites:** Node 22+, MongoDB 7 (local or Atlas), pnpm (root) / npm (client workspace).
+**Prerequisites:** Node22 (exact local version in `.nvmrc`), MongoDB7
+(replica set for transaction tests), npm for the API and pnpm11.9.0 for the client workspace.
 
 ```bash
-# 1. API  → http://localhost:5001
-cd server
-npm install
-cp .env.example .env        # see below for the variables that matter
-npm run dev
+# Install from the repository root with the committed lockfiles.
+npm --prefix server ci
+pnpm --dir client install --frozen-lockfile
+cp server/.env.example server/.env
+cp client/apps/admin/.env.local.example client/apps/admin/.env.local
 
-# 2. Marketplace + storefronts  → http://localhost:3002
-cd client/apps/platform
-npm install
-npm run dev
-
-# 3. Back-office  → http://localhost:3000
-cd client/apps/admin
-npm install
-cp .env.local.example .env.local
-npm run dev
+# Run each process in its own terminal.
+npm --prefix server run dev
+pnpm --dir client --filter platform dev
+pnpm --dir client --filter admin dev
 ```
 
 To browse a tenant storefront locally, hit `http://localhost:3002/?_tenant=<slug>` —
@@ -132,43 +127,47 @@ and `KORAPAY_SECRET_KEY` (NGN checkout), `CLOUDINARY_*` (image upload and deriva
 `SENDER_EMAIL_ADDRESS` (transactional email), `GOOGLE_MAPS_API_KEY` / `GOOGLE_PLACES_API_KEY`
 (delivery and address lookup).
 
-## Tests and type checks
+## Verification and release
 
 ```bash
-cd server && npm test                          # 2080 tests, node:test (not jest)
-cd client/apps/admin && npm test               # Vitest
-cd client/apps/admin && ./node_modules/.bin/tsc --noEmit
-cd client/apps/platform && npm run type:check
+npm run test:quality
+npm run check:secrets
+npm --prefix server test
+pnpm --dir client --filter admin type:check
+pnpm --dir client --filter platform type:check
+pnpm --dir client --filter admin lint
+pnpm --dir client --filter platform lint
+pnpm --dir client --filter admin test
+pnpm --dir client --filter mobile test
+pnpm --dir client --filter mobile type:check
+pnpm --dir client --filter admin build
+pnpm --dir client --filter platform build
+npm --prefix server audit --omit=dev --audit-level=high
+pnpm --dir client audit --prod --audit-level high
 ```
 
-Three things worth knowing before you trust a green run here:
+`npm run check` runs the configured local API/dashboard checks in sequence;
+production builds, mobile checks and security audits remain explicit release gates.
+Use the app-local TypeScript executables; do not fetch an unrelated `tsc` package.
+Component tests opt into jsdom while logic tests use Node. Production configs
+keep TypeScript build errors enabled; separate lint/type steps are still required.
+Existing `@ts-nocheck` files and lint warnings mean a green type check has limits.
 
-- **The admin Vitest environment is `node`, not jsdom.** Components cannot be rendered.
-  Testable logic is extracted into plain modules and tested there — if you find yourself
-  wanting to mount a component, extract the decision it makes instead.
-- **`next build` is not a type or lint gate for the admin app.** Its `next.config` sets
-  both `typescript.ignoreBuildErrors` and `eslint.ignoreDuringBuilds` — linting the whole
-  project during a build exhausts Vercel's 8 GB build memory. Type checking is a separate,
-  explicit step (`tsc --noEmit`), and it is the one that counts.
-- **Run `tsc` from the app's own `node_modules/.bin`.** From a directory where the local
-  TypeScript isn't installed, `npx tsc` will happily fetch an unrelated `tsc` package from
-  the registry and exit `0` without checking anything.
-- **One known server test failure**, pre-existing: `pricelistRoutesValidation.test.js`
-  ("get-one pricelist is tenant-scoped"). The test double doesn't support a chained
-  `.populate().populate()`; the route it covers is fine. Everything else passes.
+[Quality checks](.github/workflows/ci.yml) adds pull-request and main-branch gates.
+[Web release](.github/workflows/release-web.yml) supports manual Vercel releases
+from a successful exact main commit using owner-configured protected environments.
+These workflows need a pushed, reviewed commit and a successful hosted run;
+configuration files alone do not prove CI/CD is operational. Existing Vercel project
+settings and backend hosting must be checked against the release procedure.
 
-## Deploying
+`GET /health` is process liveness; `GET /ready` returns503 if the database cannot
+answer a bounded ping. Configure the hosting load balancer to use readiness.
 
-Each Next.js app deploys independently on Vercel with its own root directory and an
-`ignoreCommand` that skips the build when the diff didn't touch that app or the shared
-packages (`client/apps/{admin,platform}/vercel.json`). The API runs as a Node service on
-`backend.drinksharbour.com`.
-
-One packaging note that has bitten this repo: **npm does not implement the `workspace:`
-protocol.** The Vercel install step uses npm, so a `workspace:*` dependency added to a
-client app builds locally under pnpm and fails on deploy. Verify packaging changes against
-a clean `git archive` checkout, not your working tree — pnpm's `node_modules` masks the
-failure.
+See [contribution and review rules](CONTRIBUTING.md), [security](SECURITY.md),
+[release/recovery/backup procedures](docs/operations/README.md) and
+[source handover](docs/operations/source-handover.md). Current evidence and open
+release blockers live in [the production audit](docs/audits/production-readiness-2026-10-19.md).
+Do not infer production or resale readiness from unit tests alone.
 
 ## Where the reasoning lives
 

@@ -13,7 +13,7 @@ export type POStatus =
   | 'done'
   | 'cancelled';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
-export type BillStatus = 'draft' | 'posted' | 'paid' | 'cancelled';
+export type BillStatus = 'draft' | 'posted' | 'confirmed' | 'partial' | 'overdue' | 'paid' | 'cancelled';
 export type ReturnStatus =
   | 'draft'
   | 'confirmed'
@@ -388,14 +388,39 @@ export function fmtAmount(n: number | undefined | null): string {
 // pack holds; the purchase line persists it as `packagingQty`. Buyers order
 // loose units, then read the order back as "5 packs & 1 bottle".
 
+// 'unit'/'piece' cover the industry-neutral line-entry defaults below so
+// prints can consume packaging='units'/'pieces' strings — the legacy 'bottle'
+// fallback (rows that lack packaging text) is kept exactly as it was (DRI-6
+// /purchases decision, docs/memory/pos-retail-accommodation.md).
 const PACK_NOUNS = [
   'bottle', 'can', 'keg', 'box', 'carton', 'pouch', 'jar', 'tin', 'bag',
+  'unit', 'piece',
 ] as const;
 
 /** Countable noun for a line's packaging ('glass_bottle' → 'bottle'). */
 export function packNounOf(packaging?: string): string {
   const p = (packaging ?? '').toLowerCase();
   return PACK_NOUNS.find((n) => p.includes(n)) ?? 'bottle';
+}
+
+/**
+ * Entry-time packaging default for a newly-picked purchase line (DRI-14).
+ * 'bottle' is only a print FALLBACK for legacy rows that lack packaging text —
+ * it is not a default a retail row should be forced into. A row picked from a
+ * retail variant therefore carries an explicit industry-neutral noun at line
+ * entry so PO/RFQ prints can consume it; the Size row's own natural unit noun
+ * ('piece' → 'pieces') wins when already present. There is no per-industry
+ * branch: retail origin is detected purely by the row's variant identity
+ * (colour/option — data every beverage Size row never carries), so beverage
+ * rows return undefined and keep their byte-identical legacy behavior.
+ */
+export function defaultPackagingForLine(size?: {
+  colorName?: string | null;
+  optionName?: string | null;
+  unitType?: string | null;
+}): string | undefined {
+  if (!size || !(size.colorName || size.optionName)) return undefined;
+  return size.unitType === 'piece' ? 'pieces' : 'units';
 }
 
 /** Units per pack for a purchase line — packagingQty on the wire, else packSize. */
@@ -413,8 +438,8 @@ export function linePackSize(item: {
  * server stringifies as "[object Object]", which is exactly the bug this
  * guards against when an edit round-trips a loaded order.
  */
-export function refIdOf(
-  ref: string | { _id?: string } | null | undefined
+export function refIdOf<T extends { _id?: string }>(
+  ref: string | T | null | undefined
 ): string {
   if (ref === null || ref === undefined) return '';
   if (typeof ref === 'object') return String(ref._id ?? '');

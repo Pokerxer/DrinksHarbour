@@ -11,7 +11,7 @@ const {
 } = require('../middleware/auth.middleware');
 
 // Public — anonymous/guest carts validate too, no auth required.
-router.post('/validate', validateCart);
+router.post('/validate', require('../services/marketContext').handler(validateCart));
 
 // Staff read of the cart pipeline (admin Orders page → "Live Carts").
 // Registered before '/' so the literal path can never be shadowed, and behind
@@ -24,8 +24,8 @@ router.get(
 );
 
 router.get('/', protect, getMyCart);
-router.post('/save', protect, saveCart);
-router.post('/merge', protect, mergeMyCart);
+router.post('/save', protect, require('../services/marketContext').handler(saveCart));
+router.post('/merge', protect, require('../services/marketContext').handler(mergeMyCart));
 router.delete('/', protect, clearMyCart);
 
 module.exports = router;

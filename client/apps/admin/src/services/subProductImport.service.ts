@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export const IMPORT_COLUMNS = [
@@ -109,12 +110,12 @@ export function buildTemplateCsv(): string {
   return `${header}\n${createExample}\n${updateExample}\n`;
 }
 
-async function handle(res: Response, fallback: string) {
+async function handle<T>(res: Response, fallback: string): Promise<T> {
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
+    const err = await readError(res);
     throw new Error(err.message || fallback);
   }
-  return res.json();
+  return readJson<T>(res);
 }
 const jsonAuth = (token: string) => ({
   'Content-Type': 'application/json',

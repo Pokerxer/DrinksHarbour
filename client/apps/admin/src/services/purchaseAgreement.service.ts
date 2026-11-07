@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // services/purchaseAgreement.service.ts
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -103,7 +104,7 @@ class PurchaseAgreementService {
       `${API_URL}/api/purchase-agreements?${queryParams}`,
       { headers: this.getHeaders(token) }
     );
-    return response.json();
+    return readJson(response);
   }
 
   async getAgreement(
@@ -113,7 +114,7 @@ class PurchaseAgreementService {
     const response = await fetch(`${API_URL}/api/purchase-agreements/${id}`, {
       headers: this.getHeaders(token),
     });
-    return response.json();
+    return readJson(response);
   }
 
   async createAgreement(
@@ -125,7 +126,7 @@ class PurchaseAgreementService {
       headers: this.getHeaders(token),
       body: JSON.stringify(data),
     });
-    return response.json();
+    return readJson(response);
   }
 
   async updateAgreement(
@@ -138,7 +139,7 @@ class PurchaseAgreementService {
       headers: this.getHeaders(token),
       body: JSON.stringify(data),
     });
-    return response.json();
+    return readJson(response);
   }
 
   async deleteAgreement(
@@ -149,7 +150,7 @@ class PurchaseAgreementService {
       method: 'DELETE',
       headers: this.getHeaders(token),
     });
-    return response.json();
+    return readJson(response);
   }
 
   async activateAgreement(id: string, token: string): Promise<CreateResponse> {
@@ -160,7 +161,7 @@ class PurchaseAgreementService {
         headers: this.getHeaders(token),
       }
     );
-    return response.json();
+    return readJson(response);
   }
 
   async cancelAgreement(id: string, token: string): Promise<CreateResponse> {
@@ -171,7 +172,7 @@ class PurchaseAgreementService {
         headers: this.getHeaders(token),
       }
     );
-    return response.json();
+    return readJson(response);
   }
 
   async addTenderResponse(
@@ -187,7 +188,7 @@ class PurchaseAgreementService {
         body: JSON.stringify(data),
       }
     );
-    return response.json();
+    return readJson(response);
   }
 
   async selectTenderWinner(
@@ -203,7 +204,7 @@ class PurchaseAgreementService {
         body: JSON.stringify(data),
       }
     );
-    return response.json();
+    return readJson(response);
   }
 
   async createPOFromAgreement(
@@ -224,7 +225,7 @@ class PurchaseAgreementService {
         body: JSON.stringify(data),
       }
     );
-    return response.json();
+    return readJson(response);
   }
 }
 

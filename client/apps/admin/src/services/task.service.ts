@@ -1,3 +1,4 @@
+import { readJson } from './response';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'cancelled';
@@ -33,7 +34,7 @@ export interface CreateTaskInput {
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
-  const body = await res.json();
+  const body = await readJson<T & { success: boolean; message?: string }>(res);
   if (!res.ok || !body.success)
     throw new Error(body.message || 'Request failed');
   return body;

@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // services/contact.service.ts — unified tenant Contacts directory.
 //
 // One surface over BOTH in-store (POSCustomer) and ecommerce (User customer)
@@ -237,12 +238,12 @@ export interface ContactListParams {
   search?: string;
 }
 
-async function handle(res: Response, fallback: string) {
+async function handle<T>(res: Response, fallback: string): Promise<T> {
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
+    const err = await readError(res);
     throw new Error(err.message || fallback);
   }
-  return res.json();
+  return readJson<T>(res);
 }
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });

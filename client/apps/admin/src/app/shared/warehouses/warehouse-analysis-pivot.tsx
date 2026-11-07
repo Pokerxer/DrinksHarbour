@@ -26,12 +26,19 @@ import {
 import type { StockRow } from '@/services/warehouseStock.service';
 import {
   fmtMeasureVal,
-  formatG1Label,
   ALL_GROUP_ITEMS,
   type Measure,
   type GroupByKey,
   type HierPivotResult,
 } from './warehouse-analysis-helpers';
+
+/**
+ * Display label for a pivot value key: the full identity label when the pivot
+ * result carries one (size keys are exact Size IDs, DRI-17), else the key —
+ * every other dimension's key is already display-ready.
+ */
+const pivotLabel = (p: HierPivotResult | null, key: string): string =>
+  p?.keyLabels?.[key] ?? key;
 
 // ── Pivot UI ──────────────────────────────────────────────────────────────────
 
@@ -136,11 +143,11 @@ function exportPivotCSV(
         (p.subColValsMap[ck] ?? []).forEach((sk) => {
           visCols.push({
             path: [ck, sk],
-            label: `${formatG1Label(ck, colDims[0])} / ${formatG1Label(sk, colDims[1])}`,
+            label: `${pivotLabel(p, ck)} / ${pivotLabel(p, sk)}`,
           });
         });
       } else {
-        visCols.push({ path: [ck], label: formatG1Label(ck, colDims[0]) });
+        visCols.push({ path: [ck], label: pivotLabel(p, ck) });
       }
     });
     visCols.forEach((c) => headers.push(c.label));
@@ -157,14 +164,14 @@ function exportPivotCSV(
   csvRows.push(gtRow);
 
   p.rowVals0.forEach((rk) => {
-    const row = [formatG1Label(rk, rowDims[0]), numVal([rk], [])];
+    const row = [pivotLabel(p, rk), numVal([rk], [])];
     visCols.forEach((c) => row.push(numVal([rk], c.path)));
     csvRows.push(row);
 
     if (rowDims.length >= 2 && expandedRows.has(rk)) {
       (p.subRowValsMap[rk] ?? []).forEach((srk) => {
         const sub = [
-          `  ${formatG1Label(rk, rowDims[0])} / ${formatG1Label(srk, rowDims[1])}`,
+          `  ${pivotLabel(p, rk)} / ${pivotLabel(p, srk)}`,
           numVal([rk, srk], []),
         ];
         visCols.forEach((c) => sub.push(numVal([rk, srk], c.path)));
@@ -204,11 +211,11 @@ function exportPivotExcel(
         (p.subColValsMap[ck] ?? []).forEach((sk) => {
           visCols.push({
             path: [ck, sk],
-            label: `${formatG1Label(ck, colDims[0])} / ${formatG1Label(sk, colDims[1])}`,
+            label: `${pivotLabel(p, ck)} / ${pivotLabel(p, sk)}`,
           });
         });
       } else {
-        visCols.push({ path: [ck], label: formatG1Label(ck, colDims[0]) });
+        visCols.push({ path: [ck], label: pivotLabel(p, ck) });
       }
     });
   }
@@ -246,7 +253,7 @@ function exportPivotExcel(
 
   p.rowVals0.forEach((rk) => {
     const rowCells = [
-      strCell(formatG1Label(rk, rowDims[0])),
+      strCell(pivotLabel(p, rk)),
       numCell(p.rowTotals[rk]),
       ...visCols.map((c) => numCell(numVal([rk], c.path))),
     ].join('');
@@ -255,7 +262,7 @@ function exportPivotExcel(
       (p.subRowValsMap[rk] ?? []).forEach((srk) => {
         const subCells = [
           strCell(
-            `  ${formatG1Label(rk, rowDims[0])} / ${formatG1Label(srk, rowDims[1])}`
+            `  ${pivotLabel(p, rk)} / ${pivotLabel(p, srk)}`
           ),
           numCell(numVal([rk, srk], [])),
           ...visCols.map((c) => numCell(numVal([rk, srk], c.path))),
@@ -348,7 +355,7 @@ export function PivotView({
   const visibleRows = p
     ? searchQ
       ? p.rowVals0.filter((rk) =>
-          formatG1Label(rk, pivotRowDims[0]).toLowerCase().includes(searchQ)
+          pivotLabel(p, rk).toLowerCase().includes(searchQ)
         )
       : p.rowVals0
     : [];
@@ -361,14 +368,14 @@ export function PivotView({
         (p.subColValsMap[ck] ?? []).forEach((sk) => {
           visibleCols.push({
             colPath: [ck, sk],
-            label: formatG1Label(sk, pivotColDims[1]),
+            label: pivotLabel(p, sk),
             isSubCol: true,
           });
         });
       } else {
         visibleCols.push({
           colPath: [ck],
-          label: formatG1Label(ck, pivotColDims[0]),
+          label: pivotLabel(p, ck),
           isSubCol: false,
         });
       }
@@ -390,11 +397,11 @@ export function PivotView({
     const rLabel =
       rPath.length === 0
         ? 'All'
-        : rPath.map((k, i) => formatG1Label(k, pivotRowDims[i])).join(' › ');
+        : rPath.map((k) => pivotLabel(p, k)).join(' › ');
     const cLabel =
       cPath.length === 0
         ? 'Total'
-        : cPath.map((k, i) => formatG1Label(k, pivotColDims[i])).join(' › ');
+        : cPath.map((k) => pivotLabel(p, k)).join(' › ');
     if (rPath.length === 0 && cPath.length === 0) return 'Grand Total';
     if (cPath.length === 0) return rLabel;
     if (rPath.length === 0) return cLabel;
@@ -773,7 +780,7 @@ export function PivotView({
                           </button>
                         )}
                         <span className="font-semibold leading-tight text-gray-700">
-                          {formatG1Label(ck, pivotColDims[0])}
+                          {pivotLabel(p, ck)}
                         </span>
                       </div>
                       <div className="mt-0.5 text-[10px] tabular-nums text-gray-400">
@@ -803,7 +810,7 @@ export function PivotView({
                         className="sticky top-[52px] z-20 min-w-[100px] border-b border-r border-gray-100 bg-white px-3 py-2 text-right"
                       >
                         <span className="text-[11px] font-medium text-gray-600">
-                          {formatG1Label(sk, pivotColDims[1])}
+                          {pivotLabel(p, sk)}
                         </span>
                       </th>
                     ));
@@ -870,7 +877,7 @@ export function PivotView({
                               className="break-words font-medium leading-snug text-gray-800"
                               style={{ maxWidth: 220 }}
                             >
-                              {formatG1Label(rk, pivotRowDims[0])}
+                              {pivotLabel(p, rk)}
                             </div>
                             <div className="mt-0.5 flex items-center gap-1">
                               <div
@@ -912,7 +919,7 @@ export function PivotView({
                               className="break-words leading-snug text-gray-600"
                               style={{ maxWidth: 200 }}
                             >
-                              {formatG1Label(srk, pivotRowDims[1])}
+                              {pivotLabel(p, srk)}
                             </span>
                           </div>
                         </td>

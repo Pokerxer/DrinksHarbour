@@ -17,7 +17,11 @@ function isVenueBusinessType(businessType) {
  * Sends 400 and returns true when venue mode is off; returns false to pass.
  */
 function venueBlocked(req, res) {
-  if (req.tenant?.posSettings?.isBarRestaurant === true) return false;
+  const tenant = req.tenant;
+  if (tenant?.venueSettings?.identityVersion === 1) {
+    const access = require('./entitlements.service').resolveEntitlements(tenant.toObject?.() || tenant);
+    if (tenant.status === 'approved' && tenant.businessCapabilities?.includes('hospitality') && access.capabilities.includes('table_management') && (req.method === 'GET' || access.writesAllowed)) return false;
+  } else if (tenant?.posSettings?.isBarRestaurant === true) return false;
   res.status(400).json({ success: false, message: 'venue mode disabled' });
   return true;
 }

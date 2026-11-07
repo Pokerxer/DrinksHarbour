@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PromotionSettings from './promotion-settings';
 const occasions = [
   {
@@ -12,13 +12,15 @@ const occasions = [
     sourceUrl: 'https://www.champagneday.fr/world/',
   },
 ];
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-10T12:00:00Z'));
+});
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
 it('selects a world drinks event with its verified date and source, and permits a custom calendar date', () => {
-  vi.useFakeTimers();
-  vi.setSystemTime(new Date('2026-10-10T12:00:00Z'));
   const apply = vi.fn();
   render(
     <PromotionSettings

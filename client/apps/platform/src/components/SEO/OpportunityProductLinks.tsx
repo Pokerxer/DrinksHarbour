@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { resolveCatalogueHref } from '@/lib/catalogueLinks';
 
 const CORE_OPPORTUNITY_PRODUCTS = [
   { slug: 'bold-98-irish-whiskey', name: 'Bold 98 Irish Whiskey' },
@@ -428,7 +429,7 @@ export default function OpportunityProductLinks({ includeSlugs, limit = 8 }: { i
         </div>
         <nav aria-label="Popular product links" className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {products.map((product, index) => (
-            <Link key={product.slug} href={`/product/${product.slug}`} className="group rounded-2xl border border-stone-200/80 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#b87968] hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0">
+            <Link key={product.slug} href={resolveCatalogueHref(`/product/${product.slug}`)} className="group rounded-2xl border border-stone-200/80 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#b87968] hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0">
               <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-stone-400">0{index + 1}</span>
               <span className="mt-3 block text-sm font-bold leading-5 text-stone-900 group-hover:text-[#7C1D1D]">{product.name}</span>
               <span className="mt-3 block text-xs font-semibold text-[#9b5a4e]">View bottle <span aria-hidden="true">↗</span></span>

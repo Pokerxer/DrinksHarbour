@@ -1,6 +1,8 @@
 // @ts-nocheck
 'use client';
 
+import { businessIcon } from '@/app/shared/ecommerce/business-catalog/business-icons';
+import { isBeverageProductType } from '@/utils/product-types';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Badge, Flex, Text } from 'rizzui';
@@ -28,6 +30,8 @@ interface ProductGridCardProps {
 }
 
 const getBeverageIcon = (type?: string) => {
+  const icon = businessIcon(type);
+  if (icon) return icon;
   if (!type) return PiPackageBold;
   const t = type.toLowerCase();
   if (t.includes('wine') || t.includes('champagne')) return PiWineBold;
@@ -181,7 +185,7 @@ export default function ProductGridCard({
           className="border-t border-gray-100 pt-3"
         >
           <Flex align="center" gap="1">
-            {product.isAlcoholic !== undefined && (
+            {isBeverageProductType(product.type) && product.isAlcoholic !== undefined && (
               <Badge
                 color={product.isAlcoholic ? 'warning' : 'success'}
                 variant="flat"

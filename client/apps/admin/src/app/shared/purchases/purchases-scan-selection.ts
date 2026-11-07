@@ -10,6 +10,8 @@
 // `packSize`. Keeping that inversion here — pure, no React, no I/O — is what
 // makes it testable and keeps it from being re-derived in each drawer.
 
+import { sizeVariantLabel } from '@/utils/size-variant-label';
+import { defaultPackagingForLine } from './types';
 import type { ScanResultItem } from '@/services/scan.service';
 
 /** A manual pick from the catalogue search, when the AI got it wrong. */
@@ -21,6 +23,9 @@ export interface PurchaseLineOverride {
   packSize: number;
   sizeId?: string;
   sizeName?: string;
+  // Packaging noun set at line entry ('units'/'pieces' retail rows, undefined
+  // for beverage rows — see defaultPackagingForLine).
+  packaging?: string;
   taxRate?: number;
 }
 
@@ -32,6 +37,7 @@ export interface PurchaseLineDraft {
   sku: string;
   sizeId?: string;
   sizeName?: string;
+  packaging?: string;
   quantity: number;
   packSize: number;
   unitPrice: number;
@@ -69,6 +75,7 @@ export function scanRowToPurchaseLine(
       sku: o.sku,
       sizeId: o.sizeId,
       sizeName: o.sizeName,
+      packaging: o.packaging,
       quantity,
       packSize: o.packSize > 0 ? o.packSize : 1,
       unitPrice: o.unitPrice,
@@ -94,13 +101,16 @@ export function scanRowToPurchaseLine(
     };
   }
 
-  const sizeName = size.displayName ?? size.size;
+  const sizeName = sizeVariantLabel(size);
   return {
     subProductId: sp._id,
     productName: `${baseName} – ${sizeName}`,
     sku: size.sku ?? sp.sku,
     sizeId: size.size,
     sizeName,
+    // Line-entry packaging default ('units'/'pieces' on retail variant rows,
+    // undefined keeps beverage rows untouched).
+    packaging: defaultPackagingForLine(size),
     quantity,
     // A size row that predates `unitsPerPack` arrives undefined, and a 0 would
     // divide-by-zero the PO form's pack totals.

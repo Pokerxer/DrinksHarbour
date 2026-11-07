@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
 
 export const HOME_TITLE = 'Buy Drinks Online in Nigeria | DrinksHarbour';
 export const HOME_DESCRIPTION = 'Buy drinks online in Nigeria with DrinksHarbour. Shop wines, spirits, beer and non-alcoholic drinks, compare prices and order delivery in Abuja and nationwide.';
-const url = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+const url = publicSiteOrigin();
 
 export const homeMetadata: Metadata = {
   title: { absolute: HOME_TITLE },

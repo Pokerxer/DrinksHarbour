@@ -1,8 +1,9 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: "Sustainability",
   description:
     "DrinksHarbour's commitment to sustainable practices, responsible sourcing, and supporting local communities across Nigeria.",
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
       "Our commitment to sustainable practices, responsible sourcing, and supporting local communities.",
   },
   alternates: { canonical: `${BASE_URL}/sustainability` },
-};
+});
 
 const jsonLd = {
   "@context": "https://schema.org",

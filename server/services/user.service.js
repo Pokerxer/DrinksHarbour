@@ -741,6 +741,7 @@ const updateUser = async (userId, updateData, requestingUserId, requestingUserRo
 
   // Don't allow updating sensitive fields directly
   const protectedFields = [
+    'venueDeniedActions',
     'passwordHash',
     'loginScope',
     'emailVerificationToken',

@@ -13,7 +13,7 @@
     "clean": "rm -rf node_modules .expo .turbo"
   },
   "dependencies": {
-    "@babel/runtime": "^7.29.7",
+    "@babel/runtime": "^7.29.10",
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "~15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -27,21 +27,22 @@
     "expo-router": "~6.0.24",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
-    "nativewind": "^4.2.6",
+    "nativewind": "^4.2.7",
     "react": "19.1.0",
     "react-native": "0.81.5",
-    "react-native-css-interop": "^0.2.6",
+    "react-native-css-interop": "^0.2.7",
     "react-native-reanimated": "~4.1.7",
     "react-native-safe-area-context": "5.6.2",
     "react-native-screens": "~4.16.0",
-    "react-native-worklets": "0.5.1"
+    "react-native-worklets": "0.5.1",
+    "react-dom": "19.1.0"
   },
   "devDependencies": {
-    "@types/node": "^22.13.13",
-    "@types/react": "~19.1.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "~19.1.17",
     "tailwind-config": "file:../../packages/config-tailwind",
-    "tailwindcss": "^3.4.17",
-    "typescript": "~5.9.2",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~5.9.3",
     "typescript-config": "file:../../packages/config-typescript",
     "vitest": "^3.2.7"
   }

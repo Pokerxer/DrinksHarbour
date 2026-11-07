@@ -1,9 +1,12 @@
+const { subcategoryIndustryForWrite } = require('../utils/taxonomyIndustryWrite');
 const SubCategory = require('../models/SubCategory');
 const Category = require('../models/Category'); // registers ref for populate
 const Product = require('../models/Product');
 const asyncHandler = require('../utils/asyncHandler');
 const { navigationCounts } = require('../services/navigationCounts');
 const cloudinaryService = require('../services/cloudinary.service');
+const industries = require('../constants/industries');
+const { listIndustriesFor, taxonomyPickerFilter } = require('../services/industryScope.service');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,12 +40,16 @@ async function uploadSubCategoryFile(file, altText) {
  * @route GET /api/subcategories
  * @access Public
  */
-const getSubCategories = asyncHandler(async (req, res) => {
+const listSubCategories = (picker) => asyncHandler(async (req, res) => {
   const { category, status = 'published', featured, trending, popular } = req.query;
+
+  if (picker && (typeof category !== 'string' || !/^[0-9a-f]{24}$/i.test(category))) {
+    return res.status(400).json({ success: false, message: 'A valid category ID is required' });
+  }
 
   const query = {};
 
-  if (status) {
+  if (!picker && status) {
     query.status = status;
   }
 
@@ -50,20 +57,37 @@ const getSubCategories = asyncHandler(async (req, res) => {
     query.parent = category;
   }
 
-  if (featured === 'true') {
+  if (!picker && featured === 'true') {
     query.isFeatured = true;
   }
 
-  if (trending === 'true') {
+  if (!picker && trending === 'true') {
     query.isTrending = true;
   }
 
-  if (popular === 'true') {
+  if (!picker && popular === 'true') {
     query.isPopular = true;
   }
 
+  // Industry scoping (2026-11-02, flag-gated): authenticated tenant callers
+  // see their industry profile + legacy/global subcategories; everyone else
+  // is unfiltered. Same resolution as categories GET — see
+  // services/industryScope.service.js.
+  const appliedIndustries = await listIndustriesFor(req);
+  const industryPredicate = industries.categoryIndustryFilter(appliedIndustries);
+  if (picker) {
+    const visibility = taxonomyPickerFilter(industryPredicate);
+    const parent = await Category.exists({ _id: category, ...visibility });
+    if (!parent) {
+      return res.json({ success: true, meta: { industries: appliedIndustries }, data: [] });
+    }
+    Object.assign(query, visibility);
+  } else if (industryPredicate) {
+    Object.assign(query, industryPredicate);
+  }
+
   const subcategories = await SubCategory.find(query)
-    .select('name slug type parent shortDescription description icon color featuredImage thumbnailImage bannerImage bannerLink bannerLinkType isFeatured isTrending isPopular displayOrder status updatedAt')
+    .select('industry name slug type parent shortDescription description icon color featuredImage thumbnailImage bannerImage bannerLink bannerLinkType isFeatured isTrending isPopular displayOrder status updatedAt')
     .sort({ displayOrder: 1, name: 1 })
     .populate('parent', 'name slug')
     .lean();
@@ -77,10 +101,14 @@ const getSubCategories = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
+    meta: { industries: appliedIndustries },
     data: subcategoriesWithCount,
     total: subcategoriesWithCount.length,
   });
 });
+
+const getSubCategories = listSubCategories(false);
+const getSubCategoryPicker = listSubCategories(true);
 
 /**
  * Get subcategories by parent category ID
@@ -95,6 +123,13 @@ const getSubCategoriesByCategory = asyncHandler(async (req, res) => {
     parent: categoryId,
     status: status
   };
+
+  // Industry scoping (2026-11-02, flag-gated) — same resolution as
+  // GET /api/subcategories; the product form's category→subcategory chain
+  // uses this endpoint.
+  const appliedIndustries = await listIndustriesFor(req);
+  const industryPredicate = industries.categoryIndustryFilter(appliedIndustries);
+  if (industryPredicate) Object.assign(query, industryPredicate);
 
   const subcategories = await SubCategory.find(query)
     .select('name slug type parent shortDescription description icon color featuredImage thumbnailImage bannerImage bannerLink bannerLinkType isFeatured isTrending isPopular displayOrder status')
@@ -124,6 +159,7 @@ const getSubCategoriesByCategory = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
+    meta: { industries: appliedIndustries },
     data: subcategoriesWithCount,
     total: subcategoriesWithCount.length,
   });
@@ -302,7 +338,9 @@ const createSubCategory = asyncHandler(async (req, res) => {
     ? Number(displayOrder)
     : 999;
 
+  const parentCategory = await Category.findById(parent).select('industry').lean();
   const subcategoryData = {
+    industry: subcategoryIndustryForWrite(req.body.industry, parentCategory),
     name,
     slug,
     parent,
@@ -407,6 +445,11 @@ const updateSubCategory = asyncHandler(async (req, res) => {
   } = req.body;
 
   const updateData = {};
+  if (req.body.industry !== undefined || parent !== undefined) {
+    const current = parent === undefined ? await SubCategory.findById(req.params.id).select('parent').lean() : null;
+    const parentCategory = await Category.findById(parent || current?.parent).select('industry').lean();
+    updateData.industry = subcategoryIndustryForWrite(req.body.industry, parentCategory) || null;
+  }
 
   if (name !== undefined) updateData.name = name;
   if (slug !== undefined) updateData.slug = slug;
@@ -864,6 +907,7 @@ For the four seasonal booleans, set true only for seasons this subcategory is es
 
 module.exports = {
   getSubCategories,
+  getSubCategoryPicker,
   getSubCategoriesByCategory,
   getSubCategoryById,
   getSubCategoryBySlug,

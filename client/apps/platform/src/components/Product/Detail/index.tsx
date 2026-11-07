@@ -1,11 +1,16 @@
 'use client';
 
 import PurchaseControls from './PurchaseControls';
+import ShoppingBenefits from './ShoppingBenefits';
+import ProductDescriptionAudio from './ProductDescriptionAudio';
 import SellerChoices from './SellerChoices';
 import SizeChoices from './SizeChoices';
+import { resolveVariantGallery } from './variant-gallery';
 import type {VendorSize} from './detail-types';
 import {purchaseLimits,clampPurchaseQuantity} from './purchase-quantity';
 import { resolveSellerChoice } from '@/utils/representativeOffer';
+import { resolveCatalogueHref } from '@/lib/catalogueLinks';
+import { resolveOfferVolume } from '@/utils/offerVolume';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Image from '@/components/UI/OptimizedImage';
@@ -119,6 +124,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
       _id: s._id,
       size: s.size,
       displayName: s.displayName || s.size,
+      colorName: s.colorName,
+      optionName: s.optionName,
+      image: s.image,
+      imageScope: s.imageScope,
       stock: s.availableStock ?? s.stock,
       availableStock: s.availableStock,
       inStock: s.inStock,
@@ -128,7 +137,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
       displayPrice: s.pricing?.displayPrice || `${s.pricing?.currencySymbol || '₦'}${s.pricing?.websitePrice || 0}`,
       currencySymbol: s.pricing?.currencySymbol || '₦',
       discount: s.discount,
-      volumeMl: s.volumeMl,
+      volumeMl: resolveOfferVolume(s),
       minOrderQuantity: s.minOrderQuantity || 1,
       maxOrderQuantity: s.maxOrderQuantity,
       packUnitPrice: s.pricing?.packUnitPrice ?? null,
@@ -144,7 +153,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   // priceRange.min (the cheapest variant, frequently out of stock), so crawlers
   // and Merchant Center read a different price/availability than real users saw.
   const defaultSize = useMemo(
-    () => (vendorSizes.find(s => s._id === productData.shoppingOffer?.sizeId && purchaseLimits(s).canBuy) ?? pickDefaultSizeFrom(vendorSizes.filter(s => purchaseLimits(s).canBuy)))?.size ?? '',
+    () => (vendorSizes.find(s => s._id === productData.shoppingOffer?.sizeId && purchaseLimits(s).canBuy) ?? pickDefaultSizeFrom(vendorSizes.filter(s => purchaseLimits(s).canBuy)))?._id ?? '',
     [vendorSizes, productData.shoppingOffer],
   );
 
@@ -154,13 +163,23 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   const selectedSizeData = useMemo(() => {
     if (!vendorSizes.length) return null;
     return (
-      vendorSizes.find((s) => s.size === activeSize) ??
-      vendorSizes.find((s) => s.size === defaultSize) ??
+      vendorSizes.find((s) => s._id === activeSize) ??
+      vendorSizes.find((s) => s._id === defaultSize) ??
       null
     );
   }, [activeSize, defaultSize, vendorSizes]);
 
   const effectiveSize = selectedSizeData?.size ?? '';
+  const images = resolveVariantGallery(
+    selectedSizeData,
+    vendorSizes,
+    selectedVendor?.imagesOverride || [],
+    productData?.images || []
+  );
+  const galleryKey = images.map(image => image.url).join('|');
+  useEffect(() => {
+    setActiveImageIndex(0);
+  }, [galleryKey]);
   const limits = purchaseLimits(selectedSizeData);
   const localQuantity = clampPurchaseQuantity(storedQuantity, limits);
 
@@ -195,6 +214,8 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     if (displayPrice < basePrice) return basePrice;
     return displayPrice;
   })();
+
+  const selectedVolumeMl = resolveOfferVolume(selectedSizeData, productData.volumeMl);
 
   const showDetailDiscount = displayOriginalPrice > displayPrice && displayPrice > 0;
   const displayCurrencySymbol = selectedSizeData?.currencySymbol || productData?.priceRange?.currencySymbol || '₦';
@@ -239,7 +260,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     if (productData?.availableAt?.length > 0 && !explicitSeller.current) {
       const offer = productData.availableAt.find((v: { _id?: string }) => String(v._id) === productData.shoppingOffer?.subProductId) || productData.availableAt[0];
       setActiveVendor(String(offer._id));
-      if (productData.shoppingOffer) setActiveSize(offer.sizes.find((size: { _id?: string }) => String(size._id) === productData.shoppingOffer.sizeId)?.size || '');
+      if (productData.shoppingOffer) setActiveSize(offer.sizes.find((size: { _id?: string }) => String(size._id) === productData.shoppingOffer.sizeId)?._id || '');
     }
   }, [productData, activeVendor]);
 
@@ -347,7 +368,6 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     );
   }
 
-  const images = productData?.images || [];
   const hasMultipleImages = images.length > 1;
 
   // Safe canonical share URL — only when hostname matches (stripped www)
@@ -379,6 +399,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100 mb-4 group">
                   {images.length > 0 ? (
                     <Swiper
+                      key={galleryKey}
                       modules={[Navigation, Thumbs, Zoom]}
                       thumbs={{ swiper: thumbsSwiper && !thumbsSwiper.destroyed ? thumbsSwiper : null }}
                       zoom={true}
@@ -445,6 +466,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 {/* Thumbnail Gallery */}
                 {hasMultipleImages && (
                   <Swiper
+                    key={galleryKey}
                     onSwiper={setThumbsSwiper}
                     spaceBetween={10}
                     slidesPerView={4}
@@ -479,7 +501,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 {productData.brand?.name &&
                   (productData.brand?.slug ? (
                     <Link
-                      href={`/brands/${productData.brand.slug}`}
+                      href={resolveCatalogueHref(`/brands/${productData.brand.slug}`)}
                       className="mb-2 inline-block text-sm font-semibold uppercase tracking-wide text-gray-500 transition-colors hover:text-gray-900 hover:underline"
                     >
                       {productData.brand.name}
@@ -555,11 +577,12 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
               <SellerChoices sellers={vendors} selectedId={selectedVendor?._id}
                 nearestId={productData.shoppingOffer?.subProductId} locationOrder={!!productData.locationOrder}
                 onSelect={id => { explicitSeller.current = true; setActiveVendor(id); setActiveSize(''); }} />
-              <SizeChoices sizes={vendorSizes} selected={effectiveSize} onSelect={setActiveSize} />
+              <SizeChoices sizes={vendorSizes} selected={selectedSizeData?._id || ''} onSelect={setActiveSize} />
 
               {/* Pack Pricing Card */}
               {hasPackPricing && (
                 <PackPricingCard
+                  sizeLabel={selectedSizeData?.displayName || selectedSizeData?.size}
                   currencySymbol={displayCurrencySymbol}
                   packUnitPrice={packPricing.packUnitPrice as number}
                   packThreshold={packPricing.packThreshold as number}
@@ -627,45 +650,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 />
               </div>
 
-              {/* Trust Indicators - Enhanced with vendor-specific info */}
-              <div className="grid grid-cols-2 gap-4 py-6 border-t border-gray-100">
-                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl">
-                  <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <Icon.PiTruck size={22} className="text-green-600" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-gray-900">Free Delivery</div>
-                    <div className="text-xs text-gray-500">Orders over {displayCurrencySymbol}10,000</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
-                  <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <Icon.PiShieldCheck size={22} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-gray-900">Secure Payment</div>
-                    <div className="text-xs text-gray-500">100% Protected</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-xl">
-                  <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                    <Icon.PiArrowUUpLeft size={22} className="text-orange-600" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-gray-900">Easy Returns</div>
-                    <div className="text-xs text-gray-500">30 Day Policy</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl">
-                  <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-                    <Icon.PiCertificate size={22} className="text-purple-600" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-gray-900">Authentic</div>
-                    <div className="text-xs text-gray-500">Guaranteed</div>
-                  </div>
-                </div>
-              </div>
+              <ShoppingBenefits />
 
               {/* Quick Info Cards */}
               <div className="grid grid-cols-3 gap-3">
@@ -681,10 +666,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     <span className="text-xs font-semibold text-gray-700">{productData.abv}% ABV</span>
                   </div>
                 )}
-                {!!productData.volumeMl && (
+                {!!selectedVolumeMl && (
                   <div className="flex items-center justify-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
                     <Icon.PiDrop size={18} className="text-gray-600" />
-                    <span className="text-xs font-semibold text-gray-700">{productData.volumeMl}ml</span>
+                    <span className="text-xs font-semibold text-gray-700">{selectedVolumeMl}ml</span>
                   </div>
                 )}
               </div>
@@ -822,7 +807,13 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
           >
             {activeTab === 'description' && (
               <div className="max-w-4xl">
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">Product Description</h2>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-2xl font-bold text-gray-900">Product Description</h2>
+                  <ProductDescriptionAudio
+                    description={productData.description}
+                    shortDescription={productData.shortDescription}
+                  />
+                </div>
                 <div 
                   dangerouslySetInnerHTML={{ 
                     __html: productData.description || productData.shortDescription || 'No description available.' 
@@ -832,7 +823,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
               </div>
             )}
             {activeTab === 'specifications' && (
-              <ProductSpecifications productData={productData} />
+              <ProductSpecifications productData={{ ...productData, volumeMl: selectedVolumeMl }} />
             )}
             {activeTab === 'reviews' && (
               <ProductReviews productId={productData._id} />

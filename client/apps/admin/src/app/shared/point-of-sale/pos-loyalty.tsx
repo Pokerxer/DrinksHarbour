@@ -759,7 +759,10 @@ function ItemPicker({
   useEffect(() => {
     setLoadingMeta(true);
     Promise.all([
-      posApi.getCategories().catch(() => ({ categories: [] })),
+      // Token attached: server applies the POS business's industry scope.
+      posApi
+        .getCategories(adminToken)
+        .catch(() => ({ categories: [] })),
       posApi.getBrands({ limit: 200 }).catch(() => ({ brands: [] })),
     ])
       .then(([catData, brandData]: any[]) => {
@@ -2112,7 +2115,7 @@ function PromotionModal({
         <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g. 20% off all spirits this weekend"
+          placeholder="e.g. 20% off all sandals this weekend"
         />
       </Field>
 
@@ -2522,7 +2525,7 @@ function BuyXGetYModal({
         <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g. On all spirits and cocktails"
+          placeholder="e.g. On all kitchenware and tableware"
         />
       </Field>
 
@@ -4744,7 +4747,7 @@ export default function POSLoyalty() {
                   <EmptyState
                     icon={<PiShoppingCart className="h-7 w-7 text-gray-300" />}
                     title="No Buy X Get Y offers yet"
-                    body="Create quantity deals like 'Buy 2 get 1 free' or 'Buy 3 cocktails get 1 at 50% off'"
+                    body="Create quantity deals like 'Buy 2 get 1 free' or 'Buy 3 t-shirts get 1 at 50% off'"
                     action={
                       <button
                         type="button"

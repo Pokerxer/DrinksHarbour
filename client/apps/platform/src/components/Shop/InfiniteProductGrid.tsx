@@ -148,7 +148,7 @@ const InfiniteProductGrid: React.FC<InfiniteProductGridProps> = ({
           <Icon.PiPackage size={40} className="text-gray-400" />
         </div>
         <h3 className="text-2xl font-semibold text-gray-900 mb-3">No products found</h3>
-        <p className="text-gray-600 max-w-md mx-auto">Try adjusting your filters or search criteria to find what you're looking for.</p>
+        <p className="text-gray-600 max-w-md mx-auto">Try adjusting your filters or search criteria to find what you&apos;re looking for.</p>
       </div>
     );
   }
@@ -196,7 +196,7 @@ const InfiniteProductGrid: React.FC<InfiniteProductGridProps> = ({
           <div className="text-center py-8">
             <div className="inline-flex items-center gap-2 text-gray-500">
               <Icon.PiCheckCircle size={20} />
-              <span>You've reached the end</span>
+              <span>You&apos;ve reached the end</span>
             </div>
           </div>
         )}

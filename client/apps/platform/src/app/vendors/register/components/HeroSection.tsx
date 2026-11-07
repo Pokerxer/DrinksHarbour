@@ -65,12 +65,12 @@ export function HeroSection({ vendorCount, productCount, brandCount }: HeroSecti
 
           {/* CTAs */}
           <div className="flex flex-wrap items-center justify-center gap-3 mb-4">
-            <a
+            <Link
               href="/vendors/register/apply"
               className="inline-flex items-center gap-2 bg-gradient-to-br from-red-600 to-red-800 text-white px-7 py-3.5 rounded-xl font-bold text-sm hover:from-red-700 hover:to-red-900 hover:scale-105 active:scale-95 transition-all shadow-lg"
             >
               <Icon.PiPaperPlaneTilt size={16} /> Apply Now — Free
-            </a>
+            </Link>
             <Link
               href="/erm"
               className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white px-7 py-3.5 rounded-xl font-bold text-sm transition-all"

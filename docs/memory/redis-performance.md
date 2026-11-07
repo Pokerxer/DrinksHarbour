@@ -1,3 +1,7 @@
+> Superseded runtime policy: the user requested full disconnection from Upstash
+> on 2026-10-31. No quota recovery/reconnection is required. See
+> `docs/memory/standalone-without-upstash.md` for the current standalone behavior.
+
 # Redis performance integration
 
 2026-10-08: Redis support added after user authorization. REDIS_URL enables
@@ -50,3 +54,10 @@ app deadlines passed PING, 30 atomic shared increments, expiry and temporary
 SET/GET/TTL checks; check keys cleaned up. Eight Redis tests passed. No code deployment
 or production-runtime activation claimed. Settings apply on next backend deployment.
 See docs/superpowers/specs/RESUME-upstash-setup.md for resource and next-step detail.
+
+2026-10-31 incident: production PING succeeded but a read-only Lua command was
+rejected by provider quota. Shared rate limits remain fail-closed. The five-second
+command-failure cooldown now applies to ready connections, and fixed diagnostic
+categories expose the reason without secrets. No billing/environment/deployment
+change. Details and required quota recovery:
+[runtime service incident](runtime-service-errors.md).

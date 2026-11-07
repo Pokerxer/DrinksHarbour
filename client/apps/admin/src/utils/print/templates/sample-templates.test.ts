@@ -4,16 +4,14 @@ import { inflateSync } from 'node:zlib';
 import { TEMPLATES } from './registry';
 import { renderDocument, renderDocuments } from '../pdf-render';
 import { templateSample } from '@/app/shared/document-templates/template-sample';
+// Compressed streams are binary: a trailing CR is data, not a CRLF delimiter.
 function streams(raw: string) {
-  return Array.from(raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g))
-    .map((match) => {
-      try {
-        return inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1');
-      } catch {
-        return match[1];
-      }
-    })
-    .join('\n');
+  return Array.from(raw.matchAll(/<<([^>]*\/Length\s+(\d+)[^>]*)>>\s*stream\r?\n/g))
+    .map(match => {
+      const bytes = raw.slice(match.index! + match[0].length, match.index! + match[0].length + Number(match[2]));
+      return /\/FlateDecode/.test(match[1])
+        ? inflateSync(Buffer.from(bytes, 'latin1')).toString('latin1') : bytes;
+    }).join('\n');
 }
 it('renders all eight sample PDFs and preserves financial text in their page streams', () => {
   mkdirSync('/tmp/document-template-preview', { recursive: true });

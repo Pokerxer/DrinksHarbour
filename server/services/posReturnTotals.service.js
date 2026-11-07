@@ -9,8 +9,16 @@ const tenderTotal = order => number(order.totalAmount);
 // rounding delta is a tender artefact — neither is product income, and neither
 // may inflate commercial sales (see the tipAmount/roundingAmount notes on
 // models/Order.js). Returns deduct from this figure, never from the tip.
+// S5: a venue service-charge line is a service fee, not product income — like
+// the tip it rides the tender total but must stay out of commercial sales and
+// food margin. The minimum shortfall IS merchandise payment and stays in.
+function venueServiceChargeTotal(order) {
+  return (order.venueBillSnapshot?.financialLines || [])
+    .filter(line => line.kind === 'service_charge')
+    .reduce((sum, line) => sum + number(line.amountMinor), 0) / 100;
+}
 function commercialGross(order) {
-  return Math.max(0, tenderTotal(order) - number(order.tipAmount) - number(order.roundingAmount));
+  return Math.max(0, tenderTotal(order) - number(order.tipAmount) - number(order.roundingAmount) - venueServiceChargeTotal(order));
 }
 
 // Commercial sales after returns. Tender cash remains a separate measure.

@@ -1,242 +1,72 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
+import { useAuth } from '@/context/AuthContext';
+import ShipmentProgress from '@/components/Orders/ShipmentProgress';
 import { API_URL } from '@/lib/api';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import TrackingLookup from '@/components/Orders/TrackingLookup';
+import { STEPS, fmt, fmtDate, getCfg } from '@/components/Orders/tracking-display';
+import type { Order } from '@/components/Orders/tracking-types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface OrderItem {
-  product: { _id: string; name: string; slug: string; images: { url: string; alt: string }[] };
-  subproduct?: { name: string; images?: string[] };
-  quantity: number;
-  priceAtPurchase: number;
-  itemSubtotal: number;
-  size?: { displayName?: string; size?: string };
-}
-
-interface Order {
-  _id: string;
-  orderNumber: string;
-  status: string;
-  paymentStatus: string;
-  paymentMethod: string;
-  subtotal: number;
-  shippingFee: number;
-  discountTotal: number;
-  totalAmount: number;
-  placedAt: string;
-  items: OrderItem[];
-  shippingAddress: {
-    fullName: string;
-    addressLine1: string;
-    addressLine2?: string;
-    city: string;
-    state: string;
-    country: string;
-    postalCode?: string;
-    phone: string;
-  };
-}
-
 // ── Config ────────────────────────────────────────────────────────────────────
-
-const STATUS_CFG: Record<string, { color: string; bg: string; border: string; icon: React.ElementType }> = {
-  pending:    { color: 'text-amber-700',  bg: 'bg-amber-50',   border: 'border-amber-200',  icon: Icon.PiClockBold },
-  confirmed:  { color: 'text-blue-700',   bg: 'bg-blue-50',    border: 'border-blue-200',   icon: Icon.PiCheckCircleBold },
-  processing: { color: 'text-orange-700', bg: 'bg-orange-50',  border: 'border-orange-200', icon: Icon.PiPackageBold },
-  shipped:    { color: 'text-purple-700', bg: 'bg-purple-50',  border: 'border-purple-200', icon: Icon.PiTruckBold },
-  delivered:  { color: 'text-green-700',  bg: 'bg-green-50',   border: 'border-green-200',  icon: Icon.PiCheckCircleBold },
-  cancelled:  { color: 'text-red-700',    bg: 'bg-red-50',     border: 'border-red-200',    icon: Icon.PiXCircleBold },
-  refunded:   { color: 'text-stone-600',  bg: 'bg-stone-50',   border: 'border-stone-200',  icon: Icon.PiArrowCounterClockwiseBold },
-};
-
-const STEPS = [
-  { key: 'pending',    label: 'Order Placed', sub: 'Payment confirmed',   icon: Icon.PiShoppingCartBold },
-  { key: 'confirmed',  label: 'Confirmed',    sub: 'Vendor acknowledged', icon: Icon.PiCheckCircleBold },
-  { key: 'processing', label: 'Packing',      sub: 'Items being prepared',icon: Icon.PiPackageBold },
-  { key: 'shipped',    label: 'On the Way',   sub: 'Rider dispatched',    icon: Icon.PiTruckBold },
-  { key: 'delivered',  label: 'Delivered',    sub: 'Order received',      icon: Icon.PiHouseBold },
-];
-
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
-
-const fmtDate = (s: string) =>
-  new Date(s).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-function getCfg(status: string) {
-  return STATUS_CFG[status?.toLowerCase()] || STATUS_CFG.pending;
-}
 
 // ── Tracking Content ──────────────────────────────────────────────────────────
 
 function OrderTrackingContent() {
   const searchParams = useSearchParams();
+  const {token,user}=useAuth();
+  const generation=useRef(0);
+  useEffect(()=>()=>{generation.current+=1;},[]);
   const [orderNumber, setOrderNumber] = useState(searchParams.get('orderId') || '');
-  const [email, setEmail]             = useState(searchParams.get('email')   || '');
   const [order, setOrder]             = useState<Order | null>(null);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState('');
 
-  const fetchOrder = async (num: string, mail: string) => {
-    if (!num.trim() || !mail.trim()) { setError('Please enter both your order number and email.'); return; }
+  const fetchOrder = async (num: string) => {
+    if (!token || !user) return;
+    if (!num.trim()) { setError('Please enter your order number.'); return; }
+    const request=++generation.current;
     setLoading(true); setError(''); setOrder(null);
     try {
-      const res  = await fetch(`${API_URL}/api/orders/number/${num.trim()}?email=${encodeURIComponent(mail.trim())}`);
+      const res  = await fetchWithAuth(`${API_URL}/api/orders/number/${encodeURIComponent(num.trim())}`, { cache: 'no-store' });
       const data = await res.json();
-      if (res.status === 404) { setError('Order not found. Please check your order number and email.'); return; }
+      if(request!==generation.current)return;
+      if (res.status === 401) { setError('Sign in to the account that placed this order. For a guest order, use its confirmation page on the checkout device.'); return; }
+      if (res.status === 404) { setError('Order not found in your signed-in account. Please check the order number.'); return; }
       if (!res.ok) throw new Error(data.message || 'Failed to fetch order');
       setOrder(data.data?.order || data.order || data);
     } catch (err: any) {
+      if(request!==generation.current)return;
       setError(err.message || 'Failed to fetch order. Please check your details and try again.');
     } finally {
-      setLoading(false);
+      if(request===generation.current)setLoading(false);
     }
   };
 
   useEffect(() => {
     const id  = searchParams.get('orderId');
-    const em  = searchParams.get('email');
-    if (id && em) { setOrderNumber(id); setEmail(em); fetchOrder(id, em); }
+    if (id) { setOrderNumber(id); fetchOrder(id); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); fetchOrder(orderNumber, email); };
+  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); fetchOrder(orderNumber); };
 
   // ── LOOKUP FORM ───────────────────────────────────────────────────────────
 
   if (!order) {
-    return (
-      <div className="min-h-screen bg-stone-50">
-        {/* Hero */}
-        <div className="relative bg-gradient-to-br from-stone-900 via-red-950 to-stone-900 text-white overflow-hidden">
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute -top-32 right-0 w-96 h-96 bg-red-700 opacity-10 rounded-full blur-3xl" />
-            <div className="absolute bottom-0 left-0 w-64 h-64 bg-red-500 opacity-10 rounded-full blur-3xl" />
-          </div>
-          <div className="max-w-4xl mx-auto px-4 py-16 relative text-center">
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-1.5 text-xs font-semibold text-red-300 mb-5 border border-white/10">
-              <Icon.PiTruckBold size={12} /> Order Tracking
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight mb-3">Where is my order?</h1>
-            <p className="text-stone-300 text-sm sm:text-base max-w-md mx-auto">
-              Enter your order number and billing email to get real-time delivery status.
-            </p>
-          </div>
-          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-stone-50 to-transparent" />
-        </div>
-
-        <div className="max-w-4xl mx-auto px-4 py-10">
-          <div className="grid lg:grid-cols-5 gap-6 items-start">
-
-            {/* Form card */}
-            <div className="lg:col-span-3 bg-white rounded-2xl border border-stone-200 shadow-sm p-7">
-              <h2 className="text-lg font-black text-stone-900 mb-1">Track your order</h2>
-              <p className="text-sm text-stone-500 mb-6">
-                Your order number starts with <code className="font-mono font-bold text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded">DH</code> and is in your confirmation email.
-              </p>
-
-              {error && (
-                <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl mb-5">
-                  <Icon.PiWarningCircleBold size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-red-700 font-medium">{error}</p>
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="text-xs font-bold text-stone-600 block mb-1.5">Order Number</label>
-                  <div className="relative">
-                    <Icon.PiTagBold size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
-                    <input type="text" placeholder="e.g. DH2605130001" value={orderNumber}
-                      onChange={e => setOrderNumber(e.target.value)} required
-                      className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400 transition-all font-mono" />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-stone-600 block mb-1.5">Billing Email</label>
-                  <div className="relative">
-                    <Icon.PiEnvelopeBold size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
-                    <input type="email" placeholder="you@example.com" value={email}
-                      onChange={e => setEmail(e.target.value)} required
-                      className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400 transition-all" />
-                  </div>
-                </div>
-                <button type="submit" disabled={loading}
-                  className="w-full py-3.5 bg-gradient-to-br from-red-700 to-red-900 text-white font-bold rounded-xl hover:from-red-800 hover:to-red-950 transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 disabled:opacity-60">
-                  {loading
-                    ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Searching…</>
-                    : <><Icon.PiMagnifyingGlassBold size={16} /> Track Order</>}
-                </button>
-              </form>
-
-              <p className="text-xs text-stone-400 mt-5 text-center">
-                Can't find your order?{' '}
-                <Link href="/contact?subject=order" className="text-red-700 font-semibold hover:underline">Contact support</Link>
-              </p>
-            </div>
-
-            {/* Sidebar */}
-            <div className="lg:col-span-2 space-y-4">
-              <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5">
-                <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2 mb-3">
-                  <Icon.PiQuestionBold size={14} className="text-red-700" /> Where's my order number?
-                </h3>
-                <ul className="space-y-2.5 text-xs text-stone-500">
-                  {[
-                    [Icon.PiEnvelopeBold,     'In your order confirmation email'],
-                    [Icon.PiChatTeardropBold,  'In the SMS sent after payment'],
-                    [Icon.PiUserBold,          'Under My Account → My Orders'],
-                    [Icon.PiReceiptBold,       'On your payment receipt'],
-                  ].map(([Ic, text]: any) => (
-                    <li key={text} className="flex items-center gap-2.5">
-                      <Ic size={13} className="text-red-500 flex-shrink-0" />
-                      {text}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5">
-                <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2 mb-3">
-                  <Icon.PiTruckBold size={14} className="text-red-700" /> What each status means
-                </h3>
-                <ul className="space-y-2">
-                  {STEPS.map(s => (
-                    <li key={s.key} className="flex items-center gap-2.5">
-                      <span className="text-[10px] font-bold bg-stone-100 text-stone-600 px-2 py-0.5 rounded-full flex-shrink-0">{s.label}</span>
-                      <span className="text-xs text-stone-400">{s.sub}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <a href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2347048004020'}?text=${encodeURIComponent('Hi! I need help tracking my order.')}`}
-                target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-3 bg-[#25D366] hover:bg-[#1ebe5d] text-white rounded-2xl p-4 transition-colors group">
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <Icon.PiWhatsappLogoBold size={19} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-bold text-sm">Track via WhatsApp</p>
-                  <p className="text-xs text-white/75">Instant support</p>
-                </div>
-                <Icon.PiArrowRightBold size={13} className="opacity-60 group-hover:translate-x-0.5 transition-transform" />
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <TrackingLookup orderNumber={orderNumber} setOrderNumber={setOrderNumber} loading={loading} error={error} signedIn={!!(token && user)} handleSubmit={handleSubmit} />;
   }
 
   // ── ORDER RESULT ──────────────────────────────────────────────────────────
 
-  const statusLo    = order.status?.toLowerCase();
+  const statusLo    = order.status?.toLowerCase() || 'pending';
   const cfg         = getCfg(order.status);
   const StatusIc    = cfg.icon;
   const isCancelled = statusLo === 'cancelled' || statusLo === 'refunded';
@@ -247,18 +77,19 @@ function OrderTrackingContent() {
     <div className="min-h-screen bg-stone-50">
       {/* Sticky header */}
       <div className="bg-white border-b border-stone-200 sticky top-0 z-20 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setOrder(null)}
-            className="p-2 rounded-xl hover:bg-stone-100 text-stone-500 transition-colors">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3 sm:flex-nowrap">
+          <button aria-label="Track another order" onClick={() => setOrder(null)}
+            className="min-h-11 min-w-11 p-2 rounded-xl hover:bg-stone-100 text-stone-500 transition-colors">
             <Icon.PiArrowLeftBold size={17} />
           </button>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-black text-stone-900">Order #{order.orderNumber}</p>
+          <div className="flex-1 min-w-0 basis-[calc(100%-4rem)] sm:basis-auto">
+            <p className="break-all text-sm font-black text-stone-900">Order #{order.orderNumber}</p>
             <p className="text-xs text-stone-400 hidden sm:block">{fmtDate(order.placedAt)}</p>
           </div>
+          <button type="button" onClick={() => fetchOrder(order.orderNumber)} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-700">Refresh order status</button>
           <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
             <StatusIc size={11} />
-            {statusLo.charAt(0).toUpperCase() + statusLo.slice(1)}
+            {statusLo.charAt(0).toUpperCase() + statusLo.slice(1).replaceAll('_', ' ')}
           </span>
         </div>
       </div>
@@ -275,8 +106,8 @@ function OrderTrackingContent() {
               <p className="font-bold text-red-800 text-sm">Order {statusLo === 'refunded' ? 'Refunded' : 'Cancelled'}</p>
               <p className="text-xs text-red-600 mt-1 leading-relaxed">
                 {statusLo === 'refunded'
-                  ? 'A refund has been processed and should reflect in your account within 3–5 business days.'
-                  : 'This order was cancelled. If you were charged, a refund will be processed within 3–5 business days.'}
+                  ? 'This order is recorded as refunded. Contact support to confirm the payment status and expected arrival time.'
+                  : 'This order was cancelled. If you were charged, contact support to confirm whether a refund is due and its progress.'}
                 {' '}<Link href="/contact" className="underline font-semibold">Contact support</Link> if you need help.
               </p>
             </div>
@@ -284,7 +115,8 @@ function OrderTrackingContent() {
         )}
 
         {/* Progress tracker */}
-        {!isCancelled && (
+        {statusLo === 'partially_shipped' && <p className="rounded-xl border border-stone-200 bg-white p-5">Some items have shipped. See the shipment groups below for each quantity.</p>}
+        {!isCancelled && statusLo !== 'partially_shipped' && (
           <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6">
             <h2 className="text-sm font-black text-stone-900 mb-6 flex items-center gap-2">
               <Icon.PiMapPinBold size={14} className="text-red-700" /> Delivery Progress
@@ -323,6 +155,8 @@ function OrderTrackingContent() {
             </div>
           </div>
         )}
+
+        <ShipmentProgress orderId={order._id} sessionKey={token && user ? `${user._id}:${token}` : null} />
 
         {/* Items + summary side by side on lg */}
         <div className="grid lg:grid-cols-3 gap-5">
@@ -443,10 +277,15 @@ export default function OrderTrackingPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-stone-50 flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-red-100 border-t-red-700 rounded-full animate-spin" />
+        <div role="status" aria-label="Loading order tracking" className="w-10 h-10 border-4 border-red-100 border-t-red-700 rounded-full animate-spin" />
       </div>
     }>
-      <OrderTrackingContent />
+      <OrderTrackingSession />
     </Suspense>
   );
+}
+
+function OrderTrackingSession() {
+ const {token,user}=useAuth();
+ return <OrderTrackingContent key={JSON.stringify([user?._id,token])}/>;
 }

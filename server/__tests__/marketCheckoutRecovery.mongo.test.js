@@ -1,0 +1,31 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),mongoose=require('mongoose');
+const {uri,connectVenueMongo}=require('./helpers/venueMongo');
+test('accepted marketplace checkout retries recover original order before current country and policy gates',{skip:!uri},async t=>{
+ await connectVenueMongo(t,'market_checkout_recovery');
+ const secret=process.env.JWT_SECRET;process.env.JWT_SECRET='market-recovery-fixture-only';t.after(()=>{if(secret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=secret;});
+ const before=process.env.MARKET_FOUNDATIONS_ENABLED;process.env.MARKET_FOUNDATIONS_ENABLED='true';t.after(()=>{if(before===undefined)delete process.env.MARKET_FOUNDATIONS_ENABLED;else process.env.MARKET_FOUNDATIONS_ENABLED=before;});
+ for(const name of ['email','sms','whatsapp']){const transport=require(`../services/${name}.service`);for(const method of Object.keys(transport).filter(key=>key.startsWith('send')))if(typeof transport[method]==='function')t.mock.method(transport,method,async()=>({success:true}));}
+ const oid=()=>new mongoose.Types.ObjectId(),tenant=oid(),product=oid(),sp=oid();
+ await require('../models/CountryConfiguration').collection.insertOne({code:'NG',name:'Synthetic',currency:'NGN',locale:'en-NG',timezones:['Africa/Lagos'],version:1,active:true,capabilities:{marketplace:true,storefront:true,erm:true}});
+ const Channel=require('../models/SalesChannel');await Channel.collection.insertOne({tenant:null,kind:'marketplace',market:'NG',code:'SYNTHETIC_NG',currency:'NGN',version:1,active:true,legalOwner:{type:'platform',reference:'synthetic'},paymentOwner:{type:'platform',reference:'synthetic',provider:'cash_on_delivery',account:'platform'},pricingPolicy:{code:'SYNTHETIC_TERMS',version:1,termsReference:'synthetic-only'}});
+ await require('../models/Tenant').collection.insertOne({_id:tenant,name:'Fixture merchant',status:'approved',isActive:true,subscriptionStatus:'active',revenueModel:'commission',commissionPercentage:0});
+ await require('../models/Product').collection.insertOne({_id:product,name:'Fixture bottle',type:'beer',status:'approved',isPublished:true,isAlcoholic:false,platformMarkup:0});
+ const SP=require('../models/SubProduct');await SP.collection.insertOne({_id:sp,tenant,product,sku:'RECOVERY_FIXTURE',status:'active',isPublished:true,visibleInOnlineStore:true,sellWithoutSizeVariants:true,baseSellingPrice:200,costPrice:100,availableStock:10,totalStock:10,reservedStock:0});
+ const term={effectiveFrom:new Date('2020-01-01'),effectiveUntil:new Date('2090-01-01')};
+ await require('../models/MarketCategoryPolicy').collection.insertOne({market:'NG',category:'beverage',channel:'marketplace',version:1,mode:'open',...term});
+ await require('../models/MarketEnrollment').collection.insertOne({tenant,market:'NG',category:'beverage',channel:'marketplace',version:1,status:'approved',...term});
+ const app=require('express')();app.use(require('express').json());app.use('/orders',require('../routes/order.routes'));app.use((e,req,res,next)=>res.status(e.statusCode||500).json({message:e.message}));
+ const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const payload={customer:{firstName:'Fixture',lastName:'Buyer',email:'fixture@example.test',phone:'08000000000'},shipping:{address:'Fixture street',city:'Abuja',state:'FCT',zipCode:'900001',country:'Nigeria'},paymentMethod:'cash_on_delivery',items:[{productId:String(product),subProductId:String(sp),quantity:1,price:200}],subtotal:200,shippingFee:3000,total:3200};
+ const call=async(key,body=payload)=>{const response=await fetch(`http://127.0.0.1:${server.address().port}/orders`,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key,'x-market-code':'NG'},body:JSON.stringify(body)});return{status:response.status,body:await response.json()};};
+ const first=await call('recovery-original-key');assert.equal(first.status,201,JSON.stringify(first.body));const orderId=first.body.data.order._id;
+ const stockBefore=await SP.findById(sp).lean();
+ await require('../models/CountryConfiguration').collection.updateOne({code:'NG'},{$set:{active:false,version:2}});
+ await Channel.collection.updateOne({code:'SYNTHETIC_NG'},{$set:{active:false,version:2}});
+ await SP.collection.updateOne({_id:sp},{$set:{isPublished:false,baseSellingPrice:900}});
+ const replay=await call('recovery-original-key');assert.equal(replay.status,200,JSON.stringify(replay.body));assert.equal(replay.body.data.order._id,orderId);assert.equal(replay.body.data.order.totalAmount,3200);
+ assert.equal(await require('../models/Order').countDocuments(),1);assert.equal((await SP.findById(sp).lean()).reservedStock,stockBefore.reservedStock);
+ assert.equal((await call('recovery-original-key',{...payload,total:9999})).status,409);
+ const rejected=await call('new-key-while-inactive');assert.ok([403,404].includes(rejected.status));
+});

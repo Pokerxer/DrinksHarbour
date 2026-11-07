@@ -1,4 +1,27 @@
+> Current runtime policy (2026-10-31): Upstash/Redis is disconnected. No provider
+> is required; optional caches read MongoDB directly and API/mail/auth request
+> limits use local memory. Old Redis configuration cannot reactivate it. See
+> [standalone operating notes](../docs/memory/standalone-without-upstash.md).
+
 # Import the public key
+
+## Shared warehouse identity safety
+
+Warehouse records are shared tenant location identities, not product-owned storage
+objects. Product create/edit may link only to an active warehouse owned by the
+same tenant. Empty legacy storage-form objects preserve the current reference;
+explicit null clears only the listing reference. Product forms must never create,
+edit or delete physical locations. Manage bins on warehouse stock separately.
+
+Application/model hard deletes of warehouses are prohibited. The legacy DELETE
+route now deactivates the record, preserves stock/history rows, and refuses the
+default location or a location with positive stock/reservations. Raw MongoDB
+collection operations bypass Mongoose safeguards: restrict production database
+write credentials and never use fixture cleanup against business databases.
+
+Regression: `node --test __tests__/warehouseIdentity.test.js`. Incident/recovery:
+`docs/superpowers/specs/RESUME-wh001-recovery-guard-2026-10-27.md`.
+
 wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | sudo apt-key add -
 
 # Create list file
@@ -26,30 +49,53 @@ brew services stop mongodb-community
 # Check MongoDB status
 brew services info mongodb-community
 
+## Local semantic-search runtime
+
+Local embeddings use maintained `@huggingface/transformers`3.8.1 with
+`Xenova/all-MiniLM-L6-v2` (q8, mean pooling, normalized384-value vectors).
+The scoped Sharp0.35.5 override is covered by real native image/inference checks.
+Node22 is required. Models are downloaded on first use; no database reindex is
+performed automatically. Browser caching is disabled in Node. The default model
+cache is the OS temporary directory under `drinksharbour-embedding-models`;
+set `EMBEDDING_CACHE_DIR` to a writable persistent directory when available.
+Installed application bundles do not need to be writable.
+
+After a clean install, `node scripts/verify-local-embeddings.js` checks real native
+inference with synthetic text and disposes the model. It downloads the public
+model if uncached, loads no .env and writes no business data. Ordinary unit tests
+mock model loading. CI also runs this native check; its hosted result is required
+before release. Remote model access and native packaging need deployment-specific
+staging verification. See [migration evidence](../docs/operations/server-security-migration.md).
+
+## Access-token boundaries
+
+Normal API authentication accepts legacy untyped access JWTs or `type: access`.
+MFA challenges, MFA step-up proofs and refresh JWTs cannot establish a session,
+even when their signature verifies. The mixed POS guard admits `type: pos` only
+through its tenant-checked POS path. Its admin path applies normal access-token
+purpose and password-change invalidation checks. Preserve these boundaries when
+adding a token issuer. See [regression evidence](../docs/audits/access-token-purpose-2026-10-23.md).
+
 ## Public navigation counts
 
-Category/subcategory lists read published metadata live. Approximate product count
-labels use Redis for up to60 seconds when REDIS_URL is configured; disable with
-REDIS_NAVIGATION_COUNTS_CACHE=false. Cache outage/corruption falls back to a single
-batched approved-product aggregation. Prices, stock, tenants, checkout and product
-responses are not cached here. See docs/performance/navigation-redis-images.md.
+Category/subcategory lists read published metadata live. Product count labels
+use a batched approved-product aggregation. The former Redis cache is disabled.
+Prices, stock, tenants, checkout and product responses are not cached here. See docs/performance/navigation-redis-images.md.
 
 ## Typed-sale pagination
 
 Product search with `saleType` matches an active offer and valid dates before count/pagination, after public tenant and size gates. Typed-sale counts are exact unless price filters also apply. Untyped `onSale` retains its pricing-based post-filter. Local disposable fixture: `node scripts/performance-load/flash-sale-check.js` (localhost Mongo only, no .env). See `docs/memory/flash-sale-speed.md`.
 
-## Admin report Redis cache
+## Admin report reads
 
-Selected authenticated admin report routes cache successful JSON reports for
-30 seconds after authorization, scoped by user, tenant, permissions and filters.
-Successful authenticated JSON writes invalidate affected report generations.
-Requires REDIS_URL; disable with REDIS_ADMIN_REPORT_CACHE=false. See
+Reports use live authenticated handlers, with user, tenant and permission checks
+on every request. The former Redis cache is disabled. Historical implementation:
 [operating notes](../docs/performance/admin-redis.md) and the disposable local
 `scripts/performance-load/admin-report-cache-check.js` benchmark.
 
 SubProduct list/detail/edit reads separately cache summary counts and catalog
-reference labels, with live stock/pricing records. Disable independently with
-REDIS_SUBPRODUCT_PAGE_CACHE=false. See [SubProduct cache notes](../docs/performance/sub-product-redis.md).
+reference labels in the historical implementation. All those reads now use
+authoritative loaders; the Redis cache is disabled. See [SubProduct cache notes](../docs/performance/sub-product-redis.md).
 
 ## Marketplace proximity
 
@@ -111,6 +157,23 @@ splits/coupon allocations are frozen with policy merchandise-v2. Delivery/tax/fe
 stay outside that gross split. Explicit commission marketplace price overrides are
 additive schema fields, separate from markup percentages. Rollout/history/refund
 limitations: [revenue policy notes](../docs/memory/revenue-agreement-pricing.md).
+
+Selling-price markup adds a third agreement using current tenant retail plus
+Tenant.sellingPriceMarkupPercentage. Listing/Size percentage overrides inherit
+when null; platform review can restore inheritance. No commission, cost-based
+markup or automatic pack discount is added. Payout stays retail and order/refund
+snapshots remain fixed. See [selling-price markup](../docs/memory/selling-price-markup.md).
+
+## Runtime service failures
+
+The Redis quota incident is historical. The user subsequently required operation
+without Upstash; local memory limits and authoritative reads replace the external
+runtime dependency. Historical details: [incident notes](../docs/memory/runtime-service-errors.md).
+
+`GET /realtime-status` advertises whether this process actually attached Socket.IO,
+without querying MongoDB or Redis. Vercel instances report false. POS/KDS clients
+probe before connecting and continue REST polling when unavailable. Deploy this
+endpoint before or alongside the admin socket guard.
 
 ## Standalone operation without Upstash
 

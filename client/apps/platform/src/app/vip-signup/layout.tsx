@@ -1,8 +1,9 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: "VIP Membership — Exclusive Deals & Early Access",
   description:
     "Join DrinksHarbour VIP for exclusive discounts, early access to new arrivals, and members-only offers on premium beverages.",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
     description: "Exclusive discounts, early access, and members-only offers on premium beverages.",
   },
   alternates: { canonical: `${BASE_URL}/vip-signup` },
-};
+});
 
 const jsonLd = {
   "@context": "https://schema.org",

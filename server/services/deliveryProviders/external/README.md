@@ -1,0 +1,27 @@
+# Reviewed external parcel responsibilities
+
+This is a disabled Shipbubble candidate integration, not approval of a real account/carrier or production activation. New quote/booking requires `MERCHANT_EXTERNAL_CARRIER_ENABLED=true` and an explicit current platform settings-authorized review of the original location, account reference, exact courier/service pairs, category, handling capabilities, limits, evidence and expiry. No review is seeded. `SHIPBUBBLE_ACCOUNT_<REFERENCE>` resolves the private original API key only on the server. No caller selects a URL or supplies credentials.
+
+## Existing goods and money authority
+
+A carrier responsibility attaches to one existing manual-shipped V2 MerchantShipmentAllocation. Local rider allocations, direct/POS/venue orders and foreign/inconsistent records are denied. Original parent/channel/customer, complete MerchantOrderSet, exact purchased line/variant/tenant/location/quantity, accepted child money, consumed hold/unit ranges and original allocation are verified. Reserved/refunded ranges cannot create a new carrier responsibility. No carrier method ships, delivers, restocks, reverses COGS, takes a rider claim or collects another customer charge.
+
+Quotes validate saved sender/recipient facts using the provider address API. Product/variant weight and packaging/hazard/alcohol/age facts remain server-owned; the operator supplies measured dimensions and pickup date. Rates are limited to reviewed parcel pickup services, NGN and the original accepted shipping budget. Provider wallet charge and displayed rate can differ; both are shown explicitly. Quotes expire locally after at most15minutes/current review expiry.
+
+Booking reserves the shared MerchantDispatchBudget transactionally before exactly one provider POST outside the Mongo retry transaction. Existing local and carrier commitments cannot together exceed the accepted child shipping charge. Location/review, original parent/child and goods allocation writes serialize against revocation, changed payment/financial blocks and delivery. An allocation has one deterministic carrier identity, and exact operation replay never creates again. Accepted snapshots/IDs/account references are sealed; no retrospective conversion or new automatic index migration.
+
+Missing/ambiguous provider or local evidence leaves submitting/uncertain responsibility and its reservation intact. A syntactically valid returned provider ID is saved before deeper checks. Platform reconciliation retrieves that known ID from the original account and requires exact saved addresses and confirmed wallet fee; missing evidence remains uncertain. No documented provider idempotency or lookup by our internal key is assumed. An unknown ID after timeout requires original-account investigation; the application never blindly resubmits or accepts an arbitrary replacement ID.
+
+## Cancellation and observations
+
+Only a future scheduled booking still reported pending can request cancellation. One local key claims the request; conflicting/concurrent keys fail. Cancellation acknowledgements and observed cancellation do not prove provider-wallet/customer refund, restock goods or release committed shipping money. Financial disposition remains separate.
+
+Authenticated tracking retrieval selects the exact original provider ID. Monotonic observations retain a completed/cancelled terminal state; conflicting terminal evidence requires review. Raw callbacks require original-account HMAC-SHA512, known booking/account binding and persisted deduplication. Callback status itself is not trusted: current authenticated provider state is fetched. COD/wallet funding events do not create money effects. Exact raw bytes are captured by the production JSON parser for `/api/merchant-carrier/webhooks/:account`.
+
+Operational and customer DTOs are independent allowlists. Account/provider IDs, contacts, raw payloads, rider details and returned URLs stay private; no arbitrary provider URL is rendered. Customer labels distinguish a carrier delivery report from the merchant's recorded goods quantities. Actual merchant UI provides review confirmation/revocation, rates, exact wallet-charge confirmation, existing uncertain responsibility and operator refresh/reconciliation/cancel actions. Review drafts retain their original proposed version after an uncertain write; measured quote inputs lock while waiting, and session/order changes discard late reads.
+
+## Evidence and remaining limits
+
+Official protocol links, exact module map and observed verification are in `docs/superpowers/plans/global-phases/phase-d-external-providers.md`; current acceptance in `docs/superpowers/specs/phase-d-acceptance-2026-10-27.md`. Tests replace only external HTTP and use strict disposable local data. No real provider/payment requests, credentials, country/carrier certification, messages, production feature/data/index activation or deployment occurred.
+
+Only parcel pickup protocol is implemented here; food/dropoff/COD/insurance/duties, provider return labels, customer shipping/tax refunds and payouts are unsupported. No cancellation refund, delivery date or handling/legal certification is inferred. Booking is against an already recorded goods shipment; carrier observation does not replace the independent canonical merchant delivery confirmation. Real provider sandbox/hosted callback certification and commercial capability/account review remain external gates.

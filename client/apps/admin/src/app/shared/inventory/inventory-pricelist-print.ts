@@ -1,10 +1,8 @@
-import {
-  buildPriceColumnGrid,
-  type PriceColumn,
-} from './inventory-pricelist-columns';
+import { buildPriceColumnGrid, type PriceColumn } from './inventory-pricelist-columns';
 import { buildPricelistDoc } from '@/utils/print/pricelist-print';
 import { requestDocumentExport } from '@/utils/print/document-export';
 import type { StockRow } from '@/services/warehouseStock.service';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 import {
   findMatchingPricelistRules,
   applyRuleTransform,
@@ -24,6 +22,12 @@ export interface PricelistPrintRow {
   productName: string;
   sku: string;
   sizeName: string;
+  /** Retail variant identity (DRI-30, optional additive): carried on rows
+   *  whose stock source exposed it (StockRow). The HTML print cells stay
+   *  snapshot (`sizeName`) per the CEO print decision; only sorting and the
+   *  CSV/preview presentation consume composed labels. */
+  colorName?: string | null;
+  optionName?: string | null;
   categoryName: string;
   sellingPrice: number;
   costPrice: number;
@@ -162,6 +166,8 @@ export type PricableStockLine = Pick<
   | 'productName'
   | 'sku'
   | 'sizeName'
+  | 'colorName'
+  | 'optionName'
   | 'categoryName'
   | 'sellingPrice'
   | 'costPrice'
@@ -395,6 +401,27 @@ export function linesHaveBundlePrices(lines: PricedLine[]): boolean {
   return lines.some((l) => l.bundlePrice != null);
 }
 
+/**
+ * Sort the Size dimension by the full shared variant label (identity-aware,
+ * DRI-30): same-size colour siblings order deterministically instead of
+ * colliding into an arbitrary tie. Legacy rows compose the stored sizeName
+ * byte-for-byte, so their ordering is unchanged; the exact sizeId is the
+ * final tie-break. Consumed by the browser-side sorts (pricelist lines, CSV/
+ * preview grids) — the HTML print cells keep the stored `sizeName` snapshot
+ * per the CEO print decision.
+ */
+export function pricelistSizeCmp(
+  a: Pick<PricelistPrintRow, 'sizeName' | 'sizeId'> &
+    Partial<Pick<PricelistPrintRow, 'colorName' | 'optionName'>>,
+  b: Pick<PricelistPrintRow, 'sizeName' | 'sizeId'> &
+    Partial<Pick<PricelistPrintRow, 'colorName' | 'optionName'>>
+): number {
+  return (
+    flatRowSizeLabel(a).localeCompare(flatRowSizeLabel(b)) ||
+    String(a.sizeId ?? '').localeCompare(String(b.sizeId ?? ''))
+  );
+}
+
 /** Collapse warehouse-duplicated lines to one row per subProduct+size. */
 export function dedupeRowsForPricelist(
   rows: PricableStockLine[]
@@ -408,6 +435,8 @@ export function dedupeRowsForPricelist(
         productName: r.productName,
         sku: r.sku,
         sizeName: r.sizeName,
+        colorName: r.colorName ?? null,
+        optionName: r.optionName ?? null,
         categoryName: r.categoryName || 'Uncategorized',
         sellingPrice: Number(r.sellingPrice) || 0,
         costPrice: Number(r.costPrice) || 0,
@@ -658,7 +687,7 @@ export function priceAndSortLines(
       (a, b) =>
         a.categoryName.localeCompare(b.categoryName) ||
         a.productName.localeCompare(b.productName) ||
-        a.sizeName.localeCompare(b.sizeName)
+        pricelistSizeCmp(a, b)
     );
 }
 
@@ -1241,7 +1270,7 @@ export function resolveCatalogLines(
     (a, b) =>
       a.categoryName.localeCompare(b.categoryName) ||
       a.productName.localeCompare(b.productName) ||
-      a.sizeName.localeCompare(b.sizeName)
+      pricelistSizeCmp(a, b)
   );
 }
 
@@ -1317,7 +1346,9 @@ export function buildPricelistCsv(
     ];
     const body = grid.rows.map(({ line, prices }) =>
       [
-        ...[line.categoryName, line.productName, line.sku, line.sizeName].map(
+        // CSV/preview presentation follows the browser-view rule (DRI-30):
+        // full composed variant label; legacy rows stay the stored sizeName.
+        ...[line.categoryName, line.productName, line.sku, flatRowSizeLabel(line) || line.sizeName].map(
           csvCell
         ),
         ...(options.showAvailability ? [line.currentQuantity] : []),
@@ -1383,7 +1414,9 @@ export function buildPricelistCsv(
       csvCell(l.categoryName),
       csvCell(l.productName),
       csvCell(l.sku),
-      csvCell(l.sizeName),
+      // CSV presentation is identity-aware (DRI-30); legacy rows stay the
+      // stored sizeName byte-for-byte.
+      csvCell(flatRowSizeLabel(l) || l.sizeName),
       ...(options.showAvailability ? [l.currentQuantity] : []),
       l.price.toFixed(2),
       ...(options.showWasPrices === false

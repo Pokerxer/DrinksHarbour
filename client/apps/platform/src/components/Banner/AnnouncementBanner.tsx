@@ -1,5 +1,7 @@
 'use client';
 
+import { DELIVERY_COPY } from '@/lib/deliveryCopy';
+
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -38,8 +40,8 @@ export interface BannerData {
 
 const DEFAULT_ANNOUNCEMENTS: BannerData[] = [
   {
-    _id: 'def-1', title: 'Free Delivery on Orders Over ₦2,000,000', subtitle: 'Fast & Reliable Shipping',
-    type: 'announcement', placement: 'header', ctaText: 'Shop Now', ctaLink: '/shop',
+    _id: 'def-1', title: `Free delivery: ${DELIVERY_COPY.compact}`, subtitle: DELIVERY_COPY.summary,
+    type: 'announcement', placement: 'header', ctaText: 'Delivery details', ctaLink: '/shipping-info',
     backgroundColor: '#7C1D1D', textColor: '#FFFFFF',
   },
   {

@@ -20,6 +20,9 @@ export interface Product {
   volumeMl?: number;
   abv?: number;
   status?: string;
+  // Central catalogue scope — present only when the search endpoint includes
+  // it; anything missing reads as legacy canon (see ../../catalogue-scope.ts).
+  publicationScope?: string;
   matchKind?: 'exact' | 'close' | 'related';
   matchReason?: string;
 }

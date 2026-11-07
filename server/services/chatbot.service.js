@@ -7,6 +7,10 @@ const mongoose = require('mongoose');
 const https = require('https');
 const productService = require('./product.service');
 const Anthropic = require('@anthropic-ai/sdk');
+// Venue Phase 3 S1 (docs/saas/venues/03 §2): the consumer assistant is part of
+// the retail channel — it may only propose products a shopper can actually buy
+// in the shop, so venue-only catalog kinds never surface here.
+const catalogKind = require('../constants/catalogKind');
 
 const Product = mongoose.models.Product || mongoose.model('Product');
 const SubProduct = mongoose.models.SubProduct || mongoose.model('SubProduct');
@@ -99,13 +103,13 @@ const searchWeb = async (query) => {
 };
 
 // Call Claude Haiku — supports multi-turn conversation history
-const callClaude = async (prompt, systemPrompt = null, conversationHistory = []) => {
+const callClaude = async (prompt, systemPrompt = null, conversationHistory = [], historyLimit = 10, outputFormat = null) => {
   const finalSystemPrompt = systemPrompt || BASE_SYSTEM_PROMPT;
   try {
     // Build messages: history (last 10 turns) + current user message.
     // System prompt goes in the top-level `system` param, not the messages array.
     const messages = [
-      ...conversationHistory.slice(-10).map(m => ({
+      ...conversationHistory.slice(-historyLimit).map(m => ({
         role: m.role === 'assistant' ? 'assistant' : 'user',
         content: m.content,
       })),
@@ -114,10 +118,11 @@ const callClaude = async (prompt, systemPrompt = null, conversationHistory = [])
 
     const response = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 2048,
+      max_tokens: outputFormat ? 4096 : 2048,
       temperature: 0.65,
       system: finalSystemPrompt,
       messages,
+      ...(outputFormat ? { output_config: { format: outputFormat } } : {}),
     });
 
     const textBlock = response.content.find(b => b.type === 'text');
@@ -546,6 +551,7 @@ const loadCatalog = async (tenantId = null) => {
   }
 
   const { calculateSizePricing, calculateSubProductPricing, isDiscountActive, applySubProductSale } = require('../utils/pricing');
+  const { volumeInMl } = require('../utils/occasionPlanAssessment');
 
   try {
     const ProductModel = mongoose.models.Product || mongoose.model('Product');
@@ -557,7 +563,7 @@ const loadCatalog = async (tenantId = null) => {
     const activeTenants = await TenantModel.find({
       status: 'approved',
       subscriptionStatus: { $in: ['active', 'trialing'] },
-    }).select('_id name revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits').lean();
+    }).select('_id name revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits').lean();
     const activeTenantIds = activeTenants.map(t => t._id);
     const tenantById = {};
     activeTenants.forEach(t => { tenantById[t._id.toString()] = t; });
@@ -572,7 +578,7 @@ const loadCatalog = async (tenantId = null) => {
       .populate('brand', 'name')
       .lean();
 
-    if (products.length === 0) return null;
+    if (products.length === 0) return { text: '', entries: [] };
 
     const productIds = products.map(p => p._id);
     const productById = {};
@@ -584,7 +590,7 @@ const loadCatalog = async (tenantId = null) => {
       status: { $in: ['active', 'low_stock', 'out_of_stock'] },
       tenant: { $in: tenantFilter },
       baseSellingPrice: { $gt: 0 },
-    }).select('product baseSellingPrice costPrice platformMarkupOverridePct availableStock discount discountType discountStart discountEnd isOnSale saleType saleDiscountValue saleStartDate saleEndDate sizes tenant').lean();
+    }).select('product baseSellingPrice costPrice sellingPriceMarkupOverridePct platformMarkupOverridePct availableStock discount discountType discountStart discountEnd isOnSale saleType saleDiscountValue saleStartDate saleEndDate sizes tenant').lean();
 
     // Step 4: Keep the storefront pricing inputs, including saved overrides and
     // wholesale cost. Omitting them silently recalculates a different price.
@@ -593,7 +599,7 @@ const loadCatalog = async (tenantId = null) => {
       _id: { $in: allSizeIds },
       status: 'active',
       availability: { $in: ['available', 'in_stock', 'low_stock'] },
-    }).select('_id size volumeMl stock sellingPrice costPrice wholesalePrice platformMarkupOverridePct packPlatformMarkupOverridePct maxOrderQuantity unitsPerPack discountValue discountType discountStart discountEnd availability')
+    }).select('_id size volumeMl stock sellingPrice costPrice wholesalePrice sellingPriceMarkupOverridePct platformMarkupOverridePct packPlatformMarkupOverridePct maxOrderQuantity unitsPerPack discountValue discountType discountStart discountEnd availability')
       .lean();
     const sizeById = {};
     sizes.forEach(s => { sizeById[s._id.toString()] = s; });
@@ -609,7 +615,6 @@ const loadCatalog = async (tenantId = null) => {
     // Step 6: Build catalog lines + structured entries
     const catalogLines = [];
     const entries = [];
-    const categorySet = new Set();
 
     for (const p of products) {
       const sps = spByProduct[p._id.toString()] || [];
@@ -657,7 +662,7 @@ const loadCatalog = async (tenantId = null) => {
             const key = label ? sizeKey(label) : `unknown:${sizeId}`;
             const stock = sz.stock || sp.availableStock || 0;
             if (!sizeMap.has(key) || finalPrice < sizeMap.get(key).price) {
-              sizeMap.set(key, { label: label || 'Size not specified', price: finalPrice, originalPrice, onSale, stock });
+              sizeMap.set(key, { label: label || 'Size not specified', ...(Number.isFinite(sz.volumeMl) && sz.volumeMl > 0 ? { volumeMl: sz.volumeMl } : {}), price: finalPrice, originalPrice, onSale, stock });
             }
           }
         } else {
@@ -678,7 +683,10 @@ const loadCatalog = async (tenantId = null) => {
 
       const sizeLines = sizeMap.size > 0
         ? [...sizeMap.values()].map(s => {
-            let l = `    • ${s.label}: ₦${Math.round(s.price).toLocaleString()} (stock: ${s.stock})`;
+            // Verified volume annotation (from Size.volumeMl or the label) lets
+            // the planner do prescribed-size serving arithmetic without guessing.
+            const volume = volumeInMl(s.label, s.volumeMl);
+            let l = `    • ${s.label}${volume ? ` (${volume}ml)` : ''}: ₦${Math.round(s.price).toLocaleString()} (stock: ${s.stock})`;
             if (s.onSale && s.originalPrice) l += ` [was ₦${Math.round(s.originalPrice).toLocaleString()}]`;
             return l;
           })
@@ -686,7 +694,6 @@ const loadCatalog = async (tenantId = null) => {
 
       const catName = p.category?.name || p.type || '';
       const subCatName = p.subCategory?.name || p.subType || '';
-      if (catName) categorySet.add(catName);
 
       let line = `• ${p.name}`;
       if (catName) line += ` [${catName}${subCatName ? ' > ' + subCatName : ''}]`;
@@ -721,9 +728,29 @@ const loadCatalog = async (tenantId = null) => {
       });
     }
 
-    if (catalogLines.length === 0) return null;
+    if (catalogLines.length === 0) return { text: '', entries: [] };
 
-    const categoriesLine = categorySet.size > 0 ? `CATEGORIES IN CATALOG: ${[...categorySet].join(', ')}\n\n` : '';
+    // Structured overview lets occasion planning distribute guests/budget across
+    // the catalogue's category > subcategory grid before product-line detail.
+    const overviewLines = [];
+    if (entries.length > 0) {
+      const groups = new Map();
+      for (const entry of entries) {
+        const category = entry.category || entry.type || 'Other';
+        const subCategory = entry.subCategory || '';
+        const key = `${category}||${subCategory}`;
+        if (!groups.has(key)) groups.set(key, { category, subCategory, count: 0, lowest: Infinity, highest: 0 });
+        const group = groups.get(key);
+        group.count += 1;
+        if (Number.isFinite(entry.minPrice) && entry.minPrice > 0) group.lowest = Math.min(group.lowest, entry.minPrice);
+        if (Number.isFinite(entry.maxPrice) && entry.maxPrice > 0) group.highest = Math.max(group.highest, entry.maxPrice);
+      }
+      for (const { category, subCategory, count, lowest, highest } of [...groups.values()].sort((a, b) => a.category.localeCompare(b.category) || a.subCategory.localeCompare(b.subCategory))) {
+        const span = lowest <= highest && highest > 0 ? `, ₦${Math.round(lowest).toLocaleString()}–₦${Math.round(highest).toLocaleString()}` : '';
+        overviewLines.push(`• ${category}${subCategory ? ` > ${subCategory}` : ''}: ${count} product${count === 1 ? '' : 's'}${span}`);
+      }
+    }
+    const categoriesLine = overviewLines.length > 0 ? `CATALOGUE STRUCTURE (plan across these categories > subcategories; exact sizes and prices follow per product below):\n${overviewLines.join('\n')}\n\n` : '';
     const stockNote = `(NOTE: every "stock:" figure below is INTERNAL — use it to decide if you can fulfil the requested quantity, but do NOT disclose the number to the customer unless it is below 6 or they asked for more than we have. See STOCK DISCLOSURE RULES.)\n\n`;
     const text = `${categoriesLine}${stockNote}PRODUCTS:\n${catalogLines.join('\n')}`;
 
@@ -855,7 +882,8 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
 
     let result;
     try {
-      result = await productService.searchProducts(queryParams);
+      // catalogChannel pinned last so no filter key can displace it (S1 retail gate).
+      result = await productService.searchProducts({ ...queryParams, catalogChannel: 'retail' });
     } catch (err) {
       console.error('searchProducts failed:', err.message);
     }
@@ -899,7 +927,12 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
       if (filters.type) {
         baseQuery.type = dbTypeMap[filters.type] || filters.type;
       }
-      
+
+      // DRI-5 beverage-only marketplace gate, merged after the `$or`
+      // assignment above so the two top-level clauses cannot clobber each
+      // other ($and wrapper is collision safe).
+      Object.assign(baseQuery, { $and: [catalogKind.marketplaceWhereClause()] });
+
       let products = await Product.find(baseQuery).limit(limit * 2).lean();
       
       if (tenantId) {
@@ -1184,6 +1217,10 @@ const handleChatbotQuery = async (options) => {
   const images = imageUrls || (imageUrl ? [imageUrl] : []);
 
   try {
+    if (options.mode === 'occasion') {
+      const { planOccasion } = require('./occasionChat.service');
+      return await planOccasion({ ...options, imageUrls: images }, { callClaude: (prompt, system, history, format) => callClaude(prompt, system, history, 20, format), analyzeImage, buildFullCatalogContext, loadCatalog });
+    }
     // Handle image query first — customers often send a photo with no text
     if (images.length > 0) {
       return await handleImageQuery(images, query || '', tenantId);
@@ -1418,6 +1455,7 @@ ${catalogContext ? IMAGE_REQUEST_INSTRUCTIONS : ''}`.trim();
     };
 
   } catch (error) {
+    if (options.mode === 'occasion') throw error;
     console.error('Chatbot Error:', error);
     return {
       response: "Sorry, something went wrong on our end. Please try again in a moment.",
@@ -1855,7 +1893,13 @@ const generateProductDetails = async (productId) => {
     // Visibility pinned AFTER the id so no caller-supplied value can displace
     // it. An id is not an authorisation: without this, any Product _id — draft,
     // pending, rejected, archived — describes itself in full, with prices.
-    const product = await Product.findOne({ _id: productId, ...publicProductMatch() })
+    // + DRI-5 beverage-only marketplace gate: the assistant describes only
+    // platform-buyable (beverage-kind) products.
+    const product = await Product.findOne({
+      _id: productId,
+      ...publicProductMatch(),
+      $and: [catalogKind.marketplaceWhereClause()],
+    })
       .populate('brand', 'name')
       .populate({ path: 'subProducts', populate: [{ path: 'tenant' }, { path: 'sizes' }] })
       .lean();

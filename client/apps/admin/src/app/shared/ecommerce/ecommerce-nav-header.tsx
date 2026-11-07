@@ -12,6 +12,7 @@ import NavDropdownPanel from '@/app/shared/nav-dropdown-panel';
 import MobileNavMenu, {
   activeMobileNavLabel,
 } from '@/app/shared/warehouses/mobile-nav-menu';
+import { activeModuleHref } from '@/app/shared/module-nav-active';
 import { useTenant } from '@/context/TenantContext';
 import { TENANT_ROLES } from '@/types/authorization';
 import {
@@ -29,6 +30,19 @@ export default function EcommerceNavHeader() {
   const accentColor = tenant?.primaryColor || '#b20202';
 
   const navItems = getEcommerceNavItems({ role, plan: tenant?.plan });
+
+  // Longest matching href wins, so /ecommerce/orders/<id> highlights the
+  // Orders tab (not the Dashboard) — same rule as module-nav-active.ts.
+  const matchedHref = activeModuleHref(
+    pathname,
+    navItems.flatMap((item) =>
+      'href' in item && item.href
+        ? [item.href]
+        : (item.items ?? [])
+            .map((sub) => sub.href)
+            .filter((href): href is string => !!href && href !== '#')
+    )
+  );
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -105,14 +119,18 @@ export default function EcommerceNavHeader() {
       {/* Nav links — visible from md up; on mobile the Menu button above */}
       <div className="hidden min-w-0 flex-1 flex-wrap items-center pl-2 md:flex">
         {navItems.map((item) => {
-          const isDirectActive = 'href' in item && item.href === pathname;
+          // Direct links activate on the longest-prefix match above; a
+          // dropdown group activates when one of its children does.
+          const isDirectActive =
+            'href' in item && !!item.href && item.href === matchedHref;
           const isDropdownActive =
             'items' in item &&
-            (item.items?.some(
-              (s) => s.href !== '#' && pathname.startsWith(s.href)
-            ) ??
+            (item.items?.some((s) => !!s.href && s.href === matchedHref) ??
               false);
-          const isActive = isDirectActive || isDropdownActive;
+          const isActive =
+            isDirectActive ||
+            isDropdownActive ||
+            ('href' in item && item.href === pathname);
           const isOpen = openMenu === item.label;
 
           const activeCls =
@@ -123,6 +141,7 @@ export default function EcommerceNavHeader() {
               <Link
                 key={item.label}
                 href={item.href}
+                aria-current={item.href === pathname ? 'page' : undefined}
                 className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors sm:px-4 ${
                   isActive
                     ? `${activeCls} text-[var(--nav-accent)]`

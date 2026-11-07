@@ -1,0 +1,54 @@
+/* Occasion gifting animation utilities. Transform/opacity only, short
+   durations (150–300ms), and every animation is disabled under
+   prefers-reduced-motion so motion-safe usage is the default everywhere. */
+
+.rise {
+  animation: dhRise 0.28s ease-out both;
+}
+.dropIn {
+  animation: dhDropIn 0.24s ease-out both;
+}
+.shimmerBar {
+  position: relative;
+  overflow: hidden;
+}
+.shimmerBar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(209, 178, 107, 0.25), transparent);
+  animation: dhShimmer 1.4s ease-in-out infinite;
+}
+.dot {
+  animation: dhBlink 1s ease-in-out infinite;
+}
+
+@keyframes dhRise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dhDropIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dhShimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+@keyframes dhBlink {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .dropIn,
+  .shimmerBar,
+  .shimmerBar::after,
+  .dot {
+    animation: none;
+  }
+  .dropIn {
+    transform: none;
+  }
+}

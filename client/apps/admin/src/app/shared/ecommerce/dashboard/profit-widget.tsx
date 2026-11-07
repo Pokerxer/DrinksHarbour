@@ -1,67 +1,17 @@
 // @ts-nocheck
 'use client';
 
-import { Text } from 'rizzui';
 import cn from '@core/utils/class-names';
 import WidgetCard from '@core/components/cards/widget-card';
 import {
-  AreaChart,
-  Area,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-  XAxis,
-  Line,
-  ComposedChart,
-} from 'recharts';
-import { CustomTooltip } from '@core/components/charts/custom-tooltip';
-import {
   PiInfoFill,
-  PiCaretDoubleUpDuotone,
-  PiCaretDoubleDownDuotone,
-  PiArrowRightBold,
+  PiArrowUpBold,
+  PiArrowDownBold,
 } from 'react-icons/pi';
 import { useDashboard, useDashboardMeta } from './use-dashboard';
-
-function fmt(n: number): string {
-  if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `₦${(n / 1_000).toFixed(1)}K`;
-  return `₦${n.toLocaleString()}`;
-}
-
-function pct(curr: number, prev: number): number {
-  if (!prev) return curr > 0 ? 100 : 0;
-  return Math.round(((curr - prev) / prev) * 1000) / 10;
-}
-
-interface MetricBoxProps {
-  label: string;
-  value: string;
-  sub?: string;
-  color?: string;
-  highlight?: boolean;
-}
-
-function MetricBox({ label, value, sub, color, highlight }: MetricBoxProps) {
-  return (
-    <div
-      className={cn(
-        'rounded-xl border px-3 py-2.5',
-        highlight
-          ? 'border-violet-200 bg-violet-50 dark:border-violet-800/40 dark:bg-violet-900/20'
-          : 'border-muted bg-gray-50 dark:bg-gray-100/10'
-      )}
-    >
-      <p className="text-[11px] uppercase tracking-wide text-gray-400">
-        {label}
-      </p>
-      <p className={cn('mt-0.5 text-base font-bold', color ?? 'text-gray-900')}>
-        {value}
-      </p>
-      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
-    </div>
-  );
-}
+import { formatCompactNaira as fmt } from './dashboard-format';
+import { DeltaBadge, MetricBox } from './widget-parts';
+import ProfitTrendChart from './profit-trend-chart';
 
 const FALLBACK = Array.from({ length: 12 }, (_, i) => ({
   month: [
@@ -83,6 +33,11 @@ const FALLBACK = Array.from({ length: 12 }, (_, i) => ({
   profit: 0,
 }));
 
+function pct(curr: number, prev: number): number {
+  if (!prev) return curr > 0 ? 100 : 0;
+  return Math.round(((curr - prev) / prev) * 1000) / 10;
+}
+
 export default function ProfitWidget({ className }: { className?: string }) {
   const data = useDashboard();
   const meta = useDashboardMeta();
@@ -100,49 +55,42 @@ export default function ProfitWidget({ className }: { className?: string }) {
     (profit?.grossRevenue ?? 0) > 0
       ? Math.round((profit!.thisMonth / profit!.grossRevenue) * 1000) / 10
       : 0;
+  const comparisonLabel = meta?.comparisonLabel ?? 'vs last month';
 
   return (
     <WidgetCard
       title="Platform Profit"
       description={
         !data ? (
-          <div className="mt-1 h-7 w-32 animate-pulse rounded bg-gray-200" />
+          <div className="mt-1 h-7 w-32 animate-pulse rounded bg-gray-200 dark:bg-gray-100/20" />
         ) : (
-          <span>
+          <span className="tabular-nums">
             {fmt(profit?.thisMonth ?? 0)}
             {profit?.grossRevenue ? (
-              <span className="ms-2 text-sm font-normal text-gray-400">
+              <span className="ms-2 text-sm font-normal text-gray-500 dark:text-gray-600">
                 {margin}% margin
               </span>
             ) : null}
           </span>
         )
       }
-      titleClassName="text-gray-500 font-normal font-inter !text-sm"
-      descriptionClassName="text-lg font-semibold sm:text-xl 3xl:text-2xl text-gray-900 font-lexend mt-1"
+      titleClassName="!text-xs font-medium uppercase tracking-wider text-gray-500"
+      descriptionClassName="font-lexend mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100 sm:text-xl 3xl:text-2xl"
       headerClassName="mb-4"
       className={cn('flex flex-col', className)}
     >
       <div className="flex flex-grow flex-col gap-3">
-        {/* Period comparison line (uses period-aware label) */}
+        {/* Period comparison pill (period-aware label, icon + % so it is
+            never colour-only) */}
         {data && (
-          <div className="flex items-center gap-1.5 text-xs">
-            <span
-              className={cn(
-                'flex items-center gap-0.5 font-medium',
-                profitPct >= 0 ? 'text-green-600' : 'text-red-500'
-              )}
-            >
-              {profitPct >= 0 ? (
-                <PiCaretDoubleUpDuotone className="h-3.5 w-3.5" />
-              ) : (
-                <PiCaretDoubleDownDuotone className="h-3.5 w-3.5" />
-              )}
-              {Math.abs(profitPct)}%
-            </span>
-            <span className="text-gray-400">
-              {meta?.comparisonLabel ?? 'vs last month'} (
-              {fmt(profit?.lastMonth ?? 0)})
+          <div className="flex items-center gap-2">
+            <DeltaBadge
+              up={profitPct >= 0}
+              percent={Math.abs(profitPct)}
+              ariaLabel={`${profitPct >= 0 ? 'Up' : 'Down'} ${Math.abs(profitPct)}% ${comparisonLabel}`}
+            />
+            <span className="text-xs text-gray-500 dark:text-gray-600">
+              {comparisonLabel} ({fmt(profit?.lastMonth ?? 0)})
             </span>
           </div>
         )}
@@ -153,28 +101,30 @@ export default function ProfitWidget({ className }: { className?: string }) {
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                className="h-16 animate-pulse rounded-xl bg-gray-100"
+                className="h-16 animate-pulse rounded-xl bg-gray-200 dark:bg-gray-100/20"
               />
             ))}
           </div>
         ) : (
           <>
-            {/* Equation row: Revenue - Cost = Profit */}
-            <div className="flex items-center gap-1.5 rounded-xl border border-dashed border-muted px-3 py-2 text-xs">
-              <span className="font-semibold text-gray-900">
+            {/* Equation row: Revenue − Cost = Profit */}
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-xl border border-dashed border-muted px-3 py-2 text-xs">
+              <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                 {fmt(profit?.grossRevenue ?? 0)}
               </span>
-              <span className="text-gray-400">Revenue</span>
-              <span className="mx-1 text-gray-300">−</span>
-              <span className="font-semibold text-blue-600">
+              <span className="text-gray-500 dark:text-gray-600">Revenue</span>
+              <span className="mx-1 text-gray-300 dark:text-gray-500">−</span>
+              <span className="font-semibold tabular-nums text-blue-dark dark:text-blue-400">
                 {fmt(profit?.vendorCost ?? 0)}
               </span>
-              <span className="text-gray-400">Vendor Cost</span>
-              <span className="mx-1 text-gray-300">=</span>
-              <span className="font-bold text-violet-600">
+              <span className="text-gray-500 dark:text-gray-600">
+                Vendor Cost
+              </span>
+              <span className="mx-1 text-gray-300 dark:text-gray-500">=</span>
+              <span className="font-bold tabular-nums text-violet-700 dark:text-violet-400">
                 {fmt(profit?.thisMonth ?? 0)}
               </span>
-              <span className="text-gray-400">Profit</span>
+              <span className="text-gray-500 dark:text-gray-600">Profit</span>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -182,26 +132,44 @@ export default function ProfitWidget({ className }: { className?: string }) {
                 label="Gross Revenue"
                 value={fmt(profit?.grossRevenue ?? 0)}
                 sub="across active orders"
-                color="text-gray-900"
               />
               <MetricBox
                 label="Platform Profit"
                 value={fmt(profit?.thisMonth ?? 0)}
                 sub={`${margin}% margin`}
-                color="text-violet-600"
+                color="text-violet-700 dark:text-violet-300"
                 highlight
               />
               <MetricBox
                 label="Vendor Cost"
                 value={fmt(profit?.vendorCost ?? 0)}
                 sub="platform pays vendors"
-                color="text-blue-600"
+                color="text-blue-dark dark:text-blue-400"
               />
               <MetricBox
                 label="Today vs Yesterday"
                 value={fmt(todayRevenue)}
-                sub={`${todayUp ? '↑' : '↓'} ${fmt(yestRevenue)} yest.`}
-                color={todayUp ? 'text-green-600' : 'text-red-500'}
+                sub={
+                  <>
+                    {todayUp ? (
+                      <PiArrowUpBold
+                        className="h-3 w-3 shrink-0 text-green-dark dark:text-green-400"
+                        aria-label="up"
+                      />
+                    ) : (
+                      <PiArrowDownBold
+                        className="h-3 w-3 shrink-0 text-red-dark"
+                        aria-label="down"
+                      />
+                    )}
+                    {fmt(yestRevenue)} yest.
+                  </>
+                }
+                color={
+                  todayUp
+                    ? 'text-green-dark dark:text-green-400'
+                    : 'text-red-dark dark:text-red-400'
+                }
               />
             </div>
           </>
@@ -210,83 +178,25 @@ export default function ProfitWidget({ className }: { className?: string }) {
         {/* Trend chart */}
         <div className="mt-auto h-44 w-full">
           {!data ? (
-            <div className="h-full animate-pulse rounded-xl bg-gray-100" />
+            <div className="h-full animate-pulse rounded-xl bg-gray-200 dark:bg-gray-100/20" />
           ) : (
-            <>
-              <p className="mb-2 text-xs text-gray-500">12-month trend</p>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={trend}
-                  margin={{ top: 4, bottom: 0, left: 0, right: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
-                      <stop
-                        offset="5%"
-                        stopColor="#10b981"
-                        stopOpacity={0.15}
-                      />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="gradCost" x1="0" y1="0" x2="0" y2="1">
-                      <stop
-                        offset="5%"
-                        stopColor="#3b82f6"
-                        stopOpacity={0.12}
-                      />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="6 8"
-                    strokeOpacity={0.4}
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="month"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 10, fill: '#9ca3af' }}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area
-                    type="bump"
-                    dataKey="totalSales"
-                    name="Revenue"
-                    stroke="#10b981"
-                    strokeWidth={1.8}
-                    fillOpacity={1}
-                    fill="url(#gradRev)"
-                  />
-                  <Area
-                    type="bump"
-                    dataKey="vendorCost"
-                    name="Vendor Cost"
-                    stroke="#3b82f6"
-                    strokeWidth={1.5}
-                    fillOpacity={1}
-                    fill="url(#gradCost)"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="profit"
-                    name="Platform Profit"
-                    stroke="#7c3aed"
-                    strokeWidth={2}
-                    dot={false}
-                    strokeDasharray="5 3"
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </>
+            <ProfitTrendChart
+              trend={trend}
+              ariaLabel={`12-month trend of revenue, vendor cost and platform profit. ${
+                profitPct >= 0 ? 'Up' : 'Down'
+              } ${Math.abs(profitPct)}% ${comparisonLabel}.`}
+            />
           )}
         </div>
 
-        <Text className="text-[11px] leading-tight text-gray-400">
-          <PiInfoFill className="inline-flex h-3.5 w-3.5 text-gray-400" />{' '}
+        <p className="flex items-start gap-1 text-[11px] leading-tight text-gray-500 dark:text-gray-600">
+          <PiInfoFill
+            className="inline-flex h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500"
+            aria-hidden="true"
+          />
           Profit = Revenue − Vendor Cost across all active orders. Vendor cost =
           customerPrice ÷ (1 + platformMarkup%).
-        </Text>
+        </p>
       </div>
     </WidgetCard>
   );

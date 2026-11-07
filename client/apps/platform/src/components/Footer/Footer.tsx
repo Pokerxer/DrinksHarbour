@@ -19,6 +19,8 @@ const SHOP_TOP_LINKS: FooterLink[] = [
   { label: "VIP Membership", href: "/vip-signup" },
   { label: "New Arrivals",   href: "/shop?tag=new-arrival" },
   { label: "On Sale",        href: "/deals" },
+  { label: "Bulk & Case Buying", href: "/bulk-drinks" },
+  { label: "Shop by Occasion", href: "/occasions" },
 ];
 
 // Static shop links rendered below the dynamic category shortcuts.
@@ -51,6 +53,7 @@ const HELP_LINKS = [
   { label: "Order Tracking",  href: "/order-tracking" },
   { label: "Shipping Info",   href: "/shipping-info" },
   { label: "Returns & Refunds", href: "/returns" },
+  { label: "Authenticity & Bottle Checks", href: "/authenticity-guarantee" },
   { label: "My Account",      href: "/my-account" },
 ];
 
@@ -104,7 +107,7 @@ function Newsletter() {
       {subscribed ? (
         <div className="flex items-center gap-2 bg-green-500/15 border border-green-500/25 rounded-xl px-4 py-3">
           <Icon.PiCheckCircleFill size={16} className="text-green-400 flex-shrink-0" />
-          <p className="text-green-300 text-sm font-medium">You're subscribed!</p>
+          <p className="text-green-300 text-sm font-medium">You&apos;re subscribed!</p>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="relative">
@@ -220,7 +223,7 @@ export const Footer: React.FC = () => {
               />
             </Link>
             <p className="text-white/45 text-xs leading-relaxed mb-5">
-              Nigeria's premier online beverage marketplace. Authentic spirits, wines, beers and
+              Nigeria&apos;s premier online beverage marketplace. Authentic spirits, wines, beers and
               more — delivered fast, nationwide.
             </p>
 
@@ -235,7 +238,8 @@ export const Footer: React.FC = () => {
                   aria-label={label}
                   className="w-8 h-8 rounded-xl bg-white/8 hover:bg-red-700/60 border border-white/10 flex items-center justify-center text-white/50 hover:text-white transition-all"
                 >
-                  <Ic size={16} />
+                  <Ic size={16} aria-hidden="true" />
+                  <span className="sr-only">{label}</span>
                 </a>
               ))}
             </div>

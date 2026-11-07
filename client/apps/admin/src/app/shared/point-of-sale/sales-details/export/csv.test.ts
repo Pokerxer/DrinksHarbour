@@ -88,3 +88,43 @@ describe('a split tender is visible in the export', () => {
     expect(getLineCell(line({ paymentMethod: 'cash' }), 'payment', 'pdf')).toBe('Cash');
   });
 });
+
+describe('variant identity survives every export format', () => {
+  // DRI-6 extension: the report surfaces must carry the server's composed
+  // variant string (colour/option identity) verbatim — DRI-7/DRI-10 seed shapes —
+  // a retail product sold as two same-size colour variants next to a legacy
+  // beverage line with no variant identity at all. Exports re-emit `item.variant`
+  // via the shared `getLineCell`; nothing here composes or re-formats a label.
+  const gownEmerald = line({ product: 'Skyline Ankara Gown', variant: 'M · Emerald' });
+  const gownAmber = line({ product: 'Skyline Ankara Gown', variant: 'M · Amber' });
+  const legacyLager = line({ product: 'Lakeside Craft Lager 330ml', variant: '' });
+
+  it('the variant column keeps colour identity in csv and pdf line exports', () => {
+    // CSV quotes the whole field; PDF emits it verbatim. A colour variant that
+    // collapsed to bare product name would make the two variants unreconcilable.
+    expect(getLineCell(gownEmerald, 'variant', 'csv')).toBe('"M · Emerald"');
+    expect(getLineCell(gownAmber, 'variant', 'csv')).toBe('"M · Amber"');
+    expect(getLineCell(gownEmerald, 'variant', 'pdf')).toBe('M · Emerald');
+    expect(getLineCell(gownAmber, 'variant', 'pdf')).toBe('M · Amber');
+  });
+
+  it('a no-variant legacy beverage row keeps its export shape byte-for-byte', () => {
+    // Empty variant: csv emits the empty (quoted) string it always did; pdf
+    // renders the em-dash placeholder instead of a dangling blank cell. Both
+    // unchanged — legacy beverage exports must not acquire a new shape.
+    expect(getLineCell(legacyLager, 'variant', 'csv')).toBe('""');
+    expect(getLineCell(legacyLager, 'variant', 'pdf')).toBe('—');
+  });
+
+  it('grouped by product, each variant keeps its own export key', () => {
+    // The grouped table/export keys a retail variant as `product (variant)`,
+    // so two colour variants of one product stay two rows — while a no-variant
+    // legacy product keys as the bare product name with no dangling brackets.
+    expect(getGroupCell(group({ key: 'Skyline Ankara Gown (M · Emerald)' }), 'key', 'csv'))
+      .toBe('"Skyline Ankara Gown (M · Emerald)"');
+    expect(getGroupCell(group({ key: 'Skyline Ankara Gown (M · Emerald)' }), 'key', 'pdf'))
+      .toBe('Skyline Ankara Gown (M · Emerald)');
+    expect(getGroupCell(group({ key: 'Lakeside Craft Lager 330ml' }), 'key', 'pdf'))
+      .toBe('Lakeside Craft Lager 330ml');
+  });
+});

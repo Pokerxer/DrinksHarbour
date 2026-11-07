@@ -1,5 +1,7 @@
 'use client';
 
+import { DELIVERY_COPY } from '@/lib/deliveryCopy';
+
 import React, { useState, useEffect } from 'react';
 import Marquee from 'react-fast-marquee';
 
@@ -37,7 +39,7 @@ const BannerTop: React.FC<Props> = ({ props, textColor, bgLine }) => {
   const displayItems = items.length > 0 ? items : [
     'Get 10% off on selected items',
     'New customers save 10% with the code GET10',
-    'Free delivery on all orders over ₦2,000,000',
+    DELIVERY_COPY.summary,
     '10% off on all seasonal essentials!',
   ];
 

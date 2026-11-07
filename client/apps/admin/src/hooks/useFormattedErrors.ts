@@ -39,7 +39,7 @@ export function useFormattedErrors<T extends Record<string, any>>(
     disabled: !enabled,
   });
 
-  const formattedErrors = useMemo(() => {
+  const formattedErrors = useMemo<FormattedError>(() => {
     if (!enabled) {
       return {
         errors: [],

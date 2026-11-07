@@ -49,7 +49,7 @@ module.exports = async function selectedRecipients({ call, ownerId, ids, tenantI
   for (let i=0;i<ids.length;i++) {
     const result=(await call(ids[i],`${path}/result`)).body.data;
     assert.equal(result.composite.examScore,i===0?100:undefined);
-    assert.equal(result.composite.combinedScore,i===0?93.33:90);
-    assert.equal(result.bonusMinor,i===0?9333:9000);
+    assert.equal(result.composite.combinedScore,i===0?92:84);
+    assert.equal(result.bonusMinor,i===0?9200:8400);
   }
 };

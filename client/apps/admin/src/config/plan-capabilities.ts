@@ -230,6 +230,7 @@ export const ROUTE_CAPABILITIES: RouteRequirement[] = [
   { prefix: '/notifications/restock', anyOf: ['purchase_orders'], label: 'Restock recommendations' },
   { prefix: '/notifications/vendor-orders', anyOf: ['purchase_orders'], label: 'Vendor order plans' },
   { prefix: '/settings/api-keys', anyOf: ['api_access'], label: 'API keys' },
+  { prefix: '/venue', anyOf: ['table_management'], label: 'Venue workspace' },
   { prefix: '/bookings', anyOf: ['table_management'], label: 'Venue bookings' },
   { prefix: '/accounting', anyOf: ['advanced_reports'], label: 'Accounting' },
   // No server guard to pair with this one, and none is missing: the

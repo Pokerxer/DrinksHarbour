@@ -228,6 +228,10 @@ function applyReceipt(poItems, receiptLines, { allowOverReceipt = false } = {}) 
     const delta = newReceivedQty - previousReceivedQty;
     if (delta <= 0) continue;
 
+    if (item.sizeId && rl.sizeId && String(item.sizeId) !== String(rl.sizeId)) {
+      throw new ValidationError('Receipt size must match the purchase order line');
+    }
+
     lines.push({
       itemId: String(rl.itemId),
       previousReceivedQty,

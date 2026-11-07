@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { subproductService } from '@/services/subproduct.service';
 import ReviewSubProductModal from './ReviewSubProductModal';
@@ -38,7 +44,9 @@ it('uses full-viewport accessible dialog and adjustable existing targets; sugges
   const p = props();
   render(<ReviewSubProductModal {...p} />);
   await screen.findByText('Base listing');
-  expect(screen.getByRole('dialog', { name: 'Review Sub-Product' })).toBeTruthy();
+  expect(
+    screen.getByRole('dialog', { name: 'Review Sub-Product' })
+  ).toBeTruthy();
   expect(screen.getAllByText('₦250.00').length).toBeGreaterThan(0);
   fireEvent.click(screen.getByText('Margin targets'));
   fireEvent.change(screen.getByLabelText('Platform target margin (%)'), {
@@ -48,8 +56,11 @@ it('uses full-viewport accessible dialog and adjustable existing targets; sugges
     screen.getByRole('button', { name: 'Use suggested price for Base listing' })
   );
   expect(
-    (screen.getByLabelText('Website price for Base listing') as HTMLInputElement)
-      .value
+    (
+      screen.getByLabelText(
+        'Website price for Base listing'
+      ) as HTMLInputElement
+    ).value
   ).toBe('1600');
   expect(p.onApprove).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Approve listing' }));
@@ -100,7 +111,9 @@ it('retries load errors and hides stale listing data on record changes', async (
   const p = props();
   const { rerender } = render(<ReviewSubProductModal {...p} />);
   await screen.findByText('Offline');
-  fireEvent.click(screen.getByRole('button', { name: 'Retry listing details' }));
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Retry listing details' })
+  );
   await screen.findByText('Base listing');
   let finish!: (r: unknown) => void;
   vi.mocked(subproductService.getSubProduct).mockImplementationOnce(
@@ -120,8 +133,18 @@ it('searches sizes, preserves manual edits when applying suggestions, and resets
   const sized = {
     ...listing,
     sizes: [
-      { _id: 'a', displayName: '70cl', sku: 'GLEN-A', pricing: listing.pricing },
-      { _id: 'b', displayName: '1 litre', sku: 'GLEN-B', pricing: listing.pricing },
+      {
+        _id: 'a',
+        displayName: '70cl',
+        sku: 'GLEN-A',
+        pricing: listing.pricing,
+      },
+      {
+        _id: 'b',
+        displayName: '1 litre',
+        sku: 'GLEN-B',
+        pricing: listing.pricing,
+      },
     ],
   };
   vi.mocked(subproductService.getSubProduct).mockResolvedValue({
@@ -137,13 +160,16 @@ it('searches sizes, preserves manual edits when applying suggestions, and resets
     target: { value: '20' },
   });
   fireEvent.click(
-    screen.getByRole('button', { name: 'Apply suggestions to unchanged prices' })
+    screen.getByRole('button', {
+      name: 'Apply suggestions to unchanged prices',
+    })
   );
   expect(
     (screen.getByLabelText('Website price for 70cl') as HTMLInputElement).value
   ).toBe('1700');
   expect(
-    (screen.getByLabelText('Website price for 1 litre') as HTMLInputElement).value
+    (screen.getByLabelText('Website price for 1 litre') as HTMLInputElement)
+      .value
   ).toBe('1600');
   fireEvent.change(screen.getByLabelText('Search sizes'), {
     target: { value: 'GLEN-B' },
@@ -152,7 +178,8 @@ it('searches sizes, preserves manual edits when applying suggestions, and resets
   expect(screen.getByLabelText('Website price for 1 litre')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Reset price edits' }));
   expect(
-    (screen.getByLabelText('Website price for 1 litre') as HTMLInputElement).value
+    (screen.getByLabelText('Website price for 1 litre') as HTMLInputElement)
+      .value
   ).toBe('1500');
 });
 it('explains hidden blocking prices from any tab and navigates directly to the issues', async () => {
@@ -176,17 +203,25 @@ it('explains hidden blocking prices from any tab and navigates directly to the i
   });
   fireEvent.click(screen.getByRole('button', { name: 'Inventory' }));
   expect(
-    (screen.getByRole('button', { name: 'Approve listing' }) as HTMLButtonElement)
-      .disabled
+    (
+      screen.getByRole('button', {
+        name: 'Approve listing',
+      }) as HTMLButtonElement
+    ).disabled
   ).toBe(true);
   expect(screen.getByText(/1 price issue blocks approval/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Show blocking prices' }));
   expect(screen.getByLabelText('Website price for 1 litre')).toBeTruthy();
   expect(screen.queryByLabelText('Website price for 70cl')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Reset price for 1 litre' }));
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Reset price for 1 litre' })
+  );
   expect(
-    (screen.getByRole('button', { name: 'Approve listing' }) as HTMLButtonElement)
-      .disabled
+    (
+      screen.getByRole('button', {
+        name: 'Approve listing',
+      }) as HTMLButtonElement
+    ).disabled
   ).toBe(false);
   expect(p.onApprove).not.toHaveBeenCalled();
 });
@@ -213,17 +248,64 @@ it('locks commission to the agreement and previews the tenant share when the cus
   });
   const p = props();
   render(<ReviewSubProductModal {...p} />);
-  fireEvent.change(await screen.findByLabelText('Website price for Base listing'), {
-    target: { value: '9000' },
-  });
+  fireEvent.change(
+    await screen.findByLabelText('Website price for Base listing'),
+    {
+      target: { value: '9000' },
+    }
+  );
   expect(screen.getByText('₦7,830.00')).toBeTruthy();
   expect(screen.getByText('₦1,170.00')).toBeTruthy();
   fireEvent.click(screen.getByText('Margin targets'));
-  const rate = screen.getByLabelText('Agreed commission (%)') as HTMLInputElement;
+  const rate = screen.getByLabelText(
+    'Agreed commission (%)'
+  ) as HTMLInputElement;
   expect(rate.value).toBe('13');
   expect(rate.disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Approve listing' }));
   await waitFor(() =>
     expect(p.onApprove).toHaveBeenCalledWith('sp', { baseWebsitePrice: 9000 })
+  );
+});
+it('restores inherited selling-price markup only on approval and manual edits cancel the reset', async () => {
+  vi.mocked(subproductService.getSubProduct).mockResolvedValue({
+    data: {
+      subProduct: {
+        ...listing,
+        tenant: { name: 'Shop A', revenueModel: 'selling_price_markup' },
+        pricing: {
+          costPrice: 90000,
+          tenantSellingPrice: 100000,
+          platformCostPrice: 100000,
+          platformSellingPrice: 125000,
+          platformMarkupPct: 25,
+          sellingPriceMarkupPct: 25,
+          inheritedSellingPriceMarkupPct: 20,
+          inheritedMarketplacePrice: 120000,
+          isSellingPriceMarkupOverridden: true,
+        },
+      },
+    },
+  });
+  const p = props();
+  render(<ReviewSubProductModal {...p} />);
+  const reset = await screen.findByRole('button', {
+    name: 'Use tenant default (20%)',
+  });
+  fireEvent.click(reset);
+  expect(
+    (
+      screen.getByLabelText(
+        'Website price for Base listing'
+      ) as HTMLInputElement
+    ).value
+  ).toBe('120000');
+  expect(p.onApprove).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Website price for Base listing'), {
+    target: { value: '130000' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Approve listing' }));
+  await waitFor(() =>
+    expect(p.onApprove).toHaveBeenCalledWith('sp', { baseWebsitePrice: 130000 })
   );
 });

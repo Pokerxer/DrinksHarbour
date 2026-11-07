@@ -65,6 +65,7 @@ function gradeAnswers(questions, answers, { complete = true, marksPerQuestion = 
   }, 0);
   return { correctCount, questionCount: questions.length, earnedMarks, maxMarks, score: earnedMarks / maxMarks * 100 };
 }
+function scoreWeights(hasExam) { return { appraisal: hasExam ? 40 : 80, exam: hasExam ? 40 : 0, attendance: 20 }; }
 function combineResult({ ratings, attendanceScore, exam, allocationMinor }) {
   const base = calculateResult(ratings, allocationMinor);
   if (!Number.isInteger(attendanceScore) || attendanceScore < 0 || attendanceScore > 100) fail('A numeric attendance score is required before finalizing.');
@@ -73,10 +74,11 @@ function combineResult({ ratings, attendanceScore, exam, allocationMinor }) {
   const n = BigInt(5 * ratings.length);
   const sum = BigInt(ratings.reduce((a, b) => a + b, 0));
   const q = BigInt(exam?.maxMarks ?? exam?.questionCount ?? 1);
-  const numerator = sum * q * 100n + BigInt(attendanceScore) * n * q + (exam ? BigInt(exam.earnedMarks ?? exam.correctCount) * n * 100n : 0n);
-  const denominator = BigInt(exam ? 3 : 2) * n * q * 100n;
+  const weights = scoreWeights(Boolean(exam));
+  const numerator = BigInt(weights.appraisal) * sum * q * 100n + BigInt(weights.attendance) * BigInt(attendanceScore) * n * q + (exam ? BigInt(weights.exam) * BigInt(exam.earnedMarks ?? exam.correctCount) * n * 100n : 0n);
+  const denominator = 10000n * n * q;
   const bonusMinor = Number((2n * numerator * BigInt(allocationMinor) + denominator) / (2n * denominator));
   const combinedScore = Math.round(Number(numerator) / Number(denominator) * 10000) / 100;
-  return { ...base, bonusMinor, appraisalScore: base.averageScore / 5 * 100, attendanceScore, ...(exam ? { examScore: (exam.earnedMarks ?? exam.correctCount) / (exam.maxMarks ?? exam.questionCount) * 100 } : {}), combinedScore };
+  return { ...base, bonusMinor, weights, appraisalScore: base.averageScore / 5 * 100, attendanceScore, ...(exam ? { examScore: (exam.earnedMarks ?? exam.correctCount) / (exam.maxMarks ?? exam.questionCount) * 100 } : {}), combinedScore };
 }
-module.exports = { validateQuestions, requireCompletedAttendance, validateExam, publicQuestions, normalizeAnswers, gradeAnswers, monthRange, combineResult };
+module.exports = { scoreWeights, validateQuestions, requireCompletedAttendance, validateExam, publicQuestions, normalizeAnswers, gradeAnswers, monthRange, combineResult };

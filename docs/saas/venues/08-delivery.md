@@ -6,6 +6,9 @@ status: proposed
 
 # What to create and in what order
 
+> Execution status25October: Phase0/1 corrections and Phase2 implementation are present locally. Browser3/3, both builds/types and full client checks pass. The remaining market failures are fixed: final backend4316pass/0fail/0cancel/18explained skips and final browser3/3 pass. Local engineering verification is complete. Read the [current handoff](../../superpowers/specs/RESUME-venue-phase-2.md) and [activation review](../../superpowers/plans/venue-phase-2/activation-review.md). Live flags, hosted certification and operator/business approval remain separate gates. Phase3/4 remain deferred.
+
+
 [Back to the main design](README.md). This is a phased design handoff, not an approved coding plan. Recommendations are [Likely]; duration and staffing estimates are intentionally not invented.
 
 ## 1. Priority and release boundaries
@@ -143,7 +146,7 @@ Track preparation latency, claim conflicts, expired holds with payments, unappli
 | Decision | Recommended default | Needed before |
 |---|---|---|
 | Catalogue scope | Add prepared-beverage/food kinds while preserving SubProduct selling identity and channel separation | Any food/cocktail recipe sale |
-| Paid access | Preserve existing Venue tier and resolve features by capability; explicitly grandfather legacy mode where needed | New entitlement rollout |
+| Paid access | Preserve existing Venue tier, resolve features by capability and require an eligible paid plan before reviewed migration; no grandfather operational entitlement | New entitlement rollout |
 | Acquisition commission | Distinguish platform-sourced service from direct/walk-in; use versioned Tenant terms | New venue payment/fee release |
 | Deposit/minimum policy | No charge before request acceptance; explicit time-bound terms and excess-credit handling | Deposit/minimum collection |
 | Refund/tax/account ownership | Approved account mappings, funding responsibility and reviewed local terms | Any new financial obligation |
@@ -167,4 +170,14 @@ Use chapter 12's delivery placement to include floor editing, presets, courses, 
 
 ## 9. Phase 0 implementation plan
 
-[Exact Phase 0 plan](../../superpowers/plans/2026-10-17-venue-phase-0.md) records the 17 October 2026 code audit, file/schema/service changes, task-by-task failing tests, rollout boundaries and decisions. User has selected paid eligibility before migration, 9% on future platform-sourced venue service with no new direct/walk-in commission, and narrow completion after subscription lapse. The proposed Phase 0 establishes foundations without live canonical collection; scope and public-listing compatibility remain review decisions. This link does not authorise application implementation or live migration.
+[Exact Phase 0 plan](../../superpowers/plans/2026-10-17-venue-phase-0.md) records source reverse-engineering, storage/service contracts, twelve tasks and exact tests/rollout gates. The user explicitly expanded Phase 0 to **live canonical checkout**, preserved reviewed existing listings, required paid eligibility before migration, selected 9%/Paystack-only for future platform-sourced visits with no new direct/walk-in fee, and allowed narrow completion after lapse. Tender handling was delegated: full-bill cash/Paystack for direct POS visits; canonical splits/deposits/wallet/offline follow later. Earlier foundation-only draft is superseded. Finance/operator/provider activation gates remain explicit; this link does not authorise product implementation or live migration.
+
+## 10. Phase 0 implementation — 18 October 2026
+
+The user subsequently authorised local implementation. Shared eligibility, location/visit identity, accepted pricing, canonical full-bill cash/Paystack, transactional settlement/recovery, booking/POS clients and reviewed mapping tooling now exist. See [implementation and verification](../../superpowers/plans/venue-phase-0/implementation-and-verification.md) and [current resume](../../superpowers/specs/RESUME-venue-phase-0.md) for actual executed counts and limitations.
+
+Live activation remains off: admin type/build checks are blocked, existing index issues need review and operator/finance/provider/deployment gates remain. Local fake-provider/replica-set/browser proof is not full roadmap parity or a production charge. No production mapping or publication grant was applied.
+
+## 11. Review corrections — 19 October 2026
+
+All three findings in [chapter13](13-phase-0-review.md) have local fixes and retained regressions: preserved accepted service after menu hiding, exact revision-to-batch evidence, and editable/reloadable booking checkout after freeze failure. [Evidence and commands](../../superpowers/plans/venue-phase-0/review-corrections.md). Backend4,040 pass/0 fail/16 skip, client 30 pass, browser 7 pass; admin type/build/provider/operator gates still prevent activation.

@@ -162,7 +162,20 @@ function evidencePipeline(tenant) {
         foreignField: "_id",
         pipeline: [
           { $match: { tenant } },
-          { $project: { size: 1, displayName: 1 } },
+          // DRI-33 — variant identity rides along with the exact Size row
+          // (mirror of the DRI-29 movement-feed populate): colorName/
+          // colorHexCode/optionName verbatim so same-size colour/option
+          // variants stay visually distinct on the /inventory customer-returns
+          // list. No label composition server-side.
+          {
+            $project: {
+              size: 1,
+              displayName: 1,
+              colorName: 1,
+              colorHexCode: 1,
+              optionName: 1,
+            },
+          },
         ],
         as: "sizes",
       },
@@ -188,6 +201,32 @@ function evidencePipeline(tenant) {
           $ifNull: [
             { $arrayElemAt: ["$sizes.displayName", 0] },
             { $ifNull: [{ $arrayElemAt: ["$sizes.size", 0] }, "—"] },
+          ],
+        },
+        // DRI-33 — emit-only-with-identity: each identity key is emitted only
+        // when the matched Size actually carries a value. Sizeless rows and
+        // rows whose Size has no variant identity (legacy beverage /
+        // colourless volume/pack rows) keep their EXACT pre-change row shape —
+        // $$REMOVE leaves no key behind, so legacy payloads are byte-identical.
+        colorName: {
+          $cond: [
+            { $arrayElemAt: ["$sizes.colorName", 0] },
+            { $arrayElemAt: ["$sizes.colorName", 0] },
+            "$$REMOVE",
+          ],
+        },
+        colorHexCode: {
+          $cond: [
+            { $arrayElemAt: ["$sizes.colorHexCode", 0] },
+            { $arrayElemAt: ["$sizes.colorHexCode", 0] },
+            "$$REMOVE",
+          ],
+        },
+        optionName: {
+          $cond: [
+            { $arrayElemAt: ["$sizes.optionName", 0] },
+            { $arrayElemAt: ["$sizes.optionName", 0] },
+            "$$REMOVE",
           ],
         },
         destinations: "$locations",

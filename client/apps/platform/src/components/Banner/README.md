@@ -3,6 +3,11 @@
 ## Overview
 A comprehensive banner system with 4 main banner types, each designed for specific use cases on the DrinksHarbour e-commerce platform.
 
+Clickable image overlays must contain descriptive anchor text, even when the
+visual design uses only artwork or an arrow. `BannerClickLayer`, `BannerClickArea`
+and `EntityBannerOverlay` supply visually hidden text alongside their accessible
+labels. Keep non-clickable banners inert; do not create placeholder links.
+
 Product-page layout stability: `product-page-banner-data.ts` fetches header and
 product-page placements before product rendering. `AnnouncementBanner` and
 `PlacementBanner` accept complete initial seeds and skip duplicate mount requests.

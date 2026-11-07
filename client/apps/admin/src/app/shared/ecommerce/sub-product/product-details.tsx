@@ -1,27 +1,96 @@
-// @ts-nocheck
 'use client';
 
+import BusinessGenerationPanel from './business-generation-panel';
+import BusinessDetails from '@/app/shared/ecommerce/business-catalog/business-details';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import ProductDetailsGallery from '@/app/shared/ecommerce/product/product-details-gallery';
-import ProductDetailsDescription from '@/app/shared/ecommerce/product/product-details-description';
-import SubProductDetailsSummary from '@/app/shared/ecommerce/sub-product/product-details-summary';
+import ListingDescription from './product-details-description';
+import SubProductDetailsSummary, {
+  type ListingSummary,
+} from './product-details-summary';
+import type { ListingOption } from './listing-option-details';
+import type { ProductGalleryImage } from '../product/primary-image';
 import ProductDetailsToolbar from './product-details-toolbar';
-import { subproductService } from '@/services/subproduct.service';
-import { isBeverageProductType } from '@/utils/product-types';
+import {
+  subproductService,
+  type SubProductData,
+} from '@/services/subproduct.service';
 import { PiSpinner, PiMagnifyingGlassBold } from 'react-icons/pi';
 
-const toDisplayName = (value: any): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  return value?.name || value?.slug || '';
+type DisplayReference = string | { name?: string; slug?: string };
+type CatalogueProduct = Record<string, unknown> & {
+  name?: string;
+  type?: string;
+  subType?: string;
+  style?: string;
+  category?: DisplayReference;
+  brand?: DisplayReference;
+  originCountry?: string;
+  isAlcoholic?: boolean;
+  description?: string;
+  shortDescription?: string;
+  publicationScope?: string;
+  images?: ProductGalleryImage[];
 };
+type Tenant = {
+  slug?: string;
+  name?: string;
+  businessName?: string;
+  defaultCurrency?: string;
+  revenueModel?: string;
+  markupPercentage?: number;
+  commissionPercentage?: number;
+  sellingPriceMarkupPercentage?: number;
+};
+type ListingSize = ListingOption & {
+  stockQuantity?: number;
+  availableStock?: number;
+  discountStart?: string;
+  discountEnd?: string;
+};
+type Listing = Omit<SubProductData, 'product' | 'tenant' | 'sizes'> & {
+  _id: string;
+  product?: CatalogueProduct | null;
+  tenant?: Tenant | null;
+  sizes?: ListingSize[];
+  barcode?: string;
+  isPublished?: boolean;
+  metaTitle?: string;
+  metaDescription?: string;
+  metaKeywords?: string[];
+  seoH1?: string;
+};
+type ListingResponse = { data?: { subProduct?: Listing } };
+
+const toDisplayName = (value?: DisplayReference) =>
+  typeof value === 'string' ? value : value?.name || value?.slug || '';
+
+function activeSale(
+  enabled?: boolean,
+  starts?: string | null,
+  ends?: string | null
+) {
+  const now = Date.now();
+  return (
+    !!enabled &&
+    (!starts || Date.parse(starts) <= now) &&
+    (!ends || Date.parse(ends) >= now)
+  );
+}
 
 export default function SubProductDetails() {
-  const params = useParams();
+  const { slug: id } = useParams<{ slug: string }>();
   const { data: session } = useSession();
-  const [subProduct, setSubProduct] = useState<any>(null);
+  const token = session?.user?.token;
+  const [result, setResult] = useState<{
+    id: string;
+    token: string;
+    product: Listing;
+  } | null>(null);
+  const subProduct =
+    result?.id === id && result.token === token ? result.product : null;
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>(
     'loading'
   );
@@ -29,35 +98,41 @@ export default function SubProductDetails() {
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
-    const id = params?.slug;
-    if (!id || !session?.user?.token) return;
+    if (!id || !token) return;
 
-    let cancelled = false;
+    const controller = new AbortController();
     setStatus('loading');
     subproductService
-      .getSubProduct(id, session.user.token, reload ? { refresh: 'true' } : undefined)
+      .getSubProduct<ListingResponse>(
+        id,
+        token,
+        reload ? { refresh: 'true' } : undefined,
+        controller.signal
+      )
       .then((res) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         const sp = res?.data?.subProduct;
         if (!sp) {
           setStatus('empty');
           return;
         }
-        setSubProduct(sp);
+        setResult({ id, token, product: sp });
         setStatus('ready');
       })
       .catch((err) => {
-        if (cancelled) return;
-        setErrorMsg(err?.message || 'Unable to load this sub-product');
+        if (controller.signal.aborted) return;
+        setErrorMsg(
+          err instanceof Error ? err.message : 'Unable to load this sub-product'
+        );
         setStatus('error');
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [params?.slug, session?.user?.token, reload]);
+  }, [id, token, reload]);
 
-  if (status === 'loading') {
+  if (status === 'loading' || (status === 'ready' && !subProduct)) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center gap-3">
         <PiSpinner className="h-6 w-6 animate-spin text-blue-500" />
@@ -66,7 +141,7 @@ export default function SubProductDetails() {
     );
   }
 
-  if (status === 'empty' || status === 'error') {
+  if (!subProduct || status === 'empty' || status === 'error') {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white p-10 text-center">
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-400">
@@ -82,71 +157,77 @@ export default function SubProductDetails() {
             ? 'This selling instance does not exist or you do not have access to it.'
             : errorMsg}
         </p>
+        {status === 'error' && (
+          <button
+            type="button"
+            className="mt-4 rounded-md border px-4 py-2 text-sm font-medium"
+            onClick={() => setReload((value) => value + 1)}
+          >
+            Retry
+          </button>
+        )}
       </div>
     );
   }
 
   const product = subProduct.product || {};
   const tenant = subProduct.tenant || {};
-  const isBeverage = isBeverageProductType(product.type);
-  const defaultSize =
-    (subProduct.sizes || []).find((s: any) => s.isDefault) ||
-    (subProduct.sizes || [])[0] ||
-    {};
+  const sizes = subProduct.sizes || [];
+  const defaultSize = sizes.find((size) => size.isDefault) || sizes[0];
   const currency =
-    tenant.defaultCurrency || defaultSize?.currency || 'NGN';
-
-  const viewModel = {
-    isReal: true,
+    subProduct.currency ||
+    defaultSize?.currency ||
+    tenant.defaultCurrency ||
+    'NGN';
+  const listingCopy =
+    subProduct.descriptionOverride?.trim() ||
+    subProduct.shortDescriptionOverride?.trim();
+  const description =
+    listingCopy || product.description || product.shortDescription;
+  const images = subProduct.imagesOverride?.some((image) => image?.url)
+    ? subProduct.imagesOverride
+    : product.images || [];
+  const viewModel: ListingSummary = {
     id: subProduct._id,
-    editHref: `/sub-products/${subProduct._id}/edit`,
-    name: product.name || 'Sub-Product',
+    name: product.name || 'Sub-product',
     type: product.type,
     subType: product.subType,
-    style: product.style || '',
+    style: product.style,
     categoryName: toDisplayName(product.category),
-    subCategoryName: toDisplayName(product.subCategory),
     brandName: toDisplayName(product.brand),
-    producer: product.producer || '',
-    originCountry: product.originCountry || '',
-    region: product.region || '',
-    isAlcoholic: !!product.isAlcoholic,
-    isBeverage,
-    abv: product.abv,
-    volumeMl: product.volumeMl,
-    material: product.material,
-    packCount: product.packCount,
-    shelfLifeDays: product.shelfLifeDays,
-    description: product.description || product.shortDescription || '',
-    status: subProduct.status,
+    originCountry: product.originCountry,
+    isAlcoholic: product.isAlcoholic,
+    status: subProduct.status || 'draft',
     isPublished: !!subProduct.isPublished,
-    sku: subProduct.sku || '',
-    barcode: subProduct.barcode || '',
+    publicationScope: product.publicationScope,
+    sku: subProduct.sku,
+    barcode: subProduct.barcode,
     stock: subProduct.availableStock,
-    tenantName: tenant.businessName || tenant.name || '',
-    revenueModel: tenant.revenueModel || '',
+    tenantName: tenant.businessName || tenant.name,
+    revenueModel: tenant.revenueModel,
     markupPercentage: tenant.markupPercentage,
     commissionPercentage: tenant.commissionPercentage,
+    sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage,
     currency,
     baseSellingPrice: subProduct.baseSellingPrice,
     salePrice: subProduct.salePrice,
-    isOnSale: !!subProduct.isOnSale,
-    sizes: (subProduct.sizes || []).map((s: any) => ({
-      id: s._id,
-      size: s.size,
-      displayName: s.displayName || s.size,
-      unitType: s.unitType,
-      sellingPrice: s.sellingPrice,
-      salePrice: s.salePrice,
-      isOnSale: !!s.isOnSale,
-      availability: s.availability,
-      stock: s.availableStock ?? s.stockQuantity,
-      sku: s.sku || '',
-      barcode: s.barcode || '',
-      isDefault: !!s.isDefault,
+    isOnSale: activeSale(
+      subProduct.isOnSale,
+      subProduct.saleStartDate,
+      subProduct.saleEndDate
+    ),
+    sizes: sizes.map((size) => ({
+      ...size,
+      id: size._id,
+      isOnSale: activeSale(size.isOnSale, size.discountStart, size.discountEnd),
+      stock: size.availableStock ?? size.stockQuantity ?? size.stock,
     })),
-    images: product.images || [],
   };
+  const canGenerate =
+    token &&
+    ['super_admin', 'admin', 'tenant_owner', 'tenant_admin'].includes(
+      session?.user?.role || ''
+    );
 
   return (
     <div className="@container">
@@ -154,26 +235,52 @@ export default function SubProductDetails() {
         key={viewModel.id}
         id={viewModel.id}
         name={viewModel.name}
-        status={viewModel.status}
-        published={viewModel.isPublished}
+        status={viewModel.status || 'draft'}
+        published={!!viewModel.isPublished}
         stock={Number(viewModel.stock ?? 0)}
-        price={Number((viewModel.isOnSale ? viewModel.salePrice : undefined) ?? viewModel.baseSellingPrice ?? 0)}
+        price={Number(
+          (viewModel.isOnSale ? viewModel.salePrice : undefined) ??
+            viewModel.baseSellingPrice ??
+            0
+        )}
         currency={currency}
-        token={session?.user?.token}
-        onChanged={() => setReload(value => value + 1)}
+        token={token}
+        onChanged={() => setReload((value) => value + 1)}
       />
-      <div className="@3xl:grid @3xl:grid-cols-12">
-        <div className="@container mb-7 @lg:mb-10 @3xl:col-span-7 @3xl:mb-0 @3xl:pe-10">
-          <ProductDetailsGallery
-            images={viewModel.images}
-            productName={viewModel.name}
+      <div className="grid items-start gap-6 @4xl:grid-cols-2">
+        <div className="min-w-0 space-y-6">
+          <section aria-label="Listing images">
+            <ProductDetailsGallery
+              images={images}
+              productName={viewModel.name}
+            />
+          </section>
+          <ListingDescription
+            description={description}
+            isOverride={!!listingCopy}
           />
         </div>
-        <div className="@container @3xl:col-span-5">
-          <SubProductDetailsSummary product={viewModel} showActions={false} />
-          <ProductDetailsDescription product={viewModel} />
-        </div>
+        <SubProductDetailsSummary product={viewModel} showActions={false} />
       </div>
+      <div className="mt-6">
+        <BusinessDetails product={product} showVariants={false} />
+      </div>
+      {canGenerate && (
+        <BusinessGenerationPanel
+          key={viewModel.id}
+          id={viewModel.id}
+          productType={product.type}
+          token={token}
+          tenantSlug={tenant.slug}
+          saved={{
+            metaTitle: subProduct.metaTitle || '',
+            metaDescription: subProduct.metaDescription || '',
+            metaKeywords: subProduct.metaKeywords || [],
+            seoH1: subProduct.seoH1 || '',
+          }}
+          onSaved={() => setReload((value) => value + 1)}
+        />
+      )}
     </div>
   );
 }

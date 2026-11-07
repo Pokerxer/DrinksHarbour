@@ -7,6 +7,15 @@ export const routes = {
     products: '/notifications/products', expiry: '/notifications/expiry',
   },
   priceChecker: { list: '/retail-tools/price-checker', create: '/retail-tools/price-checker/create', analytics: '/retail-tools/price-checker/analytics' },
+  // Operations module routes used by module nav headers and the tenant menu —
+  // keys keep layout tabs from hardcoding the same paths as tenant-menu-items.
+  bookings: '/bookings',
+  deliverySettings: '/delivery-settings',
+  merchantOrders: '/merchant-orders',
+  occasionRequests: '/occasion-requests',
+  venue: '/venue',
+  venueCompletion: '/venue-completion',
+  retailTools: '/retail-tools',
   // Post-login landing route — the app homepage (the "All Apps" menu screen
   // at /). Kept as `dashboard` because every consumer is the sign-in flow's
   // redirect; the ecommerce dashboard stays reachable via its own menu tile.
@@ -95,6 +104,9 @@ export const routes = {
     createProduct: '/products/create',
     productDetails: (slug: string) => `/products/${slug}`,
     ediProduct: (slug: string) => `/products/${slug}/edit`,
+    // Super-admin approval queue for pending central products (GET
+    // /api/products/admin/pending). Gated super_admin-only in route-roles.
+    pendingProducts: '/products/pending',
     subProducts: '/sub-products',
     createSubProduct: '/sub-products/create',
     subProductDetails: (slug: string) => `/sub-products/${slug}`,

@@ -7,6 +7,7 @@ const { loadQuestionBank } = require('../services/peerAppraisal/question-bank');
 const { generateQuestions } = require('../services/peerAppraisal/exam-ai');
 const { saveConfiguration } = require('../services/peerAppraisal/examination');
 const { ownExam, startExam, saveExamDraft, submitExam } = require('../services/peerAppraisal/exam-reviews');
+const { resetEmployeeExam } = require('../services/peerAppraisal/exam-administration');
 const handle = fn => async (req, res, next) => {
   try {
     if (typeof req.params.cycleId !== 'string' || !/^[a-f\d]{24}$/i.test(req.params.cycleId) || !mongoose.isValidObjectId(req.params.cycleId)) throw new ValidationError('Invalid cycle ID.');
@@ -28,4 +29,12 @@ exports.generate = handle(async req => {
   const tenantId = await requirePeerHr(req);
   requireState(await loadCycle(tenantId, req.params.cycleId), 'draft');
   return generateQuestions(req.body);
+});
+
+exports.reset = handle(async req => {
+  const tenantId = await requirePeerHr(req);
+  const employee = req.params.employeeId;
+  if (typeof employee !== 'string' || !/^[a-f\d]{24}$/i.test(employee)) throw new ValidationError('Invalid employee ID.');
+  return resetEmployeeExam({ tenantId, cycleId: req.params.cycleId, employee,
+    expectedRevision: req.body?.expectedRevision, expectedCycleRevision: req.body?.expectedCycleRevision, actor: req.user });
 });

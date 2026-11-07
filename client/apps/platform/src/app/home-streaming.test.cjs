@@ -7,7 +7,7 @@ const React = require('react');
 const { renderToPipeableStream } = require('react-dom/server');
 const { PassThrough } = require('node:stream');
 
-test('homepage sends hero while catalog is pending, then sends server catalog', async () => {
+test('homepage sends hero while catalog is pending, then sends server catalog', { timeout: 5000 }, async () => {
   let ready = false;
   let release;
   const pending = new Promise(resolve => { release = resolve; });
@@ -16,6 +16,11 @@ test('homepage sends hero while catalog is pending, then sends server catalog', 
     return React.createElement('a', { href: '/product/test-bottle' }, 'Server catalog');
   };
   const mocks = {
+    'next/headers': { headers: async () => ({ get: () => null }) },
+    'next/navigation': { notFound() { throw new Error('404'); }, redirect() { throw new Error('Unexpected redirect'); } },
+    '@/lib/venue/server': { publicVenueGet: async () => ({ items: [] }) },
+    '@/lib/tenant': { resolveTenant: async () => ({ tenant: null }) },
+    '@/components/CommerceGuides/CommerceDiscovery': { default: () => null },
     './home-seo': { homeMetadata: {} },
     'next/dynamic': { default: () => () => null },
     '@/components/UI/LazySection': { default: () => null },
@@ -36,8 +41,9 @@ test('homepage sends hero while catalog is pending, then sends server catalog', 
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText;
   page._compile(source, __filename);
-  const element = page.exports.default();
-  assert.equal(typeof element?.then, 'undefined', 'home shell must not await catalog requests');
+  // Tenant-aware routing makes the shell async; catalog work must still stream.
+  // Awaiting the shell before releasing `pending` catches an accidental catalog await.
+  const element = await page.exports.default();
   const output = new PassThrough();
   let html = '';
   output.on('data', chunk => { html += chunk; });

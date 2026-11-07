@@ -3,6 +3,9 @@ const { Schema } = mongoose;
 
 const posTableSchema = new Schema(
   {
+    location: { type: Schema.Types.ObjectId, ref: 'Warehouse', default: null },
+    capacityManaged: { type: Boolean, default: false },
+    venueVersion: { type: Number, default: 0, min: 0 },
     tenant: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     name: { type: String, required: true, trim: true },
     section: { type: String, trim: true, default: 'Main' },
@@ -15,10 +18,11 @@ const posTableSchema = new Schema(
     },
     currentTabId: { type: Schema.Types.ObjectId, ref: 'Order', default: null },
   },
-  { timestamps: true }
+  { timestamps: true, optimisticConcurrency: true }
 );
 
 posTableSchema.index({ tenant: 1, status: 1 });
+posTableSchema.index({ tenant: 1, location: 1, status: 1 });
 posTableSchema.index({ tenant: 1, name: 1 }, { unique: true });
 
 module.exports = mongoose.model('POSTable', posTableSchema);

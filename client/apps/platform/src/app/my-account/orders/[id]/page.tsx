@@ -8,6 +8,7 @@ import * as Icon from 'react-icons/pi';
 import { useAccount } from '../../AccountShell';
 import { useOrderDetail } from '../../_hooks/useOrders';
 import { STATUS_CONFIG } from '../../_constants';
+import ShipmentProgress from '@/components/Orders/ShipmentProgress';
 import InlineAlert from '../../_components/InlineAlert';
 import { paymentMethodLabel } from '@/config/payment-methods';
 
@@ -34,6 +35,7 @@ const STEPS = [
 
 function StatusTimeline({ status }: { status: string }) {
   const lower = status.toLowerCase();
+  if (lower === 'partially_shipped') return <p className="rounded-xl border border-stone-200 bg-white p-5">Some items have shipped. See the shipment groups below for each quantity.</p>;
   if (lower === 'cancelled' || lower === 'refunded') return null;
   const currentIdx = STEPS.findIndex(s => s.key === lower);
   const idx = currentIdx >= 0 ? currentIdx : 0;
@@ -102,7 +104,7 @@ function CancelConfirm({ onConfirm, onDismiss, loading }: { onConfirm: () => voi
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function OrderDetailPage() {
+function OrderDetailContent() {
   const { token, user } = useAccount();
   const params = useParams();
   const id = typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : null;
@@ -179,7 +181,7 @@ export default function OrderDetailPage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
-              <StatusIc size={11} /> {statusLo.charAt(0).toUpperCase() + statusLo.slice(1)}
+              <StatusIc size={11} /> {statusLo.charAt(0).toUpperCase() + statusLo.slice(1).replaceAll('_', ' ')}
             </span>
             <Link href={trackHref}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border border-stone-200 bg-white text-stone-700 hover:border-red-200 hover:text-red-700 transition-colors">
@@ -197,7 +199,7 @@ export default function OrderDetailPage() {
               <Icon.PiXCircleBold size={18} className="text-red-600" />
             </div>
             <div>
-              <p className="font-bold text-red-800 text-sm">Order {statusLo.charAt(0).toUpperCase() + statusLo.slice(1)}</p>
+              <p className="font-bold text-red-800 text-sm">Order {statusLo.charAt(0).toUpperCase() + statusLo.slice(1).replaceAll('_', ' ')}</p>
               <p className="text-xs text-red-600 mt-0.5">
                 {statusLo === 'refunded'
                   ? 'A refund has been issued and should reflect in your account within 3–5 business days.'
@@ -210,6 +212,7 @@ export default function OrderDetailPage() {
 
         {/* Status timeline */}
         <StatusTimeline status={status} />
+        <ShipmentProgress orderId={order._id} sessionKey={token && user ? `${user._id}:${token}` : null} />
 
         {/* Items */}
         <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
@@ -361,4 +364,10 @@ export default function OrderDetailPage() {
       </div>
     </>
   );
+}
+
+export default function OrderDetailPage() {
+  const {token,user}=useAccount();
+  const params=useParams();
+  return <OrderDetailContent key={JSON.stringify([params.id,user?._id,token])}/>;
 }

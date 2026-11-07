@@ -8,6 +8,7 @@ import {
   AdjustmentError,
 } from '@/services/inventoryAdjustment.service';
 import { adjustmentTarget, type AdjustmentMode } from './inventory-adjustment-entry-data';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 export function useAdjustmentEntry(token: string, done: () => void) {
   const [rows, setRows] = useState<StockRow[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -81,7 +82,9 @@ export function useAdjustmentEntry(token: string, done: () => void) {
     new Map(
       rows
         .filter((r) => r.subProductId === product && r.sizeId)
-        .map((r) => [r.sizeId, { id: r.sizeId, label: r.sizeName }]),
+        // Exact sizeId is already the identity key; the label is the full
+        // shared variant label (DRI-30) — colour/option siblings read apart.
+        .map((r) => [r.sizeId, { id: r.sizeId, label: flatRowSizeLabel(r) || r.sizeName }]),
     ).values(),
   );
   const row = rows.find(

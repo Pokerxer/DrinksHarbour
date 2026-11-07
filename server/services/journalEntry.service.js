@@ -58,6 +58,7 @@ async function postJournalEntry({
   postedBy,
   entryType = 'manual',
   status = 'posted',
+  venueCostSnapshotIds,
   session,
 }) {
   if (!tenantId) throw badRequest('Tenant is required');
@@ -81,6 +82,7 @@ async function postJournalEntry({
   const when = date ? new Date(date) : new Date();
   const payload = {
     tenant: tenantId,
+    ...(venueCostSnapshotIds ? { venueCostSnapshotIds } : {}),
     refDoc,
     refDocType: refDocType || 'SalesOrder',
     entryType,
@@ -126,6 +128,7 @@ async function reverseEntry({ tenantId, entryId, userId, session }) {
   if (original.status !== 'posted') {
     throw badRequest('Only posted entries can be reversed');
   }
+  await require('./merchantFulfillment/accountingAuthority').assertManualReversalAllowed(original, session);
   const alreadyReversed = await JournalEntry.findOne({
     tenant: tenantId, refDoc: original._id, entryType: 'reversal',
   }).session(session || null);

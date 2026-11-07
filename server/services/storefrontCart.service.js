@@ -25,13 +25,17 @@ async function quoteCart(tenant, body, session = null) {
     const unitPrice = retailPrice(sp, size), subtotal = money(unitPrice * line.quantity);
     const rates = resolveLineRates(tenant, size, line.quantity);
     const cost = size?.costPrice ?? sp.costPrice ?? 0;
-    const model = tenant.revenueModel === 'commission' ? 'commission' : 'markup';
+    const model = tenant.revenueModel === 'selling_price_markup' ? 'selling_price_markup' : tenant.revenueModel === 'commission' ? 'commission' : 'markup';
     const payout = require('../utils/pricing').calcPlatformCostPrice(cost, unitPrice, model, rates.markupPct, rates.commissionPct);
     const split = require('../utils/revenueAgreement').splitMerchandise({ amount: subtotal,
-      quantity: line.quantity, model, rate: model === 'commission' ? rates.commissionPct : rates.markupPct, payout });
+      quantity: line.quantity, model, rate: model === 'selling_price_markup' ? 0 : model === 'commission' ? rates.commissionPct : rates.markupPct, payout });
+    const direct = tenant.storefrontChannel;
+    if (direct && !size) throw new ValidationError('Select a stock variant for this website');
+    const directSplit = direct ? { tenantRevenueShare: subtotal, platformCommission: 0, vendorPriceAtPurchase: cost,
+      tenantRevenueModel: 'commission', revenueRateAtPurchase: 0, revenuePolicyVersion: 'direct-website-v1', revenueBasisAmount: subtotal } : split;
     orderItems.push({ product: sp.product._id, subproduct: sp._id, size: size?._id || undefined,
       tenant: tenant._id, quantity: line.quantity, priceAtPurchase: unitPrice, itemSubtotal: subtotal,
-      ...split, packRateApplied: rates.isPackRate });
+      ...directSplit, ...(direct ? { warehouse: direct.warehouse } : {}), packRateApplied: direct ? false : rates.isPackRate });
     items.push({ subProductId: id(sp), sizeId: size ? id(size) : null, name: sp.product.name,
       quantity: line.quantity, unitPrice, subtotal });
   }

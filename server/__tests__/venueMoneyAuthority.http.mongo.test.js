@@ -1,0 +1,21 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),mongoose=require('mongoose'),express=require('express'),jwt=require('jsonwebtoken');
+const {connectVenueMongo,fixture}=require('./helpers/venueMongo');
+test('financial HTTP recovery preserves JWT tenant, receipt location and fresh owner permissions during feature pause',async t=>{
+ await connectVenueMongo(t,'money_authority_http');const args=await fixture(),other=await fixture();await require('../services/venue/refunds').ensureIndexes();
+ const old={JWT_SECRET:process.env.JWT_SECRET,VENUE_EXPERIENCE_ENABLED:process.env.VENUE_EXPERIENCE_ENABLED,VENUE_REFUNDS_ENABLED:process.env.VENUE_REFUNDS_ENABLED};process.env.JWT_SECRET='money-authority-test-only';delete process.env.VENUE_EXPERIENCE_ENABLED;delete process.env.VENUE_REFUNDS_ENABLED;t.after(()=>{for(const[k,v]of Object.entries(old))v===undefined?delete process.env[k]:process.env[k]=v;});
+ const booking=await require('../models/Booking').create({tenant:args.tenantId,location:args.locationId,createdBy:args.actor.userId,guest:{name:'Private guest',phone:'private-phone'},partySize:2,bookingAt:new Date(Date.now()+3600000),status:'confirmed'});
+ const attempt=await require('../models/VenuePaymentAttempt').create({tenant:args.tenantId,location:args.locationId,booking:booking._id,collectionVersion:2,collectionSlot:'authority-deposit',purpose:'venue_deposit',method:'paystack',amountMinor:100000,reference:'dhv-authority-http',state:'verified',key:'deposit',requestHash:'fixture'});
+ const receipt=await require('../models/VenuePaymentReceipt').create({tenant:args.tenantId,location:args.locationId,booking:booking._id,collectionVersion:2,purpose:'venue_deposit',attempt:attempt._id,provider:'paystack',reference:attempt.reference,amountMinor:100000,currency:'NGN',verifiedAt:new Date(),unappliedMinor:100000,resolution:'paid_needs_resolution'});
+ const refund=await require('../models/VenueRefundCase').create({tenant:args.tenantId,location:args.locationId,receipt:receipt._id,amountMinor:10000,key:'review',reason:'Reviewed local case',sourceAmounts:{unappliedMinor:10000,appliedMinor:0},state:'approved'});
+ const app=express();app.use(express.json());app.use('/api/venue-experience',require('../routes/venue-experience.routes'));app.use((e,req,res,next)=>res.status(e.statusCode||500).json({code:e.code}));const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const root=`http://127.0.0.1:${server.address().port}/api/venue-experience/staff/locations`,headers={Authorization:`Bearer ${jwt.sign({userId:args.actor.userId},process.env.JWT_SECRET)}`,'Content-Type':'application/json','Idempotency-Key':'authority'};
+ const path=location=>`${root}/${location}/refunds/${refund._id}/execute`;
+ assert.equal((await fetch(path(args.locationId),{method:'POST'})).status,401);
+ assert.equal((await fetch(path(other.locationId),{method:'POST',headers,body:JSON.stringify({tenantId:other.tenantId})})).status,404);
+ const disabled=await fetch(path(args.locationId),{method:'POST',headers,body:'{}'});assert.equal((await disabled.json()).code,'REFUND_EXECUTION_NOT_ENABLED');
+ const queue=await fetch(`${root}/${args.locationId}/money-cases`,{headers});assert.equal(queue.status,200);assert.equal(queue.headers.get('cache-control'),'no-store');const data=(await queue.json()).data;assert.equal(data.items[0].receiptId,String(receipt._id));assert.equal(JSON.stringify(data).includes('private-phone'),false);
+ await require('../models/User').updateOne({_id:args.actor.userId},{$set:{venueDeniedActions:['bill.reconcile']}});
+ assert.equal((await fetch(path(args.locationId),{method:'POST',headers,body:'{}'})).status,404);assert.equal((await fetch(`${root}/${args.locationId}/money-cases`,{headers})).status,404);
+ assert.equal((await require('../models/VenueRefundCase').findById(refund._id).lean()).state,'approved');assert.equal(await require('../models/VenuePaymentReversal').countDocuments(),0);
+});

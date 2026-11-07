@@ -1,3 +1,4 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 
 const BASE_URL  = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
@@ -7,7 +8,7 @@ const LAST_UPDATED_ISO = "2026-07-12";
 const description =
   "Learn how DrinksHarbour collects, uses and protects personal data. Read about cookies, data sharing, your privacy rights and how to contact us with a request.";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: "Privacy Policy",
   description,
   keywords: [
@@ -34,7 +35,7 @@ export const metadata: Metadata = {
     title: "Privacy Policy | DrinksHarbour",
     description,
   },
-};
+});
 
 const jsonLd = {
   "@context": "https://schema.org",

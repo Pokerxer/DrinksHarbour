@@ -500,6 +500,10 @@ export interface POSSize {
   stock?: number;
   sku?: string;
   barcode?: string;
+  /** Industry-variant support (2026-11-02): color dimension rides Size rows. */
+  colorName?: string;
+  optionName?: string;
+  colorHexCode?: string;
 }
 
 export interface POSCartItem {
@@ -952,6 +956,8 @@ export type TableStatus = 'available' | 'occupied' | 'reserved' | 'inactive';
  * floor map entry plus a summary of any open tab parked on it.
  */
 export interface POSTableSummary {
+  location?: string;
+  venueVersion?: number;
   _id: string;
   name: string;
   section: string;
@@ -961,6 +967,8 @@ export interface POSTableSummary {
   currentTabId?: string | null;
   tab: null | {
     orderId: string;
+    serviceSessionId?: string;
+    identityVersion?: number;
     guests: number;
     openedAt: string;
     itemCount: number;
@@ -977,6 +985,10 @@ export interface POSTableSummary {
 
 /** The cart's binding to a venue table while a tab is open. */
 export interface CartTableBinding {
+  serviceSessionId?: string;
+  identityVersion?: number;
+  version?: number;
+  lineVersion?: number;
   tableId: string;
   name: string;
   guests?: number;

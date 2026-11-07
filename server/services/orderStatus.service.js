@@ -55,6 +55,10 @@ const STATUS_TIMESTAMPS = {
  * @returns {Promise<{previousStatus: string, changed: boolean}>}
  */
 async function applyOrderStatus(order, status, options = {}) {
+  require('./merchantFulfillment/identity').assertLegacy(order);
+  if (options.tenantId) require('./orderAccess').assertSingleTenant(order, options.tenantId);
+  if (order.onlineStockVersion === 1) return require('./storefrontLocationOrders').applyStatus(order, status, options);
+  require('./venue/legacy-guards').rejectCanonicalOrder(order);
   if (order.tableServiceBooking) throw new Error('Manage table-service fulfillment through the booking');
   const { actorId = null, cancelReason, tenantId = null } = options;
 
@@ -96,6 +100,7 @@ async function applyOrderStatus(order, status, options = {}) {
  * and testable on their own.
  */
 function applyInventoryEffects(order, status, previousStatus, actorId) {
+  if (order.onlineStockVersion === 1) throw new Error('Use transactional online stock lifecycle');
   const stockItems = order.items.filter((i) => i.subproduct);
   if (!stockItems.length) return;
 

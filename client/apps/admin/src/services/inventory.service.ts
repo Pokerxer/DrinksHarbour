@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 import { inventoryAdjustmentService, type AdjustmentInput } from './inventoryAdjustment.service';
 // services/inventory.service.ts
 
@@ -168,11 +169,11 @@ export const inventoryService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to create inventory movement');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getMovements(token: string, params?: GetMovementsParams) {
@@ -195,11 +196,11 @@ export const inventoryService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch inventory movements');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getAllMovements(
@@ -231,11 +232,11 @@ export const inventoryService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch inventory summary');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async adjustInventory(input: AdjustmentInput, token: string) {
@@ -274,11 +275,11 @@ export const inventoryService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to record received goods');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async recordReturn(
@@ -306,11 +307,11 @@ export const inventoryService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to record return');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async cancelMovement(movementId: string, token: string, reason: string) {
@@ -327,11 +328,11 @@ export const inventoryService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to cancel movement');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getLowStockItems(token: string) {
@@ -342,11 +343,11 @@ export const inventoryService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch low stock items');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getInventoryValuation(token: string) {
@@ -357,11 +358,11 @@ export const inventoryService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch inventory valuation');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getNextPONumber(token: string): Promise<ApiResponse<PONumberResponse>> {
@@ -372,10 +373,10 @@ export const inventoryService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch next PO number');
     }
 
-    return response.json();
+    return readJson(response);
   },
 };

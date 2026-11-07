@@ -1,5 +1,6 @@
 'use client';
 
+import { checkoutAttemptKey, finishCheckoutAttempt } from '@/lib/checkoutAttempt.mjs';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -19,6 +20,8 @@ import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap'
 import PlacementBanner from '@/components/Banner/PlacementBanner';
 import FirstOrderPerkBanner from '@/components/Banner/FirstOrderPerkBanner';
 import { describeDeliveryLine, type FirstOrderPerk } from 'commerce-core';
+import CheckoutGiftSection, { useGiftPackaging } from '@/components/Checkout/CheckoutGiftSection';
+import { lagosTodayISO, validateGiftDetails, buildGiftPayload, type GiftDetails, type GiftFieldErrors, type GiftPayload } from '@/lib/giftCheckout';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,7 +69,7 @@ const PAYMENT_METHODS = [
   { id: 'card',             name: 'Card Payment',          description: 'Visa, Mastercard — powered by Stripe',          icon: Icon.PiCreditCardBold,  badge: 'Coming soon', comingSoon: true },
   { id: 'bank_transfer',    name: 'Card / Bank Transfer / USSD', description: 'Pay via Korapay — card, bank transfer, USSD',   icon: Icon.PiBankBold,        badge: null,          comingSoon: false },
   { id: 'paystack',         name: 'Paystack',              description: 'Pay via Paystack — card, bank, USSD',           icon: Icon.PiShieldCheckBold, badge: 'Coming soon', comingSoon: true },
-  { id: 'cash_on_delivery', name: 'Cash on Delivery',      description: 'Pay cash when your order arrives',              icon: Icon.PiMoneyBold,       badge: null,          comingSoon: false },
+  { id: 'cash_on_delivery', name: 'Cash on Delivery',      description: 'Pay cash when your order arrives',              icon: Icon.PiMoneyBold,       badge: 'Coming soon', comingSoon: true },
 ] as const;
 
 // ─── Input field ─────────────────────────────────────────────────────────────
@@ -140,6 +143,40 @@ export default function CheckoutPage() {
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [pendingPayment, setPendingPayment] = useState<null | (() => Promise<void>)>(null);
 
+  // ── Gift checkout (order-level `gift` object) ──────────────────────────────
+  const [giftEnabled,    setGiftEnabled]    = useState(false);
+  const [gift,           setGift]           = useState<GiftDetails>({ from: '', to: '', message: '', requestedDeliveryDate: '', packagingRequested: false });
+  const [giftErrors,     setGiftErrors]     = useState<GiftFieldErrors>({});
+  const [giftSubmitTick, setGiftSubmitTick] = useState(0);
+  const giftPackaging    = useGiftPackaging();
+
+  const handleGiftToggle = () => {
+    const next = !giftEnabled;
+    setGiftEnabled(next);
+    if (next) return;
+    // Turning the gift off removes the packaging line again.
+    if (gift.packagingRequested && giftPackaging.inCart) giftPackaging.setRequested(false);
+    setGift(g => ({ ...g, packagingRequested: false }));
+    setGiftErrors({});
+  };
+
+  // The order-body `gift` object — only when the toggle is on and validation passes.
+  const giftPayload: GiftPayload | null = (() => {
+    if (!giftEnabled) return null;
+    const res = validateGiftDetails(gift, lagosTodayISO());
+    return res.ok ? buildGiftPayload(res.value!) : null;
+  })();
+
+  /** Submit-time gift validation; on failure sets inline errors and focuses the first invalid field. */
+  const validateGift = (): boolean => {
+    if (!giftEnabled) { setGiftErrors({}); return true; }
+    const res = validateGiftDetails(gift, lagosTodayISO());
+    if (res.ok) { setGiftErrors({}); return true; }
+    setGiftErrors(res.errors);
+    setGiftSubmitTick(t => t + 1);
+    return false;
+  };
+
   const [form, setForm] = useState<FormData>({
     firstName: '', lastName: '', email: '', phone: '',
     address: '', lga: '', state: '', zipCode: '', country: 'Nigeria',
@@ -147,6 +184,16 @@ export default function CheckoutPage() {
     paymentMethod: 'wallet',
   });
   const [errors, setErrors] = useState<FormErrors>({});
+
+  // Default gift "From" to the customer's own name the first time it is known.
+  useEffect(() => {
+    if (!giftEnabled) return;
+    setGift(g => {
+      if (g.from.trim()) return g;
+      const name = [form.firstName, form.lastName].map(s => (s || '').trim()).filter(Boolean).join(' ');
+      return name ? { ...g, from: name } : g;
+    });
+  }, [giftEnabled, form.firstName, form.lastName]);
 
   // Fill checkout form from a saved address object
   const applyAddressToForm = useCallback((addr: any) => {
@@ -459,6 +506,7 @@ export default function CheckoutPage() {
   const createOrderAfterPayment = async (paymentDetails: any) => {
     const res = await fetchWithAuth(`${API_URL}/api/orders`, {
       method: 'POST',
+        headers: { 'Idempotency-Key': checkoutAttemptKey(localStorage) },
       body: JSON.stringify({
         customer: buildCustomer(),
         shipping: buildShipping(),
@@ -473,6 +521,7 @@ export default function CheckoutPage() {
         utmSource: utmRef.current.source,
         utmMedium: utmRef.current.medium,
         utmCampaign: utmRef.current.campaign,
+        ...(giftPayload ? { gift: giftPayload } : {}),
         status: 'processing',
         paymentStatus: 'paid',
       }),
@@ -489,6 +538,7 @@ export default function CheckoutPage() {
     try {
       const res  = await fetchWithAuth(`${API_URL}/api/payments/stripe/initialize`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': checkoutAttemptKey(localStorage) },
         body: JSON.stringify({
           amount: total, currency: 'ngn',
           metadata: { customerEmail: form.email, customerName: `${form.firstName} ${form.lastName}` },
@@ -515,6 +565,7 @@ export default function CheckoutPage() {
         paidAt: new Date().toISOString(),
         amount: total,
       });
+      finishCheckoutAttempt(localStorage);
       clearCartEverywhere();
       localStorage.setItem('customerEmail', form.email);
       router.push(`/order-confirmation?orderId=${orderId}`);
@@ -535,6 +586,7 @@ export default function CheckoutPage() {
       // back to /payment/verify?reference=… where the order is created.
       const res  = await fetchWithAuth(`${API_URL}/api/payments/korapay/initialize`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': checkoutAttemptKey(localStorage) },
         body: JSON.stringify({
           amount: total, email: form.email,
           metadata: { customerName: `${form.firstName} ${form.lastName}`, customerPhone: form.phone },
@@ -549,6 +601,8 @@ export default function CheckoutPage() {
         cartItems: cartState.cartArray,
         subtotal, shippingFee: shipping, shippingInfo: buildShippingInfo(), total,
         couponCode: appliedCoupon,
+        // JSON.stringify drops the key entirely when null — no gift, no key.
+        gift: giftPayload,
         utmSource: utmRef.current.source,
         utmMedium: utmRef.current.medium,
         utmCampaign: utmRef.current.campaign,
@@ -569,6 +623,7 @@ export default function CheckoutPage() {
       await syncCartToServer();
       const res  = await fetchWithAuth(`${API_URL}/api/orders`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': checkoutAttemptKey(localStorage) },
         body: JSON.stringify({
           customer: buildCustomer(),
           shipping: buildShipping(),
@@ -579,13 +634,16 @@ export default function CheckoutPage() {
           utmSource: utmRef.current.source,
           utmMedium: utmRef.current.medium,
           utmCampaign: utmRef.current.campaign,
+          ...(giftPayload ? { gift: giftPayload } : {}),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to place order');
+      finishCheckoutAttempt(localStorage);
       clearCartEverywhere();
       localStorage.setItem('customerEmail', form.email);
       const orderId = data.data?.order?._id || data.data?.order?.id || data.order?._id;
+      if (data.data?.guestAccessToken) localStorage.setItem(`dh:guest-order:${orderId}`, data.data.guestAccessToken);
       router.push(`/order-confirmation?orderId=${orderId}`);
     } catch (e: any) {
       setError(e.message || 'Something went wrong. Please try again.');
@@ -614,6 +672,7 @@ export default function CheckoutPage() {
     try {
       const payRes = await fetchWithAuth(`${API_URL}/api/wallet/pay`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': checkoutAttemptKey(localStorage) },
         body: JSON.stringify({ amount: total }),
       });
       const payData = await payRes.json();
@@ -626,6 +685,7 @@ export default function CheckoutPage() {
         paidAt: new Date().toISOString(),
         amount: total,
       });
+      finishCheckoutAttempt(localStorage);
       clearCartEverywhere();
       localStorage.setItem('customerEmail', form.email);
       router.push(`/order-confirmation?orderId=${orderId}`);
@@ -643,6 +703,7 @@ export default function CheckoutPage() {
     try {
       const payRes = await fetchWithAuth(`${API_URL}/api/gift-cards/pay-checkout`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': checkoutAttemptKey(localStorage) },
         body: JSON.stringify({ code: giftCardCode.trim(), amount: total }),
       });
       const payData = await payRes.json();
@@ -655,6 +716,7 @@ export default function CheckoutPage() {
         paidAt: new Date().toISOString(),
         amount: total,
       });
+      finishCheckoutAttempt(localStorage);
       clearCartEverywhere();
       localStorage.setItem('customerEmail', form.email);
       router.push(`/order-confirmation?orderId=${orderId}`);
@@ -755,6 +817,20 @@ export default function CheckoutPage() {
     e.preventDefault();
     if (!validate())                     return;
     if (cartState.cartArray.length === 0) { setError('Your cart is empty'); return; }
+
+    // Gift block: invalid details block the submit and focus the first field.
+    if (!validateGift()) return;
+    // The server 422s a `packagingRequested` gift whose items lack the packaging
+    // SKU. A state dispatch here could not be seen by this render's buildItems,
+    // so an inconsistent cart blocks with a clear message instead of re-adding.
+    if (giftEnabled && gift.packagingRequested && giftPackaging.line && !giftPackaging.inCart) {
+      setError('Gift packaging was removed from your cart — untick and re-tick it in the gift section, then try again.');
+      return;
+    }
+    if (giftEnabled && gift.packagingRequested && !giftPackaging.line) {
+      setError('Gift packaging is not available right now — untick it in the gift section, then try again.');
+      return;
+    }
 
     if (activePayment === 'wallet') { await validateBeforeCheckout(submitWalletPay); return; }
     if (activePayment === 'gift_card') { await validateBeforeCheckout(submitGiftCardPay); return; }
@@ -926,6 +1002,18 @@ export default function CheckoutPage() {
                     <Field label="Phone Number"  name="phone"     type="tel"   icon={Icon.PiPhoneBold}   placeholder="+234" value={form.phone} error={errors.phone} onChange={handleChange} />
                   </div>
                 </div>
+
+                {/* Send as a gift? (order-level gift object) */}
+                <CheckoutGiftSection
+                  enabled={giftEnabled}
+                  details={gift}
+                  errors={giftErrors}
+                  submitTick={giftSubmitTick}
+                  packaging={giftPackaging}
+                  formatPrice={fmt}
+                  onToggle={handleGiftToggle}
+                  onChange={patch => setGift(g => ({ ...g, ...patch }))}
+                />
 
                 {/* Shipping address */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

@@ -211,6 +211,11 @@ test('deleteTable blocks a table holding a tab even if status drifted', async (t
 
 test('deleteTable removes a free table and reports success', async (t) => {
   let deleted = false;
+  t.mock.method(POSTable, 'deleteOne', async filter => {
+    assert.equal(filter.tenant, TENANT);
+    assert.deepEqual(filter.capacityManaged, { $ne: true });
+    deleted = true; return { deletedCount: 1 };
+  });
   t.mock.method(POSTable, 'findOne', () => chainable({
     _id: TABLE_ID,
     tenant: TENANT,

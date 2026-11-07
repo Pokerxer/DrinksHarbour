@@ -5,6 +5,7 @@ import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_URL } from '@/lib/api';
+import { trackContactLead } from '@/lib/commercialEnquiry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,6 +108,7 @@ export default function ContactPage() {
       });
       const data = await res.json();
       if (data.success) {
+        trackContactLead(form.subject || 'other');
         setResult({ ok: true, msg: data.message });
         setForm({ name: '', email: '', phone: '', subject: '', message: '', orderNumber: '' });
       } else {
@@ -187,7 +189,7 @@ export default function ContactPage() {
           <div className="lg:col-span-3">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8">
               <h2 className="text-lg font-black text-gray-900 mb-1">Send us a message</h2>
-              <p className="text-sm text-gray-500 mb-6">Fill in the form and we'll get back to you shortly.</p>
+              <p className="text-sm text-gray-500 mb-6">Fill in the form and we&apos;ll get back to you shortly.</p>
 
               {/* Success / Error banner */}
               <AnimatePresence>

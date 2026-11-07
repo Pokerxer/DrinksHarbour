@@ -8,7 +8,7 @@
 //
 // Required env: FISH_AUDIO_API_KEY
 // Optional env: FISH_AUDIO_MODEL (default: s2.1-pro-free)
-//               FISH_AUDIO_VOICE_ID (default voice if omitted)
+//               FISH_AUDIO_VOICE_ID (overrides the fixed Energetic Male reference voice)
 
 const fs = require('fs');
 const path = require('path');
@@ -18,8 +18,13 @@ const crypto = require('crypto');
 
 const API_KEY    = process.env.FISH_AUDIO_API_KEY || '';
 const MODEL      = process.env.FISH_AUDIO_MODEL   || 's2.1-pro-free';
-const VOICE_ID   = process.env.FISH_AUDIO_VOICE_ID || undefined;
+// Pin a speaker even without an override: independent chunks must not choose voices.
+// https://fish.audio/m/802e3bc2b27e49c2995d23ef70e6ac89/
+const VOICE_ID   = process.env.FISH_AUDIO_VOICE_ID?.trim() || '802e3bc2b27e49c2995d23ef70e6ac89';
 const TTS_URL    = 'https://api.fish.audio/v1/tts';
+const MAX_TEXT_LENGTH = 5000;
+// Include synthesis settings in cache identity; bypass old disconnected clips.
+const SYNTHESIS_PROFILE = 'continuous-v1';
 
 // ── Cache directory ─────────────────────────────────────────────────────────
 
@@ -36,7 +41,7 @@ try {
 /**
  * Synthesize text to speech via Fish Audio.
  *
- * @param {string} text  — up to ~300 chars of prose to speak
+ * @param {string} text  — up to 5,000 chars of prose to speak
  * @returns {Promise<{ buffer: Buffer, format: string }>}
  * @throws {Error} with status 503 if API key is missing, upstream errors otherwise
  */
@@ -47,17 +52,22 @@ async function synthesize(text) {
     throw err;
   }
 
-  const sanitised = text.replace(/[^\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g, '').trim().slice(0, 300);
+  if (text.trim().length > MAX_TEXT_LENGTH) {
+    const err = new Error('Text exceeds the 5,000-character narration limit.');
+    err.status = 400;
+    throw err;
+  }
+  const sanitised = text.replace(/[^\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!sanitised) {
     const err = new Error('No text to synthesize.');
     err.status = 400;
     throw err;
   }
 
-  // Cache key: sha1(text + model + voiceId) — short, collision-safe.
+  // Keep recordings isolated by text, model, resolved voice and synthesis profile.
   const hash = crypto
     .createHash('sha1')
-    .update(sanitised + '|' + MODEL + '|' + (VOICE_ID || 'default'))
+    .update(sanitised + '|' + MODEL + '|' + VOICE_ID + '|' + SYNTHESIS_PROFILE)
     .digest('hex');
 
   const cacheFile = path.join(CACHE_DIR, `${hash}.mp3`);
@@ -75,10 +85,10 @@ async function synthesize(text) {
     text: sanitised,
     format: 'mp3',
     normalize: true,
+    reference_id: VOICE_ID,
+    condition_on_previous_chunks: true,
+    temperature: 0.3,
   };
-  if (VOICE_ID) {
-    body.reference_id = VOICE_ID;
-  }
 
   const res = await fetch(TTS_URL, {
     method: 'POST',

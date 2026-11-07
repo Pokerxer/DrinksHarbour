@@ -54,9 +54,9 @@ const auditLogSchema = new Schema(
     errorMessage: { type: String, trim: true },
 
     // ── Timestamp ─────────────────────────────────────────────────────────────
-    timestamp: { type: Date, default: Date.now, index: true },
+    timestamp: { type: Date, default: Date.now },
   },
-  { _id: true, timestamps: false, versionKey: false }
+  { _id: true, timestamps: false, versionKey: false, autoIndex: false }
 );
 
 // Compound indexes for common queries

@@ -43,6 +43,9 @@ export interface SizeFormData {
   availability?: string;
   sku?: string;
   barcode?: string;
+  // Non-beverage color variants (server/models/Size.js)
+  colorName?: string;
+  colorHexCode?: string;
   packaging?: string;
   minOrderQuantity?: number;
   maxOrderQuantity?: number | null;
@@ -525,6 +528,9 @@ export const transformBackendToForm = (
     reorderQuantity: size.reorderQuantity ?? 50,
     sku: size.sku || '',
     barcode: size.barcode || '',
+    // Non-beverage color variants (server/models/Size.js)
+    colorName: size.colorName ?? '',
+    colorHexCode: size.colorHexCode ?? '',
     isDefault: toBoolean(size.isDefault) ?? false,
     isOnSale: toBoolean(size.isOnSale) ?? false,
     rank: size.rank ?? 1,

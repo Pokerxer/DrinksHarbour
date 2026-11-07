@@ -17,6 +17,7 @@ import {
 } from 'rizzui';
 import cn from '@core/utils/class-names';
 import { Form } from '@core/ui/form';
+import CatalogFormEffects from '../catalog-form-effects';
 import {
   SubCategoryFormInput,
   subCategoryFormSchema,
@@ -451,90 +452,59 @@ export default function CreateSubCategory({
             setValue
           );
 
-        // Surface WHY a submit was refused — fields without a visible error
-        // slot (e.g. the Quill description) previously failed silently.
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        useEffect(() => {
-          if (!submitCount || Object.keys(errors).length === 0) return;
-          const [k, v] = Object.entries(errors)[0] as any;
-          toast.error(`Cannot save — ${k}: ${v?.message || 'invalid value'}`);
-        }, [submitCount]);
+        const effects = (
+          <CatalogFormEffects
+            name={nameValue}
+            id={id}
+            manualSlug={slugManuallyEdited}
+            slugify={slugify}
+            setValue={setValue}
+            errors={errors}
+            submitCount={submitCount}
+            suggestions={aiSuggestions}
+            clearSuggestions={() => setAiSuggestions(null)}
+            draft={aiDraft ?? null}
+            draftFields={[
+              'name',
+              'slug',
+              'parent',
+              'displayName',
+              'tagline',
+              'shortDescription',
+              'type',
+              'subType',
+              'style',
+              'description',
+              'typicalFlavors',
+              'commonPairings',
+              'seasonalSpring',
+              'seasonalSummer',
+              'seasonalFall',
+              'seasonalWinter',
+              'metaTitle',
+              'seoH1',
+              'metaDescription',
+              'metaKeywords',
+              'canonicalUrl',
+              'color',
+              'icon',
+              'status',
+            ]}
+            parentField="parent"
+            allowedValues={{
+              style: STYLE_OPTIONS.map((o) => o.value),
+              status: STATUS_OPTIONS.map((o) => o.value),
+            }}
+            defaults={{ status: 'draft' }}
+            requiredDraftField={{
+              name: 'parent',
+              message:
+                'AI did not resolve a parent category — please select one before saving',
+            }}
+          />
+        );
 
-        // Auto-generate slug from name unless manually edited
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        useEffect(() => {
-          if (!slugManuallyEdited.current && nameValue && !id) {
-            setValue('slug', slugify(nameValue), { shouldValidate: false });
-          }
-        }, [nameValue]);
-
-        // Apply AI suggestions when available (never touch name/slug/parent)
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        useEffect(() => {
-          if (!aiSuggestions) return;
-          Object.entries(aiSuggestions).forEach(([k, v]) => {
-            if (k === 'name' || k === 'slug' || k === 'parent') return;
-            if (v === '' || v === null || v === undefined) return;
-            setValue(k as any, v, { shouldValidate: true, shouldDirty: true });
-          });
-          setAiSuggestions(null);
-        }, [aiSuggestions]);
-
-        useEffect(() => {
-          if (!aiDraft) return;
-          slugManuallyEdited.current = true;
-          const VALID_STYLES = STYLE_OPTIONS.map((o) => o.value);
-          const VALID_STATUS = STATUS_OPTIONS.map((o) => o.value);
-          const coerce = (f: string, v: any) => {
-            if (f === 'style') return VALID_STYLES.includes(v) ? v : '';
-            if (f === 'status') return VALID_STATUS.includes(v) ? v : 'draft';
-            return v;
-          };
-          const fields = [
-            'name',
-            'slug',
-            'parent',
-            'displayName',
-            'tagline',
-            'shortDescription',
-            'type',
-            'subType',
-            'style',
-            'description',
-            'typicalFlavors',
-            'commonPairings',
-            'seasonalSpring',
-            'seasonalSummer',
-            'seasonalFall',
-            'seasonalWinter',
-            'metaTitle',
-            'seoH1',
-            'metaDescription',
-            'metaKeywords',
-            'canonicalUrl',
-            'color',
-            'icon',
-            'status',
-          ];
-          fields.forEach((f) => {
-            const v = aiDraft[f];
-            if (v === undefined || v === null) return;
-            const coerced = coerce(f, v);
-            if (coerced === '') return;
-            setValue(f as any, coerced, {
-              shouldValidate: true,
-              shouldDirty: true,
-            });
-          });
-          if (!aiDraft.parent) {
-            toast.error(
-              'AI did not resolve a parent category — please select one before saving'
-            );
-          }
-          toast.success('AI draft applied — review and publish');
-        }, [aiDraft]);
-
-        return isModalView ? (
+        const content = isModalView ? (
           // ── MODAL layout ────────────────────────────────────────────────────
           <>
             <div className="space-y-5 pb-4">
@@ -1291,6 +1261,12 @@ export default function CreateSubCategory({
               </div>
             </div>
           </div>
+        );
+        return (
+          <>
+            {effects}
+            {content}
+          </>
         );
       }}
     </Form>

@@ -403,7 +403,7 @@ export default function PurchasesInvoiced({ vendorId }: { vendorId: string }) {
   const tabCount = useMemo(() => {
     const counts: Record<StatusFilter, number> = {
       all: bills.length,
-      posted: bills.filter((b) => b.status === 'posted').length,
+      posted: 0,
       confirmed: bills.filter((b) => b.status === 'confirmed').length,
       partial: bills.filter((b) => b.status === 'partial').length,
       overdue: bills.filter(isOverdue).length,

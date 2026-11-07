@@ -17,6 +17,7 @@ import {
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import { lineSizeLabel, populatedSizeIdentity } from '@/utils/size-variant-label';
 import type { PurchaseOrder } from './types';
 
 type FilterKey = 'all' | 'overdue' | 'partial';
@@ -73,9 +74,9 @@ export default function PurchasesReceive() {
         purchaseOrderService.getPurchaseOrders(token, { status: 'received' }),
       ]);
       const confirmed: PurchaseOrder[] =
-        confirmedRes.data ?? confirmedRes.purchaseOrders ?? [];
+        confirmedRes.data ?? [];
       const received: PurchaseOrder[] =
-        receivedRes.data ?? receivedRes.purchaseOrders ?? [];
+        receivedRes.data ?? [];
       const partiallyReceived = received.filter((o) =>
         o.items.some((i) => i.receivedQty < i.quantity)
       );
@@ -384,7 +385,13 @@ export default function PurchasesReceive() {
                             (item as any).subProductName ??
                             item.productName ??
                             '';
-                          const size = (item as any).sizeName;
+                          // Label composed from the populated Size identity
+                          // (colour/option) when present; a colourless/legacy
+                          // Size falls back to the stored snapshot byte-for-byte.
+                          const size = lineSizeLabel(
+                            item as { sizeName?: string | null },
+                            populatedSizeIdentity((item as any).sizeId)
+                          );
                           const label =
                             size && !name.includes(size)
                               ? `${name} – ${size}`

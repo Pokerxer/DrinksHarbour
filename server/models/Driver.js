@@ -15,6 +15,8 @@ const DRIVER_STATUSES = ['available', 'on_trip', 'off_duty', 'suspended'];
 
 const driverSchema = new Schema(
   {
+    managedTrip: { type: ObjectId, ref: 'Delivery', default: null },
+    legacyTrip: { type: ObjectId, ref: 'Delivery', default: null },
     tenant: {
       type: ObjectId,
       ref: 'Tenant',

@@ -1,3 +1,5 @@
+import { setLines } from '@/services/venue/api';
+import { venueCartLines } from '@/services/venue/cart-lines';
 import { useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -21,6 +23,7 @@ type ReparkState = {
   discountType: 'percent' | 'fixed';
   discountValue: number;
   binding: CartTableBinding | null;
+  appliedRewards?: readonly unknown[];
 };
 
 /**
@@ -37,6 +40,7 @@ export function reparkRequest(state: ReparkState) {
     token: state.token,
     heldOrderId: state.binding.heldOrderId,
     body: {
+      ...(state.binding.serviceSessionId ? { expectedVersion: state.binding.version } : {}),
       items: state.items,
       customer: {
         ...(customerId ? { customerId } : {}),
@@ -82,7 +86,7 @@ export function reparkSignature(req: NonNullable<ReturnType<typeof reparkRequest
 export default function useTabAutoRepark() {
   const { activeView } = usePOSUI();
   const { token } = usePOSAuth();
-  const { items, customer, note, discountType, discountValue, tableBinding } =
+  const { items, customer, note, discountType, discountValue, appliedRewards, tableBinding, bindTable } =
     usePOSCart();
   const isOnline = useOnlineStatus();
 
@@ -96,6 +100,7 @@ export default function useTabAutoRepark() {
     discountType,
     discountValue,
     binding: tableBinding,
+    appliedRewards,
     isOnline,
   });
   live.current = {
@@ -106,6 +111,7 @@ export default function useTabAutoRepark() {
     discountType,
     discountValue,
     binding: tableBinding,
+    appliedRewards,
     isOnline,
   };
 
@@ -119,7 +125,18 @@ export default function useTabAutoRepark() {
       const signature = reparkSignature(req);
       if (signature === lastPark.current) return;
       lastPark.current = signature;
-      posApi.updateTableTab(req.token, req.heldOrderId, req.body).catch(() => {
+      const save = async () => {
+        const binding = live.current.binding;
+        if (binding?.serviceSessionId) {
+          if (binding.version === undefined) throw new Error('Reload this table before saving it.');
+          return { serviceSession: await setLines(req.token, binding.serviceSessionId, { expectedVersion: binding.version, lines: venueCartLines(req.body.items, req.body.discountValue, live.current.appliedRewards) }, 'pos') };
+        }
+        return posApi.updateTableTab(req.token, req.heldOrderId, req.body);
+      };
+      void save().then(result => {
+        const binding = live.current.binding;
+        if (result.serviceSession && binding?.heldOrderId === req.heldOrderId) bindTable({ ...binding, version: result.serviceSession.version, lineVersion: result.serviceSession.lineVersion });
+      }).catch(() => {
         // Un-mark so the next transition retries instead of skipping.
         lastPark.current = '';
         toast.error('Could not save table tab changes');

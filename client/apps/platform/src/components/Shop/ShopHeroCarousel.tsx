@@ -48,14 +48,17 @@ export default function ShopHeroCarousel({
   }
 
   return (
-    <HeroBanner
-      placement="shop"
-      limit={5}
-      autoPlay={true}
-      showControls={true}
-      showIndicators={true}
-      useFallback={false}
-      onEmpty={handleEmpty}
-    />
+    <>
+      <h1 className="sr-only">{heroSeed?.label || 'Premium Drinks in Nigeria'}</h1>
+      <HeroBanner
+        placement="shop"
+        limit={5}
+        autoPlay={true}
+        showControls={true}
+        showIndicators={true}
+        useFallback={false}
+        onEmpty={handleEmpty}
+      />
+    </>
   );
 }

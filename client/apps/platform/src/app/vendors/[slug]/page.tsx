@@ -260,7 +260,7 @@ export default function VendorStorePage({ params }: { params: Promise<{ slug: st
 
         {/* Store name on banner */}
         <div className="absolute bottom-5 left-0 right-0 px-5">
-          <h1 className="text-white font-black text-2xl sm:text-3xl drop-shadow-lg">{store.name}</h1>
+          <h2 className="text-white font-black text-2xl sm:text-3xl drop-shadow-lg">{store.name}</h2>
           {location && (
             <p className="text-white/70 text-xs mt-1 flex items-center gap-1">
               <Icon.PiMapPin size={11} /> {location}

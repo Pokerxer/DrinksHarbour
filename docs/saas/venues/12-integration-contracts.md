@@ -6,6 +6,9 @@ status: proposed-integration
 
 # How all reference features integrate with the current software
 
+> Execution status20October: Phase0 closeout and Phase1 implementation/verification are complete locally; hosted provider certification and production release gates remain pending. Use the [current handoff](../../superpowers/specs/RESUME-venue-phase-1.md) and [operator procedure](../../superpowers/plans/venue-phase-1/operations.md) for actual state; later phase contracts below remain target requirements.
+
+
 [Main design](README.md) · [Evidence](09-reference-evidence.md) · [Restaurant features R01–R18](10-restaurant-integration.md) · [Nightlife features N01–N18](11-nightlife-integration.md)
 
 This chapter is the common integration contract for all 36 mapped feature groups. **[Certain]** existing anchors are source-inspected; **[Likely]** extensions below are design requirements. Feature groups cover the reviewed official pages, not every feature sold by either commercial product.

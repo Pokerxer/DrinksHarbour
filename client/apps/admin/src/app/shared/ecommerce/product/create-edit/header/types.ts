@@ -8,6 +8,10 @@ export interface ProductEditHeaderProps {
   title: string;
   isEditMode: boolean;
   status?: string;
+  /** Catalogue publication scope (constants/catalogScope.js). Legacy rows are undefined. */
+  publicationScope?: string | null;
+  /** Populated only when the detail endpoint resolves the owning tenant's name. */
+  owningTenantName?: string | null;
   saving: boolean;
   generating: boolean;
   canGenerate: boolean;

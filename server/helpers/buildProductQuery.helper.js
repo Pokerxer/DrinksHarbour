@@ -8,7 +8,8 @@ const Sales = require('../models/Sales');
  */
 const buildProductQuery = (filters) => {
     // Always filter for approved/published products only - no override allowed
-    const query = { status: 'approved' };
+    // (+ never tenant-private identities: see constants/catalogScope.js).
+    const query = { status: 'approved', publicationScope: { $ne: 'tenant_private' } };
     
     // Text search
     if (filters.search) {

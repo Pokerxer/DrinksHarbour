@@ -100,7 +100,7 @@ function withPunctuality(rows) {
 /** Confirm a referenced employee is one of this tenant's people. */
 async function employeeInTenant(tenantId, employeeId) {
   return User.findOne({ _id: employeeId, tenant: tenantId, status: { $ne: 'deleted' } })
-    .select('firstName lastName email avatar status')
+    .select('firstName lastName email avatar status employeeProfile.planning.attendancePolicy')
     .lean();
 }
 
@@ -448,8 +448,8 @@ const employeeHistory = asyncHandler(async (req, res) => {
 
   const items = withPunctuality(rows);
   const rating = rateAttendance(
-    { shifts, records: items, timeOff },
-    { now: new Date() }
+    { shifts, records: items, timeOff, policy: employee.employeeProfile?.planning?.attendancePolicy },
+    { now: new Date(), range, offsetMinutes }
   );
 
   // Shift-led, so an absence gets a row. Unrostered punches are appended after

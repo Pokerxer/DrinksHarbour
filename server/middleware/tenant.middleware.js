@@ -11,7 +11,7 @@ const { resolveEntitlements, readOnlyMessage } = require('../services/entitlemen
 // custom tenant silently falls back to the default set, and the add-on quota
 // reads as "one, free" for everyone regardless of what they bought.
 const TENANT_SELECT_FIELDS =
-  '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan trialEndsAt addOns customCapabilities posSettings.shops posSettings.retailWarehouse posSettings.taxEnabled posSettings.taxRate posSettings.showTaxOnReceipt email businessName paystackCustomerId paystackSubscriptionCode currentPeriodEnd cancelAtPeriodEnd';
+  '_id name slug status subscriptionStatus revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan trialEndsAt addOns customCapabilities businessType industries businessCapabilities venueSettings venueSubscriptionReadOnlySince posSettings.isBarRestaurant posSettings.shops posSettings.retailWarehouse posSettings.taxEnabled posSettings.taxRate posSettings.showTaxOnReceipt email businessName paystackCustomerId paystackSubscriptionCode currentPeriodEnd cancelAtPeriodEnd';
 const ADMIN_ROLES = ['super_admin', 'admin'];
 const RESERVED_SUBDOMAINS = ['www', 'drinksharbour', 'localhost', 'admin', 'platform', 'api'];
 
@@ -36,7 +36,7 @@ const TENANT_CONTEXT_STATUSES = ['active', 'trialing', 'past_due'];
 
 const BILLING_RECOVERY_STATUSES = ['canceled', 'incomplete', 'incomplete_expired'];
 function contextStatusAllowed(req, status) {
-  return TENANT_CONTEXT_STATUSES.includes(status) ||
+  return require('./venue-recovery.middleware').isVenueRecoveryAuthorized(req) || TENANT_CONTEXT_STATUSES.includes(status) ||
     (req.billingWriteExempt === true && BILLING_RECOVERY_STATUSES.includes(status));
 }
 
@@ -63,6 +63,7 @@ const allowBillingWrites = (req, res, next) => {
  */
 function assertWritesAllowed(req) {
   if (!WRITE_METHODS.includes(req.method)) return;
+  if (require('./venue-recovery.middleware').isVenueRecoveryAuthorized(req)) return;
   if (req.billingWriteExempt) return;
 
   const { writesAllowed, reason, plan } = resolveEntitlements(req.tenant);

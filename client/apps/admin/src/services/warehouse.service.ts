@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // services/warehouse.service.ts — the physical place
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -84,12 +85,12 @@ export interface WarehouseSettings {
   autoQuarantineExpired: boolean;
 }
 
-async function handle(res: Response, fallback: string) {
+async function handle<T>(res: Response, fallback: string): Promise<T> {
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
+    const err = await readError(res);
     throw new Error(err.message || fallback);
   }
-  return res.json();
+  return readJson<T>(res);
 }
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -102,7 +103,7 @@ export const warehouseService = {
   async getWarehouses(
     token: string,
     params?: { isActive?: boolean; type?: string }
-  ) {
+  ): Promise<{success: boolean; data: Warehouse[]}> {
     const qs = new URLSearchParams();
     if (params?.isActive !== undefined)
       qs.set('isActive', String(params.isActive));
@@ -113,7 +114,7 @@ export const warehouseService = {
       'Failed to load warehouses'
     );
   },
-  async getWarehouseById(id: string, token: string) {
+  async getWarehouseById(id: string, token: string): Promise<{success: boolean; data: Warehouse}> {
     return handle(
       await fetch(`${API_URL}/api/warehouses/${id}`, { headers: auth(token) }),
       'Failed to load warehouse'
@@ -154,7 +155,7 @@ export const warehouseService = {
   },
 
   /** Replace the location's manager list (tenant admins only server-side). */
-  async setManagers(id: string, managers: string[], token: string) {
+  async setManagers(id: string, managers: string[], token: string): Promise<{success: boolean; data: Warehouse}> {
     return handle(
       await fetch(`${API_URL}/api/warehouses/${id}/managers`, {
         method: 'PATCH',

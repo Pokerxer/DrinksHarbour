@@ -1,8 +1,9 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from 'next';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: 'Our Vendors',
   description: 'Browse all verified stores and merchants on DrinksHarbour. Discover premium spirits, wines, beers and more from trusted vendors across Nigeria.',
   alternates: { canonical: `${BASE_URL}/vendors` },
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
     type: 'website',
     url: `${BASE_URL}/vendors`,
   },
-};
+});
 
 const collectionJsonLd = {
   '@context': 'https://schema.org',

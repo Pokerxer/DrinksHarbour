@@ -1,3 +1,4 @@
+import { businessIcon } from '@/app/shared/ecommerce/business-catalog/business-icons';
 import {
   PiWineBold,
   PiBeerBottleBold,
@@ -40,6 +41,8 @@ export const getBgGradient = (type?: string) => {
 };
 
 export const getBeverageIcon = (type?: string) => {
+  const icon = businessIcon(type);
+  if (icon) return icon;
   if (!type) return PiPackageBold;
   const t = type.toLowerCase();
   if (t.includes('wine') || t.includes('champagne')) return PiWineBold;

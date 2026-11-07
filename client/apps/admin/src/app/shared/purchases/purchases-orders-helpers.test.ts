@@ -78,7 +78,7 @@ describe('withinDatePreset', () => {
   const daysAgo = (n: number) =>
     new Date(now - n * 24 * 60 * 60 * 1000).toISOString();
 
-  it.each([['all'], ['7d'], ['30d'], ['90d'], ['year']] as DatePreset[])(
+  it.each(['all', '7d', '30d', '90d', 'year'] as DatePreset[])(
     'preset %s accepts a fresh order',
     (preset) => {
       expect(withinDatePreset(order({ createdAt: daysAgo(1) }), preset)).toBe(

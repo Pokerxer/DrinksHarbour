@@ -7,8 +7,6 @@ function resolvePrice({ size, subProduct, pricelist, currency, tenant }) {
     throw new ValidationError('Price currency does not match this kiosk.');
   }
   const basis = retailPriceBasis(subProduct, size);
-  if (!Number.isFinite(basis.sellingPrice) || basis.sellingPrice <= 0)
-    throw new ValidationError('Price unavailable.');
   const rules = findMatchingPriceRules(pricelist?.rules, subProduct._id, 1);
   const setters = rules.filter((rule) => ['fixed', 'formula'].includes(rule.priceType));
   const original = applyPriceRules(
@@ -17,6 +15,10 @@ function resolvePrice({ size, subProduct, pricelist, currency, tenant }) {
     setters,
     size.wholesalePrice || 0
   );
+  // A fixed/formula pricelist may be the retail price source even when the
+  // catalog has no base price. Validate after those setters, before discounts.
+  if (!Number.isFinite(original) || original <= 0)
+    throw new ValidationError('Price unavailable.');
   const price = applyPriceRules(
     basis.sellingPrice,
     basis.costPrice,

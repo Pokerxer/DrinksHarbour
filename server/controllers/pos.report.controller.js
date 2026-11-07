@@ -7,6 +7,9 @@ const { summarizeSessionOrders, settled } = require('../services/posSessionTotal
 const POSSession   = require('../models/POSSession');
 const Order        = require('../models/Order');
 const mongoose     = require('mongoose');
+// Same per-line variant authority the order-list/report mapper uses, so the
+// breakdown labels always read `name · variant` like the other report surfaces.
+const { orderLineVariant } = require('../services/posReportOrder.service');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -22,8 +25,19 @@ function buildProductBreakdown(orders) {
   for (const order of orders) {
     if (order.status === 'voided') continue;
     for (const item of order.items || []) {
-      const key = item.product?.toString() || item.name || 'unknown';
-      if (!map[key]) map[key] = { name: item._name || item.name || 'Unknown', qty: 0, gross: 0, discounts: 0, net: 0 };
+      // Variant identity participates in the row: two colour/option variants of
+      // one product are real business lines, not the same product twice — the
+      // report collapsed them before. `orderLineVariant` is the same authority
+      // the order-list/session-report lines use (posReportOrder.service), so
+      // `name · variant` here always reads like it does on the other surfaces.
+      // `_name`/`_variant` snapshots (pos.controller) are strict-stripped by
+      // orderItemSchema like `_variant`, so the populated product name is the
+      // durable label source for persisted receipts.
+      const variant = orderLineVariant(item);
+      const name = item._name || item.name || item.product?.name || 'Unknown';
+      const productId = item.product?._id ?? item.product;
+      const key = `${productId?.toString() || item.name || 'unknown'}||${variant}`;
+      if (!map[key]) map[key] = { name: variant ? `${name} · ${variant}` : name, qty: 0, gross: 0, discounts: 0, net: 0 };
       const qty  = item.quantity || 1;
       const unit = item.priceAtPurchase ?? 0;
       const disc = item.discountAmount || 0;
@@ -63,7 +77,13 @@ exports.getSessionReport = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Session not found' });
   }
 
-  const orders          = await Order.find({ posSessionId: id, ...shopFilter(req), $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] }).lean();
+  // `items.size` is populated (label fields only, no colourless-select bloat)
+  // so legacy rows without a `_variant` snapshot still compose colour/option
+  // identity in the breakdown. `items.product` stays an ObjectId — the row key.
+  const orders          = await Order.find({ posSessionId: id, ...shopFilter(req), $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] })
+    .populate('items.product', 'name')
+    .populate('items.size', 'displayName colorName optionName')
+    .lean();
   const completedOrders = orders.filter(settled);
   const voidedOrders    = orders.filter((o) => o.isVoided || o.status === 'voided');
   const refundOrders    = orders.filter((o) => o.refunds?.length > 0);
@@ -166,7 +186,10 @@ exports.getDailyReport = asyncHandler(async (req, res) => {
   }
 
   const sessionIds = sessions.map((s) => s._id);
-  const orders     = await Order.find({ posSessionId: { $in: sessionIds }, ...shopFilter(req), $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] }).lean();
+  const orders     = await Order.find({ posSessionId: { $in: sessionIds }, ...shopFilter(req), $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] })
+      .populate('items.product', 'name')
+    .populate('items.size', 'displayName colorName optionName')
+    .lean();
 
   const completed  = orders.filter(settled);
   const voided     = orders.filter((o) => o.isVoided || o.status === 'voided');
@@ -243,7 +266,10 @@ exports.getReportSummary = asyncHandler(async (req, res) => {
   }
 
   const sessionIds = sessions.map((s) => s._id);
-  const orders     = await Order.find({ posSessionId: { $in: sessionIds }, ...shopFilter(req), $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] }).lean();
+  const orders     = await Order.find({ posSessionId: { $in: sessionIds }, ...shopFilter(req), $or: [{ tenant: tenantId }, { 'items.tenant': tenantId }] })
+      .populate('items.product', 'name')
+    .populate('items.size', 'displayName colorName optionName')
+    .lean();
 
   const completed  = orders.filter(settled);
   const voided     = orders.filter((o) => o.isVoided || o.status === 'voided');
@@ -289,3 +315,7 @@ exports.getReportSummary = asyncHandler(async (req, res) => {
     },
   });
 });
+
+// Exposed for unit tests (posReportVariantParity.test.js) — the Z/daily/range
+// breakdown contract is pinned there without booting a router.
+exports.buildProductBreakdown = buildProductBreakdown;

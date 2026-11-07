@@ -27,6 +27,7 @@ import {
   PiArrowUUpLeftDuotone,
   PiPackageDuotone,
   PiClipboardTextDuotone,
+  PiWineDuotone,
 } from 'react-icons/pi';
 
 // ─── Plan hierarchy ──────────────────────────────────────────────────────────
@@ -230,6 +231,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     href: routes.eCommerce.orders,
     icon: <PiReceiptDuotone />,
   },
+  { name: 'Merchant fulfillment', href: '/merchant-orders', icon: <PiReceiptDuotone /> },
   {
     name: 'Reviews',
     href: routes.eCommerce.reviews,
@@ -346,8 +348,12 @@ export const tenantMenuItems: TenantMenuEntry[] = [
 
   // ─── Settings ───────────────────────────────────────────────
   { label: 'Settings' },
+  { name: 'Market enrollment', href: '/settings/market-enrollment', icon: <PiGearDuotone />, minRole: 'tenant_admin' },
+  { name: 'Sales channels', href: '/settings/sales-channels', icon: <PiGearDuotone />, minRole: 'tenant_admin' },
   { name: 'Document templates', href: routes.documentTemplates, icon: <PiFileTextDuotone />, minRole: 'tenant_admin' },
   { name: 'API keys', href: '/settings/api-keys', icon: <PiGearDuotone />, minRole: 'tenant_admin' },
+  { name: 'Complete existing visits', href: '/venue-completion', icon: <PiClipboardTextDuotone /> },
+  ...(process.env.NEXT_PUBLIC_VENUE_EXPERIENCE_ENABLED === 'true' ? [{ name: 'Venue workspace', href: '/venue', icon: <PiWineDuotone /> }] : []),
   { name: 'Venue bookings', href: '/bookings', icon: <PiClipboardTextDuotone />, minRole: 'tenant_admin' },
   {
     name: 'Settings',

@@ -16,7 +16,9 @@ import {
   availableQty,
   stockStatus,
   STOCK_STATUS_LABEL,
+  sizeRowLabel,
 } from './warehouse-analysis-helpers';
+import { HEX_PATTERN } from '../point-of-sale/components/pos-size-color';
 
 const STATUS_BADGE: Record<string, string> = {
   in: 'bg-emerald-100 text-emerald-700',
@@ -69,6 +71,26 @@ function SortIcon({
 }
 
 const rowValue = (r: StockRow) => (r.currentQuantity || 0) * (r.costPrice || 0);
+
+/**
+ * Discrete colour dot on drill rows (pos-size-color POSColorDot pattern,
+ * DRI-17): only renders when the row's Size carries a validated hex, with the
+ * colour name as title. Rows without variant data render exactly as before.
+ */
+export function StockRowColorDot({ row }: { row: StockRow }) {
+  if (!row.colorHexCode || !HEX_PATTERN.test(row.colorHexCode)) return null;
+  return (
+    <span
+      aria-hidden="true"
+      title={row.colorName || undefined}
+      style={{
+        backgroundColor: row.colorHexCode,
+        borderColor: row.colorHexCode.toLowerCase() === '#ffffff' ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.55)',
+      }}
+      className="ml-1 inline-block h-2 w-2 shrink-0 rounded-full border align-middle"
+    />
+  );
+}
 
 export function StockDrillDrawer({
   rows,
@@ -123,7 +145,9 @@ export function StockDrillDrawer({
           cmp = (a.warehouseName || '').localeCompare(b.warehouseName || '');
           break;
         case 'size':
-          cmp = (a.sizeName || '').localeCompare(b.sizeName || '');
+          // Order by the full identity label (shared size-variant-label util)
+          // so colour/option sibling rows stay distinguishable from one another.
+          cmp = sizeRowLabel(a).localeCompare(sizeRowLabel(b));
           break;
         case 'onHand':
           cmp = (a.currentQuantity || 0) - (b.currentQuantity || 0);
@@ -321,7 +345,10 @@ export function StockDrillDrawer({
                       <td className="max-w-[120px] truncate px-3 py-2.5 text-gray-700">
                         {r.warehouseName}
                       </td>
-                      <td className="px-3 py-2.5 text-gray-600">{r.sizeName}</td>
+                      <td className="px-3 py-2.5 text-gray-600">
+                        {sizeRowLabel(r)}
+                        <StockRowColorDot row={r} />
+                      </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-gray-700">
                         {(r.currentQuantity || 0).toLocaleString()}
                       </td>

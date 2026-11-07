@@ -70,7 +70,13 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const yearStart      = new Date(now.getFullYear(), 0, 1);
 
   const isSuperAdmin   = ['super_admin', 'admin'].includes(req.user.role);
-  const tenantFilter   = isSuperAdmin ? {} : { 'items.tenant': req.user.tenant };
+  const scopedTenant = isSuperAdmin ? null : new (require('mongoose').Types.ObjectId)(String(req.user.tenant));
+  const tenantFilter = isSuperAdmin ? {} : { 'items.tenant': scopedTenant };
+  const aggregateOrders = pipeline => Order.aggregate(isSuperAdmin ? pipeline : [pipeline[0],
+    { $set: { items: { $filter: { input: '$items', as: 'line', cond: { $eq: ['$$line.tenant', scopedTenant] } } } } },
+    { $set: { totalAmount: { $sum: { $map: { input: '$items', as: 'line', in: { $subtract: [{ $ifNull: ['$$line.itemSubtotal', 0] }, { $ifNull: ['$$line.discountAmount', 0] }] } } } } } },
+    ...pipeline.slice(1)]);
+
   const spTenantFilter = isSuperAdmin ? {} : { tenant: req.user.tenant };
   // Only count orders originating from the ecommerce platform (web storefront / mobile app).
   // POS orders (source:'pos') and manual sales-module orders (source:'manual') are excluded.
@@ -105,31 +111,31 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   ] = await Promise.all([
 
     // 1. This period gross revenue + orders
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$totalAmount' } } },
     ]),
 
     // 2. Previous period gross revenue + orders
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: prevStart, $lte: prevEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$totalAmount' } } },
     ]),
 
     // 3. Today
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: todayStart, $lte: todayEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$totalAmount' } } },
     ]),
 
     // 4. Yesterday
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: yesterdayStart, $lte: yesterdayEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$totalAmount' } } },
     ]),
 
     // 5. 7-day daily sparkline
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: sevenDaysAgo }, status: { $in: ACTIVE_STATUSES } } },
       { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$placedAt' } }, orders: { $sum: 1 }, revenue: { $sum: '$totalAmount' } } },
       { $sort: { _id: 1 } },
@@ -139,20 +145,20 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     Order.countDocuments({ ...tenantFilter, ...sourceFilter, status: 'pending' }),
 
     // 7. 12-month sales
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: startOf(addMonths(now, -11), 'month') }, status: { $in: ACTIVE_STATUSES } } },
       { $group: { _id: { year: { $year: '$placedAt' }, month: { $month: '$placedAt' } }, revenue: { $sum: '$totalAmount' }, orders: { $sum: 1 } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
 
     // 8. Status breakdown (selected period)
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd } } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]),
 
     // 9. Payment method breakdown (selected period)
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd } } },
       { $group: { _id: '$paymentMethod', count: { $sum: 1 }, total: { $sum: '$totalAmount' } } },
       { $sort: { count: -1 } },
@@ -161,10 +167,10 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     // 10. Top 8 products sold *within the selected window*.
     //     Previously this read SubProduct.totalSold, a lifetime counter, so the
     //     widget never reflected any time period at all.
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
-      ...(isSuperAdmin ? [] : [{ $match: { 'items.tenant': req.user.tenant } }]),
+      ...(isSuperAdmin ? [] : [{ $match: { 'items.tenant': scopedTenant } }]),
       { $match: { 'items.subproduct': { $exists: true, $ne: null } } },
       { $group: {
         _id:     '$items.subproduct',
@@ -192,7 +198,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     SubProduct.countDocuments({ ...spTenantFilter, stockStatus: { $in: ['low_stock', 'out_of_stock'] } }),
 
     // 13. New vs registered orders per month this year
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: yearStart }, status: { $in: ACTIVE_STATUSES } } },
       { $group: {
         _id: { month: { $month: '$placedAt' }, isGuest: { $cond: [{ $ifNull: ['$user', false] }, false, true] } },
@@ -202,7 +208,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     ]),
 
     // 14. Profit this period — all active orders (same basis as revenue stats)
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
@@ -221,7 +227,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     ]),
 
     // 15. Previous period profit (for % change)
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: prevStart, $lte: prevEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
@@ -239,7 +245,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     ]),
 
     // 16. Monthly profit trend (12 months, all active orders)
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: startOf(addMonths(now, -11), 'month') }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
@@ -258,7 +264,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     ]),
 
     // 17. Top vendors (selected period)
-    Order.aggregate([
+    aggregateOrders([
       { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $match: { 'items.tenant': { $exists: true, $ne: null } } },
@@ -362,6 +368,10 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     return {
       id:          row._id,
       name:        row.prod?.name ?? sp.sku ?? 'Unknown product',
+      // Central catalog slug for deep links to the public product page.
+      // The products $lookup projects no fields, so the doc (slug included)
+      // is already here; an unmatched product doc degrades to ''.
+      productSlug: row.prod?.slug ?? '',
       image:       row.prod?.images?.[0]?.url ?? null,
       sku:         sp.sku ?? '',
       sold:        row.sold ?? 0,
@@ -382,7 +392,8 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   });
 
   // ── Recent orders ────────────────────────────────────────────────────────
-  const recentOrdersList = recentOrdersAgg.map(o => {
+  const recentOrdersList = recentOrdersAgg.map(raw => {
+    const o = isSuperAdmin ? raw : require('../services/orderAccess').merchantSummary(raw, req.user.tenant);
     // Collect unique vendor names on this order
     const vendors = [...new Set(
       (o.items || [])

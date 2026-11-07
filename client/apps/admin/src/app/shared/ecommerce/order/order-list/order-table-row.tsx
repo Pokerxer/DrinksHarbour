@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { PiCaretRightBold } from 'react-icons/pi';
+import { PiCaretRightBold, PiGiftBold } from 'react-icons/pi';
 import type { Order } from '@/services/order.service';
 import {
   SOURCE_CONFIG,
@@ -13,6 +13,7 @@ import {
   fmt,
   fmtDate,
 } from './order-meta';
+import { formatRequestedDeliveryDate, getGift } from '../order-view/gift';
 
 /** One table row (plus its per-vendor payout sub-row). The vendor map shows
  *  what the platform owes each vendor on this order — the operational reason a
@@ -27,6 +28,7 @@ export default function OrderTableRow({
   onView: (id: string) => void;
 }) {
   const { name, contact } = customerOf(order);
+  const gift = getGift(order);
   const itemCount = order.items.reduce((s, it) => s + it.quantity, 0);
   const src = SOURCE_CONFIG[order.source ?? 'web'] ?? SOURCE_CONFIG.web;
   const open = () => onView(order._id);
@@ -73,6 +75,12 @@ export default function OrderTableRow({
             {src.label}
             {order.receiptNumber ? ` · ${order.receiptNumber}` : ''}
           </span>
+          {gift && (
+            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+              <PiGiftBold className="h-3 w-3" aria-hidden />
+              Gift
+            </span>
+          )}
         </td>
         <td className="px-5 py-4">
           <p className="text-sm font-semibold text-gray-900">{name}</p>
@@ -104,8 +112,17 @@ export default function OrderTableRow({
         <td className="px-5 py-4">
           <MethodBadge method={order.paymentMethod} />
         </td>
-        <td className="whitespace-nowrap px-5 py-4 text-xs text-gray-500">
+        <td className="px-5 py-4 text-xs text-gray-500">
           {fmtDate(order.placedAt || order.createdAt)}
+          {gift && (
+            <span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-amber-600 dark:text-amber-400">
+              <PiGiftBold className="h-3 w-3 shrink-0" aria-hidden />
+              Req.{' '}
+              {formatRequestedDeliveryDate(gift.requestedDeliveryDate, {
+                short: true,
+              })}
+            </span>
+          )}
         </td>
         <td className="px-5 py-4 text-right">
           <PiCaretRightBold className="inline h-4 w-4 text-gray-300 transition-colors group-hover:text-gray-900" />

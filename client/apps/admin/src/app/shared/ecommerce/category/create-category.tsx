@@ -17,6 +17,7 @@ import {
 } from 'rizzui';
 import cn from '@core/utils/class-names';
 import { Form } from '@core/ui/form';
+import CatalogFormEffects from '../catalog-form-effects';
 import {
   CategoryFormInput,
   categoryFormSchema,
@@ -33,6 +34,7 @@ import toast from 'react-hot-toast';
 import { PiTrashBold, PiUploadSimpleBold } from 'react-icons/pi';
 import BannerLinkPicker from '@/app/shared/ecommerce/banner/banner-link-picker';
 import type { BannerLinkType } from '@/types/banner.types';
+import { INDUSTRY_SELECT_OPTIONS } from '@/utils/industries';
 
 const QuillEditor = dynamic(() => import('@core/ui/quill-editor'), {
   ssr: false,
@@ -113,6 +115,19 @@ const STATUS_OPTIONS = [
   { value: 'hidden', label: 'Hidden' },
   { value: 'coming_soon', label: 'Coming Soon' },
 ];
+
+// Industry taxonomy scope (2026-11-02, additive): blank '' = legacy/global —
+// the category stays visible to every business, exactly like documents created
+// before this field existed (server semantics in constants/industries.js).
+// The option label is user-first ("default" not "legacy/global") and the
+// persistent helper below both selects explains what the blank value means.
+const INDUSTRY_OPTIONS = [
+  { value: '', label: 'All industries (default)' },
+  ...INDUSTRY_SELECT_OPTIONS,
+];
+
+const INDUSTRY_HELPER_TEXT =
+  'Categories with no industry are visible to every business. Set one to restrict who sees this category.';
 
 const DEFAULT_SORT_OPTIONS = [
   { value: 'relevance', label: 'Relevance' },
@@ -410,6 +425,7 @@ export default function CreateCategory({
         tagline: data.tagline || '',
         subType: data.subType || '',
         alcoholCategory: data.alcoholCategory || 'alcoholic',
+        industry: data.industry || '',
         description: data.description || '',
         shortDescription: data.shortDescription || '',
         status: data.status || 'draft',
@@ -469,6 +485,7 @@ export default function CreateCategory({
         defaultValues: {
           status: 'draft',
           alcoholCategory: 'alcoholic',
+          industry: '',
           displayOrder: 999,
           isFeatured: false,
           isTrending: false,
@@ -502,86 +519,53 @@ export default function CreateCategory({
             setValue
           );
 
-        // Surface WHY a submit was refused — fields without a visible error
-        // slot (e.g. the Quill description) previously failed silently.
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        useEffect(() => {
-          if (!submitCount || Object.keys(errors).length === 0) return;
-          const [k, v] = Object.entries(errors)[0] as any;
-          toast.error(`Cannot save — ${k}: ${v?.message || 'invalid value'}`);
-        }, [submitCount]);
+        const effects = (
+          <CatalogFormEffects
+            name={nameValue}
+            id={id}
+            manualSlug={slugManuallyEdited}
+            slugify={slugify}
+            setValue={setValue}
+            errors={errors}
+            submitCount={submitCount}
+            suggestions={aiSuggestions}
+            clearSuggestions={() => setAiSuggestions(null)}
+            draft={aiDraft ?? null}
+            draftFields={[
+              'name',
+              'slug',
+              'displayName',
+              'tagline',
+              'shortDescription',
+              'type',
+              'subType',
+              'alcoholCategory',
+              'description',
+              'metaTitle',
+              'seoH1',
+              'metaDescription',
+              'metaKeywords',
+              'canonicalUrl',
+              'color',
+              'icon',
+              'status',
+            ]}
+            parentField="parentCategory"
+            allowedValues={{
+              type: TYPE_OPTIONS.map((o) => o.value),
+              alcoholCategory: ALCOHOL_CATEGORY_OPTIONS.map((o) => o.value),
+              status: STATUS_OPTIONS.map((o) => o.value),
+            }}
+            defaults={{ alcoholCategory: 'alcoholic', status: 'draft' }}
+            requiredDraftField={{
+              name: 'type',
+              message:
+                'AI did not return a valid Type — please select one before saving',
+            }}
+          />
+        );
 
-        // Auto-generate slug from name unless manually edited
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        useEffect(() => {
-          if (!slugManuallyEdited.current && nameValue && !id) {
-            setValue('slug', slugify(nameValue), { shouldValidate: false });
-          }
-        }, [nameValue]);
-
-        // Apply AI suggestions when available (never touch name/slug/parent)
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        useEffect(() => {
-          if (!aiSuggestions) return;
-          Object.entries(aiSuggestions).forEach(([k, v]) => {
-            if (k === 'name' || k === 'slug' || k === 'parentCategory') return;
-            if (v === '' || v === null || v === undefined) return;
-            setValue(k as any, v, { shouldValidate: true, shouldDirty: true });
-          });
-          setAiSuggestions(null);
-        }, [aiSuggestions]);
-
-        useEffect(() => {
-          if (!aiDraft) return;
-          slugManuallyEdited.current = true;
-          const VALID_TYPES = TYPE_OPTIONS.map((o) => o.value);
-          const VALID_ALCOHOL = ALCOHOL_CATEGORY_OPTIONS.map((o) => o.value);
-          const VALID_STATUS = STATUS_OPTIONS.map((o) => o.value);
-          const coerce = (f: string, v: any) => {
-            if (f === 'type') return VALID_TYPES.includes(v) ? v : '';
-            if (f === 'alcoholCategory')
-              return VALID_ALCOHOL.includes(v) ? v : 'alcoholic';
-            if (f === 'status') return VALID_STATUS.includes(v) ? v : 'draft';
-            return v;
-          };
-          const fields = [
-            'name',
-            'slug',
-            'displayName',
-            'tagline',
-            'shortDescription',
-            'type',
-            'subType',
-            'alcoholCategory',
-            'description',
-            'metaTitle',
-            'seoH1',
-            'metaDescription',
-            'metaKeywords',
-            'canonicalUrl',
-            'color',
-            'icon',
-            'status',
-          ];
-          fields.forEach((f) => {
-            const v = aiDraft[f];
-            if (v === undefined || v === null) return;
-            const coerced = coerce(f, v);
-            if (coerced === '') return;
-            setValue(f as any, coerced, {
-              shouldValidate: true,
-              shouldDirty: true,
-            });
-          });
-          if (!aiDraft.type || !VALID_TYPES.includes(aiDraft.type)) {
-            toast.error(
-              'AI did not return a valid Type — please select one before saving'
-            );
-          }
-          toast.success('AI draft applied — review and publish');
-        }, [aiDraft]);
-
-        return isModalView ? (
+        const content = isModalView ? (
           // ── MODAL layout ────────────────────────────────────────────────────
           <>
             <div className="space-y-5 pb-4">
@@ -639,6 +623,27 @@ export default function CreateCategory({
                       }
                       label="Alcohol Category"
                       placeholder="Select alcohol category"
+                    />
+                  )}
+                />
+                <Controller
+                  name="industry"
+                  control={control}
+                  render={({ field: { onChange, value } }) => (
+                    <Select
+                      options={INDUSTRY_OPTIONS}
+                      value={(() => {
+                        const found = INDUSTRY_OPTIONS.find(
+                          (o) => o.value === value
+                        );
+                        return found ?? '';
+                      })()}
+                      onChange={(opt: SelectOption) =>
+                        onChange((opt as any).value ?? '')
+                      }
+                      label="Industry"
+                      placeholder="All industries (default)"
+                      helperText={INDUSTRY_HELPER_TEXT}
                     />
                   )}
                 />
@@ -820,6 +825,27 @@ export default function CreateCategory({
                         }
                         label="Alcohol Category"
                         placeholder="Select alcohol category"
+                      />
+                    )}
+                  />
+                  <Controller
+                    name="industry"
+                    control={control}
+                    render={({ field: { onChange, value } }) => (
+                      <Select
+                        options={INDUSTRY_OPTIONS}
+                        value={(() => {
+                          const found = INDUSTRY_OPTIONS.find(
+                            (o) => o.value === value
+                          );
+                          return found ?? '';
+                        })()}
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value ?? '')
+                        }
+                        label="Industry"
+                        placeholder="All industries (default)"
+                        helperText={INDUSTRY_HELPER_TEXT}
                       />
                     )}
                   />
@@ -1297,6 +1323,12 @@ export default function CreateCategory({
               </div>
             </div>
           </div>
+        );
+        return (
+          <>
+            {effects}
+            {content}
+          </>
         );
       }}
     </Form>

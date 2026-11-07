@@ -186,9 +186,16 @@ SalesOrderSchema.index({ tenant: 1, createdAt: -1 });
 SalesOrderSchema.index({ tenant: 1, salespersonUser: 1, createdAt: -1 });
 SalesOrderSchema.index({ tenant: 1, soNumber: 1 }, { unique: true });
 // Marketplace bridge idempotency: one SalesOrder per (marketplace order,
-// tenant). Sparse so hand-created documents (marketplaceOrderId: null) are
-// exempt from the uniqueness rule.
-SalesOrderSchema.index({ tenant: 1, marketplaceOrderId: 1 }, { unique: true, sparse: true });
+// tenant). A sparse compound index still includes manual orders because they
+// have a tenant, so filter on a real marketplace order ID instead.
+SalesOrderSchema.index(
+  { tenant: 1, marketplaceOrderId: 1 },
+  {
+    name: 'sales_marketplace_order_unique_v2',
+    unique: true,
+    partialFilterExpression: { marketplaceOrderId: { $type: 'objectId' } },
+  }
+);
 
 require('../services/salesSalesperson').protectFulfillmentAttribution(SalesOrderSchema);
 

@@ -1,0 +1,33 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict'),mongoose=require('mongoose'),fs=require('node:fs'),path=require('node:path');
+const {uri,connectVenueMongo}=require('./helpers/venueMongo');
+test('merchant queue pages and counts matching own work before pagination, including work older than100 completed rows',{skip:!uri},async t=>{
+ const source=path.resolve(__dirname,'../services/merchantFulfillment/queue.js');const service=fs.existsSync(source)?require(source):{};
+ assert.equal(typeof service.page,'function','scoped queue pagination exists');
+ await connectVenueMongo(t,'merchant_queue');
+ const oid=()=>new mongoose.Types.ObjectId(),tenant=oid(),foreign=oid(),parent=oid(),location=oid();
+ const Child=require('../models/MerchantOrder');
+ const rows=[];
+ for(const [prefix,count,owner,state,date]of[['closed',130,tenant,'delivered','2026-10-25'],['open',40,tenant,'pending','2026-10-01'],['foreign',90,foreign,'pending','2026-10-26']])for(let index=0;index<count;index++)rows.push({_id:`${prefix}-${index}`,order:parent,tenant:owner,location,currency:'NGN',state,lines:[],createdAt:new Date(new Date(date).getTime()-index)});
+ await Child.collection.insertMany(rows);
+ const actor={_id:oid(),role:'tenant_owner',tenant};
+ const first=await service.page(actor,{}),second=await service.page(actor,{page:'2'});
+ assert.deepEqual([first.total,first.page,first.pages,first.limit,first.orders.length],[40,1,2,25,25]);
+ assert.equal(second.orders.length,15);assert.equal(new Set([...first.orders,...second.orders].map(row=>row._id)).size,40);
+ assert.equal([...first.orders,...second.orders].every(row=>row._id.startsWith('open-')&&String(row.tenant)===String(tenant)),true);
+ assert.equal((await service.page(actor,{state:'closed'})).total,130);
+ assert.equal((await service.page(actor,{state:'all',limit:100})).total,170);
+ assert.equal((await service.page(actor,{state:'pending',page:3})).orders.length,0);
+ for(const input of[{page:0},{page:'2x'},{page:10001},{limit:101},{limit:0},{state:'unknown'},{tenant:String(foreign)},{page:['1','2']}])await assert.rejects(()=>service.page(actor,input),error=>error.statusCode===400);
+ await assert.rejects(()=>service.page({_id:oid(),role:'customer'},{}),error=>error.statusCode===403);
+ const express=require('express'),jwt=require('jsonwebtoken'),user=oid(),previous=process.env.JWT_SECRET;
+ process.env.JWT_SECRET='synthetic-merchant-queue-only';t.after(()=>{if(previous===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previous;});
+ await require('../models/User').collection.insertOne({_id:user,tenant,role:'tenant_owner',status:'active'});
+ const app=express();app.use('/',require('../routes/merchant-operations.routes'));app.use((error,req,res,next)=>res.status(error.statusCode||500).json({message:error.message}));
+ const server=await new Promise(resolve=>{const listener=app.listen(0,'127.0.0.1',()=>resolve(listener));});t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const call=async(query,authorized=true)=>{const response=await fetch(`http://127.0.0.1:${server.address().port}/merchant-orders${query}`,{headers:authorized?{Authorization:`Bearer ${jwt.sign({userId:String(user)},process.env.JWT_SECRET)}`}:{}});return{status:response.status,cache:response.headers.get('cache-control'),body:await response.json()};};
+ assert.equal((await call('',false)).status,401);
+ const response=await call('?page=2');assert.equal(response.status,200);assert.equal(response.body.data.total,40);assert.equal(response.body.data.orders.length,15);assert.match(response.cache,/no-store/);
+ assert.equal((await call('?tenant='+foreign)).status,400);
+
+});

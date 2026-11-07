@@ -8,6 +8,10 @@ const cart = require('../services/storefrontCart.service');
 const checkout = require('../services/storefrontCheckout.service');
 const settlement = require('../services/storefrontSettlement');
 router.use((req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
+router.post('/webhooks/paystack/:account', asyncHandler(async (req, res) => {
+  await require('../services/storefrontDirectWebhook').receive({ raw: req.rawBody, signature: req.headers['x-paystack-signature'], account: req.params.account, event: req.body });
+  res.json({ received: true });
+}));
 router.use('/customers', require('./tenantCustomer.routes'));
 router.get('/store', requireStorefrontKey, (req, res) => {
   res.json({ success: true, data: catalog.publicStore(req.integration.tenant) });
@@ -25,9 +29,19 @@ router.post('/cart/quote', requireCheckoutKey, asyncHandler(async (req, res) => 
   res.json({ success: true, data: cart.publicQuote(await cart.quoteCart(req.integration.tenant, req.body)) });
 }));
 router.post('/checkout', requireCheckoutKey, asyncHandler(async (req, res) => {
-  const data = await checkout.createCheckout(req.integration.tenant, req.integration.key, req.body, req.headers['idempotency-key']);
+  const customer = req.headers['x-customer-token'] ? await require('../services/tenantCustomer.service').me(req.integration.tenant, req.headers['x-customer-token']) : null;
+  const data = await checkout.createCheckout(req.integration.tenant, req.integration.key, req.body, req.headers['idempotency-key'], customer ? { customerId: customer._id } : {});
   res.set('Location', `/api/integrations/v1/checkout/${data.id}`);
   res.status(['initializing', 'pending', 'uncertain'].includes(data.status) ? 202 : data.replayed ? 200 : 201).json({ success: true, data });
+}));
+router.get('/orders', requireCheckoutKey, asyncHandler(async (req, res) => {
+  res.json({ success: true, ...await require('../services/storefrontOrders').listOrders(req.integration.tenant, req.integration.key, req.query) });
+}));
+router.get('/reports/sales', requireCheckoutKey, asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await require('../services/storefrontOrders').salesReport(req.integration.tenant, req.integration.key, req.query) });
+}));
+router.get('/orders/:id', requireCheckoutKey, asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await require('../services/storefrontOrders').getOrder(req.integration.tenant, req.integration.key, req.params.id) });
 }));
 router.get('/checkout/:id', requireCheckoutKey, asyncHandler(async (req, res) => {
   res.json({ success: true, data: await checkout.getCheckout(req.integration.tenant, req.integration.key, req.params.id) });

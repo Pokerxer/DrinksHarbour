@@ -14,6 +14,7 @@ import PeerActions from '../cycle-workspace/peer-actions';
 import CycleSetup from './cycle-setup';
 import ParticipantTable from './participant-table';
 import ExaminationSetup from '../examination/setup';
+import CycleResultsExport from '../cycle-results-export';
 import ExaminationProgress from '../examination/progress';
 export default function PeerCyclePanel({
   cycle: initial,
@@ -94,13 +95,18 @@ export default function PeerCyclePanel({
           }
           description="A shared view of colleague ratings, completion and bonus allocations."
           actions={
-            <button
-              onClick={load}
-              disabled={busy}
-              className="rounded-xl border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
-            >
-              Refresh progress
-            </button>
+            <div className="flex flex-wrap items-start gap-2">
+              {cycle.status === 'closed' && (
+                <CycleResultsExport cycleId={cycle._id} disabled={busy} />
+              )}
+              <button
+                onClick={load}
+                disabled={busy}
+                className="rounded-xl border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Refresh progress
+              </button>
+            </div>
           }
         />
       }
@@ -198,7 +204,7 @@ export default function PeerCyclePanel({
                   <p className="mt-1 text-xs text-gray-500">
                     {cycle.status === 'closed'
                       ? progress.examination
-                        ? 'Final combined scores determine bonuses. Component weights are equal; self-ratings are excluded.'
+                        ? 'Final combined scores determine bonuses. Open an employee’s score breakdown to see component weights.'
                         : 'Final scores average all eligible appraisers. Self-ratings are excluded.'
                       : `${progress.submitted} of ${progress.appraiserTotal ?? progress.total} appraisers submitted`}
                   </p>
@@ -208,6 +214,15 @@ export default function PeerCyclePanel({
                 </span>
               </div>
               <ParticipantTable
+                cycleId={cycle._id}
+                examAttempts={
+                  cycle.status === 'collecting'
+                    ? progress.examination?.attempts
+                    : undefined
+                }
+                cycleRevision={progress.revision}
+                onExamReset={load}
+                disabled={busy}
                 participants={progress.participants}
                 closed={cycle.status === 'closed'}
               />

@@ -14,6 +14,7 @@ const adminRoles = ['super_admin', 'admin'];
 // Admin CRUD routes (protected) — must come BEFORE /:id wildcard routes
 router.post('/admin/ai-fill', protect, authorize(...adminRoles), brandController.fillWithAI);
 router.get('/admin', protect, authorize(...adminRoles), brandController.getAdminBrands);
+router.get('/admin/:id', protect, authorize(...adminRoles), brandController.getAdminBrandById);
 router.post('/admin', protect, authorize(...adminRoles), uploadBrandImages, brandController.createAdminBrand);
 router.put('/admin/:id', protect, authorize(...adminRoles), uploadBrandImages, brandController.updateAdminBrand);
 router.delete('/admin/:id', protect, authorize(...adminRoles), brandController.deleteAdminBrand);

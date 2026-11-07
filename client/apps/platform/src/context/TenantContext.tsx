@@ -48,4 +48,22 @@ export const TenantProvider: React.FC<{
 
 export const useTenant = () => useContext(TenantContext);
 
+/**
+ * DRI-9: hostname→tenant-site rule, mirroring middleware.ts extractTenantSlug
+ * verbatim. Client-side escape hatch for providers (e.g. CompareProvider)
+ * that sit OUTSIDE the layout's tenant-aware TenantProvider and therefore
+ * cannot see its context — the provider chain in app/GlobalProvider.tsx wraps
+ * a tenant-default TenantProvider outermost, so useTenant() there always
+ * reports the main site. SSR callers must not rely on this — no `headers()`
+ * here, direct imports from client code only (window access stays in the
+ * caller).
+ */
+export function isTenantHost(hostname: string): boolean {
+  const RESERVED_SUBDOMAINS = ['www', 'drinksharbour', 'admin', 'platform', 'api', 'localhost', '127'];
+  const host = hostname.split(':')[0].toLowerCase();
+  if (RESERVED_SUBDOMAINS.some((r) => host === r || host.startsWith(`${r}.`))) return false;
+  const match = host.match(/^([a-z0-9-]+)\.(?:drinksharbour\.com|localhost)$/);
+  return !!(match && !RESERVED_SUBDOMAINS.includes(match[1]));
+}
+
 export default TenantContext;

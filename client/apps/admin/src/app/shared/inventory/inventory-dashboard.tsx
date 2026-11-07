@@ -38,6 +38,7 @@ import ChartSection from './inventory-dashboard-chart-section';
 import OperationsGrid from './inventory-dashboard-operations';
 import DashboardPanels from './inventory-dashboard-panels';
 import InventoryHeader, { ErrorBanner } from './inventory-dashboard-header';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 
 const ngn = new Intl.NumberFormat('en-NG', {
   style: 'currency',
@@ -78,7 +79,9 @@ export default function InventoryDashboard() {
         .filter((row) => ['low', 'out'].includes(stockHealth(row)))
         .map((row) => ({
           _id: row._id,
-          product: { name: `${row.productName} · ${row.sizeName} · ${row.warehouseName}` },
+          product: {
+            name: `${row.productName} · ${flatRowSizeLabel(row) || row.sizeName} · ${row.warehouseName}`,
+          },
           sku: row.sku,
           availableStock: row.flags?.available ?? finite(row.currentQuantity),
           reorderPoint: row.flags?.reorderPoint ?? finite(row.minStockLevel),

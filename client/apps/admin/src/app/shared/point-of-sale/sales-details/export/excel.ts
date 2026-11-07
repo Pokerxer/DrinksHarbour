@@ -8,7 +8,7 @@ import type {
   GroupExportCol,
 } from '../types';
 
-function getLineCellExcel(r: LineRow, key: LineExportCol): string | number {
+export function getLineCellExcel(r: LineRow, key: LineExportCol): string | number {
   switch (key) {
     case 'date':
       return fmtDateTime(r.date);
@@ -67,7 +67,7 @@ function getLineCellExcel(r: LineRow, key: LineExportCol): string | number {
   }
 }
 
-function getGroupCellExcel(r: GroupRow, key: GroupExportCol): string | number {
+export function getGroupCellExcel(r: GroupRow, key: GroupExportCol): string | number {
   // Measured on the group's costed revenue; absent, not zero, when nothing in
   // the group carries a cost basis.
   const mg = r.costedRevenue > 0 ? +((r.profit / r.costedRevenue) * 100).toFixed(1) : 'n/a';

@@ -177,10 +177,20 @@ async function buildSearchQuery(params) {
     includePending = false, // New parameter
   } = params;
   
-  // For super admin, include both approved and pending products
+  // For super admin, include both approved and pending products. Public search
+  // additionally excludes tenant-private catalogue identities unconditionally
+  // (legacy rows without the scope field always match; see
+  // constants/catalogScope.js).
+  //
+  // The admin branch is INTENTIONALLY unfiltered by scope: it is the review
+  // queue and must see tenant-private identities awaiting promotion. It is
+  // only reachable via the internal includePending param, which
+  // validateSearchParams() strips from every external caller — any future
+  // caller must gate it server-side on super-admin authority before passing it
+  // (review 2026-11-02 finding A4).
   const baseQuery = includePending
     ? { status: { $in: ['approved', 'pending'] } }
-    : { status: 'approved', isPublished: true };
+    : { status: 'approved', isPublished: true, publicationScope: { $ne: 'tenant_private' } };
   
   // Text search
   if (query && query.trim()) {
@@ -426,13 +436,13 @@ function buildAggregationPipeline(baseQuery, options) {
               'tenant.city': 1,
               'tenant.state': 1,
               'tenant.country': 1,
-              'tenant.revenueModel': 1,
+              'tenant.revenueModel': 1, 'tenant.sellingPriceMarkupPercentage': 1,
               'tenant.markupPercentage': 1,
               'tenant.commissionPercentage': 1,
               'tenant.defaultCurrency': 1,
               sku: 1,
               costPrice: 1,
-              baseSellingPrice: 1, commissionPriceOverride: 1,
+              baseSellingPrice: 1, sellingPriceMarkupOverridePct: 1, commissionPriceOverride: 1,
               discount: 1,
               discountType: 1,
               sizes: 1,

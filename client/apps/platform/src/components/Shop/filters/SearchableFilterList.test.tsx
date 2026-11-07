@@ -3,6 +3,16 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import SearchableFilterList from './SearchableFilterList';
 afterEach(cleanup);
+it('keeps long lists bounded and scrollable without generated utility CSS', () => {
+  render(<List />);
+  const region = screen.getByRole('region', { name: 'Brands options' });
+  // Live CSS lacks the overflow utility: a height cap alone lets options
+  // paint over neighbouring sections. All options must remain reachable.
+  const style = getComputedStyle(region);
+  expect(['auto', 'scroll']).toContain(style.overflowY);
+  expect(style.maxHeight).toBe('256px');
+  expect(screen.getAllByRole('checkbox')).toHaveLength(options.length);
+});
 const options = [...Array.from({ length: 35 }, (_, i) => `Brand ${i + 1}`), 'Appleton Estate'];
 function List() {
   const [selected, setSelected] = useState<string[]>(['Brand 1']);

@@ -5,22 +5,27 @@ export default function ReviewTargets({
   disabled,
   commission = false,
   rate,
+  sellingMarkup = false,
 }: {
   targets: PriceTargets;
   onChange: (targets: PriceTargets) => void;
   disabled: boolean;
   commission?: boolean;
   rate?: number;
+  sellingMarkup?: boolean;
 }) {
   const invalid = Object.values(targets).some(
     (v) =>
-      v.trim() && (!Number.isFinite(Number(v)) || Number(v) < 0 || Number(v) >= 100)
+      v.trim() &&
+      (!Number.isFinite(Number(v)) || Number(v) < 0 || Number(v) >= 100)
   );
   const custom = !!(targets.platform.trim() || targets.tenant.trim());
   return (
     <details className="group rounded-xl border border-gray-200 bg-white">
       <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-2 rounded-xl p-4 focus-visible:ring-2 focus-visible:ring-blue-500">
-        <span className="text-sm font-semibold text-gray-800">Margin targets</span>
+        <span className="text-sm font-semibold text-gray-800">
+          Margin targets
+        </span>
         <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-500">
           {custom ? 'Custom targets' : 'Existing settings'}
         </span>
@@ -34,14 +39,18 @@ export default function ReviewTargets({
       </summary>
       <div className="border-t border-gray-100 p-4 sm:p-5">
         <p className="text-sm leading-6 text-gray-500">
-          Adjust these targets to explore suggestions. Tenant revenue terms remain
-          unchanged.
+          Adjust these targets to explore suggestions. Tenant revenue terms
+          remain unchanged.{' '}
+          {sellingMarkup &&
+            'A target margin is not the selling-price markup percentage. Suggestions change the product override, not the tenant default.'}
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {[
             [
               'platform',
-              commission ? 'Agreed commission (%)' : 'Platform target margin (%)',
+              commission
+                ? 'Agreed commission (%)'
+                : 'Platform target margin (%)',
             ],
             ['tenant', 'Tenant target margin (%)'],
           ].map(([key, label]) => (
@@ -56,7 +65,9 @@ export default function ReviewTargets({
                     : targets[key as keyof PriceTargets]
                 }
                 disabled={disabled || (commission && key === 'platform')}
-                onChange={(e) => onChange({ ...targets, [key]: e.target.value })}
+                onChange={(e) =>
+                  onChange({ ...targets, [key]: e.target.value })
+                }
                 placeholder="Use existing settings for each price"
                 className="mt-1 min-h-11 w-full rounded-lg border border-gray-200 px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />

@@ -8,6 +8,8 @@ import { ActionIcon, Badge, Checkbox, Flex, Text, Tooltip } from 'rizzui';
 import { PiPencilLineBold, PiEyeBold, PiPackageBold } from 'react-icons/pi';
 import cn from '@core/utils/class-names';
 import DeletePopover from '@core/components/delete-popover';
+import { isBeverageProductType } from '@/utils/product-types';
+import PublicationScopeTag from './components/PublicationScopeTag';
 
 export interface ProductListItem {
   _id: string;
@@ -26,6 +28,11 @@ export interface ProductListItem {
   basePrice?: number;
   status: string;
   isPublished: boolean;
+  // Catalogue publication scope (see server/constants/catalogScope.js). The
+  // admin list projection does not return these yet — undefined rows must
+  // render nothing, so this degrades gracefully until the server adds them.
+  publicationScope?: string;
+  owningTenantName?: string;
   totalStock?: number;
   subProductCount?: number;
   variantCount?: number;
@@ -193,9 +200,10 @@ export const productsListColumns = [
     header: 'Details',
     cell: ({ row }) => {
       const { isAlcoholic, abv, volumeMl, originCountry } = row.original;
+      const beverage = isBeverageProductType(row.original.type);
       return (
         <div className="space-y-0.5">
-          {isAlcoholic !== undefined && (
+          {beverage && isAlcoholic !== undefined && (
             <Badge
               color={isAlcoholic ? 'warning' : 'success'}
               variant="flat"
@@ -256,10 +264,16 @@ export const productsListColumns = [
     header: 'Status',
     enableSorting: false,
     cell: ({ row }) => (
-      <StatusBadge
-        status={row.original.status}
-        isPublished={row.original.isPublished}
-      />
+      <div className="flex flex-col items-start gap-1">
+        <StatusBadge
+          status={row.original.status}
+          isPublished={row.original.isPublished}
+        />
+        <PublicationScopeTag
+          publicationScope={row.original.publicationScope}
+          owningTenantName={row.original.owningTenantName}
+        />
+      </div>
     ),
   }),
 

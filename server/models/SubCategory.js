@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
+const { INDUSTRY_VALUES } = require('../constants/industries');
 
 const subCategorySchema = new Schema(
   {
@@ -40,6 +41,19 @@ const subCategorySchema = new Schema(
     
     parentPath: {
       type: String,
+    },
+
+    // ════════════════════════════════════════════════════════════
+    // INDUSTRY SCOPING (2026-11-02, additive)
+    // Same rule as Category.industry: MISSING = legacy/global (visible to
+    // every business); present must be an INDUSTRY value
+    // (constants/industries.js).
+    // ════════════════════════════════════════════════════════════
+    industry: {
+      type: String,
+      enum: INDUSTRY_VALUES,
+      trim: true,
+      index: true,
     },
 
     // ════════════════════════════════════════════════════════════

@@ -1,6 +1,11 @@
 // @ts-nocheck
 'use client';
 
+import { productTypes as catalogTypeOptions } from '@/app/shared/ecommerce/product/create-edit/form-utils';
+import BusinessListView, { useBusinessView } from '@/app/shared/ecommerce/business-catalog/business-list-view';
+import { matchesBusiness } from '@/utils/catalog-business';
+import { isBeverageProductType } from '@/utils/product-types';
+
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -46,8 +51,10 @@ import {
   ProductGridCard,
   ProductGridCardCompact,
   ViewToggle,
+  getApproveCopy,
 } from './components';
 import type { FilterConfig, ViewMode } from './components';
+import { matchesPublicationScope } from './scope-filter';
 import {
   saveProductSearchContext,
   loadProductSearchContext,
@@ -926,7 +933,7 @@ function OdooSearchPanel({
                 onClick={() => setAdvTab(tab)}
                 className={`relative px-4 py-2 text-xs font-medium capitalize transition-colors ${advTab === tab ? 'border-b-2 border-[#b20202] text-[#b20202]' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                {tab}
+                {tab === 'beverage' ? 'Product details' : tab}
               </button>
             ))}
             <div className="ml-auto flex items-center pr-3">
@@ -1084,23 +1091,10 @@ function OdooSearchPanel({
               <div className="space-y-4 p-4">
                 <div>
                   <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                    Beverage Type
+                    Product Type
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { v: 'wine', l: 'Wine🍷' },
-                      { v: 'beer', l: 'Beer🍺' },
-                      { v: 'whiskey', l: 'Whiskey🥃' },
-                      { v: 'vodka', l: 'Vodka🍸' },
-                      { v: 'gin', l: 'Gin🍸' },
-                      { v: 'rum', l: 'Rum🍹' },
-                      { v: 'tequila', l: 'Tequila🌵' },
-                      { v: 'champagne', l: 'Champagne🥂' },
-                      { v: 'soft_drink', l: 'Soft Drink🥤' },
-                      { v: 'juice', l: 'Juice🧃' },
-                      { v: 'water', l: 'Water💧' },
-                      { v: 'cocktail', l: 'Cocktail🍹' },
-                    ].map((o) => (
+                    {catalogTypeOptions.map(({ value: v, label: l }) => ({ v, l })).map((o) => (
                       <button
                         key={o.v}
                         type="button"
@@ -1298,6 +1292,9 @@ const initialFilters: FilterConfig = {
   status: [],
   stockStatus: [],
   isPublished: null,
+  // Visibility (publication-scope) facet — 'all' is the default so legacy
+  // views (rows without the field) are unchanged. See ./scope-filter.ts.
+  publicationScope: 'all',
   stockRange: [0, 0],
   variantsRange: [0, 0],
   hasVariants: null,
@@ -1504,6 +1501,7 @@ function BulkActionsBar({
   onClear,
   onSetStatus,
   onSetPublished,
+  hasPrivateSelection = false,
 }: {
   selectedCount: number;
   totalCount: number;
@@ -1515,7 +1513,16 @@ function BulkActionsBar({
   onClear: () => void;
   onSetStatus: (status: string) => void;
   onSetPublished: (value: boolean) => void;
+  // True when the selection includes a tenant-private product — approving must
+  // say it publishes that identity to the marketplace. Payloads are unchanged;
+  // approving is canonical promotion server-side (constants/catalogScope.js).
+  hasPrivateSelection?: boolean;
 }) {
+  // Copy-only change: plain "Approved" for legacy rows, promotion wording for
+  // tenant-private ones. The API call and payloads stay exactly as today.
+  const approveCopy = getApproveCopy(
+    hasPrivateSelection ? 'tenant_private' : undefined
+  );
   const [actionsOpen, setActionsOpen] = useState(false);
   return (
     <motion.div
@@ -1533,6 +1540,14 @@ function BulkActionsBar({
         <Text className="text-lg font-bold">{selectedCount}</Text>
       </motion.div>
       <Text className="font-semibold">selected</Text>
+
+      {/* Store-only promotion copy (visible only when the selection includes
+          a tenant-private product) */}
+      {approveCopy.explanation && (
+        <span className="max-w-sm text-[11px] leading-snug text-amber-300">
+          {approveCopy.explanation}
+        </span>
+      )}
 
       {/* Select all filtered results (Odoo pattern) */}
       {selectedCount < totalCount && (
@@ -1562,7 +1577,7 @@ function BulkActionsBar({
         <option value="" disabled>
           Set status…
         </option>
-        <option value="approved">Approved</option>
+        <option value="approved">{approveCopy.label}</option>
         <option value="draft">Draft</option>
         <option value="pending">Pending</option>
         <option value="discontinued">Discontinued</option>
@@ -1743,6 +1758,7 @@ export default function ProductsTable({
   classNames?: TableClassNameProps;
   paginationClassName?: string;
 }) {
+  const { business, setBusiness } = useBusinessView();
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
 
@@ -1934,6 +1950,11 @@ export default function ProductsTable({
   }, [sessionStatus, fetchProducts]);
 
   // ── Stats ────────────────────────────────────────────────────────────────────
+  // Status-only by design (minimal change): these counts back the top status
+  // pills/cards, which trigger status-based filtering. The visibility
+  // (publication-scope) facet intentionally does NOT narrow them, so pill
+  // counts stay in sync with the pill actions and the default view is
+  // unchanged for legacy rows lacking the field.
   const stats = useMemo(
     () => ({
       total: allProducts.length,
@@ -1959,7 +1980,7 @@ export default function ProductsTable({
 
   // ── CLIENT-SIDE FILTERING — full pipeline ────────────────────────────────────
   const filtered = useMemo(() => {
-    let result = [...allProducts];
+    let result = allProducts.filter(p => matchesBusiness(p.type, business));
 
     // ═══════════════════════════════════════════════════════════
     // SEARCH FILTER
@@ -2083,6 +2104,30 @@ export default function ProductsTable({
     }
 
     // ═══════════════════════════════════════════════════════════
+    // ADVANCED FILTERS — VISIBILITY (PUBLICATION SCOPE) FACET
+    // Single-select bucket over catalogue publication scope.
+    // CLIENT-SIDE ONLY: applied to the already-loaded admin-list page
+    // payload (GET /api/products/admin/list) — the server service
+    // (getAdminProductList) does not support a scope param.
+    // Legacy rows carry no publicationScope and are bucketed as
+    // 'marketplace' ONLY when that scope is explicitly selected; the
+    // default 'all' state never changes results. The truthiness guard
+    // also covers restored search contexts saved before this facet
+    // existed (field absent → treated as 'all').
+    // ═══════════════════════════════════════════════════════════
+    if (
+      advancedFilters.publicationScope &&
+      advancedFilters.publicationScope !== 'all'
+    ) {
+      result = result.filter((p) =>
+        matchesPublicationScope(
+          p.publicationScope,
+          advancedFilters.publicationScope
+        )
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // ADVANCED FILTERS — INVENTORY / VARIANTS
     // ═══════════════════════════════════════════════════════════
     if (
@@ -2136,7 +2181,7 @@ export default function ProductsTable({
     if (advancedFilters.isAlcoholic === true) {
       result = result.filter((p) => p.isAlcoholic);
     } else if (advancedFilters.isAlcoholic === false) {
-      result = result.filter((p) => !p.isAlcoholic);
+      result = result.filter((p) => isBeverageProductType(p.type) && !p.isAlcoholic);
     }
 
     if (advancedFilters.abvRange[0] > 0 || advancedFilters.abvRange[1] > 0) {
@@ -2196,7 +2241,7 @@ export default function ProductsTable({
     if (spActiveFilters.has('alcoholic'))
       result = result.filter((p) => p.isAlcoholic);
     if (spActiveFilters.has('non_alcoholic'))
-      result = result.filter((p) => !p.isAlcoholic);
+      result = result.filter((p) => isBeverageProductType(p.type) && !p.isAlcoholic);
     if (spActiveFilters.has('archived'))
       result = result.filter(
         (p) => p.status === 'discontinued' || p.status === 'archived'
@@ -2219,6 +2264,7 @@ export default function ProductsTable({
     return result;
   }, [
     allProducts,
+    business,
     searchQuery,
     searchChips,
     statusFilter,
@@ -2317,6 +2363,13 @@ export default function ProductsTable({
     if (advancedFilters.variantsRange[0] || advancedFilters.variantsRange[1])
       count++;
     if (advancedFilters.hasVariants !== null) count++;
+    // Visibility (publication-scope) facet — counts as active once a specific
+    // bucket is selected (restored legacy contexts may have it undefined).
+    if (
+      advancedFilters.publicationScope &&
+      advancedFilters.publicationScope !== 'all'
+    )
+      count++;
     if (advancedFilters.beverageTypes.length) count++;
     if (advancedFilters.isAlcoholic !== null) count++;
     if (advancedFilters.abvRange[0] || advancedFilters.abvRange[1]) count++;
@@ -2398,7 +2451,8 @@ export default function ProductsTable({
   useEffect(() => {
     table.setPagination({ pageIndex: 0, pageSize: currentPageSize });
     table.resetRowSelection();
-  }, [viewMode, currentPageSize, table]);
+    setGridSelection({});
+  }, [business, viewMode, currentPageSize, table]);
 
   // Sync filtered data into the table whenever it changes (useTanStackTable only
   // initialises from the prop — it doesn't watch for updates)
@@ -2410,6 +2464,15 @@ export default function ProductsTable({
     viewMode === 'list'
       ? table.getSelectedRowModel().rows.map((row) => row.original)
       : filtered.filter((p) => gridSelection[p._id]);
+
+  // Approve copy affordance: legacy rows carry no publicationScope, so this is
+  // false today and the bulk bar renders exactly as before. Once the admin list
+  // endpoint returns the scope fields it flips automatically.
+  const hasPrivateSelection = useMemo(
+    () =>
+      selectedData.some((p) => p.publicationScope === 'tenant_private'),
+    [selectedData]
+  );
 
   // Bulk export
   const handleBulkExport = useCallback(() => {
@@ -2538,6 +2601,7 @@ export default function ProductsTable({
 
   return (
     <div className="space-y-4 pb-24">
+      <BusinessListView business={business} onChange={setBusiness} count={filtered.length} />
       {/* Stats Cards */}
       <StatsHeader
         stats={stats}
@@ -2917,6 +2981,7 @@ export default function ProductsTable({
             onUnarchive={() => handleBulkUpdate({ status: 'draft' })}
             onSetStatus={(s) => handleBulkUpdate({ status: s })}
             onSetPublished={(v) => handleBulkUpdate({ isPublished: v })}
+            hasPrivateSelection={hasPrivateSelection}
             onClear={() => {
               if (viewMode === 'list') {
                 table.resetRowSelection();

@@ -121,7 +121,7 @@ export default function ProductDescription({ className }: ProductDescriptionProp
   const productName      = watch('name') || '';
   const productType      = watch('type');
   const productBrand     = watch('brand');
-  const isBeverage = isBeverageProductType(productType);
+  const isBeverage = !!productType && isBeverageProductType(productType);
 
   const watchedFlavors = watch('flavorProfile') || [];
   useEffect(() => { setSelectedFlavors(watchedFlavors); }, [watchedFlavors]);
@@ -268,8 +268,8 @@ export default function ProductDescription({ className }: ProductDescriptionProp
 
   return (
     <FormGroup
-      title="Description & Tasting Notes"
-      description="Detailed product information and tasting profile"
+      title={isBeverage ? "Description & Tasting Notes" : "Product Description"}
+      description={isBeverage ? "Detailed product information and tasting profile" : "Short and full customer-facing descriptions"}
       className={cn(className)}
     >
       {/* Fill-all button */}

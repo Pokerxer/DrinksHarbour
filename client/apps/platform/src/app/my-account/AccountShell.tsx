@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, createContext, useContext } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import MobileNav from './_components/MobileNav';
 import Sidebar from './_components/Sidebar';
@@ -19,16 +19,17 @@ export const useAccount = () => useContext(AccountContext);
 
 export default function AccountShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, token, isAuthenticated, isLoading, loadProfile, updateUser } = useAuth();
 
   useEffect(() => {
     if (isLoading) return;
     if (!isAuthenticated || !token) {
-      router.push('/login?redirect=/my-account');
+      router.push(`/login?redirect=${encodeURIComponent(pathname || '/my-account')}`);
       return;
     }
     loadProfile();
-  }, [isAuthenticated, isLoading, token, router, loadProfile]);
+  }, [isAuthenticated, isLoading, token, router, loadProfile, pathname]);
 
   if (isLoading) {
     return (

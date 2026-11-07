@@ -5,6 +5,7 @@ import * as Icon from 'react-icons/pi';
 
 interface PackPricingCardProps {
   currencySymbol: string;
+  sizeLabel?: string;
   packUnitPrice: number;
   packThreshold: number;
   packSavingsPct: number | null;
@@ -24,13 +25,13 @@ const formatPrice = (v: number) =>
 
 const PackPricingCard: React.FC<PackPricingCardProps> = ({
   currencySymbol,
+  sizeLabel,
   packUnitPrice,
   packThreshold,
   packSavingsPct,
   normalPrice,
   quantity,
   packRateActive,
-  packThresholdRemaining,
   onQuickAddPack,
   compact = false,
 }) => {
@@ -58,10 +59,10 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
 
       <div className="relative">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 pt-4 pb-3">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
+          <div className="flex min-w-0 items-center gap-2.5">
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+              className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center transition-colors ${
                 packRateActive
                   ? 'bg-amber-500 text-white shadow-md shadow-amber-300/50'
                   : 'bg-amber-100 text-amber-600'
@@ -106,6 +107,8 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
           )}
         </div>
 
+        {sizeLabel && <p className="px-4 pb-3 text-xs text-amber-800">Selected size: {sizeLabel}</p>}
+
         {/* Price comparison row — the quickview modal already shows both prices
             in its header, so compact mode drops this grid. */}
         <div className={`px-4 pb-3 ${compact ? 'hidden' : ''}`}>
@@ -119,7 +122,7 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
               }`}
             >
               <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">
-                {packRateActive ? 'Was' : 'Normal'}
+                Single-unit price
               </div>
               <div className={`font-bold ${packRateActive ? 'text-gray-400 line-through text-base' : 'text-gray-700 text-lg'}`}>
                 {currencySymbol}{formatPrice(normalPrice)}
@@ -135,7 +138,7 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
               }`}
             >
               <div className="text-[9px] uppercase tracking-wider text-amber-500 mb-0.5">
-                Pack Price
+                Bulk unit price
               </div>
               <div className="font-bold text-lg text-amber-700">
                 {currencySymbol}{formatPrice(packUnitPrice)}
@@ -146,11 +149,11 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
         </div>
 
         {/* Savings summary */}
-        <div className="mx-4 mb-3 rounded-lg bg-amber-100/60 px-3 py-2 flex items-center justify-between text-[11px]">
+        <div className="mx-4 mb-3 rounded-lg bg-amber-100/60 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
           <span className="text-amber-700 font-medium">
-            At {packThreshold} units:
+            Pack total · {packThreshold} units:
           </span>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
             <span className="text-gray-400 line-through">
               {currencySymbol}{formatPrice(normalTotal)}
             </span>
@@ -160,7 +163,7 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
             </span>
             <span className="flex items-center gap-0.5 text-green-600 font-semibold">
               <Icon.PiArrowDown size={10} />
-              {currencySymbol}{formatPrice(totalSavings)}
+              Save {currencySymbol}{formatPrice(totalSavings)}
             </span>
           </div>
         </div>
@@ -172,13 +175,14 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
               <span className="font-semibold text-amber-700">
                 {quantity} of {packThreshold} units
               </span>
-              <button
+              {onQuickAddPack && <button
+                type="button"
                 onClick={onQuickAddPack}
                 className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold hover:bg-amber-600 transition-colors"
               >
                 <Icon.PiPlus size={9} />
-                Add {packThresholdRemaining} to unlock
-              </button>
+                Select {packThreshold} units
+              </button>}
             </div>
             <div className="h-2.5 rounded-full bg-amber-200/50 overflow-hidden">
               <div

@@ -67,6 +67,7 @@ export default function AccountOverviewPage() {
   ];
 
   const quickLinks = [
+    { icon: Icon.PiChatCircleDotsBold, label: 'Chat with our team', href: '/my-account/chat', color: 'bg-emerald-50 text-emerald-700' },
     { icon: Icon.PiMapPinBold,   label: 'Manage Addresses',  href: '/my-account/addresses',     color: 'bg-blue-50 text-blue-700' },
     { icon: Icon.PiBellBold,     label: 'Notifications',     href: '/my-account/notifications', color: 'bg-purple-50 text-purple-700' },
     { icon: Icon.PiShieldBold,   label: 'Security Settings', href: '/my-account/security',      color: 'bg-amber-50 text-amber-700' },

@@ -110,7 +110,7 @@ const saleSchema = new Schema(
     // ────────────────────────────────────────────────
     revenueModelUsed: {
       type: String,
-      enum: ['markup', 'commission'],
+      enum: ['markup', 'commission', 'selling_price_markup'],
       required: true,
     },
 

@@ -1,3 +1,7 @@
+> Historical Redis implementation: disconnected by user request on 2026-10-31.
+> Current runtime: live MongoDB reads and local request limits. See
+> `docs/memory/standalone-without-upstash.md`; do not reconnect the provider.
+
 # Admin report caching
 
 Admin pages use Redis through the backend API, with authentication and existing permissions checked on every request. No Redis credentials or client library belong in the admin browser app.

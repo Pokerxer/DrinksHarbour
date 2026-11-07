@@ -229,8 +229,16 @@ export function resolveSalesItemDimKey(
   prodMeta: Record<string, ProdMeta>
 ): string {
   switch (dim) {
-    case 'product':
-      return item.name || item.sku || 'Unknown';
+    case 'product': {
+      // Same identity rule as the POS order-analysis product dim: a line
+      // carrying variant data keys as `name · variant` so two colour/option
+      // rows of one product stay distinct buckets. Everything else — legacy
+      // beverage lines and size-variant sales lines whose stored name already
+      // embeds the size label — resolves to `name` unchanged. No
+      // per-industry branching.
+      const label = item.name || item.sku || 'Unknown';
+      return item.variant ? `${label} · ${item.variant}` : label;
+    }
     case 'product_category':
       return prodMeta[subProductKey(item)]?.catName || 'Uncategorized';
     case 'subcategory':

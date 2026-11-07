@@ -1,5 +1,7 @@
 'use client';
 
+import { sizeVariantLabel } from '@/utils/size-variant-label';
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -360,7 +362,7 @@ function ProductSearch({
   async function fetchFullSubproduct(id: string) {
     if (expandedData[id]) return;
     try {
-      const res = await subproductService.getSubProduct(id, token);
+      const res = await subproductService.getSubProduct<{data: unknown}>(id, token);
       const sp = res?.data ?? res;
       setExpandedData((prev) => ({ ...prev, [id]: sp }));
     } catch {
@@ -381,7 +383,7 @@ function ProductSearch({
       sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
       sizes: (sp.sizes ?? []).map((s: any) => ({
         size: String(s._id ?? s.size ?? ''),
-        displayName: s.displayName ?? s.size ?? '',
+        displayName: sizeVariantLabel(s),
         sku: s.sku ?? sp.sku ?? '',
         costPrice: s.costPrice ?? sp.costPrice ?? 0,
         unitsPerPack: s.unitsPerPack ?? 1,
@@ -398,7 +400,7 @@ function ProductSearch({
       // are not currently enabled or stocked at a POS location. The POS
       // catalogue endpoint is intentionally filtered for selling and its
       // limited result set makes search miss valid purchase products.
-      const res = await subproductService.getSubProducts(token, { limit: 50 });
+      const res = await subproductService.getSubProducts<{data: {subProducts: unknown[]}}>(token, { limit: 50 });
       const list = mapProducts(res?.data?.subProducts ?? []);
       setInitial(list);
       setProducts(list);
@@ -419,7 +421,7 @@ function ProductSearch({
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await subproductService.getSubProducts(token, {
+        const res = await subproductService.getSubProducts<{data: {subProducts: unknown[]}}>(token, {
           search: query.trim(),
           limit: 50,
         });
@@ -559,7 +561,7 @@ function ProductSearch({
                           const fullSizes: any[] =
                             expandedData[p._id]?.sizes ?? [];
                           const match = fullSizes.find(
-                            (fs: any) => fs.size === s.size || fs._id === s.size
+                            (fs: any) => String(fs._id ?? fs.size ?? '') === s.size
                           );
                           const enriched: SizeOption = {
                             ...s,

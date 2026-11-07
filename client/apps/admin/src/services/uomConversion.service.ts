@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // services/uomConversion.service.ts
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -74,7 +75,7 @@ class UOMConversionService {
       `${API_URL}/api/uom-conversions?${queryParams}`,
       { headers: this.getHeaders(token) }
     );
-    return response.json();
+    return readJson(response);
   }
 
   async getConversion(id: string, token: string): Promise<{ success: boolean; data: UOMConversion }> {
@@ -82,7 +83,7 @@ class UOMConversionService {
       `${API_URL}/api/uom-conversions/${id}`,
       { headers: this.getHeaders(token) }
     );
-    return response.json();
+    return readJson(response);
   }
 
   async createConversion(data: Partial<UOMConversion>, token: string): Promise<CreateResponse> {
@@ -91,7 +92,7 @@ class UOMConversionService {
       headers: this.getHeaders(token),
       body: JSON.stringify(data),
     });
-    return response.json();
+    return readJson(response);
   }
 
   async updateConversion(id: string, data: Partial<UOMConversion>, token: string): Promise<CreateResponse> {
@@ -100,7 +101,7 @@ class UOMConversionService {
       headers: this.getHeaders(token),
       body: JSON.stringify(data),
     });
-    return response.json();
+    return readJson(response);
   }
 
   async deleteConversion(id: string, token: string): Promise<{ success: boolean; message: string }> {
@@ -108,7 +109,7 @@ class UOMConversionService {
       method: 'DELETE',
       headers: this.getHeaders(token),
     });
-    return response.json();
+    return readJson(response);
   }
 
   async convertUnits(value: number, fromUOM: string, toUOM: string, token: string): Promise<{
@@ -131,7 +132,7 @@ class UOMConversionService {
       `${API_URL}/api/uom-conversions/convert?${queryParams}`,
       { headers: this.getHeaders(token) }
     );
-    return response.json();
+    return readJson(response);
   }
 }
 

@@ -44,6 +44,9 @@ export default function PeriodSwitcher() {
     params.delete('to');
 
     const qs = params.toString();
+    // Shallow-URL semantics on purpose: push inside a transition so React
+    // keeps the current dashboard (keep-cached-while-refreshing) until the
+    // new period's server render is ready — the previous data never blanks.
     startTransition(() => {
       router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     });
@@ -54,7 +57,7 @@ export default function PeriodSwitcher() {
       <div
         role="group"
         aria-label="Reporting period"
-        className="inline-flex items-center rounded-lg border border-muted bg-gray-0 p-0.5"
+        className="inline-flex flex-wrap items-center rounded-lg border border-muted bg-gray-0 p-0.5"
       >
         {PRESETS.map(({ key, label }) => {
           const isActive = key === active;
@@ -65,7 +68,9 @@ export default function PeriodSwitcher() {
               onClick={() => select(key)}
               aria-pressed={isActive}
               className={cn(
-                'rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+                // 44px minimum target + visible focus ring, matching the
+                // codebase convention (focus-visible:ring-primary, min-h-11).
+                'min-h-11 rounded-md px-3.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                 isActive
                   ? 'bg-[#b20202] text-white shadow-sm'
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -78,7 +83,7 @@ export default function PeriodSwitcher() {
       </div>
 
       {meta?.period === 'custom' && (
-        <span className="rounded-lg border border-muted bg-gray-0 px-2.5 py-1.5 text-xs font-medium text-gray-700">
+        <span className="inline-flex min-h-11 items-center rounded-lg border border-muted bg-gray-0 px-2.5 text-xs font-medium text-gray-700">
           {meta.label}
         </span>
       )}
@@ -87,7 +92,7 @@ export default function PeriodSwitcher() {
         type="button"
         onClick={() => startTransition(() => router.refresh())}
         aria-label="Refresh dashboard data"
-        className="inline-flex items-center gap-1.5 rounded-lg border border-muted bg-gray-0 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:text-gray-900"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-muted bg-gray-0 px-2.5 text-xs font-medium text-gray-600 transition-colors hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <PiArrowClockwiseBold
           className={cn(
@@ -98,6 +103,7 @@ export default function PeriodSwitcher() {
         Refresh
       </button>
 
+      {/* Announces the in-flight load and the period now displayed. */}
       <span aria-live="polite" className="sr-only">
         {isPending
           ? 'Loading dashboard data'

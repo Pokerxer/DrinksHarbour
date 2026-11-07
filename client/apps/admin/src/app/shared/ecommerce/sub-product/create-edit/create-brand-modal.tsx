@@ -17,6 +17,7 @@ interface CreateBrandModalProps {
   onBrandCreated: (brandId: string) => void;
   token: string;
   productName?: string;
+  industry?: string;
 }
 
 export default function CreateBrandModal({
@@ -25,6 +26,7 @@ export default function CreateBrandModal({
   onBrandCreated,
   token,
   productName = '',
+  industry,
 }: CreateBrandModalProps) {
   const formId = useId();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -174,12 +176,13 @@ export default function CreateBrandModal({
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
+            industry,
             name: formData.name.trim(),
             slug: slug,
             description: formData.description.trim() || undefined,
             countryOfOrigin: formData.countryOfOrigin || undefined,
             founded: formData.founded ? parseInt(formData.founded) : undefined,
-            primaryCategory: formData.primaryCategory || undefined,
+            primaryCategory: industry && industry !== 'beverage' ? undefined : formData.primaryCategory || undefined,
             status: 'active',
           }),
         }
@@ -249,6 +252,7 @@ export default function CreateBrandModal({
           handleAutoGenerate={handleAutoGenerate}
         />
         <BrandDetailsFields
+          showPrimaryCategory={!industry || industry === 'beverage'}
           formData={formData}
           isSubmitting={isSubmitting}
           isGenerating={isGenerating}

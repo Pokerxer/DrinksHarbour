@@ -72,3 +72,10 @@ test('tenant REST quote charges the road fee in the server total', async t => {
   assert.equal(quote.total, 14000);
   assert.equal(quote.shipping.source, 'google');
 });
+test('tenant website checkout never substitutes cost-based markup for the marketplace selling-price model', async t => {
+  fixtures(t);
+  const quote = await quoteCart({ ...tenant, revenueModel: 'selling_price_markup', sellingPriceMarkupPercentage: 20 }, input);
+  assert.equal(quote.items[0].unitPrice, 5000);
+  assert.equal(quote.orderItems[0].tenantRevenueShare, 10000);
+  assert.equal(quote.orderItems[0].platformCommission, 0);
+});

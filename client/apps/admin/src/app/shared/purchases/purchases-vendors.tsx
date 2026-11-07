@@ -1917,7 +1917,8 @@ export default function PurchasesVendors() {
   const [page, setPage] = useState(1);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem('vendor_saved_searches') ?? '[]');
+      const saved: unknown = JSON.parse(localStorage.getItem('vendor_saved_searches') ?? '[]');
+      return Array.isArray(saved) ? saved.filter((s): s is SavedSearch => !!s && typeof s === 'object' && 'name' in s && typeof s.name === 'string') : [];
     } catch {
       return [];
     }

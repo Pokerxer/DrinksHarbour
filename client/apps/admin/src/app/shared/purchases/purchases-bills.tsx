@@ -602,7 +602,7 @@ export default function PurchasesBills() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const paramsRef = useRef({ page: 1, search: '', status: 'all' as StatusFilter, sortCol: 'billDate' as SortCol, sortDir: 'desc' as SortDir });
 
   function syncParams() {
@@ -626,7 +626,7 @@ export default function PurchasesBills() {
       if (q) queryParams.search = q;
 
       const res = await vendorBillService.getVendorBills(token, queryParams as any);
-      setBills(res.data ?? []);
+      setBills((res.data ?? []).map(b => ({ ...b, purchaseOrder: typeof b.purchaseOrder === 'object' ? b.purchaseOrder?._id : b.purchaseOrder, taxTotal: b.taxAmount, total: b.totalAmount, amountPaid: b.paidAmount, amountDue: b.totalAmount - b.paidAmount, items: b.items.map(i => ({ ...i, subProductId: i.subProductId || '', productName: i.subProductName || '', total: i.amount })) })));
       if (res.pagination) {
         setTotalPages(res.pagination.totalPages);
         setTotalCount(res.pagination.totalCount);

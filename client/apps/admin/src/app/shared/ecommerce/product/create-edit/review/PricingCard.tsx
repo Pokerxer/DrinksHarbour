@@ -1,5 +1,12 @@
+import SellingMarkupSummary from './SellingMarkupSummary';
+import { isSellingMarkup } from './selling-markup';
 import { evaluatePrice, money, saleActive, suggestPrice } from './pricing';
-import type { PriceDraft, PriceLine, PriceTargets, ReviewListing } from './types';
+import type {
+  PriceDraft,
+  PriceLine,
+  PriceTargets,
+  ReviewListing,
+} from './types';
 import PriceOutcomes from './PriceOutcomes';
 import PriceComparison from './PriceComparison';
 import { isCommission } from './agreement';
@@ -25,7 +32,16 @@ export default function PricingCard({
   onReset?: () => void;
 }) {
   const commission = isCommission(line, listing);
-  const normal = evaluatePrice(line, draft.normal, listing, targets);
+  const sellingMarkup = isSellingMarkup(line, listing);
+  const normal = evaluatePrice(
+    line,
+    draft.normal,
+    listing,
+    targets,
+    false,
+    undefined,
+    draft.inherit === 'true'
+  );
   const suggested = suggestPrice(line, listing, targets);
   const packSuggested = suggestPrice(
     line,
@@ -35,10 +51,19 @@ export default function PricingCard({
     Number(draft.normal)
   );
   const pack = draft.pack
-    ? evaluatePrice(line, draft.pack, listing, targets, true, Number(draft.normal))
+    ? evaluatePrice(
+        line,
+        draft.pack,
+        listing,
+        targets,
+        true,
+        Number(draft.normal)
+      )
     : null;
   const packEligible =
-    (line.pricing.packPlatformCostPrice || 0) > 0 && !!line.packThreshold;
+    !sellingMarkup &&
+    (line.pricing.packPlatformCostPrice || 0) > 0 &&
+    !!line.packThreshold;
   const packSale = saleActive(listing) || line.pricing.productDiscount?.active;
   const useButton =
     'min-h-11 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-700 hover:bg-blue-100 focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40';
@@ -49,15 +74,19 @@ export default function PricingCard({
     >
       <header className="mb-4 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-gray-900">{line.label}</h3>
+          <h3 className="text-base font-semibold text-gray-900">
+            {line.label}
+          </h3>
           <p className="mt-1 text-xs text-gray-500">
             {line.sku || 'No SKU'} · {line.currency}
           </p>
         </div>
         <span className="rounded-full bg-gray-100 px-3 py-1 text-xs capitalize text-gray-600">
-          {line.pricing.revenueModel ||
-            listing.tenant?.revenueModel ||
-            'Revenue model unavailable'}
+          {sellingMarkup
+            ? 'Selling-price markup'
+            : line.pricing.revenueModel ||
+              listing.tenant?.revenueModel ||
+              'Revenue model unavailable'}
         </span>
       </header>
       {changed && (
@@ -94,14 +123,15 @@ export default function PricingCard({
       </dl>
       {line.pricing.isPlatformCostFromWholesale && (
         <p className="mb-3 text-xs leading-5 text-amber-800">
-          The payout uses a wholesale pricing basis. Confirm the supplier cost and
-          settlement terms before approval.
+          The payout uses a wholesale pricing basis. Confirm the supplier cost
+          and settlement terms before approval.
         </p>
       )}
       {line.pricing.productDiscount?.active && (
         <p className="mb-3 text-xs leading-5 text-amber-800">
           A catalogue discount is active and is already included in the website
-          price. Approved prices can recalculate when costs or sales change.
+          price. Approved prices can recalculate when{' '}
+          {sellingMarkup ? 'tenant selling prices' : 'costs'} or sales change.
         </p>
       )}
       {normal.supplier === null && (
@@ -126,7 +156,9 @@ export default function PricingCard({
           className={useButton}
           disabled={disabled || suggested === null}
           aria-label={`Use suggested price for ${line.label}`}
-          onClick={() => suggested !== null && onEdit('normal', String(suggested))}
+          onClick={() =>
+            suggested !== null && onEdit('normal', String(suggested))
+          }
         >
           Use{' '}
           {suggested !== null
@@ -134,6 +166,16 @@ export default function PricingCard({
             : 'unavailable suggestion'}
         </button>
       </div>
+      {sellingMarkup && (
+        <SellingMarkupSummary
+          line={line}
+          listing={listing}
+          draft={draft}
+          rate={normal.sellingMarkupPct}
+          disabled={disabled}
+          onEdit={onEdit}
+        />
+      )}
       <PriceComparison
         original={line.pricing.platformSellingPrice}
         entered={draft.normal}
@@ -141,13 +183,14 @@ export default function PricingCard({
         label="website price"
       />
       <PriceOutcomes value={normal} currency={line.currency} />
-      {normal.customer !== null &&
+      {!sellingMarkup &&
+        normal.customer !== null &&
         (line.pricing.tenantSellingPrice || 0) > 0 &&
         normal.customer > (line.pricing.tenantSellingPrice || 0) && (
           <p className="mt-3 text-xs leading-5 text-amber-800">
             The customer price exceeds this tenant’s store price. Review
-            competitiveness and the revenue terms; do not reduce the website price
-            below the payout to force a discount.
+            competitiveness and the revenue terms; do not reduce the website
+            price below the payout to force a discount.
           </p>
         )}
       <p className="mt-3 text-xs leading-5 text-gray-400">
@@ -186,7 +229,8 @@ export default function PricingCard({
                   disabled={disabled || packSuggested === null}
                   aria-label={`Use suggested pack price for ${line.label}`}
                   onClick={() =>
-                    packSuggested !== null && onEdit('pack', String(packSuggested))
+                    packSuggested !== null &&
+                    onEdit('pack', String(packSuggested))
                   }
                 >
                   Use{' '}
@@ -224,8 +268,8 @@ export default function PricingCard({
               )}
               <p className="mt-2 text-xs text-gray-400">
                 Leave blank to keep the current pack setting. Quantity stays in
-                sellable units. Automatic pack prices and availability are rechecked
-                when the normal price changes.
+                sellable units. Automatic pack prices and availability are
+                rechecked when the normal price changes.
               </p>
             </>
           )}

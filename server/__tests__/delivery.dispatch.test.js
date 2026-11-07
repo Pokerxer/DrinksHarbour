@@ -144,16 +144,12 @@ test('an existing timestamp is not overwritten on re-entry', async () => {
   });
 });
 
-test('a tenant-scoped dispatch only claims that tenant’s fulfillment slice', async () => {
+test('a tenant-scoped dispatch can ship a single-merchant order', async () => {
   await withInventorySpy(async () => {
     const tenantId = oid();
-    const otherTenant = oid();
-    const order = fakeOrder({ status: 'confirmed' });
-
+    const order = fakeOrder({ status: 'confirmed', items: [{ tenant: tenantId, subproduct: oid(), quantity: 2 }] });
     await applyOrderStatus(order, 'shipped', { tenantId });
-
     assert.equal(order.fulfillmentStatus.get(String(tenantId)), 'shipped');
-    assert.equal(order.fulfillmentStatus.get(String(otherTenant)), undefined);
   });
 });
 

@@ -1,3 +1,4 @@
+const { legacyBeverageTypes } = require('../constants/legacyBeverageTypes');
 // routes/product.routes.js
 
 const express = require('express');
@@ -11,6 +12,7 @@ const { resolveTenantContext } = require('../middleware/tenant.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { uploadReviewImages } = require('../middleware/imageUpload.middleware');
 const { body, param, query } = require('express-validator');
+const { expandedTypeValues } = require('../constants/expandedProductTypes');
 
 const productValidation = [
   body('name')
@@ -24,7 +26,9 @@ const productValidation = [
       'beer', 'wine', 'sparkling_wine', 'fortified_wine', 'spirit',
       'liqueur', 'cocktail_ready_to_drink', 'non_alcoholic', 'other',
       'juice', 'tea', 'coffee', 'energy_drink', 'water', 'mixer',
-      'accessory', 'glassware', 'bar_tool', 'snack', 'gift_set', 'gift'
+      'accessory', 'glassware', 'bar_tool', 'snack', 'gift_set', 'gift',
+      ...legacyBeverageTypes,
+      ...expandedTypeValues,
     ])
     .withMessage('Invalid product type'),
 ];
@@ -159,14 +163,14 @@ router.get(
  */
 router.get(
   '/suggestions',
-  asyncHandler(async (req, res) => {
+  require('../services/marketContext').handler(asyncHandler(async (req, res) => {
     const { q, limit = 8 } = req.query;
     const suggestions = await productService.getSearchSuggestions(q, parseInt(limit));
     res.status(200).json({
       success: true,
       data: suggestions,
     });
-  })
+  }))
 );
 
 /**
@@ -179,6 +183,7 @@ router.get(
  */
 router.get(
   '/slugs',
+  (req, res, next) => require('../services/marketContext').handler((q, s, n) => n())(req, res, next),
   asyncHandler(async (req, res) => {
     // ?categories=a,b,c — the sitemap's static category list. Counting them
     // here (one request) rather than probing the search endpoint per slug keeps
@@ -240,6 +245,18 @@ router.post('/wishlist/:id', protect, mongoIdValidation, validate, productContro
  * @route DELETE /api/products/wishlist/:id
  */
 router.delete('/wishlist/:id', protect, mongoIdValidation, validate, productController.removeProductFromWishlist);
+
+/**
+ * Size guidance for the size pickers (industry-scoping round, 2026-11-03):
+ * the SERVER is the single sizing authority — the response mirrors
+ * constants/productTypes.getSizesForType(type) so a fashion business sees
+ * its apparel/numeric/waist/inseam/kids/shoe groups while a beverage
+ * business sees only its bottle/weight families. 'custom'/'variable' are
+ * always included as the escape hatch. Authenticated reads only.
+ * @route GET /api/products/size-guidance?type=fashion_top
+ * @access Private (any authenticated user; tenant-agnostic static data)
+ */
+router.get('/size-guidance', protect, productController.getSizeGuidance);
 
 /**
  * Get single product by ID
@@ -373,8 +390,10 @@ router.use(authorize('super_admin', 'tenant_admin', 'admin', 'tenant_owner'));
  * Get all products (admin with stats)
  * @route GET /api/products/admin/all
  * @access Private/Admin (incl. tenant_admin/owner for read-only browsing)
+ * Admin default listing — see controller note: no retail catalog-kind gate, so
+ * operator views list every central catalog kind (Venue Phase 3 S1).
  */
-router.get('/admin/all', productController.getAllProducts);
+router.get('/admin/all', productController.getAllProductsAdmin);
 
 /**
  * Get all products directly from DB for admin CRUD (all statuses, no tenant filtering)
@@ -400,6 +419,13 @@ router.get('/admin/:id/stock', resolveTenantContext, mongoIdValidation, validate
 // ── Product mutations — restricted to platform admins only ──────────────────
 // Central Products are platform-owned; tenants may only create pending proposals.
 router.use(authorize('super_admin', 'admin'));
+
+router.get('/admin/:id/details', mongoIdValidation, validate, asyncHandler(async (req, res) => {
+  const product = await productService.getProductById(req.params.id, true, { adminDetails: true });
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { product } });
+}));
+
 
 /**
  * Create new product

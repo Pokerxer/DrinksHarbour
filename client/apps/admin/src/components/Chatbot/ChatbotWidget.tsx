@@ -1,5 +1,6 @@
 'use client';
 
+import { readJson } from '@/services/response';
 import { useState, useRef, useEffect, useCallback } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -248,7 +249,6 @@ const formatTime = (timestamp: number) => {
 };
 
 export default function ChatbotWidget() {
-  const addToCart = null;
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -426,7 +426,7 @@ export default function ChatbotWidget() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
-      const data = await res.json();
+      const data = await readJson<{success: boolean; message?: string; data: {response: string; products: Product[]; action?: string; quantity?: number}}>(res);
       if (data.success) {
         setMessages([
           {
@@ -506,7 +506,7 @@ export default function ChatbotWidget() {
         body: formData,
       });
 
-      const data = await res.json();
+      const data = await readJson<{success: boolean; message?: string; data: {response: string; products: Product[]; action?: string; quantity?: number}}>(res);
 
       // A rate-limit refusal carries a message that explains itself ("give me a
       // moment to catch up"). Replacing it with "something went wrong. Try
@@ -528,25 +528,6 @@ export default function ChatbotWidget() {
 
       if (data.success) {
         const responseData = data.data;
-
-        // Handle guest cart add action
-        if (
-          responseData.action === 'ADD_GUEST_CART' &&
-          addToCart &&
-          responseData.products?.[0]
-        ) {
-          const product = responseData.products[0];
-          addToCart(
-            product,
-            product.selectedSize || '',
-            product.selectedColor || '',
-            product.selectedVendor || '',
-            product.selectedVendorId || '',
-            responseData.quantity || 1,
-            product.selectedSizeId || '',
-            product.selectedSubProductId || ''
-          );
-        }
 
         setMessages((prev) => [
           ...prev,

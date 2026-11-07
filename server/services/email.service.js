@@ -148,6 +148,75 @@ const formatDate = (dateString) =>
 const capitalize = (s) =>
   (s || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
+// Gift notes are free customer text — always escaped, never rendered as HTML
+// (a note containing "<script>" must render as visible text or not at all).
+const escapeHtmlText = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+// The gift subdoc exists only on gift orders; everything below renders '' when
+// it is absent, so non-gift emails stay byte-identical to before.
+const orderGift = (order) => (order?.gift && order.gift.isGift === true ? order.gift : null);
+
+const orderGiftDate = (gift) =>
+  (typeof gift?.requestedDeliveryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(gift.requestedDeliveryDate)
+    ? gift.requestedDeliveryDate
+    : '');
+
+/**
+ * Gift block for the CUSTOMER confirmation email. The requested delivery date
+ * is always labelled as a plan the team confirms — never a guaranteed date.
+ * No price-bearing content is rendered from the gift note.
+ */
+const giftEmailSection = (order) => {
+  const gift = orderGift(order);
+  if (!gift) return '';
+  const to = escapeHtmlText(gift.to);
+  const from = escapeHtmlText(gift.from);
+  const message = gift.message ? escapeHtmlText(gift.message).replace(/\n/g, '<br/>') : '';
+  const date = orderGiftDate(gift);
+  return `
+    <!-- Gift details -->
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('&#127873; Gift Details')}
+      <div style="background-color:#fdf3f0;border-radius:12px;border:1px solid #f0dcd4;border-left:4px solid #b0457f;padding:18px 20px;">
+        <p style="font-size:14px;color:#1a1310;margin:0;"><strong>To:</strong> ${to}</p>
+        <p style="font-size:14px;color:#1a1310;margin:4px 0 0;"><strong>From:</strong> ${from}</p>
+        ${message ? `<p style="font-size:14px;color:#374151;margin:12px 0 0;line-height:1.6;font-style:italic;">&ldquo;${message}&rdquo;</p>` : ''}
+        ${gift.packagingRequested ? `<p style="font-size:13px;color:#6b7280;margin:12px 0 0;line-height:1.6;">&#127873; Gift packaging included — your drinks will be packed for gifting.</p>` : ''}
+        ${date ? `<p style="font-size:12px;color:#8a6d2a;margin:12px 0 0;line-height:1.6;">Requested delivery: ${escapeHtmlText(date)} (requested &mdash; the team confirms the exact window).</p>` : ''}
+      </div>
+    </div>`;
+};
+
+/**
+ * Gift block for STAFF alerts (tenant + admin). Opens with the
+ * "GIFT ORDER — requested delivery <date>" line so tenants prep the order as a
+ * gift. Same escaping rules as the customer section.
+ */
+const giftStaffSection = (order) => {
+  const gift = orderGift(order);
+  if (!gift) return '';
+  const date = orderGiftDate(gift);
+  const message = gift.message ? escapeHtmlText(gift.message).replace(/\n/g, '<br/>') : '';
+  return `
+    <!-- Gift order -->
+    <div style="margin-bottom:26px;">
+      ${sectionHeading('&#127873; Gift Order')}
+      <div style="background-color:#fdf3f0;border-radius:12px;border:1px solid #f0dcd4;border-left:4px solid #b0457f;padding:18px 20px;">
+        <p style="font-size:14px;font-weight:800;color:#b0457f;margin:0 0 8px 0;">GIFT ORDER${date ? ` &mdash; requested delivery ${escapeHtmlText(date)}` : ''}</p>
+        <p style="font-size:14px;color:#1a1310;margin:0;"><strong>To:</strong> ${escapeHtmlText(gift.to)} &nbsp;&bull;&nbsp; <strong>From:</strong> ${escapeHtmlText(gift.from)}</p>
+        ${message ? `<p style="font-size:14px;color:#374151;margin:10px 0 0;line-height:1.6;font-style:italic;">&ldquo;${message}&rdquo;</p>` : ''}
+        ${gift.packagingRequested ? `<p style="font-size:13px;color:#6b7280;margin:10px 0 0;line-height:1.6;">&#127873; Paid gift packaging requested — pack the drinks for gifting.</p>` : ''}
+        <p style="font-size:12px;color:#8a6d2a;margin:10px 0 0;line-height:1.6;">Requested delivery is a plan the team confirms — never a guaranteed date.</p>
+      </div>
+    </div>`;
+};
+
 /** Small coloured badge using inline-block span (works in most clients) */
 const badge = (label, bg, color, border) =>
   `<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background-color:${bg};color:${color};border:1px solid ${border};text-transform:capitalize;">${label}</span>`;
@@ -639,6 +708,8 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
       </table>
     </div>
 
+    ${giftEmailSection(order)}
+
     <!-- Delivery estimate -->
     <div style="margin-bottom:28px;">
       ${sectionHeading('Delivery Information')}
@@ -714,9 +785,9 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
 // ─── 2. Vendor (tenant) new order notification ────────────────────────────────
 
 const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
+  order = require('./orderAccess').project(order, { _id: tenant._id, tenant: tenant._id, role: 'tenant_admin' });
   const totals = calculateVendorTotals(order, tenant._id);
-  const feeLabel = totals.revenueModel === 'commission' ? 'Commission' : 'Platform markup';
-  const feeRate = totals.effectiveTakeRate; // derived from the actual money split
+  const netMerchandise = Math.round((order.subtotal - order.discountTotal) * 100) / 100;
 
   const itemRows = totals.items.map(item => `
     <tr>
@@ -751,6 +822,8 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
       </tr>
     </table>
 
+    ${giftStaffSection(order)}
+
     <!-- Order info -->
     <div style="margin-bottom:26px;">
       ${sectionHeading('Order Information')}
@@ -758,7 +831,7 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
         { label: 'Order Date',     value: formatDate(order.placedAt) },
         { label: 'Items to Fulfil', value: `${totals.itemCount} item(s)` },
         { label: 'Payment Method', value: capitalize(order.paymentMethod) },
-        { label: 'Revenue Model',  value: `${feeRate}% ${feeLabel}` },
+        { label: 'Total scope', value: order.totalsScope || 'merchant_order' },
       ])}
     </div>
 
@@ -779,18 +852,14 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
 
     <!-- Earnings breakdown -->
     <div style="margin-bottom:20px;">
-      ${sectionHeading('Your Payout Breakdown')}
+      ${sectionHeading('Your Merchandise Summary')}
       <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#faf5ea,#f3e8cf);border-radius:12px;border:1px solid #ecdcbf;border-left:4px solid ${GOLD};">
         <tr>
           <td style="padding:20px;">
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
-                <td style="padding:5px 0;font-size:14px;color:#3a2a20;">Total Sales (Customer Paid)</td>
+                <td style="padding:5px 0;font-size:14px;color:#3a2a20;">Merchandise Subtotal</td>
                 <td style="padding:5px 0;font-size:14px;color:#3a2a20;text-align:right;">${formatCurrency(totals.customerSubtotal)}</td>
-              </tr>
-              <tr>
-                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;">${feeLabel} (${feeRate}%)</td>
-                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;text-align:right;">-${formatCurrency(totals.platformCommission)}</td>
               </tr>
               ${totals.itemDiscounts > 0 ? `
               <tr>
@@ -801,14 +870,14 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
                 <td colspan="2" style="padding-top:12px;"><hr style="border:none;border-top:2px solid #e6cf8f;margin:0;" /></td>
               </tr>
               <tr>
-                <td style="padding:12px 0 0 0;font-size:17px;font-weight:800;color:#8f1d1d;">Your Payout</td>
-                <td style="padding:12px 0 0 0;font-size:19px;font-weight:800;color:#8f1d1d;text-align:right;">${formatCurrency(totals.vendorEarnings)}</td>
+                <td style="padding:12px 0 0 0;font-size:17px;font-weight:800;color:#8f1d1d;">Merchandise Total</td>
+                <td style="padding:12px 0 0 0;font-size:19px;font-weight:800;color:#8f1d1d;text-align:right;">${formatCurrency(netMerchandise)}</td>
               </tr>
             </table>
           </td>
         </tr>
       </table>
-      <p style="font-size:11px;color:#9ca3af;margin:8px 4px 0;line-height:1.5;">Your payout is calculated on the pre-discount item price. Platform-funded coupons and shipping do not reduce your earnings.</p>
+      <p style="font-size:11px;color:#9ca3af;margin:8px 4px 0;line-height:1.5;">Only your merchandise and allocated discounts are shown. Payment settlement and mixed-order delivery require separate reconciliation.</p>
     </div>
 
     <!-- Customer details -->
@@ -850,14 +919,14 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
   const html = emailShell({
     accentColor:    '#8f1d1d',
     accentLabel:    '&#128722; New Order to Fulfil',
-    accentSubtitle: `Order #${order.orderNumber} &bull; Payout ${formatCurrency(totals.vendorEarnings)}`,
+    accentSubtitle: `Order #${order.orderNumber} &bull; Merchandise ${formatCurrency(netMerchandise)}`,
     body,
     footerNote: 'Partner Notification — DrinksHarbour Vendor Dashboard',
   });
 
   return sendEmail({
     to: tenant.email || tenant.contactEmail,
-    subject: `New Order #${order.orderNumber} — Your Payout: ${formatCurrency(totals.vendorEarnings)}`,
+    subject: `New Order #${order.orderNumber} — Merchandise Total: ${formatCurrency(netMerchandise)}`,
     html,
   });
 };
@@ -916,6 +985,8 @@ const sendNewOrderNotificationToAdmin = async (order, customer) => {
         </td>
       </tr>
     </table>
+
+    ${giftStaffSection(order)}
 
     <!-- Revenue summary -->
     <div style="margin-bottom:26px;">
@@ -1715,6 +1786,10 @@ module.exports = {
   // identities (itemSubtotal == vendorShare + commission, splitCheck/totalCheck).
   calculateVendorTotals,
   calculateOrderBreakdown,
+  // Gift-checkout email builders — exported so tests can assert exactly what
+  // lands in the customer/staff mailboxes (see __tests__/giftCheckout.email.test.js).
+  giftEmailSection,
+  giftStaffSection,
   sendOrderConfirmationToCustomer,
   sendNewOrderNotificationToTenant,
   sendNewOrderNotificationToAdmin,

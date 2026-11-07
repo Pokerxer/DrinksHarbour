@@ -1,3 +1,4 @@
+import { warehouseFixture } from '@/test/warehouse-fixture';
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -26,7 +27,8 @@ afterEach(() => {
 });
 it('opens each history inside the verified warehouse and links back to its stock page', async () => {
   vi.mocked(warehouseService.getWarehouseById).mockResolvedValue({
-    data: { name: 'Main depot', code: 'MAIN' },
+    success: true,
+    data: warehouseFixture({ name: 'Main depot', code: 'MAIN' }),
   });
   render(<LocationAnalysis warehouseId="one" />);
   expect(await screen.findByText('Stock scope one')).toBeTruthy();
@@ -49,14 +51,16 @@ it('does not mount stock or history when the warehouse is unavailable', async ()
   await screen.findByRole('alert');
   expect(screen.queryByRole('tablist')).toBeNull();
   vi.mocked(warehouseService.getWarehouseById).mockResolvedValue({
-    data: { name: 'Recovered', code: 'R' },
+    success: true,
+    data: warehouseFixture({ name: 'Recovered', code: 'R' }),
   });
   fireEvent.click(screen.getByText('Retry'));
   await waitFor(() => expect(screen.getByText('Stock scope foreign')).toBeTruthy());
 });
 it('supports keyboard tab navigation and preserves previously visited panels', async () => {
   vi.mocked(warehouseService.getWarehouseById).mockResolvedValue({
-    data: { name: 'Main', code: 'M' },
+    success: true,
+    data: warehouseFixture({ name: 'Main', code: 'M' }),
   });
   render(<LocationAnalysis warehouseId="one" />);
   await screen.findByText('Stock scope one');

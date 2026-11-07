@@ -217,7 +217,6 @@ const pathToDisplayName = (path: (string | number)[]): string => {
     maxOrderQuantity: 'Max Order Qty',
     orderIncrement: 'Order Increment',
     isDefault: 'Default',
-    isOnSale: 'On Sale',
     isPopularSize: 'Popular Size',
     isLimitedEdition: 'Limited Edition',
     rank: 'Rank',
@@ -258,7 +257,7 @@ const formatIssueMessage = (issue: ZodIssue): string => {
       return `Expected ${issue.expected}, received ${issue.received}`;
 
     case 'invalid_literal':
-      return `Invalid value. Must be one of: ${(issue.options as string[]).join(', ')}`;
+      return `Invalid value. Must be: ${String(issue.expected)}`;
 
     case 'unrecognized_keys':
       return `Unrecognized key(s): ${issue.keys.join(', ')}`;
@@ -267,7 +266,7 @@ const formatIssueMessage = (issue: ZodIssue): string => {
       return 'Invalid value format';
 
     case 'invalid_union_discriminator':
-      return `Invalid discriminator value: ${issue.discriminator}`;
+      return `Invalid discriminator. Must be one of: ${issue.options.join(', ')}`;
 
     case 'invalid_enum_value':
       return `Invalid option. Must be one of: ${(issue.options as string[]).join(', ')}`;

@@ -1,5 +1,13 @@
 # All-colleague bonus appraisal
 
+Attendance can use an explicit employee planning `weekly_quota` policy instead
+of a dated shift roster. The tenant-scoped monthly/range scorer loads that policy
+from the employee. Only complete Monday–Friday weeks fully inside the selected
+range count, with weekly credit capped at the target. Unfinished/partial weeks
+are excluded; absent days are weekly deficits, not invented dated shifts.
+Default employees retain published-shift scoring. See
+`docs/superpowers/specs/RESUME-wyncity-attendance-scores.md` for deployment state.
+
 HR selects appraisers from the employees being appraised in a draft cycle. Each
 selected appraiser rates every other participant once, with one integer 1–5.
 Require at least two appraisers so every participant receives an incoming rating.
@@ -7,9 +15,9 @@ No self rating. All belong to one authenticated tenant. Only unrestricted HR may
 manage the business-wide roster or read allocations/results across employees.
 
 Store NGN in integer minor units. Without examination/monthly settings, bonus uses
-unrounded mean / 5 × allocation. Combined cycles use the equal mean of appraisal
-percentage and attendance, plus examination percentage for selected exam
-recipients (legacy configurations target all matching departments). Details and API boundaries: [EXAMINATION.md](./EXAMINATION.md).
+unrounded mean / 5 × allocation. New combined calculations use appraisal40%,examination40%,attendance20%;
+non-exam employees use appraisal80%,attendance20%. Released results keep their
+saved scores and weights (legacy snapshots retain equal weighting). Details and API boundaries: [EXAMINATION.md](./EXAMINATION.md).
 Draft ratings never produce published results. Close only with every selected appraiser
 submitted and all required appraiser-to-other-participant rating pairs present. Transactions touch the cycle
 revision to serialize mutations; stale forms receive 409. Launch freezes roster, appraiser permissions
@@ -46,3 +54,13 @@ assignment remains independent from appraiser permission: `hasExamination` signa
 cycle configuration; the own examination endpoint decides access. Loaded cycle
 content stays visible when result refresh fails. See
 `docs/superpowers/specs/RESUME-employee-peer-workspace.md` for UI verification.
+
+
+Owner employee names open the unrestricted-HR scores endpoint. It exposes only
+aggregate exam/appraisal/attendance values with explicit pending/provisional states,
+never draft ratings,keys or reviewer identities. See EXAMINATION.md for endpoint
+and weighting rules. Handoff: docs/superpowers/specs/RESUME-employee-score-breakdown.md.
+
+Closed peer cycle owner headers offer Download results PDF. It prints fresh
+authorized saved snapshots, preserves historical weights, and never recalculates
+attendance or bonuses. Handoff: docs/superpowers/specs/RESUME-cycle-results-pdf.md.

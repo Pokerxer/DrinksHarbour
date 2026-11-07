@@ -182,7 +182,7 @@ function WishlistCard({ item, onRemove, onAddToCart, loading }: {
         {/* Note */}
         {item.note && (
           <p className="text-[10px] text-stone-500 bg-stone-50 rounded-lg px-2.5 py-1.5 italic line-clamp-2 border border-stone-100">
-            "{item.note}"
+            &quot;{item.note}&quot;
           </p>
         )}
 
@@ -430,7 +430,7 @@ export default function WishlistPage() {
             </div>
             <h2 className="text-xl font-black text-stone-900 mb-2">Your wishlist is empty</h2>
             <p className="text-sm text-stone-500 max-w-xs mx-auto mb-7">
-              Save items you love by tapping the ♡ on any product — they'll appear here.
+              Save items you love by tapping the ♡ on any product — they&apos;ll appear here.
             </p>
             <Link href="/shop"
               className="inline-flex items-center gap-2 bg-gradient-to-br from-red-700 to-red-900 text-white px-7 py-3 rounded-xl font-bold text-sm hover:from-red-800 hover:to-red-950 transition-all shadow-md">

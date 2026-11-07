@@ -14,6 +14,7 @@ interface CreateBrandModalProps {
   onBrandCreated: (brandId: string) => void;
   token: string;
   productName?: string;
+  industry?: string;
 }
 
 interface BrandFormData {
@@ -58,6 +59,7 @@ export default function CreateBrandModal({
   onBrandCreated,
   token,
   productName = '',
+  industry,
 }: CreateBrandModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -184,12 +186,13 @@ export default function CreateBrandModal({
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          industry,
           name: formData.name.trim(),
           slug: slug,
           description: formData.description.trim() || undefined,
           countryOfOrigin: formData.countryOfOrigin || undefined,
           founded: formData.founded ? parseInt(formData.founded) : undefined,
-          primaryCategory: formData.primaryCategory || undefined,
+          primaryCategory: industry && industry !== 'beverage' ? undefined : formData.primaryCategory || undefined,
           status: 'active',
         }),
       });
@@ -413,7 +416,7 @@ export default function CreateBrandModal({
             </div>
           </div>
 
-          <div>
+          {(!industry || industry === 'beverage') && <div>
             <label className="mb-2 block text-sm font-medium text-gray-700">
               Primary Category
             </label>
@@ -458,7 +461,7 @@ export default function CreateBrandModal({
                 </Button>
               )}
             </div>
-          </div>
+          </div>}
 
           <div className="flex justify-end gap-3 pt-4 border-t">
             <Button

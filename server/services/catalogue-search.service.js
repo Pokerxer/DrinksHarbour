@@ -9,7 +9,12 @@ const { catalogueNamePattern, rankCatalogueProducts, normalize } = require('./ca
 
 const PUBLIC_FIELDS = ['_id', 'name', 'slug', 'type', 'subType', 'brand', 'category',
   'subCategory', 'barcode', 'volumeMl', 'abv', 'originCountry', 'producer',
-  'flavorProfile', 'shortDescription', 'images', 'primaryImage', 'thumbImage', 'status'];
+  'flavorProfile', 'shortDescription', 'images', 'primaryImage', 'thumbImage', 'status',
+  // Additive catalogue-scope label (constants/catalogScope.js): lets the
+  // tenant catalogue picker distinguish "sellable now · marketplace review
+  // pending" from legacy pending approvals. Tenant-private rows are excluded
+  // from public search flows (canonical filters), so this is a safe label.
+  'publicationScope'];
 
 async function searchCatalogueProducts({ query = '', type, limit = 15 } = {}) {
   const term = String(query).trim().slice(0, 160);

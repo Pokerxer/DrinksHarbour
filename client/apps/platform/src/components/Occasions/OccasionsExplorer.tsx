@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PiPackageBold, PiArrowRightBold } from 'react-icons/pi';
 import type { OccasionId } from '@/lib/occasionBrief';
@@ -8,6 +8,7 @@ import { getOccasionSubpages } from '@/lib/occasions';
 import { occasionCards } from './data';
 import OccasionCard from './OccasionCard';
 import OccasionChatPlanner from './OccasionChatPlanner';
+import { readOccasionDraft, writeOccasionDraft } from '@/lib/occasionDraft';
 
 /** Short chip labels for guide links pulled from the lib/occasions registry. */
 const GUIDE_LABELS: Record<string, string> = {
@@ -29,6 +30,17 @@ export default function OccasionsExplorer() {
   const [occasion, setOccasion] = useState<OccasionId | ''>('');
   const plannerHeading = useRef<HTMLHeadingElement>(null);
   const selected = occasionCards.find(card => card.id === occasion);
+  // The hub keeps its own 'general' draft: restore the picked occasion on
+  // return (after the sign-in redirect too), then persist the choice.
+  useEffect(() => {
+    const draft = readOccasionDraft('general');
+    if (draft?.occasion && occasionCards.some(card => card.id === draft.occasion)) setOccasion(draft.occasion as OccasionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (occasion) writeOccasionDraft('general', { occasion });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [occasion]);
   function plan(id: OccasionId) {
     setOccasion(id);
     plannerHeading.current?.focus({ preventScroll: true });

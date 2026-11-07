@@ -1,6 +1,10 @@
 import Image from 'next/image';
 import { PiPackage, PiCheck, PiArrowRight } from 'react-icons/pi';
 import type { Product } from './ProductSearchResults';
+import {
+  TENANT_PRIVATE_MATCH_NOTE,
+  isTenantPrivateProduct,
+} from '../../catalogue-scope';
 
 export default function CatalogMatchRow({
   product,
@@ -82,11 +86,24 @@ export default function CatalogMatchRow({
           )}
           {product.volumeMl != null && <span>{product.volumeMl} ml</span>}
           {product.abv != null && <span>{product.abv}% ABV</span>}
-          {product.status === 'pending' && (
-            <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">
+          {isTenantPrivateProduct(product) ? (
+            // The tenant's own private identity: sellable immediately, the
+            // marketplace publication is what's under review. Replaces the
+            // generic pending approval tag — never shown for legacy rows.
+            <span
+              title="You can sell this in your store right away; DrinksHarbour reviews marketplace publication"
+              className="rounded bg-violet-50 px-1.5 py-0.5 font-medium text-violet-700"
+            >
+              {TENANT_PRIVATE_MATCH_NOTE}
+            </span>
+          ) : product.status === 'pending' ? (
+            <span
+              title="DrinksHarbour is still reviewing this catalog identity — it becomes sellable once approved"
+              className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700"
+            >
               Pending approval
             </span>
-          )}
+          ) : null}
         </span>
       </span>
       <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 group-hover:bg-blue-100 group-hover:text-blue-700">

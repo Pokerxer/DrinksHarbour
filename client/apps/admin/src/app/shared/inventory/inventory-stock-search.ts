@@ -13,6 +13,7 @@
 // `warehouseStockService.getAllStock` already returned every row.
 
 import { finite } from './inventory-dashboard-analysis';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 import type { StockRow } from '@/services/warehouseStock.service';
 import type {
   FilterConfig,
@@ -97,12 +98,15 @@ export function categoryOf(r: StockRow): string {
 // literal term AND reported in `unknownFields`, so a query that returns nothing
 // can say why instead of looking like an empty result set.
 
-/** The searchable surface. Keep `fieldTextFor` and this list in step. */
+/** The searchable surface. Keep `fieldTextFor` and this list in step.
+ *  Size searches the full shared variant label (flatRowSizeLabel, DRI-30), so
+ *  retail colour/option rows answer `size:emerald`; legacy rows compose the
+ *  stored sizeName byte-for-byte. */
 const SHORTHAND: { key: string; text: (r: StockRow) => string }[] = [
   { key: 'sku', text: (r) => r.sku || '' },
   { key: 'wh', text: (r) => `${r.warehouseName} ${r.warehouseId}` },
   { key: 'cat', text: (r) => categoryOf(r) },
-  { key: 'size', text: (r) => r.sizeName || '' },
+  { key: 'size', text: (r) => flatRowSizeLabel(r) },
 ];
 
 const SHORTHAND_ALIASES: Record<string, string> = {
@@ -188,13 +192,12 @@ export function parseStockQuery(raw: string): ParsedQuery {
 
 // ── Scoring ──────────────────────────────────────────────────────────────────
 
-/**
- * The concatenated text a free-text term is matched against. This is the whole
- * searchable surface — there is no zone, aisle or barcode on StockRow, whatever
- * an older comment on this page used to claim.
- */
+/** The concatenated text a free-text term is matched against. This is the whole
+ *  searchable surface — there is no zone, aisle or barcode on StockRow, whatever
+ *  an older comment on this page used to claim. The size field is the full
+ *  shared variant label (DRI-30); legacy rows index the stored sizeName byte-for-byte. */
 export function fieldTextFor(r: StockRow): string {
-  return [r.productName, r.sku, r.sizeName, r.warehouseName, categoryOf(r), r.valuationMethod]
+  return [r.productName, r.sku, flatRowSizeLabel(r), r.warehouseName, categoryOf(r), r.valuationMethod]
     .filter(Boolean)
     .join(' ')
     .normalize('NFD')
@@ -229,7 +232,7 @@ const FIELD_WEIGHTS: {
 }[] = [
   { text: (r) => (r.productName || '').toLowerCase(), boundary: 30, loose: 20 },
   { text: (r) => (r.sku || '').toLowerCase(), boundary: 18, loose: 8 },
-  { text: (r) => (r.sizeName || '').toLowerCase(), boundary: 8, loose: 4 },
+  { text: (r) => (flatRowSizeLabel(r) || '').toLowerCase(), boundary: 8, loose: 4 },
   { text: (r) => (r.warehouseName || '').toLowerCase(), boundary: 6, loose: 3 },
   { text: (r) => categoryOf(r).toLowerCase(), boundary: 6, loose: 3 },
 ];
@@ -571,7 +574,9 @@ const CONFIG_BY_ID = new Map(STOCK_FILTER_CONFIGS.map((c) => [c.id, c]));
 const STOCK_FIELD_VALUES: Record<string, (r: StockRow) => string | number | null> = {
   product: (r) => r.productName ?? '',
   sku: (r) => r.sku ?? '',
-  size: (r) => r.sizeName ?? '',
+  // Full shared variant label (DRI-30): retail rows match on composed
+  // "size · colour · option"; legacy rows compose the stored sizeName.
+  size: (r) => flatRowSizeLabel(r),
   warehouse: (r) => r.warehouseName ?? '',
   category: (r) => categoryOf(r),
   onhand: (r) => finite(r.currentQuantity),
@@ -888,7 +893,10 @@ export function sortStockRows(
         cmp = byName(a, b);
         break;
       case 'size':
-        cmp = (a.sizeName || '').localeCompare(b.sizeName || '');
+        // Sort by the full shared variant label; Emerald and Ivory of the same
+        // named size order deterministically and never tie. Legacy rows compose
+        // the stored sizeName so their ordering is unchanged.
+        cmp = flatRowSizeLabel(a).localeCompare(flatRowSizeLabel(b));
         break;
       case 'warehouse':
         cmp = (a.warehouseName || '').localeCompare(b.warehouseName || '');
@@ -931,19 +939,34 @@ const GROUP_LABEL_OF: Record<GroupKey, (r: StockRow) => string> = {
   product: (r) => r.productName || '—',
   category: (r) => categoryOf(r),
   status: (r) => STATUS_BADGE[statusOf(r)].label,
-  size: (r) => r.sizeName || '—',
+  // The SIZE label is the full shared variant label (flatRowSizeLabel, DRI-30);
+  // legacy rows resolve to the stored sizeName byte-for-byte, sizeless rows to '—'.
+  size: (r) => flatRowSizeLabel(r) || '—',
   valuation: (r) => (r.valuationMethod || 'standard').toUpperCase(),
 };
+
+/**
+ * Bucket key along each group dimension. Only the Size dimension keys on the
+ * exact Size ID (warehouse-analysis `sizeRowKey` pattern, DRI-30): identity
+ * separate from presentation, so same-size colour siblings (Emerald/Ivory)
+ * stay distinct buckets. The stored sizeName is the legacy fallback for rows
+ * that lack an id, then '—' — so sizeless rows still merge into one bucket.
+ * No per-industry forks anywhere.
+ */
+const SIZE_BUCKET_KEY = (r: StockRow): string => r.sizeId || r.sizeName || '—';
 
 export function groupStockRows(rows: StockRow[], key: string): [string, StockRow[]][] {
   const label = GROUP_LABEL_OF[key as GroupKey];
   if (!label) return [];
+  const byId = key === 'size';
   const map = new Map<string, StockRow[]>();
   for (const r of rows) {
-    const k = label(r);
+    const k = byId ? SIZE_BUCKET_KEY(r) : label(r);
     const bucket = map.get(k);
     if (bucket) bucket.push(r);
     else map.set(k, [r]);
   }
-  return Array.from(map.entries());
+  // Buckets keyed by id present their shared full label; rows in one bucket
+  // carry one identity, so the first row's label names the whole bucket.
+  return Array.from(map.entries(), ([k, bucket]) => [byId ? label(bucket[0]) : k, bucket]);
 }

@@ -1,0 +1,15 @@
+# Shared warehouse identity protection — 27 October2026
+
+## Recurrence and verified recovery — 29 October 2026
+
+User reports localhost:3000, not hosted. WH001physicallyabsentagain despite currentlocalprotection; localAPI started28Oct after27Octfixfiles, so stale-localcode notproven. Fresh9protectiontests pass; no matchingDELETE/product-edit in currentAPIlog. Atlas denied existingprofiler/system.profile reads; no deletionaudit; actualwriter/time unknown. Do NOT claim remote/hostedoldcode caused it or promisepermanentprevention. Need database-side audit/privileged writer-accessreview.
+
+Restored originalID fromverifiedmetadata only; independent18:23:29UTC verificationpassed1,282lines/26,296units, allpre-existinginventory/prices/costs/history unchanged. Evidence outputs/wyncity-2026-10-29-wh001/{before.ejson,committed.json,verified.json}; actionWYNCITY_WH001_RECOVERY_20261029. Neverreplayanyrecovery/import. Earlier26,297units were27Octbaseline; preserve later legitimate1unitdifference. In-appbrowser signedout, useraskedlogin; UIvisibilitynotyetverified. Handoff RESUME-wh001-recurrence-2026-10-29.md.
+
+Subsequent spreadsheet update completed and independently verified16:26:23UTC (after the recovery-only baseline below):696matchedrows updated,684stockbalances/167costs,258unchanged/317held. WH001now26,297units; no recovery replay. See wyncity-template16.md for authoritative latest counts and held-row report. Earlier29,405units describe the preserved pre-update baseline, not a rollback target.
+
+Confirmed reproducible defect: old updateSubProduct empty warehouse form calls Warehouse.findByIdAndDelete unscoped, deleting shared physical location without stock guard. Explains WH001 orphan pattern but no historical actor/time proven. Fixed productcreate/update to resolve tenant-owned active references only via subproductWarehouse.js, ignore empty legacy formobjects preservingref, nullunlinkonly, reject legacy nonempty storageform beforewrites. Warehouse model blocks Mongoose query/document harddeletes; deleteWarehouse now deactivates, retainsstock/history, refusesdefault/stock/reservations. Rawdboperations bypass hooks; production operator roles mustrestrictaccess. No perpetual prevention guarantee.
+
+41focusedtests passed, regressions observedredbeforefix. Finalfullsuite4302pass/24fail/74skip across4400tests; fullfailurenames/evidence in docs/superpowers/specs/RESUME-wh001-recovery-guard-2026-10-27.md. LocalAPI nodemon autoreloaded, nohosteddeployment/commit/push. Userunrelateddirtyedits preserved.
+
+OriginalWH0016a32ad2c78f1e3c27bda089a restored toWynCity699165839f3308b1baeca8fc;1282stocklines29405units reconnected. Recoverytransaction insertswarehouse+systemauditonly, backup wh001-recovery-before-attempt2.ejson under outputs/wyncity-2026-10-27-template16/. Firstattemptabortedtimelimit/nochanges; retrycommitted. Independentverificationpassed16:05:32UTC, allpre-existingrecordsacross7tenantcollectionsexactlyunchanged, auditcount1. Evidencewh001-recovery-verified.json. Neverreapply. Spreadsheet16stock/costadjustmentsnotyetapplied.

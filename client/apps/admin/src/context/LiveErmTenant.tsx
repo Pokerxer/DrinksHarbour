@@ -10,5 +10,10 @@ export default function LiveErmTenant({ status, plan, children }: {
   return <TenantProvider initialTenant={tenant ? {
     ...tenant, plan, capabilities: status.capabilities,
     subscriptionStatus: status.subscriptionStatus,
+    // Additive: the resolved industry profile the server applies (explicit
+    // Tenant.industries first, then business-type derivation). Absent while the
+    // flag is OFF or on older servers — consumers treat undefined as
+    // unprofiled/legacy (no filtering).
+    ...(status.industries ? { industries: status.industries } : {}),
   } : null}>{children}</TenantProvider>;
 }

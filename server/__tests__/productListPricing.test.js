@@ -178,3 +178,9 @@ test("a size's wholesale price is still the platform cost basis in the list", as
   assert.equal(pricing.websitePrice, 26500);
   assert.notEqual(pricing.websitePrice, 39700, 'the wholesale rate was dropped');
 });
+
+test('selling-price markup list retains a product percentage and ignores old markup overrides', async t => {
+  const { pricing } = await listPricingFor(t, baseSize({ sellingPrice: 100000, costPrice: 90000, sellingPriceMarkupOverridePct: 25, platformMarkupOverridePct: 90 }), { tenant: { revenueModel: 'selling_price_markup', sellingPriceMarkupPercentage: 20 } });
+  assert.equal(pricing.websitePrice, 125000);
+  assert.equal(pricing.platformCostPrice, 100000);
+});

@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // Services for Gemini AI API calls
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -24,6 +25,12 @@ export interface GroundingMeta {
 interface ProductDetailsResponse extends GroundingMeta {
   success: boolean;
   data: {
+    specifications?: Record<string, string>;
+    category?: string;
+    subCategory?: string;
+    proof?: number;
+    barcode?: string;
+    style?: string;
     name: string;
     slug: string;
     type: string;
@@ -402,7 +409,7 @@ interface CategorySuggestionResponse extends GroundingMeta {
 const handleFetchError = async (response: Response): Promise<never> => {
   let errorMessage = 'Failed to connect to server';
   try {
-    const errorData = await response.json();
+    const errorData = await readError(response);
     errorMessage = errorData.message || `Server error: ${response.status}`;
   } catch {
     errorMessage = `Server error: ${response.status} ${response.statusText}`;
@@ -417,7 +424,8 @@ export const geminiService = {
   async generateProductDetails(
     name: string,
     token: string,
-    category?: string
+    category?: string,
+    industry?: string
   ): Promise<ProductDetailsResponse> {
     const url = `${API_URL}/api/gemini/generate-product`;
 
@@ -428,14 +436,14 @@ export const geminiService = {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ name, category }),
+        body: JSON.stringify({ name, category, type: category, industry }),
       });
 
       if (!response.ok) {
         await handleFetchError(response);
       }
 
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
         throw new Error(
@@ -471,7 +479,7 @@ export const geminiService = {
         await handleFetchError(response);
       }
 
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
         throw new Error(
@@ -506,7 +514,7 @@ export const geminiService = {
         await handleFetchError(response);
       }
 
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
         throw new Error(
@@ -541,7 +549,7 @@ export const geminiService = {
         await handleFetchError(response);
       }
 
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
         throw new Error(
@@ -578,7 +586,7 @@ export const geminiService = {
         await handleFetchError(response);
       }
 
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
         throw new Error(
@@ -614,7 +622,7 @@ export const geminiService = {
         await handleFetchError(response);
       }
 
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
         throw new Error(
@@ -652,7 +660,7 @@ export const geminiService = {
         await handleFetchError(response);
       }
 
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
         throw new Error(
@@ -683,7 +691,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, brand }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate short description');
     }
@@ -710,7 +718,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, brand, originCountry }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate full description');
     }
@@ -735,7 +743,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate flavor profile');
     }
@@ -761,7 +769,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, flavorProfile }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate food pairings');
     }
@@ -787,7 +795,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, flavorProfile }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate nose notes');
     }
@@ -813,7 +821,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, flavorProfile }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate palate notes');
     }
@@ -838,7 +846,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate finish notes');
     }
@@ -864,7 +872,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, age }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate color description');
     }
@@ -890,7 +898,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, brand }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate origin country');
     }
@@ -916,7 +924,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, originCountry }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate region');
     }
@@ -943,7 +951,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, originCountry, region }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate appellation');
     }
@@ -969,7 +977,7 @@ export const geminiService = {
         body: JSON.stringify({ name, brand, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate producer');
     }
@@ -994,7 +1002,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate vintage');
     }
@@ -1020,7 +1028,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, age }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate age statement');
     }
@@ -1045,7 +1053,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate production method');
     }
@@ -1071,7 +1079,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, productionMethod }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate cask type');
     }
@@ -1096,7 +1104,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(
         error.message || 'Failed to generate serving temperature'
@@ -1123,7 +1131,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate glassware');
     }
@@ -1148,7 +1156,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate garnish');
     }
@@ -1173,7 +1181,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate mixers');
     }
@@ -1198,7 +1206,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate allergens');
     }
@@ -1223,7 +1231,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate ingredients');
     }
@@ -1250,7 +1258,7 @@ export const geminiService = {
         body: JSON.stringify({ name, brand, type, ...options }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate meta title');
     }
@@ -1289,7 +1297,7 @@ export const geminiService = {
         }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate meta description');
     }
@@ -1323,7 +1331,7 @@ export const geminiService = {
         body: JSON.stringify({ name, ...options }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate keywords');
     }
@@ -1348,7 +1356,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate dietary info');
     }
@@ -1375,7 +1383,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, abv, volumeMl }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate nutritional info');
     }
@@ -1400,7 +1408,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate volume and ABV');
     }
@@ -1426,7 +1434,7 @@ export const geminiService = {
         body: JSON.stringify({ name, type, volumeMl }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate standard sizes');
     }
@@ -1447,7 +1455,7 @@ export const geminiService = {
         body: JSON.stringify({ name }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       const slug = name
         .toLowerCase()
@@ -1481,7 +1489,7 @@ export const geminiService = {
         await handleFetchError(response);
       }
 
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
         throw new Error(
@@ -1511,7 +1519,7 @@ export const geminiService = {
         body: JSON.stringify({ name, productName }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate brand description');
     }
@@ -1536,7 +1544,7 @@ export const geminiService = {
         body: JSON.stringify({ name, productName }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate brand country');
     }
@@ -1561,7 +1569,7 @@ export const geminiService = {
         body: JSON.stringify({ name, countryOfOrigin: context }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate brand founded year');
     }
@@ -1586,7 +1594,7 @@ export const geminiService = {
         body: JSON.stringify({ name, productName }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate brand category');
     }
@@ -1616,7 +1624,7 @@ export const geminiService = {
         }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(
         error.message || 'Failed to generate category suggestion'
@@ -1650,7 +1658,7 @@ export const geminiService = {
         }),
       });
       if (!response.ok) await handleFetchError(response);
-      return response.json();
+      return readJson(response);
     } catch (error: any) {
       throw new Error(
         error.message || 'Failed to generate subcategory suggestion'

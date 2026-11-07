@@ -2,6 +2,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MainChart, StackedChart } from '../warehouse-analysis-charts';
+import type { GroupRow2 } from '../warehouse-analysis-helpers';
 const data = (count: number) =>
   Array.from({ length: count }, (_, i) => ({
     label: `Product ${i + 1}`,
@@ -90,4 +91,36 @@ it('uses the same horizontal layout for stacked products below and above eight',
     expect(container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(count);
     expect(container.querySelector('svg')?.outerHTML).not.toMatch(/NaN|Infinity/);
   }
+});
+
+// DRI-17 — the page passes `seriesLabels` down to StackedChart, so size series
+// (keyed by exact Size ID) must present the shared full identity label and never
+// leak a raw Size ID into the stacked views. Regression for the missing
+// index.tsx wire found while finishing this issue.
+it('presents size-series labels, not raw Size IDs, in the stacked table', () => {
+  const variantRow = (sizeKey: string, value: number): GroupRow2 => ({
+    label: 'Product One',
+    isoKey: 'p1',
+    __total__: value,
+    orders: 1,
+    orderList: [],
+    [sizeKey]: value,
+  });
+  const { container } = render(
+    <StackedChart
+      rows={[variantRow('sz-emerald', 12), variantRow('sz-ivory', 5)]}
+      series={['sz-emerald', 'sz-ivory']}
+      chartType="table"
+      measure="on_hand_qty"
+      groupLabel="Product"
+      measureLabel="On hand"
+      orderMap={{}}
+      onSegmentClick={() => {}}
+      seriesLabels={{ 'sz-emerald': 'm · Emerald', 'sz-ivory': 'm · Ivory' }}
+    />,
+  );
+  const table = container.querySelector('table')?.textContent || '';
+  expect(table).toContain('m · Emerald');
+  expect(table).toContain('m · Ivory');
+  expect(table).not.toMatch(/sz-emerald|sz-ivory/);
 });

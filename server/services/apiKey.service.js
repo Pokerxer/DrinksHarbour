@@ -56,6 +56,7 @@ async function authenticateKey(secret, scope, now = new Date()) {
     error.statusCode = 429;
     throw error;
   }
-  return { key, tenant };
+  return { key, tenant: tenant.storefrontIntegrationEnabled
+    ? await require('./storefrontChannels').attachChannel(tenant, key) : tenant };
 }
 module.exports = { SCOPES, PUBLIC_FIELDS, hashSecret, issueKey, authenticateKey };

@@ -9,5 +9,9 @@
     "build": "npm run build:iso",
     "build:iso": "cd apps/admin && npm run build",
     "dev": "turbo dev --filter=admin"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22 <23"
   }
 }

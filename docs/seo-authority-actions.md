@@ -1,5 +1,15 @@
 # Authority work — DrinksHarbour
 
+## 2026-10-18 campaign preparation
+
+See [backlink campaign](seo/backlinks/README.md) for seven researched prospects,
+five tailored editorial drafts, a conditional stockist template and a contact log.
+The October 18 connector request still returned the September 8 backlink snapshot:
+12 links / 12 domains, no individual rows. Competitor intersections remain empty.
+No current link quality assessment or new links are claimed. Pitches remain unsent;
+explicit send instructions and real sender details are needed before outreach.
+The current technical health metric is 92; it does not measure backlink gains.
+
 ## Verified baseline, 2026-09-09
 
 [SiteGuru backlink report](https://app.siteguru.co/backlink_results/view/554078):

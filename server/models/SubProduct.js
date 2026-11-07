@@ -69,6 +69,7 @@ const subProductSchema = new Schema(
     // changes: the platform selling price recalculates with this same %.
     // null = use the product-level platformMarkup.
     // Explicit pre-catalogue-discount marketplace price for commission agreements.
+    sellingPriceMarkupOverridePct: { type: Number, min: 0, max: 500, default: null },
     commissionPriceOverride: { type: Number, min: 0, default: null },
     platformMarkupOverridePct: {
       type: Number,
@@ -170,6 +171,12 @@ const subProductSchema = new Schema(
       type: Boolean,
       default: false,
     },
+
+    // Tenant-owned SEO. These never mutate the central Product.
+    metaTitle: { type: String, maxlength: 60 },
+    metaDescription: { type: String, maxlength: 160 },
+    seoH1: { type: String, maxlength: 100 },
+    metaKeywords: [{ type: String, maxlength: 80 }],
 
     // TENANT OVERRIDES
     // ════════════════════════════════════════════════════════════
@@ -723,7 +730,6 @@ subProductSchema.pre('save', function () {
 // INDEXES
 // ════════════════════════════════════════════════════════════
 
-// subProductSchema.index({ tenant: 1, product: 1 }, { unique: true });
 // subProductSchema.index({ tenant: 1, status: 1 });
 // subProductSchema.index({ sku: 1 });
 // subProductSchema.index({ sizes: 1 });
@@ -732,6 +738,14 @@ subProductSchema.pre('save', function () {
 // subProductSchema.index({ tenant: 1, isFeaturedByTenant: 1 });
 // subProductSchema.index({ tenant: 1, stockStatus: 1 });
 // subProductSchema.index({ vendor: 1, tenant: 1 });
+
+// The (tenant, product) uniqueness contract (docs/audits/general-saas-evolution
+// F2) is intentionally NOT declared here: a schema index would be auto-built
+// on the next server start, before the required duplicate reconciliation has
+// run on that database. The contract lives in config/catalogueIndexes.js and
+// is applied explicitly by scripts/ensure-catalogue-uniqueness.js (check first,
+// then --apply-uniqueness); the service-level conflict check in
+// subproduct.service.js covers behaviour until then.
 
 const SubProduct = mongoose.models.SubProduct || mongoose.model('SubProduct', subProductSchema);
 module.exports = SubProduct;

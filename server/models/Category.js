@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
+const { INDUSTRY_VALUES } = require('../constants/industries');
 
 const categorySchema = new Schema(
   {
@@ -73,6 +74,20 @@ const categorySchema = new Schema(
       type: String,
       enum: ['alcoholic', 'non_alcoholic', 'low_alcohol', 'alcohol_free', 'mixed'],
       default: 'alcoholic',
+      index: true,
+    },
+
+    // ════════════════════════════════════════════════════════════
+    // INDUSTRY SCOPING (2026-11-02, additive)
+    // A MISSING industry = legacy/global category: visible to every
+    // business. If present it must be an INDUSTRY value
+    // (constants/industries.js). See marketplaceTaxonomy.js for the
+    // declared values and the --backfill-industry seed step.
+    // ════════════════════════════════════════════════════════════
+    industry: {
+      type: String,
+      enum: INDUSTRY_VALUES,
+      trim: true,
       index: true,
     },
 

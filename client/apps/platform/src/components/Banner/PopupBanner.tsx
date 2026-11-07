@@ -758,7 +758,9 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
                     onClose();
                   }}
                   className="absolute inset-0 z-[1] rounded-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-orange-500"
-                />
+                >
+                  <span className="sr-only">{banner.ctaText || banner.image.alt || banner.title || 'Explore promotion'}</span>
+                </Link>
               )}
               {/* Keep badges above the contained artwork without changing its crop. */}
               {/* Discount badge */}

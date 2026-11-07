@@ -31,6 +31,9 @@ const optionalPositiveNumber = z.preprocess(
 // Size option schema for sub-product variants
 export const sizeOptionSchema = z.object({
   _id: z.string().optional(),
+  optionName: z.string().trim().max(100).optional(),
+  imageScope: z.enum(['variant', 'color', 'option']).optional(),
+  image: z.object({ url: z.string().url().regex(/^https?:\/\//i), alt: z.string().optional() }).nullable().optional(),
   size: z.string().default(''),
   displayName: z.string().optional(),
   sizeCategory: z.string().default('standard'),
@@ -88,6 +91,22 @@ export const sizeOptionSchema = z.object({
   availability: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
+  // Non-beverage color variants (server/models/Size.js). colorName keeps the
+  // user's spelling verbatim; colorHexCode must be a complete #RRGGBB value —
+  // incomplete/half-typed input is treated as "not set" rather than blocking
+  // the save (the swatch + text input make a full value trivial to enter).
+  colorName: z.preprocess(
+    (val) => {
+      if (typeof val !== 'string') return val ?? undefined;
+      const trimmed = val.trim();
+      return trimmed === '' ? undefined : trimmed;
+    },
+    z.string().max(60).optional()
+  ),
+  colorHexCode: z.preprocess(
+    (val) => (typeof val === 'string' && /^#?[0-9a-fA-F]{6}$/.test(val.trim()) ? val.trim().toUpperCase() : undefined),
+    z.string().optional()
+  ),
   packaging: z.string().optional(),
   minOrderQuantity: optionalPositiveNumber,
   maxOrderQuantity: optionalPositiveNumber,

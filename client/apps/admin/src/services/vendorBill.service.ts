@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // services/vendorBill.service.ts
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -108,11 +109,11 @@ export const vendorBillService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to create vendor bill');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getVendorBill(
@@ -126,11 +127,11 @@ export const vendorBillService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch vendor bill');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getVendorBills(
@@ -172,11 +173,11 @@ export const vendorBillService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch vendor bills');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async updateVendorBill(
@@ -194,11 +195,11 @@ export const vendorBillService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to update vendor bill');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async deleteVendorBill(
@@ -213,11 +214,11 @@ export const vendorBillService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to delete vendor bill');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async recordPayment(
@@ -244,11 +245,11 @@ export const vendorBillService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to record payment');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async validateBill(
@@ -270,10 +271,10 @@ export const vendorBillService = {
     );
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to validate bill');
     }
 
-    return response.json();
+    return readJson(response);
   },
 };

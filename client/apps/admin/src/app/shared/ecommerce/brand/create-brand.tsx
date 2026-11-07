@@ -1,6 +1,7 @@
 // @ts-nocheck
 'use client';
 
+import { INDUSTRY_SELECT_OPTIONS } from '@/utils/industries';
 import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Controller, type SubmitHandler } from 'react-hook-form';
@@ -343,6 +344,7 @@ export default function CreateBrand({
         founded: data.founded !== undefined ? Number(data.founded) : undefined,
         founderName: data.founderName || '',
         brandType: data.brandType || undefined,
+        industry: data.industry || null,
         primaryCategory: data.primaryCategory || undefined,
         specializations: data.specializations || '',
         countryOfOrigin: data.countryOfOrigin || '',
@@ -492,12 +494,19 @@ export default function CreateBrand({
                     />
                   )}
                 />
+                <label className="block text-sm">
+                    Business
+                    <select className="ml-2 rounded border p-2" {...register('industry')}>
+                      <option value="">Unassigned</option>
+                      {INDUSTRY_SELECT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
                 <Controller
                   name="primaryCategory"
                   control={control}
                   render={({ field: { onChange, value } }) => (
                     <Select
-                      options={PRIMARY_CATEGORY_OPTIONS}
+                      options={watch('industry') && watch('industry') !== 'beverage' ? [] : PRIMARY_CATEGORY_OPTIONS}
                       value={
                         PRIMARY_CATEGORY_OPTIONS.find(
                           (o) => o.value === value
@@ -691,12 +700,19 @@ export default function CreateBrand({
                       />
                     )}
                   />
+                  <label className="block text-sm">
+                    Business
+                    <select className="ml-2 rounded border p-2" {...register('industry')}>
+                      <option value="">Unassigned</option>
+                      {INDUSTRY_SELECT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
                   <Controller
                     name="primaryCategory"
                     control={control}
                     render={({ field: { onChange, value } }) => (
                       <Select
-                        options={PRIMARY_CATEGORY_OPTIONS}
+                        options={watch('industry') && watch('industry') !== 'beverage' ? [] : PRIMARY_CATEGORY_OPTIONS}
                         value={
                           PRIMARY_CATEGORY_OPTIONS.find(
                             (o) => o.value === value

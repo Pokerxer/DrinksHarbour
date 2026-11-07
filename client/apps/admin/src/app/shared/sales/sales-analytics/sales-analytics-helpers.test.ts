@@ -86,6 +86,28 @@ describe('getSalesG1Key', () => {
     expect(getSalesG1Key(so({ customerSnapshot: undefined }), 'customer', {})).toBe(
       'Walk-in Customer'
     );
+    // No beverage-category assumption: any customer shape without a usable
+    // name lands in the walk-in bucket, named customers bucket on their name.
+    expect(getSalesG1Key(so({ customerSnapshot: {} }), 'customer', {})).toBe(
+      'Walk-in Customer'
+    );
+    expect(getSalesG1Key(so({ customerSnapshot: { phone: '0803' } }), 'customer', {})).toBe(
+      'Walk-in Customer'
+    );
+    expect(getSalesG1Key(so({ customerSnapshot: { name: 'Dara Ojo' } }), 'customer', {})).toBe(
+      'Dara Ojo'
+    );
+  });
+
+  test('salesperson buckets: named staff stay distinct, unattributed docs read "Unassigned"', () => {
+    expect(getSalesG1Key(so({ salesperson: 'Ada' }), 'salesperson', {})).toBe('Ada');
+    expect(getSalesG1Key(so({ salesperson: 'Bola' }), 'salesperson', {})).toBe('Bola');
+    // Marketplace-routed orders intentionally read Unassigned (decision on
+    // record) — a missing staff attribution is a bucket, not an error.
+    expect(getSalesG1Key(so({ salesperson: '' }), 'salesperson', {})).toBe('Unassigned');
+    expect(
+      getSalesG1Key(so({ salesperson: undefined }), 'salesperson', {})
+    ).toBe('Unassigned');
   });
 
   test('status reads the lifecycle field of the right doc type', () => {
@@ -115,11 +137,81 @@ describe('getSalesG1Key', () => {
     const key = getSalesG1Key(so(), 'order_month', {});
     expect(key).toMatch(/^\d{4}-\d{2}$/);
   });
+
+  test('monthly and weekly buckets split orders across all five retail types', () => {
+    // One seeded order per retail type — no beverage-only assumptions in the
+    // time buckets: each order earns its own month and own week.
+    const types = ['Fashion', 'Electronics', 'Beauty', 'Home & Living', 'General Retail'];
+    const orders = types.map((t, i) =>
+      so({
+        docType: 'order',
+        orderStatus: 'confirmed',
+        createdAt: `2026-0${i + 1}-10T09:00:00Z`,
+        items: [line({ name: `${t} fixture item`, lineTotal: 10000 + i })],
+      })
+    );
+    const months = new Set(orders.map((o) => getSalesG1Key(o, 'order_month', {})));
+    expect(months.size).toBe(5);
+    const weeks = new Set(orders.map((o) => getSalesG1Key(o, 'order_week', {})));
+    expect(weeks.size).toBe(5);
+    // Same month, different week — the weekly engine still splits.
+    const sameMonth = [
+      so({ createdAt: '2026-03-03T09:00:00Z' }),
+      so({ createdAt: '2026-03-20T09:00:00Z' }),
+    ];
+    const w = new Set(sameMonth.map((o) => getSalesG1Key(o, 'order_week', {})));
+    expect(getSalesG1Key(sameMonth[0], 'order_month', {})).toBe(
+      getSalesG1Key(sameMonth[1], 'order_month', {})
+    );
+    expect(w.size).toBe(2);
+  });
 });
 
 describe('resolveSalesItemDimKey', () => {
   test('product uses the line name, not the sku', () => {
     expect(resolveSalesItemDimKey(line(), 'product', {})).toBe('Hennessy VSOP');
+  });
+
+  test('variant-carrying lines key as "name · variant" so colour/option rows stay distinct', () => {
+    // Two colourways of one fashion product — one bucket each.
+    const navy = line({ name: 'Summer Shirt', variant: 'M · Navy · Slim' });
+    const black = line({ name: 'Summer Shirt', variant: 'M · Black · Regular' });
+    expect(resolveSalesItemDimKey(navy, 'product', {})).toBe(
+      'Summer Shirt · M · Navy · Slim'
+    );
+    expect(resolveSalesItemDimKey(black, 'product', {})).toBe(
+      'Summer Shirt · M · Black · Regular'
+    );
+    // Electronics: option rows of the same product name split too.
+    const keys = new Set(
+      [
+        line({ name: 'Smart TV', variant: 'Wi-Fi' }),
+        line({ name: 'Smart TV', variant: 'Cellular' }),
+      ].map((l) => resolveSalesItemDimKey(l, 'product', {}))
+    );
+    expect(keys.size).toBe(2);
+  });
+
+  test('lines without variant data key on the stored name — legacy beverage rows byte-identical', () => {
+    expect(
+      resolveSalesItemDimKey(line({ name: 'Hennessy VSOP – 750 ml' }), 'product', {})
+    ).toBe('Hennessy VSOP – 750 ml');
+    expect(
+      resolveSalesItemDimKey(line({ variant: undefined }), 'product', {})
+    ).toBe('Hennessy VSOP');
+    // Nameless size rows keep the pre-existing sku fallback.
+    expect(resolveSalesItemDimKey(line({ name: '', sku: 'HV-750' }), 'product', {})).toBe(
+      'HV-750'
+    );
+  });
+
+  test('taxonomy dims keep their generic fallbacks (audit-only rule)', () => {
+    expect(
+      resolveSalesItemDimKey(line({ subproduct: 'sp404' }), 'product_category', {})
+    ).toBe('Uncategorized');
+    expect(resolveSalesItemDimKey(line({ subproduct: 'sp404' }), 'brand', {})).toBe(
+      'No Brand'
+    );
   });
 
   test('category/brand come from prodMeta keyed by subproduct id', () => {

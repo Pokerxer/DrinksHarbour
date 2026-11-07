@@ -3,6 +3,7 @@
 const brandService = require('../services/brand.service');
 const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/response');
+const { NotFoundError } = require('../utils/errors');
 const Brand = require('../models/Brand');
 const Product = require('../models/Product');
 const cloudinaryService = require('../services/cloudinary.service');
@@ -79,7 +80,6 @@ exports.getAllBrands = asyncHandler(async (req, res) => {
     page = 1,
     limit = 20,
     featured,
-    status = 'active',
     sort = 'name',
     order = 'asc',
     search,
@@ -107,7 +107,6 @@ exports.getAllBrands = asyncHandler(async (req, res) => {
     page,
     limit,
     featured,
-    status,
     sort,
     order,
     search,
@@ -227,6 +226,16 @@ exports.getFilterOptions = asyncHandler(async (req, res) => {
 // ─── Admin CRUD handlers ──────────────────────────────────────────────────────
 
 /**
+ * @route GET /api/brands/admin/:id
+ * @access Private (platform admin) — includes proposals for review
+ */
+exports.getAdminBrandById = asyncHandler(async (req, res) => {
+  const brand = await Brand.findById(req.params.id).select('-__v').lean();
+  if (!brand) throw new NotFoundError('Brand not found');
+  successResponse(res, { brand }, 'Brand retrieved successfully');
+});
+
+/**
  * @route GET /api/brands/admin
  * @access Private (admin)
  */
@@ -262,6 +271,7 @@ exports.createAdminBrand = asyncHandler(async (req, res) => {
 
   const brandData = {
     name: b.name,
+    industry: b.industry || undefined,
     slug: b.slug,
     status: b.status || 'active',
     createdBy: req.user?._id,
@@ -353,6 +363,7 @@ exports.updateAdminBrand = asyncHandler(async (req, res) => {
   const updateData = {};
 
   if (b.name !== undefined) updateData.name = b.name;
+  if (b.industry !== undefined) updateData.industry = b.industry || null;
   if (b.slug !== undefined) updateData.slug = b.slug;
   if (b.legalName !== undefined) updateData.legalName = b.legalName;
   if (b.tradingAs !== undefined) updateData.tradingAs = String(b.tradingAs).split(',').map((s) => s.trim()).filter(Boolean);

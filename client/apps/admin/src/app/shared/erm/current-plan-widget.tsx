@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import {
   PiCrownDuotone,
   PiCalendarDuotone,
@@ -134,12 +135,14 @@ export default function CurrentPlanWidget({ status }: { status: ErmStatus }) {
         and each POS can use its own selected stock location.
       </p>
       <div className="mt-3 flex flex-wrap gap-3 text-xs underline">
-        <a href="/warehouses">Manage stock locations</a>
-        <a href="/settings#point_of_sale">Manage POS terminals</a>
+        <Link href="/warehouses">Manage stock locations</Link>
+        <Link href="/settings#point_of_sale">Manage POS terminals</Link>
       </div>
       <div className="mt-4 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-        {status.revenueModel === 'markup' ? 'Plan commission (your business uses markup): ' : 'Marketplace commission: '}
-        <span className="font-semibold">{status.commissionRate}%</span>
+        {status.revenueModel === 'selling_price_markup' ? 'Marketplace pricing follows your selling-price markup agreement; plan commission does not apply.' : <>
+          {status.revenueModel === 'markup' ? 'Plan commission (your business uses markup): ' : 'Marketplace commission: '}
+          <span className="font-semibold">{status.commissionRate}%</span>
+        </>}
       </div>
     </div>
   );

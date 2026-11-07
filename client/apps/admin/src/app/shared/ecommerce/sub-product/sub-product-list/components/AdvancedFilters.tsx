@@ -1,6 +1,10 @@
 // @ts-nocheck
 'use client';
 
+import { productTypes as catalogTypeOptions } from '@/app/shared/ecommerce/product/create-edit/form-utils';
+import { useTenant } from '@/context/TenantContext';
+import { resolveTenantIndustries, typesForIndustries } from '@/utils/industries';
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Text, Badge, Button, Flex, Input, Select, Switch, RangeSlider } from 'rizzui';
@@ -121,33 +125,7 @@ const VISIBILITY_OPTIONS = [
   { value: 'hidden', label: 'Hidden', color: 'secondary', icon: '🔒' },
 ];
 
-const BEVERAGE_TYPES = [
-  { value: 'wine', label: 'Wine', icon: '🍷' },
-  { value: 'red_wine', label: 'Red Wine', icon: '🍷' },
-  { value: 'white_wine', label: 'White Wine', icon: '🥂' },
-  { value: 'sparkling_wine', label: 'Sparkling', icon: '🍾' },
-  { value: 'rose_wine', label: 'Rosé', icon: '🌸' },
-  { value: 'champagne', label: 'Champagne', icon: '🥂' },
-  { value: 'beer', label: 'Beer', icon: '🍺' },
-  { value: 'craft_beer', label: 'Craft Beer', icon: '🍻' },
-  { value: 'lager', label: 'Lager', icon: '🍺' },
-  { value: 'ale', label: 'Ale', icon: '🍺' },
-  { value: 'stout', label: 'Stout', icon: '🍺' },
-  { value: 'whiskey', label: 'Whiskey', icon: '🥃' },
-  { value: 'vodka', label: 'Vodka', icon: '🍸' },
-  { value: 'gin', label: 'Gin', icon: '🍸' },
-  { value: 'rum', label: 'Rum', icon: '🍹' },
-  { value: 'tequila', label: 'Tequila', icon: '🌵' },
-  { value: 'brandy', label: 'Brandy', icon: '🥃' },
-  { value: 'cognac', label: 'Cognac', icon: '🥃' },
-  { value: 'liqueur', label: 'Liqueur', icon: '🍸' },
-  { value: 'cocktail', label: 'Cocktail', icon: '🍹' },
-  { value: 'soft_drink', label: 'Soft Drink', icon: '🥤' },
-  { value: 'juice', label: 'Juice', icon: '🧃' },
-  { value: 'water', label: 'Water', icon: '💧' },
-  { value: 'energy_drink', label: 'Energy Drink', icon: '⚡' },
-  { value: 'mixer', label: 'Mixer', icon: '🍋' },
-];
+
 
 const ORIGIN_COUNTRIES = [
   { value: 'NG', label: 'Nigeria', flag: '🇳🇬' },
@@ -470,6 +448,13 @@ export default function AdvancedFilters({
   onReset,
   activeFilterCount,
 }: AdvancedFiltersProps) {
+  const { tenant } = useTenant();
+  const industryProfile = resolveTenantIndustries(tenant);
+  const typeOptions = typesForIndustries(
+    catalogTypeOptions,
+    industryProfile
+  );
+  const showBeverageFilters = !industryProfile || industryProfile.includes('beverage');
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'basic' | 'beverage' | 'performance' | 'dates'>('basic');
   const panelRef = useRef<HTMLDivElement>(null);
@@ -492,7 +477,7 @@ export default function AdvancedFilters({
   // Tab navigation
   const tabs = [
     { id: 'basic', label: 'Basic', icon: PiTagBold },
-    { id: 'beverage', label: 'Beverage', icon: PiWineBold },
+    { id: 'beverage', label: 'Product details', icon: PiTagBold },
     { id: 'performance', label: 'Performance', icon: PiChartBarBold },
     { id: 'dates', label: 'Dates', icon: PiCalendarBold },
   ];
@@ -730,15 +715,16 @@ export default function AdvancedFilters({
               {/* BEVERAGE TAB */}
               {activeTab === 'beverage' && (
                 <>
-                  <FilterSection title="Beverage Type" icon={PiWineBold} defaultOpen badge={filters.beverageTypes.length}>
+                  <FilterSection title="Product Type" icon={PiWineBold} defaultOpen badge={filters.beverageTypes.length}>
                     <PillSelect
-                      options={BEVERAGE_TYPES}
+                      options={typeOptions}
                       selected={filters.beverageTypes}
                       onChange={(values) => updateFilter('beverageTypes', values)}
                       columns={3}
                     />
                   </FilterSection>
                   
+                  {showBeverageFilters && <>
                   <FilterSection title="Alcohol Content" icon={PiThermometerBold}>
                     <div className="space-y-3">
                       <ToggleRow
@@ -759,7 +745,7 @@ export default function AdvancedFilters({
                     </div>
                   </FilterSection>
                   
-                  <FilterSection title="Volume / Size" icon={PiDropBold}>
+                  <FilterSection title="Container volume" icon={PiDropBold}>
                     <RangeInputs
                       minValue={filters.volumeRange[0]}
                       maxValue={filters.volumeRange[1]}
@@ -769,6 +755,7 @@ export default function AdvancedFilters({
                     />
                   </FilterSection>
                   
+                  </>}
                   <FilterSection title="Origin Country" icon={PiGlobeBold} badge={filters.originCountries.length}>
                     <PillSelect
                       options={ORIGIN_COUNTRIES}

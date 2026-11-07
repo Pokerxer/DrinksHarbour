@@ -1,4 +1,7 @@
+import { legacyBeverageTypeValues } from '@/utils/legacy-beverage-types';
 import { expandedProductTypeValues } from '@/utils/expanded-product-types';
+import { hospitalityProductTypeValues } from '@/utils/hospitality-product-types';
+import { retailProductTypeValues } from '@/utils/retail-product-types';
 import { z } from 'zod';
 import { fileSchema } from './common-rules';
 
@@ -139,7 +142,12 @@ export const productFormSchema = z.object({
   type: z
     .enum(
       [
+        ...legacyBeverageTypeValues,
         ...expandedProductTypeValues,
+        // Retail verticals (server retailTypes — electronics/fashion/beauty/home)
+        ...retailProductTypeValues,
+        // Hospitality & foodservice (server hospitalityTypes — 14 types)
+        ...hospitalityProductTypeValues,
         'beer',
         'wine',
         'sparkling_wine',
@@ -228,6 +236,7 @@ export const productFormSchema = z.object({
   // ═══════════════════════════════════════════════════════════════════
   // DESCRIPTIVE CONTENT
   // ═══════════════════════════════════════════════════════════════════
+  specifications: z.record(z.string().max(1000)).optional(),
   shortDescription: z.string().max(280).optional(),
   description: z.string().max(5000).optional(),
   tastingNotes: z

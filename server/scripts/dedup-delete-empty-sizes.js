@@ -32,7 +32,7 @@ const AuditLog = require('../models/AuditLog');
 
 const MONGODB_URI =
   process.env.MONGODB_URI ||
-  'mongodb+srv://jrwaldehzx:NWXdpyCMP7yB7a4N@cluster0.ukrr40p.mongodb.net/drinksharbour';
+  require('../utils/requireMongoUri').requireMongoUri();
 
 // System actor for AuditLog entries (no human user driving this migration)
 const SYSTEM_ACTOR = {

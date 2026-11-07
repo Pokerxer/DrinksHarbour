@@ -77,7 +77,10 @@ async function applyStockAdjustment(d, input, actor, tenant) {
         .session(session)
         .lean();
       if (!sp) throw new NotFoundError('Product not found');
-      const size = await d.Size.findOne({ _id: sizeId, tenant, subProduct: subProductId })
+      // Size docs store the sub-product under `subproduct` (models/Size.js) —
+      // querying `subProduct` matched no document and failed every /inventory
+      // adjustments write with NotFoundError.
+      const size = await d.Size.findOne({ _id: sizeId, tenant, subproduct: subProductId })
         .select('costPrice')
         .session(session)
         .lean();

@@ -208,7 +208,7 @@ export default function BrandProductsPage({
     setError(null);
     try {
       const [brandRes, prodsRes] = await Promise.all([
-        fetch(`${API_URL}/api/brands/${id}`, {
+        fetch(`${API_URL}/api/brands/admin/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(

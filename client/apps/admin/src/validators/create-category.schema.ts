@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { INDUSTRIES } from '@/utils/industries';
 import { messages } from '@/config/messages';
 
 const validTypes = [
@@ -75,6 +76,13 @@ export const categoryFormSchema = z.object({
     errorMap: () => ({ message: 'Please select a valid type' }),
   }),
   subType: z.string().max(80).optional(),
+  // Industry taxonomy scope (2026-11-02, additive): blank '' = legacy/global
+  // (the category is visible to every business, exactly as documents created
+  // before this field existed). Super-admin classification only.
+  industry: z
+    .enum(INDUSTRIES)
+    .or(z.literal(''))
+    .optional(),
   alcoholCategory: z
     .enum([
       'alcoholic',

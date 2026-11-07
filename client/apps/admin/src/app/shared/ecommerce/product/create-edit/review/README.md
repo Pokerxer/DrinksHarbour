@@ -38,3 +38,19 @@ Revenue agreement correction (2026-10-17): commission uses final merchandise and
 locks the agreed rate. Price edits change commission payout; no second markup.
 Only markup agreements preserve a fixed payout. Explicit commission overrides are
 stored separately from markup percentages. See docs/memory/revenue-agreement-pricing.md.
+
+Selling-price markup (2026-10-31): Tenant retail is the fixed payout. Website
+price edits persist a percentage on the tenant listing/Size, never a frozen
+amount or central Product field. Use tenant default is a pending reset committed
+only on approval; manually editing the price cancels that reset. Explicit zero
+and inherited default are distinct. Pack policy is the same percentage. Only
+platform operators may change/reset these overrides. See docs/memory/selling-price-markup.md.
+
+2026-11-02 modal refinement: SellingMarkupSummary separates tenant default from
+live percentage-to-save and inherited reset. selling-markup.ts rounds retail to
+kobo, reverses catalogue sales, and floors implied percentages to4 decimals like
+the server; unchanged quotes retain the saved rate. Validate0–500% before approval.
+Do not fabricate missing defaults as0%, show an above-retail warning for this
+intentional premium, or advertise/persist separate packs for this model. Supplier
+cost is not the payout basis or a prerequisite for a price suggestion. Keep margin
+targets distinct from markup. See docs/memory/review-modal-selling-price-markup.md.

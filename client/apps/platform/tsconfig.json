@@ -37,7 +37,17 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "src/components/Cosmetic1/AdsPhoto.jsx",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-venue-application/types/**/*.ts",
+    ".next-venue-application/dev/types/**/*.ts",
+    ".next-production-audit/types/**/*.ts",
+    ".next-production-audit/dev/types/**/*.ts",
+    ".next-venue-phase2-oct24/types/**/*.ts",
+    ".next-venue-phase2-oct24/dev/types/**/*.ts",
+    ".next-venue-phase2-build-oct25/types/**/*.ts",
+    ".next-venue-phase2-build-oct25/dev/types/**/*.ts",
+    ".next-venue-resume/types/**/*.ts",
+    ".next-venue-resume/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

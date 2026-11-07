@@ -1,3 +1,4 @@
+import { isBeverageProductType } from '@/utils/product-types';
 // Pure filtering / sorting / grouping logic for the SubProducts list.
 //
 // Extracted from table.tsx so it can be unit-tested (see filtering.test.ts) and
@@ -38,6 +39,10 @@ export interface SubProductListItem {
     originCountry?: string;
     brand?: { name: string };
     category?: { name: string };
+    // Central catalogue scope hydrate — absent on legacy rows and on payloads
+    // that don't include it; anything missing reads as canonical. Interpret
+    // via ../catalogue-scope.ts (never raw).
+    publicationScope?: string;
   };
   sizes?: SizeVariant[];
   baseSellingPrice: number;
@@ -399,6 +404,7 @@ function matchesAdvancedFilters(p: SubProductListItem, f: FilterConfig): boolean
     if (!f.beverageTypes.some((bt) => t.includes(bt.toLowerCase()))) return false;
   }
 
+  if (f.isAlcoholic !== null && !isBeverageProductType(p.product?.type)) return false;
   if (!triState(f.isAlcoholic, p.product?.isAlcoholic)) return false;
 
   if (

@@ -97,6 +97,7 @@ import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface OrderItem {
+  warehouse?: { _id: string; name?: string; code?: string };
   netSales?: number;
   netQuantity?: number;
   returnedQuantity?: number;
@@ -136,7 +137,7 @@ interface PosOrder {
   posStaff?: { firstName: string; lastName: string; posName?: string };
   customer?: { firstName?: string; lastName?: string; phone?: string } | null;
   session?: { _id: string; terminalType?: string; openedAt?: string } | null;
-  paymentDetails?: { splitPayments?: { method: string; amount: number }[] };
+  paymentDetails?: { change?: number; splitPayments?: { method: string; amount: number }[] };
   items?: OrderItem[];
   refunds?: OrderRefund[];
 }
@@ -1507,10 +1508,12 @@ const DRILL_HEADERS: { col: DrillSortCol; label: string; right?: boolean }[] = [
 ];
 
 function OrderDrillDrawer({
+  invoiceStore,
   orders,
   title,
   onClose,
 }: {
+  invoiceStore: ReturnType<typeof posStore>;
   orders: PosOrder[];
   title: string;
   measure: Measure;
@@ -4588,17 +4591,22 @@ export default function POSOrderAnalysis() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  // Fetch categories and brands (no auth needed)
+  // Fetch categories and brands (the categories fetch carries the POS tenant
+  // token so the server applies the business's industry scope when profiled;
+  // anonymous callers still get the full legacy list). Gated on token like the
+  // analysis fetch above — with a bare `[]` dep this fired before auth hydrated
+  // and silently landed the unscoped legacy list.
   useEffect(() => {
+    if (!token) return;
     posApi
-      .getCategories()
+      .getCategories(token)
       .then((d) => setCategories(d.categories || []))
       .catch(() => {});
     posApi
       .getBrands({ limit: 200 })
       .then((d) => setBrands(d.brands || []))
       .catch(() => {});
-  }, []);
+  }, [token]);
 
   // Fetch products to build name→category/brand map
   useEffect(() => {
@@ -7817,6 +7825,7 @@ export default function POSOrderAnalysis() {
       {/* ── Drill-down drawer ─────────────────────────────────────────── */}
       {drillData && (
         <OrderDrillDrawer
+          invoiceStore={invoiceStore}
           orders={drillData.orders}
           title={drillData.title}
           measure={measure}

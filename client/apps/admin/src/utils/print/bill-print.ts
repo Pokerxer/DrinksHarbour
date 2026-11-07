@@ -1,5 +1,6 @@
 import { billReturnSummary } from '@/app/shared/purchases/invoice-return-summary';
 import type { VendorBill } from '@/services/vendorBill.service';
+import { lineSizeLabel, populatedSizeIdentity } from '@/utils/size-variant-label';
 import { fmtAmt, fmtDate, moneyWords } from './print-shared';
 import type { DocumentModel, DocCell } from './doc-model';
 
@@ -9,7 +10,14 @@ export function buildBillInvoice(bill: VendorBill, companyName: string): Documen
 
   const rows: DocCell[][] = bill.items.map((item, index) => {
     const name = item.subProductName ?? '—';
-    const size = item.sizeName ? ` – ${item.sizeName}` : '';
+    // Compose from the populated Size identity (colour/option) when the bill's
+    // GET payload carries it; colourless/legacy rows keep the stored sizeName
+    // snapshot byte-for-byte (snapshot policy — never re-composed server-side).
+    const sizeLabel = lineSizeLabel(
+      item,
+      populatedSizeIdentity((item as any).sizeId)
+    );
+    const size = sizeLabel ? ` – ${sizeLabel}` : '';
     return [
       {
         text: `${name}${size}`,

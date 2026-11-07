@@ -1,6 +1,5 @@
-// @ts-nocheck
+import Link from 'next/link';
 import { routes } from '@/config/routes';
-import PageHeader from '@/app/shared/page-header';
 import ProductDetails from '@/app/shared/ecommerce/product/product-details';
 import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
@@ -9,34 +8,23 @@ export const metadata = {
   ...metaObject('Product Details'),
 };
 
-export default async function ProductDetailsPage({ params }: any) {
-  const slug = (await params).slug;
-
-  const pageHeader = {
-    title: 'Shop',
-    breadcrumb: [
-      {
-        href: routes.eCommerce.dashboard,
-        name: 'E-Commerce',
-      },
-      {
-        href: routes.eCommerce.shop,
-        name: 'Shop',
-      },
-      {
-        name: slug,
-      },
-    ],
-  };
-
+export default function ProductDetailsPage() {
   return (
     <>
       <EcommercePageHeader hideHero />
       <div className="mt-4">
-        <PageHeader
-          title={pageHeader.title}
-          breadcrumb={pageHeader.breadcrumb}
-        />
+        <nav aria-label="Breadcrumb" className="mb-4 text-sm text-gray-600">
+          <Link
+            href={routes.eCommerce.products}
+            className="underline underline-offset-4"
+          >
+            Products
+          </Link>
+          <span aria-hidden="true" className="mx-2">
+            /
+          </span>
+          <span aria-current="page">Product details</span>
+        </nav>
         <ProductDetails />
       </div>
     </>

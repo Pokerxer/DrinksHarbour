@@ -1,0 +1,126 @@
+name: Quality checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Check whitespace in the actual change
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if test -n "$BASE_SHA" && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            git diff --check "$BASE_SHA" "$GITHUB_SHA"
+          else
+            git show --format= --check "$GITHUB_SHA"
+          fi
+      - run: npm run test:quality
+      - run: npm run check:secrets
+
+  server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Start disposable transaction databases
+        run: |
+          docker run --detach --name drinks-venue -p 29127:29127 mongo:7.0 mongod --port 29127 --replSet venuePhase0 --bind_ip_all
+          docker run --detach --name drinks-peer -p 27029:27029 mongo:7.0 mongod --port 27029 --replSet peerTest --bind_ip_all
+          for spec in 'drinks-venue 29127 venuePhase0' 'drinks-peer 27029 peerTest'; do
+            read -r container port replica <<< "$spec"
+            for attempt in $(seq 1 30); do
+              if docker exec "$container" mongosh --port "$port" --quiet --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 1)'; then break; fi
+              sleep 2
+            done
+            docker exec "$container" mongosh --port "$port" --quiet --eval "rs.initiate({_id:'$replica',members:[{_id:0,host:'127.0.0.1:$port'}]})"
+            ready=false
+            for attempt in $(seq 1 30); do
+              if docker exec "$container" mongosh --port "$port" --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then ready=true; break; fi
+              sleep 2
+            done
+            test "$ready" = true
+          done
+      - name: Unit, HTTP and transaction tests
+        env:
+          NODE_ENV: test
+          DRINKSHARBOUR_VENUE_TEST_MONGO_URI: mongodb://127.0.0.1:29127/drinks_venue_test_ci?replicaSet=venuePhase0
+          PEER_TEST_MONGO: mongodb://127.0.0.1:27029/?replicaSet=peerTest
+        run: node --test --test-concurrency=2 --test-timeout=60000 '__tests__/*.test.js'
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Native embedding compatibility
+        timeout-minutes: 5
+        env:
+          EMBEDDING_PROVIDER: local
+        run: node scripts/verify-local-embeddings.js
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [admin, platform, mobile]
+    env:
+      NEXTAUTH_SECRET: ci-only-do-not-use-for-deployment
+      NEXTAUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:5001
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+      - run: pnpm --dir client install --frozen-lockfile --ignore-scripts
+      - name: Client native, authentication and Metro compatibility
+        if: matrix.app == 'admin'
+        run: node scripts/quality/verify-client-runtime.mjs
+      - name: Type safety
+        run: pnpm --dir client --filter ${{ matrix.app }} type:check
+      - name: Lint
+        if: matrix.app != 'mobile'
+        run: pnpm --dir client --filter ${{ matrix.app }} lint
+      - name: Automated tests
+        if: matrix.app != 'platform'
+        run: pnpm --dir client --filter ${{ matrix.app }} test
+      - name: Production build
+        if: matrix.app != 'mobile'
+        run: pnpm --dir client --filter ${{ matrix.app }} build
+      - name: Production dependency audit
+        run: pnpm --dir client audit --prod --audit-level high

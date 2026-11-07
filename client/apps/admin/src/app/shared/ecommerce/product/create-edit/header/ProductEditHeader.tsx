@@ -10,6 +10,7 @@ import {
 } from 'react-icons/pi';
 import HeaderMetrics from './HeaderMetrics';
 import RecordNavigation from './RecordNavigation';
+import PublicationScopeTag from '../../product-list/components/PublicationScopeTag';
 import type { ProductEditHeaderProps } from './types';
 
 export default function ProductEditHeader(props: ProductEditHeaderProps) {
@@ -61,6 +62,12 @@ export default function ProductEditHeader(props: ProductEditHeaderProps) {
                   {status}
                 </span>
               )}
+              {props.isEditMode && props.publicationScope ? (
+                <PublicationScopeTag
+                  publicationScope={props.publicationScope}
+                  owningTenantName={props.owningTenantName}
+                />
+              ) : null}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
               <p

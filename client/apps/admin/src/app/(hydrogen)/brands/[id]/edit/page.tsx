@@ -5,6 +5,7 @@ import CreateBrand from '@/app/shared/ecommerce/brand/create-brand';
 import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 import { Metadata } from 'next';
+import { getAuthenticatedUser } from '@/lib/server-auth';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -13,9 +14,11 @@ type Props = {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   try {
+    const user = await getAuthenticatedUser();
+    if (!user?.token) throw new Error('Authentication required');
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/brands/${id}`,
-      { cache: 'no-store' }
+      `${process.env.NEXT_PUBLIC_API_URL}/api/brands/admin/${id}`,
+      { cache: 'no-store', headers: { Authorization: `Bearer ${user.token}` } }
     );
     const json = await res.json();
     const name = json?.data?.brand?.name;
@@ -31,9 +34,11 @@ export default async function EditBrandPage({ params }: Props) {
   let currentImages: { logo?: string; featured?: string; banner?: string } = {};
 
   try {
+    const user = await getAuthenticatedUser();
+    if (!user?.token) throw new Error('Authentication required');
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/brands/${id}`,
-      { cache: 'no-store' }
+      `${process.env.NEXT_PUBLIC_API_URL}/api/brands/admin/${id}`,
+      { cache: 'no-store', headers: { Authorization: `Bearer ${user.token}` } }
     );
     const json = await res.json();
     if (json.success && json.data?.brand) {
@@ -52,6 +57,7 @@ export default async function EditBrandPage({ params }: Props) {
         founded: c.founded ?? undefined,
         founderName: c.founderName || '',
         brandType: c.brandType || '',
+        industry: c.industry || '',
         primaryCategory: c.primaryCategory || '',
         specializations: Array.isArray(c.specializations)
           ? c.specializations.join(', ')

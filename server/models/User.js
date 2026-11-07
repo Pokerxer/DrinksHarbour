@@ -8,6 +8,7 @@ const userSchema = new Schema(
     // ────────────────────────────────────────────────
     // Authentication & basic profile
     // ────────────────────────────────────────────────
+    venueDeniedActions: [{ type: String, enum: require('../services/venue/eligibility').ACTIONS }],
     email: {
       type: String,
       required: true,
@@ -373,7 +374,7 @@ const userSchema = new Schema(
     },
     posPermissions: {
       type: [String],
-      enum: ['pos:sell', 'pos:refund', 'pos:void', 'pos:price_override', 'pos:credit_override', 'pos:discount', 'pos:terminal:retail', 'pos:terminal:wholesale'],
+      enum: ['venue:servings_write', 'venue:production_write', 'venue:inventory_count', 'venue:profitability_read', 'venue:costs_review', 'pos:sell', 'pos:refund', 'pos:void', 'pos:price_override', 'pos:credit_override', 'pos:discount', 'pos:terminal:retail', 'pos:terminal:wholesale'],
       default: ['pos:sell', 'pos:terminal:retail', 'pos:terminal:wholesale'],
     },
 
@@ -462,6 +463,21 @@ const userSchema = new Schema(
       planning: {
         roles: { type: [{ type: ObjectId, ref: 'EmployeeRole' }], default: [] },
         defaultRole: { type: ObjectId, ref: 'EmployeeRole' },
+        // Explicit HR scoring rule; never inferred from a person's name or notes.
+        attendancePolicy: {
+          type: new Schema({
+            type: { type: String, enum: ['weekly_quota'], required: true },
+            daysPerWeek: { type: Number, min: 1, max: 5, required: true, validate: Number.isInteger },
+            startTime: { type: String, required: true, match: /^([01]\d|2[0-3]):[0-5]\d$/ },
+            endTime: { type: String, required: true, match: /^([01]\d|2[0-3]):[0-5]\d$/ },
+            effectiveFrom: { type: String, required: true, validate: value => {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+              const date = new Date(`${value}T00:00:00Z`);
+              return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+            } },
+          }, { _id: false }),
+          default: undefined,
+        },
       },
       appSettings: {
         analyticDistribution: { type: String, trim: true },

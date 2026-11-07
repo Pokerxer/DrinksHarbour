@@ -42,9 +42,9 @@ async function fetchEntries(tenantId, { from, to, period } = {}) {
  * Whether a window's cost of goods sold has to be estimated from inventory
  * movements — i.e. it carries no 5xxx cost posting of its own.
  */
-function needsMovementEstimate(entries) {
+function needsMovementEstimate(entries, costAccountCodes = []) {
   return (
-    !entries?.length || !entries.some((e) => e.lines?.some((l) => String(l.account).startsWith('5')))
+    !entries?.length || !entries.some((e) => e.lines?.some((l) => String(l.account).startsWith('5') || costAccountCodes.includes(String(l.account))))
   );
 }
 
@@ -85,10 +85,11 @@ async function getProfitLoss(tenantId, { from, to, compare } = {}) {
     Account.find({ tenant: tenantId }).lean(),
     countDrafts(tenantId),
   ]);
-  const movementTotals = needsMovementEstimate(entries)
+  const costRoles = await require('./venue/cost-account-roles').approvedCostAccountRoles({ tenantId, accounts });
+  const movementTotals = needsMovementEstimate(entries, costRoles.costAccountCodes)
     ? await movementTotalsForWindow(tenantId, { from, to })
     : null;
-  const pl = buildProfitLoss(entries, taxSummary, movementTotals, accounts);
+  const pl = buildProfitLoss(entries, taxSummary, movementTotals, accounts, costRoles);
 
   // Opt-in comparison against the equally long window immediately before. "All
   // time" has no preceding period, so `previous` stays null rather than showing
@@ -101,10 +102,10 @@ async function getProfitLoss(tenantId, { from, to, compare } = {}) {
     getSummary(tenantId, { from: prior.fromISO, to: prior.toISO }),
   ]);
   // The derived-COGS fallback is decided on the prior window's own entries.
-  const priorMovement = needsMovementEstimate(priorEntries)
+  const priorMovement = needsMovementEstimate(priorEntries, costRoles.costAccountCodes)
     ? await movementTotalsForWindow(tenantId, { from: prior.fromISO, to: prior.toISO })
     : null;
-  const previous = buildProfitLoss(priorEntries, priorTax, priorMovement, accounts);
+  const previous = buildProfitLoss(priorEntries, priorTax, priorMovement, accounts, costRoles);
   return {
     ...pl,
     draftsExcluded,
@@ -122,7 +123,8 @@ async function getBalanceSheet(tenantId, { asOf } = {}) {
     Account.find({ tenant: tenantId }).lean(),
     countDrafts(tenantId),
   ]);
-  const lifetime = buildProfitLoss(entries, {}, null, accounts);
+  const costRoles = await require('./venue/cost-account-roles').approvedCostAccountRoles({ tenantId, accounts });
+  const lifetime = buildProfitLoss(entries, {}, null, accounts, costRoles);
   return { ...buildBalanceSheet(entries, asOf, lifetime.netProfit, accounts), draftsExcluded };
 }
 

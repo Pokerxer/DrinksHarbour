@@ -10,6 +10,11 @@ const warehouseBatchSchema = new Schema(
     subProduct: { type: ObjectId, ref: 'SubProduct', required: true, index: true },
     size:       { type: ObjectId, ref: 'Size', required: true, index: true },
     product:    { type: ObjectId, ref: 'Product' }, // denormalized for recall/lookup
+    venueProduction: { batchId: Schema.Types.ObjectId, costSnapshotId: Schema.Types.ObjectId },
+    venueValuation: {
+      reviewedBy: Schema.Types.ObjectId, reviewedAt: Date,
+      initialCostMinor: Number, initialQuantityScaled: Number, issuedQuantityScaled: { type: Number, default: 0 }, issuedCostMinor: { type: Number, default: 0 }, receiptId: Schema.Types.ObjectId, reason: String,
+    },
     batchNumber: { type: String, required: true, trim: true, maxlength: 100 },
     quantity:        { type: Number, min: 0, default: 0 },
     initialQuantity: { type: Number, min: 0, default: 0 },

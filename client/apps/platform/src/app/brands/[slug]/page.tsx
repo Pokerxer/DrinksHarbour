@@ -1,26 +1,23 @@
+import { brandDescriptionSegments } from '@/lib/brand-description-links';
 import Image from '@/components/UI/OptimizedImage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Fraunces } from 'next/font/google';
+import { fraunces } from '@/app/fonts';
 import * as Icon from 'react-icons/pi';
 import { capSeoTitle } from '@/lib/seoTitle';
 import { buildBrandDescription } from '@/lib/brandSeoDescription';
 import EntityBannerOverlay from '@/components/Banner/entity-banner-overlay';
 import { jsonLdHtml } from '@/lib/jsonld';
+import DescriptionAudio from '@/components/UI/DescriptionAudio';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-const BASE_URL =
-  process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
+
+const BASE_URL = publicSiteOrigin();
 const SITE_NAME = 'DrinksHarbour';
 
 // Display face for the "bottle label" treatment — soft old-style serif.
-const fraunces = Fraunces({
-  subsets: ['latin'],
-  style: ['normal', 'italic'],
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-});
 
 // Force dynamic rendering — root layout uses headers() for tenant resolution,
 // which makes static pre-generation incompatible. Data is still cached via
@@ -441,6 +438,10 @@ export default async function BrandPage({
   const aboutParas = descriptionParas.length
     ? descriptionParas
     : toParagraphs(brand.shortDescription);
+  const aboutRichParas = String(descriptionParas.length ? brand.description : brand.shortDescription ?? '')
+    .split(/<\/(?:p|div|h[1-6]|li)>|<br\s*\/?>|\n+/gi)
+    .filter(paragraph => plainText(paragraph))
+    .map(paragraph => brandDescriptionSegments(paragraph, decodeEntities));
   const storyParas = toParagraphs(brand.story);
 
   // King 2 (H1) — keyword-rich heading, falls back to the brand name.
@@ -667,6 +668,14 @@ export default async function BrandPage({
               >
                 About {brand.name}
               </h2>
+              <div className="mt-4">
+                <DescriptionAudio subject="brand information"
+                  description={[
+                    `About ${brand.name}.`,
+                    ...aboutParas,
+                    ...(storyParas.length ? ['Our story.', ...storyParas] : []),
+                  ].join('\n\n')} />
+              </div>
               <div className="mt-4 max-w-[9rem]">
                 <LabelRule tone={`${primary}55`} />
               </div>
@@ -708,7 +717,8 @@ export default async function BrandPage({
                           aria-label={`${brand.name} on ${key}`}
                           className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:text-gray-900"
                         >
-                          <Ic className="h-4 w-4" />
+                          <Ic className="h-4 w-4" aria-hidden="true" />
+                          <span className="sr-only">{brand.name} on {key}</span>
                         </a>
                       );
                     })}
@@ -735,11 +745,15 @@ export default async function BrandPage({
                   <p
                     className={`${fraunces.className} bp-dropcap text-lg leading-relaxed text-gray-700`}
                   >
-                    {aboutParas[0]}
+                    {aboutRichParas[0]?.map(({ text, href }, i) => href
+                      ? <Link key={i} href={href} className="underline underline-offset-2">{text}</Link>
+                      : text)}
                   </p>
-                  {aboutParas.slice(1).map((para, i) => (
+                  {aboutRichParas.slice(1).map((para, i) => (
                     <p key={i} className="text-[15px] leading-7 text-gray-600">
-                      {para}
+                      {para.map(({ text, href }, j) => href
+                        ? <Link key={j} href={href} className="underline underline-offset-2">{text}</Link>
+                        : text)}
                     </p>
                   ))}
                 </div>

@@ -309,6 +309,64 @@ describe('dedupeRowsForPricelist', () => {
   });
 });
 
+// ── Retail variant identity (DRI-30) ─────────────────────────────────────────
+//
+// Pricelist: identity-aware sorts + CSV/preview presentation; the HTML print
+// cells stay the stored `sizeName` snapshot (CEO print decision). Emerald and
+// Ivory of the same named size 'M' are the two-variant DISTINCT pattern; a
+// no-variant legacy beverage row pins byte shapes.
+
+describe('retail variant identity — pricelist sorts, CSV and print bytes', () => {
+  const retail = (colorName: string, sizeId: string): PricelistPrintRow =>
+    row({ sizeId, sizeName: 'M', colorName });
+  const legacy = row({ sizeId: 'sz-70', sizeName: '70cl', productName: 'Hennessy VS' });
+
+  it('carries variant identity through the dedupe by subProduct+size', () => {
+    const out = dedupeRowsForPricelist([
+      retail('Emerald', 'sz-em'),
+      { ...retail('Emerald', 'sz-em'), currentQuantity: 1 },
+      retail('Ivory', 'sz-iv'),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.find((r) => r.colorName === 'Emerald')).toBeTruthy();
+    expect(out.find((r) => r.colorName === 'Ivory')).toBeTruthy();
+  });
+
+  it('orders same-size colour siblings deterministically instead of colliding', () => {
+    const lines = priceAndSortLines([retail('Ivory', 'sz-iv'), retail('Emerald', 'sz-em')], null);
+    expect(lines.map((l) => l.colorName)).toEqual(['Emerald', 'Ivory']);
+  });
+
+  it('keeps legacy row ordering composed from the stored sizeName', () => {
+    const lines = priceAndSortLines(
+      [
+        row({ sizeId: 'sz-1', sizeName: '1.5L' }),
+        row({ sizeId: 'sz-2', sizeName: '750ml', subProductId: 'sp2' }),
+      ],
+      null
+    );
+    expect(lines.map((l) => l.sizeName)).toEqual(['1.5L', '750ml']);
+  });
+
+  it('prints the stored sizeName bytes — never the composed identity', () => {
+    const html = buildCustomerPricelistHtml(
+      [retail('Emerald', 'sz-em'), legacy],
+      null,
+      opts()
+    );
+    expect(html).toContain('<td class="muted">M</td>');
+    expect(html).toContain('<td class="muted">70cl</td>');
+    expect(html).not.toContain('Emerald');
+  });
+
+  it('CSV export composes the full shared label for retail rows and stays byte-identical for legacy', () => {
+    const csv = buildPricelistCsv([retail('Emerald', 'sz-em'), legacy], null, opts());
+    expect(csv).toContain('"M · Emerald"');
+    // Legacy beverage row keeps the stored snapshot cell byte-for-byte.
+    expect(csv).toContain('"70cl"');
+  });
+});
+
 describe('buildCustomerPricelistHtml', () => {
   it('escapes hostile product names', () => {
     const html = buildCustomerPricelistHtml(

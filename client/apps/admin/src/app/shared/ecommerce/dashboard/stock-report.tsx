@@ -4,7 +4,8 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import WidgetCard from '@core/components/cards/widget-card';
-import { Button, Text } from 'rizzui';
+import { Button } from 'rizzui/button';
+import { Text } from 'rizzui/typography';
 import cn from '@core/utils/class-names';
 import { routes } from '@/config/routes';
 import { useDashboard } from './use-dashboard';

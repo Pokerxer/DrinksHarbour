@@ -1,8 +1,10 @@
 'use client';
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuthToken } from '@/hooks/use-authorization';
 import TableCheckout from '@/app/shared/venue/table-checkout';
-type Booking = { _id: string; guest: { name: string; phone: string }; partySize: number; bookingAt: string; status: string; tableLabel?: string };
+import BookingSeat from '@/app/shared/venue/booking-seat';
+type Booking = { requestMode?:'request_only'; requestPolicy?:{timezone:string}; serviceSession?: string; location?: string; _id: string; guest: { name: string; phone: string }; partySize: number; bookingAt: string; status: string; tableLabel?: string };
 const transitions: Record<string, string[]> = { pending: ['confirmed', 'cancelled'], confirmed: ['checked_in', 'cancelled', 'no_show'], checked_in: ['completed'] };
 export default function BookingsPage() {
   const token = useAuthToken();
@@ -12,7 +14,7 @@ export default function BookingsPage() {
   const [status, setStatus] = useState('');
   const request = useCallback(async (path: string, method = 'GET', body?: object) => {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/bookings${path}`, {
-      method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
       ...(body ? { body: JSON.stringify(body) } : {}), cache: 'no-store',
     });
     const result = await response.json() as { message?: string; data: Booking[] };
@@ -47,10 +49,12 @@ export default function BookingsPage() {
     </select></label>
     <ul className="space-y-3">{rows.map(row => <li className="rounded border p-4" key={row._id}>
       <strong>{row.guest.name}</strong> · {row.guest.phone} · {row.partySize} guests
-      <p>{new Date(row.bookingAt).toLocaleString()} · {row.tableLabel || 'Table unassigned'} · {row.status}</p>
-      <div className="mt-3 flex gap-4">{(transitions[row.status] || []).map(to => <button className="underline" disabled={busy} key={to}
+      <p>{row.requestPolicy?.timezone ? `${new Intl.DateTimeFormat('en-NG',{timeZone:row.requestPolicy.timezone,dateStyle:'medium',timeStyle:'short'}).format(new Date(row.bookingAt))} · ${row.requestPolicy.timezone}` : new Date(row.bookingAt).toLocaleString()} · {row.tableLabel || 'Table unassigned'} · {row.status}</p>
+      {row.requestMode === 'request_only' && <p>Requests await venue confirmation. <Link href="/venue" className="underline">Review in venue workspace</Link></p>}
+      <div className="mt-3 flex gap-4">{(row.requestMode === 'request_only' || row.serviceSession ? [] : transitions[row.status] || []).filter(to => to !== 'checked_in').map(to => <button className="underline" disabled={busy} key={to}
         onClick={() => void run(async () => { await request(`/${row._id}/status`, 'PATCH', { to }); })}>{to.replaceAll('_', ' ')}</button>)}</div>
-      {row.status === 'checked_in' && token && <TableCheckout bookingId={row._id} token={token} />}
+      {row.status === 'confirmed' && token && <BookingSeat token={token} bookingId={row._id} onSeated={refresh} />}
+      {row.status === 'checked_in' && token && <TableCheckout bookingId={row._id} token={token} serviceSessionId={row.serviceSession} />}
     </li>)}</ul>
     {!rows.length && <p>No bookings match this filter.</p>}
   </section>;

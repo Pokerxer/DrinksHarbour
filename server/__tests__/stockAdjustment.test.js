@@ -78,7 +78,9 @@ function setup() {
     Size: {
       findOne: (q) => {
         scoped(q);
-        assert.equal(q.subProduct, ids.product);
+        // models/Size.js stores the sub-product under `subproduct` — the
+        // pre-DRI-29 filter used `subProduct`, which matched no document.
+        assert.equal(q.subproduct, ids.product);
         return query({ _id: ids.size, costPrice: 12 });
       },
       updateOne: (q, update) => {

@@ -102,7 +102,7 @@ export default function ModuleNavHeader({
           onClick={() => setMobileOpen((v) => !v)}
           aria-expanded={mobileOpen}
           aria-controls="module-mobile-menu"
-          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${
+          className={`flex min-h-[44px] items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${
             mobileOpen
               ? 'border-[#b20202]/30 bg-[#b20202]/5 text-[#b20202]'
               : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'

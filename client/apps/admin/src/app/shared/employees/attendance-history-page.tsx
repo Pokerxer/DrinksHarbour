@@ -314,8 +314,17 @@ export default function AttendanceHistoryPage({
 
             {rating.score === null && (
               <p className="mt-3 text-xs text-gray-500">
-                Nothing was rostered in this window, so there is nothing to
-                rate. This is not a score of zero.
+                {rating.weeklySummary
+                  ? 'No completed Monday–Friday week is fully covered by this date range. Choose a wider range to see the weekly score.'
+                  : 'Nothing was rostered in this window, so there is nothing to rate. This is not a score of zero.'}
+              </p>
+            )}
+
+            {rating.weeklySummary && (
+              <p className="mt-3 text-xs text-gray-500">
+                Target: {rating.weeklySummary.daysPerWeek} days per completed
+                Monday–Friday week. {rating.weeklySummary.weeks.length}{' '}
+                completed weeks rated; the current week is excluded.
               </p>
             )}
 
@@ -381,7 +390,10 @@ export default function AttendanceHistoryPage({
 
             <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-gray-100 pt-4">
               {[
-                { label: 'Rostered', value: String(rating.counts.expected) },
+                {
+                  label: rating.weeklySummary ? 'Required days' : 'Rostered',
+                  value: String(rating.counts.expected),
+                },
                 { label: 'Attended', value: String(rating.counts.attended) },
                 { label: 'Absent', value: String(rating.counts.absent) },
                 { label: 'Late', value: String(rating.counts.late) },

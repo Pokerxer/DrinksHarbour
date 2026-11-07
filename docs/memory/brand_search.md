@@ -37,3 +37,9 @@ so portrait creatives are fully visible even when older banner data says
 `imageFit: cover`. The image-only modal no longer adds a content fade that would
 obscure artwork. Platform focused tests and `git diff --check` pass; live browser
 visual acceptance remains pending.
+
+2 November 2026 directory follow-up: see brands-directory.md and
+RESUME-brands-directory.md for complete pagination, fixed alphabet/country/sort,
+error states and decomposition. Public publication hardening/admin compatibility
+is recorded in brand-publication.md. Preserve all earlier alias and zero-count
+visibility guarantees.

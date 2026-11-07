@@ -8,7 +8,9 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
-import { purchaseEvent, type GTagItem } from '@/lib/gtag';
+import { purchaseEvent } from '@/lib/gtag';
+import { buildPaidPurchaseEvent } from '@/lib/purchaseTracking';
+import DeliveredReviewRequest from '@/components/Product/DeliveredReviewRequest';
 import { firePurchase } from '@/lib/pixels';
 import { paymentMethodLabel } from '@/config/payment-methods';
 import { useFirstOrderPerk } from '@/context/FirstOrderPerkContext';
@@ -23,6 +25,7 @@ interface OrderItem {
   quantity: number;
   priceAtPurchase: number;
   itemSubtotal: number;
+  discountAmount?: number;
 }
 
 interface Order {
@@ -35,6 +38,8 @@ interface Order {
   discountTotal: number;
   shippingFee: number;
   totalAmount: number;
+  taxAmount?: number;
+  currency?: string;
   placedAt: string;
   paidAt?: string;
   paymentDetails?: { channel?: string; transactionId?: string };
@@ -176,13 +181,10 @@ function OrderConfirmationContent() {
     if (!orderId) { setLoading(false); return; }
     try {
       const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
-      const customerEmail = localStorage.getItem('customerEmail') || sessionStorage.getItem('customerEmail');
-
-      let url = `${API_URL}/api/orders/${orderId}`;
-      if (!token && customerEmail) url += `?email=${encodeURIComponent(customerEmail)}`;
-
-      const res = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      const guestProof = localStorage.getItem(`dh:guest-order:${orderId}`);
+      const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
+        credentials: 'include',
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(guestProof ? { 'X-Order-Access': guestProof } : {}) },
       });
 
       const data = await res.json();
@@ -205,29 +207,13 @@ function OrderConfirmationContent() {
   // applies. Re-ask, or the header keeps advertising it until a full reload.
   useEffect(() => { if (order) refreshFirstOrderPerk(); }, [order, refreshFirstOrderPerk]);
 
-  const purchaseFired = useRef(false);
+  const purchaseFired = useRef<string | null>(null);
   useEffect(() => {
-    if (!order || purchaseFired.current) return;
-    if (order.status === 'cancelled' || order.status === 'refunded') return;
-    purchaseFired.current = true;
-
-    const items: GTagItem[] = (order.items || []).map((item: OrderItem) => ({
-      item_id: item.subproduct?.sku ?? item.product?.slug ?? '',
-      item_name: item.product?.name ?? 'Product',
-      item_variant: item.size?.name ?? undefined,
-      price: item.priceAtPurchase,
-      quantity: item.quantity,
-    }));
-
-    purchaseEvent({
-      transaction_id: order.orderNumber,
-      value: order.totalAmount,
-      currency: 'NGN',
-      shipping: order.shippingFee,
-      tax: 0,
-      coupon: order.coupon?.code ?? undefined,
-      items,
-    });
+    if (!order || purchaseFired.current === order.orderNumber) return;
+    const purchase = buildPaidPurchaseEvent(order);
+    if (!purchase) return;
+    purchaseFired.current = order.orderNumber;
+    purchaseEvent(purchase);
 
     firePurchase({
       value: order.totalAmount,
@@ -363,6 +349,8 @@ function OrderConfirmationContent() {
             <OrderTimeline status={order.status} />
           </div>
         )}
+
+        <DeliveredReviewRequest status={order.status} items={order.items || []} />
 
         {/* Items */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

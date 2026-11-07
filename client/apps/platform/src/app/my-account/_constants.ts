@@ -2,6 +2,7 @@ import * as Icon from 'react-icons/pi';
 import type { StatusConfig, NotificationSettings } from './_types';
 
 export const STATUS_CONFIG: Record<string, StatusConfig> = {
+  partially_shipped: { color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200', icon: Icon.PiTruckBold },
   pending:    { color: 'text-yellow-700', bg: 'bg-yellow-50',  border: 'border-yellow-200', icon: Icon.PiClockBold },
   confirmed:  { color: 'text-blue-700',   bg: 'bg-blue-50',    border: 'border-blue-200',   icon: Icon.PiCheckCircleBold },
   processing: { color: 'text-orange-700', bg: 'bg-orange-50',  border: 'border-orange-200', icon: Icon.PiPackageBold },
@@ -12,7 +13,7 @@ export const STATUS_CONFIG: Record<string, StatusConfig> = {
 
 export const ORDERS_PAGE_SIZE = 10;
 
-export const ORDER_STATUSES = ['all', 'pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'] as const;
+export const ORDER_STATUSES = ['all', 'pending', 'confirmed', 'processing', 'partially_shipped', 'shipped', 'delivered', 'cancelled'] as const;
 
 export const NG_STATES = [
   'Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River',
@@ -22,6 +23,8 @@ export const NG_STATES = [
 ];
 
 export const NAV_ITEMS = [
+  { icon: Icon.PiChatCircleDotsBold, label: 'Chat', href: '/my-account/chat' },
+  ...(process.env.NEXT_PUBLIC_VENUE_EXPERIENCE_ENABLED === 'true' ? [{ icon: Icon.PiCalendarCheckBold, label: 'Reservations', href: '/my-account/reservations' }] : []),
   { icon: Icon.PiSquaresFourBold, label: 'Overview',        href: '/my-account' },
   { icon: Icon.PiPackageBold,     label: 'My Orders',       href: '/my-account/orders' },
   { icon: Icon.PiWalletBold,      label: 'Wallet',          href: '/my-account/wallet' },

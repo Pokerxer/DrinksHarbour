@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Tenant = require('../models/Tenant');
 const asyncHandler = require('../utils/asyncHandler');
+const { assertAccessToken } = require('../utils/accessToken');
 
 /**
  * Validate POS token from Authorization header.
@@ -38,7 +39,7 @@ const protectPOS = asyncHandler(async (req, res, next) => {
 
   // Attach tenant (always from the verified DB record, never from token claim alone)
   const tenant = await Tenant.findById(user.tenant);
-  if (!tenant || !tenant.isActive) {
+  if (!tenant || (!tenant.isActive && !await require('./venue-recovery.middleware').authorizePOSVenueRecovery(req, tenant))) {
     return res.status(401).json({ success: false, message: 'Tenant not found or inactive' });
   }
   req.tenant = tenant;
@@ -74,6 +75,7 @@ const protectPOSOrAdmin = asyncHandler(async (req, res, next) => {
   let decoded;
   try {
     decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded?.type !== 'pos') assertAccessToken(decoded);
   } catch {
     return res.status(401).json({ success: false, message: 'Invalid or expired token' });
   }
@@ -92,16 +94,20 @@ const protectPOSOrAdmin = asyncHandler(async (req, res, next) => {
     req.posPermissions = decoded.posPermissions || user.posPermissions || ['pos:sell'];
 
     const tenant = await Tenant.findById(user.tenant);
-    if (!tenant || !tenant.isActive) {
+    if (!tenant || (!tenant.isActive && !await require('./venue-recovery.middleware').authorizePOSVenueRecovery(req, tenant))) {
       return res.status(401).json({ success: false, message: 'Tenant not found or inactive' });
     }
     req.tenant = tenant;
   } else {
     // ── Admin JWT path ───────────────────────────────────────────────────────
     const userId = decoded.userId || decoded.id;
-    const user   = await User.findById(userId).select('_id email role tenant status firstName lastName');
+    const user   = await User.findById(userId).select('_id email role tenant status firstName lastName passwordChangedAt');
     if (!user || user.status !== 'active') {
       return res.status(401).json({ success: false, message: 'User not found or inactive' });
+    }
+    if (user.passwordChangedAt && decoded.iat &&
+        decoded.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)) {
+      return res.status(401).json({ success: false, message: 'Token invalidated by recent password change' });
     }
     req.user = user;
     req.posPermissions = [];
@@ -117,7 +123,7 @@ const protectPOSOrAdmin = asyncHandler(async (req, res, next) => {
     }
 
     const tenant = await Tenant.findById(user.tenant);
-    if (!tenant || !tenant.isActive) {
+    if (!tenant || (!tenant.isActive && !await require('./venue-recovery.middleware').authorizePOSVenueRecovery(req, tenant))) {
       return res.status(401).json({ success: false, message: 'Tenant not found or inactive' });
     }
     req.tenant = tenant;

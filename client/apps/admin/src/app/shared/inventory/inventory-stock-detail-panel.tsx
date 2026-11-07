@@ -4,6 +4,7 @@ import type { StockBrowserMode } from './inventory-stock-browser';
 import { fmtNgn, fmtDate } from './inventory-receipts-support';
 import { availableOf, lineValue, carryingCostOf } from './inventory-stock-search';
 import { finite } from './inventory-dashboard-analysis';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 import StockDetailHeader from './inventory-stock-detail-header';
 import StockCountControl from './inventory-stock-count-control';
 import StockHistoryPanel from './inventory-stock-history-panel';
@@ -22,7 +23,7 @@ export default function StockDetail({
 }) {
   const properties = [
     ['Category', row.categoryName || 'Uncategorized'],
-    ['Size', row.sizeName],
+    ['Size', flatRowSizeLabel(row)],
     ['Warehouse', row.warehouseName],
     ['Valuation', (row.valuationMethod || '—').toUpperCase()],
     ['Unit cost', fmtNgn(finite(row.costPrice))],

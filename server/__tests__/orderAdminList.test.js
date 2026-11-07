@@ -21,6 +21,9 @@ const orderController = require('../controllers/order.controller');
 // ── Model stubs ──────────────────────────────────────────────────────────────
 
 function stubList({ docs = [], total = 0, statusCounts = [] } = {}) {
+  const AuditLog = require('../models/AuditLog');
+  const auditCreate = AuditLog.create;
+  AuditLog.create = async () => ({});
   const original = {
     find: Order.find,
     countDocuments: Order.countDocuments,
@@ -42,7 +45,7 @@ function stubList({ docs = [], total = 0, statusCounts = [] } = {}) {
 
   return {
     captured,
-    restore() { Object.assign(Order, original); },
+    restore() { Object.assign(Order, original); AuditLog.create = auditCreate; },
   };
 }
 
@@ -235,22 +238,20 @@ test('getOrder lets a tenant admin open an order containing their own items', as
   }
 });
 
-test('getOrder still blocks a tenant admin from another tenant’s order', async () => {
+test('getOrder hides a foreign merchant order as missing', async () => {
   const stub = stubFindById(orderDoc(TENANT_B));
   try {
-    const res = await run(orderController.getOrder, {
-      params: { id: 'order1' },
-      query: {},
+    await assert.rejects(run(orderController.getOrder, {
+      params: { id: 'order1' }, query: {},
       user: { _id: { toString: () => USER_ID }, role: 'tenant_admin', tenant: TENANT_A },
-    });
-    assert.strictEqual(res.statusCode, 403);
-    assert.strictEqual(res.body.success, false);
+    }), e => e.statusCode === 404);
   } finally {
     stub.restore();
   }
 });
 
-test('getOrder still admits platform admins and the order owner', async () => {
+test('getOrder still admits platform admins and the order owner', async (t) => {
+  t.mock.method(require('../models/AuditLog'), 'create', async () => ({}));
   let stub = stubFindById(orderDoc(TENANT_B));
   try {
     const res = await run(orderController.getOrder, {

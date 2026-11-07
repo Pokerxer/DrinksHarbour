@@ -100,7 +100,7 @@ const updateWarehouse = asyncHandler(async (req, res) => {
 const deleteWarehouse = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
   await warehouseService.deleteWarehouse(req.params.id, tenantId);
-  res.json({ success: true, message: 'Warehouse deleted' });
+  res.json({ success: true, message: 'Warehouse deactivated; stock and history preserved' });
 });
 
 const getWarehouseStock = asyncHandler(async (req, res) => {

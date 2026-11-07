@@ -27,6 +27,11 @@ it('uses POS-style app launcher and branding while preserving permitted active n
   render(<NotificationsSectionNav />);
   expect(screen.getByRole('button', { name: 'Open apps' })).toBeTruthy();
   expect(screen.getByRole('img', { name: 'DrinksHarbour' })).toBeTruthy();
+  // Mobile Menu control from the shared ModuleNavHeader chrome. Its
+  // accessible label shows the active destination, hence the name here.
+  const menuButton = screen.getByRole('button', { name: 'Sales performance' });
+  expect(menuButton.getAttribute('aria-controls')).toBe('module-mobile-menu');
+  expect(menuButton.getAttribute('aria-expanded')).toBe('false');
   expect(
     screen
       .getByRole('link', { name: 'Sales performance' })

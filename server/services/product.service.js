@@ -1,4 +1,20 @@
+const marketCatalog = require('./marketCatalog');
 const { expandedTypeValues } = require('../constants/expandedProductTypes');
+// Venue Phase 3 S1 (docs/saas/venues/03 §2): central catalog kinds gate which
+// products the retail channels list. Venue kinds ride venue service instead.
+const catalogKind = require('../constants/catalogKind');
+// Industry size-variant slice: catalogKind derivation pivots on the helper in
+// constants/catalogKind.js (single source). The helper maps the
+// electronics_/fashion_/beauty_/home_ retail verticals to KINDS.retail and
+// everything else (incl. unknown) to KINDS.beverage — identical to the Product
+// schema default — so createProduct behavior is unchanged for legacy flows.
+const catalogKindForType = catalogKind.catalogKindForType;
+// Age-restricted deliverables (vape + HOSPITALITY tobacco, additive
+// 2026-11-02): createProduct's autoRequiresAgeVerification derivation flips
+// these types to true when the caller did not explicitly pass
+// `requiresAgeVerification`. ONLY these types change; every legacy type keeps
+// the canonical alcoholic→true / otherwise→false derivation.
+const { AGE_RESTRICTED_TYPES } = require('../constants/productTypes');
 const { resolveProximityProducts, rankOffers, selectShoppingOffer } = require('./marketplaceProximity');
 // services/product.service.js
 
@@ -19,6 +35,10 @@ const Sales = require('../models/Sales');
 const Review = require('../models/Review');
 const SubProduct = require('../models/SubProduct');
 const Size = require('../models/Size');
+const catalogScope = require('../constants/catalogScope');
+const industries = require('../constants/industries');
+const { taxonomyPickerFilter } = require('./industryScope.service');
+const { retailSizeWhereClause } = require('../constants/sizeChannels');
 const Tag = require('../models/Tag');
 const Flavor = require('../models/Flavor');
 const Order = require('../models/Order');
@@ -44,6 +64,34 @@ const {
   buildBrandFilter,
   safeObjectId
 } = require('../helpers/searchFilter.helper');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Industry-scope write validation (2026-11-02, additive). Gated by
+// INDUSTRY_TAXONOMY_SCOPE_ENABLED (constants/industries.js) and applied ONLY
+// on tenant write paths where the tenant resolves to a FILTERED profile (a
+// non-empty industries array). Platform admins, unprofiled/legacy tenants
+// ('Other', empty profile) and the flag-OFF state are never restricted —
+// today's writes stay byte-identical.
+const INDUSTRY_WRITE_MESSAGE = 'Selected category is not in your industry profile';
+
+async function assertIndustryScopedCategoryWrite({ categoryDoc, subDoc, parentId, resolveIndustries }) {
+  if (!industries.enabled() || !resolveIndustries) return;
+  const inds = await resolveIndustries();
+  if (!Array.isArray(inds) || inds.length === 0) return; // legacy profile: bypass
+  if (!industries.categoryAllowedInIndustries(categoryDoc, inds)) {
+    throw new ValidationError(INDUSTRY_WRITE_MESSAGE);
+  }
+  if (subDoc) {
+    // Same parent category's doc when we already loaded it; otherwise one
+    // extra select just for the parent's industry on the ambiguity path.
+    const parentDoc = (categoryDoc && parentId && String(categoryDoc._id) === String(parentId))
+      ? categoryDoc
+      : (parentId ? await Category.findById(parentId).select('industry').lean() : null);
+    if (!industries.subCategoryAllowedInIndustries(subDoc, parentDoc, inds)) {
+      throw new ValidationError(INDUSTRY_WRITE_MESSAGE);
+    }
+  }
+}
 
 
 
@@ -77,6 +125,7 @@ const VALID_TYPES = [
 ];
 
 const VALID_STANDARD_SIZES = [
+  ...require('../constants/productTypes').BEVERAGE_SIZE_CODES,
   // Wine & Champagne
   '10cl', '18.7cl', '20cl', '25cl', '37.5cl', '50cl',
   '75cl', '100cl', '150cl', '300cl', '450cl', '600cl', '900cl', '1200cl', '1500cl',
@@ -315,6 +364,17 @@ const createProduct = async (inputData, user, tenant = null) => {
     }
   }
 
+  // Additive age gate (2026-11-02): AGE_RESTRICTED deliverables (vape /
+  // shisha kit / shisha molasses / cigars) require age verification. Tobacco
+  // types are created isAlcoholic:false, so the alcoholic branch alone leaves
+  // the legacy `false` default below — this ONLY flips members of
+  // AGE_RESTRICTED_TYPES. Order-of-precedence preserved: an explicit caller
+  // `requiresAgeVerification` (true OR false) always wins over this clause,
+  // and the alcoholic derivation above is untouched.
+  if (requiresAgeVerification === undefined && AGE_RESTRICTED_TYPES.includes(type)) {
+    autoRequiresAgeVerification = true;
+  }
+
   // Non-beverage validations
   if (NON_BEVERAGE_TYPES.includes(type)) {
     if (volumeMl) {
@@ -335,6 +395,8 @@ const createProduct = async (inputData, user, tenant = null) => {
   let submissionSource = 'admin';
   let submittingTenant = null;
   let isTenantSubmission = false;
+  // Tenant document for industry-scope validation (INDUSTRY_TAXONOMY_SCOPE_ENABLED).
+  let tenantDoc = null;
 
   if (['super_admin', 'admin'].includes(user.role)) {
     submissionSource = 'admin';
@@ -344,7 +406,7 @@ const createProduct = async (inputData, user, tenant = null) => {
     }
 
     // Verify tenant is active
-    const tenantDoc = await Tenant.findById(tenant._id || tenant);
+    tenantDoc = await Tenant.findById(tenant._id || tenant);
     if (!tenantDoc) {
       throw new NotFoundError('Tenant not found');
     }
@@ -517,30 +579,33 @@ const createProduct = async (inputData, user, tenant = null) => {
   }
 
   // ============================================================
-  // STEP 9: Resolve Category (must exist and be published)
+  // STEP 9: Resolve Category (must be selectable)
   // ============================================================
   let categoryId = null;
+  let industryCategoryDoc = null; // loaded doc for industry-scope validation
 
   if (category) {
     if (/^[0-9a-fA-F]{24}$/.test(category)) {
       const existingCategory = await Category.findOne({
         _id: category,
-        status: 'published',
+        ...taxonomyPickerFilter(),
       }).lean();
       if (!existingCategory) {
-        throw new ValidationError('Category not found or not published');
+        throw new ValidationError('Category not found or unavailable for product selection');
       }
+      industryCategoryDoc = existingCategory;
       categoryId = category;
     } else {
       const existingCategory = await Category.findOne({
         name: new RegExp(`^${category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
-        status: 'published',
+        ...taxonomyPickerFilter(),
       }).lean();
       if (!existingCategory) {
         throw new ValidationError(
-          `Category "${category}" not found or not published`
+          `Category "${category}" not found or unavailable for product selection`
         );
       }
+      industryCategoryDoc = existingCategory;
       categoryId = existingCategory._id;
     }
   }
@@ -549,33 +614,52 @@ const createProduct = async (inputData, user, tenant = null) => {
   // STEP 10: Resolve SubCategory (must belong to parent category)
   // ============================================================
   let subCategoryId = null;
+  let industrySubDoc = null; // loaded doc for industry-scope validation
 
   if (subCategory && categoryId) {
     if (/^[0-9a-fA-F]{24}$/.test(subCategory)) {
       const existingSub = await SubCategory.findOne({
         _id: subCategory,
         parent: categoryId,
-        status: 'published',
+        ...taxonomyPickerFilter(),
       }).lean();
       if (!existingSub) {
         throw new ValidationError(
-          'SubCategory not found, does not belong to parent category, or not published'
+          'SubCategory not found, does not belong to parent category, or unavailable for product selection'
         );
       }
+      industrySubDoc = existingSub;
       subCategoryId = subCategory;
     } else {
       const existingSub = await SubCategory.findOne({
         name: new RegExp(`^${subCategory.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
         parent: categoryId,
-        status: 'published',
+        ...taxonomyPickerFilter(),
       }).lean();
       if (!existingSub) {
         throw new ValidationError(
-          `SubCategory "${subCategory}" not found under parent category or not published`
+          `SubCategory "${subCategory}" not found under parent category or unavailable for product selection`
         );
       }
+      industrySubDoc = existingSub;
       subCategoryId = existingSub._id;
     }
+  }
+
+  // ============================================================
+  // STEP 10b: Industry scope (2026-11-02, additive).
+  // Only tenant submissions resolve a tenant profile (tenantDoc from the
+  // tenant path above); platform admins and flag-OFF bypass entirely.
+  // ============================================================
+  if (industryCategoryDoc || industrySubDoc) {
+    await assertIndustryScopedCategoryWrite({
+      categoryDoc: industryCategoryDoc,
+      subDoc: industrySubDoc,
+      parentId: categoryId,
+      resolveIndustries: tenantDoc
+        ? () => Promise.resolve(industries.resolveTenantIndustries(tenantDoc))
+        : null,
+    });
   }
 
   // ============================================================
@@ -695,6 +779,10 @@ const createProduct = async (inputData, user, tenant = null) => {
 
     // Classification
     type,
+    // Single-source catalog-kind pivot (constants/catalogKind.js): derived
+    // once from type. No payload path sets it explicitly today; if one ever
+    // does, it should win over this — seed it here the same way.
+    catalogKind: catalogKindForType(type),
     subType,
     category: categoryId,
     subCategory: subCategoryId,
@@ -702,6 +790,7 @@ const createProduct = async (inputData, user, tenant = null) => {
     flavors: flavorIds,
 
     // Content
+    specifications: require('../utils/businessSpecifications').cleanSpecifications(inputData.specifications, type),
     shortDescription,
     description: finalDescription,
     tagline,
@@ -751,6 +840,13 @@ const createProduct = async (inputData, user, tenant = null) => {
     // Submission tracking
     submissionSource,
     submittingTenant: isTenantSubmission ? submittingTenant : undefined,
+    // Catalogue scope (constants/catalogScope.js): with the general-catalogue
+    // flag, a tenant submission is a tenant-private identity owned by that
+    // business — approval promotes it to canonical. Off keeps the legacy
+    // pending-canonical behavior with zero change for beverage tenants.
+    ...(catalogScope.enabled() && isTenantSubmission
+      ? { publicationScope: catalogScope.TENANT_PRIVATE, owningTenant: submittingTenant }
+      : {}),
     createdBy: user._id,
 
     // AI
@@ -1039,7 +1135,7 @@ const createProduct = async (inputData, user, tenant = null) => {
       .populate('tenant', 'name slug logo city state country')
       .populate({
         path: 'sizes',
-        select: 'size displayName volumeMl sellingPrice costPrice unitsPerPack commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availableStock availability currency sku isDefault',
+        select: 'size displayName volumeMl sellingPrice costPrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availableStock availability currency sku isDefault',
       })
       .lean();
 
@@ -1252,6 +1348,31 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   if (!isAuthorizedRole) {
     throw new ForbiddenError(`You do not have permission to update this product (role: ${user.role})`);
   }
+
+  // Industry-scope resolution (2026-11-02, additive). Only tenant roles get a
+  // profile; platform admins are never filtered. Authority is the JWT tenant
+  // (user.tenant) or the already-resolved req.tenant — never query params.
+  // req.tenant can be absent on PUT /api/products/:id (no
+  // resolveTenantContext on that route), so user.tenant keeps the boundary
+  // real for tenant owners/admins.
+  const isTenantUpdateRole = ['tenant_owner', 'tenant_admin'].includes(user.role);
+  const industryTenantId = isTenantUpdateRole
+    ? ((tenant && (tenant._id || tenant)) || user.tenant || null)
+    : null;
+  const resolveUpdateIndustries = industryTenantId
+    ? async () => {
+        let doc = null;
+        if (isTenantUpdateRole && tenant && tenant._id && (tenant.industries !== undefined || tenant.businessType !== undefined)) {
+          doc = tenant; // already a resolved tenant doc
+        } else {
+          doc = await Tenant.findById(industryTenantId)
+            .select('businessType industries')
+            .lean()
+            .catch(() => null);
+        }
+        return doc ? industries.resolveTenantIndustries(doc) : null;
+      }
+    : null;
 
   // ============================================================
   // STEP 4: Extract & Validate Update Fields
@@ -1523,6 +1644,11 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
     if (!VALID_TYPES.includes(type)) {
       throw new ValidationError(`Invalid product type: ${type}`);
     }
+    // Reset a derived stock kind when changing back to a legacy type.
+    // Explicit venue kinds on existing legacy products remain intact.
+    if (catalogKindForType(product.type) !== catalogKind.KINDS.beverage) {
+      product.catalogKind = catalogKindForType(type);
+    }
     product.type = type;
   }
 
@@ -1536,28 +1662,37 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   if (category !== undefined) {
     const oldCategoryId = product.category;
     let newCategoryId = null;
+    let industryCategoryDoc = null; // loaded doc for industry-scope validation
 
     if (category) {
       if (/^[0-9a-fA-F]{24}$/.test(category)) {
         const existingCategory = await Category.findOne({
           _id: category,
-          status: 'published',
+          ...taxonomyPickerFilter(),
         }).lean();
         if (!existingCategory) {
-          throw new ValidationError('Category not found or not published');
+          throw new ValidationError('Category not found or unavailable for product selection');
         }
+        industryCategoryDoc = existingCategory;
         newCategoryId = category;
       } else {
         const existingCategory = await Category.findOne({
           name: new RegExp(`^${category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
-          status: 'published',
+          ...taxonomyPickerFilter(),
         }).lean();
         if (!existingCategory) {
-          throw new ValidationError('Category not found or not published');
+          throw new ValidationError('Category not found or unavailable for product selection');
         }
+        industryCategoryDoc = existingCategory;
         newCategoryId = existingCategory._id;
       }
     }
+
+    // Industry scope (flag-gated, tenant paths only — see helper above).
+    await assertIndustryScopedCategoryWrite({
+      categoryDoc: industryCategoryDoc,
+      resolveIndustries: resolveUpdateIndustries,
+    });
 
     // Update category counts
     if (oldCategoryId && oldCategoryId.toString() !== newCategoryId?.toString() && product.status === 'approved') {
@@ -1583,30 +1718,42 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   if (subCategory !== undefined) {
     const oldSubCategoryId = product.subCategory;
     let newSubCategoryId = null;
+    let industrySubDoc = null; // loaded doc for industry-scope validation
 
     if (subCategory && product.category) {
       if (/^[0-9a-fA-F]{24}$/.test(subCategory)) {
         const existingSub = await SubCategory.findOne({
           _id: subCategory,
           parent: product.category,
-          status: 'published',
+          ...taxonomyPickerFilter(),
         }).lean();
         if (!existingSub) {
           throw new ValidationError('SubCategory not found under parent category');
         }
+        industrySubDoc = existingSub;
         newSubCategoryId = subCategory;
       } else {
         const existingSub = await SubCategory.findOne({
           name: new RegExp(`^${subCategory.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
           parent: product.category,
-          status: 'published',
+          ...taxonomyPickerFilter(),
         }).lean();
         if (!existingSub) {
           throw new ValidationError('SubCategory not found under parent category');
         }
+        industrySubDoc = existingSub;
         newSubCategoryId = existingSub._id;
       }
     }
+
+    // Industry scope (flag-gated, tenant paths only). The categoryDoc is not
+    // loaded on a sub-only update; the helper falls back to the parent's
+    // industry (its own absent-industry rule).
+    await assertIndustryScopedCategoryWrite({
+      subDoc: industrySubDoc,
+      parentId: product.category,
+      resolveIndustries: resolveUpdateIndustries,
+    });
 
     // Update subcategory counts
     if (oldSubCategoryId && oldSubCategoryId.toString() !== newSubCategoryId?.toString() && product.status === 'approved') {
@@ -1697,6 +1844,9 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   // ============================================================
   // STEP 13: Update Descriptions & Content
   // ============================================================
+  if (updateData.specifications !== undefined) {
+    product.specifications = require('../utils/businessSpecifications').cleanSpecifications(updateData.specifications, product.type);
+  }
   if (shortDescription !== undefined) {
     product.shortDescription = shortDescription;
     shouldRegenerateEmbedding = true;
@@ -1781,6 +1931,11 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
       product.status = 'approved';
       product.publishedAt = product.publishedAt || new Date();
       product.approvedBy = user._id;
+      // Publishing IS canonical promotion (see constants/catalogScope.js).
+      if (product.publicationScope === 'tenant_private') {
+        product.publicationScope = 'canonical';
+        product.owningTenant = undefined;
+      }
     } else if (!isPublishedInput && product.status === 'approved') {
       product.isPublished = false;
     }
@@ -1804,6 +1959,12 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
       product.isPublished = true;
       product.publishedAt = new Date();
       product.approvedBy = user._id;
+      // Approving IS canonical promotion (see constants/catalogScope.js):
+      // the tenant keeps their listing; the identity becomes marketplace-visible.
+      if (product.publicationScope === 'tenant_private') {
+        product.publicationScope = 'canonical';
+        product.owningTenant = undefined;
+      }
 
       // Increment counts on related collections
       const updates = [];
@@ -2065,6 +2226,7 @@ const getProductByBarcode = async (barcode) => {
 
   // Get active SubProducts
   const subProducts = await SubProduct.find({
+    ...await marketCatalog.listingFilter(product),
     product: product._id,
     status: 'active',
   })
@@ -2078,7 +2240,7 @@ const getProductByBarcode = async (barcode) => {
     })
     .populate({
       path: 'sizes',
-      match: { availability: { $in: ['available', 'low_stock'] } },
+      match: { ...retailSizeWhereClause(), availability: { $in: ['available', 'low_stock'] } },
       select: 'size displayName sellingPrice stock availability',
     })
     .select('tenant sku baseSellingPrice sizes')
@@ -2274,7 +2436,7 @@ const exportTenantProducts = async (tenantId, format = 'csv') => {
     })
     .populate({
       path: 'sizes',
-      select: 'size displayName sellingPrice costPrice unitsPerPack commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availability',
+      select: 'size displayName sellingPrice costPrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availability',
     })
     .lean();
 
@@ -2345,7 +2507,7 @@ const exportTenantProducts = async (tenantId, format = 'csv') => {
 const exportAllProducts = async (format = 'csv', status = null) => {
   const query = status ? { status } : {};
 
-  const products = await Product.find(query)
+  const products = await Product.find(await marketCatalog.query(query))
     .populate('brand', 'name')
     .populate('category', 'name')
     .populate('subCategory', 'name')
@@ -2426,6 +2588,16 @@ const approveProduct = async (productId, user) => {
   product.publishedAt = new Date();
   product.approvedBy = user._id;
   product.rejectedReason = undefined; // Clear rejection reason if previously rejected
+
+  // Catalogue-scope promotion (docs/audits/general-saas-evolution): approving
+  // a tenant-private identity IS the canonical promotion — same review action,
+  // always audited by PRODUCT_APPROVE. The model guard would otherwise refuse
+  // an approved tenant-private row.
+  const promotedFromScope = product.publicationScope === 'tenant_private' ? 'tenant_private' : null;
+  if (promotedFromScope) {
+    product.publicationScope = 'canonical';
+    product.owningTenant = undefined;
+  }
 
   await product.save();
   await require('./productDecisionNotification').notifyProductDecision(product, user._id);
@@ -2803,8 +2975,8 @@ const getPendingProducts = async (filters = {}, pagination = {}) => {
 
   // Execute queries
   const [total, products] = await Promise.all([
-    Product.countDocuments(query),
-    Product.find(query)
+    marketCatalog.productCount(query),
+    Product.find(await marketCatalog.query(query))
       .populate('brand', 'name slug logo')
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')
@@ -2884,8 +3056,8 @@ const getRejectedProducts = async (filters = {}, pagination = {}) => {
 
   // Execute queries
   const [total, products] = await Promise.all([
-    Product.countDocuments(query),
-    Product.find(query)
+    marketCatalog.productCount(query),
+    Product.find(await marketCatalog.query(query))
       .populate('brand', 'name slug logo')
       .populate('category', 'name slug')
       .populate('submittingTenant', 'name slug')
@@ -2913,7 +3085,7 @@ const getRejectedProducts = async (filters = {}, pagination = {}) => {
  * Get product submission statistics
  */
 const getProductSubmissionStats = async () => {
-  const stats = await Product.aggregate([
+  const stats = await marketCatalog.productAggregate([
     {
       $group: {
         _id: '$status',
@@ -2922,7 +3094,7 @@ const getProductSubmissionStats = async () => {
     },
   ]);
 
-  const byTenant = await Product.aggregate([
+  const byTenant = await marketCatalog.productAggregate([
     {
       $match: {
         submittingTenant: { $exists: true },
@@ -2977,7 +3149,7 @@ const getProductSubmissionStats = async () => {
     },
   ]);
 
-  const byDate = await Product.aggregate([
+  const byDate = await marketCatalog.productAggregate([
     {
       $match: {
         createdAt: {
@@ -3005,11 +3177,11 @@ const getProductSubmissionStats = async () => {
     }, {}),
     byTenant,
     byDate,
-    total: await Product.countDocuments(),
-    pending: await Product.countDocuments({ status: 'pending' }),
-    approved: await Product.countDocuments({ status: 'approved' }),
-    rejected: await Product.countDocuments({ status: 'rejected' }),
-    archived: await Product.countDocuments({ status: 'archived' }),
+    total: await marketCatalog.productCount(),
+    pending: await marketCatalog.productCount({ status: 'pending' }),
+    approved: await marketCatalog.productCount({ status: 'approved' }),
+    rejected: await marketCatalog.productCount({ status: 'rejected' }),
+    archived: await marketCatalog.productCount({ status: 'archived' }),
   };
 };
 
@@ -3405,7 +3577,7 @@ const getProductTenantData = async (productId) => {
     status: 'active',
   });
 
-  const priceRange = await SubProduct.aggregate([
+  const priceRange = await marketCatalog.subproductAggregate([
     {
       $match: {
         product: productId,
@@ -3415,6 +3587,7 @@ const getProductTenantData = async (productId) => {
     {
       $lookup: {
         from: 'sizes',
+        pipeline: [{ $match: retailSizeWhereClause() }],
         localField: 'sizes',
         foreignField: '_id',
         as: 'sizeData',
@@ -3547,7 +3720,7 @@ const getProductCompetitors = async (productId) => {
     };
   }
 
-  const competitors = await Product.find(query)
+  const competitors = await Product.find(await marketCatalog.query(query))
     .populate('brand', 'name slug logo')
     .populate('category', 'name slug')
     .select('name slug type abv images tenantCount averageSellingPrice')
@@ -3632,7 +3805,7 @@ const getProductRecommendations = async (productId, limit = 10) => {
   };
 
   // Score-based matching
-  const recommendations = await Product.aggregate([
+  const recommendations = await marketCatalog.productAggregate([
     {
       $match: query,
     },
@@ -3861,6 +4034,9 @@ const searchProducts = async (searchParams = {}) => {
     onSale,
     saleType,
     minRating,
+    // Gift-packaging SKU discovery (gift checkout): the checkout gift section
+    // filters on this flag instead of trusting a text match on the SKU name.
+    isGiftPackaging,
 
     // Response projection: 'card', or a comma-separated list of top-level
     // keys. Omitted, the full product objects are returned as before.
@@ -3888,6 +4064,15 @@ const searchProducts = async (searchParams = {}) => {
     // any of the listed states.
     status: statusFilter = 'approved',
     includeUnpublished = false,
+
+    // ── Catalog kind channel (Venue Phase 3 S1) ─────────────────────────────
+    // The retail shop lists beverages only. Prepared/venue-only kinds exist in
+    // the central catalog to be sold through tenant venue menus. Public listing
+    // callers declare `catalogChannel: 'retail'` (pinned in their controller);
+    // admin surfaces — the sub-product picker at /catalogue-search, admin
+    // listings and analytics — deliberately omit it: an operator view must see
+    // every kind.
+    catalogChannel,
   } = searchParams;
 
   const currentDate = new Date();
@@ -3902,6 +4087,21 @@ const searchProducts = async (searchParams = {}) => {
     status: statusFilter,
     includeUnpublished,
   });
+
+  // Channel gates (Venue Phase 3 S1 + DRI-5 2026-11-05). Merged as their own
+  // `$or` clause each; nothing else assigns `baseQuery.$or` (text search
+  // composes as `$and: [baseQuery, textSearchQuery]`), so the spread cannot
+  // clobber or be clobbered. Legacy documents without `catalogKind` match
+  // both clauses (an absent field is treated as 'beverage').
+  // - 'retail' is the PLATFORM MARKETPLACE channel (public /api/products):
+  //   beverage-kind only — retail-kind stock is not sold here (DRI-5).
+  // - 'store' is the TENANT STOREFRONT channel: retail-kind stock stays
+  //   sellable there (retail integration, DRI-4).
+  if (catalogChannel === 'retail') {
+    Object.assign(baseQuery, catalogKind.marketplaceWhereClause());
+  } else if (catalogChannel === 'store') {
+    Object.assign(baseQuery, catalogKind.retailWhereClause());
+  }
 
   if (Array.isArray(searchParams.productIds)) baseQuery._id = { $in: searchParams.productIds };
 
@@ -4113,6 +4313,12 @@ const searchProducts = async (searchParams = {}) => {
     baseQuery.isFeatured = isFeatured === 'true' || isFeatured === true;
   }
 
+  // Gift-packaging filter (boolean, accepts 'true'/'false' strings like the
+  // other query-string filters).
+  if (isGiftPackaging !== undefined) {
+    baseQuery.isGiftPackaging = isGiftPackaging === 'true' || isGiftPackaging === true;
+  }
+
   // Rating filter (may be overridden by intent detection)
   if (effectiveMinRating) {
     baseQuery.averageRating = { $gte: parseFloat(effectiveMinRating) };
@@ -4221,6 +4427,7 @@ const searchProducts = async (searchParams = {}) => {
         from: 'subproducts',
         let: { productId: '$_id' },
         pipeline: [
+          ...(includeUnpublished ? [] : [{ $match: { visibleInOnlineStore: { $ne: false } } }]),
           {
             $match: {
               $expr: {
@@ -4258,6 +4465,7 @@ const searchProducts = async (searchParams = {}) => {
               foreignField: 'subproduct',
               as: 'sizes',
               pipeline: [
+                { $match: retailSizeWhereClause() },
                 {
                   $match: {
                     status: 'active',
@@ -4294,7 +4502,7 @@ const searchProducts = async (searchParams = {}) => {
                     discount: 1,
                     sku: 1,
                     isDefault: 1,
-                    platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
+                    sellingPriceMarkupOverridePct: 1, platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
                   },
                 },
               ],
@@ -4318,7 +4526,7 @@ const searchProducts = async (searchParams = {}) => {
                 city: 1,
                 state: 1,
                 country: 1,
-                revenueModel: 1,
+                revenueModel: 1, sellingPriceMarkupPercentage: 1,
                 markupPercentage: 1,
                 commissionPercentage: 1,
                 packMarkupPercentage: 1,
@@ -4328,7 +4536,7 @@ const searchProducts = async (searchParams = {}) => {
               },
               sku: 1,
               costPrice: 1,
-              baseSellingPrice: 1, commissionPriceOverride: 1,
+              baseSellingPrice: 1, sellingPriceMarkupOverridePct: 1, commissionPriceOverride: 1,
               discount: 1,
               discountType: 1,
               sizes: 1,
@@ -4634,7 +4842,7 @@ const searchProducts = async (searchParams = {}) => {
   // STEP 6: Execute Pipeline for Total Count
   // ============================================================
   const countPipeline = [...pipeline, { $count: 'total' }];
-  const countResult = shoppingLocation ? [] : await Product.aggregate(countPipeline);
+  const countResult = shoppingLocation ? [] : await marketCatalog.productAggregate(countPipeline);
   let totalResults = countResult.length > 0 ? countResult[0].total : 0;
 
   // ============================================================
@@ -4645,7 +4853,7 @@ const searchProducts = async (searchParams = {}) => {
     pipeline.push({ $limit: limit });
   }
 
-  const searchResults = await Product.aggregate(pipeline);
+  const searchResults = await marketCatalog.productAggregate(pipeline);
 
   // ============================================================
   // STEP 8: Process and Enrich Products
@@ -4677,7 +4885,7 @@ const searchProducts = async (searchParams = {}) => {
 
       // Process each size with website pricing
       const processedSizes = (subProduct.sizes || []).map((size) => {
-        const sellingPrice = size.sellingPrice || 0;
+        const sellingPrice = size.sellingPrice || (revenueModel === 'selling_price_markup' ? subProduct.baseSellingPrice : 0) || 0;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
         const wholesalePrice = size.wholesalePrice || 0; // B2B wholesale price (replaces cost/selling for revenue model)
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
@@ -4696,7 +4904,7 @@ const searchProducts = async (searchParams = {}) => {
         let platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
 
         // Calculate platform selling price with product discount first
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.sellingPriceMarkupOverridePct, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount for display
         const priceBeforeSale = platformSellingPrice;
@@ -4784,7 +4992,7 @@ const searchProducts = async (searchParams = {}) => {
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
                   calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, size.wholesalePrice || 0),
-                  platformMarkupPct, null, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? size.compareAtPrice : 0 }
+                  platformMarkupPct, null, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: size.sellingPriceMarkupOverridePct, tenantStorePrice: ['commission', 'selling_price_markup'].includes(revenueModel) ? size.compareAtPrice : 0 }
                 ).toFixed(2)
               : null,
             currency,
@@ -4988,6 +5196,9 @@ const searchProducts = async (searchParams = {}) => {
       type: product.type,
       subType: product.subType,
       isAlcoholic: product.isAlcoholic,
+      // Gift-packaging marker (gift checkout): surfaced so the checkout gift
+      // section can find the SKU via the public search endpoint.
+      isGiftPackaging: product.isGiftPackaging === true,
       abv: product.abv,
       proof: product.proof,
       volume: product.volume,
@@ -5203,7 +5414,7 @@ const searchProducts = async (searchParams = {}) => {
 const CARD_TOP_LEVEL = [
   '_id', 'id', 'sku', 'name', 'slug', 'shortDescription',
   'abv', 'volumeMl', 'isAlcoholic', 'originCountry', 'region', 'type',
-  'badge', 'availability', 'status', 'isFeatured',
+  'badge', 'availability', 'status', 'isFeatured', 'isGiftPackaging',
   'averageRating', 'reviewCount', 'totalSold', 'tenantCount',
   // `pricingInfo` is deliberately absent: it restates priceRange/hasDiscounts
   // and nothing on the storefront reads it.
@@ -5321,7 +5532,7 @@ async function getSearchFilters(baseQuery) {
     { $sort: { _id: 1 } },
   ];
 
-  const [facets = {}] = await Product.aggregate([
+  const [facets = {}] = await marketCatalog.productAggregate([
     { $match: baseQuery },
     {
       $facet: {
@@ -5437,13 +5648,14 @@ const getAvailableFilters = async (query) => {
       Product.distinct('originCountry', query).then(origins => origins.filter(Boolean).sort()),
       Flavor.find({ status: 'active' }, 'name value').lean(),
       // Get price statistics to generate dynamic ranges
-      Product.aggregate([
+      marketCatalog.productAggregate([
         { $match: query },
         {
           $lookup: {
             from: 'subproducts',
             let: { productId: '$_id' },
             pipeline: [
+          { $match: { visibleInOnlineStore: { $ne: false } } },
               {
                 $match: {
                   $expr: {
@@ -5470,6 +5682,7 @@ const getAvailableFilters = async (query) => {
               foreignField: 'subproduct',
               as: 'sizes',
               pipeline: [
+                { $match: retailSizeWhereClause() },
                 {
                   $match: {
                     availability: { $in: ['available', 'low_stock'] },
@@ -5485,7 +5698,7 @@ const getAvailableFilters = async (query) => {
                     costPrice: 1,
                     wholesalePrice: 1,
                     unitsPerPack: 1,
-                    platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
+                    sellingPriceMarkupOverridePct: 1, platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
                     packPlatformMarkupOverridePct: 1,
                     availableStock: 1,
                     compareAtPrice: 1,
@@ -5509,7 +5722,7 @@ const getAvailableFilters = async (query) => {
                 $project: {
                   tenant: 1,
                   costPrice: 1,
-                  baseSellingPrice: 1, commissionPriceOverride: 1,
+                  baseSellingPrice: 1, sellingPriceMarkupOverridePct: 1, commissionPriceOverride: 1,
                   discount: 1,
                   discountType: 1,
                   discountStart: 1,
@@ -5720,6 +5933,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
       shoppingLocation: options.shoppingLocation, tenantId: options.tenantId,
       sortBy: options.sortBy || 'nearest', useEmbeddings: false,
       page: 1, limit,
+      catalogChannel: 'retail', // S1: trending strip feeds the public shop
     });
     return result.products;
   }
@@ -5777,8 +5991,8 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
     // No sales-based trending yet — show a random sample of approved products.
     // Do NOT restrict to isFeatured here: that would make trending / recommended
     // sections display only featured products.
-    products = await Product.aggregate([
-        { $match: { status: 'approved', isPublished: true, ...catCond } },
+    products = await marketCatalog.productAggregate([
+        { $match: { status: 'approved', isPublished: true, ...catCond, ...catalogKind.marketplaceWhereClause() } },
         { $sample: { size: limit } },
         {
           $lookup: {
@@ -5832,11 +6046,12 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
       ]);
   } else {
     // Get full product details for trending products
-    products = await Product.find({
+    products = await Product.find({ ...await marketCatalog.productFilter(),
       _id: { $in: productIds },
       status: 'approved',
       isPublished: true,
       ...catCond,
+      ...catalogKind.marketplaceWhereClause(), // DRI-5: marketplace strip — beverage-kind only
     })
       .populate('brand', 'name slug logo description')
       .populate('category', 'name slug icon description')
@@ -5849,11 +6064,12 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
     // few of the globally trending ones belong to it, so the section is never
     // sparse on a category page.
     if (catIds && products.length < limit) {
-      const topUp = await Product.find({
+      const topUp = await Product.find({ ...await marketCatalog.productFilter(),
         ...catCond,
         _id: { $nin: products.map((p) => p._id) },
         status: 'approved',
         isPublished: true,
+        ...catalogKind.marketplaceWhereClause(), // DRI-5: marketplace strip — beverage-kind only
       })
         .sort({ isFeatured: -1, averageRating: -1, reviewCount: -1 })
         .populate('brand', 'name slug logo description')
@@ -5872,11 +6088,13 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
   
   for (const product of products) {
     const subProducts = await SubProduct.find({
+    ...await marketCatalog.listingFilter(product),
       product: product._id,
       status: 'active',
+      visibleInOnlineStore: { $ne: false },
     })
-      .populate('tenant', 'name slug logo city state country revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency primaryColor')
-      .populate('sizes', 'volume unit displayName sellingPrice costPrice wholesalePrice unitsPerPack commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability')
+      .populate('tenant', 'name slug logo city state country revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency primaryColor')
+      .populate({ path: 'sizes', match: retailSizeWhereClause(), select: 'volume unit displayName sellingPrice costPrice wholesalePrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability' })
       .select(
         'tenant baseSellingPrice costPrice discountPercentage finalPrice currency sizes stockQuantity availability minOrderQuantity maxOrderQuantity revenueModel isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
       )
@@ -5911,7 +6129,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
         let platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
         
         // Calculate platform selling price with product discount first
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.sellingPriceMarkupOverridePct, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         
         // Store original price before sale discount for display
         const priceBeforeSale = platformSellingPrice;
@@ -6003,7 +6221,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
             compareAtPrice: sizeItem.compareAtPrice
               ? calcPlatformSellingPrice(
                   calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, sizeItem.wholesalePrice || 0),
-                  platformMarkupPct, null, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? sizeItem.compareAtPrice : 0 }
+                  platformMarkupPct, null, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: sizeItem.sellingPriceMarkupOverridePct, tenantStorePrice: ['commission', 'selling_price_markup'].includes(revenueModel) ? sizeItem.compareAtPrice : 0 }
                 ).toFixed(2)
               : null,
             currency,
@@ -6371,7 +6589,7 @@ const getTrendingProductsByCategory = async (categoryId, limit = 10, dateRange =
   }
 
   // Use the main getTrendingProducts function to get full details
-  const products = await Product.find({
+  const products = await Product.find({ ...await marketCatalog.productFilter(),
     _id: { $in: productIds },
     status: 'approved',
   })
@@ -6419,7 +6637,7 @@ const getSeasonalProducts = async (season, limit = 20) => {
     ],
   };
 
-  const products = await Product.find(query)
+  const products = await Product.find(await marketCatalog.query(query))
     .populate('brand', 'name slug logo')
     .populate('category', 'name slug')
     .select('name slug type images abv tenantCount')
@@ -6448,8 +6666,10 @@ const getProductStockStatus = async (productId) => {
 
   // Get all active SubProducts with sizes
   const subProducts = await SubProduct.find({
+    ...await marketCatalog.listingFilter(product),
     product: productId,
     status: 'active',
+      visibleInOnlineStore: { $ne: false },
   })
     .populate({
       path: 'tenant',
@@ -6457,6 +6677,7 @@ const getProductStockStatus = async (productId) => {
     })
     .populate({
       path: 'sizes',
+      match: retailSizeWhereClause(),
       select: 'size displayName stock availability lowStockThreshold sellingPrice',
     })
     .lean();
@@ -6478,7 +6699,7 @@ const getProductStockStatus = async (productId) => {
         totalStock += stock;
         tenantStock += stock;
 
-        const value = stock * (size.sellingPrice || 0);
+        const value = stock * (size.sellingPrice || (revenueModel === 'selling_price_markup' ? subProduct.baseSellingPrice : 0) || 0);
         totalValue += value;
         tenantValue += value;
 
@@ -6540,7 +6761,7 @@ const getProductPriceRange = async (productId) => {
     throw new ValidationError('Invalid product ID');
   }
 
-  const priceData = await SubProduct.aggregate([
+  const priceData = await marketCatalog.subproductAggregate([
     {
       $match: {
         product: productId,
@@ -6550,6 +6771,7 @@ const getProductPriceRange = async (productId) => {
     {
       $lookup: {
         from: 'sizes',
+        pipeline: [{ $match: retailSizeWhereClause() }],
         localField: 'sizes',
         foreignField: '_id',
         as: 'sizeData',
@@ -6894,7 +7116,7 @@ const getFrequentlyBoughtTogether = async (productId, limit = 5) => {
   const productIds = ordersWithProduct.map((item) => item._id);
 
   // Get full product details
-  const products = await Product.find({
+  const products = await Product.find({ ...await marketCatalog.productFilter(),
     _id: { $in: productIds },
     status: 'approved',
   })
@@ -6947,7 +7169,7 @@ const getProductCrossSells = async (productId, limit = 4) => {
   const complementaryTypes = crossSellRules[product.type] || [];
 
   // Find complementary products
-  const crossSells = await Product.find({
+  const crossSells = await Product.find({ ...await marketCatalog.productFilter(),
     _id: { $ne: productId },
     status: 'approved',
     $or: [
@@ -6980,7 +7202,7 @@ const getProductUpSells = async (productId, limit = 4) => {
   const currentPrice = product.averageSellingPrice || 0;
 
   // Find premium alternatives (same category/type but higher price)
-  const upSells = await Product.find({
+  const upSells = await Product.find({ ...await marketCatalog.productFilter(),
     _id: { $ne: productId },
     status: 'approved',
     type: product.type,
@@ -7018,7 +7240,7 @@ const getProductVariants = async (productId) => {
   }
 
   // Get all SubProducts with sizes
-  const variants = await SubProduct.aggregate([
+  const variants = await marketCatalog.subproductAggregate([
     {
       $match: {
         product: productId,
@@ -7045,6 +7267,7 @@ const getProductVariants = async (productId) => {
     {
       $lookup: {
         from: 'sizes',
+        pipeline: [{ $match: retailSizeWhereClause() }],
         localField: 'sizes',
         foreignField: '_id',
         as: 'sizeData',
@@ -7731,6 +7954,7 @@ const getAllProducts = async (queryParams) => {
         from: 'subproducts',
         let: { productId: '$_id' },
         pipeline: [
+          { $match: { visibleInOnlineStore: { $ne: false } } },
           {
             $match: {
               $expr: {
@@ -7766,6 +7990,7 @@ const getAllProducts = async (queryParams) => {
               foreignField: 'subproduct',
               as: 'sizes',
               pipeline: [
+                { $match: retailSizeWhereClause() },
                 {
                   $match: {
                     status: 'active',
@@ -7790,7 +8015,7 @@ const getAllProducts = async (queryParams) => {
                     discount: 1,
                     sku: 1,
                     isDefault: 1,
-                    platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
+                    sellingPriceMarkupOverridePct: 1, platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
                   },
                 },
               ],
@@ -7807,7 +8032,7 @@ const getAllProducts = async (queryParams) => {
                 city: 1,
                 state: 1,
                 country: 1,
-                revenueModel: 1,
+                revenueModel: 1, sellingPriceMarkupPercentage: 1,
                 markupPercentage: 1,
                 commissionPercentage: 1,
                 packMarkupPercentage: 1,
@@ -7817,7 +8042,7 @@ const getAllProducts = async (queryParams) => {
               },
               sku: 1,
               costPrice: 1,
-              baseSellingPrice: 1, commissionPriceOverride: 1,
+              baseSellingPrice: 1, sellingPriceMarkupOverridePct: 1, commissionPriceOverride: 1,
               discount: 1,
               discountType: 1,
               discountedPrice: 1,
@@ -8145,8 +8370,8 @@ const getAllProducts = async (queryParams) => {
   // ============================================================
   // 4. EXECUTE QUERIES IN PARALLEL
   // ============================================================
-  const totalPromise = Product.countDocuments(query);
-  const productsPromise = Product.aggregate(pipeline);
+  const totalPromise = marketCatalog.productCount(query);
+  const productsPromise = marketCatalog.productAggregate(pipeline);
 
   const [totalProducts, products] = await Promise.all([
     totalPromise,
@@ -8187,7 +8412,7 @@ const getAllProducts = async (queryParams) => {
 
       // Process each size with website pricing
       const processedSizes = (subProduct.sizes || []).map((size) => {
-        const sellingPrice = size.sellingPrice || 0;
+        const sellingPrice = size.sellingPrice || (revenueModel === 'selling_price_markup' ? subProduct.baseSellingPrice : 0) || 0;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
         const wholesalePrice = size.wholesalePrice || 0;
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
@@ -8196,7 +8421,7 @@ const getAllProducts = async (queryParams) => {
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
         let platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.sellingPriceMarkupOverridePct, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount
         const priceBeforeSale = platformSellingPrice;
@@ -8290,7 +8515,7 @@ const getAllProducts = async (queryParams) => {
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
                   calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
-                  platformMarkupPct, null, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? size.compareAtPrice : 0 }
+                  platformMarkupPct, null, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: size.sellingPriceMarkupOverridePct, tenantStorePrice: ['commission', 'selling_price_markup'].includes(revenueModel) ? size.compareAtPrice : 0 }
                 ).toFixed(2)
               : null,
             currency,
@@ -8862,13 +9087,14 @@ const getFeaturedProducts = async (page = 1, limit = 12, options = {}) => {
       shoppingLocation: options.shoppingLocation, tenantId: options.tenantId,
       sortBy: options.sortBy || 'nearest', useEmbeddings: false,
       page: page, limit,
+      catalogChannel: 'retail', // S1: retail strip — beverages only
     });
     return result;
   }
   const pageNum = Math.max(1, page);
   const limitNum = options._fullCandidates ? limit : Math.min(Math.max(1, limit), 50);
 
-  const totalPromise = Product.countDocuments({ status: 'approved', isPublished: true });
+  const totalPromise = marketCatalog.productCount({ status: 'approved', isPublished: true, ...catalogKind.marketplaceWhereClause() });
 
   // Build the availability pipeline for a given top-level match filter.
   // `take` bounds how many products this pass returns.
@@ -8881,6 +9107,7 @@ const getFeaturedProducts = async (page = 1, limit = 12, options = {}) => {
         from: 'subproducts',
         let: { productId: '$_id' },
         pipeline: [
+          { $match: { visibleInOnlineStore: { $ne: false } } },
           {
             $match: {
               $expr: {
@@ -8913,6 +9140,7 @@ const getFeaturedProducts = async (page = 1, limit = 12, options = {}) => {
               foreignField: 'subproduct',
               as: 'sizes',
               pipeline: [
+                { $match: retailSizeWhereClause() },
                 {
                   $match: {
                     availability: { $in: ['available', 'low_stock'] },
@@ -8952,9 +9180,9 @@ const getFeaturedProducts = async (page = 1, limit = 12, options = {}) => {
   ];
 
   // Pass 1: admin-flagged featured products.
-  const featuredRaw = await Product.aggregate(
+  const featuredRaw = await marketCatalog.productAggregate(
     buildPipeline(
-      { status: 'approved', isPublished: true, isFeatured: true },
+      { status: 'approved', isPublished: true, isFeatured: true, ...catalogKind.marketplaceWhereClause() },
       limitNum
     )
   );
@@ -8963,9 +9191,9 @@ const getFeaturedProducts = async (page = 1, limit = 12, options = {}) => {
   let fallbackRaw = [];
   if (featuredRaw.length < limitNum) {
     const excludeIds = featuredRaw.map((p) => p._id);
-    fallbackRaw = await Product.aggregate(
+    fallbackRaw = await marketCatalog.productAggregate(
       buildPipeline(
-        { status: 'approved', isPublished: true, _id: { $nin: excludeIds } },
+        { status: 'approved', isPublished: true, _id: { $nin: excludeIds }, ...catalogKind.marketplaceWhereClause() },
         limitNum - featuredRaw.length
       )
     );
@@ -8986,7 +9214,7 @@ const getFeaturedProducts = async (page = 1, limit = 12, options = {}) => {
 
   const tenants = await Tenant.find({ _id: { $in: tenantIds } })
     .select(
-      'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
+      'revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
     )
     .lean();
 
@@ -9029,6 +9257,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30, options = {}) => 
       shoppingLocation: options.shoppingLocation, tenantId: options.tenantId,
       sortBy: options.sortBy || 'nearest', useEmbeddings: false,
       page: page, limit,
+      catalogChannel: 'retail', // S1: retail strip — beverages only
     });
     return result;
   }
@@ -9071,11 +9300,12 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30, options = {}) => 
     status: 'approved',
     isPublished: true,
     publishedAt: { $gte: cutoffDate },
+    ...catalogKind.marketplaceWhereClause(), // DRI-5: marketplace strip — beverage-kind only
   };
 
-  const totalPromise = Product.countDocuments(query);
+  const totalPromise = marketCatalog.productCount(query);
 
-  const products = await Product.aggregate([
+  const products = await marketCatalog.productAggregate([
     { $match: query },
 
     // Lookup active SubProducts
@@ -9084,6 +9314,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30, options = {}) => 
         from: 'subproducts',
         let: { productId: '$_id' },
         pipeline: [
+          { $match: { visibleInOnlineStore: { $ne: false } } },
           {
             $match: {
               $expr: {
@@ -9116,6 +9347,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30, options = {}) => 
               foreignField: 'subproduct',
               as: 'sizes',
               pipeline: [
+                { $match: retailSizeWhereClause() },
                 {
                   $match: {
                     availability: { $in: ['available', 'low_stock'] },
@@ -9159,7 +9391,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30, options = {}) => 
 
   const tenants = await Tenant.find({ _id: { $in: tenantIds } })
     .select(
-      'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
+      'revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
     )
     .lean();
 
@@ -9206,7 +9438,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30, options = {}) => 
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
         let platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.sellingPriceMarkupOverridePct, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         if (revenueModel === 'commission') platformCostPrice = calcPlatformCostPrice(0, platformSellingPrice, 'commission', 0, effCommissionPct);
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePriceVal = platformSellingPrice;
@@ -9248,7 +9480,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30, options = {}) => 
             compareAtPrice: sizeItem.compareAtPrice
               ? calcPlatformSellingPrice(
                   calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, sizeItem.wholesalePrice || 0),
-                  platformMarkupPct, null, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? sizeItem.compareAtPrice : 0 }
+                  platformMarkupPct, null, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: sizeItem.sellingPriceMarkupOverridePct, tenantStorePrice: ['commission', 'selling_price_markup'].includes(revenueModel) ? sizeItem.compareAtPrice : 0 }
                 ).toFixed(2)
               : null,
             currency,
@@ -9486,6 +9718,7 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
       shoppingLocation: options.shoppingLocation, tenantId: options.tenantId,
       sortBy: options.sortBy || 'nearest', useEmbeddings: false,
       page: page, limit,
+      catalogChannel: 'retail', // S1: retail strip — beverages only
     });
     return result;
   }
@@ -9555,12 +9788,13 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
 
   const productIds = topSellers.map((ts) => ts._id);
 
-  const products = await Product.aggregate([
+  const products = await marketCatalog.productAggregate([
     {
       $match: {
         _id: { $in: productIds },
         status: 'approved',
         isPublished: true,
+        ...catalogKind.marketplaceWhereClause(), // DRI-5: bestseller strip feeds the beverage-only public shop
       },
     },
 
@@ -9570,6 +9804,7 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
         from: 'subproducts',
         let: { productId: '$_id' },
         pipeline: [
+          { $match: { visibleInOnlineStore: { $ne: false } } },
           {
             $match: {
               $expr: {
@@ -9602,6 +9837,7 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
               foreignField: 'subproduct',
               as: 'sizes',
               pipeline: [
+                { $match: retailSizeWhereClause() },
                 {
                   $project: {
                     size: 1,
@@ -9611,7 +9847,7 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
                     costPrice: 1,
                     wholesalePrice: 1,
                     unitsPerPack: 1,
-                    platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
+                    sellingPriceMarkupOverridePct: 1, platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
                     packPlatformMarkupOverridePct: 1,
                     availableStock: 1,
                     compareAtPrice: 1,
@@ -9711,7 +9947,7 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
 
   const tenants = await Tenant.find({ _id: { $in: tenantIds } })
     .select(
-      'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
+      'revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
     )
     .lean();
 
@@ -9752,7 +9988,7 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
       // Process each size with website pricing
       const processedSizes = (subProduct.sizes || []).map((size) => {
         // Fallback chain: size.sellingPrice → subProduct.baseSellingPrice → size.costPrice
-        const sizeSellingPrice = size.sellingPrice || subProduct.baseSellingPrice || size.costPrice || 0;
+        const sizeSellingPrice = size.sellingPrice || subProduct.baseSellingPrice || (revenueModel === 'selling_price_markup' ? 0 : size.costPrice) || 0;
         const sellingPrice = sizeSellingPrice;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
         const wholesalePrice = size.wholesalePrice || 0;
@@ -9761,7 +9997,7 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
         let platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.sellingPriceMarkupOverridePct, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         if (revenueModel === 'commission') platformCostPrice = calcPlatformCostPrice(0, platformSellingPrice, 'commission', 0, effCommissionPct);
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePrice = platformSellingPrice;
@@ -9802,7 +10038,7 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
                   calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, size.wholesalePrice || 0),
-                  platformMarkupPct, null, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? size.compareAtPrice : 0 }
+                  platformMarkupPct, null, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: size.sellingPriceMarkupOverridePct, tenantStorePrice: ['commission', 'selling_price_markup'].includes(revenueModel) ? size.compareAtPrice : 0 }
                 ).toFixed(2)
               : null,
             currency,
@@ -10066,7 +10302,14 @@ const getBestsellers = async (page = 1, limit = 12, options = {}) => {
 // ────────────────────────────────────────────────────────────────────────────
 
 /** A product is only reachable at /product/[slug] in these states. */
-const SELLABLE_PRODUCT_MATCH = { status: 'approved', isPublished: true };
+// Tenant-private identities are never reachable here, flag on or off —
+// the scope filter is unconditional defense-in-depth (legacy rows without the
+// field always match). See constants/catalogScope.js.
+const SELLABLE_PRODUCT_MATCH = {
+  status: 'approved',
+  isPublished: true,
+  publicationScope: { $ne: catalogScope.TENANT_PRIVATE },
+};
 
 /** Only these tenants may sell; anything else and the listing is invisible. */
 const SELLING_TENANT_MATCH = {
@@ -10076,6 +10319,7 @@ const SELLING_TENANT_MATCH = {
 
 /** A size counts as buyable in these states. */
 const SELLABLE_SIZE_MATCH = {
+  ...retailSizeWhereClause(),
   status: 'active',
   availability: { $in: ['available', 'in_stock', 'low_stock', 'pre_order', 'limited_stock'] },
 };
@@ -10088,7 +10332,7 @@ const SELLABLE_SIZE_MATCH = {
  * @returns {Promise<Object>} Fully processed product with vendors, pricing, reviews, and badge
  * @throws {NotFoundError} If product doesn't exist or is unavailable
  */
-const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null } = {}) => {
+const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null, surface = null } = {}) => {
   // ══════════════════════════════════════════════════════════════════════════
   // 1. FETCH BASE PRODUCT
   // ══════════════════════════════════════════════════════════════════════════
@@ -10105,10 +10349,28 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // 1b. SURFACE GATE (DRI-9, 2026-11-05)
+  // The controller derives the surface: `x-is-tenant-site` (set by the
+  // platform middleware for tenant-subdomain requests) selects the tenant-site
+  // surface; every other transport — the main marketplace SSeR fetch, browser
+  // refetches, quickviews, chatbot pulls — defaults to the beverage-only main
+  // marketplace. Retail-kind Products must not have buy offers assembled
+  // there (message matches the "no active seller" wording below so existing
+  // unavailable-product handling covers it); tenant store surfaces keep
+  // selling the retail kind, and admin/product-id endpoints never pass
+  // through here.
+  // ══════════════════════════════════════════════════════════════════════════
+  if (surface !== catalogKind.DETAIL_SURFACES.TENANT_SITE && catalogKind.blocksMarketplaceBuyOffers(product)) {
+    throw new NotFoundError('Product is not currently available from any seller');
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // 2. FETCH ACTIVE SUBPRODUCTS WITH TENANTS & SIZES
   // ══════════════════════════════════════════════════════════════════════════
   const subProducts = await SubProduct.find({
+    ...await marketCatalog.listingFilter(product),
     product: product._id,
+    visibleInOnlineStore: { $ne: false },
     ...(tenantId ? { tenant: tenantId } : {}),
     status: { $in: ['active', 'low_stock', 'out_of_stock'] },
   })
@@ -10116,19 +10378,20 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
       path: 'tenant',
       match: SELLING_TENANT_MATCH,
       select:
-        'name slug logo location primaryColor revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
+        'name slug logo location primaryColor revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
     })
     .populate({
       path: 'sizes',
       match: {
+        ...retailSizeWhereClause(),
         status: 'active',
         availability: { $in: [...SELLABLE_SIZE_MATCH.availability.$in, 'out_of_stock'] },
       },
       select:
-        'size displayName sellingPrice costPrice wholesalePrice unitsPerPack commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
+        'size displayName colorName optionName image imageScope sellingPrice costPrice wholesalePrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
     })
     .select(
-      'tenant sku costPrice baseSellingPrice currency discount discountType discountedPrice discountStart discountEnd sizes status totalSold totalRevenue isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
+      'tenant sku imagesOverride costPrice baseSellingPrice currency discount discountType discountedPrice discountStart discountEnd sizes status totalSold totalRevenue isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
     )
     .lean();
 
@@ -10149,7 +10412,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
   const tenantIds = activeSubProducts.map((sp) => sp.tenant._id.toString());
   const tenants = await Tenant.find({ _id: { $in: tenantIds } })
     .select(
-      'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo city state country'
+      'revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo city state country'
     )
     .lean();
 
@@ -10193,7 +10456,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
       // Process each size with website pricing
       const processedSizes = (subProduct.sizes || []).map((size) => {
         // Fallback chain: size.sellingPrice → subProduct.baseSellingPrice → size.costPrice
-        const sizeSellingPrice = size.sellingPrice || subProduct.baseSellingPrice || size.costPrice || 0;
+        const sizeSellingPrice = size.sellingPrice || subProduct.baseSellingPrice || (revenueModel === 'selling_price_markup' ? 0 : size.costPrice) || 0;
         const sellingPrice = sizeSellingPrice;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
         const wholesalePrice = size.wholesalePrice || 0;
@@ -10209,7 +10472,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
       // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
       const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
       let platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
-      let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+      let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.sellingPriceMarkupOverridePct, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
       // Store original price before sale discount for display
       const priceBeforeSale = platformSellingPrice;
@@ -10257,7 +10520,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
         packMarkupPctUsed = packRates.markupPct;
         packCommissionPctUsed = packRates.commissionPct;
         packPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, packRates.markupPct, packRates.commissionPct, wholesalePrice);
-        const packSelling = calcPlatformSellingPrice(packPlatformCostPrice, platformMarkupPct, productDiscount, { revenueModel, tenantStorePrice: sellingPrice, commissionPriceOverride: size?.packCommissionPriceOverride ?? size?.commissionPriceOverride ?? null, platformMarkupOverridePct: size?.packPlatformMarkupOverridePct ?? size?.platformMarkupOverridePct ?? null });
+        const packSelling = calcPlatformSellingPrice(packPlatformCostPrice, platformMarkupPct, productDiscount, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.sellingPriceMarkupOverridePct, tenantStorePrice: sellingPrice, commissionPriceOverride: size?.packCommissionPriceOverride ?? size?.commissionPriceOverride ?? null, platformMarkupOverridePct: size?.packPlatformMarkupOverridePct ?? size?.platformMarkupOverridePct ?? null });
         // Only advertise a pack rate that actually BEATS the normal price.
         // A tenant with no reduced pack rates configured produces
         // packSelling === websitePrice — publishing that shipped a "0% off"
@@ -10318,6 +10581,10 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
       return {
         _id: size._id,
         size: size.displayName || size.size,
+        colorName: size.colorName,
+        optionName: size.optionName,
+        imageScope: size.imageScope,
+        image: size.image?.url ? { url: size.image.url, alt: size.image.alt } : undefined,
         volumeMl: size.volumeMl,
         sku: size.sku,
         isDefault: size.isDefault,
@@ -10340,7 +10607,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
           compareAtPrice: size.compareAtPrice
             ? calcPlatformSellingPrice(
                 calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct, size.wholesalePrice || 0),
-                platformMarkupPct, null, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? size.compareAtPrice : 0 }
+                platformMarkupPct, null, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: size.sellingPriceMarkupOverridePct, tenantStorePrice: ['commission', 'selling_price_markup'].includes(revenueModel) ? size.compareAtPrice : 0 }
               ).toFixed(2)
             : null,
           currency,
@@ -10392,6 +10659,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
 
       // Sizes with pricing
       sizes: processedSizes,
+      imagesOverride: (subProduct.imagesOverride || []).filter(image => image?.url).map(({ url, alt }) => ({ url, alt })),
 
       // Price range for this tenant
       priceRange: {
@@ -10744,6 +11012,7 @@ const sellableListingStages = () => [
       let: { productId: '$_id' },
       as: 'sellable',
       pipeline: [
+          { $match: { visibleInOnlineStore: { $ne: false } } },
         { $match: { $expr: { $eq: ['$product', '$$productId'] }, status: 'active' } },
         { $project: { tenant: 1, sizes: 1 } },
         {
@@ -10765,6 +11034,7 @@ const sellableListingStages = () => [
             let: { sizeIds: { $ifNull: ['$sizes', []] } },
             as: 'sellableSizes',
             pipeline: [
+                { $match: retailSizeWhereClause() },
               { $match: { $expr: { $in: ['$_id', '$$sizeIds'] }, ...SELLABLE_SIZE_MATCH } },
               { $limit: 1 },
               { $project: { _id: 1 } },
@@ -10792,8 +11062,8 @@ const sellableListingStages = () => [
  * @returns {Promise<Array<{slug: string, updatedAt: Date}>>}
  */
 const getSellableProductSlugs = async () => {
-  return Product.aggregate([
-    { $match: SELLABLE_PRODUCT_MATCH },
+  return marketCatalog.productAggregate([
+    { $match: { ...SELLABLE_PRODUCT_MATCH, ...catalogKind.marketplaceWhereClause() } },
     { $project: { slug: 1, updatedAt: 1 } },
     ...sellableListingStages(),
     { $project: { _id: 0, slug: 1, updatedAt: 1 } },
@@ -10820,8 +11090,8 @@ const getSellableProductSlugs = async () => {
  */
 const getSellableFacetCounts = async (categorySlugs = []) => {
   const groupSellableBy = (refField) =>
-    Product.aggregate([
-      { $match: { ...SELLABLE_PRODUCT_MATCH, [refField]: { $ne: null } } },
+    marketCatalog.productAggregate([
+      { $match: { ...SELLABLE_PRODUCT_MATCH, ...catalogKind.marketplaceWhereClause(), [refField]: { $ne: null } } },
       { $project: { [refField]: 1 } },
       ...sellableListingStages(),
       { $group: { _id: `$${refField}`, count: { $sum: 1 } } },
@@ -10866,7 +11136,8 @@ const getSellableFacetCounts = async (categorySlugs = []) => {
  * @param {string} id - Product ID
  * @param {boolean} includePending - Whether to include pending products (for SubProduct editing)
  */
-const getProductById = async (id, includePending = false) => {
+const getProductById = async (id, includePending = false, { adminDetails = false } = {}) => {
+  if (marketCatalog.active() && !adminDetails) includePending = false;
   if (!/^[0-9a-fA-F]{24}$/.test(id)) {
     throw new ValidationError('Invalid product ID format');
   }
@@ -10875,6 +11146,10 @@ const getProductById = async (id, includePending = false) => {
   const query = { _id: id };
   if (!includePending) {
     query.status = 'approved';
+    // Defense-in-depth: never resolve tenant-private identities here, even
+    // though an approved row can never legally be tenant_private (the model
+    // guard forbids it) — review 2026-11-02 finding A7.
+    query.publicationScope = { $ne: catalogScope.TENANT_PRIVATE };
   }
 
   const product = await Product.findOne(query)
@@ -10892,9 +11167,9 @@ const getProductById = async (id, includePending = false) => {
   // Get SubProducts - include all statuses when editing SubProducts (includePending mode)
   const subProductQuery = includePending 
     ? { product: product._id }
-    : { product: product._id, status: 'active' };
+    : { product: product._id, status: 'active', visibleInOnlineStore: { $ne: false } };
 
-  const subProducts = await SubProduct.find(subProductQuery)
+  const subProducts = await SubProduct.find({ ...subProductQuery, ...(!includePending ? await marketCatalog.listingFilter(product) : {}) })
     .populate({
       path: 'tenant',
       match: includePending 
@@ -10904,20 +11179,23 @@ const getProductById = async (id, includePending = false) => {
             subscriptionStatus: { $in: ['active', 'trialing'] },
           },
       select:
-        'name slug logo primaryColor revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
+        'name slug logo primaryColor revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
     })
     .populate({
       path: 'sizes',
       match: includePending 
         ? undefined 
         : {
+            ...retailSizeWhereClause(),
             availability: { $in: ['available', 'low_stock', 'pre_order'] },
           },
       select:
-        'size displayName sellingPrice costPrice unitsPerPack commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
+        ['size displayName sellingPrice costPrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
+         adminDetails ? 'colorName optionName unitType dimensions shelfLifeDays servingsPerUnit venueServing' : ''].join(' '),
     })
     .select(
-      'tenant sku baseSellingPrice costPrice currency discount discountType discountStart discountEnd sizes shortDescriptionOverride imagesOverride status totalSold totalRevenue isOnSale saleType saleDiscountValue salePrice saleStartDate saleEndDate'
+      'tenant sku baseSellingPrice costPrice currency discount discountType discountStart discountEnd sizes shortDescriptionOverride imagesOverride status totalSold totalRevenue isOnSale saleType saleDiscountValue salePrice saleStartDate saleEndDate' +
+      (adminDetails ? ' isPublished' : '')
     )
     .lean();
 
@@ -10945,7 +11223,7 @@ const getProductById = async (id, includePending = false) => {
   const tenants = tenantIds.length > 0 
     ? await Tenant.find({ _id: { $in: tenantIds } })
         .select(
-          'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
+          'revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
         )
         .lean()
     : [];
@@ -11132,7 +11410,7 @@ const getProductAvailability = async (productId, location = {}) => {
   if (state) locationQuery['tenant.state'] = new RegExp(state, 'i');
   if (country) locationQuery['tenant.country'] = new RegExp(country, 'i');
 
-  const availability = await SubProduct.aggregate([
+  const availability = await marketCatalog.subproductAggregate([
     {
       $match: {
         product: productId,
@@ -11159,6 +11437,7 @@ const getProductAvailability = async (productId, location = {}) => {
     {
       $lookup: {
         from: 'sizes',
+        pipeline: [{ $match: retailSizeWhereClause() }],
         localField: 'sizes',
         foreignField: '_id',
         as: 'sizeData',
@@ -11257,6 +11536,7 @@ const getRelatedProducts = async (productId, options = {}) => {
     _id: { $ne: productId },
     status: 'approved',
     isPublished: true,
+    ...catalogKind.marketplaceWhereClause(), // DRI-5: related strip feeds the beverage-only public shop
   };
 
   // ============================================================
@@ -11400,7 +11680,7 @@ async function getSemanticRelatedProducts(product, baseQuery, limit, includeOutO
     { $limit: limit * 3 },
   ];
 
-  const products = await Product.aggregate(pipeline);
+  const products = await marketCatalog.productAggregate(pipeline);
   return await enrichRelatedProducts(products, includeOutOfStock);
 }
 
@@ -11421,7 +11701,7 @@ async function getCategoryRelatedProducts(product, baseQuery, limit, includeOutO
     ],
   };
 
-  const products = await Product.find(query)
+  const products = await Product.find(await marketCatalog.query(query))
     .limit(limit * 3)
     .sort({ averageRating: -1, totalSold: -1 })
     .lean();
@@ -11443,7 +11723,7 @@ async function getBrandRelatedProducts(product, baseQuery, limit, includeOutOfSt
     brand: product.brand._id,
   };
 
-  const products = await Product.find(query)
+  const products = await Product.find(await marketCatalog.query(query))
     .limit(limit * 3)
     .sort({ averageRating: -1, totalSold: -1 })
     .lean();
@@ -11527,7 +11807,9 @@ async function getMixedRelatedProducts(product, baseQuery, limit, includeOutOfSt
                 {
                   $size: {
                     $setIntersection: [
-                      '$tags',
+                      // $size crashes on missing/legacy docs without an array
+                      // field ("$size must be an array, was null") — coalesce.
+                      { $ifNull: ['$tags', []] },
                       product.tags?.map(t => t._id) || [],
                     ],
                   },
@@ -11540,7 +11822,7 @@ async function getMixedRelatedProducts(product, baseQuery, limit, includeOutOfSt
                 {
                   $size: {
                     $setIntersection: [
-                      '$flavors',
+                      { $ifNull: ['$flavors', []] },
                       product.flavors?.map(f => f._id) || [],
                     ],
                   },
@@ -11557,7 +11839,7 @@ async function getMixedRelatedProducts(product, baseQuery, limit, includeOutOfSt
     { $limit: limit * 3 },
   ];
 
-  const products = await Product.aggregate(pipeline);
+  const products = await marketCatalog.productAggregate(pipeline);
   return await enrichRelatedProducts(products, includeOutOfStock);
 }
 
@@ -11574,7 +11856,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
   const currentDate = new Date();
 
   // Fetch full product data with complete population
-  const enrichedProducts = await Product.aggregate([
+  const enrichedProducts = await marketCatalog.productAggregate([
     { $match: { _id: { $in: productIds } } },
 
     // Lookup SubProducts with complete data
@@ -11583,6 +11865,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
         from: 'subproducts',
         let: { productId: '$_id' },
         pipeline: [
+          { $match: { visibleInOnlineStore: { $ne: false } } },
           {
             $match: {
               $expr: {
@@ -11618,6 +11901,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
               foreignField: 'subproduct',
               as: 'sizes',
               pipeline: [
+                { $match: retailSizeWhereClause() },
                 {
                   $match: {
                     status: 'active',
@@ -11646,7 +11930,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
                     discount: 1,
                     sku: 1,
                     isDefault: 1,
-                    platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
+                    sellingPriceMarkupOverridePct: 1, platformMarkupOverridePct: 1, commissionPriceOverride: 1, packCommissionPriceOverride: 1,
                   },
                 },
               ],
@@ -11668,7 +11952,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
                 city: 1,
                 state: 1,
                 country: 1,
-                revenueModel: 1,
+                revenueModel: 1, sellingPriceMarkupPercentage: 1,
                 markupPercentage: 1,
                 commissionPercentage: 1,
                 packMarkupPercentage: 1,
@@ -11678,7 +11962,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
               },
               sku: 1,
               costPrice: 1,
-              baseSellingPrice: 1, commissionPriceOverride: 1,
+              baseSellingPrice: 1, sellingPriceMarkupOverridePct: 1, commissionPriceOverride: 1,
               discount: 1,
               discountType: 1,
               sizes: 1,
@@ -11933,7 +12217,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
 
       // Process each size with website pricing
       const processedSizes = (subProduct.sizes || []).map((size) => {
-        const sellingPrice = size.sellingPrice || 0;
+        const sellingPrice = size.sellingPrice || (revenueModel === 'selling_price_markup' ? subProduct.baseSellingPrice : 0) || 0;
         const costPrice = size.costPrice || subProduct.costPrice || 0;
         const wholesalePrice = size.wholesalePrice || 0;
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
@@ -11942,7 +12226,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
         // Headline price is always at the normal rates; pack rates are quantity-earned (resolveLineRates)
         const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, 1);
         let platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct, wholesalePrice);
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.sellingPriceMarkupOverridePct, tenantStorePrice: sellingPrice, commissionPriceOverride: (typeof size !== 'undefined' ? size : sizeItem)?.commissionPriceOverride ?? null, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount
         const priceBeforeSale = platformSellingPrice;
@@ -12036,7 +12320,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
                   calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
-                  platformMarkupPct, null, { revenueModel, tenantStorePrice: revenueModel === 'commission' ? size.compareAtPrice : 0 }
+                  platformMarkupPct, null, { revenueModel, sellingPriceMarkupPercentage: tenant.sellingPriceMarkupPercentage, sellingPriceMarkupOverridePct: size.sellingPriceMarkupOverridePct, tenantStorePrice: ['commission', 'selling_price_markup'].includes(revenueModel) ? size.compareAtPrice : 0 }
                 ).toFixed(2)
               : null,
             currency,
@@ -12594,11 +12878,22 @@ const getSearchSuggestions = async (query, limit = 8) => {
   const lowerTerm  = searchTerm.toLowerCase();
 
   try {
+    // Product names are shopping discovery; brand/category names remain global metadata.
+    // Resolve eligibility once, before either product query applies its limit.
+    const productScope = {
+      ...await marketCatalog.productFilter(),
+      ...(marketCatalog.active() ? { isPublished: true } : {}),
+    };
     // Use MongoDB $text index (name + description + tastingNotes) for relevant product names
+    // DRI-5: both queries carry the beverage-only marketplace clause (the
+    // shop-suggest dropdown is a public listing feed). The regex leg already
+    // owns a `$or`, so the clause joins through `$and` there — `$or`
+    // spread-merge would clobber it.
+    const marketplaceClause = catalogKind.marketplaceWhereClause();
     const [textProducts, regexProducts, brandSuggestions, categorySuggestions] = await Promise.all([
       // 1. $text index search — highest quality matches
       Product.find(
-        { status: 'approved', $text: { $search: searchTerm } },
+        { ...productScope, status: 'approved', ...marketplaceClause, $text: { $search: searchTerm } },
         { score: { $meta: 'textScore' }, name: 1 },
       )
         .sort({ score: { $meta: 'textScore' } })
@@ -12606,19 +12901,32 @@ const getSearchSuggestions = async (query, limit = 8) => {
         .lean(),
 
       // 2. Regex search — catches prefix/substring matches the text index may miss
-      Product.find(
-        {
-          status: 'approved',
-          $or: [
-            { name: { $regex: searchTerm, $options: 'i' } },
-            { type: { $regex: lowerTerm,  $options: 'i' } },
-          ],
-        },
-        { name: 1 },
-      )
-        .sort({ averageRating: -1 })
-        .limit(limit)
-        .lean(),
+      // productScope may itself carry `$and` (market scoping), so the retail
+      // clause and the regex alternatives are appended to that array instead
+      // of re-assigning the key.
+      (() => {
+        const { $and: scopeAnd = [], ...scopeRest } = productScope;
+        return Product.find(
+          {
+            ...scopeRest,
+            status: 'approved',
+            $and: [
+              ...scopeAnd,
+              marketplaceClause,
+              {
+                $or: [
+                  { name: { $regex: searchTerm, $options: 'i' } },
+                  { type: { $regex: lowerTerm,  $options: 'i' } },
+                ],
+              },
+            ],
+          },
+          { name: 1 },
+        )
+          .sort({ averageRating: -1 })
+          .limit(limit)
+          .lean();
+      })(),
 
       // 3. Brand names
       Brand.find(
@@ -12704,7 +13012,7 @@ const getPersonalizedRecommendations = async (userId, limit = 10, options = {}) 
     const subCategories = [...new Set(viewedProducts.map(p => p.subCategory?.toString()).filter(Boolean))];
 
     // Simple fallback: just fetch products matching categories of viewed ones
-    const recommendations = await Product.find({
+    const recommendations = await Product.find({ ...await marketCatalog.productFilter(),
       _id: { $nin: viewedIds },
       status: 'approved',
       $or: [
@@ -12725,7 +13033,7 @@ const getPersonalizedRecommendations = async (userId, limit = 10, options = {}) 
       const moreNeeded = limit - recommendations.length;
       const alreadyFoundIds = recommendations.map(r => r._id);
       
-      const fillProducts = await Product.find({
+      const fillProducts = await Product.find({ ...await marketCatalog.productFilter(),
         _id: { $nin: [...viewedIds, ...alreadyFoundIds] },
         status: 'approved'
       })
@@ -12790,16 +13098,22 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status, cate
   }
 
   const [products, total] = await Promise.all([
-    Product.find(query)
+    Product.find(await marketCatalog.query(query))
       .populate('brand', 'name slug')
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')
-      .select('_id name slug type description images isAlcoholic abv volumeMl originCountry brand category subCategory status isPublished publishedAt totalStockAvailable createdAt updatedAt')
+      // Catalogue scope (constants/catalogScope.js): super-admin list surfaces
+      // private identities so the reviewer sees "Store-only · <tenant>" and
+      // the bulk approve copy communicates the canonical promotion. Legacy
+      // rows omit both fields; owningTenant is populated to a name so
+      // tenant IDs never leak as data.
+      .populate('owningTenant', 'name slug')
+      .select('_id name slug type description images isAlcoholic abv volumeMl originCountry brand category subCategory status isPublished publishedAt publicationScope owningTenant totalStockAvailable createdAt updatedAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum)
       .lean(),
-    Product.countDocuments(query),
+    marketCatalog.productCount(query),
   ]);
 
   // Count variants per product: sum of size variants across all sub-products.
@@ -12807,7 +13121,7 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status, cate
   // are the real sellable variants. Fall back to counting 1 per sub-product when
   // no sizes are defined (e.g. sell-without-size-variants mode).
   const productIds = products.map(p => p._id);
-  const subProductCounts = await SubProduct.aggregate([
+  const subProductCounts = await marketCatalog.subproductAggregate([
     { $match: { product: { $in: productIds } } },
     {
       $group: {

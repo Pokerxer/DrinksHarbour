@@ -38,6 +38,7 @@ export const TABS = [
     icon: PiPercentBold,
     fields: [
       'revenueModel',
+      'sellingPriceMarkupPercentage',
       'markupPercentage',
       'commissionPercentage',
       'platformMarkupPercentage',
@@ -53,6 +54,7 @@ export const TABS = [
     icon: PiScalesBold,
     fields: [
       'businessType',
+      'industries',
       'cacNumber',
       'tin',
       'idType',
@@ -100,6 +102,7 @@ export const DEFAULT_VALUES: Partial<TenantFormInput> = {
   plan: 'free_trial',
   subscriptionStatus: 'trialing',
   revenueModel: 'markup',
+  sellingPriceMarkupPercentage: 0,
   markupPercentage: 40,
   commissionPercentage: 12,
   platformMarkupPercentage: 15,
@@ -116,6 +119,7 @@ export const DEFAULT_VALUES: Partial<TenantFormInput> = {
   psDefaultBillControlPolicy: 'received',
   nafdacRequired: false,
   bankAccounts: [],
+  industries: [],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

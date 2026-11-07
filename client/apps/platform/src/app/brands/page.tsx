@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import BrandsBrowser from './BrandsBrowser';
-import { displayableBrands } from './brand-results';
+import type { BrandCardData } from './brand-results';
+import { loadBrands } from '@/components/Brands/loadBrands';
+import { API_URL } from '@/lib/api';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
 const SITE_NAME = 'DrinksHarbour';
 const PAGE_URL = `${BASE_URL}/brands`;
@@ -55,27 +56,18 @@ export const metadata: Metadata = {
 // matching CollectionPage ItemList — in its HTML. <BrandsBrowser/> is seeded
 // with this exact list (same limit, no productCount filter, same default
 // name-ascending sort) so hydration matches and it skips its own first fetch.
-async function fetchBrands(): Promise<any[]> {
+async function fetchBrands(): Promise<{ brands?: BrandCardData[]; error?: string }> {
   try {
-    const res = await fetch(`${API_URL}/api/brands?limit=500&status=active`, {
-      next: { revalidate: 3600 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const list = data?.data?.brands ?? data?.data ?? data?.brands ?? [];
-    // Show every published brand — the grid intentionally includes houses with
-    // zero products yet ("Coming soon"). Previously the productCount > 0 filter
-    // hid ~200 active brands whose productCount was simply stale (0) even though
-    // they link real products by ObjectId.
-    return displayableBrands(Array.isArray(list) ? list : [])
-      .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+    const brands = await loadBrands({ apiUrl: API_URL, revalidate: 3600 });
+    return { brands: brands.sort((a, b) => a.name.localeCompare(b.name)) };
   } catch {
-    return [];
+    return { error: 'Could not load brands. Please try again.' };
   }
 }
 
 export default async function BrandsPage() {
-  const brands = await fetchBrands();
+  const seed = await fetchBrands();
+  const brands = seed.brands ?? [];
 
   const collectionJsonLd = {
     '@context': 'https://schema.org',
@@ -129,7 +121,7 @@ export default async function BrandsPage() {
       />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(collectionJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(breadcrumbJsonLd) }} />
-      <BrandsBrowser initialBrands={brands} />
+      <BrandsBrowser initialBrands={seed.brands} initialError={seed.error} />
     </>
   );
 }

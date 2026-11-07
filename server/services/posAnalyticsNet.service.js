@@ -19,7 +19,10 @@ function orderLineNetTotals(order) {
   // the tender total made a gratuity look like a return on the line: the tip is
   // distributed across lines by the same weighting, so it has to be taken back
   // out here or `returnedValue` would report staff earnings as returned goods.
-  const shareOrder={...order,totalAmount:(order.totalAmount||0)*share,items:[item],refunds};
+  // S5: the share clone must scale the service-charge line with the tender, or
+  // the full fee would be deducted from every line's share of the gross.
+  const shareOrder={...order,totalAmount:(order.totalAmount||0)*share,items:[item],refunds,
+   ...(order.venueBillSnapshot?{venueBillSnapshot:{...order.venueBillSnapshot,financialLines:(order.venueBillSnapshot.financialLines||[]).map(l=>({...l,amountMinor:l.amountMinor*share}))}}:{})};
   const lineTotals=orderReturnTotals(shareOrder);
   return {grossShare:lineTotals.grossRevenue,
    returnedValue:money(Math.max(0,lineTotals.grossRevenue-lineTotals.netSales)),

@@ -280,13 +280,7 @@ export function VendorsView() {
         </table>
       </div>
       <Pager page={page} pages={pages} setPage={setPage} />
-      {creditFor && (
-        <CustomerCreditPanel
-          token={token}
-          customer={creditFor}
-          onClose={() => setCreditFor(null)}
-        />
-      )}
+
     </div>
   );
 }

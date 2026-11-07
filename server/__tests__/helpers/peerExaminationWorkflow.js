@@ -65,8 +65,8 @@ module.exports = async function examWorkflow({ call, ownerId, ids, tenantId, for
     const result = (await call(ids[i], `${path}/result`)).body.data;
     assert.equal(result.composite.attendanceScore, 100);
     assert.equal(result.composite.appraisalScore, 80);
-    assert.equal(result.composite.combinedScore, i === 0 ? 76.67 : 90);
-    assert.equal(result.bonusMinor, i === 0 ? 3833333 : 4500000);
+    assert.equal(result.composite.combinedScore, i === 0 ? 72 : 84);
+    assert.equal(result.bonusMinor, i === 0 ? 3600000 : 4200000);
     assert.equal(result.composite.examScore, i === 0 ? 50 : undefined);
     assert.equal(result.composite.attendanceMonth, '2020-01');
   }

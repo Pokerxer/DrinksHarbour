@@ -67,7 +67,7 @@ export default function SeasonalBannerSection() {
 
       {/* Valentine Theme */}
       <section>
-        <h3 className="text-lg font-semibold mb-4 text-gray-700">Valentine's Day Theme</h3>
+        <h3 className="text-lg font-semibold mb-4 text-gray-700">Valentine&apos;s Day Theme</h3>
         <SeasonalBanner
           placement="home_secondary"
           theme="valentine"

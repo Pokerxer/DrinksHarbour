@@ -1,23 +1,30 @@
 'use client';
 
-import { Controller, useFieldArray } from 'react-hook-form';
+import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
 
-import { ActionIcon, Button, Input, Select, Text, type SelectOption } from 'rizzui';
+import { ActionIcon, Button, Input, MultiSelect, Select, Text, type SelectOption } from 'rizzui';
 
 import { TenantFormInput } from '@/validators/create-tenant.schema';
 
 import { PiTrashBold, PiPlusBold } from 'react-icons/pi';
 
-import { useFormContext } from 'react-hook-form';
 import { Card, FieldGrid, VisibilityToggle } from './form-controls';
 
 import { KycSummary } from './form-kyc';
-import { BUSINESS_TYPE_OPTIONS, ID_TYPE_OPTIONS } from './form-options';
+import { BUSINESS_TYPE_OPTIONS, ID_TYPE_OPTIONS, INDUSTRIES_EDIT_OPTIONS } from './form-options';
 import type { TenantFormMeta } from './form-types';
 
-export function LegalFields({ meta }: { meta?: TenantFormMeta }) {
+export function LegalFields({ meta, isEdit = false }: { meta?: TenantFormMeta; isEdit?: boolean }) {
   const { register, control, watch, setValue, formState: { errors } } = useFormContext<TenantFormInput>();
   const nafdacRequiredValue = watch('nafdacRequired');
+  // Industry taxonomy scope (2026-11-02): additive editor. In EDIT mode the
+  // editor is ALWAYS visible (profile data, not gating — a profile can be
+  // created before a business type is picked); in CREATE mode the original
+  // condition stands. Blank/absent stays the legacy/global view exactly as
+  // before this field existed.
+  const businessTypeValue = watch('businessType');
+  const industriesValue = watch('industries') ?? [];
+  const showIndustriesEditor = isEdit || !!businessTypeValue || industriesValue.length > 0;
   const { fields: bankAccountFields, append: appendBankAccount, remove: removeBankAccount } = useFieldArray({ control, name: 'bankAccounts' });
   return (<>
 {/* ── Legal & KYC ── */}
@@ -85,6 +92,30 @@ export function LegalFields({ meta }: { meta?: TenantFormMeta }) {
                     error={errors.idNumber?.message}
                   />
                 </FieldGrid>
+                {showIndustriesEditor && (
+                  <div className="mt-4">
+                    <MultiSelect
+                      label="Industries"
+                      options={INDUSTRIES_EDIT_OPTIONS}
+                      value={industriesValue}
+                      onChange={(opts) =>
+                        setValue('industries', (opts ?? []) as TenantFormInput['industries'], {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
+                      placeholder="Leave empty for all categories (legacy)"
+                      clearable
+                      error={errors.industries?.message}
+                    />
+                    <Text className="mt-1.5 text-xs text-gray-400">
+                      Scope of the catalogue this tenant manages. Empty or
+                      unprofiled tenants see all category scopes (legacy/global
+                      behaviour); a profile limits the visible categories and
+                      product types to those verticals.
+                    </Text>
+                  </div>
+                )}
                 <div className="mt-4 divide-y divide-gray-100">
                   <Controller
                     name="nafdacRequired"

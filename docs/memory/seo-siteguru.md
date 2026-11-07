@@ -1,5 +1,15 @@
 # SiteGuru SEO baseline and patch
 
+2026-10-18 backlink work: prepared docs/seo/backlinks/ (README, evidence,
+prospects, outreach, tracker). Seven prospects: five editorial and two conditional
+relationships; five tailored messages plus stockist template. Nothing sent,
+submitted, purchased or published. SiteGuru still returns September 8's 12 / 12
+backlink summary with zero source rows; competitor opportunities return no_data.
+Top-pages last_90_days returned empty despite advertised range; do not claim fresh
+page metrics. Food-pairing guide is the lead target, subject to factual/author
+verification. Explicit send instructions and real sender identity are still needed.
+See docs/superpowers/specs/RESUME-backlinks.md for continuation.
+
 2026-09-09 screenshot request: MarketplaceIntro is rendered inside a Tailwind
 `sr-only` wrapper. Its SEO/accessibility text and crawlable links remain in the
 HTML without occupying visual space for sighted visitors.

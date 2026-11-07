@@ -26,6 +26,12 @@ export interface AdminTenantData {
   contactPhone?: string;
   phone?: string;
   email?: string;
+  /**
+   * Industry taxonomy scope (2026-11-02, additive). Fed from either the
+   * `/api/tenants/slug/:slug` payload or the ERM status payload (see
+   * LiveErmTenant); absent/empty = unprofiled/legacy — no type filtering.
+   */
+  industries?: string[];
 }
 
 interface TenantContextValue {

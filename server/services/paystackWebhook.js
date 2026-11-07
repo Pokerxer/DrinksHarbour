@@ -14,17 +14,14 @@ async function processEvent(event) {
   const payment = { reference: data.reference, status: data.status, transactionId: String(data.id || ''),
     amount: data.amount / 100, currency: data.currency, paidAt: data.paid_at, channel: data.channel };
   if (typeof data.reference !== 'string' || !data.reference) throw new ConflictError('Missing payment reference');
+  if (data.reference.startsWith('dhv-')) {
+    await require('./venue/collections').verifyVenuePayment({ reference: data.reference });
+    return;
+  }
   if (data.reference.startsWith('dhw-')) {
     if (!await settlement.settlePayment(data.reference, payment)) throw new ConflictError('Checkout payment reference not found');
     return;
   }
-  const order = await Order.findOne({ paymentReference: data.reference });
-  if (!order || order.paymentStatus === 'paid') return;
-  if (order.integrationCheckout) throw new ConflictError('Integration payment must use its checkout reference');
-  if (data.status !== 'success' || data.currency !== (order.currency || 'NGN') ||
-      !Number.isFinite(data.amount) || data.amount !== Math.round(order.totalAmount * 100)) {
-    throw new ConflictError('Payment amount or currency does not match order');
-  }
-  await require('./payment.service').attachPaymentToOrder(String(order._id), { ...payment, method: 'paystack' });
+  await require('./marketplaceWebhook').settle('paystack', data.reference);
 }
 module.exports = { validSignature, processEvent };

@@ -1,3 +1,4 @@
+import { readJson, readError } from './response';
 // services/reorder.service.ts
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -64,6 +65,24 @@ export interface ReorderSuggestion {
   unitCost: number;
   estimatedCost: number;
   urgency: 'critical' | 'high' | 'normal';
+  // Variant identity (DRI-33 contract, emit-only-with-identity per DRI-16/DRI-29
+  // precedent). Variant suggestions carry the exact Size: sizeId + the Size
+  // code/displayName, plus verbatim colour/option + packaging fields ONLY when
+  // the Size actually carries them. SubProduct-aggregate (sizeless/legacy)
+  // suggestions keep the exact pre-change payload shape — the UI renders those
+  // rows byte-identically.
+  sizeId?: string;
+  /** Raw Size code of the targeted Size row (variant suggestions only). */
+  size?: string | ({ displayName?: string | null; size?: string | null; colorName?: string | null; optionName?: string | null } | null);
+  /** Populate-style displayName of the targeted Size row (variant suggestions only). */
+  displayName?: string | null;
+  /** Defensive alternate identity shape (color/option flat siblings, DRI-16 style). */
+  sizeName?: string;
+  colorName?: string;
+  colorHexCode?: string;
+  optionName?: string;
+  unitType?: string;
+  unitsPerPack?: number;
 }
 
 export interface GetRulesParams {
@@ -113,11 +132,11 @@ export const reorderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to create reorder rule');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getRules(token: string, params?: GetRulesParams) {
@@ -140,11 +159,11 @@ export const reorderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch reorder rules');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getRuleById(ruleId: string, token: string) {
@@ -155,11 +174,11 @@ export const reorderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch reorder rule');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async updateRule(ruleId: string, data: Partial<CreateRuleData>, token: string) {
@@ -173,11 +192,11 @@ export const reorderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to update reorder rule');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async deleteRule(ruleId: string, token: string) {
@@ -189,11 +208,11 @@ export const reorderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to delete reorder rule');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async triggerRule(ruleId: string, token: string, notes?: string) {
@@ -207,11 +226,11 @@ export const reorderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to trigger reorder rule');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async checkAllRules(token: string) {
@@ -224,11 +243,11 @@ export const reorderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to check reorder rules');
     }
 
-    return response.json();
+    return readJson(response);
   },
 
   async getSuggestions(token: string) {
@@ -239,10 +258,10 @@ export const reorderService = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await readError(response);
       throw new Error(error.message || 'Failed to fetch reorder suggestions');
     }
 
-    return response.json();
+    return readJson(response);
   },
 };

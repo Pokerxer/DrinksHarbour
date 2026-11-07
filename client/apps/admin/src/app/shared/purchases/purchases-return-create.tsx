@@ -6,6 +6,8 @@ import {
   returnablePurchaseQuantity,
   wholeInvoiceReturnQuantities,
 } from './purchase-return-quantities';
+import { lineSizeLabel, populatedSizeIdentity } from '@/utils/size-variant-label';
+import { refIdOf } from './types';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -457,7 +459,9 @@ export default function PurchasesReturnCreate() {
         subProductId: item.subProductId,
         subProductName: item.subProductName ?? item.productName,
         sku: item.sku,
-        sizeId: item.sizeId,
+        // Populate turns a stored Size ref into an object — normalise back to
+        // the raw id (same guard purchases-edit applies on round-trips).
+        sizeId: refIdOf(item.sizeId as string | { _id?: string } | null),
         sizeName: item.sizeName,
         quantity: row.returnQty,
         unitPrice: getUnitPrice(item),
@@ -913,8 +917,11 @@ export default function PurchasesReturnCreate() {
                         className={`font-medium leading-tight ${selected ? 'text-gray-900' : 'text-gray-700'}`}
                       >
                         {item.subProductName ?? item.productName ?? '—'}
-                        {item.sizeName && compact && (
-                          <span className="text-gray-400"> · {item.sizeName}</span>
+                        {lineSizeLabel(item, populatedSizeIdentity(item.sizeId)) && compact && (
+                          <span className="text-gray-400">
+                            {' '}
+                            · {lineSizeLabel(item, populatedSizeIdentity(item.sizeId))}
+                          </span>
                         )}
                       </p>
                       {item.sku && <p className="text-[11px] text-gray-400">{item.sku}</p>}
@@ -928,7 +935,7 @@ export default function PurchasesReturnCreate() {
                     {/* Size */}
                     {!compact && (
                       <td className="px-2 py-3 text-center text-xs text-gray-500">
-                        {item.sizeName ?? '—'}
+                        {lineSizeLabel(item, populatedSizeIdentity(item.sizeId)) || '—'}
                       </td>
                     )}
 

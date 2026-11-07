@@ -163,7 +163,7 @@ export default function CreateTenant({
             <div className={activeTab !== "identity" ? "hidden" : undefined}><IdentityFields id={id} meta={meta} slugManuallyEdited={slugManuallyEdited} /></div>
 <div className={activeTab !== "billing" ? "hidden" : undefined}><BillingFields /></div>
 <div className={activeTab !== "revenue" ? "hidden" : undefined}><RevenueFields /></div>
-<div className={activeTab !== "legal" ? "hidden" : undefined}><LegalFields meta={meta} /></div>
+<div className={activeTab !== "legal" ? "hidden" : undefined}><LegalFields meta={meta} isEdit={!!id} /></div>
 <div className={activeTab !== "operations" ? "hidden" : undefined}><OperationsFields meta={meta} /></div>
           </div>
 

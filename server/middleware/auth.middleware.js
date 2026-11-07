@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User');
 const { loadCustomPermissions, TENANT_ACTION_PERMISSIONS } = require('../services/effectivePermissions.service');
 const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
+const { assertAccessToken } = require('../utils/accessToken');
 const {
   resolveTenantContext,
   requireOwnTenant,
@@ -37,6 +38,7 @@ const protect = asyncHandler(async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    assertAccessToken(decoded);
 
     // Expose the raw token + decoded payload to downstream handlers
     // (e.g. logout needs the jti to revoke the refresh-token chain)
@@ -47,7 +49,7 @@ const protect = asyncHandler(async (req, res, next) => {
     // JWT payload uses userId, not id
     const userId = decoded.userId || decoded.id;
     req.user = await User.findById(userId)
-      .select('_id email role tenant status firstName lastName passwordChangedAt mfaEnabled customRole')
+      .select('_id email role tenant status firstName lastName passwordChangedAt mfaEnabled customRole venueDeniedActions')
       .lean();
 
     if (!req.user) {
@@ -108,6 +110,7 @@ const optionalProtect = asyncHandler(async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    assertAccessToken(decoded);
 
     // JWT payload uses userId, not id
     const userId = decoded.userId || decoded.id;

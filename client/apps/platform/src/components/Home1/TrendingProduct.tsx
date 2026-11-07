@@ -440,7 +440,7 @@ const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
                 Products
               </span>
             </h2>
-            <p className="text-gray-500 text-lg">Discover what's popular this week</p>
+            <p className="text-gray-500 text-lg">Discover what&apos;s popular this week</p>
           </div>
           
           <div className="flex items-center gap-3 justify-center sm:justify-end">

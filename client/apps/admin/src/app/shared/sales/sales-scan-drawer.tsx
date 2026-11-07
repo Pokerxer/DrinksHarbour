@@ -26,6 +26,7 @@ import {
 import Link from 'next/link';
 import { QRCodeCanvas } from 'qrcode.react';
 import { routes } from '@/config/routes';
+import { sizeVariantLabel } from '@/utils/size-variant-label';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 import {
   scanService,
@@ -302,13 +303,16 @@ export default function SalesScanDrawer({
     if (size) {
       // Mirror product-line-search pickSize fallback: size price → subproduct base price
       const price = size.sellingPrice || sp.baseSellingPrice;
+      // Same shared identity formatter as the picker path — legacy beverage
+      // scans (no colour/option) render byte-identical strings.
+      const sizeLabel = sizeVariantLabel(size);
       return {
         ...base,
-        name: `${r.item.matchedProductName ?? r.item.extractedName} – ${size.displayName ?? size.size}`,
+        name: `${r.item.matchedProductName ?? r.item.extractedName} – ${sizeLabel}`,
         sku: size.sku ?? sp.sku,
         sellingPrice: price,
         sizeId: size.size,
-        sizeName: size.displayName ?? size.size,
+        sizeName: sizeLabel,
         availableStock: size.availableStock,
         originalPrice: price,
       };

@@ -7,11 +7,12 @@ export type OrdersDataType = RecentOrderType;
 
 import Link from 'next/link';
 import WidgetCard from '@core/components/cards/widget-card';
-import { Button } from 'rizzui';
+import { Button } from 'rizzui/button';
 import cn from '@core/utils/class-names';
 import { routes } from '@/config/routes';
 import { useDashboard } from './use-dashboard';
-import { PiArrowRightBold, PiUserBold } from 'react-icons/pi';
+import { PiArrowRightBold, PiReceiptDuotone, PiUserBold } from 'react-icons/pi';
+import { formatNaira } from './dashboard-format';
 
 const STATUS_STYLE: Record<string, string> = {
   pending:
@@ -36,6 +37,9 @@ const PAY_STYLE: Record<string, string> = {
   refunded: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
 };
 
+const NEUTRAL_PILL =
+  'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300';
+
 const METHOD_LABEL: Record<string, string> = {
   card: 'Card',
   bank_transfer: 'Bank',
@@ -44,14 +48,6 @@ const METHOD_LABEL: Record<string, string> = {
   mobile_money: 'Mobile',
   wallet: 'Wallet',
 };
-
-function fmt(n: number): string {
-  return new Intl.NumberFormat('en-NG', {
-    style: 'currency',
-    currency: 'NGN',
-    maximumFractionDigits: 0,
-  }).format(n);
-}
 
 function fmtDate(s: string): string {
   const d = new Date(s);
@@ -72,7 +68,7 @@ function SkeletonRow() {
           className="px-3 py-4 first:px-5 last:px-3 first:lg:px-7 last:lg:pr-7"
         >
           <div
-            className="h-4 rounded bg-gray-200"
+            className="h-4 rounded bg-gray-200 dark:bg-gray-100/20"
             style={{ width: `${40 + ((i * 13) % 50)}%` }}
           />
         </td>
@@ -94,21 +90,36 @@ export default function RecentOrder({ className }: { className?: string }) {
       action={
         <Link href={routes.eCommerce.orders}>
           <Button variant="outline" size="sm" className="gap-1 text-xs">
-            View All <PiArrowRightBold className="h-3 w-3" />
+            View All <PiArrowRightBold className="h-3 w-3" aria-hidden="true" />
           </Button>
         </Link>
       }
     >
       <div className="custom-scrollbar overflow-x-auto">
         <table className="w-full min-w-[700px] text-sm">
+          <caption className="sr-only">
+            Most recent orders with customer, amount, payment and status
+          </caption>
           <thead>
-            <tr className="border-b border-muted text-left text-xs uppercase tracking-wide text-gray-400">
-              <th className="px-5 py-3 font-medium lg:px-7">Order #</th>
-              <th className="px-3 py-3 font-medium">Customer</th>
-              <th className="px-3 py-3 font-medium">Amount</th>
-              <th className="px-3 py-3 font-medium">Payment</th>
-              <th className="px-3 py-3 font-medium">Status</th>
-              <th className="px-3 py-3 text-right font-medium lg:pr-7">When</th>
+            <tr className="border-b border-muted text-left text-xs uppercase tracking-wide text-gray-500">
+              <th scope="col" className="px-5 py-3 font-medium lg:px-7">
+                Order #
+              </th>
+              <th scope="col" className="px-3 py-3 font-medium">
+                Customer
+              </th>
+              <th scope="col" className="px-3 py-3 font-medium">
+                Amount
+              </th>
+              <th scope="col" className="px-3 py-3 font-medium">
+                Payment
+              </th>
+              <th scope="col" className="px-3 py-3 font-medium">
+                Status
+              </th>
+              <th scope="col" className="px-3 py-3 text-right font-medium lg:pr-7">
+                When
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -116,29 +127,34 @@ export default function RecentOrder({ className }: { className?: string }) {
               Array.from({ length: 7 }).map((_, i) => <SkeletonRow key={i} />)
             ) : orders.length === 0 ? (
               <tr>
-                <td
-                  colSpan={6}
-                  className="px-5 py-12 text-center text-sm text-gray-400 lg:px-7"
-                >
-                  No orders yet
+                <td colSpan={6} className="px-5 py-12 lg:px-7">
+                  <div className="flex flex-col items-center justify-center text-gray-500">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-100/10 dark:text-gray-500">
+                      <PiReceiptDuotone className="h-6 w-6" aria-hidden="true" />
+                    </div>
+                    <p className="text-sm">No orders yet</p>
+                  </div>
                 </td>
               </tr>
             ) : (
               orders.map((order) => (
                 <tr
                   key={String(order.id)}
-                  className="border-b border-muted transition-colors last:border-0 hover:bg-gray-50 dark:hover:bg-gray-100/5"
+                  className="border-b border-muted transition-colors last:border-0 hover:bg-gray-50 focus-within:bg-gray-50 dark:hover:bg-gray-100/5 dark:focus-within:bg-gray-100/5"
                 >
                   <td className="px-5 py-3.5 lg:px-7">
                     <Link
                       href={`${routes.eCommerce.orders}/${order.id}`}
-                      className="font-semibold text-primary hover:underline"
+                      aria-label={`View order #${order.orderNumber}`}
+                      className="-m-1 inline-flex items-center rounded-md p-1 font-semibold text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     >
-                      #{order.orderNumber}
+                      <span className="tabular-nums">
+                        #{order.orderNumber}
+                      </span>
                     </Link>
                     {order.vendors?.length > 0 && (
                       <p
-                        className="mt-0.5 max-w-[120px] truncate text-[10px] text-gray-400"
+                        className="mt-0.5 max-w-[120px] truncate text-[10px] text-gray-500 dark:text-gray-600"
                         title={order.vendors.join(', ')}
                       >
                         {order.vendors.slice(0, 2).join(', ')}
@@ -150,7 +166,10 @@ export default function RecentOrder({ className }: { className?: string }) {
                   </td>
                   <td className="max-w-[180px] px-3 py-3.5">
                     <div className="flex items-center gap-1.5">
-                      <span className="truncate text-gray-700">
+                      <span
+                        className="truncate text-gray-700 dark:text-gray-300"
+                        title={order.customer}
+                      >
                         {order.customer}
                       </span>
                       {order.hasAccount && (
@@ -158,26 +177,29 @@ export default function RecentOrder({ className }: { className?: string }) {
                           title="Registered user"
                           className="shrink-0 rounded bg-blue-50 p-0.5 dark:bg-blue-900/30"
                         >
-                          <PiUserBold className="h-2.5 w-2.5 text-blue-500" />
+                          <PiUserBold
+                            className="h-2.5 w-2.5 text-blue-500"
+                            aria-hidden="true"
+                          />
+                          <span className="sr-only">Registered customer</span>
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-3.5 font-semibold text-gray-900">
-                    {fmt(order.total)}
+                  <td className="px-3 py-3.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                    {formatNaira(order.total)}
                   </td>
                   <td className="px-3 py-3.5">
                     <div className="flex flex-col gap-0.5">
                       <span
                         className={cn(
                           'w-fit rounded-full px-2 py-0.5 text-xs font-medium capitalize',
-                          PAY_STYLE[order.paymentStatus] ??
-                            'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                          PAY_STYLE[order.paymentStatus] ?? NEUTRAL_PILL
                         )}
                       >
                         {order.paymentStatus}
                       </span>
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-gray-500 dark:text-gray-600">
                         {METHOD_LABEL[order.paymentMethod] ??
                           order.paymentMethod}
                       </span>
@@ -187,15 +209,14 @@ export default function RecentOrder({ className }: { className?: string }) {
                     <span
                       className={cn(
                         'rounded-full px-2.5 py-1 text-xs font-medium capitalize',
-                        STATUS_STYLE[order.status] ??
-                          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        STATUS_STYLE[order.status] ?? NEUTRAL_PILL
                       )}
                     >
                       {order.status}
                     </span>
                   </td>
-                  <td className="px-3 py-3.5 text-right text-xs tabular-nums text-gray-400 lg:pr-7">
-                    {fmtDate(order.placedAt)}
+                  <td className="px-3 py-3.5 text-right text-xs tabular-nums text-gray-500 dark:text-gray-600 lg:pr-7">
+                    <span suppressHydrationWarning>{fmtDate(order.placedAt)}</span>
                   </td>
                 </tr>
               ))

@@ -12,7 +12,7 @@ const controller = require('../controllers/peerAppraisal.controller');
 const oid = () => new mongoose.Types.ObjectId();
 // Opt in only against the disposable localhost replica set; never loads .env.
 test('transactional peer appraisal lifecycle', { skip: !process.env.PEER_TEST_MONGO }, async t => {
-  assert.equal(process.env.PEER_TEST_MONGO, 'mongodb://127.0.0.1:27029/?replicaSet=peerTest');
+  assert.match(process.env.PEER_TEST_MONGO, /^mongodb:\/\/127\.0\.0\.1:270(?:29|30)\/\?replicaSet=peerTest$/);
   await mongoose.connect(process.env.PEER_TEST_MONGO, { dbName: `peer_appraisal_test_${process.pid}` });
   try {
     await Promise.all([Cycle.init(), P.init(), R.init(), require('../models/PeerAppraisalExam').init(), require('../models/PeerAppraisalExamAttempt').init()]);
@@ -84,7 +84,10 @@ test('transactional peer appraisal lifecycle', { skip: !process.env.PEER_TEST_MO
       const call = async (user, path, method = 'GET', body, extraHeaders = {}) => {
         const token = user ? jwt.sign({ userId: String(user) }, process.env.JWT_SECRET, { expiresIn: '10m' }) : null;
         const response = await fetch(base + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-        return { status: response.status, body: await response.json() };
+        const raw = await response.text();
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch { parsed = { message: 'Non-JSON response' }; }
+        return { status: response.status, body: parsed };
       };
       try {
         assert.equal((await call(null, '/my')).status, 401);
@@ -119,6 +122,12 @@ test('transactional peer appraisal lifecycle', { skip: !process.env.PEER_TEST_MO
         }
         assert.equal((await call(foreignId, `/${cycleId}/result`)).status, 404);
         assert.equal((await call(ownerId, '/bad-id/participants')).status, 400);
+        await t.test('owner examination resets, revisions, isolation and audits', async () => {
+          await require('./helpers/peerExamResetWorkflow')({ call, ownerId, ids, tenantId, foreignId, foreignTenant });
+        });
+        await t.test('owner employee score drilldown, weights, privacy and final snapshots', async () => {
+          await require('./helpers/peerEmployeeScoresWorkflow')({ call, ownerId, ids, tenantId, foreignId, foreignTenant });
+        });
         await t.test('department examination, monthly attendance and combined bonuses', async () => {
           await require('./helpers/peerExaminationWorkflow')({ call, ownerId, ids, tenantId, foreignId, foreignTenant });
         });

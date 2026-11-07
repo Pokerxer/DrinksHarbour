@@ -25,6 +25,9 @@ const STOP_STATUSES = ['pending', 'delivered', 'failed'];
 
 const stopSchema = new Schema(
   {
+    merchantOrder: String,
+    dispatchBooking: String,
+    shipmentAllocation: String,
     order: {
       type: ObjectId,
       ref: 'Order',
@@ -86,6 +89,8 @@ const stopSchema = new Schema(
 
 const deliverySchema = new Schema(
   {
+    responsibilityVersion: Number,
+    originLocation: { type: ObjectId, ref: 'Warehouse' },
     tenant: {
       type: ObjectId,
       ref: 'Tenant',

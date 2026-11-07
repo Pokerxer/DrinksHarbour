@@ -33,6 +33,19 @@ test('SalesOrder rejects an out-of-enum docType', () => {
   assert.ok(err.errors.docType);
 });
 
+test('marketplace order uniqueness excludes manual orders with a null link', () => {
+  const bridgeIndex = SalesOrder.schema.indexes().find(([fields]) =>
+    fields.tenant === 1 && fields.marketplaceOrderId === 1
+  );
+  assert.ok(bridgeIndex);
+  assert.strictEqual(bridgeIndex[1].unique, true);
+  assert.strictEqual(bridgeIndex[1].name, 'sales_marketplace_order_unique_v2');
+  assert.deepStrictEqual(bridgeIndex[1].partialFilterExpression, {
+    marketplaceOrderId: { $type: 'objectId' },
+  });
+  assert.notStrictEqual(bridgeIndex[1].sparse, true);
+});
+
 test('a line item defaults priceOverridden to false and can be set true', () => {
   const doc = new SalesOrder({
     tenant: oid(),

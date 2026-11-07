@@ -26,6 +26,12 @@ const { KIOSK_TOKEN_HEADER } = require('../middleware/kiosk.middleware');
 /** Header names are case-insensitive; the allowlist is compared as such. */
 const allowed = () => corsOptions.allowedHeaders.map((h) => h.toLowerCase());
 
+test('CORS permits idempotent venue commands and signed channel attribution', () => {
+  for (const header of ['idempotency-key', 'x-venue-channel', 'x-venue-issued', 'x-venue-signature']) {
+    assert.ok(allowed().includes(header), `${header} must reach the venue command in a browser`);
+  }
+});
+
 test('CORS allows the kiosk device-token header', () => {
   assert.ok(
     allowed().includes(KIOSK_TOKEN_HEADER.toLowerCase()),

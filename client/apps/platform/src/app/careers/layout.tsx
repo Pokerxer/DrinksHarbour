@@ -1,8 +1,9 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: "Careers — Join Our Team",
   description:
     "Explore career opportunities at DrinksHarbour. Join Nigeria's leading online beverage platform and help us deliver excellence.",
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
       "Join Nigeria's leading online beverage platform. View open roles and grow your career with DrinksHarbour.",
   },
   alternates: { canonical: `${BASE_URL}/careers` },
-};
+});
 
 const jsonLd = {
   "@context": "https://schema.org",

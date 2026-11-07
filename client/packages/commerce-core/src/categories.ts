@@ -74,7 +74,7 @@ export async function fetchAllCategories(): Promise<Category[]> {
   if (_catInflight) return _catInflight;
 
   _catInflight = fetch(`${getApiBaseUrl()}/api/categories`)
-    .then(r => r.json())
+    .then(r => r.json() as Promise<{data?: {categories?: Category[]}}>)
     .then(data => {
       const cats: Category[] = data?.data?.categories ?? [];
       _catCache = cats;
@@ -97,7 +97,7 @@ export async function fetchAllSubCategories(): Promise<SubCategory[]> {
   if (_subInflight) return _subInflight;
 
   _subInflight = fetch(`${getApiBaseUrl()}/api/subcategories`)
-    .then(r => r.json())
+    .then(r => r.json() as Promise<{data?: SubCategory[]}>)
     .then(data => {
       // /api/subcategories returns { success, data: [...], total }
       const subs: SubCategory[] = data?.data ?? [];

@@ -6,6 +6,7 @@
 // is a single atom (its own "order" and its own "line"), per-row attribution is
 // automatic — there's no multi-line PO to fan out across categories/brands.
 import type { StockRow } from '@/services/warehouseStock.service';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 import { BASE_CURRENCY, CURRENCY_SYMBOLS } from '../purchases/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -257,8 +258,42 @@ export function computeAvg(rows: { value: number }[]): number {
 }
 
 /** No date dimensions on this page — keys are already display-ready. */
-export function formatG1Label(key: string, _dim: GroupByKey): string {
-  return key;
+export function formatG1Label(
+  key: string,
+  _dim: GroupByKey,
+  keyLabels?: Record<string, string>,
+): string {
+  return keyLabels?.[key] ?? key;
+}
+
+// ── Size variant identity ───────────────────────────────────────────────────────
+//
+// CEO decision on record (docs/memory/pos-retail-accommodation.md, "/warehouses
+// extension — 2026-11-06"): warehouse reporting keys each Size dimension bucket
+// by the exact Size ID; presentation goes through the shared full label.
+// (identity separate from presentation). Before this, buckets keyed on
+// `sizeName` collapsed colour/option siblings (Emerald/Ivory "m" merged).
+//
+// `sizeName`/`colorName`/`optionName` on a row come from the DRI-16 additive
+// server payload; every legacy beverage row lacks the variant fields, so both
+// its key and label resolve to `sizeName` exactly as before.
+
+/** Bucket key along the size dimension: exact Size id, legacy fallback to the
+ *  stored name only for rows that lack an id, then '—' (poReceive.helpers
+ *  fallback pattern). Not for display — see `getRowLabel`. */
+export function sizeRowKey(r: Pick<StockRow, 'sizeId' | 'sizeName'>): string {
+  return r.sizeId || r.sizeName || '—';
+}
+
+/** Full identity label for a stock row's size, via the shared
+ *  size-variant-label util. Row objects that carry only size identity can also
+ *  use this (partial `sizeId` optional). */
+export function sizeRowLabel(r: {
+  sizeName?: string | null;
+  colorName?: string | null;
+  optionName?: string | null;
+}): string {
+  return flatRowSizeLabel(r) || r.sizeName || '—';
 }
 
 // ── Dimension key resolution ────────────────────────────────────────────────────
@@ -282,7 +317,7 @@ export function getRowKey(
     case 'brand':
       return meta?.brandName || 'No Brand';
     case 'size':
-      return r.sizeName || '—';
+      return sizeRowKey(r);
     case 'stock_status':
       return STOCK_STATUS_LABEL[stockStatus(r)];
     case 'expiry':
@@ -290,6 +325,20 @@ export function getRowKey(
     default:
       return 'Unknown';
   }
+}
+
+/**
+ * Display label for a row along a dimension. Identity ≠ presentation: the size
+ * dimension keys by exact Size ID (`getRowKey`) but presents the shared full
+ * identity label; every other dimension's label is its key.
+ */
+export function getRowLabel(
+  r: StockRow,
+  dim: GroupByKey,
+  prodMeta: Record<string, ProdMeta>,
+): string {
+  if (dim === 'size') return sizeRowLabel(r);
+  return getRowKey(r, dim, prodMeta);
 }
 
 // ── Filtering ──────────────────────────────────────────────────────────────────
@@ -436,7 +485,6 @@ export function applySortStack<T extends { label: string; orders: number; isoKey
 }
 
 // ── Single-level grouping ────────────────────────────────────────────────────
-
 export function computeGroupData(
   rows: StockRow[],
   groupBy: GroupByKey,
@@ -452,7 +500,7 @@ export function computeGroupData(
   });
 
   const out: GroupRow[] = Object.entries(groups).map(([key, list]) => ({
-    label: key,
+    label: getRowLabel(list[0], groupBy, prodMeta),
     isoKey: key,
     value: aggregateMeasure(list, measure, toBase),
     orders: list.length,
@@ -475,16 +523,20 @@ export function computeMultiSeries(
 ): {
   rows: GroupRow2[];
   series: string[];
+  /** Series-key → display label (size keys are Size IDs; labels are full). */
+  seriesLabels: Record<string, string>;
   orderMap: Record<string, Record<string, StockRow[]>>;
 } {
   const orderMap: Record<string, Record<string, StockRow[]>> = {};
   const seriesSet = new Set<string>();
+  const seriesLabels: Record<string, string> = {};
   const g1Order: string[] = [];
 
   rows.forEach((r) => {
     const g1 = getRowKey(r, groupBy, prodMeta);
     const g2 = getRowKey(r, groupBy2, prodMeta);
     seriesSet.add(g2);
+    if (!seriesLabels[g2]) seriesLabels[g2] = getRowLabel(r, groupBy2, prodMeta);
     if (!orderMap[g1]) {
       orderMap[g1] = {};
       g1Order.push(g1);
@@ -496,7 +548,7 @@ export function computeMultiSeries(
 
   const outRows: GroupRow2[] = g1Order.map((g1) => {
     const row: GroupRow2 = {
-      label: g1,
+      label: getLabelForFirstRow(orderMap[g1], groupBy, prodMeta),
       isoKey: g1,
       __total__: 0,
       orders: 0,
@@ -514,7 +566,18 @@ export function computeMultiSeries(
   });
 
   const sortedRows = applySortStack(outRows, sortStack, (r) => r.__total__);
-  return { rows: sortedRows, series, orderMap };
+  return { rows: sortedRows, series, seriesLabels, orderMap };
+}
+
+/** Display label for the first row of a bucket's rows (labels are consistent
+ *  within an identity bucket — same Size ID ⇒ same identity fields). */
+function getLabelForFirstRow(
+  buckets: Record<string, StockRow[]>,
+  dim: GroupByKey,
+  prodMeta: Record<string, ProdMeta>,
+): string {
+  const first = Object.values(buckets).find((list) => list.length > 0)?.[0];
+  return first ? getRowLabel(first, dim, prodMeta) : 'Unknown';
 }
 
 // ── Hierarchical pivot (Odoo-style) ─────────────────────────────────────────────
@@ -522,6 +585,8 @@ export function computeMultiSeries(
 export interface HierPivotResult {
   rowVals0: string[];
   colVals0: string[];
+  /** Pivot-value key → display label ('size' keys are Size IDs; labels full). */
+  keyLabels: Record<string, string>;
   subRowValsMap: Record<string, string[]>;
   subColValsMap: Record<string, string[]>;
   getValue: (rowPath: string[], colPath: string[]) => number;
@@ -546,6 +611,7 @@ export function computeHierarchicalPivot(
   // Each cache cell holds the deduped set of rows whose key paths cover it.
   const cache = new Map<string, Map<string, StockRow>>();
   const numCache = new Map<string, number>();
+  const keyLabels: Record<string, string> = {};
 
   const cacheKey = (rPath: string[], cPath: string[]) =>
     rPath.join('\x00') + '\x01' + cPath.join('\x00');
@@ -568,9 +634,17 @@ export function computeHierarchicalPivot(
   rows.forEach((r) => {
     const rKeys = rowDims.map((d) => getRowKey(r, d, prodMeta));
     const cKeys = colDims.map((d) => getRowKey(r, d, prodMeta));
+    const rLbls = rowDims.map((d) => getRowLabel(r, d, prodMeta));
+    const cLbls = colDims.map((d) => getRowLabel(r, d, prodMeta));
 
-    rKeys.forEach((k, i) => rValSets[i]?.add(k));
-    cKeys.forEach((k, i) => cValSets[i]?.add(k));
+    rKeys.forEach((k, i) => {
+      rValSets[i]?.add(k);
+      if (keyLabels[k] == null) keyLabels[k] = rLbls[i];
+    });
+    cKeys.forEach((k, i) => {
+      cValSets[i]?.add(k);
+      if (keyLabels[k] == null) keyLabels[k] = cLbls[i];
+    });
     if (rKeys.length >= 2) {
       if (!subRVals.has(rKeys[0])) subRVals.set(rKeys[0], new Set());
       subRVals.get(rKeys[0])!.add(rKeys[1]);
@@ -648,6 +722,7 @@ export function computeHierarchicalPivot(
   return {
     rowVals0,
     colVals0,
+    keyLabels,
     subRowValsMap,
     subColValsMap,
     getValue: getVal,

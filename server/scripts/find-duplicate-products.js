@@ -30,7 +30,6 @@
  * names differ.
  */
 
-require('dotenv').config();
 const mongoose = require('mongoose');
 
 /**
@@ -251,6 +250,7 @@ function report(title, groups) {
 module.exports = { normaliseName, identityKey, suggestKeeper, collisionsBy, tokenSetKey, differsOnlyByTypeNoise, noiseOnlyPairs };
 
 if (require.main === module) {
+  require('dotenv').config();
   main().catch((err) => {
     console.error('Failed:', err.message);
     process.exit(1);

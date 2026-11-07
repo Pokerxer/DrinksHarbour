@@ -5,14 +5,16 @@ import { capSeoTitle } from "@/lib/seoTitle";
 import { normalizeDescription } from "@/lib/seoDescription";
 import { pickDefaultVariant, isDefaultVariantInStock, SHIPPING_DETAILS, MERCHANT_RETURN_POLICY } from "commerce-core";
 import ProductClient from "./ProductClient";
+import { buildTenantHeaders } from '@/lib/tenant';
 import { fetchProductBannerSeed } from '@/components/Banner/product-page-banner-data';
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
 import ProductSeoDetails from '@/components/SEO/ProductSeoDetails';
-import { isCrawlerRequest } from '@/lib/crawlerRequest';
+import ProductBuyingQuestions from '@/components/SEO/ProductBuyingQuestions';
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL  || "https://www.drinksharbour.com";
+const BASE_URL = publicSiteOrigin();
 const SITE_NAME = "DrinksHarbour";
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
@@ -32,8 +34,14 @@ const SITE_NAME = "DrinksHarbour";
 // free when we still opted into it.
 const fetchProduct = cache(async (slug: string): Promise<{ product: any; related: any[] } | null> => {
   try {
+    // Forward the middleware-injected tenant headers so the backend knows the
+    // detail surface: tenant subdomains get `x-is-tenant-site` (retail-kind
+    // products keep selling there), the main marketplace gets none and the
+    // backend applies its beverage-only gate (DRI-9).
+    const tenantHeaders = await buildTenantHeaders();
     const res = await fetch(`${API_URL}/api/products/slug/${slug}`, {
       cache: 'no-store',
+      ...(Object.keys(tenantHeaders).length ? { headers: tenantHeaders } : {}),
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -256,16 +264,13 @@ export default async function ProductPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  const tenantHeaders = await buildTenantHeaders();
   const [fetched, banners] = await Promise.all([fetchProduct(slug), fetchProductBannerSeed(API_URL)]);
 
   if (!fetched) notFound();
 
   const { product: p, related } = fetched;
   const schemas = buildSchemas(p, slug);
-
-  // The buying-guide block below is served in the HTML to search/AI crawlers
-  // only — human visitors get a focused purchase page without it.
-  const showSeoDetails = await isCrawlerRequest();
 
   return (
     <>
@@ -286,12 +291,23 @@ export default async function ProductPage({
           { href: '/shipping-info', label: 'Check delivery information' },
         ]}
       />
-      {showSeoDetails && <ProductSeoDetails slug={slug} product={p} />}
       {/* Hand the already-fetched product to the client component so the body —
           description, specs, reviews — is in the server HTML rather than a
           "Loading product details..." spinner. The fetch is deduped with the
           one generateMetadata made. */}
-      <ProductClient slug={slug} initialProduct={p} initialRelated={related} initialBannerData={banners} />
+      <ProductClient
+        slug={slug}
+        initialProduct={p}
+        initialRelated={related}
+        initialBannerData={banners}
+        /** Server-resolved surface flag so the client refetch (location
+         * revision change) keeps the same backend surface the SSeR fetch
+         * used — tenant storefronts keep retail listings, main marketplace
+         * stays gated (DRI-9). */
+        isTenantSite={tenantHeaders['x-is-tenant-site'] === 'true'}
+      />
+      <ProductSeoDetails slug={slug} product={p} />
+      <ProductBuyingQuestions product={p} />
     </>
   );
 }
@@ -448,7 +464,7 @@ function buildProductSchema(p: any, slug: string): object {
 
   // Beverage-specific additional properties
   const additionalProperty: { name: string; value: string }[] = [];
-  if (p.abv)     additionalProperty.push({ name: "ABV",           value: `${p.abv}%` });
+  if (p.abv != null) additionalProperty.push({ name: "ABV",       value: `${p.abv}%` });
   if (p.vintage) additionalProperty.push({ name: "Vintage",       value: String(p.vintage) });
   if (p.age)     additionalProperty.push({ name: "Age Statement", value: `${p.age} Years` });
   if (p.region)  additionalProperty.push({ name: "Region",        value: p.region });

@@ -59,8 +59,8 @@ function ExamPaper({ cycleId }: { cycleId: string }) {
       {exam &&
         (!exam.assigned ? (
           <p className="text-sm text-gray-500">
-            No examination is assigned to you. Your combined score uses
-            appraisal and attendance equally.
+            No examination is assigned to you. Your combined score uses 80%
+            appraisal and 20% attendance.
           </p>
         ) : exam.submittedAt ? (
           <div>

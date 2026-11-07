@@ -53,3 +53,10 @@ Verification from `client/apps/admin`:
 `pnpm exec vitest run src/app/shared/price-checker --maxWorkers=2`.
 Resume and release notes: `docs/superpowers/specs/RESUME-customer-price-checker.md`
 at the repository root.
+
+## Creation identity defaults
+
+During creation, typing a kiosk name generates internalId and URL slug. Manual
+changes stop auto-fill independently. Suggest URL resumes generation for the URL
+in creation. Edit mode preserves existing identifiers even when the name changes;
+URL changes there remain explicit because devices use the saved link.

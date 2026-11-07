@@ -1,0 +1,3 @@
+// @vitest-environment jsdom
+import {cleanup,render,screen} from '@testing-library/react';import {afterEach,expect,it} from 'vitest';import UsageVarianceTable from './usage-variance-table';afterEach(cleanup);
+it('shows incomplete count coverage without inventing zero usage',()=>{render(<UsageVarianceTable report={{rows:[],totals:{actualUsageMinor:null,theoreticalUsageMinor:null,varianceMinor:null},coverage:{reconciliationStatus:'incomplete',missingReasons:['not_counted']},asOf:'2026-10-30T12:00:00Z',currency:'NGN'}}/>);expect(screen.getAllByText('Unknown').length).toBe(3);expect(screen.getByText(/Incomplete count coverage/)).toBeTruthy();expect(screen.queryByText('₦0.00')).toBeNull();});

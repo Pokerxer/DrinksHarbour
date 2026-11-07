@@ -8,7 +8,7 @@
 // so the same text is billed once.
 //
 // Rate-limited: 30 requests per 15 minutes per IP (stricter than the global
-// 100/15min limiter). Input capped at 300 characters.
+// 100/15min limiter). Narration input is bounded at 5,000 characters.
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
@@ -42,7 +42,13 @@ router.post(
         });
       }
 
-      const trimmed = text.trim().slice(0, 300);
+      const trimmed = text.trim();
+      if (trimmed.length > 5000) {
+        return res.status(400).json({
+          success: false,
+          message: 'Text exceeds the 5,000-character narration limit.',
+        });
+      }
       if (trimmed.length < 5) {
         return res.status(400).json({
           success: false,

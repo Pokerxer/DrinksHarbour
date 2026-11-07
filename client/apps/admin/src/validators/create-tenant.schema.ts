@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { INDUSTRIES } from '@/utils/industries';
 
 // Keep these in step with models/Tenant.js — a value the model allows but this
 // list omits makes the whole edit form unsubmittable for that tenant.
@@ -19,7 +20,7 @@ const subscriptionStatusValues = [
   'incomplete',
   'incomplete_expired',
 ] as const;
-const revenueModelValues = ['markup', 'commission'] as const;
+const revenueModelValues = ['markup', 'commission', 'selling_price_markup'] as const;
 const statusValues = [
   'pending',
   'approved',
@@ -36,10 +37,18 @@ export const businessTypeValues = [
   'Beverage Brand',
   'Liquor Store',
   'Bar / Lounge',
+  'Nightclub / Club',
   'Restaurant',
   'Hotel',
   'Distributor',
   'Other',
+  // 2026-11-02 vertical expansion — additive only, legacy options verbatim.
+  // The server Tenant enum accepts the same values (models/Tenant.js).
+  'Fashion Retail',
+  'Electronics Retail',
+  'Beauty & Skincare',
+  'Home & Living',
+  'General Retail',
 ] as const;
 
 export const idTypeValues = [
@@ -110,6 +119,7 @@ export const tenantFormSchema = z
 
     // Revenue model
     revenueModel: optionalEnum(revenueModelValues),
+    sellingPriceMarkupPercentage: z.number().finite().min(0).max(500).optional(),
     markupPercentage: z.number().min(0).max(500).optional(),
     commissionPercentage: z.number().min(0).max(50).optional(),
     platformMarkupPercentage: z.number().min(0).max(100).optional(),
@@ -140,6 +150,13 @@ export const tenantFormSchema = z
 
     // Business registration & compliance
     businessType: optionalEnum(businessTypeValues),
+    // Industry taxonomy scope (2026-11-02): additive multi-select of canonical
+    // INDUSTRY values. Empty/unset means unprofiled/legacy — the tenant sees
+    // every category scope, exactly as today.
+    industries: z
+      .array(z.enum(INDUSTRIES))
+      .max(INDUSTRIES.length)
+      .optional(),
     cacNumber: z
       .union([
         z

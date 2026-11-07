@@ -11,11 +11,17 @@ import FormGroup from '@/app/shared/form-group';
 import { useEffect, useState, Fragment } from 'react';
 import { PiCheck, PiSparkle, PiSpinner, PiPlus, PiFolder, PiCaretRight, PiX } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
+import { useTenant } from '@/context/TenantContext';
+import { industriesMetaLabel, resolveTenantIndustries, industriesForProductType, INDUSTRY_SELECT_OPTIONS, taxonomyMatchesBusiness, brandMatchesBusiness } from '@/utils/industries';
 import { geminiService } from '@/services/gemini.service';
 import { categoryService } from '@/services/category.service';
 import { brandService } from '@/services/brand.service';
 import toast from 'react-hot-toast';
 import CreateBrandModal from './create-brand-modal';
+import {
+  buildProductTypeOptions,
+  ProductTypeOptionContent,
+} from '../../product/create-edit/product-type-options';
 
 interface ProductIdentificationProps {
   className?: string;
@@ -26,6 +32,7 @@ interface Category {
   name: string;
   slug: string;
   type: string;
+  industry?: string;
 }
 
 interface SubCategory {
@@ -33,6 +40,7 @@ interface SubCategory {
   name: string;
   slug: string;
   type: string;
+  industry?: string;
   parent: string;
 }
 
@@ -42,6 +50,8 @@ interface Brand {
   slug: string;
   description?: string;
   primaryCategory?: string;
+  industry?: string;
+  brandType?: string;
   countryOfOrigin?: string;
   isFeatured?: boolean;
   isPremium?: boolean;
@@ -84,11 +94,33 @@ export default function ProductIdentification({
   const selectedCategory = watch('category');
   const [slugFocused, setSlugFocused] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
+
+  const { tenant } = useTenant();
+  const profile = resolveTenantIndustries(tenant);
+  const [chosenBusiness, setChosenBusiness] = useState('');
+  const business = chosenBusiness || industriesForProductType(productType) ||
+    (productType ? 'general' : profile?.length === 1 ? profile[0] : '');
+  const visibleProductTypes = productTypes.filter(({ value }) =>
+    (industriesForProductType(value) || 'general') === business
+  );
+
+  // Grouped type picker: when the list is browsed (no search term) group
+  // headings mark each category; searching flattens back to plain results.
+  // Shared with the parent product form (./product-type-options contract).
+  const [typeSearch, setTypeSearch] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
+  const [allCategories, setCategories] = useState<Category[]>([]);
+  const [allSubCategories, setSubCategories] = useState<SubCategory[]>([]);
+  const [allBrands, setBrands] = useState<Brand[]>([]);
+  const categories = allCategories.filter(row => business === 'general'
+    ? !row.industry && !industriesForProductType(row.type)
+    : taxonomyMatchesBusiness(row, business));
+  const subCategories = allSubCategories.filter(row => row.parent === selectedCategory && (!row.industry || row.industry === business));
+  const brands = allBrands.filter(row => business === 'general'
+    ? !row.industry && !brandMatchesBusiness(row, 'beverage')
+    : brandMatchesBusiness(row, business));
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+  const [industriesScopeNote, setIndustriesScopeNote]   = useState<string | null>(null);
   const [isLoadingSubCategories, setIsLoadingSubCategories] = useState(false);
   const [isLoadingBrands, setIsLoadingBrands] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -106,16 +138,18 @@ export default function ProductIdentification({
       setIsLoadingCategories(true);
       setLoadError(null);
       try {
-        const cats = await categoryService.getCategories(session.user.token);
+        const { categories: cats, industriesMeta } = await categoryService.getCategoriesWithMeta(session.user.token, 'picker');
         console.log('Categories fetched:', cats);
         // Ensure we always set an array, even if the API returns something unexpected
         const categoriesArray = Array.isArray(cats) ? cats : [];
         setCategories(categoriesArray);
+        setIndustriesScopeNote(industriesMetaLabel(industriesMeta));
         console.log('Categories set:', categoriesArray.length);
       } catch (error) {
         console.error('Failed to fetch categories:', error);
         setLoadError('Failed to load categories');
         setCategories([]);
+        setIndustriesScopeNote(null);
       } finally {
         setIsLoadingCategories(false);
       }
@@ -134,7 +168,7 @@ export default function ProductIdentification({
     console.log('Fetching brands...');
     setIsLoadingBrands(true);
     try {
-      const fetchedBrands = await brandService.getBrands(session.user.token, { limit: 100 });
+      const fetchedBrands = await brandService.getBrands(session.user.token, { limit: 500 });
       console.log('Brands fetched:', fetchedBrands.length);
       setBrands(fetchedBrands);
     } catch (error) {
@@ -162,7 +196,7 @@ export default function ProductIdentification({
       try {
         const subCats = await categoryService.getSubCategories(
           session.user.token, 
-          selectedCategory
+          selectedCategory, 'picker'
         );
         // Ensure we always set an array
         setSubCategories(Array.isArray(subCats) ? subCats : []);
@@ -176,13 +210,6 @@ export default function ProductIdentification({
 
     fetchSubCategories();
   }, [selectedCategory, session]);
-
-  // Reset subcategory when category changes
-  useEffect(() => {
-    if (selectedCategory) {
-      setValue('subCategory', '');
-    }
-  }, [selectedCategory, setValue]);
 
   // Auto-generate slug when name changes
   useEffect(() => {
@@ -218,7 +245,8 @@ export default function ProductIdentification({
       const response = await geminiService.generateProductDetails(
         productName,
         session.user.token,
-        productType
+        productType,
+        business
       );
 
       const data = response.data;
@@ -228,13 +256,9 @@ export default function ProductIdentification({
       setValue('subType', data.subType || '');
       
       // Handle category - ensure it's set properly
-      if (data.category) {
-        setValue('category', data.category);
-      }
-      
-      // Handle subcategory - only set if category is set
-      if (data.subCategory && data.category) {
-        setValue('subCategory', data.subCategory);
+      if (data.category || industriesForProductType(data.type) !== industriesForProductType(productType)) {
+        setValue('category', data.category || '');
+        setValue('subCategory', data.category ? data.subCategory || '' : '');
       }
       
       setValue('isAlcoholic', data.isAlcoholic ?? false);
@@ -242,7 +266,13 @@ export default function ProductIdentification({
       setValue('volumeMl', data.volumeMl);
       setValue('originCountry', data.originCountry || '');
       setValue('region', data.region || '');
-      setValue('brand', data.brand || '');
+      const generatedBusiness = industriesForProductType(data.type) || 'general';
+      const matchedBrand = allBrands.find(brand => (generatedBusiness === 'general'
+        ? !brand.industry && !brandMatchesBusiness(brand, 'beverage')
+        : brandMatchesBusiness(brand, generatedBusiness)) &&
+        (brand._id === data.brand || brand.name.toLowerCase() === data.brand?.trim().toLowerCase()));
+      if (matchedBrand) setValue('brand', matchedBrand._id);
+      else if (generatedBusiness !== business) setValue('brand', '');
       setValue('producer', data.producer || '');
       setValue('vintage', data.vintage);
       setValue('age', data.age);
@@ -392,11 +422,17 @@ export default function ProductIdentification({
             } : ''}
             onChange={(option: SelectOption) => {
               setValue('category', option.value as string);
+              setValue('subCategory', '');
             }}
             disabled={isLoadingCategories}
             error={errors.category?.message as string}
             className="w-full"
           />
+          {industriesScopeNote && (
+            <Text className="mt-1 text-xs text-gray-400">
+              Showing your {industriesScopeNote} categories
+            </Text>
+          )}
           <Text className="mt-2 text-xs text-gray-500">
             {categories.length > 0
               ? `${categories.length} categories available`
@@ -523,7 +559,7 @@ export default function ProductIdentification({
         </div>
 
         {/* Create Brand Modal */}
-        <CreateBrandModal
+        <CreateBrandModal industry={business === 'general' ? undefined : business || undefined}
           isOpen={showBrandModal}
           onClose={() => setShowBrandModal(false)}
           onBrandCreated={(newBrandId) => {
@@ -548,12 +584,31 @@ export default function ProductIdentification({
               </Badge>
             )}
           </label>
+          <label className="mb-2 block text-sm">
+            Business
+            <select className="ml-2 rounded border p-2" value={business} onChange={event => {
+              setChosenBusiness(event.target.value);
+              for (const field of ['type', 'category', 'subCategory', 'brand'] as const) setValue(field, '');
+            }}>
+              <option value="">Select a business</option>
+              {INDUSTRY_SELECT_OPTIONS.filter(option => !profile || profile.some(value => value === option.value)).map(option =>
+                <option key={option.value} value={option.value}>{option.label}</option>
+              )}
+              <option value="general">General catalog</option>
+            </select>
+          </label>
           <Select
+            searchable
+            searchPlaceHolder="Type to search product types…"
             placeholder="Search and select product type"
-            options={productTypes.map((type) => ({
-              value: type.value,
-              label: `${type.label} (${type.category})`,
-            }))}
+            // rizzui's internal label filter is replaced by the grouped
+            // builder so group headings can't linger over empty groups.
+            disableDefaultFilter
+            onSearchChange={setTypeSearch}
+            options={buildProductTypeOptions(visibleProductTypes, typeSearch)}
+            getOptionDisplayValue={(option) => (
+              <ProductTypeOptionContent option={option} />
+            )}
             value={productTypes.find((t) => t.value === watch('type')) ? {
               value: watch('type') || '',
               label: `${productTypes.find((t) => t.value === watch('type'))?.label} (${productTypes.find((t) => t.value === watch('type'))?.category})`,
@@ -564,6 +619,11 @@ export default function ProductIdentification({
             error={errors.type?.message as string}
             className="w-full"
           />
+          <Text className="mt-1 text-xs text-gray-500">
+            {visibleProductTypes === productTypes
+              ? `${visibleProductTypes.length} product types available`
+              : `${visibleProductTypes.length} of ${productTypes.length} product types available — in your industries`}
+          </Text>
         </div>
 
         {/* SKU */}
@@ -616,7 +676,7 @@ export default function ProductIdentification({
       </div>
     </FormGroup>
 
-    <CreateBrandModal
+    <CreateBrandModal industry={business === 'general' ? undefined : business || undefined}
       isOpen={showBrandModal}
       onClose={() => setShowBrandModal(false)}
       onBrandCreated={(newBrandId) => {

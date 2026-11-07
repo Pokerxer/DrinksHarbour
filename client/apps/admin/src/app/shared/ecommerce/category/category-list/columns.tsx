@@ -8,6 +8,9 @@ import Link from 'next/link';
 import { ActionIcon, Badge, Checkbox, Flex, Text, Tooltip } from 'rizzui';
 import { PiPencilLineBold, PiTagBold } from 'react-icons/pi';
 import { CategoryDataType } from './table';
+import { INDUSTRY_LABELS } from './industry-scope';
+
+const INDUSTRY_COLUMN_LABELS = INDUSTRY_LABELS;
 
 const columnHelper = createColumnHelper<CategoryDataType>();
 
@@ -91,6 +94,23 @@ export const categoriesColumns = [
       return (
         <Badge color="primary" variant="flat" className="capitalize text-xs font-medium">
           {type.replace(/_/g, ' ')}
+        </Badge>
+      );
+    },
+  }),
+
+  // Industry taxonomy scope (2026-11-02, additive tag column). Legacy/global
+  // documents (no `industry` field) render the dash, same as legacy statuses.
+  columnHelper.accessor('industry', {
+    id: 'industry',
+    size: 130,
+    header: 'Industry',
+    cell: ({ getValue }) => {
+      const industry = getValue();
+      if (!industry) return <Text className="text-gray-400">—</Text>;
+      return (
+        <Badge color="secondary" variant="flat" className="text-xs font-medium">
+          {INDUSTRY_COLUMN_LABELS[industry] ?? industry}
         </Badge>
       );
     },

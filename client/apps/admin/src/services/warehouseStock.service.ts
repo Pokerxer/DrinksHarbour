@@ -82,6 +82,10 @@ export interface WarehouseStockRow {
     | {
         _id: string;
         size?: string;
+        /** Retail variant identity (DRI-16 additive) — only sizes that carry it. */
+        colorName?: string;
+        colorHexCode?: string;
+        optionName?: string;
         sellingPrice?: number;
         costPrice?: number;
       };
@@ -116,6 +120,10 @@ export interface StockRow {
   sku: string;
   sizeId: string;
   sizeName: string;
+  /** Retail variant identity (DRI-16 additive) — only sizes that carry it. */
+  colorName?: string | null;
+  colorHexCode?: string | null;
+  optionName?: string | null;
   currentQuantity: number;
   reservedQuantity: number;
   costPrice: number;
@@ -265,7 +273,7 @@ export const warehouseStockService = {
       'Failed to return transfer'
     );
   },
-  async getStockByWarehouse(subProductId: string, token: string) {
+  async getStockByWarehouse(subProductId: string, token: string): Promise<{success: boolean; data: WarehouseStockRow[]}> {
     return handle(
       await fetch(
         `${API_URL}/api/subproducts/${subProductId}/stock-by-warehouse`,

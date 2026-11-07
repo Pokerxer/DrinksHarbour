@@ -33,7 +33,10 @@ export default function KioskEditor({ id }: { id?: string }) {
     let current = true;
     setOptions(null);
     setError('');
-    Promise.all([api.options(token), id ? api.get(id, token) : Promise.resolve(null)])
+    Promise.all([
+      api.options(token),
+      id ? api.get(id, token) : Promise.resolve(null),
+    ])
       .then(([data, kiosk]) => {
         if (!current) return;
         setOptions(data);
@@ -55,7 +58,8 @@ export default function KioskEditor({ id }: { id?: string }) {
         );
       })
       .catch((e) => {
-        if (current) setError(e instanceof Error ? e.message : 'Unable to load kiosk.');
+        if (current)
+          setError(e instanceof Error ? e.message : 'Unable to load kiosk.');
       });
     return () => {
       current = false;
@@ -106,7 +110,9 @@ export default function KioskEditor({ id }: { id?: string }) {
         </p>
       )}
       {status !== 'loading' && !token ? (
-        <p role="alert">Sign in as a tenant administrator to configure a kiosk.</p>
+        <p role="alert">
+          Sign in as a tenant administrator to configure a kiosk.
+        </p>
       ) : !options ? (
         <p role="status">
           {error
@@ -132,11 +138,12 @@ export default function KioskEditor({ id }: { id?: string }) {
             <fieldset disabled={saving} className="pc-setup-fields">
               {id && (
                 <p className="pc-help">
-                  Changing the URL slug replaces the kiosk’s address. Update the saved link on your
-                  display after saving.
+                  Changing the URL slug replaces the kiosk’s address. Update the
+                  saved link on your display after saving.
                 </p>
               )}
               <IdentityFields
+                autoGenerate={!id}
                 options={options}
                 register={register}
                 setValue={setValue}
@@ -159,7 +166,10 @@ export default function KioskEditor({ id }: { id?: string }) {
             <Link
               href="/retail-tools/price-checker"
               onClick={(event) => {
-                if (saving || (isDirty && !window.confirm('Discard unsaved changes?')))
+                if (
+                  saving ||
+                  (isDirty && !window.confirm('Discard unsaved changes?'))
+                )
                   event.preventDefault();
               }}
             >

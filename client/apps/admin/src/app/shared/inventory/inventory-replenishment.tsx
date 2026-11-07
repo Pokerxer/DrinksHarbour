@@ -12,6 +12,10 @@ import {
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { reorderService, type ReorderRule } from '@/services/reorder.service';
+import {
+  populatedSizeIdentity,
+  sizeVariantLabel,
+} from '@/utils/size-variant-label';
 
 const TRIGGER_LABEL: Record<string, string> = {
   min_quantity: 'Min quantity',
@@ -31,6 +35,19 @@ function ruleProduct(rule: ReorderRule): string {
   const p = rule.product as { name?: string } | undefined;
   const sp = rule.subProduct as { sku?: string } | undefined;
   return p?.name ?? sp?.sku ?? rule.name;
+}
+
+/**
+ * Targeted Size label for a rule row (DRI-34). `getRules` starts populating
+ * `size` (backend slice): when the populated Size carries colour/option
+ * identity compose the full shared label; a populated identity-less Size
+ * (legacy beverage volume/pack) presents its displayName alone; rules without
+ * a Size keep today's exact row rendering.
+ */
+export function ruleSizeLabel(rule: ReorderRule): string | null {
+  if (!rule.size || typeof rule.size !== 'object') return null;
+  const identity = populatedSizeIdentity(rule.size);
+  return sizeVariantLabel(identity ?? rule.size) || null;
 }
 
 /**
@@ -184,6 +201,11 @@ export default function InventoryReplenishment() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">
                       {ruleProduct(rule)}
+                      {ruleSizeLabel(rule) && (
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {ruleSizeLabel(rule)}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-600">
                       {TRIGGER_LABEL[rule.triggerType] ?? rule.triggerType}

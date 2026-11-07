@@ -45,3 +45,19 @@ test('banner search reports service errors instead of a successful empty list', 
     brandService.getBrands('token', { search: 'laph' })
   ).rejects.toThrow('Unable to search brands');
 });
+test('admin detail reads proposals from the protected endpoint', async () => {
+  const pending = { _id: 'proposal-id', name: 'Proposal', status: 'pending' };
+  const fetcher = vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ data: { brand: pending } }),
+  }));
+  vi.stubGlobal('fetch', fetcher);
+  expect(await brandService.getBrandById('admin-token', 'proposal-id')).toEqual(pending);
+  expect(fetcher).toHaveBeenCalledWith(
+    expect.stringContaining('/api/brands/admin/proposal-id'),
+    expect.objectContaining({
+      headers: { Authorization: 'Bearer admin-token' },
+      cache: 'no-store',
+    })
+  );
+});

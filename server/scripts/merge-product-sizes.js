@@ -26,7 +26,7 @@ const mongoose = require('mongoose');
 
 const MONGODB_URI =
   process.env.MONGODB_URI ||
-  'mongodb+srv://jrwaldehzx:NWXdpyCMP7yB7a4N@cluster0.ukrr40p.mongodb.net/drinksharbour';
+  require('../utils/requireMongoUri').requireMongoUri();
 
 const FROM_SLUG = process.env.FROM_SLUG;
 const TO_SLUG = process.env.TO_SLUG;

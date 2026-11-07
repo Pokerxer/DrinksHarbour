@@ -1,72 +1,32 @@
-// @ts-nocheck
-'use client';
-
-import { Collapse, Title, Text } from 'rizzui';
-import cn from '@core/utils/class-names';
-import { PiCaretDownBold, PiTagLight } from 'react-icons/pi';
-
-export default function ProductDetailsDescription() {
+export default function ListingDescription({
+  description,
+  isOverride,
+}: {
+  description?: string;
+  isOverride: boolean;
+}) {
   return (
-    <Collapse
-      className="border-t last-of-type:border-t-0"
-      defaultOpen={true}
-      header={({ open, toggle }) => (
-        <div
-          role="button"
-          onClick={toggle}
-          className="flex w-full cursor-pointer items-center justify-between py-6 font-lexend text-lg font-semibold text-gray-900"
-        >
-          Product Details
-          <div className="flex shrink-0 items-center justify-center">
-            <PiCaretDownBold
-              className={cn(
-                'h-[18px] w-[18px] transform transition-transform duration-300',
-                open && 'rotate-180'
-              )}
-            />
-          </div>
-        </div>
-      )}
+    <section
+      aria-labelledby="listing-description"
+      className="rounded-2xl border border-gray-200 bg-white p-5"
     >
-      <div className="-mt-2 pb-7">
-        <Text as="p" className="pb-2 leading-relaxed">
-          Monochrome elegance. Made with a relaxed wide-leg, these trousers are
-          made from a sustainable soft organic cotton with a mechanical stretch
-          making the garment easily recycled.
-        </Text>
-        <ul className="space-y-2.5">
-          <li>Synthetic leather upper</li>
-          <li>Cushioned footbed</li>
-          <li>Textured and patterned outsole</li>
-          <li>Warranty: 1 month</li>
-        </ul>
-        <Title as="h6" className="mt-6 font-inter text-sm font-semibold">
-          Material & Care
-        </Title>
-        <ul className="space-y-2.5 pt-3.5">
-          <li>Synthetic Leather</li>
-          <li>EASY WIPE CLEAN</li>
-        </ul>
-        <div className="mt-6 flex items-start">
-          <div className="me-3 mt-1 flex shrink-0 items-center font-medium text-gray-900">
-            <PiTagLight className="me-1.5 h-[18px] w-[18px]" /> Tags:
-          </div>
-          <ul className="-m-1 text-gray-900">
-            <li className="m-1 inline-flex rounded bg-gray-100 px-2.5 py-1">
-              Shoe
-            </li>
-            <li className="m-1 inline-flex rounded bg-gray-100 px-2.5 py-1">
-              Fashion
-            </li>
-            <li className="m-1 inline-flex rounded bg-gray-100 px-2.5 py-1">
-              Men
-            </li>
-            <li className="m-1 inline-flex rounded bg-gray-100 px-2.5 py-1">
-              Nike
-            </li>
-          </ul>
-        </div>
-      </div>
-    </Collapse>
+      <h2 id="listing-description" className="text-lg font-semibold">
+        Listing description
+      </h2>
+      {description ? (
+        <>
+          <p className="mt-1 text-xs text-gray-500">
+            {isOverride ? 'Listing copy' : 'Central product copy'}
+          </p>
+          <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700">
+            {description}
+          </p>
+        </>
+      ) : (
+        <p className="mt-2 text-sm text-gray-500">
+          No description has been recorded.
+        </p>
+      )}
+    </section>
   );
 }

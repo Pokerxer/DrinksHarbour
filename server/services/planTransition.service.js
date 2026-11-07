@@ -130,6 +130,7 @@ async function reconcilePlanChange(tenant, now = new Date()) {
       commissionPercentage: getCommissionRate(operation.targetPlan) * 100 }, $inc: { billingRevision: 1 },
   });
   if (result.matchedCount) {
+    await require('./venue/subscription').recordVenueBoundary(tenant, { plan: operation.targetPlan, subscriptionStatus: 'active', trialEndsAt: null });
     await Transition.updateOne({ _id: operation._id, operationId: operation.operationId }, { $set: { state: 'complete' } });
     // Retention ledger. Recorded here, where the plan genuinely changes and the
     // transition is known to have completed — not when it was scheduled, so an

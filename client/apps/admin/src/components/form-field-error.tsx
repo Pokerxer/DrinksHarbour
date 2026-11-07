@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@core/utils/class-names';
+import cn from '@core/utils/class-names';
 
 export interface FormFieldErrorProps {
   error?: string;

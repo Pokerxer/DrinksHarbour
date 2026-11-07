@@ -4,6 +4,7 @@ import { PiImage, PiX } from 'react-icons/pi';
 import type { StockRow } from '@/services/warehouseStock.service';
 import StockProductLink from './inventory-stock-product-link';
 import { statusOf, STATUS_BADGE } from './inventory-stock-search';
+import { flatRowSizeLabel } from '@/utils/size-variant-label';
 function ProductImage({ row }: { row: StockRow }) {
   const [failed, setFailed] = useState(false);
   return (
@@ -37,7 +38,7 @@ export default function StockDetailHeader({ row, close }: { row: StockRow; close
         </h2>
         <p className="mt-1 break-all text-[11px] text-gray-500">{row.sku || 'No SKU'}</p>
         <p className="mt-1 text-xs text-gray-600">
-          {row.sizeName} · {row.warehouseName}
+          {flatRowSizeLabel(row) || row.sizeName} · {row.warehouseName}
         </p>
       </div>
       <button

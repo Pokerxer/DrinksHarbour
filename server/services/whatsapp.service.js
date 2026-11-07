@@ -148,6 +148,32 @@ async function sendWhatsAppLongMessage(to, text) {
 // ── Notification templates ────────────────────────────────────────────────────
 
 /**
+ * Short gift mention for the customer confirmation message. '' for normal
+ * orders, so non-gift text stays byte-identical.
+ */
+const orderGiftCustomerLine = (order) => {
+  const gift = order?.gift;
+  if (!gift || gift.isGift !== true) return '';
+  const date = typeof gift.requestedDeliveryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(gift.requestedDeliveryDate)
+    ? ` — requested delivery ${gift.requestedDeliveryDate} (the team confirms the exact window)`
+    : '';
+  return `\n🎁 This order is a *gift* for ${gift.to}${date}\n`;
+};
+
+/**
+ * Gift header for the tenant new-order alert — tenants must see at a glance
+ * that this order is a gift and when it is requested to land, so they can prep.
+ */
+const orderGiftTenantLine = (order) => {
+  const gift = order?.gift;
+  if (!gift || gift.isGift !== true) return '';
+  const date = typeof gift.requestedDeliveryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(gift.requestedDeliveryDate)
+    ? ` — requested delivery ${gift.requestedDeliveryDate}`
+    : '';
+  return `*GIFT ORDER${date}*\n\n`;
+};
+
+/**
  * Order confirmation sent to customer right after checkout.
  */
 async function sendOrderConfirmationWhatsApp(order, customer) {
@@ -158,13 +184,16 @@ async function sendOrderConfirmationWhatsApp(order, customer) {
   const num    = order.orderNumber || order._id?.toString().slice(-8).toUpperCase();
   const total  = fmt(order.totalAmount || order.total);
   const items  = order.items?.length || 0;
+  const giftLines = orderGiftCustomerLine(order);
 
   const msg =
     `🎉 *Order Confirmed!*\n\n` +
     `Hi ${name}, thank you for shopping with DrinksHarbour!\n\n` +
     `*Order:* #${num}\n` +
     `*Items:* ${items} item${items !== 1 ? 's' : ''}\n` +
-    `*Total:* ${total}\n\n` +
+    `*Total:* ${total}\n` +
+    giftLines +
+    `\n` +
     `We'll notify you once your order is on its way. You can track your order at:\n` +
     `drinksharbour.com/order-tracking\n\n` +
     `Questions? Reply to this message and we'll help. 🍷`;
@@ -224,9 +253,11 @@ async function sendNewOrderAlertWhatsApp(order, tenant) {
     return tid === tenant._id?.toString();
   }) || order.items || [];
   const itemCount = items.reduce((s, i) => s + i.quantity, 0);
+  const giftHeader = orderGiftTenantLine(order);
 
   const msg =
     `🛒 *New Order — Action Required*\n\n` +
+    giftHeader +
     `*Order:* #${num}\n` +
     `*Items to fulfil:* ${itemCount}\n\n` +
     `Please log in to your dashboard to confirm and prepare this order.\n` +
@@ -256,6 +287,8 @@ async function sendVerificationWhatsApp(phone, code, firstName) {
 module.exports = {
   sendWhatsAppMessage,
   sendWhatsAppLongMessage,
+  orderGiftCustomerLine,
+  orderGiftTenantLine,
   sendOrderConfirmationWhatsApp,
   sendOrderStatusWhatsApp,
   sendNewOrderAlertWhatsApp,

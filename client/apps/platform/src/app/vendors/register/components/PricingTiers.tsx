@@ -98,7 +98,7 @@ export function PricingTiers() {
                 </ul>
 
                 {/* CTA */}
-                <a
+                <Link
                   href="/vendors/register/apply"
                   className={`inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-sm transition-all duration-300 hover:scale-[1.03] active:scale-95 ${
                     tier.popular
@@ -110,7 +110,7 @@ export function PricingTiers() {
                 >
                   {tier.priceMonthly === 0 ? 'Start Free Trial' : `Choose ${tier.label}`}
                   <Icon.PiArrowRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
-                </a>
+                </Link>
 
                 {tier.addOnsAllowed && (
                   <p className="text-[10px] text-gray-400 text-center mt-2.5 flex items-center justify-center gap-1">

@@ -12,3 +12,9 @@ Attempt revision2→3, cycle revision advanced, auditPEER_EXAM_ATTEMPT_RESET ato
 Post-commit verification passed. Progress must refresh the employee page first.
 Do not rerun; operation complete. No application code changes or deployment.
 Resume: docs/superpowers/specs/RESUME-progress-october-timer-reset.md.
+
+2026-10-20: user requested another answers/time reset. Live attempt was submitted
+with10answers/revision15. Reset completed15→16,answers0,timing/submission/grades
+cleared. Paper/marks/8minute duration retained. Atomic audit/cycle update and
+post-commit verification passed. Latest handoff:
+docs/superpowers/specs/RESUME-progress-october-reset-2026-10-20.md.

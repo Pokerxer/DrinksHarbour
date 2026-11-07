@@ -3,6 +3,7 @@
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const Size = require('../models/Size');
+const { retailSizeWhereClause } = require('../constants/sizeChannels');
 const SubProduct = require('../models/SubProduct');
 const Tenant = require('../models/Tenant');
 const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
@@ -49,13 +50,15 @@ const addToCart = async (data) => {
     throw new NotFoundError('Product variant not available from this seller');
   }
 
+  await require('./marketIngress').assertOffer({ tenant: subProduct.tenant, product });
+
   // Verify tenantId matches if provided
   if (tenantId && subProduct.tenant._id.toString() !== tenantId.toString()) {
     throw new ValidationError('SubProduct does not belong to specified tenant');
   }
 
   // Verify Size exists and has stock
-  const size = await Size.findOne({
+  const size = await Size.findOne({ ...retailSizeWhereClause(),
     _id: sizeId,
     subproduct: subProductId,
   }).lean();
@@ -202,6 +205,7 @@ const addToCart = async (data) => {
     })
     .populate({
       path: 'items.size',
+      match: retailSizeWhereClause(),
       select: 'size displayName sellingPrice stock availability currency',
     })
     .lean();
@@ -286,7 +290,7 @@ const syncCart = async (userId, items) => {
       }
 
       // Verify size exists
-      const size = await Size.findOne({
+      const size = await Size.findOne({ ...retailSizeWhereClause(),
         _id: sizeId,
         subproduct: subProductId,
       }).lean();
@@ -435,15 +439,16 @@ const getCart = async (userId) => {
       // at its pre-sale price — the exact drawer-vs-checkout mismatch this path
       // exists to prevent.
       path: 'items.subproduct',
-      select: 'sku costPrice baseSellingPrice commissionPriceOverride status isOnSale saleType saleDiscountValue saleStartDate saleEndDate',
+      select: 'sku costPrice baseSellingPrice sellingPriceMarkupOverridePct commissionPriceOverride status isOnSale saleType saleDiscountValue saleStartDate saleEndDate',
       populate: {
         path: 'tenant',
-        select: 'name slug logo status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits',
+        select: 'name slug logo status subscriptionStatus revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits',
       },
     })
     .populate({
       path: 'items.size',
-      select: 'size displayName sizeLabel colorName sellingPrice costPrice stock availability currency unitsPerPack maxOrderQuantity minOrderQuantity discountValue discountType discountStart discountEnd commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct',
+      match: retailSizeWhereClause(),
+      select: 'size displayName sizeLabel colorName sellingPrice costPrice stock availability currency unitsPerPack maxOrderQuantity minOrderQuantity discountValue discountType discountStart discountEnd sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct',
     })
     .lean();
 
@@ -515,7 +520,7 @@ const updateCartItemQuantity = async (userId, itemId, quantity) => {
   }
 
   // Verify stock availability
-  const size = await Size.findById(cart.items[itemIndex].size).lean();
+  const size = await Size.findOne({ _id: cart.items[itemIndex].size, ...retailSizeWhereClause() }).lean();
   if (!size) {
     throw new NotFoundError('Product size no longer available');
   }
@@ -609,8 +614,8 @@ const validateCartItems = async (items) => {
     });
 
     const subProduct = await SubProduct.findOne({ _id: subProductId, status: 'active' })
-      .populate({ path: 'tenant', select: 'status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits' })
-      .populate({ path: 'product', select: 'platformMarkup platformDiscount' });
+      .populate({ path: 'tenant', select: 'status subscriptionStatus revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits' })
+      .populate({ path: 'product', select: 'type platformMarkup platformDiscount' });
     // NOTE: the sale fields (isOnSale/saleType/saleDiscountValue/sale dates) are
     // read off `subProduct` below. They are on the document itself, so no select
     // narrows them away here — but a projection added to this findOne must keep
@@ -622,7 +627,13 @@ const validateCartItems = async (items) => {
       return unavailable();
     }
 
-    const size = sizeId ? await Size.findOne({ _id: sizeId, subproduct: subProductId }) : null;
+    if (require('./marketContext').enabled()) {
+      const allowed = await require('./marketPolicy').evaluateMarketAccess({ tenant: subProduct.tenant,
+        market: require('./marketContext').currentMarket(), category: require('./marketIngress').categoryFor(subProduct.product), channel: 'marketplace' });
+      if (!allowed.allowed) return unavailable();
+    }
+
+    const size = sizeId ? await Size.findOne({ ...retailSizeWhereClause(), _id: sizeId, subproduct: subProductId }) : null;
     if (!size) return unavailable();
 
     // Platform selling price (markup/commission + product discount) — same pipeline

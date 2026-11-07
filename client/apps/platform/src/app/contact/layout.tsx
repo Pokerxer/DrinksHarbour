@@ -1,8 +1,9 @@
+import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withSocialMetadata({
   title: "Contact Us",
   description:
     "Contact DrinksHarbour for help with orders, drinks, delivery and your account. Find our support details and send the team a message about your enquiry.",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
     description: "Reach our support team for questions about orders, delivery, and products.",
   },
   alternates: { canonical: `${BASE_URL}/contact` },
-};
+});
 
 const BREADCRUMB_SCHEMA = {
   "@context": "https://schema.org",

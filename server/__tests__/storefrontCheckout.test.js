@@ -60,6 +60,11 @@ test('pending order and stock reserve precede gateway initialization using one r
 });
 test('stock mutations scope both parent and size and reject variant shortages', async t => {
   const item = { tenant: tenant._id, subproduct: 'c'.repeat(24), size: 'd'.repeat(24), quantity: 2 };
+  t.mock.method(Size, 'exists', filter => {
+    assert.equal(filter.tenant, tenant._id); assert.equal(filter.subproduct, item.subproduct);
+    assert.deepEqual(filter.$nor, [require('../constants/sizeChannels').retailSizeWhereClause()]);
+    return { session: async () => null };
+  });
   t.mock.method(SubProduct, 'updateOne', async filter => {
     assert.equal(filter.tenant, tenant._id);
     assert.equal(filter.isPublished, true);

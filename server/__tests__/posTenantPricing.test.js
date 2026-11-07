@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { computePOSPricing } = require('../controllers/pos.controller');
 
-for (const revenueModel of ['markup', 'commission']) {
+for (const revenueModel of ['markup', 'commission', 'selling_price_markup']) {
   test(`POS uses tenant prices despite website promotions (${revenueModel})`, () => {
     const sp = {
       baseSellingPrice: 5000, costPrice: 3000,

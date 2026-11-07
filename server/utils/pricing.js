@@ -1,3 +1,4 @@
+const { MODEL: SELLING_MARKUP, retailBasis, sellingMarkupPrice, sellingMarkupResult } = require('./sellingPriceMarkup');
 /**
  * Pricing calculation utilities for DrinksHarbour platform
  * 
@@ -111,6 +112,7 @@ const applyDiscount = (price, discount) => {
  * @returns {number} platformCostPrice
  */
 const calcPlatformCostPrice = (costPrice, tenantSellingPrice, revenueModel, markupPct = 25, commissionPct = 12, wholesalePrice = 0) => {
+  if (revenueModel === SELLING_MARKUP) return retailBasis(tenantSellingPrice);
   // Normalize revenueModel - 'platform_markup' is treated as 'markup'
   const normalizedRevenueModel = revenueModel === 'platform_markup' ? 'markup' : revenueModel;
   
@@ -172,6 +174,7 @@ const roundUpTo100 = (price) => {
  * @returns {number} platformSellingPrice
  */
 const calcPlatformSellingPrice = (platformCostPrice, platformMarkupPct = DEFAULT_PLATFORM_MARKUP, productDiscount = null, options = {}) => {
+  if (options.revenueModel === SELLING_MARKUP) return sellingMarkupPrice(options.tenantStorePrice, options.sellingPriceMarkupOverridePct ?? options.sellingPriceMarkupPercentage ?? 0, productDiscount);
   if (options.revenueModel === 'commission')
     return commissionSellingPrice(options.tenantStorePrice, productDiscount, options.commissionPriceOverride);
   if (!platformCostPrice || platformCostPrice <= 0) return 0;
@@ -228,6 +231,8 @@ const calculateSubProductPricing = (subProduct, product, tenant) => {
   // Base values (no size variant)
   const costPrice = subProduct?.costPrice ?? 0;
   const tenantSellingPrice = subProduct?.baseSellingPrice ?? 0;
+
+  if (revenueModel === SELLING_MARKUP) return sellingMarkupResult({ retail: tenantSellingPrice, cost: costPrice, override: subProduct?.sellingPriceMarkupOverridePct }, product, tenant);
 
   if (revenueModel === 'commission') return commissionResult({
     retail: tenantSellingPrice, cost: costPrice, override: subProduct?.commissionPriceOverride,
@@ -321,6 +326,11 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   // missing OR zero (tenants often leave size costPrice at 0)
   const costPrice = size?.costPrice > 0 ? size.costPrice : fallbackCostPrice;
   const tenantSellingPrice = size?.sellingPrice > 0 ? size.sellingPrice : fallbackSellingPrice;
+
+  if (revenueModel === SELLING_MARKUP) return {
+    ...sellingMarkupResult({ retail: tenantSellingPrice, cost: costPrice, override: size?.sellingPriceMarkupOverridePct }, product, tenant),
+    sizeId: size?._id, sizeName: size?.size ?? size?.displayName,
+  };
 
   if (revenueModel === 'commission') return {
     ...commissionResult({ retail: tenantSellingPrice, cost: costPrice,
@@ -572,6 +582,7 @@ const applySubProductSale = (pricing, subProduct, now = new Date()) => {
     ? splitMerchandise({ amount: finalPrice, model: 'commission', rate: base.commissionPct }) : null;
   return {
     ...base,
+    ...(base.revenueModel === SELLING_MARKUP ? { platformMargin: Math.round((finalPrice - base.platformCostPrice) * 100) / 100 } : {}),
     ...(split ? { platformCostPrice: split.tenantRevenueShare, tenantReceives: split.tenantRevenueShare, platformMargin: split.platformCommission } : {}),
     finalPrice,
     saleActive: true,
