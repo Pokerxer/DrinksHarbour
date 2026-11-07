@@ -186,3 +186,52 @@
   .phone-torch { background: #242326; border-color: #454044; }
   .phone-summary { background: #2a2426; border-color: #5a3a36; }
 }
+
+/* ── round 3 — scanner tuning ───────────────────────────────────────────── */
+.phone-zoom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #68615e;
+}
+.phone-zoom input[type='range'] {
+  flex: 1;
+  accent-color: #b20202;
+}
+.phone-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.phone-manual label {
+  font-size: 13px;
+  color: #68615e;
+}
+.phone-manual input {
+  border: 1px solid #e5e0db;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+.phone-manual-check {
+  background: #231f20;
+}
+.phone-quiet-button {
+  border: 0;
+  background: none;
+  color: #b20202;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 0;
+  text-align: left;
+}
+@media (prefers-color-scheme: dark) {
+  .phone-manual input {
+    background: #1c1b1e;
+    border-color: #454044;
+    color: #faf9f6;
+  }
+  .phone-manual-check { background: #faf9f6; color: #231f20; }
+}

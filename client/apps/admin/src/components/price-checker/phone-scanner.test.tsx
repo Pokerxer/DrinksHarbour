@@ -12,6 +12,7 @@ const reader = vi.hoisted(() => {
     stop: vi.fn(async () => {}),
     clear: vi.fn(),
     applyVideoConstraints: undefined as undefined | ((constraints: unknown) => Promise<void>),
+    getRunningTrackCapabilities: undefined as undefined | (() => { zoom?: { min: number; max: number } }),
     /** Push a scanned code through the registered decoder during tests. */
     feed: (code: string) => decode?.(code),
   };
@@ -33,7 +34,17 @@ vi.mock('html5-qrcode', () => ({
       stop: reader.stop,
       clear: reader.clear,
       applyVideoConstraints: reader.applyVideoConstraints,
+      getRunningTrackCapabilities: reader.getRunningTrackCapabilities,
     };
+  },
+  Html5QrcodeSupportedFormats: {
+    EAN_13: 1,
+    EAN_8: 2,
+    UPC_A: 3,
+    UPC_E: 4,
+    CODE_128: 5,
+    CODE_39: 6,
+    ITF_14: 7,
   },
 }));
 
@@ -81,4 +92,44 @@ it('offers no torch button when the reader lacks the capability', async () => {
   await waitFor(() =>
     expect(screen.queryByRole('button', { name: 'Toggle torch' })).toBeNull()
   );
+});
+
+it('tunes the decoder for bottle symbologies and a wide horizontal band', async () => {
+  render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
+  await waitFor(() => expect(reader.start).toHaveBeenCalledTimes(1));
+  const [, options] = reader.start.mock.calls[0] as unknown as [
+    unknown,
+    { fps: number; qrbox: { height: number }; experimentalFeatures: Record<string, boolean> },
+  ];
+  expect(options.fps).toBe(15);
+  expect(options.qrbox).toMatchObject({ height: 140 });
+  expect(options.experimentalFeatures).toEqual({ useBarCodeDetectorIfSupported: true });
+});
+
+it('offers a zoom slider only when the running track supports it', async () => {
+  torchSupport.apply = vi.fn(async () => {});
+  reader.getRunningTrackCapabilities = vi.fn(() => ({ zoom: { min: 1, max: 3 } }));
+  render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
+  const zoom = await screen.findByRole('slider', { name: 'Zoom' });
+  fireEvent.change(zoom, { target: { value: '2.5' } });
+  await waitFor(() =>
+    expect(reader.applyVideoConstraints).toHaveBeenCalledWith({
+      advanced: [{ zoom: 2.5 }],
+    })
+  );
+});
+
+it('accepts a manually typed barcode as a fallback', async () => {
+  const onScan = vi.fn();
+  render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={onScan} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Type barcode' }));
+  const input = screen.getByLabelText('Barcode');
+  fireEvent.change(input, { target: { value: '490187700713' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Check price' }));
+  expect(onScan).toHaveBeenCalledWith('490187700713');
+  fireEvent.change(input, { target: { value: '12' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Check price' }));
+  expect(onScan).toHaveBeenCalledTimes(1);
 });
