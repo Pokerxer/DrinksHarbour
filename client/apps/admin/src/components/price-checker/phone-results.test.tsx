@@ -1,18 +1,13 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
-import type { PhoneScanResult } from '../../app/kiosk/price-checker/[kioskSlug]/m/[session]/phone-api';
-import { PhoneResults } from './phone-results';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { PhoneResults, type Checked } from './phone-results';
 
 afterEach(() => cleanup());
 
-interface Checked {
-  barcode: string;
-  result: PhoneScanResult;
-}
-
 const hit = (name: string, price: number, barcode: string): Checked => ({
   barcode,
+  at: Date.now(),
   result: {
     found: true,
     status: 'FOUND',
@@ -50,4 +45,20 @@ it('handles empty sessions and misses gracefully', () => {
   expect(String(container.textContent)).toContain('ask a member of staff');
   render(<PhoneResults results={[]} />);
   expect(screen.queryByRole('region', { name: 'Session summary' })).toBeNull();
+});
+
+it('offers a 5s undo on the newest scan and collapses to 3 hits on tiny screens', () => {
+  vi.useFakeTimers({ now: new Date('2026-11-08T10:00:00Z') });
+  const onUndo = vi.fn();
+  const { container } = render(
+    <PhoneResults results={[hit('Fresh', 20000, '3'), hit('Older', 30000, '2'), hit('Oldest', 40000, '1'), hit('Elder', 50000, '0')]} onUndo={onUndo} />
+  );
+  const undo = screen.getByRole('button', { name: /undo fresh/i });
+  fireEvent.click(undo);
+  expect(onUndo).toHaveBeenCalledWith('3');
+  // 4+ hits collapse behind a "show all" toggle
+  expect(screen.getByRole('button', { name: /show all \(4\)/i })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /show all \(4\)/i }));
+  expect(container.querySelectorAll('.phone-hit')).toHaveLength(4);
+  vi.useRealTimers();
 });

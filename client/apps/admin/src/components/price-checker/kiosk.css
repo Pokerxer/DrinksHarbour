@@ -445,3 +445,25 @@
   border-radius: 999px;
   padding: 8px 16px;
 }
+
+/* ── round 4 — session recap ─────────────────────────────────────────────── */
+.kiosk-session {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding: 14px 18px;
+  background: var(--kiosk-panel);
+  border: 1px solid var(--kiosk-line);
+  border-radius: 14px;
+  animation: kiosk-rise var(--motion-fast, 160ms) var(--motion-ease, ease) both;
+}
+.kiosk-session p {
+  margin: 0;
+  font-size: 0.8em;
+}
+.kiosk-session strong {
+  color: var(--kiosk-accent);
+}

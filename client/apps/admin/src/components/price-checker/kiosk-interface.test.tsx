@@ -237,3 +237,36 @@ it('the tray "Scan again" button returns the kiosk to the welcome screen', () =>
   fireEvent.click(again);
   expect(state.screen).toBe('idle');
 });
+
+it('shows a session summary on the welcome screen after a comparison closes', () => {
+  state.screen = 'result';
+  state.product = {
+    name: 'Stout one',
+    price: 42000,
+    currency: 'NGN',
+    alcoholic: false,
+    taxLabel: '',
+    barcode: '490187000011',
+  };
+  const view = render(<PriceCheckerKiosk slug="counter" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Add to compare' }));
+  state.product = {
+    name: 'Lager two',
+    price: 58000,
+    currency: 'NGN',
+    alcoholic: false,
+    taxLabel: '',
+    barcode: '490187000012',
+  };
+  view.rerender(<PriceCheckerKiosk slug="counter" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Add to compare' }));
+  state.screen = 'compare';
+  view.rerender(<PriceCheckerKiosk slug="counter" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  state.screen = 'idle';
+  view.rerender(<PriceCheckerKiosk slug="counter" />);
+  const recap = screen.getByRole('status');
+  expect(String(recap.textContent)).toContain('Compared 2 bottles');
+  expect(String(recap.textContent)).toContain('Stout one');
+  expect(String(recap.textContent)).toContain('₦58,000');
+});

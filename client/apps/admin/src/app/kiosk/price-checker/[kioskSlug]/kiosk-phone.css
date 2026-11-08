@@ -235,3 +235,42 @@
   }
   .phone-manual-check { background: #faf9f6; color: #231f20; }
 }
+
+/* ── round 4 — undo & collapse ──────────────────────────────────────────── */
+.phone-undo {
+  align-self: flex-start;
+  border: 1px solid #e5e0db;
+  border-radius: 999px;
+  background: #fff;
+  color: #b20202;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+.phone-show-all {
+  border: 0;
+  background: none;
+  color: #b20202;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 0;
+  text-align: left;
+}
+@media (max-width: 360px) {
+  .phone-card {
+    padding: 14px;
+    max-width: none;
+  }
+  .phone-start {
+    font-size: 14px;
+    padding: 12px 14px;
+  }
+  .phone-hit img {
+    width: 40px;
+    height: 40px;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .phone-undo { background: #242326; border-color: #454044; }
+}

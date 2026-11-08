@@ -1,9 +1,11 @@
 'use client';
-import { useCallback, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useKiosk } from './use-kiosk';
 import { useCompare, compareKey } from './use-compare';
 import { usePhonePairing } from './use-phone-pairing';
 import { useOfflineBook } from './use-offline';
+import { compareSummary, type CompareSummary } from './session-summary';
+import { formatMoney } from './money';
 import { PhonePair } from './phone-pair';
 import { ProductResult } from './product-result';
 import { CompareTray } from './compare-tray';
@@ -38,6 +40,19 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
   const productAlreadyHeld = Boolean(
     product && compare.items.some((item) => compareKey(item) === compareKey(product))
   );
+  // Decision recap shown after a comparison closes (screen returns to idle).
+  const [summary, setSummary] = useState<CompareSummary | null>(null);
+  const closeCompare = useCallback(() => {
+    if (compare.items.length >= 2) setSummary(compareSummary(compare.items));
+    kiosk.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compare.items, kiosk]);
+  const scannerHousekeepingCleanup = useCallback(() => {}, []);
+  void scannerHousekeepingCleanup;
+  // Any new scan or tray change wipes a stale recap immediately.
+  useEffect(() => {
+    if (screen !== 'idle' && screen !== 'compare') setSummary(null);
+  }, [screen, compare.items.length]);
   // Phone pairing: the QR session id doubles as the socket room name. Only
   // shown while the kiosk is usable; scans land in the comparison tray.
   const pairEnabled = Boolean(
@@ -146,7 +161,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
             items={compare.items}
             currency={config.currency}
             onRemove={compare.remove}
-            onClose={kiosk.reset}
+            onClose={closeCompare}
           />
         ) : screen === 'result' && kiosk.product && config ? (
           <>
@@ -193,9 +208,22 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
             {settings?.welcomeMessage && (
               <p className="kiosk-small">{settings.welcomeMessage}</p>
             )}
-            {config?.store && (
+                {config?.store && (
               <div className="kiosk-store-pill">
                 {config.store.name} — {config.store.location}
+              </div>
+            )}
+            {summary && (
+              <div className="kiosk-session" role="status">
+                <p>
+                  Compared {summary.count} bottles · best value{' '}
+                  <strong>{summary.bestName}</strong>
+                  {summary.saved > 0 &&
+                    ` · from ${formatMoney(summary.from, config?.currency ?? 'NGN')} to ${formatMoney(summary.to, config?.currency ?? 'NGN')}`}
+                </p>
+                <button className="kiosk-quiet" onClick={kiosk.openCompare}>
+                  Compare again
+                </button>
               </div>
             )}
             {pairUrl && <PhonePair url={pairUrl} />}

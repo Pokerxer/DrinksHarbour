@@ -76,7 +76,7 @@ export default function PhonePriceCheckerPage({
     setError('');
     try {
       const result = await postPhoneScan(slug, code, session);
-      setChecked((list) => [{ barcode: code, result }, ...list].slice(0, 12));
+      setChecked((list) => [{ barcode: code, at: Date.now(), result }, ...list].slice(0, 12));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Check failed');
     } finally {
@@ -128,7 +128,12 @@ export default function PhonePriceCheckerPage({
             {error}
           </p>
         )}
-        <PhoneResults results={checked} />
+        <PhoneResults
+          results={checked}
+          onUndo={(barcode) =>
+            setChecked((list) => list.filter((entry) => entry.barcode !== barcode))
+          }
+        />
         {!checked.length && phase === 'live' && (
           <p className="phone-toned">Scans appear here as you check bottles.</p>
         )}
