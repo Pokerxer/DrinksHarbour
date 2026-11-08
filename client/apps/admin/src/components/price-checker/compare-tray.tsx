@@ -2,6 +2,7 @@
 import type { KioskProduct } from './types';
 import { compareKey, MAX_COMPARE_ITEMS } from './use-compare';
 import { formatMoney } from './money';
+import { useHoldProgress } from './use-hold-progress';
 
 /** Persistent tray bar of bottles held for comparison, visible on the welcome
  *  and result screens so the customer can resume an interrupted session. */
@@ -10,16 +11,19 @@ export function CompareTray({
   currency,
   canAdd,
   onRemove,
-  onClear,
+  onScanAgain,
   onCompare,
+  onHoldClear,
 }: {
   items: KioskProduct[];
   currency: string;
   canAdd: boolean;
   onRemove: (key: string) => void;
-  onClear: () => void;
+  onScanAgain: () => void;
   onCompare: () => void;
+  onHoldClear: () => void;
 }) {
+  const hold = useHoldProgress(1500, onHoldClear);
   if (!items.length) return null;
   const ready = items.length >= 2;
   return (
@@ -43,11 +47,26 @@ export function CompareTray({
           >
             ✕
           </button>
+          <button
+            className="kiosk-tray-again"
+            aria-label={`Scan again for ${product.name}`}
+            title="Scan again"
+            onClick={onScanAgain}
+          >
+            ↻
+          </button>
         </div>
       ))}
       <div className="kiosk-tray-actions">
-        <button className="kiosk-quiet" onClick={onClear}>
-          Clear
+        <button
+          className="kiosk-quiet kiosk-tray-clear"
+          data-holding={hold.progress > 0 && hold.progress < 1 ? 'true' : 'false'}
+          onPointerDown={hold.start}
+          onPointerUp={hold.cancel}
+          onPointerLeave={hold.cancel}
+          onPointerCancel={hold.cancel}
+        >
+          Hold to clear
         </button>
         <button
           className="kiosk-primary"

@@ -230,8 +230,9 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
           currency={config.currency}
           canAdd={compare.canAdd}
           onRemove={compare.remove}
-          onClear={compare.clear}
+          onScanAgain={kiosk.reset}
           onCompare={kiosk.openCompare}
+          onHoldClear={compare.clear}
         />
       )}
       <footer className="kiosk-footer">

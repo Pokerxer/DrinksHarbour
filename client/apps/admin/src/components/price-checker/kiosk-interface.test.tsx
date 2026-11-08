@@ -198,3 +198,42 @@ it('announces the tray as full once four bottles are held', () => {
   const add = screen.getByRole('button', { name: 'Tray full — remove a bottle' });
   expect(add.hasAttribute('disabled')).toBe(true);
 });
+
+it('a quick tap on "Hold to clear" does not wipe the tray', () => {
+  state.screen = 'result';
+  state.product = {
+    name: 'Snappy bottle',
+    price: 1000,
+    currency: 'NGN',
+    alcoholic: false,
+    taxLabel: '',
+    barcode: '490187000009',
+  };
+  const view = render(<PriceCheckerKiosk slug="counter" />);
+  // preseed the tray through the result screen
+  fireEvent.click(screen.getByRole('button', { name: 'Add to compare' }));
+  expect(screen.getAllByRole('region', { name: 'Bottles to compare' })).toBeTruthy();
+  // A quick tap (no hold ring running) must not wipe the tray.
+  fireEvent.click(screen.getByRole('button', { name: 'Hold to clear' }));
+  const tray = screen.getAllByRole('region', { name: 'Bottles to compare' });
+  expect(tray).toBeTruthy();
+  view.rerender(<PriceCheckerKiosk slug="counter" />);
+  expect(screen.getAllByRole('region', { name: 'Bottles to compare' })).toBeTruthy();
+});
+
+it('the tray "Scan again" button returns the kiosk to the welcome screen', () => {
+  state.screen = 'result';
+  state.product = {
+    name: 'Bottle X',
+    price: 3000,
+    currency: 'NGN',
+    alcoholic: false,
+    taxLabel: '',
+    barcode: '490187000010',
+  };
+  const view = render(<PriceCheckerKiosk slug="counter" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Add to compare' }));
+  const again = screen.getByRole('button', { name: 'Scan again for Bottle X' });
+  fireEvent.click(again);
+  expect(state.screen).toBe('idle');
+});
