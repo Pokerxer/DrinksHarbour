@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import type { KioskConfig, KioskProduct } from './types';
 import { ScannerMark } from './scanner-mark';
+import { useCountUp } from './use-count-up';
+
 export function ProductResult({
   product,
   config,
@@ -13,6 +15,11 @@ export function ProductResult({
 }) {
   const [confirmed, setConfirmed] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const reduced =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const countedPrice = useCountUp(product.price, reduced);
   const money = (value: number) =>
     new Intl.NumberFormat('en-NG', {
       style: 'currency',
@@ -57,7 +64,7 @@ export function ProductResult({
         {product.size && <p className="kiosk-size">{product.size}</p>}
         <div className="kiosk-price-block">
           {product.originalPrice !== undefined && <del>{money(product.originalPrice)}</del>}
-          <p className="kiosk-price">{money(product.price)}</p>
+          <p className="kiosk-price">{money(countedPrice)}</p>
           {product.taxLabel && <p className="kiosk-small">{product.taxLabel}</p>}
           {product.savings !== undefined && (
             <p className="kiosk-saving">
