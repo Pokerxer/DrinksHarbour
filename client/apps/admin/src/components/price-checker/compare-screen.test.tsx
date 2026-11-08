@@ -112,3 +112,26 @@ it('renders the decision headline above the table', () => {
   const verdict = screen.getByRole('status');
   expect(String(verdict.textContent)).toContain('Both bottles');
 });
+
+it('supports tap-to-highlight on a compared bottle', () => {
+  const { container, rerender } = render(
+    <CompareScreen
+      items={[bottle('A', 500, 40), bottle('B', 400, 40)]}
+      currency="NGN"
+      onRemove={() => {}}
+      onClose={() => {}}
+    />
+  );
+  const cardA = container.querySelector('.kiosk-compare-card');
+  expect(cardA?.getAttribute('data-focus')).toBe('false');
+  fireEvent.click(cardA!);
+  expect(container.querySelector('.kiosk-compare-card')?.getAttribute('data-focus')).toBe('true');
+  fireEvent.click(container.querySelector('.kiosk-compare-card')!);
+  expect(container.querySelector('.kiosk-compare-card')?.getAttribute('data-focus')).toBe('false');
+  // focusing B clears A
+  fireEvent.click(cardA!);
+  const cardB = container.querySelectorAll('.kiosk-compare-card')[1];
+  fireEvent.click(cardB);
+  expect(container.querySelectorAll('.kiosk-compare-card')[0].getAttribute('data-focus')).toBe('false');
+  expect(cardB.getAttribute('data-focus')).toBe('true');
+});

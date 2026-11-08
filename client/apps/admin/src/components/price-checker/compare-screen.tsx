@@ -1,4 +1,5 @@
 'use client';
+import { useState, type CSSProperties } from 'react';
 import type { KioskProduct } from './types';
 import { formatMoney } from './money';
 import { bestValueRank, pricePerDrink, pricePerMl } from './metrics';
@@ -8,23 +9,41 @@ import { compareKey } from './use-compare';
 interface CardProps {
   product: KioskProduct;
   rank: number;
+  index: number;
+  focused: boolean;
+  onToggleFocus: (key: string) => void;
   onRemove: (key: string) => void;
   currency: string;
 }
 
-function CompareCard({ product, rank, onRemove, currency }: CardProps) {
+function CompareCard({
+  product,
+  rank,
+  index,
+  focused,
+  onToggleFocus,
+  onRemove,
+  currency,
+}: CardProps) {
   const money = (value: number) => formatMoney(value, currency);
+  const key = compareKey(product);
   return (
     <div
       className="kiosk-compare-card"
       role="listitem"
       data-rank={rank}
-      key={compareKey(product)}
+      data-focus={focused ? 'true' : 'false'}
+      onClick={() => onToggleFocus(key)}
+      style={{ '--card-index': index } as CSSProperties}
+      key={key}
     >
       <button
         className="kiosk-compare-drop"
         aria-label={`Remove ${product.name}`}
-        onClick={() => onRemove(compareKey(product))}
+        onClick={(event) => {
+          event.stopPropagation();
+          onRemove(key);
+        }}
       >
         ✕
       </button>
@@ -63,6 +82,9 @@ export function CompareScreen({
   const ranks = bestValueRank(items);
   const rows = rowsFor(items);
   const headline = decisionHeadline(items, currency);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const toggleFocus = (key: string) =>
+    setFocusKey((current) => (current === key ? null : key));
   // Currency glyph, whatever the kiosk is configured with (₦, $, …).
   const symbol =
     formatMoney(1, currency).match(/[^\d.,\s]/)?.[0] ?? '₦';
@@ -117,7 +139,13 @@ export function CompareScreen({
           <span className="kiosk-eyebrow">Compare bottles</span>
           <p>Pick the bottle that suits you best.</p>
         </div>
-        <button className="kiosk-quiet" onClick={onClose}>
+        <button
+          className="kiosk-quiet"
+          onClick={() => {
+            setFocusKey(null);
+            onClose();
+          }}
+        >
           Close
         </button>
       </div>
@@ -127,6 +155,9 @@ export function CompareScreen({
             key={compareKey(product)}
             product={product}
             rank={ranks[index]}
+            index={index}
+            focused={focusKey === compareKey(product)}
+            onToggleFocus={toggleFocus}
             onRemove={onRemove}
             currency={currency}
           />
