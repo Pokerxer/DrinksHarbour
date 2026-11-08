@@ -146,3 +146,22 @@ components in `client/apps/admin/src/components/price-checker/`) supports:
   (unit, mocked catalog/logging), `offline.test.ts`,
   extended `use-kiosk.test.tsx` / `scanner.test.ts` /
   `phone-scanner.test.tsx`. Suites: 43 server / 108 client / tsc clean.
+
+## Round 4 — motion, responsiveness, interactions (2026-11-08, spec `2026-11-08-kiosk-motion-responsiveness-design.md`)
+
+Client-only round (no server changes). Files: `kiosk-motion.css` (new —
+tokens `--motion-fast/base/stagger/ease`, staggered compare-card/verdict/crown
+entrances via `--card-index`, idle attract loop gated on `data-attract`,
+zoom/focus/hold keyframes, kiosk breakpoints `≤1024px` (2×2 compare) /
+`≤640px` (card carousel) / `≤700px`-height (scrollable content, compressed
+chrome), reduced-motion kill switch), `use-count-up.ts` (rAF price count-up,
+instant under reduced-motion/no-rAF), `use-hold-progress.ts`
+(hold-to-clear guard, one-shot, reholdable after cancel), 
+`session-summary.ts` (compareSummary pure helper), tray "↻ Scan again" + 
+"Hold to clear" (1.5s), compare cards tap-to-highlight (`data-focus`, single
+focus, cleared on Close), kiosk session recap on idle after a comparison
+closes ("Compared n bottles · best value X · from → to" + "Compare again",
+wiped on any scan/tray change), phone undo (5s window on the newest scan;
+`Checked.at` added) and "Show all (n)" once >3 entries; `product-result`
+render has a shimmer-free price count-up. Suites: 43 server / 122 client /
+tsc clean.
