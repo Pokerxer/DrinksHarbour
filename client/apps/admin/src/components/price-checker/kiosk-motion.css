@@ -1,0 +1,179 @@
+/* Round 4 motion system — tokens, orchestrated entrances, idle attract loop.
+   Everything collapses under prefers-reduced-motion. */
+
+.price-kiosk {
+  --motion-fast: 160ms;
+  --motion-base: 280ms;
+  --motion-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --motion-stagger: 60ms;
+}
+
+/* Retimed core entrances on tokens */
+.kiosk-content > section,
+.kiosk-compare-card,
+.kiosk-tray-item {
+  animation: kiosk-rise var(--motion-base) var(--motion-ease) both;
+}
+.kiosk-compare-card {
+  animation-delay: calc(var(--card-index, 0) * var(--motion-stagger));
+}
+
+/* Verdict line lands after the cards */
+.kiosk-compare-verdict {
+  animation: kiosk-rise
+    calc(var(--motion-base) + var(--motion-stagger) * 4)
+    var(--motion-ease);
+  animation-delay: calc(var(--motion-fast) + var(--motion-stagger) * 4);
+}
+
+/* Best-value crown pops after its card */
+.kiosk-compare-best {
+  animation: kiosk-pop var(--motion-base) var(--motion-ease) both;
+  animation-delay: calc(var(--card-index, 0) * var(--motion-stagger) + var(--motion-base) * 0.6);
+  transform-origin: 50% 100%;
+}
+@keyframes kiosk-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  70% {
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Idle attract loop — only while the welcome screen shows */
+.kiosk-content [data-attract='true'] .kiosk-scanner svg {
+  animation: kiosk-attract 4s var(--motion-ease) infinite;
+}
+.kiosk-content [data-attract='true'] h1 {
+  animation: kiosk-breathe 4s var(--motion-ease) infinite;
+}
+@keyframes kiosk-attract {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  10%,
+  30% {
+    opacity: 0.55;
+  }
+  20% {
+    opacity: 1;
+  }
+}
+@keyframes kiosk-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.82;
+  }
+}
+
+/* Price entrance + image zoom on the result screen */
+.kiosk-price {
+  transition: none;
+}
+.kiosk-image img {
+  animation: kiosk-zoom var(--motion-base) var(--motion-ease) both;
+}
+@keyframes kiosk-zoom {
+  from {
+    transform: scale(1.03);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/* Focused compare card */
+.kiosk-compare-card[data-focus='true'] {
+  outline: 2px solid var(--kiosk-accent);
+  outline-offset: 2px;
+  transform: scale(1.04);
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
+.kiosk-compare-card[data-focus='false'] {
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
+
+/* Hold-to-clear ring */
+.kiosk-tray-clear[data-holding='true'] {
+  animation: kiosk-hold 1.5s linear forwards;
+}
+.kiosk-tray-clear[data-holding='false'] {
+  animation: none;
+}
+@keyframes kiosk-hold {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--kiosk-accent) 70%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 18px color-mix(in srgb, var(--kiosk-accent) 70%, transparent);
+  }
+}
+
+/* Small kiosk/tablet screens: tray + QR stack, compare 2×2 */
+@media (max-width: 1024px) {
+  .price-kiosk {
+    padding: clamp(16px, 2.5vw, 32px);
+  }
+  .kiosk-phone-qr {
+    margin-left: 0;
+    max-width: none;
+  }
+  .kiosk-compare-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Very small kiosks / tablets become a swipe carousel */
+@media (max-width: 640px) {
+  .kiosk-compare-grid {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 8px;
+  }
+  .kiosk-compare-card {
+    flex: 0 0 78vw;
+    scroll-snap-align: center;
+  }
+}
+/* Tall portrait displays: compress chrome, scroll the middle */
+@media (max-height: 700px) {
+  .price-kiosk {
+    gap: 8px;
+  }
+  .kiosk-content {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+  .kiosk-footer span {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kiosk-content > section,
+  .kiosk-compare-card,
+  .kiosk-tray-item,
+  .kiosk-compare-verdict,
+  .kiosk-compare-best,
+  .kiosk-content [data-attract='true'] .kiosk-scanner svg,
+  .kiosk-content [data-attract='true'] h1,
+  .kiosk-image img,
+  .kiosk-tray-clear[data-holding='true'],
+  .kiosk-tray button[data-pulse='1'] {
+    animation: none !important;
+  }
+  .kiosk-compare-card[data-focus='true'] {
+    transition: none;
+  }
+}

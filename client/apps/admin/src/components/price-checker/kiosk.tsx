@@ -13,6 +13,7 @@ import { ScannerMark } from './scanner-mark';
 import { validBarcode } from './scanner';
 import './kiosk.css';
 import './kiosk-display.css';
+import './kiosk-motion.css';
 export default function PriceCheckerKiosk({ slug }: { slug: string }) {
   const offlineBook = useOfflineBook(slug);
   const kiosk = useKiosk(slug, offlineBook.support ?? undefined);
@@ -135,6 +136,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
       </header>
       <div
         className="kiosk-content"
+        data-attract={screen === 'idle' ? 'true' : undefined}
         aria-live="polite"
         aria-atomic="true"
         aria-busy={screen === 'loading' || screen === 'initializing'}
