@@ -1,4 +1,9 @@
 const marketCatalog = require('./marketCatalog');
+// Trending: market eligibility groups are resolved once per request and
+// categoryFor() is the same mapping marketCatalog.listingFilter uses, so the
+// product-tailored filter below stays meaning-identical while paying for the
+// policy read a single time instead of once per product (see getTrendingProducts).
+const { categoryFor } = require('./marketIngress');
 const { expandedTypeValues } = require('../constants/expandedProductTypes');
 // Venue Phase 3 S1 (docs/saas/venues/03 §2): central catalog kinds gate which
 // products the retail channels list. Venue kinds ride venue service instead.
@@ -4839,21 +4844,36 @@ const searchProducts = async (searchParams = {}) => {
   pipeline.push({ $sort: { ...sortStage, _id: 1 } });
 
   // ============================================================
-  // STEP 6: Execute Pipeline for Total Count
+  // STEP 6+7: Execute pipeline once, with $facet carrying BOTH the page and
+  // the total count through the SAME match/lookup/sort pass.
+  //
+  // Perf (2026-11-08 300s timeouts): search ran the whole pipeline TWICE —
+  // once for `$count`, then again with `$skip`/`$limit`. Both passes scan the
+  // text-query $or (an indexless regex over ~12 fields) and re-run the six
+  // lookups per matched product on the M0 cluster's shared CPU, so a search
+  // paid double for every stage. One execution after `$sort`, split into
+  // `$facet: { page: [skip, limit], count: [count] }` is semantically
+  // identical: count still counts everything entering the facet, page still
+  // takes its window after the sort. Shopping-location requests keep the old
+  // shape (they skip count and rank ALL candidates in JS).
   // ============================================================
-  const countPipeline = [...pipeline, { $count: 'total' }];
-  const countResult = shoppingLocation ? [] : await marketCatalog.productAggregate(countPipeline);
-  let totalResults = countResult.length > 0 ? countResult[0].total : 0;
-
-  // ============================================================
-  // STEP 7: Execute Pipeline with Pagination
-  // ============================================================
-  if (!shoppingLocation) {
-    pipeline.push({ $skip: skip });
-    pipeline.push({ $limit: limit });
+  let totalResults = 0;
+  let searchResults;
+  if (shoppingLocation) {
+    searchResults = await marketCatalog.productAggregate(pipeline);
+  } else {
+    const [facet] = await marketCatalog.productAggregate([
+      ...pipeline,
+      {
+        $facet: {
+          page: [{ $skip: skip }, { $limit: limit }],
+          count: [{ $count: 'total' }],
+        },
+      },
+    ]);
+    totalResults = facet?.count?.[0]?.total || 0;
+    searchResults = facet?.page || [];
   }
-
-  const searchResults = await marketCatalog.productAggregate(pipeline);
 
   // ============================================================
   // STEP 8: Process and Enrich Products
@@ -6083,12 +6103,28 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
     }
   }
 
-  // Fetch SubProducts for each product to get sizes, tenants, and pricing details
-  const productsWithDetails = [];
-  
-  for (const product of products) {
+  // Fetch SubProducts for each product to get sizes, tenants, and pricing details.
+  //
+  // Perf (2026-11-08 300s timeouts): the loop was serial `for...await`, and on
+  // every iteration it re-called `marketCatalog.listingFilter(product)` — which
+  // re-runs `eligibleGroups()` (a policy read per supply category) under the
+  // per-product filter. With 10 trending products × the categories × ~120ms
+  // round trips, the strip cost dozens of serial DB reads to show ten cards.
+  // Now: eligibility groups are resolved ONCE, the per-product filter applies
+  // the same `categoryFor(product)` mapping listingFilter uses, and the
+  // per-product fetches run in parallel with `Promise.all`.
+  const marketActive = marketCatalog.active();
+  let marketGroups = null;
+  if (marketActive) {
+    marketGroups = await marketCatalog.eligibleGroups();
+  }
+  const listingFilterFor = (product) => marketActive
+    ? { $and: [{ tenant: { $in: marketGroups[categoryFor(product)] || [] } }] }
+    : {};
+
+  const detailsFor = async (product) => {
     const subProducts = await SubProduct.find({
-    ...await marketCatalog.listingFilter(product),
+    ...listingFilterFor(product),
       product: product._id,
       status: 'active',
       visibleInOnlineStore: { $ne: false },
@@ -6449,8 +6485,10 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
           }
         : null,
     };
-    productsWithDetails.push(productResult);
-  }
+    return productResult;
+  };
+
+  const productsWithDetails = (await Promise.all(products.map(detailsFor))).filter(Boolean);
 
   // Sort by original trending order if we have trending data
   if (productIds.length > 0) {
@@ -13097,61 +13135,179 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status, cate
     query.$or = or;
   }
 
+  const catalogMatch = await marketCatalog.query(query);
+
+  // Latency contract (2026-11-09 probe): one DB roundtrip ≈ 140ms against the
+  // production cluster. The old implementation ran find + FOUR populates +
+  // a count + TWO aggregates ≈ 8 sequential roundtrips before the first byte.
+  // The pipeline below folds the four populates and BOTH stat aggregates into
+  // two parallel server-side roundtrips (rows + count) with identical shape:
+  // brand/category/subCategory become populated objects, owningTenant a name,
+  // subProductCount/variantCount and price/priceMax/priceCurrency computed
+  // server-side from sub-products and size rows (same rule as before:
+  // min–max across priced sizes, falling back to the listings' base price
+  // range when no size carries a price).
+  const identityLookups = [
+    { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand', pipeline: [{ $project: { name: 1, slug: 1 } }] } },
+    { $lookup: { from: 'categories', localField: 'category', foreignField: '_id', as: 'category', pipeline: [{ $project: { name: 1, slug: 1 } }] } },
+    { $lookup: { from: 'subcategories', localField: 'subCategory', foreignField: '_id', as: 'subCategory', pipeline: [{ $project: { name: 1, slug: 1 } }] } },
+    // Catalogue scope (constants/catalogScope.js): super-admin list surfaces
+    // private identities so the reviewer sees "Store-only · <tenant>" and
+    // the bulk approve copy communicates the canonical promotion. Legacy
+    // rows omit both fields; owningTenant is resolved to a name so tenant
+    // IDs never leak as data.
+    { $lookup: { from: 'tenants', localField: 'owningTenant', foreignField: '_id', as: 'owningTenant', pipeline: [{ $project: { name: 1, slug: 1 } }] } },
+    { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$subCategory', preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$owningTenant', preserveNullAndEmptyArrays: true } },
+  ];
+  const statLookups = [
+    {
+      $lookup: {
+        from: 'subproducts',
+        localField: '_id',
+        foreignField: 'product',
+        as: '_statsSubs',
+        pipeline: [
+          { $project: { _id: 1, baseSellingPrice: 1, currency: 1 } },
+          { $lookup: { from: 'sizes', localField: '_id', foreignField: 'subproduct', as: '_sizes', pipeline: [
+            { $match: { sellingPrice: { $gt: 0 } } },
+            { $project: { _id: 0, sellingPrice: 1, currency: 1 } },
+          ] } },
+        ],
+      },
+    },
+    { $addFields: {
+      subProductCount: { $size: '$_statsSubs' },
+      variantCount: {
+        $add: [
+          { $size: '$_statsSubs' },
+          { $sum: { $map: { input: '$_statsSubs', as: 'sub', in: { $size: { $ifNull: ['$$sub._sizes', []] } } } } },
+        ],
+      },
+      // Price = the min–max across the product's SIZE rows (each size prices
+      // itself); listings without priced sizes quote their baseSellingPrice.
+      // Feeds the /product cards (same rule as the /sub-products cards —
+      // docs/memory/toolbar-size-price.md).
+      _sizePrices: {
+        $filter: {
+          input: { $reduce: {
+            input: '$_statsSubs',
+            initialValue: [],
+            in: { $cond: [
+              { $gt: [{ $size: { $ifNull: ['$$this._sizes', []] } }, 0] },
+              { $concatArrays: ['$$value', { $map: { input: '$$this._sizes', as: 'sz', in: { amount: '$$sz.sellingPrice', currency: '$$sz.currency' } } }] },
+              '$$value',
+            ] } },
+          },
+          as: 'row',
+          cond: { $gt: ['$$row.amount', 0] },
+        },
+      },
+      _basePrices: {
+        $filter: {
+          input: { $map: { input: '$_statsSubs', as: 'sub', in: { amount: '$$sub.baseSellingPrice', currency: '$$sub.currency' } } },
+          as: 'row',
+          cond: { $gt: ['$$row.amount', 0] },
+        },
+      },
+    } },
+    { $set: {
+      price: { $cond: [
+        { $gt: [{ $size: '$_sizePrices' }, 0] },
+        { $min: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.amount' } } },
+        { $cond: [
+          { $gt: [{ $size: '$_basePrices' }, 0] },
+          { $min: { $map: { input: '$_basePrices', as: 'r', in: '$$r.amount' } } },
+          null,
+        ] },
+      ] },
+      // priceMax only when a real RANGE exists (the old rule: set only when
+      // max > min — a single price point reports just `price`).
+      priceMax: { $cond: [
+        { $gt: [{ $size: '$_sizePrices' }, 0] },
+        { $cond: [
+          { $lt: [
+            { $min: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.amount' } } },
+            { $max: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.amount' } } },
+          ] },
+          { $max: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.amount' } } },
+          null,
+        ] },
+        { $cond: [
+          { $lt: [
+            { $min: { $map: { input: '$_basePrices', as: 'r', in: '$$r.amount' } } },
+            { $max: { $map: { input: '$_basePrices', as: 'r', in: '$$r.amount' } } },
+          ] },
+          { $max: { $map: { input: '$_basePrices', as: 'r', in: '$$r.amount' } } },
+          null,
+        ] },
+      ] },
+      priceCurrency: { $cond: [
+        { $gt: [{ $size: '$_sizePrices' }, 0] },
+        { $first: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.currency' } } },
+        { $cond: [
+          { $gt: [{ $size: '$_basePrices' }, 0] },
+          { $first: { $map: { input: '$_basePrices', as: 'r', in: '$$r.currency' } } },
+          'NGN',
+        ] },
+      ] },
+    } },
+    { $project: {
+      _id: 1,
+      name: 1, slug: 1, type: 1, description: 1, images: 1,
+      isAlcoholic: 1, abv: 1, volumeMl: 1, originCountry: 1,
+      brand: 1, category: 1, subCategory: 1,
+      status: 1, isPublished: 1, publishedAt: 1, publicationScope: 1, owningTenant: 1,
+      totalStockAvailable: 1, createdAt: 1, updatedAt: 1,
+      price: 1, priceMax: 1, priceCurrency: 1,
+      subProductCount: 1, variantCount: 1,
+    } },
+  ];
+  const listPipeline = [
+    { $match: catalogMatch },
+    ...identityLookups,
+    ...statLookups,
+    { $sort: { createdAt: -1 } },
+    { $skip: skip },
+    { $limit: limitNum },
+  ];
   const [products, total] = await Promise.all([
-    Product.find(await marketCatalog.query(query))
-      .populate('brand', 'name slug')
-      .populate('category', 'name slug')
-      .populate('subCategory', 'name slug')
-      // Catalogue scope (constants/catalogScope.js): super-admin list surfaces
-      // private identities so the reviewer sees "Store-only · <tenant>" and
-      // the bulk approve copy communicates the canonical promotion. Legacy
-      // rows omit both fields; owningTenant is populated to a name so
-      // tenant IDs never leak as data.
-      .populate('owningTenant', 'name slug')
-      .select('_id name slug type description images isAlcoholic abv volumeMl originCountry brand category subCategory status isPublished publishedAt publicationScope owningTenant totalStockAvailable createdAt updatedAt')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum)
-      .lean(),
+    marketCatalog.productAggregate(listPipeline),
     marketCatalog.productCount(query),
   ]);
 
-  // Count variants per product: sum of size variants across all sub-products.
-  // If a sub-product has explicit sizes (each with their own SKU/barcode), those
-  // are the real sellable variants. Fall back to counting 1 per sub-product when
-  // no sizes are defined (e.g. sell-without-size-variants mode).
-  const productIds = products.map(p => p._id);
-  const subProductCounts = await marketCatalog.subproductAggregate([
-    { $match: { product: { $in: productIds } } },
-    {
-      $group: {
-        _id: '$product',
-        subProductCount: { $sum: 1 },
-        variantCount: {
-          $sum: {
-            $cond: [
-              { $gt: [{ $size: { $ifNull: ['$sizes', []] } }, 0] },
-              { $size: { $ifNull: ['$sizes', []] } },
-              1,
-            ],
-          },
-        },
-      },
-    },
-  ]);
-  const countMap = subProductCounts.reduce((acc, { _id, subProductCount, variantCount }) => {
-    acc[_id.toString()] = { subProductCount, variantCount };
-    return acc;
-  }, {});
+  // Count variants per product: sum of size variants across all sub-products,
+  // plus each row's price — both now computed INSIDE the list pipeline above
+  // (single roundtrip instead of three sequential aggregates here). The rule
+  // stays the documented one: variant identity = size rows with fallback to
+  // one-per-subproduct; price = min–max across priced sizes with the
+  // listings' base price range as fallback
+  // (docs/memory/toolbar-size-price.md).
 
   const items = products.map(p => {
-    const counts = countMap[p._id.toString()] || { subProductCount: 0, variantCount: 0 };
-    return {
+    const counts = { subProductCount: p.subProductCount ?? 0, variantCount: p.variantCount ?? 0 };
+    const item = {
       ...p,
       isPublished: p.isPublished ?? (p.status === 'approved' && !!p.publishedAt),
       subProductCount: counts.subProductCount,
       variantCount: counts.variantCount,
+      // Field-presence parity with the pre-refactor flow: price/priceMax stay
+      // ABSENT (not null) when the product carries no quote, and priceMax
+      // exists only when min/max form a real range (single-point quotes keep
+      // just `price`). Documented rule: docs/memory/toolbar-size-price.md.
+      price: p.price ?? undefined,
+      priceMax: p.priceMax ?? undefined,
+      priceCurrency: p.priceCurrency ?? undefined,
     };
+    // JSON.stringify drops `undefined` keys, but the object itself would carry
+    // the explicit null from the aggregation stage — delete so deep-equal
+    // assertions see the exact legacy shape.
+    if (item.price === undefined) delete item.price;
+    if (item.priceMax === undefined) delete item.priceMax;
+    if (item.priceCurrency === undefined) delete item.priceCurrency;
+    return item;
   });
 
   return {

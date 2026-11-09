@@ -44,10 +44,21 @@ async function searchCatalogueProducts({ query = '', type, limit = 15 } = {}) {
     ] } } },
     { $sort: { _candidateScore: -1, name: 1, _id: 1 } },
     { $limit: 300 },
+    // The old flow populated brand/category/subCategory AFTER the aggregate
+    // (three sequential ~140ms DB roundtrips). The lookups below are resolved
+    // server-side inside this one roundtrip with the identical shape
+    // (`{ _id, name }` objects, null when absent), so the client payload and
+    // the ranking inputs are unchanged.
+    { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand', pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: 'categories', localField: 'category', foreignField: '_id', as: 'category', pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: 'subcategories', localField: 'subCategory', foreignField: '_id', as: 'subCategory', pipeline: [{ $project: { name: 1 } }] } },
+    { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$subCategory', preserveNullAndEmptyArrays: true } },
     { $project: Object.fromEntries(PUBLIC_FIELDS.map((field) => [field, 1])) },
   ]);
-  const populated = await Product.populate(rows, ['brand', 'category', 'subCategory']
-    .map((path) => ({ path, select: 'name' })));
+  // Lookups resolved everything the old three-roundtrip populate pass did.
+  const populated = rows;
   const products = rankCatalogueProducts(populated, term).slice(0, Math.max(1, Math.min(15, Number(limit) || 15)))
     .map((product) => Object.fromEntries([...PUBLIC_FIELDS, 'matchKind', 'matchReason']
       .filter((field) => product[field] !== undefined).map((field) => [field, product[field]])));
