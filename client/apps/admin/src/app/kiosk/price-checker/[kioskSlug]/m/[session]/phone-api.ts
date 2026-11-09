@@ -1,4 +1,5 @@
-import type { KioskProduct } from '../../../../../../components/price-checker/types';
+import type { KioskProduct } from '@/components/price-checker/types';
+import type { Language } from '@/components/price-checker/copy';
 
 // Same-origin helper client for the phone companion page. All traffic goes
 // through the existing Next route proxy (`/api/price-checker/...`), which owns
@@ -24,9 +25,10 @@ async function call<T>(slug: string, action: 'session' | 'scan', body?: object):
   return payload.data;
 }
 
-/** Establishes the audience-bound price-checker session cookie for the phone. */
+/** Establishes the audience-bound price-checker session cookie for the phone
+ *  and returns the kiosk's public config (drives language + display flags). */
 export function openSession(slug: string) {
-  return call<void>(slug, 'session', { slug });
+  return call<{ slug: string; settings: { language?: Language } }>(slug, 'session', { slug });
 }
 
 /** Checks one barcode, logging it as a phone scan and pairing it to a kiosk. */
