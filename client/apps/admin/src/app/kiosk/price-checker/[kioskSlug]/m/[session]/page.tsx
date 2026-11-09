@@ -6,7 +6,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PhoneScanner } from '@/components/price-checker/phone-scanner';
-import { PhoneResults, type Checked } from '@/components/price-checker/phone-results';
+import { PhoneResults, mergeScan, type Checked } from '@/components/price-checker/phone-results';
 import { openSession, postPhoneScan } from './phone-api';
 import '../../kiosk-phone.css';
 
@@ -76,7 +76,9 @@ export default function PhonePriceCheckerPage({
     setError('');
     try {
       const result = await postPhoneScan(slug, code, session);
-      setChecked((list) => [{ barcode: code, at: Date.now(), result }, ...list].slice(0, 12));
+      setChecked((list) =>
+        mergeScan(list, { barcode: code, at: Date.now(), result }).results.slice(0, 12)
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Check failed');
     } finally {

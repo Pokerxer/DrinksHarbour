@@ -55,6 +55,8 @@ export function PhoneScanner({
 }) {
   const [status, setStatus] = useState<'ready' | 'starting' | 'denied'>('ready');
   const [torch, setTorch] = useState<TorchState>({ supported: false, on: false });
+  const [flash, setFlash] = useState(false);
+  const [captured, setCaptured] = useState(false);
   const [zoom, setZoomState] = useState<ZoomRange | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [manual, setManual] = useState(false);
@@ -68,6 +70,13 @@ export function PhoneScanner({
       const now = Date.now();
       if (last.current.code === value && now - last.current.at < 700) return;
       last.current = { code: value, at: now };
+      // Capture feedback: haptic + light sweep + confirmation pill. Never
+      // fires twice for the same read (the dedupe guard above runs first).
+      navigator.vibrate?.(40);
+      setFlash(true);
+      setCaptured(true);
+      window.setTimeout(() => setFlash(false), 300);
+      window.setTimeout(() => setCaptured(false), 900);
       onScan(value);
     },
     [onScan]
@@ -162,13 +171,19 @@ export function PhoneScanner({
       >
         Start camera
       </button>
-      <div className="phone-viewfinder">
+      <div className={`phone-viewfinder${flash ? ' phone-flashing' : ''}`}>
         <div id="phone-reader" />
         <span className="phone-corner tl" aria-hidden="true" />
         <span className="phone-corner tr" aria-hidden="true" />
         <span className="phone-corner bl" aria-hidden="true" />
         <span className="phone-corner br" aria-hidden="true" />
+        {flash && <span className="phone-sweep" aria-hidden="true" />}
       </div>
+      {captured && (
+        <p className="phone-captured" role="status">
+          ✓ Scanned
+        </p>
+      )}
       {status === 'ready' && (
         <p className="phone-hint">Align the barcode inside the box</p>
       )}

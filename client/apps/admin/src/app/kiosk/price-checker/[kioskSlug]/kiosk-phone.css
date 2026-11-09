@@ -274,3 +274,43 @@
 @media (prefers-color-scheme: dark) {
   .phone-undo { background: #242326; border-color: #454044; }
 }
+
+/* ── capture feedback ───────────────────────────────────────────────────── */
+.phone-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--phone-accent, #b20202);
+  box-shadow: 0 0 14px 4px rgba(178, 2, 2, 0.55);
+  border-radius: 2px;
+  animation: phone-sweep 300ms linear both;
+}
+@keyframes phone-sweep {
+  from { top: 8%; opacity: 1; }
+  to { top: 90%; opacity: 0.2; }
+}
+.phone-viewfinder.phone-flashing .phone-corner {
+  border-color: #176341;
+}
+.phone-captured {
+  display: inline-block;
+  align-self: center;
+  background: #e1f1e6;
+  color: #136f3a;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 999px;
+  padding: 6px 16px;
+  animation: phone-pop 200ms ease both;
+}
+@keyframes phone-pop {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .phone-sweep, .phone-captured { animation: none; }
+}
+@media (prefers-color-scheme: dark) {
+  .phone-captured { background: #12331f; color: #90e9ba; }
+}

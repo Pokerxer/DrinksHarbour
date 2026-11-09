@@ -20,6 +20,27 @@ export const COLLAPSE_AT = 3;
 export const UNDO_WINDOW_MS = 5000;
 
 /**
+ * Adds a scan to the session list. A barcode the customer already checked is
+ * never duplicated — its existing entry moves to the top with the new
+ * timestamp (so undo/summary counts stay product-based).
+ */
+export function mergeScan(results: Checked[], entry: Checked): {
+  results: Checked[];
+  deduped: boolean;
+} {
+  if (results.some((row) => row.barcode === entry.barcode)) {
+    return {
+      results: [
+        { ...entry },
+        ...results.filter((row) => row.barcode !== entry.barcode),
+      ],
+      deduped: true,
+    };
+  }
+  return { results: [entry, ...results], deduped: false };
+}
+
+/**
  * The phone session's scan history: a summary bar (count + session-cheapest)
  * over the result cards. The newest scan sits on top, pulses once, carries a
  * 5-second Undo, and long sessions collapse to the newest few with a
