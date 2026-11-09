@@ -287,7 +287,7 @@ export default function CheckoutPage() {
     }));
     beginCheckoutEvent({ items });
     fireBeginCheckout({
-      value: cartState.cartArray.reduce((sum, item) => sum + item.price * (item.quantity || 1), 0),
+      value: cartState.cartArray.reduce((sum, item) => sum + getEffectiveUnitPrice(item) * (item.quantity || 1), 0),
       currency: 'NGN',
       num_items: cartState.cartArray.reduce((sum, item) => sum + (item.quantity || 1), 0),
     });
@@ -334,7 +334,12 @@ export default function CheckoutPage() {
   }, [form.state]);
 
   // ── Calculate shipping whenever state, LGA, subtotal, or address changes ──
-  const subtotal = cartState.cartArray.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
+  // Subtotal MUST use the same price source as the line rows and the
+  // submitted items: getEffectiveUnitPrice (live sale/pack pricing). The
+  // cart's stored `item.price` is a snapshot from add-to-cart time — when
+  // the platform reprices an item, this summary showed one total while every
+  // line on the same page showed another.
+  const subtotal = cartState.cartArray.reduce((s, i) => s + getEffectiveUnitPrice(i) * (i.quantity || 1), 0);
 
   // Unique vendor IDs across all cart items (for multi-vendor route pricing)
   const vendorIds = [...new Set(
