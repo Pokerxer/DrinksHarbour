@@ -11,11 +11,3 @@ test('compare/phone settings default on and validate as booleans', () => {
   );
   assert.throws(() => validateSettings({ enableCompare: 'yes' }), /enableCompare/u);
 });
-
-test('language defaults to english and accepts en/ha/pig only', () => {
-  assert.equal(defaults.language, 'en');
-  assert.deepEqual(validateSettings({ language: 'ha' }).language, 'ha');
-  assert.deepEqual(validateSettings({ language: 'pig' }).language, 'pig');
-  assert.throws(() => validateSettings({ language: 'swahili' }), /language/u);
-  assert.throws(() => validateSettings({ language: 42 }), /language/u);
-});

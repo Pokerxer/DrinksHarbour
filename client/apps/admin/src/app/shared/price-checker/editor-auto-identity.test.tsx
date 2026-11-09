@@ -46,7 +46,6 @@ const options: KioskOptions = {
     displayDiscountPercentage: true,
     displayStoreName: true,
     displayBarcode: false,
-    language: 'en',
     enableCompare: true,
     enablePhoneScan: true,
     manualEntry: true,

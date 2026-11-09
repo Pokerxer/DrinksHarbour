@@ -1,6 +1,5 @@
 import type { CompareSummary } from './session-summary';
 import { formatMoney } from './money';
-import { t, type Language } from './copy';
 
 export interface ShareLinks {
   whatsapp?: string;
@@ -11,20 +10,15 @@ export interface ShareLinks {
  *  catalog data; nothing personal leaves the phone. */
 export function shareMessage(
   summary: CompareSummary,
-  storeName: string | null,
-  lang: Language = 'en'
+  storeName: string | null
 ): string {
   const band =
     summary.saved > 0
-      ? ` ${t(lang, 'recapBand', {
-          from: formatMoney(summary.from, 'NGN'),
-          to: formatMoney(summary.to, 'NGN'),
-        })}`
+      ? ` from ${formatMoney(summary.from, 'NGN')} to ${formatMoney(summary.to, 'NGN')}`
       : '';
-  const bestPart = t(lang, 'recapBest', { name: summary.bestName });
   return [
     'DrinksHarbour',
-    `${t(lang, 'recapIntro', { n: summary.count })} · ${bestPart}${band}`,
+    `Compared ${summary.count} bottles · best value ${summary.bestName}${band}`,
     storeName ? `@ ${storeName}` : '',
   ]
     .filter(Boolean)

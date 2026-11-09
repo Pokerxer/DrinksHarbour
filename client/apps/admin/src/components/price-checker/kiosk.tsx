@@ -8,7 +8,6 @@ import { compareSummary, type CompareSummary } from './session-summary';
 import { useStaleSession, COMPARE_MS, IDLE_MS } from './use-idle-timer';
 import { buildShareLinks, shareMessage } from './share';
 import { formatMoney } from './money';
-import { LANGUAGES, LanguageProvider, useCopy, type Language } from './copy';
 import { PhonePair } from './phone-pair';
 import { ProductResult } from './product-result';
 import { CompareTray } from './compare-tray';
@@ -20,46 +19,17 @@ import './kiosk.css';
 import './kiosk-display.css';
 import './kiosk-motion.css';
 
-const LANG_KEY = (slug: string) => `price-checker-lang-${slug}`;
-
-function readStoredLang(slug: string): Language | null {
-  try {
-    const value = sessionStorage.getItem(LANG_KEY(slug));
-    return value === 'en' || value === 'ha' || value === 'pig' ? value : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function PriceCheckerKiosk({ slug }: { slug: string }) {
   const offlineBook = useOfflineBook(slug);
   const kiosk = useKiosk(slug, offlineBook.support ?? undefined);
   const compare = useCompare(slug);
-  const [langOverride, setLangOverride] = useState<Language | null>(() =>
-    readStoredLang(slug)
-  );
-  const lang = langOverride ?? kiosk.config?.settings.language ?? 'en';
-  const cycleLanguage = useCallback(() => {
-    const next = LANGUAGES[(LANGUAGES.findIndex((row) => row.id === lang) + 1) % LANGUAGES.length]
-      .id;
-    setLangOverride(next);
-    try {
-      sessionStorage.setItem(LANG_KEY(slug), next);
-    } catch {
-      /* private mode — language lives in memory only */
-    }
-  }, [lang, slug]);
   return (
-    <LanguageProvider lang={lang}>
-      <KioskScreen
-        slug={slug}
-        kiosk={kiosk}
-        compare={compare}
-        offline={offlineBook.book}
-        lang={lang}
-        onCycleLanguage={cycleLanguage}
-      />
-    </LanguageProvider>
+    <KioskScreen
+      slug={slug}
+      kiosk={kiosk}
+      compare={compare}
+      offline={offlineBook.book}
+    />
   );
 }
 
@@ -68,19 +38,9 @@ interface KioskScreenProps {
   kiosk: ReturnType<typeof useKiosk>;
   compare: ReturnType<typeof useCompare>;
   offline: ReturnType<typeof useOfflineBook>['book'];
-  lang: Language;
-  onCycleLanguage: () => void;
 }
 
-function KioskScreen({
-  kiosk,
-  compare,
-  offline,
-  lang,
-  onCycleLanguage,
-  slug,
-}: KioskScreenProps) {
-  const { t } = useCopy();
+function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
   const [summary, setSummary] = useState<CompareSummary | null>(null);
   const [manual, setManual] = useState(false);
   const [pairSession] = useState(() => crypto.randomUUID());
@@ -148,23 +108,23 @@ function KioskScreen({
         await document.documentElement.requestFullscreen();
       else await document.exitFullscreen();
     } catch {
-      setMessage(t('fullscreenFallback'));
+      setMessage('Use your browser’s fullscreen option to fill this screen.');
     }
   }
   const title =
     screen === 'closed'
-      ? t('closedTitle')
+      ? 'Kiosk unavailable'
       : screen === 'offline'
-        ? t('offlineTitle')
+        ? 'Connection unavailable'
         : screen === 'missing'
-          ? t('missingTitle')
-          : t('staffTitle');
+          ? 'Product not recognised'
+          : 'Please ask a member of staff';
   const detail =
     screen === 'missing'
       ? settings?.notFoundMessage
       : screen === 'offline'
-        ? t('offlineBody')
-        : t('staffBody');
+        ? 'Please try again or ask a staff member for assistance.'
+        : 'We cannot display a price for this item here. Please ask a member of staff for assistance.';
   const money = (value: number) => formatMoney(value, config?.currency ?? 'NGN');
   return (
     <div
@@ -188,14 +148,13 @@ function KioskScreen({
         </div>
         {kiosk.offline && (
           <div className="kiosk-offline-pill" role="status">
-            {t('offlinePill', {
-              time: offline
-                ? new Date(offline.generatedAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : '—',
-            })}
+            Offline · prices from{' '}
+            {offline
+              ? new Date(offline.generatedAt).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : 'cache'}
           </div>
         )}
         {config?.store && (
@@ -213,21 +172,13 @@ function KioskScreen({
             </span>
           </div>
         )}
-        <button
-          className="kiosk-quiet kiosk-lang"
-          aria-label={t('language')}
-          title={t('language')}
-          onClick={onCycleLanguage}
-        >
-          {lang.toUpperCase()}
-        </button>
         {settings?.fullscreen && (
           <button
             className="kiosk-quiet"
             onClick={fullscreen}
-            aria-label={t('fullscreen')}
+            aria-label="Toggle fullscreen"
           >
-            ⛶ <span>{t('fullscreen')}</span>
+            ⛶ <span>Fullscreen</span>
           </button>
         )}
       </header>
@@ -268,23 +219,25 @@ function KioskScreen({
           </>
         ) : ['idle', 'initializing', 'loading'].includes(screen) ? (
           <section className="kiosk-status">
-            <span className="kiosk-eyebrow">{t('idleEyebrow')}</span>
+            <span className="kiosk-eyebrow">Your in-store price guide</span>
             <ScannerMark loading={screen !== 'idle'} />
             <h1>
               {screen === 'loading' ? (
-                t('loading')
+                'Checking product…'
               ) : screen === 'initializing' ? (
-                t('initializing')
+                'Getting ready…'
               ) : (
                 <>
-                  {t('titleLine1')}
+                  Check a
                   <br />
-                  <span>{t('titleLine2')}</span>
+                  <span>Product Price</span>
                 </>
               )}
             </h1>
             <p>
-              {screen === 'idle' ? t('idlePrompt') : t('justMoment')}
+              {screen === 'idle'
+                ? 'Scan a product barcode to see its current price'
+                : 'Just a moment'}
             </p>
             {settings?.welcomeMessage && (
               <p className="kiosk-small">{settings.welcomeMessage}</p>
@@ -297,57 +250,54 @@ function KioskScreen({
             {summary && (
               <div className="kiosk-session" role="status">
                 <p>
-                  {t('recapIntro', { n: summary.count })} ·{' '}
-                  {t('recapBest', { name: summary.bestName })}
+                  Compared {summary.count} bottles · best value{' '}
+                  <strong>{summary.bestName}</strong>
                   {summary.saved > 0 &&
-                    ` · ${t('recapBand', {
-                      from: money(summary.from),
-                      to: money(summary.to),
-                    })}`}
+                    ` · from ${money(summary.from)} to ${money(summary.to)}`}
                 </p>
                 <div className="kiosk-session-share">
                   <button className="kiosk-quiet" onClick={kiosk.openCompare}>
-                    {t('recapAgain')}
+                    Compare again
                   </button>
                   <button
                     className="kiosk-quiet"
-                    aria-label={t('shareWhatsapp')}
+                    aria-label="WhatsApp"
                     onClick={() => {
                       const links = buildShareLinks(
-                        shareMessage(summary, config?.store?.name ?? null, lang)
+                        shareMessage(summary, config?.store?.name ?? null)
                       );
                       if (links.whatsapp) window.open(links.whatsapp, '_blank');
                     }}
                   >
-                    {t('shareWhatsapp')}
+                    WhatsApp
                   </button>
                   <button
                     className="kiosk-quiet"
-                    aria-label={t('shareSms')}
+                    aria-label="SMS"
                     onClick={() => {
                       const link = buildShareLinks(
-                        shareMessage(summary, config?.store?.name ?? null, lang)
+                        shareMessage(summary, config?.store?.name ?? null)
                       ).sms;
                       if (link) window.location.href = link;
                     }}
                   >
-                    {t('shareSms')}
+                    SMS
                   </button>
                   <button
                     className="kiosk-quiet"
-                    aria-label={t('shareCopy')}
+                    aria-label="Copy"
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(
-                          shareMessage(summary, config?.store?.name ?? null, lang)
+                          shareMessage(summary, config?.store?.name ?? null)
                         );
-                        setMessage(t('shareCopied'));
+                        setMessage('Copied ✓');
                       } catch {
                         /* clipboard blocked — WhatsApp/SMS remain */
                       }
                     }}
                   >
-                    {t('shareCopy')}
+                    Copy
                   </button>
                 </div>
               </div>
@@ -359,7 +309,9 @@ function KioskScreen({
             <ScannerMark />
             <h1>{title}</h1>
             <p>
-              {screen === 'closed' ? t('closedBody') : detail}
+              {screen === 'closed'
+                ? 'This price checker is currently unavailable. Please ask a member of staff.'
+                : detail}
             </p>
             {screen !== 'closed' && (
               <button
@@ -370,7 +322,7 @@ function KioskScreen({
                     : kiosk.reset()
                 }
               >
-                {t('tryAgain')}
+                Try again
               </button>
             )}
           </section>
@@ -391,19 +343,19 @@ function KioskScreen({
         <div>
           <strong>
             {screen === 'closed'
-              ? t('footerStaff')
+              ? 'Please ask a member of staff'
               : screen === 'offline'
-                ? t('footerWaiting')
+                ? 'Waiting for connection'
                 : screen === 'compare'
-                  ? t('footerComparing')
+                  ? 'Comparing bottles'
                   : screen === 'idle'
-                    ? t('footerReady')
-                    : t('footerAnother')}
+                    ? 'Ready to scan'
+                    : 'Scan another product'}
           </strong>
           <span>
             {kiosk.remaining > 0
-              ? t('footerCountdown', { n: kiosk.remaining })
-              : t('footerScanHold')}
+              ? `Returning to scan screen in ${kiosk.remaining} seconds`
+              : 'Hold the barcode under the scanner'}
           </span>
         </div>
         {settings?.manualEntry &&
@@ -419,7 +371,7 @@ function KioskScreen({
                 setMessage('');
               }}
             >
-              {t('manualEntry')}
+              Enter barcode
             </button>
           )}
       </footer>
@@ -439,7 +391,9 @@ function KioskScreen({
               event.preventDefault();
               const value = validBarcode(code);
               if (!value) {
-                setBarcodeError(t('manualError'));
+                setBarcodeError(
+                  'Enter a barcode of 5 to 128 printable characters.'
+                );
                 return;
               }
               closeManual();
@@ -448,7 +402,7 @@ function KioskScreen({
               void kiosk.scan(value);
             }}
           >
-            <label htmlFor="manual-barcode">{t('manualLabel')}</label>
+            <label htmlFor="manual-barcode">Product barcode</label>
             <input
               id="manual-barcode"
               value={code}
@@ -465,10 +419,10 @@ function KioskScreen({
               autoFocus
             />
             <button className="kiosk-primary" type="submit">
-              {t('checkPrice')}
+              Check price
             </button>
             <button className="kiosk-quiet" type="button" onClick={closeManual}>
-              {t('close')}
+              Close
             </button>
             {barcodeError && (
               <p

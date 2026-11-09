@@ -2,7 +2,6 @@
 import type { KioskProduct } from './types';
 import { compareKey, MAX_COMPARE_ITEMS } from './use-compare';
 import { formatMoney } from './money';
-import { useCopy } from './copy';
 import { useHoldProgress } from './use-hold-progress';
 
 /** Persistent tray bar of bottles held for comparison, visible on the welcome
@@ -24,12 +23,11 @@ export function CompareTray({
   onCompare: () => void;
   onHoldClear: () => void;
 }) {
-  const { t } = useCopy();
   const hold = useHoldProgress(1500, onHoldClear);
   if (!items.length) return null;
   const ready = items.length >= 2;
   return (
-    <div className="kiosk-tray" role="region" aria-label={t('trayAria')}>
+    <div className="kiosk-tray" role="region" aria-label="Bottles to compare">
       {items.map((product) => (
         <div className="kiosk-tray-item" key={compareKey(product)}>
           {product.image && (
@@ -44,15 +42,15 @@ export function CompareTray({
           <span className="kiosk-tray-price">{formatMoney(product.price, currency)}</span>
           <button
             className="kiosk-tray-drop"
-            aria-label={t('removeNamed', { name: product.name })}
+            aria-label={`Remove ${product.name}`}
             onClick={() => onRemove(compareKey(product))}
           >
             ✕
           </button>
           <button
             className="kiosk-tray-again"
-            aria-label={t('scanAgainNamed', { name: product.name })}
-            title={t('scanAgainNamed', { name: product.name })}
+            aria-label={`Scan again for ${product.name}`}
+            title="Scan again"
             onClick={onScanAgain}
           >
             ↻
@@ -68,7 +66,7 @@ export function CompareTray({
           onPointerLeave={hold.cancel}
           onPointerCancel={hold.cancel}
         >
-          {t('holdClear')}
+          Hold to clear
         </button>
         <button
           className="kiosk-primary"
@@ -78,8 +76,8 @@ export function CompareTray({
           onClick={onCompare}
         >
           {items.length < MAX_COMPARE_ITEMS
-            ? t('compareN', { n: items.length })
-            : t('trayFullCompare')}
+            ? `Compare (${items.length})`
+            : 'Tray full — compare'}
         </button>
       </div>
     </div>

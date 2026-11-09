@@ -217,3 +217,14 @@ tsc clean.
   WhatsApp / SMS / Copy buttons (`wa.me/?text=` + `sms:?&body=` encoded;
   clipboard with silent failure). Language-aware message.
 - Suites: 44 server / 140 client / tsc clean.
+
+## REMOVED — language system (2026-11-09)
+
+The round-6 language addition (EN/HA/PIG dictionary, switcher, server
+`settings.language`) was removed the same day at the owner's request. The
+customer-facing copy is back to hard-coded English literals; idle-stale,
+night mode, share, and everything from rounds 1–5 are unaffected. Do not
+re-introduce `language` into `PriceCheckerKiosk.settings` — `displayDefaults`
+booleans auto-flow into the Mongoose schema, so a string setting there
+silently becomes a boolean and validation fails (this exact trap bit during
+the round-6 build).

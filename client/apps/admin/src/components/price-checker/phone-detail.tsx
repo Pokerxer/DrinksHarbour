@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react';
 import type { KioskProduct } from './types';
 import { formatMoney } from './money';
 import { typeLabel } from './metrics';
-import { useCopy } from './copy';
 
 const STOCK: Record<string, string> = {
   IN_STOCK: 'In stock',
@@ -21,7 +20,6 @@ export function PhoneDetail({
   currency: string;
   onClose: () => void;
 }) {
-  const { t } = useCopy();
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -43,12 +41,12 @@ export function PhoneDetail({
         className="phone-detail"
         role="dialog"
         aria-modal="true"
-        aria-label={t('detailAria', { name: product.name })}
+        aria-label={`Product details — ${product.name}`}
       >
         <button
           ref={closeRef}
           className="phone-detail-close"
-          aria-label={t('closeDetails')}
+          aria-label="Close details"
           onClick={onClose}
         >
           ✕
@@ -79,37 +77,37 @@ export function PhoneDetail({
         <dl className="phone-detail-rows">
           {product.size && (
             <>
-              <dt>{t('size')}</dt>
+              <dt>Size</dt>
               <dd>{product.size}</dd>
             </>
           )}
           {product.abv !== undefined && (
             <>
-              <dt>{t('abv')}</dt>
+              <dt>ABV</dt>
               <dd>{product.abv}% ABV</dd>
             </>
           )}
           {product.volume && (
             <>
-              <dt>{t('volume')}</dt>
+              <dt>Volume</dt>
               <dd>{product.volume}</dd>
             </>
           )}
           {product.origin && (
             <>
-              <dt>{t('origin')}</dt>
+              <dt>Origin</dt>
               <dd>{product.origin}</dd>
             </>
           )}
           {product.beverageType && (
             <>
-              <dt>{t('type')}</dt>
+              <dt>Type</dt>
               <dd>{typeLabel(product.beverageType) ?? product.beverageType}</dd>
             </>
           )}
           {product.availability && (
             <>
-              <dt>{t('stock')}</dt>
+              <dt>Stock</dt>
               <dd>
                 <span
                   className={`phone-stock ${product.availability.toLowerCase()}`}
@@ -121,7 +119,7 @@ export function PhoneDetail({
           )}
           {product.barcode && (
             <>
-              <dt>{t('barcodeLabel')}</dt>
+              <dt>Barcode</dt>
               <dd className="phone-mono">{product.barcode}</dd>
             </>
           )}

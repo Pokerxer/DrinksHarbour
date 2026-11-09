@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { formatMoney } from './money';
-import { useCopy } from './copy';
 import type { PhoneScanResult } from '../../app/kiosk/price-checker/[kioskSlug]/m/[session]/phone-api';
 
 const STOCK: Record<string, string> = {
@@ -58,7 +57,6 @@ export function PhoneResults({
   onSelect?: (entry: Checked) => void;
   now?: () => number;
 }) {
-  const { t } = useCopy();
   const hits = results
     .map((entry, index) => ({ index, checked: entry }))
     .filter((entry) => entry.checked?.result?.found && entry.checked.result.product);
@@ -141,7 +139,7 @@ export function PhoneResults({
                     <p className="phone-price">
                       {formatMoney(result.product.price, result.product.currency)}
                       {result.product.price === cheapest && (
-                        <span className="phone-badge">{t('bestSoFar')}</span>
+                        <span className="phone-badge">Best so far</span>
                       )}
                     </p>
                     <p className="phone-toned">
@@ -159,7 +157,7 @@ export function PhoneResults({
                         {STOCK[result.product.availability] ?? 'Stock unknown'}
                       </span>
                     )}
-                    <p className="phone-toned phone-sent">{t('sentToStore')}</p>
+                    <p className="phone-toned phone-sent">Sent to the store screen ✓</p>
                     <span className="phone-details-hint">Tap for details</span>
                   </div>
                   {onUndo && displayIndex === 0 && undoVisible && at !== undefined && (
@@ -171,7 +169,7 @@ export function PhoneResults({
                         onUndo(barcode);
                       }}
                     >
-                      {t('undoNamed', { name: result.product.name })}
+                      Undo {result.product.name} scan
                     </button>
                   )}
                 </div>
@@ -190,7 +188,7 @@ export function PhoneResults({
       </ul>
       {!expanded && results.length > COLLAPSE_AT && (
         <button className="phone-show-all" onClick={() => setExpanded(true)}>
-          {t('showAll', { n: results.length })}
+          Show all ({results.length})
         </button>
       )}
     </>

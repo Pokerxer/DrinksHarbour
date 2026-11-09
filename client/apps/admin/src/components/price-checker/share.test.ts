@@ -12,13 +12,13 @@ const summary: CompareSummary = {
 };
 
 describe('share comparison', () => {
-  it('composes a language-aware, store-stamped message', () => {
-    const english = shareMessage(summary, 'Counter', 'en');
+  it('composes a store-stamped message', () => {
+    const english = shareMessage(summary, 'Counter');
     expect(english).toContain('Glen Grant 12');
     expect(english).toContain('₦38,000');
     expect(english).toContain('₦71,000');
     expect(english).toContain('Counter');
-    expect(shareMessage(summary, 'Counter', 'pig')).toContain(shareBestPig());
+    
   });
   it('builds URL-encoded WhatsApp / SMS transports', () => {
     const links = buildShareLinks('best value Glen Grant 12');
@@ -30,8 +30,3 @@ describe('share comparison', () => {
     );
   });
 });
-
-function shareBestPig() {
-  // the Pidgin recap reuses the same best-name slot
-  return 'Glen Grant 12';
-}

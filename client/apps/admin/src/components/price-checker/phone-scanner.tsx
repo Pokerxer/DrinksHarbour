@@ -1,7 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { validBarcode } from './scanner';
-import { useCopy } from './copy';
 
 interface ZoomRange {
   min: number;
@@ -54,7 +53,6 @@ export function PhoneScanner({
   session: string;
   onScan: (code: string) => void;
 }) {
-  const { t } = useCopy();
   const [status, setStatus] = useState<'ready' | 'starting' | 'denied'>('ready');
   const [torch, setTorch] = useState<TorchState>({ supported: false, on: false });
   const [flash, setFlash] = useState(false);
@@ -199,7 +197,7 @@ export function PhoneScanner({
         onClick={() => void start()}
         disabled={status === 'starting'}
       >
-        {t('startCamera')}
+        Start camera
       </button>
       <div className={`phone-viewfinder${flash ? ' phone-flashing' : ''}`}>
         <div id="phone-reader" />
@@ -215,26 +213,26 @@ export function PhoneScanner({
         </p>
       )}
       {status === 'ready' && (
-        <p className="phone-hint">{t('alignHint')}</p>
+        <p className="phone-hint">Align the barcode inside the box</p>
       )}
       {torch.supported && (
         <button
           className="phone-torch"
-          aria-label={t('toggleTorch')}
+          aria-label="Toggle torch"
           onClick={() => void toggleTorch()}
         >
-          {torch.on ? t('torchOn') : t('toggleTorch')}
+          {torch.on ? 'Torch on' : 'Toggle torch'}
         </button>
       )}
       {dimHint && (
         <div className="phone-night" role="status">
-          <span>{t('nightChip')}</span>
+          <span>Dim store?</span>
           <button className="phone-night-enable" onClick={() => void enableNight()}>
-            {t('nightEnable')}
+            Night mode
           </button>
         </div>
       )}
-      {nightOn && <p className="phone-toned">{t('nightOn')}</p>}
+      {nightOn && <p className="phone-toned">Night mode on</p>}
       {zoom && (
         <label className="phone-zoom">
           <span>Zoom</span>
@@ -251,7 +249,7 @@ export function PhoneScanner({
       )}
       {manual ? (
         <form className="phone-manual" onSubmit={submitManual}>
-          <label htmlFor="phone-manual-barcode">{t('barcodeLabel')}</label>
+          <label htmlFor="phone-manual-barcode">Barcode</label>
           <input
             id="phone-manual-barcode"
             value={manualCode}
@@ -261,7 +259,7 @@ export function PhoneScanner({
             onChange={(event) => setManualCode(event.target.value)}
           />
           <button type="submit" className="phone-start phone-manual-check">
-            {t('checkPrice')}
+            Check price
           </button>
         </form>
       ) : (
@@ -270,12 +268,12 @@ export function PhoneScanner({
           aria-expanded={false}
           onClick={() => setManual(true)}
         >
-          {t('typeBarcode')}
+          Type barcode
         </button>
       )}
-      {status === 'starting' && <p role="status">{t('openingCamera')}</p>}
+      {status === 'starting' && <p role="status">Opening camera…</p>}
       {status === 'denied' && (
-        <p role="alert">{t('cameraDenied')}</p>
+        <p role="alert">Allow camera access in your browser to scan bottles.</p>
       )}
     </section>
   );

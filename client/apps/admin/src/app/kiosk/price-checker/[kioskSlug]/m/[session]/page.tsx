@@ -9,7 +9,6 @@ import { PhoneScanner } from '@/components/price-checker/phone-scanner';
 import { PhoneResults, mergeScan, type Checked } from '@/components/price-checker/phone-results';
 import { PhoneDetail } from '@/components/price-checker/phone-detail';
 import type { KioskProduct } from '@/components/price-checker/types';
-import { t, type Language, LanguageProvider } from '@/components/price-checker/copy';
 import { openSession, postPhoneScan } from './phone-api';
 import '../../kiosk-phone.css';
 
@@ -46,7 +45,6 @@ export default function PhonePriceCheckerPage({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [selected, setSelected] = useState<KioskProduct | null>(null);
-  const [lang, setLang] = useState<Language>('en');
   const sessionData = useRef({ slug: '', session: '' });
   const slugState = useRef('');
   useEffect(() => {
@@ -65,8 +63,7 @@ export default function PhonePriceCheckerPage({
       slugState.current = kioskSlug;
       setChecked(readStored(kioskSlug));
       try {
-        const config = await openSession(kioskSlug);
-        if (config?.settings?.language) setLang(config.settings.language);
+        await openSession(kioskSlug);
         if (!cancelled) setPhase('live');
       } catch {
         if (!cancelled) setPhase('down');
@@ -86,7 +83,7 @@ export default function PhonePriceCheckerPage({
       const outcome = mergeScan(checked, { barcode: code, at: Date.now(), result });
       setChecked(outcome.results.slice(0, 12));
       if (outcome.deduped)
-        setNotice(t(lang, 'dedupeNotice'));
+        setNotice('Already on your list — moved to the top ✓');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Check failed');
     } finally {
@@ -109,23 +106,22 @@ export default function PhonePriceCheckerPage({
     return (
       <main className="phone-page">
         <div className="phone-card">
-          <h1>{t(lang, 'downTitle')}</h1>
-          <p>{t(lang, 'downBody')}</p>
+          <h1>Price checker unavailable</h1>
+          <p>Please open this link again from the price checker screen.</p>
         </div>
       </main>
     );
   return (
-    <LanguageProvider lang={lang}>
     <main className="phone-page">
       <div className="phone-card">
         <header className="phone-brand">
           <h1>
             Drinks<span>Harbour</span>
           </h1>
-          <p>{t(lang, 'phoneTagline')}</p>
+          <p>Scan a bottle to check its price</p>
         </header>
         {phase === 'opening' ? (
-          <p role="status">{t(lang, 'connecting')}</p>
+          <p role="status">Connecting to the price checker…</p>
         ) : (
           <PhoneScanner
             slug={sessionData.current.slug}
@@ -133,7 +129,7 @@ export default function PhonePriceCheckerPage({
             onScan={(code) => void onScan(code)}
           />
         )}
-        {busy && <p role="status">{t(lang, 'checking')}</p>}
+        {busy && <p role="status">Checking price…</p>}
         {error && (
           <p role="alert" className="phone-error">
             {error}
@@ -167,6 +163,5 @@ export default function PhonePriceCheckerPage({
         />
       )}
     </main>
-    </LanguageProvider>
   );
 }
